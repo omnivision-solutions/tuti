@@ -8,6 +8,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 export type PlanLine = { text: string; more?: { title: string; points: string[] } };
 
 export type PricingPlan = {
+  /** The plan's key in the billing file. */
+  key?: string;
   name: string;
   /** Dollars a month, billed monthly and billed yearly (null where it isn't sold that way); null for a plan not sold. */
   price: { month: number | null; year: number | null } | null;

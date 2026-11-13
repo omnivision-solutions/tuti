@@ -29,3 +29,8 @@ test("an invalid file stops the server, naming what's wrong", () => {
   expect(() => billingConfig()).toThrow(/plans\[1\]\.limits\.boards/);
   expect(() => billingConfig()).toThrow(/is listed twice/);
 });
+
+test("the default plan is free while projects store the database's plans", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.defaultPlan = "pro"; }));
+  expect(() => billingConfig()).toThrow(/must be free for now\n {2}→ at defaultPlan/);
+});

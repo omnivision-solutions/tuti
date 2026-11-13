@@ -111,3 +111,21 @@ test("names, prices and team sizes come from the billing file", () => {
   expect([growth!.name, growth!.price, growth!.intro, growth!.cta.label]).toEqual(["Growth", { month: null, year: 60 }, "Everything in Starter, plus:", "Start with Growth"]);
   expect(business!.intro).toBe("Everything in Growth, plus:");
 });
+
+test("the cards are the file's plans, each listing what the file gives it", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => {
+    config.plans = config.plans.filter(({ key }) => key !== "business");
+    pro.features = pro.features.filter((feature) => feature !== "customDomain");
+    pro.limits.reportingDays = 90;
+    pro.extras = ["Onboarding call"];
+  }));
+  expect(pricingPlans().map(({ key, name }) => [key, name])).toEqual([
+    ["free", "Free"],
+    ["pro", "Pro"],
+  ]);
+  const pro = lines("Pro").map(({ text }) => text);
+  expect(pro).not.toContain("Your own domain");
+  expect(pro).toContain("Reporting, up to 90 days");
+  expect(pro.at(-1)).toBe("Onboarding call");
+  expect(pricingPlans().map(({ featured }) => Boolean(featured))).toEqual([false, true]);
+});

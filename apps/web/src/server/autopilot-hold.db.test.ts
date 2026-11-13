@@ -202,7 +202,6 @@ test("an edit that can't go live because the project publishes more articles tha
   // The file's AI fakes stay stubbed: only these go back.
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
-    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const edit = await articleEdit();
@@ -233,7 +232,6 @@ test("an edit waiting for the plan's published articles, once there's room, says
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
-    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO", autopilotMinSure: 80 } });
   const first = await articleEdit();
@@ -257,7 +255,6 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
-    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const edit = await articleEdit();
@@ -301,7 +298,6 @@ test("Publish now on an article's two scheduled edits past the plan's published 
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
-    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const first = await articleEdit();
@@ -324,7 +320,6 @@ test("Publish now from Home with an article edit held by one refused earlier pas
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
-    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const first = await articleEdit();

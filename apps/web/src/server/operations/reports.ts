@@ -384,7 +384,7 @@ export const getReports = defineOperation({
   run: async ({ projectId }, input) => {
     const plan = await requirePlan(projectId, "reporting");
     if (lockedRanges(plan).includes(input.range)) {
-      throw new OperationError(402, "plan_required", `${reportingRangeNeeded()} See Settings → Billing.`);
+      throw new OperationError(402, "plan_required", `${reportingRangeNeeded(plan)} See Settings → Billing.`);
     }
     const range = reportRange(input.range);
     const [docs, ai, gaps, inbox] = await Promise.all([

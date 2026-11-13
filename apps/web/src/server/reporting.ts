@@ -1,4 +1,4 @@
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, reportingRangeNeeded } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
@@ -18,10 +18,10 @@ export async function reportingPage(slug: string, given: unknown) {
     notFound();
   }
   const { plan } = membership.project;
-  const locked = lockedRanges(plan);
-  const key = typeof given === "string" && !locked.includes(given as RangeKey) ? given : undefined;
+  const ranges = lockedRanges(plan);
+  const key = typeof given === "string" && !ranges.includes(given as RangeKey) ? given : undefined;
   const sample = !planIncludes(plan, "reporting");
-  return { membership, range: reportRange(key), locked, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
+  return { membership, range: reportRange(key), locked: { ranges, hint: reportingRangeNeeded(plan) }, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
 }
 
 // Made-up numbers in the reports' shapes, for the blurred pages: the same each time, rising and falling over the range's days.

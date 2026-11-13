@@ -43,6 +43,8 @@ const plan = z
         reportingDays: days.nullable().describe("The longest range Reporting shows, in days; null: every range."),
       })
       .strict(),
+    extras: z.array(z.string().min(1)).default([]).describe('More lines its pricing card lists after what the file says it has, e.g. "Priority support".'),
+    featured: z.boolean().default(false).describe("Its card stands out on the pricing page, and its Upgrade is Billing's main button."),
     monthlyCredits: count.default(0).describe("AI credits each paid month gives (a year: twelve months' worth), with AI credits on."),
   })
   .strict();
@@ -74,6 +76,9 @@ export const billingSchema = z
     });
     if (!keys.includes(config.defaultPlan)) {
       context.addIssue({ code: "custom", path: ["defaultPlan"], message: `"${config.defaultPlan}" isn't one of the plans` });
+    } else if (config.defaultPlan !== "free") {
+      // ponytail: a project without a paid plan is stored as FREE; any default once projects store a plan's key.
+      context.addIssue({ code: "custom", path: ["defaultPlan"], message: "must be free for now" });
     }
     const stripe = [...config.plans.flatMap(({ prices }) => Object.values(prices)), ...Object.values(config.badge ?? {})].flatMap((price) => price.stripe);
     stripe.forEach((id, index) => {

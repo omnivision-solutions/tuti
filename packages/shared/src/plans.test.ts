@@ -94,10 +94,24 @@ test("Reporting: by plan, and what's needed is named from the file", () => {
     [true, 31],
     [true, null],
   ]);
-  expect([planNeeded("reporting"), reportingRangeNeeded()]).toEqual(["Reporting needs the Pro plan.", "Longer ranges need the Business plan."]);
+  expect([planNeeded("reporting"), reportingRangeNeeded("PRO"), reportingRangeNeeded("BUSINESS")]).toEqual([
+    "Reporting needs the Pro plan.",
+    "Longer ranges need the Business plan.",
+    "Your plan doesn't include longer ranges.",
+  ]);
+  // A longer range that isn't every range still counts.
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.limits.reportingDays = 365; }));
+  expect(reportingRangeNeeded("PRO")).toBe("Longer ranges need the Business plan.");
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => {
     pro.name = "Growth";
     business.features = business.features.filter((feature) => feature !== "aiTuning");
   }));
   expect([planNeeded("reporting"), planNeeded("aiTuning")]).toEqual(["Reporting needs the Growth plan.", "Advanced tuning needs a plan this server doesn't sell."]);
+});
+
+test("upgrades never name a plan that isn't sold (no prices: by quote)", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
+  expect([roomierPlan("PRO", boardLimit), planFor("privatePortal"), planFor("customDomain")?.name]).toEqual([null, null, "Pro"]);
+  expect(reportingRangeNeeded("PRO")).toBe("Your plan doesn't include longer ranges.");
+  expect(planNeeded("sitePath")).toBe("A portal under a path of your site needs a plan this server doesn't sell.");
 });

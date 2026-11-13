@@ -7,7 +7,7 @@ import { FAKE_STRIPE_PRICES } from "./stripe-fake";
 
 type Price = { perMonth: number; stripe: string[] };
 type Limits = { seats: number | null; boards: number | null; articles: number | null; historyDays: number; articleVersions: number; reportingDays: number | null };
-type Plan = { key: string; name: string; prices: { month?: Price; year?: Price }; features: string[]; limits: Limits; monthlyCredits: number };
+type Plan = { key: string; name: string; prices: { month?: Price; year?: Price }; features: string[]; limits: Limits; monthlyCredits: number; extras?: string[]; featured?: boolean };
 export type TestBilling = { plans: Plan[]; defaultPlan: string; badge?: { month?: Price; year?: Price }; historyKeptDays: number };
 
 const price = (perMonth: number, name: keyof typeof FAKE_STRIPE_PRICES): Price => ({ perMonth, stripe: [FAKE_STRIPE_PRICES[name].id] });
@@ -32,6 +32,7 @@ export function testBilling(): TestBilling {
         features: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
         limits: { seats: null, boards: 5, articles: null, historyDays: 30, articleVersions: 5, reportingDays: 31 },
         monthlyCredits: 1000,
+        featured: true,
       },
       {
         key: "business",
@@ -40,6 +41,7 @@ export function testBilling(): TestBilling {
         features: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath", "aiTuning"],
         limits: { seats: null, boards: null, articles: null, historyDays: 90, articleVersions: 50, reportingDays: null },
         monthlyCredits: 5000,
+        extras: ["Priority support"],
       },
     ],
     badge: { month: price(49, "STRIPE_PRICE_BADGE_MONTHLY"), year: price(49, "STRIPE_PRICE_BADGE_YEARLY") },

@@ -25,6 +25,15 @@ function terms(plan: PlanKey): BillingPlan {
 
 const keyOf = (plan: BillingPlan) => plan.key.toUpperCase() as PlanKey;
 
+/** Whether a plan can be bought (it has a price): the only ones an upgrade names. */
+const sold = (plan: BillingPlan) => Object.keys(plan.prices).length > 0;
+
+/** The plans the billing file lists, cheapest first, as projects store them; none without plans. */
+export const listedPlans = (): PlanKey[] => billingConfig()?.plans.map(keyOf) ?? [];
+
+/** The plan a project without a paid one is on. */
+export const defaultPlanKey = (): PlanKey => (billingConfig()?.defaultPlan.toUpperCase() ?? "FREE") as PlanKey;
+
 /** The Stripe price a plan is sold at (the first of its prices for `interval`), or null where it isn't for sale. */
 export function planPrice(plan: PlanKey, interval: PlanInterval): string | null {
   return listed(plan)?.prices[interval]?.stripe[0] ?? null;
@@ -59,6 +68,9 @@ export function badgePerMonth(interval?: PlanInterval): number | null {
   return interval ? (badge?.[interval]?.perMonth ?? null) : (badge?.month?.perMonth ?? badge?.year?.perMonth ?? null);
 }
 
+/** What a project on `plan` gets, as the billing file has it (the default plan's where the file doesn't list it). Billing on only. */
+export const planTerms = (plan: PlanKey): BillingPlan => terms(plan);
+
 /** A plan's name and what it shows a month, billed monthly and yearly (null where it isn't sold that way). */
 export function planDisplay(plan: PlanKey): { name: string; price: { month: number | null; year: number | null } } {
   const terms = listed(plan);
@@ -92,10 +104,9 @@ export function plansWith(feature: PlanFeature): PlanKey[] | null {
   return plansEnabled() ? PLAN_KEYS.filter((plan) => planIncludes(plan, feature)) : null;
 }
 
-/** The first plan (cheapest first) above the default that includes a feature, for saying what to upgrade to; null if none does. */
+/** The first plan for sale (cheapest first) that includes a feature, for saying what to upgrade to; null if none does. */
 export function planFor(feature: PlanFeature): BillingPlan | null {
-  const config = billingConfig();
-  return config?.plans.find((plan) => plan.key !== config.defaultPlan && plan.features.includes(feature)) ?? null;
+  return billingConfig()?.plans.find((plan) => sold(plan) && plan.features.includes(feature)) ?? null;
 }
 
 /**
@@ -124,10 +135,10 @@ export function planNeeded(feature: PlanFeature): string {
   return plan ? `${NEEDS[feature]} the ${plan.name} plan.` : `${NEEDS[feature]} a plan this server doesn't sell.`;
 }
 
-/** The plans after `plan` in the billing file (cheapest first): the ones to upgrade to. None without plans. */
+/** The plans for sale after `plan` in the billing file (cheapest first): the ones to upgrade to. None without plans. */
 export function plansAbove(plan: PlanKey): BillingPlan[] {
   const config = billingConfig();
-  return config ? config.plans.slice(config.plans.indexOf(terms(plan)) + 1) : [];
+  return config ? config.plans.slice(config.plans.indexOf(terms(plan)) + 1).filter(sold) : [];
 }
 
 /**
@@ -198,10 +209,10 @@ export function reportingDays(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.reportingDays : null;
 }
 
-/** What a project is told when a range is past reportingDays: the first plan with every range. */
-export function reportingRangeNeeded(): string {
-  const plan = billingConfig()?.plans.find(({ features, limits }) => features.includes("reporting") && limits.reportingDays === null);
-  return plan ? `Longer ranges need the ${plan.name} plan.` : "Your plan doesn't include longer ranges.";
+/** What a project on `plan` is told when a range is past its reportingDays: the first plan for sale above it with longer ones. */
+export function reportingRangeNeeded(plan: PlanKey): string {
+  const roomier = roomierPlan(plan, (next) => (planIncludes(next, "reporting") ? reportingDays(next) : 0));
+  return roomier ? `Longer ranges need the ${roomier.name} plan.` : "Your plan doesn't include longer ranges.";
 }
 
 /**

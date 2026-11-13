@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import LicensePage from "@/app/app/(account-pages)/license/page";
@@ -249,4 +250,18 @@ test("without Stripe, or for ids that aren't ones, nothing is sold: back to the 
   ids.project = "not an id";
   expect(await buy()).toContain("/app/license?");
   expect(stripe.sessions.length).toBe(sessions);
+});
+
+test("the licence page says what a licence costs as sold, and names no price where none is set", async () => {
+  const text = async () =>
+    renderToStaticMarkup(
+      (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve({ ...ids }) } as PageProps<"/app/license">)) as React.ReactElement,
+    );
+  expect(await text()).toContain("portal, for $49 a month.");
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.perMonth = 39; delete badge!.month; }));
+  expect(await text()).toContain("portal, for $39 a month, billed yearly.");
+  vi.stubEnv("BILLING_CONFIG", "");
+  const page = await text();
+  expect(page).toContain("hides &quot;Powered by tuti&quot; on one project&#x27;s portal. It&#x27;s for");
+  expect(page).not.toContain("$0");
 });

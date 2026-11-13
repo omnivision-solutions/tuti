@@ -1,4 +1,4 @@
-import { planNeeded, reportingRangeNeeded } from "@tuti/shared";
+import { planNeeded } from "@tuti/shared";
 import { cn } from "cn";
 import { ArrowDownRightIcon, ArrowUpRightIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
@@ -48,7 +48,8 @@ export function ReportPane({
 }: {
   title: string;
   range: ReportRange;
-  locked: RangeKey[];
+  /** The ranges the plan doesn't have, and what to say about them. */
+  locked: { ranges: RangeKey[]; hint: string };
   upgrade: { slug: string; admin: boolean } | null;
   children: ReactNode;
 }) {
@@ -57,8 +58,8 @@ export function ReportPane({
     <ReportRangePicker
       current={range.key}
       dates={Object.fromEntries(RANGES.map(({ key }) => [key, rangeDates(reportRange(key, new Date(range.today)))])) as Record<RangeKey, string>}
-      locked={locked}
-      lockedHint={reportingRangeNeeded()}
+      locked={locked.ranges}
+      lockedHint={locked.hint}
     />
   );
   return (

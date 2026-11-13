@@ -168,6 +168,20 @@
             ],
             "additionalProperties": false
           },
+          "extras": {
+            "default": [],
+            "description": "More lines its pricing card lists after what the file says it has, e.g. \"Priority support\".",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "featured": {
+            "default": false,
+            "description": "Its card stands out on the pricing page, and its Upgrade is Billing's main button.",
+            "type": "boolean"
+          },
           "monthlyCredits": {
             "default": 0,
             "description": "AI credits each paid month gives (a year: twelve months' worth), with AI credits on.",

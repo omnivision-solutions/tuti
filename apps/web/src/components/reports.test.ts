@@ -106,6 +106,6 @@ test("a chart marks its bar for today so far, in its words and its look; a past 
 
 test("the range picker's dates are the page's range's: worked out on its day, not on the clock as the heading renders", () => {
   const range = reportRange("30d", new Date("2025-01-15T23:59:59.900Z"));
-  const html = renderToStaticMarkup(ReportPane({ title: "Help center", range, locked: [], upgrade: null, children: null })).replaceAll("\u2009", " ");
+  const html = renderToStaticMarkup(ReportPane({ title: "Help center", range, locked: { ranges: [], hint: "" }, upgrade: null, children: null })).replaceAll("\u2009", " ");
   expect(html).toContain("Date range: Past 30 days, Dec 17, 2024 – Jan 15, 2025");
 });

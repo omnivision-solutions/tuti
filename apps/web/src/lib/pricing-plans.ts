@@ -1,4 +1,4 @@
-import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planDisplay, planIncludes, type PlanKey, teamLimit, topupsEnabled } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
@@ -90,60 +90,62 @@ const seats = (plan: PlanKey): PlanLine => {
   return { text: limit === null ? "Unlimited team members" : `${limit} team ${limit === 1 ? "member" : "members"}` };
 };
 
-/** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
+/** Reporting's line: "Reporting, up to a month", "…up to 90 days" or "…every range"; none on a plan without it. */
+const reporting = (plan: PlanKey): PlanLine[] => {
+  if (!planIncludes(plan, "reporting")) {
+    return [];
+  }
+  const days = reportingDays(plan);
+  return [{ text: days === null ? "Reporting, every range" : days === 31 ? "Reporting, up to a month" : `Reporting, up to ${days} days` }];
+};
+
+/** A feature's line where the plan includes it. Email from the team's domain only where the server has support email and Amazon SES (as Settings → Support offers it). */
+const feature = (plan: PlanKey, name: PlanFeature, text: string): PlanLine[] =>
+  planIncludes(plan, name) && (name !== "emailDomain" || (process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses())) ? [{ text }] : [];
+
+/**
+ * The plans the billing file lists, as the pricing page shows them (and Settings → Billing compares them), cheapest first:
+ * the first lists everything, each next one what it has more of ("Everything in Pro, plus:"). Server only: it reads the
+ * server's settings.
+ */
 export function pricingPlans(): PricingPlan[] {
-  return [
-    {
-      ...shown("FREE"),
-      highlights: [...autopilot("FREE"), ...credits("FREE", freeCredits(), "to start")],
+  const plans = listedPlans();
+  return plans.map((plan, index) => {
+    const previous = plans[index - 1];
+    // Its lines that the plan before it doesn't have (all of them on the first).
+    const more = (lines: (plan: PlanKey) => PlanLine[]) => {
+      const own = lines(plan);
+      const before = previous ? lines(previous).map(({ text }) => text) : [];
+      return own.filter(({ text }) => !before.includes(text));
+    };
+    const { name, price } = shown(plan);
+    const { extras, featured } = planTerms(plan);
+    const isDefault = plan === defaultPlanKey();
+    return {
+      key: plan.toLowerCase(),
+      name,
+      price,
+      highlights: [...autopilot(plan), ...(isDefault ? credits(plan, freeCredits(), "to start") : credits(plan, planCredits(plan), "a month"))],
+      ...(previous && { intro: `Everything in ${planDisplay(previous).name}, plus:` }),
       features: [
-        { text: "Unlimited end users" },
-        seats("FREE"),
-        { text: "Help center, roadmap and changelog" },
-        { text: "Unlimited feedback posts" },
-        boards("FREE"),
-        articles("FREE"),
-        ...history("FREE"),
-        versions("FREE"),
+        ...(previous ? [] : [{ text: "Unlimited end users" }]),
+        ...more((key) => [seats(key)]),
+        ...(previous ? [] : [{ text: "Help center, roadmap and changelog" }, { text: "Unlimited feedback posts" }]),
+        ...more((key) => [boards(key)]),
+        ...more((key) => [articles(key)]),
+        ...more(history),
+        ...more((key) => feature(key, "customDomain", "Your own domain")),
+        ...more((key) => feature(key, "emailDomain", "Email from your own domain")),
+        ...more((key) => [versions(key)]),
+        ...more(reporting),
+        ...more((key) => feature(key, "privatePortal", "A private help center, with reader groups")),
+        ...more((key) => feature(key, "sitePath", "Your help center under a path of your site")),
+        ...extras.map((text) => ({ text })),
       ],
-      cta: { label: "Start free", href: "/app/auth/sign-up" },
-    },
-    {
-      ...shown("PRO"),
-      highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
-      intro: `Everything in ${planDisplay("FREE").name}, plus:`,
-      features: [
-        seats("PRO"),
-        boards("PRO"),
-        articles("PRO"),
-        ...history("PRO"),
-        { text: "Your own domain" },
-        // Offered where the server has support email and Amazon SES (as Settings → Support offers it: supportDomain, ses).
-        ...(process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses() ? [{ text: "Email from your own domain" }] : []),
-        versions("PRO"),
-        { text: "Reporting, up to a month" },
-      ],
-      cta: { label: `Start with ${planDisplay("PRO").name}`, href: "/app/auth/sign-up" },
-      featured: true,
-    },
-    {
-      ...shown("BUSINESS"),
-      highlights: [...autopilot("BUSINESS"), ...credits("BUSINESS", planCredits("BUSINESS"), "a month")],
-      intro: `Everything in ${planDisplay("PRO").name}, plus:`,
-      features: [
-        boards("BUSINESS"),
-        // Only where the operator gives Business a limit of its own (it has everything in Pro).
-        ...(articleLimit("BUSINESS") === articleLimit("PRO") ? [] : [articles("BUSINESS")]),
-        ...history("BUSINESS"),
-        versions("BUSINESS"),
-        { text: "Reporting, every range" },
-        { text: "A private help center, with reader groups" },
-        { text: "Your help center under a path of your site" },
-        { text: "Priority support" },
-      ],
-      cta: { label: `Start with ${planDisplay("BUSINESS").name}`, href: "/app/auth/sign-up" },
-    },
-  ];
+      cta: { label: price === null && isDefault ? "Start free" : `Start with ${name}`, href: "/app/auth/sign-up" },
+      ...(featured && { featured }),
+    };
+  });
 }
 
 /** Enterprise, beside the plans: by quote. */

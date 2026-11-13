@@ -17,12 +17,6 @@ import { TOPUP_DOLLARS } from "@/server/operations/credits";
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
-/** What each plan includes, as the pricing page lists it, for the comparison. */
-function planFeatures() {
-  const [FREE, PRO, BUSINESS] = pricingPlans();
-  return { FREE, PRO, BUSINESS };
-}
-
 const day = (date: Date) => date.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
@@ -44,8 +38,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
   const shown = planDisplay(plan.plan);
-  // A paid plan's own billing (the add-on bills alike); on the default plan, what it starts at.
-  const badge = plan.plan === "FREE" ? badgePerMonth() : badgePerMonth(plan.planInterval === "year" ? "year" : "month");
+  // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One already on
+  // a plan billed a way it's no longer sold shows its other price, so it can still be seen and removed.
+  const sold = plan.plan === "FREE" ? badgePerMonth() : badgePerMonth(plan.planInterval === "year" ? "year" : "month");
+  const badge = sold ?? (plan.badgeAddOn ? badgePerMonth() : null);
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -78,7 +74,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             {plan.plan !== "FREE" ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} plans={planFeatures()} />
+              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={plan.plan.toLowerCase()} />
             ) : (
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}
@@ -97,7 +93,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
             }
           >
-            {(plan.badgeAddOn || planSalesEnabled()) &&
+            {(plan.badgeAddOn || (planSalesEnabled() && sold !== null)) &&
               (plan.plan === "FREE" ? (
                 // To the plans above, monthly or yearly as picked there.
                 <a href="#plans" className={buttonVariants({ variant: "outline" })}>

@@ -52,7 +52,9 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
   });
   const monthly = licensePrice("month");
   const yearly = licensePrice("year");
-  const billing = licenseBilling(badgePerMonth(monthly ? "month" : "year") ?? 0, { month: Boolean(monthly), year: Boolean(yearly) });
+  // What it costs as sold here, or the add-on's price where Checkout sells nothing (the page says to email); none without one.
+  const perMonth = badgePerMonth(monthly ? "month" : yearly ? "year" : undefined);
+  const billing = perMonth === null ? null : licenseBilling(perMonth, { month: Boolean(monthly), year: Boolean(yearly) });
   const portal = process.env.STRIPE_PORTAL_LOGIN_URL?.trim();
   const body = `Hi,\n\nI'd like a licence to remove "Powered by tuti".\n\nInstallation ID: ${installation}\nProject ID: ${project}\n`;
   const mailto = `mailto:${LICENSE_EMAIL}?${new URLSearchParams({ subject: "Tuti licence", body }).toString().replaceAll("+", "%20")}`;
@@ -62,7 +64,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
       <div className="flex flex-col gap-2">
         <h1 className="font-heading text-2xl font-bold tracking-tight">Remove &quot;Powered by tuti&quot;</h1>
         <p className="text-muted-foreground">
-          A licence hides &quot;Powered by tuti&quot; on one project&apos;s portal, for {billing.price}. It&apos;s for
+          A licence hides &quot;Powered by tuti&quot; on one project&apos;s portal{billing && `, for ${billing.price}`}. It&apos;s for
           this project on this installation of Tuti:
         </p>
       </div>
@@ -108,7 +110,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
           <input type="hidden" name="project" value={project} />
           {typeof claim === "string" && <input type="hidden" name="claim" value={claim} />}
           {failed && <p className="text-sm text-destructive">Couldn&apos;t open Stripe&apos;s checkout. Try again in a moment.</p>}
-          <p>Pay by card with Stripe, {billing.billed}. It renews until you cancel it.</p>
+          <p>Pay by card with Stripe, {billing?.billed}. It renews until you cancel it.</p>
           <TermsAgreement by="buying" />
           <div className="flex flex-wrap gap-2">
             {monthly && (

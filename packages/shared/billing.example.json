@@ -17,7 +17,8 @@
       },
       "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
       "limits": { "seats": null, "boards": 5, "articles": null, "historyDays": 30, "articleVersions": 5, "reportingDays": 31 },
-      "monthlyCredits": 1000
+      "monthlyCredits": 1000,
+      "featured": true
     },
     {
       "key": "business",
@@ -28,7 +29,8 @@
       },
       "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath", "aiTuning"],
       "limits": { "seats": null, "boards": null, "articles": null, "historyDays": 90, "articleVersions": 50, "reportingDays": null },
-      "monthlyCredits": 5000
+      "monthlyCredits": 5000,
+      "extras": ["Priority support"]
     }
   ],
   "badge": {
