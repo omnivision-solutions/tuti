@@ -887,11 +887,15 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await otherTab.getByRole("button", { name: "Account" }).click();
   await otherTab.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(otherTab.getByText("Acme is private. Sign in to see it.")).toBeVisible();
+  type Router = { push: (href: string) => void; refresh: () => void };
   await asker.evaluate(() => {
-    const { router } = (window as unknown as { next: { router: { push: (href: string) => void; refresh: () => void } } }).next;
-    router.push("/sign-in");
-    router.refresh();
+    Object.assign(window, { beforeNavigation: true });
+    (window as unknown as { next: { router: Router } }).next.router.push("/sign-in");
   });
+  await expect(asker).toHaveURL(/\/sign-in$/);
+  // A client navigation (the page wasn't loaded afresh), then the refresh that gets the layout for who's reading now.
+  expect(await asker.evaluate(() => "beforeNavigation" in window)).toBe(true);
+  await asker.evaluate(() => (window as unknown as { next: { router: Router } }).next.router.refresh());
   await expect(asker.getByText("Acme is private. Sign in to see it.")).toBeVisible();
   await expect(asker.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(asker.locator("#tuti-widget")).toHaveCount(0);
