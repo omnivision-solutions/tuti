@@ -202,10 +202,11 @@ export function ReplyForm({
     <>
       <form
         ref={form}
-        // One surface: the box lights up as a whole while it's written in (the text field has no border or ring of its own),
+        // One surface: the box lights up as a whole while it's written in, and turns red when a send fails (the text field has no
+        // border or ring of its own),
         // in the note's colours on Note, so a note doesn't look like a reply before it's added.
         className={cn(
-          "inbox-composer flex flex-col gap-0 rounded-2xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 transition-[border-color,box-shadow] has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50 @max-[57rem]/app:p-2",
+          "inbox-composer flex flex-col gap-0 rounded-2xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 transition-[border-color,box-shadow] has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50 has-[textarea[aria-invalid=true]]:border-destructive has-[textarea[aria-invalid=true]]:ring-3 has-[textarea[aria-invalid=true]]:ring-destructive/20 @max-[57rem]/app:p-2",
           note && "border-highlight-foreground/40 bg-inbox-note has-[textarea:focus-visible]:border-highlight-foreground/60 has-[textarea:focus-visible]:ring-highlight-foreground/20",
           "[&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs",
         )}
@@ -255,7 +256,7 @@ export function ReplyForm({
             rows={2}
             // While it's sending, what's there is what's sent: nothing to add that the send would then clear or repeat.
             readOnly={pending}
-            className={cn("inbox-reply-text min-h-10 border-0 bg-transparent px-1 py-0.75 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent", note && "inbox-reply-note")}
+            className={cn("inbox-reply-text min-h-10 border-0 bg-transparent px-1 py-0.75 text-sm shadow-none focus-visible:ring-0 aria-invalid:ring-0 dark:bg-transparent dark:aria-invalid:ring-0", note && "inbox-reply-note")}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
           />

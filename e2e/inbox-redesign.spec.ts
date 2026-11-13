@@ -301,6 +301,19 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   expect(await reply.evaluate((field) => getComputedStyle(field).boxShadow)).not.toMatch(/0px 0px 0px [1-9]/);
   // Its 3px ring, once the transition has run.
   await expect.poll(() => composer.evaluate((form) => getComputedStyle(form).boxShadow)).toMatch(/0px 0px 0px 3px/);
+  // A failed send (nothing written) marks the box, not a ring of the field's own inside it.
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(reply).toHaveAttribute("aria-invalid", "true");
+  expect(await reply.evaluate((field) => getComputedStyle(field).boxShadow)).not.toMatch(/0px 0px 0px [1-9]/);
+  const destructive = await owner.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "border border-destructive";
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+    return colour;
+  });
+  await expect.poll(() => composer.evaluate((form) => getComputedStyle(form).borderTopColor)).toBe(destructive);
   await reply.fill("Thanks for flagging this, I’ve refunded the charge");
   await checkpoint(owner, "laptop-reply-focused", { fullPage: false });
   // Reply and Note keep their focus ring and full underline: the tab list doesn't clip them.
