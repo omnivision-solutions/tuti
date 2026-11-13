@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenIcon, ChartLineIcon, CircleHelpIcon, MessagesSquareIcon, SearchIcon, SparklesIcon, ThumbsUpIcon } from "lucide-react";
+import { BookOpenIcon, ChartLineIcon, CircleHelpIcon, InboxIcon, SearchIcon, SparklesIcon, ThumbsUpIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 import { SectionGroup, SectionLink, SectionPane } from "@/components/pane";
@@ -34,7 +34,7 @@ export function ReportingMenu({ slug }: { slug: string }) {
         </SectionLink>
       </SectionGroup>
       <SectionGroup label="Inbox">
-        <SectionLink href={at("/inbox")} icon={<MessagesSquareIcon aria-hidden />}>
+        <SectionLink href={at("/inbox")} icon={<InboxIcon aria-hidden />}>
           Conversations
         </SectionLink>
       </SectionGroup>
