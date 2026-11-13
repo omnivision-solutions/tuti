@@ -7,8 +7,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 export const daysLeft = (endsAt: Date, now = new Date()) => Math.max(1, Math.ceil((endsAt.getTime() - now.getTime()) / 86_400_000));
 
 /** Every project page during a free trial and after it ended without a plan: what's left, and Billing's plans for owners and admins. */
-export function TrialNotice({ projectSlug, trial, admin }: { projectSlug: string; trial: { endsAt: Date; ended: boolean }; admin: boolean }) {
-  const days = daysLeft(trial.endsAt);
+export function TrialNotice({ projectSlug, trial, admin, now = new Date() }: { projectSlug: string; trial: { endsAt: Date; ended: boolean }; admin: boolean; now?: Date }) {
+  const days = daysLeft(trial.endsAt, now);
   return (
     <Alert>
       <ClockIcon />

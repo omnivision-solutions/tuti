@@ -157,16 +157,20 @@ test("the migration counts an account that already owns a project as having had 
   await prisma.project.update({ where: { id: older.id }, data: { createdAt: new Date("2026-01-02T03:04:05Z") } });
   const member = await addMember(older.id, "ADMIN");
   const loner = await signUp("Loner");
+  // Invited as an owner of a project someone else made: not its maker, so not marked.
+  const invited = await signUp("Invited owner");
+  await prisma.teamMember.create({ data: { projectId: older.id, userId: invited.id, role: "OWNER" } });
   const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113200000_trials/migration.sql", import.meta.url), "utf8");
   // Back to before it (this file's database is its own).
   await prisma.$executeRawUnsafe(`ALTER TABLE "project" DROP COLUMN "trialEndsAt"; ALTER TABLE "user" DROP COLUMN "trialStartedAt";`);
   await prisma.$executeRawUnsafe(sql);
 
-  const started = await prisma.$queryRaw<{ id: string; trialStartedAt: Date | null }[]>`SELECT id, "trialStartedAt" FROM "user" WHERE id = ANY(${[owner.id, member.id, loner.id]})`;
+  const started = await prisma.$queryRaw<{ id: string; trialStartedAt: Date | null }[]>`SELECT id, "trialStartedAt" FROM "user" WHERE id = ANY(${[owner.id, member.id, loner.id, invited.id]})`;
   expect(Object.fromEntries(started.map(({ id, trialStartedAt }) => [id, trialStartedAt]))).toEqual({
     [owner.id]: new Date("2026-01-02T03:04:05Z"),
     [member.id]: null,
     [loner.id]: null,
+    [invited.id]: null,
   });
   expect((await newProject()).trialEndsAt).toBeNull();
 });
@@ -189,4 +193,14 @@ test("an owner of someone else's project (invited) still gets a trial on the fir
   await prisma.teamMember.create({ data: { projectId: theirs.id, userId: owner.id, role: "OWNER" } });
   const mine = await newProject();
   expect(mine.trialEndsAt).not.toBeNull();
+});
+
+test("a first project made without claiming the trial (the previous release, mid-deploy) still counts: the next one gets none", async () => {
+  // As the release before trials made it: no trial, the marker left unset.
+  const earlier = await projectOf(owner);
+  await prisma.user.update({ where: { id: owner.id }, data: { trialStartedAt: null } });
+  expect(earlier.id).toBeTruthy();
+  const next = await newProject();
+  expect(next.trialEndsAt).toBeNull();
+  expect((await creditBalance(next.id)).grants.filter(({ source }) => source === "PLAN")).toEqual([]);
 });

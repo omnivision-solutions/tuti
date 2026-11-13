@@ -17,6 +17,15 @@ export async function startTrial(tx: Prisma.TransactionClient, projectId: string
   if (count === 0 || !trial) {
     return;
   }
+  // Nor where it made another project first, without claiming (on the previous release, while a deploy ran both):
+  // the first owner of another project is who made it. An owner invited later isn't, so keeps their trial.
+  const [made] = await tx.$queryRaw<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM team_member tm
+    WHERE tm."userId" = ${ownerId} AND tm.role = 'OWNER' AND tm."projectId" <> ${projectId}
+      AND NOT EXISTS (SELECT 1 FROM team_member first WHERE first."projectId" = tm."projectId" AND first.role = 'OWNER' AND first."createdAt" < tm."createdAt")`;
+  if (made!.n > 0) {
+    return;
+  }
   const trialEndsAt = new Date(now.getTime() + trial.days * 86_400_000);
   await tx.project.update({ where: { id: projectId }, data: { trialEndsAt } });
   if (trial.credits > 0) {
