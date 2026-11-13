@@ -337,7 +337,7 @@ the list picks none to approve at once.
   Tabs come in two styles. Switching a page's views or sections (Feedback's
   statuses, Changelog, Users, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
-  pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations), and on the portal the same pills; switching a control's mode is a segmented
+  pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations), and on the portal a list's views are the same pills (the changelog's tags, a board's sort) and the docs tabs are underline tabs under the site bar (`PartRow`); switching a control's mode is a segmented
   `Tabs` (the reply box's Reply and Note are underline tabs across the top of its card instead, under Inbox) (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed, each with its count) are `FilterPills`, as the board's sort, so
   the portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
