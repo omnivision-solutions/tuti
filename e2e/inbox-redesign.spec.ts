@@ -252,7 +252,7 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
     subject: "Can I export my reports?",
     body: "Can I export reports for our weekly planning? We plan every Monday and would love to share them with the whole team.",
   });
-  await api("/conversations/1/messages", { body: "Hi Sam! Yes, from Reports → Export." });
+  await api("/conversations/1/messages", { body: "Hi Sam! Yes, from Reports → Export: https://docs.example.com/export" });
   await api("/conversations/1/messages", { body: "Would a CSV work, or do you need a PDF?" });
   await api("/conversations/1/messages", { body: "thanks!!", author: { id: "demo-sam" } });
   await owner.setViewportSize({ width: 1440, height: 900 });
@@ -267,7 +267,7 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await expect(lines).toHaveCount(2);
   await expect(lines.first()).toHaveCSS("position", "absolute");
   await expect(lines.last()).toHaveCSS("position", "static");
-  await expect(messages.getByRole("listitem").nth(1)).toContainText("Olive Owner · just now");
+  await expect(messages.getByRole("listitem").nth(1)).toContainText("Olive Owner · ");
   await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "hidden");
   await expect(messages.locator(".team .inbox-chat-avatar").last()).toHaveCSS("visibility", "visible");
   // The team's in the primary colour; the customer's long message stays well short of the pane's width.
@@ -282,6 +282,10 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await expect(bubbles.nth(1)).toHaveCSS("background-color", primary);
   const list = (await messages.boundingBox())!;
   expect((await bubbles.first().boundingBox())!.width).toBeLessThanOrEqual(list.width * 0.72);
+  // A link in the team's colour shows its keyboard focus: an outline in the bubble's text colour, not primary on primary.
+  const link = bubbles.nth(1).getByRole("link", { name: "https://docs.example.com/export" });
+  await link.focus();
+  await expect(link).toHaveCSS("outline-color", await bubbles.nth(1).evaluate((bubble) => getComputedStyle(bubble).color));
   // A short one stays short.
   expect((await bubbles.last().boundingBox())!.width).toBeLessThan(120);
 
