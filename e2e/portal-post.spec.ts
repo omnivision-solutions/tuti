@@ -276,6 +276,8 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
       const page = await (await browser.newContext({ baseURL: portalUrl(slug), viewport, colorScheme, storageState: signedIn })).newPage();
       await page.goto(darkPath);
       await expect(page.getByRole("button", { name: "Unsubscribe" })).toBeVisible();
+      // Upvote's words fit inside it, beside Unsubscribe and Copy link on a phone (the row wraps rather than squeezing it).
+      expect(await page.getByRole("button", { name: /^Upvote \(/ }).evaluate((button) => button.scrollWidth <= button.clientWidth)).toBe(true);
       await expect(page.getByRole("region", { name: "Similar ideas" }).getByRole("link", { name: night })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
       await checkpoint(page, `portal-post-subscribed-${name}-${colorScheme}`);
@@ -301,6 +303,12 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(di.getByRole("button", { name: "Upvoted" })).toBeEnabled();
   await di.reload();
   await expect(hears).toBeVisible();
+  // On a phone the line sits under the row of actions, and Upvote's words still fit inside it.
+  await di.setViewportSize({ width: 390, height: 844 });
+  const upvoted = di.getByRole("button", { name: "Upvoted" });
+  expect(await upvoted.evaluate((button) => button.scrollWidth <= button.clientWidth)).toBe(true);
+  expect((await hears.boundingBox())!.y).toBeGreaterThanOrEqual((await upvoted.boundingBox())!.y + (await upvoted.boundingBox())!.height);
+  await di.setViewportSize({ width: 1280, height: 720 });
   // The line from the start (a fresh page), and still the vote taken back brings Subscribe.
   await di.getByRole("button", { name: "Upvoted" }).click();
   await expect(di.getByRole("button", { name: "Upvote" })).toHaveText("Upvote1");

@@ -221,7 +221,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           post, the voters under them (the details and the way to a new idea aren't). */}
       <aside
         aria-label="About this idea"
-        className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-[2.375rem] lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-5 max-lg:[&>:first-child]:min-w-0 max-lg:[&>:first-child]:flex-1 max-lg:[&>:first-child]:basis-0 lg:[&>a]:w-full lg:[&>button]:w-full"
+        className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-[2.375rem] lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-5 max-lg:[&>:first-child]:grow lg:[&>a]:w-full lg:[&>button]:w-full"
       >
         {vote("upvote")}
         {subscribe}

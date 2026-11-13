@@ -459,7 +459,8 @@ the list picks none to approve at once.
     email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces under a "Voters" label, then
     under one line Board, Status, Expected and Posted as rows without lines between them, Copy link and Share (the
     device's share sheet, where it has one) as round icon buttons, "Have another idea? Post it". On phones and tablets
-    the same actions in one row under the body (Upvote widest), the voters under them. The thread: "N comments" and its
+    the same actions in one row under the body (Upvote widest, Subscribe without its bell; the row wraps rather
+    squeezing Upvote), "You'll hear when it ships." and the voters under them. The thread: "N comments" and its
     sort, the comment box under them (the face, the box, a grey Comment button: Upvote stays the one primary); signed
     out, one "Join the conversation" bar (a fill, Sign in a secondary) instead. The team's replies on the accent's soft
     tint with a 2px accent rule and the Team badge, status changes inline with the status's icon and pill. Similar ideas
