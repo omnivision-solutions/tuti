@@ -9,7 +9,8 @@ const COPY_ICON =
 
 /**
  * "Copy" on each code block of the article before it (rendered on the server, so the buttons are added once its script
- * runs): in a labelled block's strip, else at the block's top right. Without JavaScript there's nothing to copy with.
+ * runs), in a strip above the code so it never covers it: a labelled block's label strip, beside code tabs (copying the
+ * tab shown), else a strip of its own (`.code-copy-bar`). Without JavaScript there's nothing to copy with.
  */
 export function CodeCopyButtons() {
   const marker = useRef<HTMLSpanElement>(null);
@@ -18,28 +19,47 @@ export function CodeCopyButtons() {
     if (!article) {
       return;
     }
-    // ponytail: buttons added to server-rendered blocks React never re-renders; a RichText option if that changes. In an
-    // unlabelled block the button scrolls with a long line; a wrapper around the <pre> would keep it put.
-    const buttons = [...article.querySelectorAll<HTMLPreElement>("pre")].map((pre) => {
+    // Copies `pre`'s code alone (not the word of a button in its strip).
+    const copyButton = (pre: () => Element) => {
       const button = document.createElement("button");
       button.type = "button";
       button.innerHTML = `${COPY_ICON}<span>Copy</span>`;
       button.setAttribute("aria-label", "Copy code");
       button.className =
-        "inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 font-sans portal:border-transparent portal:bg-secondary portal:hover:bg-secondary-hover text-[0.8125rem] font-semibold text-muted-foreground transition-colors hover:text-foreground";
-      // The code alone (not this button's word, inside an unlabelled block).
-      const code = pre.querySelector("code") ?? pre;
-      button.addEventListener("click", () => copyText(code.innerText));
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-card px-2 font-sans portal:border-transparent portal:bg-secondary portal:hover:bg-secondary-hover text-[0.8125rem] font-semibold text-muted-foreground transition-colors hover:text-foreground";
+      button.addEventListener("click", () => {
+        const block = pre();
+        void copyText((block.querySelector("code") ?? (block as HTMLElement)).innerText);
+      });
+      return button;
+    };
+    const bar = (button: HTMLButtonElement) => {
+      const element = document.createElement("div");
+      element.className = "code-copy-bar";
+      element.append(button);
+      return element;
+    };
+    // ponytail: added to server-rendered blocks React never re-renders; a RichText option if that changes.
+    const added: Element[] = [];
+    for (const tabs of article.querySelectorAll(".rich-code-tabs")) {
+      const shown = () => {
+        const radios = [...tabs.querySelectorAll<HTMLInputElement>(":scope > .rich-code-tab-row input")];
+        return tabs.querySelectorAll(":scope > pre")[Math.max(radios.findIndex((radio) => radio.checked), 0)]!;
+      };
+      added.push(bar(copyButton(shown)));
+      tabs.append(added.at(-1)!);
+    }
+    for (const pre of article.querySelectorAll<HTMLPreElement>("pre:not(.rich-code-tabs > pre)")) {
       const caption = pre.parentElement?.matches(".rich-code") ? pre.parentElement.querySelector("figcaption") : null;
       if (caption) {
-        caption.append(button);
+        added.push(copyButton(() => pre));
+        caption.append(added.at(-1)!);
       } else {
-        button.classList.add("absolute", "top-2.5", "right-2.5");
-        pre.append(button);
+        added.push(bar(copyButton(() => pre)));
+        pre.prepend(added.at(-1)!);
       }
-      return button;
-    });
-    return () => buttons.forEach((button) => button.remove());
+    }
+    return () => added.forEach((element) => element.remove());
   }, []);
   return <span ref={marker} hidden />;
 }
