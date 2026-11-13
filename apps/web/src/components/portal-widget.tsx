@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
  * read the portal (`shown`); its panel at the portal's address, under `base` for one under a path of the team's site. Its launcher and panel are the loader's, outside React, and outlive client navigations. Once
  * who's reading changes (signing in or out, `viewer`) or the page may no longer show the portal, a panel opened before has
  * the last reader's page in it: a full load starts afresh. Never opened, it has nothing of theirs. Once the page may no
- * longer show the portal (signing out of a private one, onto its sign-in page) it's a full load whatever happened: the
+ * longer show the portal (the reader's access taken away while they're on it) it's a full load whatever happened: the
  * loader's launcher is outside React, and React keeps an async script it hoisted after it's gone from the page.
  * Its launcher and panel go over the page and its sticky header (z-40), under the portal's sheets and dialogs (z-50: the
  * assistant, the menu), which cover an open panel until they close; the panel stays a level over the launcher, as the

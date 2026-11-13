@@ -2,7 +2,6 @@
 
 import { LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -19,9 +18,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
-/** Signs out of this portal (or the app) and goes to its home page. */
+/**
+ * Signs out of this portal (or the app) and goes to its home page, loaded afresh: nothing of the last reader's stays (the
+ * widget the portal's loader added, outside React; the layout as it was for them, which a client navigation keeps).
+ */
 function useSignOut() {
-  const router = useRouter();
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
   return async () => {
@@ -34,8 +35,7 @@ function useSignOut() {
       toast.error("Couldn't sign you out. Try again.");
       return;
     }
-    router.push(at("/"));
-    router.refresh();
+    window.location.assign(at("/"));
   };
 }
 

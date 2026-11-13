@@ -823,7 +823,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await api("/support", { inbox: false }, "PATCH");
   await visitor.reload();
 
-  // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
+  // Back on. Signing out on the portal loads the page afresh: the launcher and panel the loader added
   // for the signed-in reader don't stay for whoever's next.
   await api("/widget", { onPortal: true }, "PATCH");
   const ada = await signUp(browser, portalUrl(slug), "Ada");
@@ -868,9 +868,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(reader.getByText("Acme is private. Sign in to see it.")).toBeVisible();
   await expect(reader.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(readerLauncher).toHaveCount(0);
-  // Off on the portal, the widget is there for Ask AI alone: a reader who asked leaves nothing of it either once signed out,
-  // however the page gets to the sign-in page. Signing out mostly ends in a full load already; a client navigation there
-  // and a refresh, as signing out asks for (here signed out in another tab, then the router's), is the case to cover.
+  // Off on the portal, the widget is there for Ask AI alone: a reader who asked leaves nothing of it either once signed out.
   await api("/widget", { onPortal: false }, "PATCH");
   const asker = await signInReader();
   await asker.goto(`/docs/${article.slug}`);
@@ -882,20 +880,8 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await askerAssistant.getByRole("button", { name: "Close the assistant" }).click();
   await asker.keyboard.press("Escape");
   await expect(asker.locator("#tuti-widget")).toBeHidden();
-  const otherTab = await asker.context().newPage();
-  await otherTab.goto(`/docs/${article.slug}`);
-  await otherTab.getByRole("button", { name: "Account" }).click();
-  await otherTab.getByRole("menuitem", { name: "Sign out" }).click();
-  await expect(otherTab.getByText("Acme is private. Sign in to see it.")).toBeVisible();
-  type Router = { push: (href: string) => void; refresh: () => void };
-  await asker.evaluate(() => {
-    Object.assign(window, { beforeNavigation: true });
-    (window as unknown as { next: { router: Router } }).next.router.push("/sign-in");
-  });
-  await expect(asker).toHaveURL(/\/sign-in$/);
-  // A client navigation (the page wasn't loaded afresh), then the refresh that gets the layout for who's reading now.
-  expect(await asker.evaluate(() => "beforeNavigation" in window)).toBe(true);
-  await asker.evaluate(() => (window as unknown as { next: { router: Router } }).next.router.refresh());
+  await asker.getByRole("button", { name: "Account" }).click();
+  await asker.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(asker.getByText("Acme is private. Sign in to see it.")).toBeVisible();
   await expect(asker.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(asker.locator("#tuti-widget")).toHaveCount(0);
