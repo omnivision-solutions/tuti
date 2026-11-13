@@ -76,8 +76,10 @@ test("a short window keeps Save and Publish in reach while editing the end of a 
   await team.setViewportSize({ width: 1024, height: 450 });
   await team.goto(`/app/${slug}/docs/invite-your-team`);
   const article = team.getByRole("textbox", { name: "Article", exact: true });
-  await article.click();
-  await team.keyboard.press("ControlOrMeta+End");
+  // Into its last line, as someone scrolling to the end does. Not by Ctrl+End the moment the editor shows: on a busy
+  // machine that was sometimes lost, and the text went where the click had put the caret, mid-article.
+  await article.locator("p").last().click();
+  await team.keyboard.press("End");
   await team.keyboard.type("Invite the rest of your team.");
   await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
   expect(await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTop)).toBeGreaterThan(700);
