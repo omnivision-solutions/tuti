@@ -11,6 +11,7 @@ import { SignInLink } from "@/components/sign-in-link";
 import { FilterPills } from "@/components/filter-pills";
 import { NewPostMenu } from "@/components/new-post-menu";
 import { PortalPageHeader } from "@/components/portal-page-header";
+import { RoadmapColumnLink } from "@/components/roadmap-column-link";
 import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
@@ -125,15 +126,14 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
       />
       {/* Below tablet width, a column at a time, picked from a segmented control that sticks under the header, on the
           paper, so it's always clear which column the cards are in. */}
-      <div className="sticky top-[var(--portal-header-height,0px)] z-10 -my-2 bg-background py-2 md:hidden">
+      <div data-roadmap-switcher className="sticky top-[var(--portal-header-height,0px)] z-10 -my-2 bg-background py-2 md:hidden">
         <nav aria-label="Columns" className="flex rounded-xl bg-muted p-1">
           {ROADMAP.map(({ status, key }, i) => {
             const active = key === column;
             return (
-              <Link
+              <RoadmapColumnLink
                 key={key}
                 href={columnHref(key)}
-                scroll={false}
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold whitespace-nowrap",
@@ -142,13 +142,13 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               >
                 <span className="truncate">{STATUS_LABELS[status]}</span>{" "}
                 <span className="text-xs font-semibold text-muted-foreground tabular-nums">{columns[i]!.length}</span>
-              </Link>
+              </RoadmapColumnLink>
             );
           })}
         </nav>
       </div>
       {/* Three columns, each headed by its status's icon; a card per idea. */}
-      <div className="grid gap-x-6 gap-y-10 md:grid-cols-3">
+      <div data-roadmap-columns className="grid gap-x-6 gap-y-10 md:grid-cols-3">
         {ROADMAP.map(({ status, key }, i) => {
           const posts = columns[i]!;
           const Icon = STATUS_ICONS[status];

@@ -501,7 +501,8 @@ the list picks none to approve at once.
     lines, "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" in
     the accent on a shipped one); an empty column a soft fill, "Nothing here yet.". On phones one column at a time,
     picked from a segmented control over them (`?column=`; the portal's only segmented control), which sticks under
-    the site bar on the paper as the cards scroll.
+    the site bar on the paper as the cards scroll; switching from deep in a column opens the other at its first card.
+    Focus moving up a column scrolls the card out from under the stuck headings (the page's scroll-padding allows for them).
   - **The changelog**: the page header (`PortalPageHeader`): "Changelog", "What's new, improved and fixed in
     <project>.", then one row: the tags as pills (`FilterPills`, links, `?tag=`, All and only the tags its entries
     have, each with its count) and RSS (a round grey icon button) and **Subscribe** (the one filled button; a popover

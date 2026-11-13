@@ -361,6 +361,11 @@
     /* The scrollbar's room is kept on short pages too, so the header never shifts sideways between pages. */
     scrollbar-gutter: stable;
   }
+  /* The portal roadmap's sticky column headings (or, on phones, its column switcher) sit under the header too: focus
+     moving up a column scrolls a card out from under them. */
+  html:has([data-roadmap-columns]) {
+    scroll-padding-top: calc(var(--portal-header-height, 12rem) + 6rem);
+  }
   /* The portal's hairlines (between rows, under the header): the lighter divider. Controls keep their edge (`border-input`). */
   :root:has([data-portal-top], [data-portal-look]) * {
     border-color: var(--divider);

@@ -204,10 +204,10 @@ test("the portal's roadmap: the columns' headings stay under the header as the c
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  // Enough planned ideas to scroll well past the headings; one in each other column.
-  for (let i = 1; i <= 14; i++) {
+  // Enough ideas to scroll well past the headings: 12 planned, 8 in progress, one completed.
+  for (let i = 1; i <= 21; i++) {
     await api("/posts", { board: "feature-requests", title: `Idea ${i}` });
-    await api(`/posts/${i}`, { status: i === 13 ? "in_progress" : i === 14 ? "completed" : "planned" }, "PATCH");
+    await api(`/posts/${i}`, { status: i <= 12 ? "planned" : i <= 20 ? "in_progress" : "completed" }, "PATCH");
   }
   const visitor = await newPerson(browser, portalUrl(slug));
   const headerBottom = async () => (await visitor.locator("[data-portal-top]").boundingBox())!.height;
@@ -232,6 +232,19 @@ test("the portal's roadmap: the columns' headings stay under the header as the c
   const planned = visitor.getByRole("heading", { name: "Planned" });
   const point = (await planned.boundingBox())!;
   expect(await visitor.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest("h2")?.textContent, { x: point.x + 30, y: point.y + point.height / 2 })).toContain("Planned");
+  // Shift+Tab up a column scrolls the card it reaches out from under the headings.
+  const headingBottom = async () => {
+    const box = (await visitor.getByRole("region", { name: "Planned" }).getByRole("paragraph").first().boundingBox())!;
+    return box.y + box.height;
+  };
+  const idea4 = visitor.getByRole("link", { name: "Idea 4", exact: true });
+  await idea4.evaluate((link, top) => window.scrollBy(0, link.getBoundingClientRect().top - top), (await headerBottom()) + 100);
+  await idea4.evaluate((link) => (link as HTMLElement).focus({ preventScroll: true }));
+  await visitor.keyboard.press("Shift+Tab");
+  const focused = visitor.locator(":focus");
+  await expect(focused).toHaveAccessibleName(/^Sign in to vote/);
+  expect((await focused.boundingBox())!.y).toBeGreaterThanOrEqual(await headingBottom());
+  await scrollFar();
   await checkpoint(visitor, "roadmap-sticky-headings", { fullPage: false });
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "roadmap-sticky-headings-dark", { fullPage: false });
@@ -249,4 +262,12 @@ test("the portal's roadmap: the columns' headings stay under the header as the c
   await checkpoint(visitor, "roadmap-phone-sticky-switcher", { fullPage: false });
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "roadmap-phone-sticky-switcher-dark", { fullPage: false });
+  await visitor.emulateMedia({ colorScheme: "light" });
+  // Switching from down there shows the other column from its first card, just under the switcher.
+  await visitor.getByRole("navigation", { name: "Columns" }).getByRole("link", { name: "In progress 8" }).click();
+  await visitor.waitForURL("**/roadmap?column=inProgress");
+  const first = (await visitor.getByRole("link", { name: "Idea 20" }).boundingBox())!;
+  const switcherNow = (await visitor.getByRole("navigation", { name: "Columns" }).boundingBox())!;
+  expect(first.y).toBeGreaterThan(switcherNow.y + switcherNow.height);
+  expect(first.y).toBeLessThan(switcherNow.y + switcherNow.height + 120);
 });
