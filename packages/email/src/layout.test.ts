@@ -57,4 +57,10 @@ test("a changelog entry's links take the project's accent", async () => {
     changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", doc, unsubscribeUrl: "https://acme.example/u", accent: "#7c3aed" }).body,
   );
   expect(html).toMatch(/<a href="https:\/\/acme.example\/docs" style="color:#7c3aed/);
+  // A grey that's enough for a button (3:1) but not for text this size (under 4.5:1): links in the text colour.
+  const grey = await render(
+    changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", doc, unsubscribeUrl: "https://acme.example/u", accent: "#808080" }).body,
+  );
+  expect(grey).toMatch(new RegExp(`<a href="https://acme.example/docs" style="color:${colors.text}`));
+  expect(grey).toContain("border-top:4px solid #808080");
 });

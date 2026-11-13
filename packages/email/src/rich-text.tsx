@@ -20,10 +20,10 @@ const mono = { fontFamily: "SFMono-Regular, Menlo, Consolas, monospace", fontSiz
  * skipped and unsafe links render as text. Images use the email JPEG from the image
  * job, from `mediaUrls` (left out without one there); those URLs must keep working
  * (lastingMediaUrls in apps/web). Videos become a link to `linkUrl`, the page where
- * they play (e.g. the changelog entry). Links take the project's `accent` (accentColors).
+ * they play (e.g. the changelog entry). Links take the project's `accent` where it reads as text (accentColors' `link`).
  */
 export function EmailRichText({ doc, mediaUrls, linkUrl, accent }: { doc: Doc; mediaUrls?: MediaUrls | null; linkUrl: string; accent?: string | null }) {
-  return <>{children(doc, { media: mediaUrls ?? undefined, linkUrl, accent: accentColors(accent).accent })}</>;
+  return <>{children(doc, { media: mediaUrls ?? undefined, linkUrl, accent: accentColors(accent).link })}</>;
 }
 
 function children(node: Node, ctx: Context): ReactNode[] {
