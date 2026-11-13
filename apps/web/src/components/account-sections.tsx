@@ -68,7 +68,9 @@ export function AccountSections({ sections }: { sections: Section[] }) {
   const pills = useScrollingRow(current, sections);
   // As a hash link does (the router's Link doesn't): to the section, again when the address already has its hash, and
   // focus there, so the next Tab and a screen reader go on from it.
-  const pick = (id: Section["id"]) => {
+  const pick = (id: Section["id"], event: React.MouseEvent) => {
+    // A click meant to open the link elsewhere (a new tab or window, a middle click) leaves this page as it is.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     picked.current = true;
     setCurrent(id);
     const section = document.getElementById(id);
@@ -84,7 +86,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
           <Link
             key={section.id}
             href={`#${section.id}`}
-            onClick={() => pick(section.id)}
+            onClick={(event) => pick(section.id, event)}
             aria-current={section.id === current ? "location" : undefined}
             data-active={section.id === current || undefined}
             className={pillClass(section.id === current)}
@@ -102,7 +104,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
             <Link
               key={section.id}
               href={`#${section.id}`}
-              onClick={() => pick(section.id)}
+              onClick={(event) => pick(section.id, event)}
               aria-current={section.id === current ? "location" : undefined}
               className={cn(
                 "flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.9375rem] font-medium transition-colors [&_svg]:size-4 [&_svg]:shrink-0",

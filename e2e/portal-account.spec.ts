@@ -48,6 +48,12 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   const sections = bo.getByRole("navigation", { name: "Account sections" });
   await expect(sections.getByRole("link")).toHaveText(["Profile", "Emails", "Your posts 1", "Your votes 2"]);
   await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Opened in a new tab (Ctrl/Cmd-click): this page stays where it is, Profile still marked.
+  const tab = bo.context().waitForEvent("page");
+  await sections.getByRole("link", { name: /Your votes/ }).click({ modifiers: ["ControlOrMeta"] });
+  await (await tab).close();
+  expect(await bo.evaluate(() => window.scrollY)).toBe(0);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
   // From the keyboard, as a hash link: the next Tab goes on inside the section jumped to (a screen reader is taken there too).
   await sections.getByRole("link", { name: /Your votes/ }).focus();
   await bo.keyboard.press("Enter");
