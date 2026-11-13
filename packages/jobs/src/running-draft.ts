@@ -203,11 +203,12 @@ const blank = (node: Item & { text?: string }): boolean =>
 
 /**
  * Whether an entry with pull requests isn't written yet: its text is only their titles, as the running draft wrote
- * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or nothing (failed
- * analyses took them out). Nobody wrote it, by hand or with AI.
+ * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or `lines` (the
+ * lines Autopilot wrote into their bullets, writeChangelogLine), or nothing (failed analyses took them out). Nobody
+ * wrote it, by hand or with AI.
  */
-export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[]): boolean {
-  const titles = new Set(pullRequests.flatMap((pr) => [bulletText(pr), pr.title]));
+export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[], lines: string[] = []): boolean {
+  const titles = new Set([...pullRequests.flatMap((pr) => [bulletText(pr), pr.title]), ...lines]);
   // Not a blank block of any kind (the editor saves an empty paragraph after a list), nor a bullet whose text was deleted.
   const blocks = ((content as Doc | null)?.content ?? []).filter((block) => !blank(block as Item));
   return (

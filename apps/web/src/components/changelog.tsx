@@ -898,8 +898,8 @@ export function ChangelogEntryActions({
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
-  /** Not written yet (onlyPullRequestTitles): its text is still the pull requests' titles, or empty. Draft with AI leads, and Publish asks first. */
-  unwritten?: "titles" | "empty";
+  /** Not written yet (onlyPullRequestTitles): its text is still the pull requests' titles, Autopilot's line for each, or empty. Draft with AI leads, and Publish asks first. */
+  unwritten?: "titles" | "lines" | "empty";
   /** Delete (behind the top bar's "More actions"), or Draft with AI, Save and Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
 }) {
@@ -997,10 +997,11 @@ export function ChangelogEntryActions({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {unwritten === "titles" ? "Publish the pull requests' titles?" : unwritten === "empty" ? "Publish it without text?" : `Publish “${title}”?`}
+            {unwritten === "titles" ? "Publish the pull requests' titles?" : unwritten === "lines" ? "Publish Autopilot's lines as they are?" : unwritten === "empty" ? "Publish it without text?" : `Publish “${title}”?`}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
+            {unwritten === "lines" && `“${title}” is still one line for each pull request, as Autopilot wrote them, not release notes. `}
             {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
             {aiFirst && "Draft with AI writes release notes from them. "}
             {sample || importedOn

@@ -33,3 +33,11 @@ test("a bullet left with only a line break and an empty list inside it is nothin
   expect(onlyPullRequestTitles(list(item(paragraph("Add a dark theme (acme/app#1)")), leftover()), [pr])).toBe(true);
   expect(onlyPullRequestTitles(list(item(paragraph("Add a dark theme (acme/app#1)")), leftover({ type: "image", attrs: { src: "/x.png" } })), [pr])).toBe(false);
 });
+
+test("the line Autopilot wrote for a pull request is nothing written either; a line edited by hand is", () => {
+  const lines = ["Dark theme"];
+  expect(onlyPullRequestTitles(list(item(paragraph("Dark theme"))), [pr])).toBe(false);
+  expect(onlyPullRequestTitles(list(item(paragraph("Dark theme"))), [pr], lines)).toBe(true);
+  expect(onlyPullRequestTitles(list(item(paragraph("Dark theme")), item(paragraph("Add a dark theme (acme/app#1)"))), [pr], lines)).toBe(true);
+  expect(onlyPullRequestTitles(list(item(paragraph("Dark theme, in Settings"))), [pr], lines)).toBe(false);
+});

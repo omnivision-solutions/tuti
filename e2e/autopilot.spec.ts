@@ -466,6 +466,28 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Dark theme", { exact: true })).toBeVisible();
   await expect(owner.getByText("A tidier theme store")).toBeVisible();
   await expect(owner.getByText(chore)).toHaveCount(0);
+  // Still only Autopilot's lines, not release notes: Draft with AI is the main action (filled), Publish asks first.
+  // (By the primary variant's class, not the colour: buttons fade between fills.)
+  const primary = /(^|\s)bg-primary(\s|$)/;
+  await expect(owner.getByRole("button", { name: "Draft with AI", exact: true })).toHaveClass(primary);
+  await expect(owner.getByRole("button", { name: "Publish", exact: true })).not.toHaveClass(primary);
+  await expect(owner.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+  await checkpoint(owner, "changelog-autopilot-lines", { fullPage: false });
+  await owner.getByRole("button", { name: "Publish", exact: true }).click();
+  const asTheyAre = owner.getByRole("alertdialog", { name: "Publish Autopilot's lines as they are?" });
+  await expect(asTheyAre).toContainText("“Next release” is still one line for each pull request, as Autopilot wrote them, not release notes.");
+  await asTheyAre.getByRole("button", { name: "Cancel" }).click();
+  // Edited by hand, it's written: Publish is the main action, and Draft with AI is in Edit with AI's menu.
+  await owner.getByRole("textbox", { name: "What changed" }).getByText("Dark theme", { exact: true }).click();
+  await owner.keyboard.press("End");
+  await owner.keyboard.type(", in Settings");
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.reload();
+  await expect(owner.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
+  await expect(owner.getByRole("button", { name: "Draft with AI", exact: true })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Edit with AI" })).toBeVisible();
+  await checkpoint(owner, "changelog-edited", { fullPage: false });
 
   // On a phone: the list first, right under the page's title; a page opens in its place, with the way back.
   await owner.setViewportSize({ width: 390, height: 844 });
