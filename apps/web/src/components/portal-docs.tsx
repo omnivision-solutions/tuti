@@ -613,7 +613,7 @@ export function DocsLayout({
   return (
     // At least the window's height (flex-1 in <main>), so the tree runs to the bottom on a short page.
     // In the header's 82rem container, less its padding, so the tree's left edge is the logo's.
-    <div data-docs-layout data-docs-wide={sections ? "" : undefined} className={cn("mx-auto flex w-full flex-1 xl:max-w-[79rem] xl:gap-8", sections ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
+    <div data-docs-layout className={cn("mx-auto flex w-full flex-1 xl:max-w-[79rem] xl:gap-8", sections ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
       {/* From the header to the bottom of the page; the tree scrolls on its own, under the header. */}
       {column(
         <aside className={cn("-my-10 hidden w-64 shrink-0 md:block", reading && READING_HIDES)}>
