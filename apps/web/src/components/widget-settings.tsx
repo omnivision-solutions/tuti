@@ -43,6 +43,7 @@ export function WidgetSettings({
   color,
   defaultColor,
   defaultColorLabel,
+  ownColor,
   position,
   links,
   icon: initialIcon,
@@ -61,6 +62,8 @@ export function WidgetSettings({
   defaultColor: string;
   /** The button that picks `defaultColor` again (ColorField). */
   defaultColorLabel?: string;
+  /** The launcher's own colour as saved, null while it follows the default. */
+  ownColor: string | null;
   position: "bottom-right" | "bottom-left";
   links: { label: string; url: string }[];
   icon: WidgetIcon;
@@ -118,6 +121,7 @@ export function WidgetSettings({
               <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
               <ColorField id="widget-color" name="color" label="Colour" color={color} defaultColor={defaultColor} defaultLabel={defaultColorLabel} />
               <input type="hidden" name="defaultColor" value={defaultColor} />
+              <input type="hidden" name="ownColor" value={ownColor ?? ""} />
             </Field>
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-2 text-sm font-medium">Position</legend>

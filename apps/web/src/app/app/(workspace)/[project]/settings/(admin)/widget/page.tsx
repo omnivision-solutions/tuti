@@ -60,6 +60,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
         label={widget.label}
         color={color}
         defaultColor={defaultColor}
+        ownColor={widget.color}
         defaultColorLabel={defaultColor !== DEFAULT_WIDGET_COLOR ? "Use the accent colour" : undefined}
         position={widget.position}
         links={widget.links}

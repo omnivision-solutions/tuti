@@ -62,7 +62,23 @@ test("with the portal's accent colour set, that's the launcher's default: pickin
   expect((await update({ color: "#12804a" })).color).toBe("#12804a");
   // An accent too pale to stand out on a light page isn't the launcher's default: the brand green is.
   await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#fde047" } });
+  await update({ color: "#5b21b6" });
   expect((await update({ color: "#12804a" })).color).toBeNull();
+});
+
+test("a colour the launcher has of its own stays its own once the accent becomes the same, saved from the form or the API", async () => {
+  actAs(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed", widgetColor: "#ea580c" } });
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#ea580c" } });
+  expect((await update({ color: "#ea580c" })).color).toBe("#ea580c");
+  const data = new FormData();
+  data.set("label", "Feedback");
+  data.set("position", "bottom-right");
+  data.set("color", "#ea580c");
+  data.set("defaultColor", "#ea580c");
+  data.set("ownColor", "#ea580c");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect((await call(getWidgetSettings, team(), {})).color).toBe("#ea580c");
 });
 
 test("the form's colour, left at the default it showed, keeps following the accent, even one changed since it was opened", async () => {

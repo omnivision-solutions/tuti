@@ -171,7 +171,7 @@ export const updateWidgetSettings = defineOperation({
       prisma.$transaction(async (tx) => {
         // One save at a time per project, so two saves can't each keep an image the other replaced.
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
-        const current = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { widgetIcon: true, widgetIconImageId: true, brandColor: true } });
+        const current = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { widgetIcon: true, widgetIconImageId: true, widgetColor: true, brandColor: true } });
         // Removing the image of an image icon (the form still says "image") goes back to the chat bubble.
         const removed = input.iconImage === null && current.widgetIcon === "image" && (input.icon ?? "image") === "image";
         const icon = removed ? "chat" : (input.icon ?? current.widgetIcon);
@@ -193,8 +193,11 @@ export const updateWidgetSettings = defineOperation({
           where: { id: projectId },
           data: {
             ...(input.label !== undefined && { widgetLabel: input.label }),
-            // The launcher's default (the portal's accent, or the brand green): kept as none, so the launcher follows it.
-            ...(input.color !== undefined && { widgetColor: input.color === defaultLauncherColor(current.brandColor) ? null : input.color }),
+            // Picking the launcher's default (the portal's accent, or the brand green) keeps no colour of its own, so the
+            // launcher follows it; a colour it already has stays its own, even once the accent is the same.
+            ...(input.color !== undefined && {
+              widgetColor: input.color !== null && input.color === current.widgetColor ? input.color : input.color === defaultLauncherColor(current.brandColor) ? null : input.color,
+            }),
             ...(input.position !== undefined && { widgetPosition: input.position }),
             ...(input.links !== undefined && { widgetLinks: input.links }),
             ...(input.title !== undefined && { widgetTitle: input.title }),
