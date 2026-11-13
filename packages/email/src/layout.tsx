@@ -1,5 +1,5 @@
 import { Body, Column, Container, Head, Html, Img, Preview, Row, Section, Text } from "@react-email/components";
-import { readableOn, textColorOn } from "@tuti/shared/colors";
+import { readableOn, SURFACES, textColorOn } from "@tuti/shared/colors";
 import type { ReactNode } from "react";
 
 // Brand colours: the light theme tokens in packages/ui/src/globals.css, as hex.
@@ -23,16 +23,17 @@ export const colors = {
 
 /**
  * A project's accent (`Project.brandColor`, `#rrggbb`; null for Tuti's green) in the emails sent on its behalf: the
- * colour, or where it's too faint on the white card (under 3:1, as brandCss judges the portal's page) the same shade of
- * it the portal uses (readableOn; the text colour for a grey), with black or white text on it; and for text in it
- * (`link`: links at body size) the colour where it reads as text (4.5:1), else that shade.
+ * colour, or where it's too faint (under 3:1) the shade of it the portal's light mode uses (readableOn; the text colour
+ * for a grey), with black or white text on it; and for text in it (`link`: links at body size) the colour where it reads
+ * as text (4.5:1), else that shade. Judged against the portal's light page, as brandCss does, so a project's emails and
+ * portal match: the white card is lighter still, so what reads there reads on it.
  */
 export function accentColors(accent?: string | null): { accent: string; onAccent: string; link: string } {
   if (!accent || !/^#[0-9a-f]{6}$/i.test(accent)) {
     return { accent: colors.green, onAccent: colors.onGreen, link: colors.green };
   }
-  const shown = readableOn(accent, 1) ?? colors.text;
-  return { accent: shown, onAccent: textColorOn(shown), link: readableOn(accent, 1, 4.5) ?? colors.text };
+  const shown = readableOn(accent, SURFACES.light) ?? colors.text;
+  return { accent: shown, onAccent: textColorOn(shown), link: readableOn(accent, SURFACES.light, 4.5) ?? colors.text };
 }
 
 /** The main button's style, in the project's accent (accentColors). */

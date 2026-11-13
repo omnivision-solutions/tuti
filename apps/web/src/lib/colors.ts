@@ -1,5 +1,5 @@
 /** Colour maths shared by the server and the app's previews (no server imports here). */
-import { readableOn, readsOn, textColorOn } from "@tuti/shared/colors";
+import { readableOn, readsOn, SURFACES, textColorOn } from "@tuti/shared/colors";
 
 /** A colour typed as hex (`#rrggbb`, or `#rgb` expanded; the `#` optional) as `#rrggbb` in lower case; null if it isn't one. */
 export function parseHex(typed: string): string | null {
@@ -9,11 +9,6 @@ export function parseHex(typed: string): string | null {
 
 export { luminance, textColorOn } from "@tuti/shared/colors";
 
-/**
- * Relative luminance of the surfaces the accent is hardest to read on (globals.css): the
- * page background in light mode, cards in dark mode.
- */
-const SURFACES = { light: 0.9823, dark: 0.0106 };
 
 /** Whether `color` stands out from the page in light mode and in dark (a button on any site: the widget's launcher). */
 export const readsEverywhere = (color: string) => readsOn(color, SURFACES.light) && readsOn(color, SURFACES.dark);

@@ -15,6 +15,12 @@ export function textColorOn(hex: string): string {
   return luminance(hex) > 0.179 ? "#000000" : "#ffffff";
 }
 
+/**
+ * Relative luminance of the surfaces the portal's accent is hardest to read on (packages/ui's globals.css): the page
+ * background in light mode, cards in dark mode.
+ */
+export const SURFACES = { light: 0.9823, dark: 0.0106 };
+
 /** WCAG's minimum for text at body size: a shade made for a too-faint accent is also its links' colour. */
 const TEXT_CONTRAST = 4.5;
 
