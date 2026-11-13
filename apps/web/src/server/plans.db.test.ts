@@ -305,8 +305,10 @@ test("the enum is neither followed nor written: the previous release's trigger i
   const { subscription, events } = await subscribe("business");
   await deliver(...events);
   expect(await key()).toEqual({ plan: "business", planEnum: "FREE" });
+  // Its end doesn't write the enum either: set to something else first, it stays.
+  await prisma.$executeRaw`UPDATE project SET plan = 'PRO' WHERE id = ${id}`;
   await deliver(stripe.update(subscription, { status: "canceled" }));
-  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
+  expect(await key()).toEqual({ plan: null, planEnum: "PRO" });
 });
 
 test("a project on a plan the file no longer lists is on the default plan: it can buy one, and the webhook gives it", async () => {
