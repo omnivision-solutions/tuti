@@ -197,3 +197,56 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
     await checkpoint(ada, `roadmap-phone-${colorScheme}`);
   }
 });
+
+test("the portal's roadmap: the columns' headings stay under the header as the cards scroll", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Enough planned ideas to scroll well past the headings; one in each other column.
+  for (let i = 1; i <= 14; i++) {
+    await api("/posts", { board: "feature-requests", title: `Idea ${i}` });
+    await api(`/posts/${i}`, { status: i === 13 ? "in_progress" : i === 14 ? "completed" : "planned" }, "PATCH");
+  }
+  const visitor = await newPerson(browser, portalUrl(slug));
+  const headerBottom = async () => (await visitor.locator("[data-portal-top]").boundingBox())!.height;
+  const scrollFar = () => visitor.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight - innerHeight - 200));
+
+  // On a laptop, each heading stays just under the header, over its own column.
+  await visitor.setViewportSize({ width: 1280, height: 800 });
+  await visitor.goto("/roadmap");
+  await expect(visitor.getByRole("link", { name: "Idea 12" })).toBeVisible();
+  await scrollFar();
+  await expect.poll(() => visitor.evaluate(() => scrollY)).toBeGreaterThan(800);
+  for (const name of ["Planned", "In progress", "Completed"]) {
+    const column = visitor.getByRole("region", { name });
+    const heading = column.getByRole("heading", { name });
+    const [box, columnBox, top] = [(await heading.boundingBox())!, (await column.boundingBox())!, await headerBottom()];
+    expect(box.y).toBeGreaterThanOrEqual(top - 1);
+    expect(box.y).toBeLessThan(top + 40);
+    expect(box.x).toBeGreaterThanOrEqual(columnBox.x - 1);
+    expect(box.x + box.width).toBeLessThanOrEqual(columnBox.x + columnBox.width + 1);
+  }
+  // Not hidden under a card.
+  const planned = visitor.getByRole("heading", { name: "Planned" });
+  const point = (await planned.boundingBox())!;
+  expect(await visitor.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest("h2")?.textContent, { x: point.x + 30, y: point.y + point.height / 2 })).toContain("Planned");
+  await checkpoint(visitor, "roadmap-sticky-headings", { fullPage: false });
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "roadmap-sticky-headings-dark", { fullPage: false });
+  await visitor.emulateMedia({ colorScheme: "light" });
+
+  // On a phone, the column switcher stays just under the header.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto("/roadmap");
+  await scrollFar();
+  await expect.poll(() => visitor.evaluate(() => scrollY)).toBeGreaterThan(800);
+  const switcher = (await visitor.getByRole("navigation", { name: "Columns" }).boundingBox())!;
+  const top = await headerBottom();
+  expect(switcher.y).toBeGreaterThanOrEqual(top - 1);
+  expect(switcher.y).toBeLessThan(top + 20);
+  await checkpoint(visitor, "roadmap-phone-sticky-switcher", { fullPage: false });
+  await visitor.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(visitor, "roadmap-phone-sticky-switcher-dark", { fullPage: false });
+});

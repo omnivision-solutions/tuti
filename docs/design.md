@@ -495,10 +495,13 @@ the list picks none to approve at once.
     primary at the row's end: on every board "New post", a menu of each board's own button text with the board's name
     under it; on one board (picked, or the only one) that board's button text ("New post" without one), straight to its
     form (`NewPostMenu`). On phones it's a round + beside the title, named the same. Then three open columns headed by
-    the status's icon, name and count and its meaning, no line under them; a card per idea (the board, the title, two
+    the status's icon, name and count and its meaning, no line under them (the headings stick just under the site
+    bar while the cards pass under them, on the paper, each over its own column; no hairline when stuck either: the
+    cards' edges sliding under the paper read as the cut); a card per idea (the board, the title, two
     lines, "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" in
     the accent on a shipped one); an empty column a soft fill, "Nothing here yet.". On phones one column at a time,
-    picked from a segmented control over them (`?column=`; the portal's only segmented control).
+    picked from a segmented control over them (`?column=`; the portal's only segmented control), which sticks under
+    the site bar on the paper as the cards scroll.
   - **The changelog**: the page header (`PortalPageHeader`): "Changelog", "What's new, improved and fixed in
     <project>.", then one row: the tags as pills (`FilterPills`, links, `?tag=`, All and only the tags its entries
     have, each with its count) and RSS (a round grey icon button) and **Subscribe** (the one filled button; a popover
