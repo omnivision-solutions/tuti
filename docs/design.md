@@ -60,6 +60,8 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
+| `divider`, `card-edge` | A hairline between rows, a card's ring: `border` in the app; on the portal lighter, and no card ring in light (Layout → Portals → Surfaces) |
+| `tuti` | Tuti's own green, whatever a portal's accent: only the mark in "Powered by tuti" (`TutiMark brand`) |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -385,7 +387,7 @@ the list picks none to approve at once.
   - **Look.** Inter for headings and text by default (preloaded; headings 650, tracked −0.022em; body 15–17px); a project's own
     fonts (Settings → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
-    paper (`border` 0.87 L, `input` 0.81 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
+    paper (`border` 0.87 L, `input` 0.81 L; rows' hairlines the lighter `divider`, 0.925 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
     0.205, lines 0.32/0.40, chroma ≈0.005; green stays the accent), 14px cards and 10px controls (`--radius` 0.625rem),
     a soft card shadow (`shadow-card`), `sunken` for inline code, `info` for callouts and `tag-improved` for the changelog.
     Statuses there are one hue each in both themes: Under review violet, Planned blue, In progress orange, Completed
@@ -394,15 +396,32 @@ the list picks none to approve at once.
     neutral style (`PortalAvatar`; the `avatar-*` tokens are all `secondary` there), the team's soft green.
   - **Accent.** "Green" on the portal means the project's accent (Settings → Branding), Tuti's green only when it has
     none: `brandCss` (`lib/colors.ts`) sets `primary`, its text, the focus `ring` and the `soft` tint and its text (at
-    Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. So the
-    accent is the letter mark, the one filled button, links, focus rings, selection, a vote cast, the open board, part or
-    article, the team's replies, the New tag, numbered steps, the widget's header and launcher (unless Settings → Widget
-    gives it a colour of its own, or the accent wouldn't stand out on a light page and a dark one: the launcher is one
-    colour on any site, so it's the brand green then). What keeps a
-    colour of its own, whatever the accent: statuses (Completed stays green: it says what happened), the changelog's
-    other tags, destructive red, the info blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own
-    mark). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
+    Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. Used
+    sparingly: the accent is only the letter mark, the page's one filled primary, links, focus rings, toggles that are
+    on, a vote cast (its soft tint, no edge), the open part's underline in the header, the team's replies (a soft tint),
+    the widget's header and launcher (unless Settings → Widget gives it a colour of its own, or the accent wouldn't stand
+    out on a light page and a dark one: the launcher is one colour on any site, so it's the brand green then). Every
+    other selected state is neutral (`bg-accent text-foreground`): the open board in a rail, the picked pill, the open
+    item in a nav list, the docs tree's article, the phone menu's part. What keeps a colour of its own, whatever the
+    accent: statuses (Completed stays green: it says what happened), the changelog's tags, destructive red, the info
+    blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own mark, always in the `tuti` green: the
+    only Tuti green on a portal). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
     `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.
+  - **Surfaces.** One level: the paper, and cards (`bg-card shadow-card ring-1 ring-card-edge`: the soft shadow, no
+    outline in light, a faint ring in dark) only for one object (a roadmap idea, a board, a collection, a form).
+    Lists are rows on the paper; hairlines only between rows, in `divider` (every default border on the portal is one;
+    lighter than a control's edge), and the header's bottom line, the docs "On this page" line, the changelog's timeline
+    and `kbd` keep theirs. No rule under a page's header or above the footer. Asides (empty states, "Can't find it?",
+    callouts, tags) are fills, not outlines. Controls keep their edges: fields and search boxes (`border-input`) and
+    focus rings. Secondary buttons are grey fills without an edge (the `outline` Button variant takes the `secondary`
+    look there, by the `portal:` variant), round icon buttons too; filter pills (`FilterPills`) have no outline, the
+    others muted text on the paper and the picked one the neutral fill; vote boxes and counts are grey fills (voted the
+    `soft` tint, a completed idea's the Completed tint). The page keeps the scrollbar's room (`scrollbar-gutter:
+    stable`), so the header never shifts between short and long pages.
+  - **Page header** (`PortalPageHeader`): every list and detail page the same shape, on the paper (no header card):
+    the back link, a 36px title (28px on phones) and its one muted line, then one row with the pills on the left
+    (`pills`) and the actions on the right (`actions`, the page's one filled primary last); on phones the actions
+    beside the title (`phoneActions`: round icon buttons, a round + primary). No rule under it.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in
@@ -422,12 +441,12 @@ the list picks none to approve at once.
     with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on
     the page and inset to the card's text: the status label above the title (none for Open), a 17px title, two lines of
     excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`: chevron over
-    the count, 52×58; voted, soft green with a green edge; a completed idea's a green-tinted box with a check). Under the
+    the count, 52×58, a grey fill; voted, the accent's soft tint; a completed idea's a green-tinted box with a check). Under the
     default list "That's all N ideas still to come in <board>. Share yours"; under a search's results "Not here? Post it".
     The rail, nothing else competing with the list: **New idea** (the page's one filled button; it opens the board's form
     in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post",
     which comes back with the title; without JavaScript the old box is in the page; after a search that found nothing it
-    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one soft green),
+    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one a neutral fill),
     and the latest shipped idea as one line ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu).
     Phones: New idea beside the title, no card, the status menu's count without its words, the shipped line and Get
     updates under the list.

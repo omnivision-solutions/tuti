@@ -57,7 +57,7 @@ export function PopularArticles({ articles }: { articles: { href: string; title:
     return null;
   }
   return (
-    <section aria-labelledby="popular-articles" className="flex flex-col rounded-xl bg-card px-2.5 pt-1 pb-2.5 shadow-card ring-1 ring-border">
+    <section aria-labelledby="popular-articles" className="flex flex-col rounded-xl bg-card px-2.5 pt-1 pb-2.5 shadow-card ring-1 ring-card-edge">
       <h2 id="popular-articles" className="flex items-center gap-2 border-b px-3 py-4 font-sans text-base font-semibold">
         <TrendingUpIcon aria-hidden className="size-4 text-primary" />
         Popular articles

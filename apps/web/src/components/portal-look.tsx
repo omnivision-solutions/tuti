@@ -182,7 +182,7 @@ export function PoweredByTuti({ className }: { className?: string }) {
       className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground", className)}
     >
       Powered by
-      <TutiMark className="size-4" />
+      <TutiMark brand className="size-4" />
       <span className="font-heading font-bold text-foreground">tuti</span>
     </a>
   );

@@ -108,7 +108,7 @@ export function ChangelogEntryView({
           <RichText
             doc={entry.cover}
             mediaUrls={mediaUrls}
-            className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-border")}
+            className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-card-edge")}
           />
         )}
         <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />

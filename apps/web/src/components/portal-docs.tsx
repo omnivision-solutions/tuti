@@ -22,7 +22,7 @@ import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
 import { ArticleLinks, CollectionContents, LockedMark } from "@/components/docs-collections";
-import { PageHeader } from "@/components/page-header";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { PartRow } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
@@ -102,7 +102,7 @@ async function feedbackHref(projectSlug: string, question: string) {
 export async function DocsSearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={`Results for “${query}”`} />
+      <PortalPageHeader title={`Results for “${query}”`} />
       {answersEnabled() && (
         <DocsAnswer
           key={query}
@@ -148,7 +148,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           <PopularChips articles={popular} />
         </div>
       ) : (
-        <PageHeader title={tab.name} />
+        <PortalPageHeader title={tab.name} />
       )}
       {collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
@@ -159,7 +159,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
             <li key={collection.slug}>
               <Link
                 href={at(`/docs/${collection.slug}`)}
-                className="group flex h-full flex-col gap-2 rounded-xl bg-card p-5 shadow-card ring-1 ring-border transition-shadow hover:ring-primary/40 sm:p-6"
+                className="group flex h-full flex-col gap-2 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:ring-primary/40 sm:p-6"
               >
                 <h2 className="flex items-center gap-3 font-sans text-[1.0625rem] font-semibold break-words group-hover:text-primary">
                   {collection.icon && (
@@ -227,7 +227,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
   if (tab?.locked) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <PageHeader title={tab.slug !== docs.home ? tab.name : "Docs"} />
+        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : "Docs"} />
         <LockedMessage signedIn={docs.signedIn} />
         <PortalFooter docs />
       </div>
@@ -296,7 +296,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
           <Link href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
             {up.label}
           </Link>
-          <PageHeader
+          <PortalPageHeader
             title={
               // Its icon, in the accent colour, before its name.
               <span className="flex items-center gap-3">
@@ -452,7 +452,7 @@ async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof art
       href={at(`/docs/${article.slug}`)}
       rel={rel}
       className={cn(
-        "flex flex-col gap-1 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border transition-shadow hover:shadow-md hover:ring-primary/40",
+        "flex flex-col gap-1 rounded-xl bg-card p-4 shadow-xs ring-1 ring-card-edge transition-shadow hover:shadow-md hover:ring-primary/40",
         rel === "next" && "sm:col-start-2 sm:items-end sm:text-right",
       )}
     >
@@ -514,7 +514,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
       title={title}
       aria-current={slug === current ? "page" : undefined}
       className={cn(
-        "flex items-center rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-soft aria-[current=page]:font-medium aria-[current=page]:text-soft-foreground",
+        "flex items-center rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground",
         className,
       )}
     >

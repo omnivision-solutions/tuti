@@ -124,7 +124,9 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   await visitor.setViewportSize({ width: 700, height: 900 });
   await menuButton.click();
   const menu = visitor.getByRole("dialog", { name: "Menu" });
-  expect((await menu.boundingBox())!.width).toBeGreaterThanOrEqual(699);
+  // Every pixel but the scrollbar's room, which the portal keeps (scrollbar-gutter) so nothing shifts as it opens.
+  const gutter = await visitor.evaluate(() => window.innerWidth - document.body.getBoundingClientRect().width);
+  expect((await menu.boundingBox())!.width).toBeGreaterThanOrEqual(699 - gutter);
   await expect(menu.getByRole("link", { name: "Pricing" })).toBeVisible();
   await menu.getByRole("link", { name: /^Acme Customer Success/ }).click();
   await visitor.waitForURL(/\/feedback\//);

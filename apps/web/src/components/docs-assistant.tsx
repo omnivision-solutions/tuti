@@ -549,7 +549,7 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
   return (
     <section
       aria-labelledby="still-stuck"
-      className="flex flex-wrap items-center gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-border sm:flex-nowrap sm:px-6"
+      className="flex flex-wrap items-center gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge sm:flex-nowrap sm:px-6"
     >
       <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-lg bg-soft text-soft-foreground">
         <MessageCircleIcon className="size-5" />
