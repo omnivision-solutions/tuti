@@ -119,7 +119,8 @@ export function PaneHeader({
   title?: ReactNode;
   level?: 1 | 2;
   titleInForm?: boolean;
-  back?: { href: string; label: ReactNode };
+  /** `className`: where it hides (the inbox's, beside its list). */
+  back?: { href: string; label: ReactNode; className?: string };
   description?: ReactNode;
   filters?: ReactNode;
   actions?: ReactNode;
@@ -142,7 +143,7 @@ export function PaneHeader({
           </button>
         )}
         {back && (
-          <Link href={back.href} className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground [&>svg]:size-4 [&>svg]:shrink-0">
+          <Link href={back.href} className={cn("flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground [&>svg]:size-4 [&>svg]:shrink-0", back.className)}>
             <ChevronLeftIcon aria-hidden className={cn(!titleInForm && "@min-[48rem]/app:hidden")} />
             <span className="truncate">{back.label}</span>
             {!titleInForm && <ChevronRightIcon aria-hidden className="hidden @min-[48rem]/app:block" />}

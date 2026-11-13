@@ -61,6 +61,9 @@ const EMAIL_STATUS: Record<EmailStatus, (error: string | null) => string> = {
   FAILED: (error) => `Couldn't email it${error ? `: ${error}` : ""}`,
 };
 
+/** The way back to the inbox, hidden where its list is beside the conversation (the link would open an empty pane). */
+const INBOX_BACK = "@min-[52.5rem]/inbox:hidden";
+
 /** A conversation shows its latest this many messages, and this many earlier ones with each "Show earlier messages" (`?messages=`). */
 const MESSAGES_PER_PAGE = 50;
 
@@ -211,7 +214,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       <ConversationPane open detailsHidden={detailsHidden}>
         <Pane className="inbox-conversation col-start-1 row-start-1">
           <PaneHeader
-            back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }}
+            back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }}
             title={<span title={conversation.subject}>{conversation.subject}</span>}
             actions={
               <>
@@ -433,7 +436,7 @@ function PastHistory({
     <ConversationPane open>
       {/* The whole thread's grid: there are no details beside it. */}
       <Pane className="col-span-full">
-        <PaneHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }} title={`Conversation #${number}`} />
+        <PaneHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }} title={`Conversation #${number}`} />
         <PaneBody className="p-6">
           <EmptyState
             title="Past your plan's history"
