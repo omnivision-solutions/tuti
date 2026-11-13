@@ -151,8 +151,25 @@ test("Get set up's cards wrap a long project name inside the card, on a phone an
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   };
   await fits();
+  // Home's pane scrolls inside the window: scrolled past its end, the window doesn't bounce (macOS) to show what's under it.
+  const windowBounce = () => owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY);
+  expect(await windowBounce()).toBe("none");
+  expect(await owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorX)).toBe("auto");
+  // Narrower, the sidebar can leave the pane less than its window-height width: the window may scroll, and bounces.
+  await owner.setViewportSize({ width: 900, height: 800 });
+  expect(await windowBounce()).toBe("auto");
   await owner.setViewportSize({ width: 390, height: 844 });
   await fits();
+  // On a phone the window scrolls the page, and bounces as usual.
+  expect(await windowBounce()).toBe("auto");
+  // A touch tablet as wide keeps it too: its pull to refresh.
+  const tablet = await browser.newContext({ storageState: await owner.context().storageState(), viewport: { width: 1280, height: 800 }, hasTouch: true, isMobile: true });
+  const page = await tablet.newPage();
+  await page.goto(owner.url());
+  await expect(page.getByRole("list", { name: "Get set up" })).toBeVisible();
+  await expect(page.locator("[data-panes]")).toBeAttached();
+  expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY)).toBe("auto");
 });
 
 test("a new project: Home leads with sample content and each setup step's action, no numbers; empty Feedback and Changelog each say what to do", async ({ browser }, testInfo) => {

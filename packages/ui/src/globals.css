@@ -373,6 +373,15 @@
   html:has([data-slot="sidebar-inset"]) {
     scroll-padding-top: var(--app-toolbar-height, 0px);
   }
+  /* Pages of panes (PaneLayout), the window's height once 48rem is beside the sidebar (64rem from the window's edge, with
+     it open): a pane scrolled past its end doesn't bounce the whole window up (macOS's elastic scroll), which showed the
+     canvas and the page's edge under the panes. Up and down only (sideways swipes still go Back and Forward), and with a
+     mouse or trackpad (a touch tablet keeps pull to refresh). */
+  @media (width >= 64rem) and (pointer: fine) {
+    html:has([data-panes]) {
+      overscroll-behavior-y: none;
+    }
+  }
   /* A Portal settings page (PortalSettingsPane), where the page scrolls, scrolls under its pane's header (60px; and the
      menu row on phones). */
   @media (width < 64rem) {
