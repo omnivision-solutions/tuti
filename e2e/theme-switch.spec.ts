@@ -108,4 +108,10 @@ test("a reader's own pick, even the team's default, survives the team changing i
   await reader.reload();
   await expect(theme.getByRole("radio", { name: "Light" })).toBeChecked();
   await expect(html).toHaveClass(/\blight\b/);
+
+  // The portal's widget follows the page, not the team's default: light like the reader's pick, though the default is dark.
+  await reader.locator('body > button[aria-controls="tuti-widget"]').click();
+  const panel = reader.frameLocator("#tuti-widget iframe");
+  await expect(panel.getByRole("navigation", { name: "Widget" })).toBeVisible();
+  await expect(panel.locator("html")).toHaveClass(/\blight\b/);
 });

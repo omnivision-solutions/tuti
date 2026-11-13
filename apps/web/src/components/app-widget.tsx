@@ -9,7 +9,7 @@ import { appWidgetToken } from "@/server/app-widget";
 
 declare global {
   interface Window {
-    Tuti?: { identify: (getToken: () => Promise<string | null>) => void; close: () => void };
+    Tuti?: { identify: (getToken: () => Promise<string | null>) => void; close: () => void; setTheme?: (theme: "light" | "dark" | "auto") => void };
   }
 }
 
