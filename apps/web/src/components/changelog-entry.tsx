@@ -5,6 +5,7 @@ import { ArrowRightIcon, LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ChangelogExcerpt } from "@/components/changelog-excerpt";
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { TagBadge } from "@/components/changelog-tag";
 import { PortalPageHeader } from "@/components/portal-page-header";
@@ -131,7 +132,7 @@ export function ChangelogEntryView({
           />
         )}
         {excerpt ? (
-          <Excerpt entry={entry} size={excerpt} />
+          <Excerpt doc={entry.doc} size={excerpt} />
         ) : (
           <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         )}
@@ -186,24 +187,8 @@ export function ChangelogEntryView({
   );
 }
 
-/**
- * An entry's text in the list: plain (no images, embeds or code), cut at a word's end and at its clamp's lines, the medium
- * one fading out where it's cut; the rest is on its page (the title's link, stretched over it, opens it).
- */
-function Excerpt({ entry, size }: { entry: PublishedEntry; size: "medium" | "short" }) {
-  const { text, cut } = excerptOf(entry.doc, EXCERPT[size].chars, EXCERPT[size].lines);
-  if (!text) {
-    return null;
-  }
-  return (
-    <p
-      className={cn(
-        "text-base leading-7 break-words whitespace-pre-line text-foreground/85",
-        size === "medium" ? "line-clamp-8" : "line-clamp-3",
-        size === "medium" && cut && "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]",
-      )}
-    >
-      {text}
-    </p>
-  );
+/** An entry's text in the list: plain (no images, embeds or code), cut at its clamp's characters and lines. */
+function Excerpt({ doc, size }: { doc: Doc; size: "medium" | "short" }) {
+  const { text, cut } = excerptOf(doc, EXCERPT[size].chars, EXCERPT[size].lines);
+  return text ? <ChangelogExcerpt text={text} size={size} cut={cut} /> : null;
 }

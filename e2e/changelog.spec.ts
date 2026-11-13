@@ -291,8 +291,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // On the list too, under the entry.
   await ada.goto("/changelog");
   await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 🎉/ })).toHaveAccessibleName("React with 🎉 (1)");
-  // There as grey fills too, not bare emoji.
-  await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 👍/ })).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // There as grey fills too, not bare emoji; and they react there, above the title's link stretched over the entry.
+  const listThumbs = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 👍/ });
+  await expect(listThumbs).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await listThumbs.click();
+  await expect(listThumbs).toHaveAttribute("aria-pressed", "true");
+  await expect(listThumbs).toBeEnabled();
+  await listThumbs.click();
+  await expect(listThumbs).toHaveAttribute("aria-pressed", "false");
+  await expect(listThumbs).toBeEnabled();
+  await expect(ada).toHaveURL(/\/changelog$/);
   await ada.goBack();
   // Taken back.
   await tada.click();
@@ -677,9 +685,11 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   const api = await apiFor(team, slug);
   // One more than a page holds (20): the odd ones new, the even ones fixes.
   // The newest two run long: the list shows excerpts, the rest on their pages.
-  const long = `${"Faster boards and fewer clicks. ".repeat(24)}\n\nAnd last, exports in CSV.`;
+  // (Release 20 shorter: one paragraph of ~380 characters, five lines on a laptop, past eight on a phone.)
+  const long = (repeats: number) => `${"Faster boards and fewer clicks. ".repeat(repeats)}\n\nAnd last, exports in CSV.`;
   for (let n = 1; n <= 21; n++) {
-    await api("/changelog", { title: `Release ${n}`, body: n >= 20 ? long : "Faster boards and fewer clicks.", tags: [n % 2 ? "new" : "fixed"] });
+    const body = n === 21 ? long(24) : n === 20 ? long(12) : "Faster boards and fewer clicks.";
+    await api("/changelog", { title: `Release ${n}`, body, tags: [n % 2 ? "new" : "fixed"] });
     await api(`/changelog/${n}/publish`, {});
   }
   // Over three months: 12 to 21 in October, 2 to 11 in September, Release 1 in August (on page 2).
@@ -809,6 +819,13 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await checkpoint(reader, "portal-changelog-page-2");
   await main.getByRole("link", { name: "Newer entries" }).click();
   await expect(reader).toHaveURL(/\/changelog$/);
+  // Fixed's newest, Release 20, fits its eight lines on a laptop (no fade); on a phone it wraps past them, and fades
+  // where the clamp cuts it.
+  await reader.goto("/changelog?tag=fixed");
+  await expect(excerptOf("Release 20")).toHaveCSS("mask-image", "none");
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
+  await reader.goto("/changelog");
 
   // On a phone, the header's menu lists the entries by date (with their titles), the one being read marked.
   await reader.setViewportSize({ width: 390, height: 844 });
