@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { emailsThisMonth, handlers } from "@tuti/jobs";
-import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
@@ -9,7 +9,7 @@ import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation } from "./operations/conversations";
-import { createPost } from "./operations/create";
+import { createComment, createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
@@ -24,13 +24,19 @@ import { emailSignInLink } from "./sign-in-link";
 const DOMAIN = "tuti.email";
 const log = { info: () => {}, warn: () => {} };
 
+// Mid-month, so a test run near a month's end can't straddle two months.
+const MID_MONTH = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15, 12));
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"], now: MID_MONTH });
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
   // Free sends 1 email a month.
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 1; }));
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address));
 const limitEmails = (address: string) => emailsTo(address).filter((email) => email.subject.endsWith("reached its monthly email limit"));
@@ -87,19 +93,24 @@ test("past the plan's monthly limit, replies are saved but their email waits; th
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 1 });
 
   // Next month, the rest go.
-  vi.useFakeTimers({ toFake: ["Date"], now: nextMonth() });
-  onTestFinished(() => void vi.useRealTimers());
+  vi.setSystemTime(nextMonth());
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(2);
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 1 });
 });
 
-test("shipped emails past the limit are due again next month, and go then", async () => {
-  const { project, team } = await setup();
+/** A post with two verified voters. */
+async function votedPost(project: { id: string }) {
   const voters = [await signUp("Val Voter"), await signUp("Vic Voter")];
   await prisma.user.updateMany({ where: { id: { in: voters.map((v) => v.id) } }, data: { emailVerified: true } });
   const post = await call(createPost, { actor: { kind: "user", userId: voters[0]!.id }, projectId: project.id }, { board: "feature-requests", title: "Dark mode" });
   await call(setVote, { actor: { kind: "user", userId: voters[1]!.id }, projectId: project.id }, { number: post.number, voted: true });
+  return { voters, post };
+}
+
+test("shipped emails past the limit are due again next month, and go then", async () => {
+  const { project, team } = await setup();
+  const { voters, post } = await votedPost(project);
   await call(updatePost, team, { number: post.number, status: "completed" });
   const shipped = () => voters.filter((voter) => emailsTo(voter.email).some((email) => email.subject.startsWith("Done:"))).length;
   expect(shipped()).toBe(1);
@@ -112,6 +123,33 @@ test("shipped emails past the limit are due again next month, and go then", asyn
   await handlers.postShipped({ postId }, log);
   expect(shipped()).toBe(2);
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).toBeNull();
+});
+
+test("a team's reply emailed to voters past the limit is due next month; an upgrade lets it go before then", async () => {
+  const { project, team } = await setup();
+  const { voters, post } = await votedPost(project);
+  await call(createComment, team, { number: post.number, body: "It's out.", emailVoters: true });
+  const replied = () => voters.filter((voter) => emailsTo(voter.email).some((email) => email.subject === "Re: Dark mode")).length;
+  expect(replied()).toBe(1);
+  const comment = () => prisma.comment.findFirstOrThrow({ where: { projectId: project.id }, select: { votersEmailDueAt: true } });
+  expect((await comment()).votersEmailDueAt).toEqual(nextMonth());
+
+  // Still capped: the safety net leaves it.
+  await handlers.resubmitReplyEmails({}, log);
+  expect(replied()).toBe(1);
+  // Upgraded, the safety net finds it, though it's due next month.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await handlers.resubmitReplyEmails({}, log);
+  expect(replied()).toBe(2);
+  expect((await comment()).votersEmailDueAt).toBeNull();
+});
+
+test("a reply that isn't emailed after all (nobody to email) doesn't count", async () => {
+  const { project, team } = await setup();
+  await twoReplies(project, team);
+  await prisma.emailBlock.createMany({ data: [`e2e-kim-${project.slug}@example.com`, `e2e-lee-${project.slug}@example.com`].map((email) => ({ projectId: project.id, email })) });
+  await handlers.sendConversationReplies({}, log);
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 0, limit: 1 });
 });
 
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {

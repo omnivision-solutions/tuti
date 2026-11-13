@@ -5,7 +5,7 @@ import type { JobInput } from "@tuti/shared";
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
-import { claimProjectEmail, dueAgain } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, nextMonth, releaseProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -212,6 +212,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     );
     if (error) {
       failed++;
+      await releaseProjectEmail(projectId);
       log.warn(`couldn't email that post ${postId} shipped: ${error.message}`);
       continue;
     }
@@ -240,8 +241,14 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
  * never queued, or died mid-send) gets its job again. Claims keep that from emailing anyone twice.
  */
 export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEmails">, log: JobLogger): Promise<JobResult> {
+  // Not a capped project's (its daily cap or monthly limit): they'd wait again.
+  const capped = await cappedProjects();
   const due = await prisma.post.findMany({
-    where: { shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+    where: {
+      // Due a while ago, or held for next month by the monthly limit (dueAgain) where the project has room again (an upgrade).
+      OR: [{ shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { shippedEmailsDueAt: nextMonth(new Date()) }],
+      ...(capped.length > 0 && { projectId: { notIn: capped } }),
+    },
     select: { id: true },
     take: 500,
   });

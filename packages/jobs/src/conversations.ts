@@ -7,7 +7,7 @@ import { ses } from "@tuti/shared/ses";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
-import { cappedProjects, claimProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, releaseProjectEmail } from "./email-limits";
 import { sesTenantHeaders } from "./ses-tenant";
 
 /** Tuti's loop header (apps/web lib/email-noise.ts): mail that comes back with it is known as ours. */
@@ -210,11 +210,15 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
     LIMIT 100`;
   let sent = 0;
   for (const { conversationId, projectId } of due) {
-    // A send that then doesn't happen keeps its slot: the cap errs low.
+    // A send that then doesn't happen keeps its slot in the daily cap (it errs low), not in the month's count.
     if (!(await claimProjectEmail(projectId, now))) {
       continue;
     }
-    sent += (await sendReplies(conversationId, domain, now, log)) ? 1 : 0;
+    if (await sendReplies(conversationId, domain, now, log)) {
+      sent++;
+    } else {
+      await releaseProjectEmail(projectId, now);
+    }
   }
   return { emails: sent };
 }

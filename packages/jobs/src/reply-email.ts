@@ -3,7 +3,7 @@ import { type PostVisibility, prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { cappedProjects, claimProjectEmail, dueAgain } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, nextMonth, releaseProjectEmail } from "./email-limits";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
@@ -182,6 +182,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
     );
     if (error) {
       failed++;
+      await releaseProjectEmail(projectId);
       log.warn(`couldn't email reply ${commentId} to a voter: ${error.message}`);
       continue;
     }
@@ -208,7 +209,8 @@ export async function resubmitReplyEmails(_input: JobInput<"resubmitReplyEmails"
   const capped = await cappedProjects();
   const due = await prisma.comment.findMany({
     where: {
-      votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) },
+      // Due a while ago, or held for next month by the monthly limit (dueAgain) where the project has room again (an upgrade).
+      OR: [{ votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { votersEmailDueAt: nextMonth(new Date()) }],
       ...(plansEnabled() && { project: { emailPausedAt: null } }),
       ...(capped.length > 0 && { projectId: { notIn: capped } }),
     },

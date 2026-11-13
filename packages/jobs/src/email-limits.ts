@@ -65,6 +65,16 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
   return true;
 }
 
+/**
+ * Gives back an email claimProjectEmail took this month when it wasn't sent after all (nobody to send it to, sent by
+ * another run, or the send failed): the month's count is what was sent. The first week's daily cap keeps it (it errs low).
+ */
+export async function releaseProjectEmail(projectId: string, now = new Date()) {
+  if (plansEnabled()) {
+    await prisma.projectEmailMonth.updateMany({ where: { projectId, month: monthOf(now), emails: { gt: 0 } }, data: { emails: { decrement: 1 } } });
+  }
+}
+
 /** How many emails a project sent its users this calendar month (UTC), and its plan's limit (null: none). Null without plans. */
 export async function emailsThisMonth(projectId: string, now = new Date()): Promise<{ emails: number; limit: number | null } | null> {
   if (!plansEnabled()) {
@@ -85,7 +95,8 @@ export async function monthlyLimitReached(projectId: string, now = new Date()): 
 
 /**
  * When what a run held should be due again: next month where the project's monthly limit held it (the safety nets look
- * back only a day or two, so they find it once the month resets), now otherwise (tomorrow's cap, or a pause).
+ * back only a day or two, so they find it once the month resets, and also take ones due later whose project has room
+ * again, after an upgrade), now otherwise (tomorrow's cap, or a pause).
  */
 export async function dueAgain(projectId: string, now = new Date()): Promise<Date> {
   return (await monthlyLimitReached(projectId, now)) ? nextMonth(now) : now;

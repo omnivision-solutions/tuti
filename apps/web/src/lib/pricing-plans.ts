@@ -1,4 +1,4 @@
-import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, emailsPerMonth, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
@@ -74,6 +74,12 @@ const history = (plan: PlanKey): PlanLine[] => {
   return days === null ? [] : [{ text: `${days} days of inbox history` }];
 };
 
+/** "1,000 emails a month to your users": support replies, "it shipped" and changelog emails (emailsPerMonth). */
+const emails = (plan: PlanKey): PlanLine => {
+  const limit = emailsPerMonth(plan);
+  return { text: limit === null ? "Unlimited emails to your users" : `${number(limit)} emails a month to your users` };
+};
+
 const versions = (plan: PlanKey): PlanLine => {
   const kept = articleVersionsKept(plan);
   return { text: kept === 1 ? "1 version kept per help article" : `${kept} versions kept per help article` };
@@ -136,6 +142,7 @@ export function pricingPlans(): PricingPlan[] {
         ...more((key) => [boards(key)]),
         ...more((key) => [articles(key)]),
         ...more(history),
+        ...more((key) => [emails(key)]),
         ...more((key) => feature(key, "customDomain", "Your own domain")),
         ...more((key) => feature(key, "emailDomain", "Email from your own domain")),
         ...more((key) => [versions(key)]),
