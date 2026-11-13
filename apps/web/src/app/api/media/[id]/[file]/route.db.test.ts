@@ -120,7 +120,8 @@ test("profile pictures saved with the old /media links point at /api/media after
   expect((await open(link)).status).toBe(302);
 });
 
-test("the migration saves links to the app's own images without host or path; a picture from elsewhere stays", async () => {
+// Run again by the next release, for links the release before saved while it ran beside the first.
+test.each(["20261112160000_pictures_saved_without_host", "20261113110000_pictures_saved_without_host_again"])("%s saves links to the app's own images without host or path; a picture from elsewhere stays", async (migration) => {
   const media = await image();
   const key = emailImageKey(media.id);
   // Uploaded (imageId) or copied from another user (none of its own); and one from another site, whatever its path.
@@ -131,7 +132,7 @@ test("the migration saves links to the app's own images without host or path; a 
   await prisma.user.update({ where: { id: kept.id }, data: { image: elsewhere } });
 
   await prisma.$executeRawUnsafe(
-    readFileSync(new URL("../../../../../../../../packages/db/prisma/migrations/20261112160000_pictures_saved_without_host/migration.sql", import.meta.url), "utf8"),
+    readFileSync(new URL(`../../../../../../../../packages/db/prisma/migrations/${migration}/migration.sql`, import.meta.url), "utf8"),
   );
 
   const ids = [uploaded.id, copied.id, kept.id];
