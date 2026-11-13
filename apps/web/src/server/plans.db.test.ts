@@ -268,7 +268,7 @@ test("a project deleted meanwhile: Stripe's events are answered, and nothing is 
 
 test("the migration gives each project its plan's key: Pro and Business theirs, Free none (the default plan)", async () => {
   const projects = await Promise.all((["FREE", "PRO", "BUSINESS"] as const).map(async (planEnum) => (await prisma.project.update({ where: { id: (await createProject(owner)).id }, data: { planEnum } })).id));
-  // As before the migration: no key (cleared without writing the enum, which the trigger would follow).
+  // As before the migration: no key.
   await prisma.$executeRaw`UPDATE project SET "planKey" = NULL WHERE id = ANY(${projects})`;
   expect((await prisma.project.findMany({ where: { id: { in: projects } }, select: { plan: true } })).map(({ plan }) => plan)).toEqual([null, null, null]);
   const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113180000_plan_keys/migration.sql", import.meta.url), "utf8");
@@ -294,38 +294,21 @@ test("any plan the file sells is bought by its key, and Stripe's webhook stores 
   await expect(call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" })).rejects.toMatchObject({ status: 503 });
 });
 
-test("while a deploy runs both releases, the previous one's plan writes follow into the key, and this one keeps the enum in step", async () => {
+test("the enum is neither followed nor written: the previous release's trigger is gone, and the webhook stores the key alone", async () => {
   const id = project.id;
   const key = async () => (await prisma.project.findUniqueOrThrow({ where: { id }, select: { plan: true, planEnum: true } }));
-  // The previous release's webhook: the enum only (a paid plan with its status, then ended with its status cleared).
+  // A write of the enum alone (the release before plan keys) no longer reaches the key.
   await prisma.$executeRaw`UPDATE project SET plan = 'PRO', "planStatus" = 'active' WHERE id = ${id}`;
-  expect(await key()).toEqual({ plan: "pro", planEnum: "PRO" });
+  expect(await key()).toEqual({ plan: null, planEnum: "PRO" });
   await prisma.$executeRaw`UPDATE project SET plan = 'FREE', "planStatus" = NULL WHERE id = ${id}`;
-  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
-  // A key changed on its own (a plan renamed in the file), then this release's write of Free beside it: the key stays.
-  await prisma.$executeRaw`UPDATE project SET plan = 'PRO', "planStatus" = 'active' WHERE id = ${id}`;
-  await prisma.$executeRaw`UPDATE project SET "planKey" = 'starter' WHERE id = ${id}`;
-  await prisma.project.update({ where: { id }, data: { plan: "starter", planEnum: "FREE" } });
-  expect(await key()).toEqual({ plan: "starter", planEnum: "FREE" });
-  // The previous release's Pro over a paid plan it has no name for (a second subscription): the key stays.
-  await prisma.$executeRaw`UPDATE project SET plan = 'PRO' WHERE id = ${id}`;
-  expect((await key()).plan).toBe("starter");
-  await prisma.$executeRaw`UPDATE project SET plan = 'FREE' WHERE id = ${id}`;
-  expect((await key()).plan).toBe("starter");
-  // That plan ended by the previous release (its enum already Free): the key follows.
-  await prisma.$executeRaw`UPDATE project SET plan = 'FREE', "planStatus" = NULL WHERE id = ${id}`;
-  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
-  // This release writes both: a key the enum has no name for stays.
-  await prisma.project.update({ where: { id }, data: { plan: "scale", planEnum: "FREE" } });
-  expect((await key()).plan).toBe("scale");
-  await prisma.project.update({ where: { id }, data: { plan: null } });
-  // Its webhook keeps the enum in step for the previous release's worker.
+  // The webhook leaves the enum as it is, through a paid plan and its end.
   const { subscription, events } = await subscribe("business");
   await deliver(...events);
-  expect(await key()).toMatchObject({ plan: "business", planEnum: "BUSINESS" });
-  // And once it ends: the previous release's worker sees Free too.
+  expect(await key()).toEqual({ plan: "business", planEnum: "FREE" });
+  // Its end doesn't write the enum either: set to something else first, it stays.
+  await prisma.$executeRaw`UPDATE project SET plan = 'PRO' WHERE id = ${id}`;
   await deliver(stripe.update(subscription, { status: "canceled" }));
-  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
+  expect(await key()).toEqual({ plan: null, planEnum: "PRO" });
 });
 
 test("a project on a plan the file no longer lists is on the default plan: it can buy one, and the webhook gives it", async () => {
