@@ -112,7 +112,7 @@ function Hero() {
         <h1>
           Ship code. <em>Your help center keeps&nbsp;up.</em>
         </h1>
-        <p className="lead">Help center, AI answers, inbox and feedback board, updated every time you ship.</p>
+        <p className="lead">Help center, AI answers and feedback board, updated every time you ship.</p>
         <Ctas />
       </div>
       <div className="frame">
@@ -253,7 +253,7 @@ function Bento() {
   );
 }
 
-// The README's Self-hosting steps.
+// The README's Self-hosting steps: its web image, run with its variables in .env.
 const SELF_HOST = [`git clone ${REPO_URL}`, "docker build -f apps/web/Dockerfile -t tuti-web .", "docker run -p 3000:3000 --env-file .env tuti-web"];
 
 function OpenSource() {
