@@ -19,6 +19,7 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { replyTime, subjectFrom, timeAgo } from "@/lib/format";
 import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
+import { WIDGET_LABEL, WIDGET_ROW } from "@/lib/portal-look";
 import { MAX_QUESTION } from "@/lib/widget-docs";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
@@ -504,19 +505,12 @@ function ConversationList({
       )}
       {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
       {conversations && conversations.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="px-1 group-label">
-            Your conversations
-          </h2>
-          <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">
+        <div className="flex flex-col gap-1">
+          <h2 className={WIDGET_LABEL}>Your conversations</h2>
+          <ul className="flex flex-col divide-y" aria-label="Conversations">
             {conversations.map((c) => (
-              // The first and last rows' corners are the list's, and so is their hover.
-              <li key={c.number} className="first:rounded-t-xl last:rounded-b-xl">
-                <button
-                  type="button"
-                  onClick={() => onOpen(c.number)}
-                  className="flex w-full items-center gap-3 rounded-[inherit] px-4 py-3 text-left transition-colors hover:bg-accent"
-                >
+              <li key={c.number}>
+                <button type="button" onClick={() => onOpen(c.number)} className={cn(WIDGET_ROW, "w-[calc(100%+1rem)]")}>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
                     {/* The latest message's first line, theirs marked as such. */}
@@ -569,9 +563,14 @@ function ListStatus({ text }: { text: string }) {
   return <p ref={region} role="status" className="sr-only" />;
 }
 
-/** The team (their faces, when they reply) in a card, with what to do next under them. */
+/** The team (their faces, when they reply) atop the panel, with what to do next under them and a line below. */
 function TeamCard({ team, children }: { team: ReactNode; children?: ReactNode }) {
-  return <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">{team}{children}</div>;
+  return (
+    <div className="flex flex-col gap-4 border-b pt-2 pb-5">
+      {team}
+      {children}
+    </div>
+  );
 }
 
 /** New message's place in the team's card while the list loads. */
@@ -580,9 +579,9 @@ const NEW_MESSAGE_SKELETON = <Skeleton aria-hidden className="h-9 w-full rounded
 /** What the conversations will look like, while they load; ListStatus says so. */
 function ListSkeleton() {
   return (
-    <div aria-hidden data-loading-skeleton className="flex flex-col divide-y rounded-xl border bg-card">
+    <div aria-hidden data-loading-skeleton className="flex flex-col divide-y">
       {[0, 1, 2].map((row) => (
-        <div key={row} className="flex flex-col gap-1.5 px-4 py-3">
+        <div key={row} className="flex flex-col gap-1.5 py-3">
           <Skeleton className="h-4 w-2/3" />
           <Skeleton className="h-3.5 w-5/6" />
           <Skeleton className="h-3 w-1/4" />
@@ -899,7 +898,7 @@ function Conversation({
       {opened && (
         <>
           {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}
-          <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t bg-background px-4 pt-3 pb-4">
+          <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t bg-card px-4 pt-3 pb-4">
             <Composer
               label="Reply"
               placeholder="Write a reply…"

@@ -8,6 +8,7 @@ import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { useWidgetLook } from "@/components/widget-look";
 import { timeAgo } from "@/lib/format";
+import { WIDGET_LABEL, WIDGET_ROW } from "@/lib/portal-look";
 import { widgetIdeaNews } from "@/server/widget";
 import type { IdeaNews } from "@/server/widget-home";
 
@@ -85,19 +86,14 @@ export function WidgetIdeaNews() {
     return null;
   }
   return (
-    <section aria-labelledby="idea-news" className="flex flex-col gap-2">
-      <h2 id="idea-news" className="px-1 text-sm font-medium text-muted-foreground">
+    <section aria-labelledby="idea-news" className="flex flex-col gap-1">
+      <h2 id="idea-news" className={WIDGET_LABEL}>
         Your ideas
       </h2>
-      <ul className="flex flex-col divide-y rounded-xl border bg-card">
+      <ul className="flex flex-col divide-y">
         {news.map((item) => (
           <li key={item.href}>
-            <a
-              href={at(item.href)}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-3 px-4 py-3 hover:bg-accent first:rounded-t-xl last:rounded-b-xl"
-            >
+            <a href={at(item.href)} target="_blank" rel="noreferrer" className={WIDGET_ROW}>
               <StatusDot status={item.status} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="font-medium break-words">

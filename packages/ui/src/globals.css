@@ -17,9 +17,9 @@
 @custom-variant launcher (:root:has([data-app-widget]) &);
 /* On phones, where the app's tab bar is at the bottom of the screen (AppTabBar, on a part's own page). */
 @custom-variant tabbar (:root:has([data-tab-bar]) &);
-/* On the public portal's pages (PortalTop marks them): its own look for shared controls, the admin's untouched (docs/design.md
-   → Portals). */
-@custom-variant portal (:root:has([data-portal-top]) &);
+/* On the public portal's pages (PortalTop marks them) and the widget's panel (`data-portal-look`): its own look for shared
+   controls, the admin's untouched (docs/design.md → Portals). */
+@custom-variant portal (:root:has([data-portal-top], [data-portal-look]) &);
 /* In the app on phones, where a page's actions are a menu from the top bar (PageActions). */
 @custom-variant phonebar {
   @media (width < 48rem) {
@@ -279,8 +279,10 @@
  * its own (the same selectors' light block is less specific than the dark one, so dark mode still wins).
  * Lines: `divider`, lighter than a control's edge (`input`), for the hairlines between rows (every default border here);
  * cards (`ring-card-edge`) have no outline in light, the soft shadow alone, and a faint ring in dark.
+ * The widget's panel takes the same tokens (`data-portal-look`), not the page-level rules (the scrollbar's room, the header's
+ * scroll padding).
  */
-:root:has([data-portal-top]) {
+:root:has([data-portal-top], [data-portal-look]) {
   --radius: 0.625rem;
   --border: oklch(0.87 0.016 84.6);
   --input: oklch(0.81 0.02 84.6);
@@ -303,7 +305,7 @@
   --card-edge: transparent;
   --portal-shadow: 0 1px 2px oklch(0.3 0.02 60 / 6%), 0 4px 16px -6px oklch(0.3 0.02 60 / 10%);
 }
-:root.dark:has([data-portal-top]) {
+:root.dark:has([data-portal-top], [data-portal-look]) {
   --background: oklch(0.165 0.004 160);
   --foreground: oklch(0.965 0.003 160);
   --card: oklch(0.205 0.005 160);
@@ -366,7 +368,7 @@
     scrollbar-gutter: stable;
   }
   /* The portal's hairlines (between rows, under the header): the lighter divider. Controls keep their edge (`border-input`). */
-  :root:has([data-portal-top]) * {
+  :root:has([data-portal-top], [data-portal-look]) * {
     border-color: var(--divider);
   }
   /* The marketing site's sticky 64px header: focus and anchor targets clear it. */

@@ -7,12 +7,12 @@ import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { usePortalHref } from "@/components/portal-base";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { pillClass } from "@/components/filter-pills";
 import { Skeleton } from "@/components/ui/skeleton";
 import { VoteButton } from "@/components/vote-button";
 import { heardSignOut } from "@/lib/heard-sign-out";
 import { latestOnly } from "@/lib/latest-only";
+import { WIDGET_LABEL } from "@/lib/portal-look";
 import { postPath } from "@/lib/post-urls";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut, widgetVote } from "@/server/widget";
@@ -230,6 +230,7 @@ export function WidgetFeedback({
         postId={post.id}
         count={shown.voteCount}
         voted={shown.voted}
+        shape="compact"
         disabled={!known || pending}
         vote={async (voted) => {
           const at = identity;
@@ -246,60 +247,57 @@ export function WidgetFeedback({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2>Suggest an idea</h2>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {signedIn && <p className="text-sm text-muted-foreground">Posting as {signedIn.name}</p>}
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <NewPostForm
-            projectSlug={projectSlug}
-            boardSlug={boardSlug}
-            mediaUrls={portalSignedIn ? mediaUrls : null}
-            linkTarget="_blank"
-            collapsible
-            signedOut={!viewer}
-            submit={token ? (prev, formData) => widgetCreatePost(projectSlug, token, prev, formData) : undefined}
-            onPosted={() => setPosted((n) => n + 1)}
-            similarVote={(post) => voteFor({ ...post, board: { slug: post.boardSlug } })}
-            widgetToken={token}
-            onSimilar={(posts) => answered(identity, posts)}
-            defaultTitle={defaultTitle}
-            {...texts}
-          />
-        </CardContent>
-      </Card>
+      {/* On the panel, not a card: its title box, Post (the tab's primary), and the details once it's opened. */}
+      <section aria-labelledby="suggest-idea" className="flex flex-col gap-2">
+        <h2 id="suggest-idea" className={WIDGET_LABEL}>
+          Suggest an idea
+        </h2>
+        {signedIn && <p className="text-sm text-muted-foreground">Posting as {signedIn.name}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <NewPostForm
+          projectSlug={projectSlug}
+          boardSlug={boardSlug}
+          mediaUrls={portalSignedIn ? mediaUrls : null}
+          linkTarget="_blank"
+          collapsible
+          signedOut={!viewer}
+          submit={token ? (prev, formData) => widgetCreatePost(projectSlug, token, prev, formData) : undefined}
+          onPosted={() => setPosted((n) => n + 1)}
+          similarVote={(post) => voteFor({ ...post, board: { slug: post.boardSlug } })}
+          widgetToken={token}
+          onSimilar={(posts) => answered(identity, posts)}
+          defaultTitle={defaultTitle}
+          {...texts}
+        />
+      </section>
 
       <section aria-label="Ideas" aria-busy={loading} className="flex flex-col gap-3">
-        {!viewer && <h2 className="px-1 text-sm font-medium">Trending</h2>}
+        {!viewer && <h2 className={WIDGET_LABEL}>Trending</h2>}
         {viewer && (
-          <div role="group" aria-label="Show" className="flex gap-1">
+          <div role="group" aria-label="Show" className="flex gap-1.5">
             {(
               [
                 ["Trending", false],
                 ["Mine", true],
               ] as const
             ).map(([name, value]) => (
-              <Button key={name} size="sm" variant={mine === value ? "secondary" : "ghost"} aria-pressed={mine === value} onClick={() => setMineAsked(value)}>
+              <button key={name} type="button" className={pillClass(mine === value)} aria-pressed={mine === value} onClick={() => setMineAsked(value)}>
                 {name}
-              </Button>
+              </button>
             ))}
           </div>
         )}
         {loading ? (
-          <div className="flex flex-col gap-3 rounded-xl border bg-card p-3">
+          <div className="flex flex-col gap-3">
             {[0, 1, 2].map((row) => (
               <div key={row} className="flex items-center gap-3">
-                <Skeleton className="h-12 w-12" />
+                <Skeleton className="h-[2.875rem] w-[2.625rem]" />
                 <Skeleton className="h-4 flex-1" />
               </div>
             ))}
           </div>
         ) : list.ideas.length > 0 ? (
-          <ul className="flex flex-col divide-y rounded-xl border bg-card px-3">
+          <ul className="flex flex-col divide-y">
             {list.ideas.map((idea) => (
               <li key={idea.id} className="flex items-center gap-3 py-3">
                 {voteFor(idea)}

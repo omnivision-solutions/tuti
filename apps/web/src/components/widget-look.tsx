@@ -4,7 +4,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, use, useEffect, useState } from "react";
 
 import { inPreview } from "@/components/portal-look";
-import { type FromPortal, isToPortal, type WidgetLook, widgetOnly, type WidgetPart } from "@/lib/portal-look";
+import { type FromPortal, isToPortal, WIDGET_ROW, WIDGET_TILE, type WidgetLook, widgetOnly, type WidgetPart } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 const WidgetLookContext = createContext<WidgetLook>({ links: [], title: "", greeting: "", hidden: [] });
@@ -44,18 +44,21 @@ export function WidgetTitle() {
   return <p className="font-heading text-2xl font-bold break-words">{useWidgetLook().title || "How can we help?"}</p>;
 }
 
-/** Home's quick links (Customize → Widget), each opening in a new tab; `row`, a row's look on Home. */
-export function WidgetQuickLinks({ row }: { row: string }) {
+/** Home's quick links (Customize → Widget), each opening in a new tab: rows in Home's last list. */
+export function WidgetQuickLinks() {
   const { links } = useWidgetLook();
   if (links.length === 0) {
     return null;
   }
   return (
     <nav aria-label="Quick links">
-      <ul className="flex flex-col divide-y rounded-xl border bg-card">
+      <ul className="flex flex-col divide-y">
         {links.map((link, i) => (
           <li key={i}>
-            <a href={link.url} target="_blank" rel="noopener noreferrer" className={cn(row, "break-words first:rounded-t-xl last:rounded-b-xl")}>
+            <a href={link.url} target="_blank" rel="noopener noreferrer" className={cn(WIDGET_ROW, "break-words")}>
+              <span className={WIDGET_TILE}>
+                <ExternalLinkIcon aria-hidden />
+              </span>
               <span className="min-w-0 flex-1 font-medium">{link.label}</span>
               <ExternalLinkIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </a>

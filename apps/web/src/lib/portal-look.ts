@@ -89,6 +89,15 @@ export const MAX_WIDGET_HOME_TEXT = 60;
  * The widget's panel as Customize → Widget sets it (in its preview, before it's saved): its Home's quick
  * links, heading and greeting (empty for the defaults), and the parts turned off.
  */
+/**
+ * The widget's panel (docs/design.md → Portals → Widget): one surface of rows split by hairlines (a list's `divide-y`), each
+ * row a link with a muted hover reaching a little past the line; group labels 13px muted sentence case; a row's icon on a
+ * neutral tile.
+ */
+export const WIDGET_ROW = "-mx-2 flex items-center gap-3 rounded-[0.625rem] px-2 py-3 text-left transition-colors hover:bg-muted";
+export const WIDGET_LABEL = "text-[0.8125rem] font-medium text-muted-foreground";
+export const WIDGET_TILE = "grid size-9 shrink-0 place-items-center rounded-[0.625rem] bg-secondary text-foreground [&_svg]:size-[1.0625rem]";
+
 export type WidgetLook = { links: LookLink[]; title: string; greeting: string; hidden: WidgetPart[] };
 
 /**
