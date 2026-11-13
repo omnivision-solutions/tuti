@@ -224,7 +224,7 @@ export function ReplyForm({
               setError(undefined);
             }}
           >
-            <TabsList className="h-auto gap-4 rounded-none bg-transparent p-0">
+            <TabsList className="h-auto gap-4 overflow-visible rounded-none bg-transparent p-0">
               <TabsTrigger value="reply" className={TAB}>Reply</TabsTrigger>
               <TabsTrigger value="note" className={cn(TAB, "data-active:border-highlight-foreground [&>svg]:size-3.25")}>
                 <LockKeyholeIcon aria-hidden />

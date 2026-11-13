@@ -294,6 +294,8 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await expect.poll(() => composer.evaluate((form) => getComputedStyle(form).boxShadow)).toMatch(/0px 0px 0px 3px/);
   await reply.fill("Thanks for flagging this, I’ve refunded the charge");
   await checkpoint(owner, "laptop-reply-focused", { fullPage: false });
+  // Reply and Note keep their focus ring and full underline: the tab list doesn't clip them.
+  await expect(owner.getByRole("tablist")).toHaveCSS("overflow-x", "visible");
   // On Note the whole box takes the note's colours.
   const card = await composer.evaluate((form) => getComputedStyle(form).backgroundColor);
   await owner.getByRole("tab", { name: "Note" }).click();
