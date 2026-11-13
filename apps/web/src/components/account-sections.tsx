@@ -48,19 +48,25 @@ export function AccountSections({ sections }: { sections: Section[] }) {
       }
     };
     const release = () => (picked.current = false);
-    // On load, the hash only where the browser took the page to it (a reload or Back can restore it elsewhere): its section
-    // at the line, or on screen at the page's end. Otherwise what the page shows.
-    const id = hashed();
-    const y = id && top(id);
-    if (id && y !== undefined && ((y >= -8 && y <= line() + 8) || (atEnd() && y < window.innerHeight))) fromHash();
-    else follow();
+    // On load and on a hash change, the hash only where the browser took the page to it (a reload or Back can restore the
+    // page elsewhere): its section at the line, or on screen at the page's end. Otherwise what the page shows.
+    const settle = () => {
+      const id = hashed();
+      const y = id && top(id);
+      if (id && y !== undefined && ((y >= -8 && y <= line() + 8) || (atEnd() && y < window.innerHeight))) fromHash();
+      else {
+        picked.current = false;
+        follow();
+      }
+    };
+    settle();
     window.addEventListener("scroll", follow, { passive: true });
-    window.addEventListener("hashchange", fromHash);
+    window.addEventListener("hashchange", settle);
     // The reader's own scrolling (the scrollbar's drag too), or the jump's end: the list follows the page again.
     for (const event of RELEASE) window.addEventListener(event, release, { passive: true });
     return () => {
       window.removeEventListener("scroll", follow);
-      window.removeEventListener("hashchange", fromHash);
+      window.removeEventListener("hashchange", settle);
       for (const event of RELEASE) window.removeEventListener(event, release);
     };
   }, [sections]);

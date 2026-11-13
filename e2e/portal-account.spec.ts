@@ -344,11 +344,17 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
   // Opened with a section's hash the browser didn't scroll to (it can't scroll here; a reload or Back that restores the
   // page elsewhere is the same): the section the page shows, not the hash's.
-  // (A load of its own: from /account itself, it would only be a hash change, which marks the section asked for.)
   await tall.goto("/roadmap");
   await tall.goto("/account#votes");
   await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
   await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
+  // A hash change on the page that doesn't move it (typed, or Back within the page restoring it elsewhere): the same.
+  await tall.evaluate(() => (window.location.hash = "#emails"));
+  await expect(tall).toHaveURL(/#emails$/);
+  // (After the hashchange event and the list's render: two frames.)
+  await tall.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await expect(tallList.getByRole("link", { name: "Emails" })).not.toHaveAttribute("aria-current");
   await tall.context().close();
   // Sign out on the page: a failed one, refused or never sent (offline), says so and stays, the button ready again; then
   // back on the portal's home, signed out.
