@@ -166,6 +166,8 @@ test("Get set up's cards wrap a long project name inside the card, on a phone an
   const tablet = await browser.newContext({ storageState: await owner.context().storageState(), viewport: { width: 1280, height: 800 }, hasTouch: true, isMobile: true });
   const page = await tablet.newPage();
   await page.goto(owner.url());
+  await expect(page.getByRole("list", { name: "Get set up" })).toBeVisible();
+  await expect(page.locator("[data-panes]")).toBeAttached();
   expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY)).toBe("auto");
 });
