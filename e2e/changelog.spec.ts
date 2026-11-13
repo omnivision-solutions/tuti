@@ -686,10 +686,14 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   // One more than a page holds (20): the odd ones new, the even ones fixes.
   // The newest two run long: the list shows excerpts, the rest on their pages.
   // (Release 20 shorter: one paragraph of ~380 characters, five lines on a laptop, past eight on a phone.)
+  const idea = (title: string) => api("/posts", { board: "feature-requests", title, body: "Details of the idea." }) as unknown as Promise<{ number: number }>;
+  const ideas = [(await idea("Export every board, its posts, votes and comments, to a spreadsheet in one go")).number, (await idea("Dark mode")).number];
   const long = (repeats: number) => `${"Faster boards and fewer clicks. ".repeat(repeats)}\n\nAnd last, exports in CSV.`;
   for (let n = 1; n <= 21; n++) {
     const body = n === 21 ? long(24) : n === 20 ? long(12) : "Faster boards and fewer clicks.";
-    await api("/changelog", { title: `Release ${n}`, body, tags: [n % 2 ? "new" : "fixed"] });
+    // Release 19 shipped two ideas, one with a long title: a pill each, on the list too.
+    const posts = n === 19 ? ideas : undefined;
+    await api("/changelog", { title: `Release ${n}`, body, tags: [n % 2 ? "new" : "fixed"], posts });
     await api(`/changelog/${n}/publish`, {});
   }
   // Over three months: 12 to 21 in October, 2 to 11 in September, Release 1 in August (on page 2).
@@ -826,6 +830,11 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await reader.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
   await reader.goto("/changelog");
+  // A long idea's pill stays in its entry (its title shortened), and the page doesn't scroll sideways.
+  const shipped = main.getByRole("article", { name: "Release 19" });
+  const pill = (await shipped.getByRole("link", { name: /^Export every board/ }).boundingBox())!;
+  expect(pill.x + pill.width).toBeLessThanOrEqual((await shipped.boundingBox())!.x + (await shipped.boundingBox())!.width + 1);
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   // On a phone, the header's menu lists the entries by date (with their titles), the one being read marked.
   await reader.setViewportSize({ width: 390, height: 844 });

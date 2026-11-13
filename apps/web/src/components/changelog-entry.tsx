@@ -75,7 +75,7 @@ export function ChangelogEntryView({
   const at = (path: string) => withBase(base, path);
   // In the list the title's link stretches over the entry (its text, its cover), so they open its page too, while one link
   // per entry is all keyboards and screen readers meet; what's clickable on its own sits above it.
-  const above = excerpt ? "relative z-10 self-start" : undefined;
+  const above = excerpt ? "relative z-10 max-w-full self-start" : undefined;
   // In the list, short ("7 Nov 2026"), as in its margin.
   const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
   // Its tags (grey; Breaking red) and, on phones or its own page, its date: above the title, or under it on its page.
