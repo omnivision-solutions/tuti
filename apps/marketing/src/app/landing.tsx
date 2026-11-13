@@ -1022,7 +1022,7 @@ function Faq() {
     ["Can I move from another tool?", "Yes. Import from Intercom, Featurebase, Ferndesk, Canny, Frill, Nolt or any help center by URL. Old links can point to the new pages."],
     ["Can the help center use my domain?", "Yes, with your logo, colours and fonts."],
     ["How does the free trial work?", "Your first project gets 7 days free, no card needed. Pick a plan whenever you're ready."],
-    ["Is Tuti open source?", "Yes. Self-host it free with every feature, or let us run it for you."],
+    ["Is Tuti open source?", "Yes. Self-host it free, with no plan limits, or let us run it for you."],
   ];
   return (
     <section className="flush">

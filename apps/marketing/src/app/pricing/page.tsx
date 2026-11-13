@@ -52,7 +52,7 @@ export default async function PricingPage() {
   );
 }
 
-const SELF_HOSTED = ["Every feature, no limits", "Your server, your data", "Your own AI keys"];
+const SELF_HOSTED = ["No plan limits", "Your server, your data", "Your own AI keys"];
 
 /** The free way to run Tuti: on your own server. */
 function SelfHosted() {
