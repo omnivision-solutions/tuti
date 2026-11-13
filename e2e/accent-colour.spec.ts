@@ -210,6 +210,43 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
       expect(ring).toContain(await token(reader, "--divider"));
     }
   }
+  // The widget's panel takes the portal's look (docs/design.md → Portals → Widget), in light and dark: the project's fonts,
+  // one surface of rows split by the divider (no cards), the open tab a neutral pill (not the accent), vote boxes grey
+  // fills, and a vote cast the accent's tint with a ring.
+  await reader.setViewportSize({ width: 400, height: 600 });
+  for (const scheme of ["light", "dark"] as const) {
+    await reader.emulateMedia({ colorScheme: scheme });
+    await reader.goto("/widget");
+    await expect(reader.getByText("Acme", { exact: true })).toHaveCSS("font-family", /playfairDisplay/);
+    // <body> too, for what opens over the panel at its end (toasts).
+    const panelFont = await reader.getByRole("main").evaluate((main) => getComputedStyle(main).fontFamily);
+    await expect.poll(() => reader.evaluate(() => getComputedStyle(document.body).fontFamily)).toBe(panelFont);
+    const surface = await token(reader, "--card");
+    await expect(reader.getByRole("main")).toHaveCSS("background-color", surface);
+    const send = reader.getByRole("link", { name: /^Send us a message/ });
+    await expect(send).toHaveCSS("border-top-width", "0px");
+    const ideaRow = reader.getByRole("link", { name: /^Share an idea/ }).locator("..");
+    await expect(ideaRow).toHaveCSS("border-bottom-width", "1px");
+    await expect(ideaRow).toHaveCSS("border-bottom-color", await token(reader, "--divider"));
+    const home = reader.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Home" });
+    await expect(home.locator("span").first()).toHaveCSS("background-color", await token(reader, "--accent"));
+    await expect(home.locator("svg")).toHaveCSS("color", await token(reader, "--foreground"));
+    await checkpoint(reader, `widget home ${scheme}`);
+
+    await reader.goto("/widget?tab=feedback");
+    const ideas = reader.getByRole("region", { name: "Ideas" });
+    const notVoted = ideas.getByRole("button", { name: /^Upvote \(/ }).first();
+    await expect(notVoted).toHaveCSS("background-color", await token(reader, "--secondary"));
+    await expect(notVoted).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    const voted = ideas.getByRole("button", { name: /^Remove vote \(/ });
+    await expect(voted).toHaveCSS("background-color", await token(reader, "--soft"));
+    await expect.poll(() => voted.evaluate((button) => getComputedStyle(button).boxShadow)).toMatch(/inset/);
+    await expect(ideas.getByRole("listitem").first()).toHaveCSS("border-bottom-color", await token(reader, "--divider"));
+    await expect(ideas.getByRole("list")).toHaveCSS("border-top-width", "0px");
+    await checkpoint(reader, `widget feedback ${scheme}`);
+  }
+  await reader.setViewportSize({ width: 1280, height: 720 });
+
   // The widget and the app keep the browser's scrollbar (it's only the portal's pages that keep its room).
   await reader.goto("/widget");
   await expect(reader.locator("html")).toHaveCSS("scrollbar-gutter", "auto");

@@ -13,10 +13,11 @@ import { toggleVote } from "@/server/posts";
 const SHAPE = "h-auto w-12 flex-col gap-0 py-1.5";
 /**
  * The portal's shapes: `box` (a board's row: the chevron over the count), `chip` (a roadmap card's footer: side by side,
- * small) and `upvote` (a post's rail: "Upvote", then the count, the whole width).
+ * small), `upvote` (a post's rail: "Upvote", then the count, the whole width) and `compact` (the widget's rows: a smaller box).
  */
 const SHAPES = {
   box: "h-[3.625rem] w-[3.25rem] shrink-0 flex-col gap-0 rounded-xl text-[0.9375rem] font-bold tabular-nums [&_svg]:size-[1.125rem]",
+  compact: "h-[2.875rem] w-[2.625rem] shrink-0 flex-col gap-0 rounded-lg text-sm font-bold tabular-nums [&_svg]:size-4",
   chip: "h-9 shrink-0 gap-1 rounded-lg px-2.5 text-[0.9375rem] font-bold tabular-nums",
   upvote: "h-12 gap-2.5 rounded-xl px-5 text-base font-semibold tabular-nums",
 } as const;
@@ -73,7 +74,7 @@ export function VoteButton({
   signInHref?: string;
   /** On a portal, signed out: a link to its sign-in page that comes back here (signed in but unable to vote, `disabled`). */
   signedOut?: boolean;
-  /** The portal's (see SHAPES); without one, the app's and the widget's. */
+  /** The portal's and the widget's (see SHAPES); without one, the app's. */
   shape?: VoteShape;
 }) {
   const [pending, startTransition] = useTransition();
@@ -85,7 +86,13 @@ export function VoteButton({
   }
   if (signInHref) {
     return (
-      <a href={signInHref} target="_blank" rel="noreferrer" aria-label={`Sign in to vote (${votes})`} className={cn(buttonVariants({ variant: "outline" }), SHAPE)}>
+      <a
+        href={signInHref}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Sign in to vote (${votes})`}
+        className={shape ? cn(buttonVariants({ variant: "secondary" }), SHAPES[shape], portalLook(shape, false)) : cn(buttonVariants({ variant: "outline" }), SHAPE)}
+      >
         <Contents count={optimistic.count} voted={false} />
       </a>
     );

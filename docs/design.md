@@ -556,13 +556,21 @@ the list picks none to approve at once.
   header, `--portal-header-height`, so the header's buttons stay in reach): a
   header in the project's colour (a gradient shading it away from the text
   on it, black or white, so that reads everywhere) with the tab's name and Close, the tab scrolling under
-  it, the tabs with icons at the bottom and "Powered by tuti" under them. On
+  it, the tabs with icons at the bottom (the open one's icon on a neutral pill, never the accent) and "Powered by tuti"
+  under them. The panel takes the portal's look (its tokens, by `data-portal-look` on its `<main>`, so the `portal:`
+  variant and the divider reach it, but not the page-level rules: the scrollbar's room, the header's scroll padding) and
+  the project's fonts (else Inter). Each tab is one white panel (`card`) of rows: hairlines between rows (`divide-y`,
+  `WIDGET_ROW`: a muted hover reaching a little past them), group labels 13px muted sentence case (`WIDGET_LABEL`), a
+  row's icon on a neutral tile (`WIDGET_TILE`), no card around a list or a link; the accent only on the header, the
+  launcher, the tab's one primary (Post, New message), links and a vote cast. Vote boxes are the portal's (`VoteButton`'s
+  `compact` shape: a grey fill, cast the soft tint and ring); secondaries grey fills; the docs tabs and Trending/Mine
+  the portal's pills. On
   Home the header holds the greeting too ("Hi <first name>" for someone the page
   signs in), then help first (the docs search box, with three suggested articles
   as rows under it), "Send us a message" (the team's faces and when they usually
   reply), "Your ideas" (status news, each a row with its status's dot) for someone
-  signed in, then Feedback, the latest update ("2 new" when some are unread) and the quick links.
-  What's new is a card per update (cover, date and tags, title, two lines, Read more
+  signed in, then one list of Feedback, the latest update ("2 new" when some are unread) and the quick links.
+  What's new is a section per update between lines (cover, date and tags, title, two lines, Read more
   opening it in the panel), unread ones with the orange dot Messages uses.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
@@ -572,7 +580,7 @@ the list picks none to approve at once.
   from its first paint, and the button unless it has its own colour (Settings → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
-  Messages has the team on top in a card (their faces and when they usually reply,
+  Messages has the team on top, centred above a line (their faces and when they usually reply,
   as on Home, and New message across it), then "Your conversations" (a group label)
   over their conversations, newest first, each a row with its latest line ("You:"
   before theirs) and "Closed", "Replied" or "Waiting for a reply"; while it loads,

@@ -1847,7 +1847,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await checkpoint(visitor, "widget-quick-links");
   // In a narrow panel a long label wraps, its icon inside the panel.
   await visitor.setViewportSize({ width: 360, height: 720 });
-  const icon = widget.getByRole("link", { name: /Averyverylong/ }).locator("svg");
+  const icon = widget.getByRole("link", { name: /Averyverylong/ }).locator("svg").last();
   const panel = (await visitor.locator("#tuti-widget").boundingBox())!;
   expect((await icon.boundingBox())!.x + (await icon.boundingBox())!.width).toBeLessThanOrEqual(panel.x + panel.width);
   // On a phone the panel is the whole screen, over the launcher (its own close button at the top).
@@ -2341,11 +2341,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(row.last()).toContainText(/Replied · /);
   await expect(row.last().getByText("New reply")).toBeAttached();
   await expect(widget.getByText("Couldn't load your conversations.")).toHaveCount(0);
-  // The list's corners are only the first row's top and the last row's bottom (each row's hover fills them).
-  const corners = (locator: Locator) => locator.evaluate((el) => [getComputedStyle(el).borderTopLeftRadius, getComputedStyle(el).borderBottomLeftRadius]);
-  const [firstTop, firstBottom] = await corners(row.first().getByRole("button"));
-  const [lastTop, lastBottom] = await corners(row.last().getByRole("button"));
-  expect([firstTop !== "0px", firstBottom, lastTop, lastBottom !== "0px"]).toEqual([true, "0px", "0px", true]);
+  // Rows on the panel, not a card (docs/design.md → Portals → Widget): no edge around the list, a hairline between rows.
+  await expect(widget.getByRole("list", { name: "Conversations" })).toHaveCSS("border-top-width", "0px");
+  await expect(row.first()).toHaveCSS("border-bottom-width", "1px");
   await checkpoint(visitor, "widget-messages-list");
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "widget-messages-list-dark");

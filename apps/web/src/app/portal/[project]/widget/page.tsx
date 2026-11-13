@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { aiPaused } from "@tuti/jobs";
-import { BookOpenIcon, ChevronRightIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, FileTextIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,6 +9,7 @@ import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { TagBadge } from "@/components/changelog-tag";
 import { PoweredByTuti } from "@/components/portal-look";
+import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
 import { SampleBadge } from "@/components/sample-badge";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
 import { PortalBaseProvider } from "@/components/portal-base";
@@ -20,12 +21,14 @@ import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
-import { WidgetLookProvider, WidgetPart, WidgetQuickLinks, WidgetTitle } from "@/components/widget-look";
+import { WidgetBodyFonts, WidgetLookProvider, WidgetPart, WidgetQuickLinks, WidgetTitle } from "@/components/widget-look";
 import { WidgetMessages } from "@/components/widget-messages";
 import { UnreadCount, UnreadDot, WidgetUnread } from "@/components/widget-whats-new";
 import { widgetHeaderStyle } from "@/lib/colors";
 import { appUrl } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
+import { portalFontStyle } from "@/lib/portal-fonts";
+import { WIDGET_ROW, WIDGET_TILE } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
@@ -95,12 +98,16 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   }
   // The portal's accent colour; the logo and links are the portal header's, which the panel doesn't have.
   const css = brandCss(brand.color);
+  // The portal's tokens (globals.css: lines, greys, cards, controls' `portal:` look) and its fonts (else Inter), on the panel.
+  const fonts = portalFontStyle(brand.fonts);
+  const look = { "data-portal-look": true, style: fonts as React.CSSProperties };
   // A private portal shows nothing until whoever's here may read it (see portal-access.ts).
   if (!(await mayRead(project.id))) {
     return (
       <PortalBaseProvider base={base} slug={slug}>
-        <main className="flex flex-col gap-4 p-4">
+        <main {...look} className={cn("flex min-h-dvh flex-col gap-4 bg-card p-4", PORTAL_FONT_CLASSES)}>
           <WidgetThemeScript scheme={brand.colorScheme} />
+          <WidgetBodyFonts style={fonts} />
           {css && <style>{css}</style>}
           <div className="flex justify-end">
             <WidgetClose inline={display === "inline"} />
@@ -138,9 +145,10 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <WithAssistant assistant={assistant}>
       <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew} portalReader={tab === "home" && !whatsNew ? await portalReaderHome(project.id) : null}>
       <WidgetLookProvider saved={{ links: settings.links, title: settings.title, greeting: settings.greeting, hidden: settings.hidden }} appOrigin={appUrl().origin}>
-    <main className="flex h-dvh flex-col">
+    <main {...look} className={cn("flex h-dvh flex-col bg-card", PORTAL_FONT_CLASSES)}>
       {/* First, before anything shows. */}
       <WidgetThemeScript scheme={brand.colorScheme} />
+      <WidgetBodyFonts style={fonts} />
       {css && <style>{css}</style>}
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
         <div className="flex items-center justify-between gap-2">
@@ -212,11 +220,14 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
                 // In What's new, Home is lit as its section, not the page they're on.
                 aria-current={active ? (whatsNew ? "true" : "page") : undefined}
                 className={cn(
-                  "flex min-w-0 flex-1 flex-col items-center gap-1 px-1 pt-2.5 pb-1 text-xs transition-colors",
+                  "group flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 pt-1.5 pb-1 text-xs transition-colors",
                   active ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <Icon aria-hidden className={cn("size-5", active && "text-primary")} />
+                {/* The open tab: a neutral pill behind its icon (the accent is the header's). */}
+                <span className={cn("grid h-7 w-11 place-items-center rounded-full transition-colors", active ? "bg-accent" : "group-hover:bg-muted")}>
+                  <Icon aria-hidden className="size-5" />
+                </span>
                 <span className="max-w-full truncate">{name}</span>
               </Link>
             );
@@ -274,14 +285,18 @@ async function Home({
     getSession().then((session) => whatsNewSeen(projectId, session?.user.id ?? null)),
     portalLinks(),
   ]);
-  const row = "flex items-center gap-3 px-4 py-3 text-left hover:bg-accent";
   return (
     <div className="flex flex-col gap-3">
       {docs && (
         <WidgetPart part="docs">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             {/* A plain GET form: the Help center tab searches as it opens. */}
-            <form action={at("/widget")} role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+            <form
+              action={at("/widget")}
+              role="search"
+              aria-label="Help center"
+              className="flex items-center gap-2 rounded-lg border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
+            >
               <input type="hidden" name="tab" value="docs" />
               <input
                 type="search"
@@ -289,17 +304,18 @@ async function Home({
                 aria-label="Search for help"
                 placeholder="Search for help"
                 maxLength={200}
-                className="min-w-0 flex-1 bg-transparent py-2.5 font-medium outline-none placeholder:text-foreground"
+                className="min-w-0 flex-1 bg-transparent py-2.5 outline-none placeholder:text-muted-foreground"
               />
-              <button type="submit" aria-label="Search" className="shrink-0 text-primary">
-                <SearchIcon aria-hidden className="size-5" />
+              <button type="submit" aria-label="Search" className="shrink-0 text-muted-foreground hover:text-foreground">
+                <SearchIcon aria-hidden className="size-4" />
               </button>
             </form>
             {suggested.length > 0 && (
-              <ul aria-label="Suggested articles" className="flex flex-col divide-y rounded-xl border bg-card">
+              <ul aria-label="Suggested articles" className="flex flex-col divide-y">
                 {suggested.map((article) => (
                   <li key={article.slug}>
-                    <Link href={at(docsHref({ article: article.slug }))} className={cn(row, "text-sm break-words first:rounded-t-xl last:rounded-b-xl")}>
+                    <Link href={at(docsHref({ article: article.slug }))} className={cn(WIDGET_ROW, "break-words")}>
+                      <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1">{article.title}</span>
                       <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                     </Link>
@@ -312,50 +328,70 @@ async function Home({
       )}
       {messages && (
         <WidgetPart part="messages">
-          <Link href={at("/widget?tab=messages")} className={cn(row, "rounded-xl border bg-card")}>
-            <TeamFaces faces={faces} />
+          <Link href={at("/widget?tab=messages")} className={WIDGET_ROW}>
+            {faces.length > 0 ? (
+              <TeamFaces faces={faces} />
+            ) : (
+              <span className={WIDGET_TILE}>
+                <MessageCircleIcon aria-hidden />
+              </span>
+            )}
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-medium">Send us a message</span>
               {replyMs !== null && <span className="text-sm text-muted-foreground">Usually replies in {replyTime(replyMs)}</span>}
             </span>
-            <MessageCircleIcon aria-hidden className="size-5 shrink-0 text-primary" />
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           </Link>
         </WidgetPart>
       )}
       <WidgetPart part="feedback">
         <WidgetIdeaNews />
       </WidgetPart>
-      {feedback && (
-        <WidgetPart part="feedback">
-          <Link href={at("/widget?tab=feedback")} className={cn(row, "rounded-xl border bg-card")}>
-            <span className="flex flex-1 flex-col">
-              <span className="font-medium">Share an idea</span>
-              <span className="text-sm text-muted-foreground">Suggest a feature or report a problem</span>
-            </span>
-            <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
-          </Link>
-        </WidgetPart>
-      )}
-      {latest && (
-        <WidgetPart part="whatsNew">
-          {/* "2 new" once the widget's script says what this visitor has seen; the latest update either way. */}
-          <WidgetUnread {...seen}>
-            <Link href={at("/widget?tab=whats-new")} className={cn(row, "rounded-xl border bg-card")}>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-center gap-2">
-                  <span className="font-medium">What&apos;s new</span>
-                  <UnreadCount />
+      {/* Feedback, What's new and the team's links: one list of rows (each part may be off), the lines on each row's wrapper
+          (a row's hover reaches past them). */}
+      <div className="flex flex-col divide-y empty:hidden">
+        {feedback && (
+          <WidgetPart part="feedback">
+            <div>
+              <Link href={at("/widget?tab=feedback")} className={WIDGET_ROW}>
+                <span className={WIDGET_TILE}>
+                  <LightbulbIcon aria-hidden />
                 </span>
-                <span className="text-sm break-words text-muted-foreground">
-                  {latest.title} · {timeAgo(latest.publishedAt!)}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-medium">Share an idea</span>
+                  <span className="text-sm text-muted-foreground">Suggest a feature or report a problem</span>
                 </span>
-              </span>
-              <MegaphoneIcon aria-hidden className="size-5 shrink-0 text-primary" />
-            </Link>
-          </WidgetUnread>
-        </WidgetPart>
-      )}
-      <WidgetQuickLinks row={row} />
+                <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              </Link>
+            </div>
+          </WidgetPart>
+        )}
+        {latest && (
+          <WidgetPart part="whatsNew">
+            {/* "2 new" once the widget's script says what this visitor has seen; the latest update either way. */}
+            <WidgetUnread {...seen}>
+              <div>
+                <Link href={at("/widget?tab=whats-new")} className={WIDGET_ROW}>
+                  <span className={WIDGET_TILE}>
+                    <MegaphoneIcon aria-hidden />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium">What&apos;s new</span>
+                      <UnreadCount />
+                    </span>
+                    <span className="text-sm break-words text-muted-foreground">
+                      {latest.title} · {timeAgo(latest.publishedAt!)}
+                    </span>
+                  </span>
+                  <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                </Link>
+              </div>
+            </WidgetUnread>
+          </WidgetPart>
+        )}
+        <WidgetQuickLinks />
+      </div>
     </div>
   );
 }
@@ -419,10 +455,10 @@ async function Feedback({
 async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: string; projectName: string; slug: string; aiFirst: boolean }) {
   const [session, faces, replyMs] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId)]);
   const team = (
-    // Its card is WidgetMessages', with what to do next (New message) in it.
-    <section aria-label="The team" className="flex items-center gap-3">
+    // Centred atop the tab (WidgetMessages' TeamCard), with what to do next (New message) under it.
+    <section aria-label="The team" className="flex flex-col items-center gap-2 text-center">
       <TeamFaces faces={faces} />
-      <span className="flex min-w-0 flex-1 flex-col">
+      <span className="flex max-w-full flex-col">
         <span className="font-medium break-words">The {projectName} team</span>
         {replyMs !== null && <span className="text-sm text-muted-foreground">Usually replies in {replyTime(replyMs)}</span>}
       </span>
@@ -432,8 +468,8 @@ async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: 
 }
 
 /**
- * The changelog, opened from Home's What's new card, with the way back to Home: a card per entry (its date, tags,
- * title, cover, two lines and Read more), the ones published since the visitor last looked marked unread.
+ * The changelog, opened from Home's What's new row, with the way back to Home: a section per entry between lines (its
+ * cover, date, tags, title, two lines and Read more), the ones published since the visitor last looked marked unread.
  * Showing them marks them seen.
  */
 async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }) {
@@ -471,12 +507,14 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
     <WidgetUnread {...seen} at={at}>
       <ChangelogSeen projectSlug={slug} at={at} signedIn={!!session} />
       {/* data-seen: the portal reader's seen time this render had (journeys wait for the refresh after their visit is recorded). */}
-      <div className="flex flex-col gap-3" data-seen={seen.seen ?? undefined}>
+      <div className="flex flex-col" data-seen={seen.seen ?? undefined}>
         {back}
         {entries.map((entry) => (
-          <article key={entry.number} aria-labelledby={`entry-${entry.number}`} className="overflow-hidden rounded-xl border bg-card">
-            {entry.cover && <RichText doc={entry.cover} mediaUrls={media} className="[&_img]:aspect-[2/1] [&_img]:w-full [&_img]:object-cover" />}
-            <div className="flex flex-col gap-2 p-4">
+          <article key={entry.number} aria-labelledby={`entry-${entry.number}`} className="flex flex-col gap-3 border-b py-4 last:border-b-0">
+            {entry.cover && (
+              <RichText doc={entry.cover} mediaUrls={media} className="overflow-hidden rounded-lg [&_img]:aspect-[2/1] [&_img]:w-full [&_img]:object-cover" />
+            )}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <UnreadDot number={entry.number} />
                 <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>

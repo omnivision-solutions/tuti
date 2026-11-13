@@ -6,10 +6,13 @@ import { articleLinks } from "@/components/article-links";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
-import { ArticleLinks, DocsTabs, LockedMark } from "@/components/docs-collections";
+import { ArticleLinks, LockedMark } from "@/components/docs-collections";
+import { FilterPills } from "@/components/filter-pills";
 import { buttonVariants } from "@/components/ui/button";
 import { WidgetDocsSearch, WidgetNoResults, WidgetSearchResults } from "@/components/widget-docs-search";
 import { WidgetLocked } from "@/components/widget-locked";
+import { WIDGET_LABEL, WIDGET_ROW, WIDGET_TILE } from "@/lib/portal-look";
+import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { articleCount, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
@@ -79,18 +82,18 @@ async function SearchResults({ projectId, projectSlug, query }: { projectId: str
 }
 
 /**
- * Collections as cards that open them (Home's cards): each with its description and how many articles
+ * Collections as rows that open them, each with its icon on a neutral tile, its description and how many articles
  * this reader may open in it (none in a locked one, which shows nothing), as the portal's docs count them.
  */
 function CollectionLinks({ collections, label, href }: { collections: DocsCollection[]; label: string; href: (slug: string) => string }) {
   return (
-    <ul aria-label={label} className="flex flex-col gap-2">
+    <ul aria-label={label} className="flex flex-col divide-y">
       {collections.map((collection) => {
         const count = articleCount(collection);
         return (
           <li key={collection.slug}>
-            <Link href={href(collection.slug)} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 hover:bg-accent">
-              <span className="text-primary empty:hidden">
+            <Link href={href(collection.slug)} className={WIDGET_ROW}>
+              <span className={cn(WIDGET_TILE, "empty:hidden")}>
                 <CollectionIcon name={collection.icon} />
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
@@ -101,7 +104,7 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
                 {collection.description && <span className="text-sm break-words text-muted-foreground">{collection.description}</span>}
                 {count > 0 && <span className="text-xs text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</span>}
               </span>
-              <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+              <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </Link>
           </li>
         );
@@ -121,7 +124,22 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
   const found = slug ? findCollection(docs, slug) : null;
   const tab = found ? found.tab : (docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0]);
   const at = { docsTab: tab?.slug };
-  const tabs = tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => link(docsHref({ docsTab: t }))} compact />;
+  // With two or more, the docs' tabs as the portal's pills, the open one the neutral fill.
+  const tabs = tab && docs.tabs.length > 1 && (
+    <FilterPills
+      label="Docs tabs"
+      current={link(docsHref({ docsTab: tab.slug }))}
+      items={docs.tabs.map((t) => ({
+        href: link(docsHref({ docsTab: t.slug })),
+        title: (
+          <>
+            {t.name}
+            {t.locked && <LockedMark className="ml-0 text-current" />}
+          </>
+        ),
+      }))}
+    />
+  );
   if (found) {
     const { collection, parent } = found;
     return (
@@ -156,7 +174,7 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
           {collections.length > 0 && (
-            <h2 id="more-articles" className="font-heading font-bold tracking-tight">
+            <h2 id="more-articles" className={WIDGET_LABEL}>
               More articles
             </h2>
           )}
