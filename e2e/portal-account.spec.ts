@@ -348,11 +348,15 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await tall.goto("/account#votes");
   await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
   await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
-  // A hash change on the page that doesn't move it (typed, or Back within the page restoring it elsewhere): the same.
-  await tall.evaluate(() => (window.location.hash = "#emails"));
-  await expect(tall).toHaveURL(/#emails$/);
-  // (After the hashchange event and the list's render: two frames.)
-  await tall.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  // A hash change on the page that doesn't move it (typed, or Back within the page restoring it elsewhere): the same. From
+  // a section picked (and so pinned) first, so the mark has to move for this to pass.
+  await tallList.getByRole("link", { name: /Your votes/ }).click();
+  await expect(tallList.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
+  // (The address changed without the router's popstate, then the browser's hashchange: only the list reacts.)
+  await tall.evaluate(() => {
+    history.replaceState(history.state, "", "#emails");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
   await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
   await expect(tallList.getByRole("link", { name: "Emails" })).not.toHaveAttribute("aria-current");
   await tall.context().close();
