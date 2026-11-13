@@ -993,9 +993,8 @@ function Pricing({ ai }: { ai: boolean }) {
             </div>
           </div>
           <div className="r">
-            <div className="big">
-              7 days<small>free</small>
-            </div>
+            {/* "Try it free" is the heading: the figure alone stays on one line in the narrow column. */}
+            <div className="big">7 days</div>
             <div className="cap in-every">In every plan</div>
             <ul className="inc">
               {included.map((item) => (
