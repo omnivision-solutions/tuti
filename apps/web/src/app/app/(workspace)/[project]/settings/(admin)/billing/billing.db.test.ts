@@ -70,3 +70,12 @@ test("an add-on that's on shows no amount: it may be billed at an older price th
   expect(page).toContain("Hidden on this project's plan. It ends with the plan.");
   expect(page).toContain("Show the badge again");
 });
+
+test("an add-on that's on keeps its card where it's no longer sold for the plan's billing (sold: false), so it can be removed", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.sold = false; }));
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "PRO", planInterval: "year", planStatus: "active", badgeAddOn: true, stripeSubscriptionId: `sub_${projectId}` } });
+  const page = await billing();
+  expect(page).toContain("Hidden on this project's plan. It ends with the plan.");
+  expect(page).toContain("Show the badge again");
+  expect(page).not.toContain("Hide the badge");
+});

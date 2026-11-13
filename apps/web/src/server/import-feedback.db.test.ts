@@ -8,7 +8,7 @@ import { billingFile, FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFak
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
-import { getImport, startImport } from "@/server/operations/imports";
+import { boardsNotes, getImport, startImport } from "@/server/operations/imports";
 import { listBoards } from "@/server/operations/read";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -644,4 +644,11 @@ test("a key that can't read the boards or the posts isn't accepted for Feedback"
     message: "This key can't read Feedback in Featurebase. Use a key that can, or leave Feedback out.",
   });
   expect(await prisma.dataImport.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("the import's note promises an upgrade only where a plan for sale has more boards", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect(boardsNotes("PRO")!.canny).toMatch(/until an upgrade lets you turn them on\. Business has any number\.$/);
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
+  expect(boardsNotes("PRO")!.canny).toMatch(/boards past that come across turned off, seen only by your team in the app\.$/);
 });

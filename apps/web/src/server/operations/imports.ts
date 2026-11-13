@@ -89,7 +89,7 @@ export function boardsNotes(plan: PlanKey): Record<ImportSourceKey, string> | nu
     .map(({ name, limits }, index) => `${name}${index === 0 ? " has" : ""} ${limits.boards === null ? "any number" : `up to ${limits.boards}`}`)
     .join(", and ");
   const note = (name: string) =>
-    `Projects on the ${planDisplay(plan).name} plan have up to ${limit} feedback boards: ${name}'s boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on.${more && ` ${more}.`}`;
+    `Projects on the ${planDisplay(plan).name} plan have up to ${limit} feedback boards: ${name}'s boards past that come across turned off, seen only by your team in the app${more ? ` until an upgrade lets you turn them on. ${more}.` : "."}`;
   return Object.fromEntries(Object.entries(IMPORT_SOURCES).map(([key, { name }]) => [key, note(name)])) as Record<ImportSourceKey, string>;
 }
 
