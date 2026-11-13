@@ -250,7 +250,8 @@ test("the portal's roadmap: the columns' headings stay under the header as the c
     await visitor.keyboard.press("Shift+Tab");
     const focused = visitor.locator(":focus");
     await expect(focused).toHaveAccessibleName(/^Sign in to vote/);
-    expect((await focused.boundingBox())!.y).toBeGreaterThanOrEqual((await stuckBottom()) - 1);
+    // Its focus ring (3px) clear of them too.
+    expect((await focused.boundingBox())!.y).toBeGreaterThanOrEqual((await stuckBottom()) + 3);
   };
   await focusUpAColumn();
   await visitor.setViewportSize({ width: 800, height: 800 });
