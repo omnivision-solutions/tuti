@@ -265,8 +265,12 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   // there for screen readers only).
   const lines = messages.locator(".team .inbox-message-by");
   await expect(lines).toHaveCount(2);
-  await expect(lines.first()).toHaveCSS("position", "absolute");
-  await expect(lines.last()).toHaveCSS("position", "static");
+  await expect(lines.first()).toHaveCSS("height", "0px");
+  await expect(lines.last()).not.toHaveCSS("height", "0px");
+  // The shown avatar's foot is level with its bubble's.
+  const avatar = (await messages.locator(".team .inbox-chat-avatar").last().boundingBox())!;
+  const bubble = (await bubbles.nth(2).boundingBox())!;
+  expect(Math.abs(avatar.y + avatar.height - (bubble.y + bubble.height))).toBeLessThanOrEqual(2);
   await expect(messages.getByRole("listitem").nth(1)).toContainText("Olive Owner · ");
   await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "hidden");
   await expect(messages.locator(".team .inbox-chat-avatar").last()).toHaveCSS("visibility", "visible");
@@ -375,12 +379,16 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await owner.goto(`/app/${slug}/inbox/3`);
   await expect(messages.locator(".team .inbox-message-by")).toHaveCount(2);
   for (const line of await messages.locator(".team .inbox-message-by").all()) {
-    await expect(line).toHaveCSS("position", "static");
+    // Back with its spacing: a line's height and the gap under it.
+    await expect(line).toHaveCSS("padding-top", "3px");
+    await expect(line).toHaveCSS("margin-bottom", "8px");
   }
   await owner.goto(`/app/${slug}/inbox/2`);
   await expect(messages.locator(".inbox-day")).toHaveCount(2);
   for (const line of await messages.locator(".team .inbox-message-by").all()) {
-    await expect(line).toHaveCSS("position", "static");
+    // Back with its spacing: a line's height and the gap under it.
+    await expect(line).toHaveCSS("padding-top", "3px");
+    await expect(line).toHaveCSS("margin-bottom", "8px");
   }
   await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "visible");
 });

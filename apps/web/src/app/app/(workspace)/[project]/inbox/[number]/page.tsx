@@ -295,7 +295,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   const name = byName(message);
                   const status = emailed(message);
                   // A run from one sender, as in a messaging app: the next message from them within minutes, by the same name with the
-                  // same email status, carries the avatar and that line for both (this one's line kept for screen readers). A run ends where the
+                  // same email status, carries the avatar and that line for both (this one's line folded to no height, still read by screen readers). A run ends where the
                   // next message starts a new day in the viewer's time zone: its divider, shown in the browser, brings them back.
                   const next = conversation.messages[index + 1];
                   const runs =
@@ -312,7 +312,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                     <li key={message.id} data-message={message.id}>
                       <MessageDay at={message.createdAt.toISOString()} previous={conversation.messages[index - 1]?.createdAt.toISOString()} />
                       <div className={cn("inbox-message flex items-end gap-2", fromTeam && "team flex-row-reverse justify-start", message.note && "note mx-5 flex-row justify-center @max-[57rem]/app:mx-3.75 @min-[77rem]/app:group-data-[details=hidden]/thread:mx-17.5")}>
-                        <Avatar className={cn("inbox-chat-avatar mb-5.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden", runs && "invisible mb-0 in-[li:has(+li_.inbox-day)]:visible in-[li:has(+li_.inbox-day)]:mb-5.75")}>
+                        <Avatar className={cn("inbox-chat-avatar mb-7.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden", runs && "invisible mb-0 in-[li:has(+li_.inbox-day)]:visible in-[li:has(+li_.inbox-day)]:mb-7.75")}>
                           <AvatarFallback>{initial(name)}</AvatarFallback>
                         </Avatar>
                         <div className={cn("inbox-message-body min-w-0 max-w-[min(30rem,72%)] max-md:max-w-[82%]", message.note && "max-w-full max-md:max-w-full")}>
@@ -341,7 +341,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </details>
                             )}
                           </div>
-                          <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "sr-only in-[li:has(+li_.inbox-day)]:not-sr-only")}>
+                          <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "h-0 overflow-hidden pt-0 mb-0 in-[li:has(+li_.inbox-day)]:h-auto in-[li:has(+li_.inbox-day)]:pt-0.75 in-[li:has(+li_.inbox-day)]:mb-2")}>
                             {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
                             {!message.note && `${name} · `}
                             {timeAgo(message.createdAt)} {status && <span>{status}</span>}
