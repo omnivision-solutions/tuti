@@ -353,14 +353,16 @@ describe("avatar", () => {
       actAs(person);
       expect(await setAvatar(uploads[i]!.id)).toEqual({});
     }
-    // Their photo since comes from elsewhere (sign-in), the upload still recorded.
-    await prisma.user.update({ where: { id: other.id }, data: { image: "https://example.com/face.png" } });
+    // Their photo since comes from elsewhere (sign-in), the upload still recorded; a path that happens to hold the
+    // upload's id isn't the upload (only the saved form is).
+    const elsewhere = `https://example.com/media/${uploads[1]!.id}/face.png`;
+    await prisma.user.update({ where: { id: other.id }, data: { image: elsewhere } });
     await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: { in: people.map((person) => person.id) } } });
 
     await release();
     const after = await prisma.user.findMany({ where: { id: { in: people.map((person) => person.id) } }, select: { id: true, image: true, imageId: true } });
     expect(after.find((p) => p.id === member.id)).toMatchObject({ image: null, imageId: null });
-    expect(after.find((p) => p.id === other.id)).toMatchObject({ image: "https://example.com/face.png", imageId: null });
+    expect(after.find((p) => p.id === other.id)).toMatchObject({ image: elsewhere, imageId: null });
     const media = await prisma.media.findMany({ where: { id: { in: uploads.map((u) => u.id) } }, select: { attachedAt: true } });
     expect(media.map((m) => m.attachedAt)).toEqual([null, null]);
   });
