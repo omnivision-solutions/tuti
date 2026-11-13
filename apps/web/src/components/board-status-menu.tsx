@@ -6,14 +6,14 @@ import Link from "next/link";
 import { Fragment } from "react";
 
 import { STATUS_ICONS, STATUS_TEXT } from "@/components/post-status-badge";
-import { Button } from "@/components/ui/button";
+import { pillClass } from "@/components/filter-pills";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 export type StatusChoice = { label: string; count: number; href: string; status?: PostStatus; current: boolean; group: number };
 
 /**
- * A board's status filter: one quiet button at the end of its sort row (what the list shows and how many), a menu of
+ * A board's status filter: a pill with a menu at the end of its sort row (what the list shows and how many), a menu of
  * links with each status's count (the ideas not done yet, each status that has any, every idea). `choices` in order;
  * a line between groups. `counted`: the button and the menu say how many too (not under a search or Mine, whose lists
  * aren't the board's counts).
@@ -24,20 +24,15 @@ export function BoardStatusMenu({ choices, counted }: { choices: StatusChoice[];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            aria-label={counted ? `Status: ${current.label}, ${current.count} ${current.count === 1 ? "idea" : "ideas"}` : `Status: ${current.label}`}
-            className="h-9 shrink-0 gap-1.5 px-2.5 text-[0.9375rem] font-medium text-muted-foreground hover:text-foreground aria-expanded:text-foreground"
-          />
-        }
+        aria-label={counted ? `Status: ${current.label}, ${current.count} ${current.count === 1 ? "idea" : "ideas"}` : `Status: ${current.label}`}
+        className={pillClass(false, "aria-expanded:bg-muted aria-expanded:text-foreground")}
       >
-        <Icon aria-hidden className={cn("size-4", current.status && STATUS_TEXT[current.status])} />
-        <span className="max-sm:sr-only">{current.label}</span>
-        {counted && <span className="text-[0.8125rem] tabular-nums">{current.count}</span>}
-        <ChevronDownIcon aria-hidden className="size-3.5" />
+        <Icon aria-hidden className={cn(current.status && STATUS_TEXT[current.status])} />
+        {current.label}
+        {counted && <span className="tabular-nums">{current.count}</span>}
+        <ChevronDownIcon aria-hidden />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-auto min-w-56 whitespace-nowrap">
+      <DropdownMenuContent align="start" className="w-auto min-w-56 whitespace-nowrap">
         {choices.map((choice, i) => {
           const ChoiceIcon = choice.status ? STATUS_ICONS[choice.status] : ListFilterIcon;
           return (

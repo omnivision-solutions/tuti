@@ -124,7 +124,7 @@ test("a portal comment draft this release can't read is kept, said so, until a n
   await createProject(owner, "Acme", slug);
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "New idea" }).click();
+  await ada.getByRole("button", { name: "New post" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByRole("link", { name: "Dark mode" }).click();

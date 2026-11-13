@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
-import { PORTAL_PARTS } from "@/components/portal-nav";
+import { feedbackHref, PORTAL_PARTS } from "@/components/portal-nav";
 import { PortalLogo, usePortalLook } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -144,7 +144,7 @@ export function PortalMenu({
                 return (
                   <Link
                     key={key}
-                    href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
+                    href={at(key === "feedback" ? feedbackHref(boards) : href)}
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "rounded-lg px-3 py-2.5 font-heading text-lg font-semibold",

@@ -37,11 +37,10 @@ cute at the expense of clarity.
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
   line above its buttons, never a grey band. The primary
   button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
-- **Portal board search:** a larger, filled field (`BoardSearch`), full width as the first step in finding an existing
-  idea: 40px high on phones (`h-10`), 44px from 640px (`sm:h-11`), with 14px portal corners (`rounded-xl`) and the
-  page's fill in light and dark (`bg-background`). Its search icon sits inside on the left. Text is 16px below 768px
-  to avoid iOS focus zoom, 15px from 768px (`text-base md:text-[0.9375rem]`). This named variant deliberately differs from
-  the standard control's height, radius and light-mode fill; it gives the board's search room to lead the list.
+- **Portal board search:** a filled field (`BoardSearch`) with its search icon inside on the left and the page's fill in
+  light and dark (`bg-background`): in a board's (and Feedback's) header row 240px wide and 36px high with 10px corners;
+  on phones in a popover under the round search button, 40px high with 14px corners (`rounded-xl`). Text is 16px below
+  768px to avoid iOS focus zoom, 15px from 768px (`text-base md:text-[0.9375rem]`).
 - **Surfaces:** a ladder: the sidebar (a step darker than the page in light), the page (`background`, a soft
   cream), cards on it (`card`: white in light, a step lighter than the page in dark)
   with a `border` ring and a soft shadow (`Card`, `StatStrip`), never a card without its edge.
@@ -428,29 +427,40 @@ the list picks none to approve at once.
     underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
     the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
     On phones the header is one line (mark and name, Sign in or the account, the
-    menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
-    (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
-  - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
-    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (a
-    secondary grey fill with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
-    Then the Portal board search variant above, first and full width: after a typing pause it replaces the current URL
-    without adding a history entry; Enter submits a new entry. Back and Forward cancel waiting typing and update the
-    box only when the URL's search changes, keeping unsent words through sort- or status-only history changes. Links
-    restore the destination's search; opening a link elsewhere leaves this page's search alone. Then under a line the
-    sort tabs with icons (Trending flame, Top trending, New clock, Mine) and at the row's end the **status menu**, a quiet
-    button saying what the list shows and how many ("Not done yet 8"; a status in its icon and colour): a menu of links
-    with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on
-    the page and inset to the card's text: the status label above the title (none for Open), a 17px title, two lines of
-    excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`: chevron over
-    the count, 52×58, a grey fill; voted, the accent's soft tint with a thin inset ring and the chevron in the accent; a completed idea's a green-tinted box with a check). Under the
-    default list "That's all N ideas still to come in <board>. Share yours"; under a search's results "Not here? Post it".
-    The rail, nothing else competing with the list: **New idea** (the page's one filled button; it opens the board's form
-    in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post",
-    which comes back with the title; without JavaScript the old box is in the page; after a search that found nothing it
-    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one a neutral fill),
-    and the latest shipped idea as one line ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu).
-    Phones: New idea beside the title, no card, the status menu's count without its words, the shipped line and Get
-    updates under the list.
+    menu): the parts are in the menu. Under it, on Docs, the docs tabs' row when there are two or more (Feedback's boards
+    are in its pages: pills, a board's rail and switcher). Feedback opens the boards' overview (one board: that board).
+    A "Powered by tuti" footer under a line.
+  - **Feedback's overview** (`/feedback`, with two or more boards; one board opens it): the shared header, "Feedback"
+    and "Vote for the ideas you want most, or share your own.", the board pills on the left (All boards and each board,
+    with their ideas not done yet), on the right the search (it looks through every board shown, every status), Get
+    updates as a round bell and **New post** (`NewPostMenu`: each board's own button text with its name under it). Then
+    one card per board (its name, description, its top three open ideas by Trending as rows: a vote chip, the title, the
+    status; then "N ideas still to come" and "Open board →"), and "Recently shipped" as rows on the paper (the latest
+    three across boards, with the day). Phones: round search and a round + beside the title, the pills scroll, Get
+    updates under the content.
+  - **A board** (the visitor's job: is my idea here? then vote or post it): the shared header, no card: its name, its line
+    (the team's description, else "Vote for the ideas you want most, or share your own."), then one row: on the left the
+    sort pills with icons (Trending flame, Top trending, New clock, Mine), a separator and the **status menu** as a pill
+    with a menu ("Not done yet 8"; a status in its icon and colour): links with counts, Not done yet (the default), each
+    status with ideas on the board, then Every idea. On the right the Portal board search above (after a typing pause it
+    replaces the current URL without adding a history entry; Enter submits a new entry. Back and Forward cancel waiting
+    typing and update the box only when the URL's search changes, keeping unsent words through sort- or status-only
+    history changes. Links restore the destination's search; opening a link elsewhere leaves this page's search alone),
+    **Get updates** as a round bell (a popover with where the reader stands, the changelog by email, "Read the
+    changelog" and RSS), and the page's one filled button: the board's own Button text (Settings → Boards; "New post"
+    without it). It opens the board's form in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`;
+    signed out its title and "Sign in to post", which comes back with the title; without JavaScript the old box is in the
+    page; after a search that found nothing it reads "Not here? Post it", and the empty list has "Post it as a new idea".
+    Then the rows on the paper between hairlines: the status label above the title (none for Open), a 17px title, two
+    lines of excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`:
+    chevron over the count, 52×58, a grey fill; voted, the accent's soft tint with a thin inset ring and the chevron in the
+    accent; a completed idea's a green-tinted box with a check). Under the default list "That's all N ideas still to come
+    in <board>. Share yours"; under a search's results "Not here? Post it". The rail, a plain column (no card) with
+    sentence-case labels: Boards (the open one a neutral fill, counts) and Recently shipped, the latest as one line
+    ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu). Phones: one title row with a round search (its
+    field in a popover) and a round + named by the board's button text; then one row of pills that scrolls sideways,
+    starting with the board switcher (a menu pill named after the board: All boards and each board); the shipped line
+    and Get updates under the list.
   - **A post**: the shared page header (back link to the board, the 36px title, 28px on phones), the byline, then the
     status pill and "Expected <month>" with a calendar, the body at 17px. The rail is a plain column, no card:
     **Upvote** with the count after a rule (`shape="upvote"`; the page's one filled primary before voting; voted,

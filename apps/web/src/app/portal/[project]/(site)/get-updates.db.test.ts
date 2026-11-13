@@ -22,8 +22,11 @@ vi.mock("@/components/ui/popover", () => ({
   PopoverContent: ({ children }: { children: ReactNode }) => createElement("div", null, createElement("i", { "data-get-updates": "" }), children, createElement("i", { "data-get-updates-end": "" })),
 }));
 
-/** Get updates' popover in the board's page as HTML (the first of its two copies: in the card, and under the list for phones). */
-const popoverHtml = (html: string) => html.slice(html.indexOf("data-get-updates="), html.indexOf("data-get-updates-end"));
+/** Get updates' popover in the board's page as HTML (the first of its two copies: in the header's row, and under the list for phones; not the phones' search). */
+const popoverHtml = (html: string) => {
+  const start = html.indexOf('id="get-updates"');
+  return html.slice(start, html.indexOf("data-get-updates-end", start));
+};
 
 /** A board's Get updates says only what holds for the reader: what the shipped email does for them (audienceReach), or how to vote. */
 test("a board's Get updates: the email promised only to whom it reaches, confirm when that's missing, unsubscribed said, sign in for who can't vote", async () => {

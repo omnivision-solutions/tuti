@@ -52,11 +52,15 @@ export function NewIdea({
   );
 }
 
-/** "New idea", the board's primary: opens the page's NewIdea (`label`: other words for it, as "Not here? Post it" after a search that found nothing). */
-export function NewIdeaButton({ className, size, label = "New idea" }: { className?: string; size?: "lg"; label?: string }) {
+/** The board's primary (`label`: its own button text, Boards → Button, or "New post"): opens the page's NewIdea. `round`: a round + named by it (phones). */
+export function NewIdeaButton({ label, round = false, className }: { label: string; round?: boolean; className?: string }) {
   const open = useContext(OpenContext);
-  return (
-    <Button onClick={() => open?.()} size={size} className={cn("font-semibold", className)}>
+  return round ? (
+    <Button onClick={() => open?.()} size="icon-lg" aria-label={label} className={cn("rounded-full", className)}>
+      <PlusIcon />
+    </Button>
+  ) : (
+    <Button onClick={() => open?.()} className={cn("font-semibold", className)}>
       <PlusIcon />
       {label}
     </Button>

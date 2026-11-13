@@ -23,8 +23,8 @@ export const PORTAL_PARTS = [
 /** `path` is `href` or a page under it. */
 const within = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 
-/** A board's own page (not one of its posts): on wide screens it has a sidebar, with the boards. */
-const onBoard = (path: string) => /^\/feedback\/[^/]+$/.test(path);
+/** Feedback's overview or a board's own page (not one of its posts): wide, for the boards' cards or a board's sidebar. */
+const onBoard = (path: string) => /^\/feedback(\/[^/]+)?$/.test(path);
 
 /** A post's page: on wide screens its properties beside it. */
 const onPost = (path: string) => /^\/feedback\/[^/]+\/[^/]+$/.test(path);
@@ -34,8 +34,11 @@ const onChangelogList = (path: string) => /^\/changelog(\/page\/\d+)?$/.test(pat
 
 type Board = { slug: string; name: string };
 
+/** Where the header's Feedback goes: the boards' overview, or with one board, that board. */
+export const feedbackHref = (boards: Board[]) => (boards.length === 1 ? boardPath(boards[0]!) : "/feedback");
+
 /**
- * The parts in the header: Feedback opens the first board (and is left out without one).
+ * The parts in the header: Feedback opens the boards' overview (one board: that board; left out without one).
  * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
  * On phones they get a line of their own, as tabs scrolling sideways, faded at the end with more.
  */
@@ -63,7 +66,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
         return (
           <Link
             key={key}
-            href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
+            href={at(key === "feedback" ? feedbackHref(boards) : href)}
             aria-current={active ? "page" : undefined}
             data-active={active || undefined}
             className={cn(
@@ -207,23 +210,14 @@ export function PartRow({
 }
 
 /**
- * The current part's row: the boards under Feedback, `docsTabs` (drawn on the server by the docs
- * pages' slot) under Docs. The slot keeps what it last showed after a move to another part, so it
- * only shows here on Docs.
+ * The current part's row: `docsTabs` (drawn on the server by the docs pages' slot) under Docs. The slot keeps what it
+ * last showed after a move to another part, so it only shows here on Docs. Feedback's boards are in its pages (pills,
+ * the board's rail and switcher).
  */
-export function PartRows({ boards, docsTabs }: { boards: Board[]; docsTabs: React.ReactNode }) {
+export function PartRows({ docsTabs }: { docsTabs: React.ReactNode }) {
   const path = usePortalPath();
-  const at = usePortalHref();
   if (usePortalNotFound()) {
     return null;
   }
-  if (within(path, "/docs")) {
-    return docsTabs;
-  }
-  if (within(path, "/feedback")) {
-    const links = boards.map((board) => ({ href: at(boardPath(board)), name: board.name, active: within(path, boardPath(board)) }));
-    // On a board's page on wide screens, the boards are in its sidebar instead; a post's page has its way back above its title.
-    return onPost(path) ? null : <PartRow label="Boards" links={links} className={cn(onBoard(path) && "lg:hidden")} />;
-  }
-  return null;
+  return within(path, "/docs") ? docsTabs : null;
 }

@@ -256,23 +256,26 @@ export async function howShipped(postId: string) {
 /**
  * A portal board's posts (without its `slug`, every board's: the widget's) that `viewer` may see, in `statuses` (every
  * status without them) with `q`'s words in the title or description, with whether they voted for each;
- * `mine`: only those they posted or voted for.
+ * `mine`: only those they posted or voted for; `boardIds`: only those on these boards (Feedback's overview: the boards it shows);
+ * `take`: only the first that many, no pages (`more` false; the overview's top ideas).
  */
 export function boardPosts(
   board: { projectId: string; slug?: string },
   filters: PostFilters,
   viewer: PostViewer,
-  { statuses, q, mine = false }: { statuses?: PostStatus[]; q?: string; mine?: boolean } = {},
+  { statuses, q, mine = false, boardIds, take }: { statuses?: PostStatus[]; q?: string; mine?: boolean; boardIds?: string[]; take?: number } = {},
 ) {
   const userId = viewer.userId ?? undefined;
-  return upToPage(filters, async (page) => {
+  const find = async (page: { skip: number; take: number }) => {
     const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} AND ${visiblePostsSql(viewer)}
       ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}
+      ${boardIds ? Prisma.sql`AND p."boardId" = ANY(${boardIds})` : Prisma.empty}
       ${mine ? Prisma.sql`AND (p."authorId" = ${userId ?? ""} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId ?? ""}))` : Prisma.empty}`;
     const ids = await pageIds(board.projectId, filters.sort, where, page);
     const posts = await prisma.post.findMany({
       // Checked again: one made private or the team's since the ids were read isn't shown.
-      where: { id: { in: ids }, ...visiblePosts(viewer) },
+      // And still on the boards asked for: one moved off them since isn't either.
+      where: { id: { in: ids }, ...visiblePosts(viewer), ...(boardIds && { boardId: { in: boardIds } }) },
       select: {
         id: true,
         number: true,
@@ -290,10 +293,11 @@ export function boardPosts(
       },
     });
     return inOrder(ids, posts);
-  });
+  };
+  return take ? find({ skip: 0, take }).then((posts) => ({ posts, more: false })) : upToPage(filters, find);
 }
 
-/** A project's boards `viewer` sees, for a portal board's sidebar, oldest first (as the header's row), each with how many ideas on it they see aren't done yet. */
+/** A project's boards `viewer` sees, for a portal board's sidebar and Feedback's overview, oldest first, each with how many ideas on it they see aren't done yet. */
 export function boardsWithCounts(projectId: string, viewer: PostViewer) {
   return prisma.board.findMany({
     where: { projectId, ...shownBoards(viewer) },
@@ -302,6 +306,8 @@ export function boardsWithCounts(projectId: string, viewer: PostViewer) {
       id: true,
       slug: true,
       name: true,
+      description: true,
+      postButton: true,
       _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES }, ...visiblePosts(viewer) } } } },
     },
   });
@@ -317,16 +323,20 @@ export async function boardStatusCounts(boardId: string, viewer: PostViewer): Pr
   return Object.fromEntries(rows.map((row) => [row.status, row._count._all]));
 }
 
-/** A board's completed posts `viewer` sees, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
-export function recentlyShipped(boardId: string, viewer: PostViewer) {
+/**
+ * The completed posts `viewer` sees on a board (or on any of several: Feedback's overview), the latest completed first (as
+ * the roadmap's Completed: older ones by their last change), for "Recently shipped": up to `limit`.
+ */
+export function recentlyShipped(boards: string | string[], viewer: PostViewer, limit = 5) {
+  const boardIds = [boards].flat();
   // When each shipped: its activity's latest Completed, or for one completed before status changes were kept, its last change.
-  return prisma.$queryRaw<{ id: string; number: number; title: string; voteCount: number; shippedAt: Date }[]>`
-    SELECT p.id, p.number, p.title, p."voteCount",
+  return prisma.$queryRaw<{ id: string; boardId: string; number: number; title: string; voteCount: number; shippedAt: Date }[]>`
+    SELECT p.id, p."boardId", p.number, p.title, p."voteCount",
       COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt") AS "shippedAt"
     FROM post p
-    WHERE p."boardId" = ${boardId} AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED' AND ${visiblePostsSql(viewer)}
+    WHERE p."boardId" = ANY(${boardIds}) AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED' AND ${visiblePostsSql(viewer)}
     ORDER BY "shippedAt" DESC, p.id DESC
-    LIMIT 5`;
+    LIMIT ${limit}`;
 }
 
 type Like = {

@@ -261,7 +261,7 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await laptop.goto("/sign-in?next=%2Ffeedback%2Ffeature-requests");
   await signInWithPassword(laptop, email, PASSWORD);
   await expect(laptop).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
-  await expect(laptop.getByRole("button", { name: "New idea" })).toBeVisible();
+  await expect(laptop.getByRole("button", { name: "New post" })).toBeVisible();
   await expect(laptop.getByRole("button", { name: "Account" })).toBeVisible();
 });
 
@@ -275,7 +275,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   const title = "Can I pay with crypto?";
   const vera = await newPerson(browser, portalUrl(slug));
   await vera.goto("/feedback/feature-requests");
-  await vera.getByRole("button", { name: "New idea" }).click();
+  await vera.getByRole("button", { name: "New post" }).click();
   const box = vera.getByRole("dialog", { name: "Share an idea" }).locator("form");
   await box.getByLabel("Title").fill(title);
   await box.getByRole("button", { name: "Sign in to post" }).click();

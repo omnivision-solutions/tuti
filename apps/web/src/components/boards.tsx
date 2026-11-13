@@ -240,7 +240,7 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
                   maxLength={BOARD_TEXT_LIMITS.postButton}
                   placeholder={BOARD_TEXT_DEFAULTS.postButton}
                 />
-                <FieldDescription>{"The form's submit button, e.g. Request a feature or Report a bug."}</FieldDescription>
+                <FieldDescription>{"The button that opens the board's form on your portal, and the form's submit button, e.g. Request a feature or Report a bug. Without one, the portal's button says New post and the form's Submit post."}</FieldDescription>
               </Field>
               <Field>
                 <FieldLabel htmlFor={id("titlePlaceholder")}>Title placeholder</FieldLabel>
