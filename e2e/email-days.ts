@@ -18,3 +18,18 @@ export async function setTodaysEmails(slug: string, { sent = 0, bounced = 0, cla
     await client.end();
   }
 }
+
+/** Sets a project's count of emails to its users this month (UTC), as its plan's monthly limit counts them. */
+export async function setThisMonthsEmails(slug: string, emails: number): Promise<void> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO project_email_month ("projectId", month, emails) SELECT id, date_trunc('month', now() AT TIME ZONE 'UTC')::date, $2 FROM project WHERE slug = $1
+       ON CONFLICT ("projectId", month) DO UPDATE SET emails = $2`,
+      [slug, emails],
+    );
+  } finally {
+    await client.end();
+  }
+}

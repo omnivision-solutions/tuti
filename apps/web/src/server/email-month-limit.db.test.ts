@@ -225,8 +225,8 @@ test("a send that fails gives its slot back: the month counts what was sent", as
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 5 });
 });
 
-test("a full project's email due now (its job never ran) is moved to next month by the safety nets, never left behind; a paused one's isn't", async () => {
-  const { project, team } = await setup();
+test("a full project's email due now (its job never ran) is moved to next month by the safety nets, never left behind, and its team told; a paused one's isn't", async () => {
+  const { owner, project, team } = await setup();
   await votedPost(project);
   await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: month(), emails: 1 } });
   const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
@@ -249,6 +249,8 @@ test("a full project's email due now (its job never ran) is moved to next month 
   await handlers.resubmitReplyEmails({}, log);
   await handlers.resubmitShippedEmails({}, log);
   expect(await due()).toEqual([nextMonth(), nextMonth()]);
+  // Its team hears, once, though no claim was refused.
+  expect(limitEmails(owner.email)).toHaveLength(1);
 });
 
 test("resuming a paused project keeps the email the monthly limit holds for next month", async () => {
@@ -261,6 +263,65 @@ test("resuming a paused project keeps the email the monthly limit holds for next
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
   expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
   expect((await due()).shippedEmailsDueAt).toEqual(nextMonth());
+});
+
+test("a new project's shipped emails held by its daily cap are due when the cap resets, so the safety net finds them then", async () => {
+  const { project, team } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+  await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 199 } });
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const { voters, post } = await votedPost(project);
+  await call(updatePost, team, { number: post.number, status: "completed" });
+  const shipped = () => voters.filter((voter) => emailsTo(voter.email).some((email) => email.subject.startsWith("Done:"))).length;
+  expect(shipped()).toBe(1);
+  // Due at tomorrow's start (UTC), not now: held from now, it would leave the day's look-back before the cap resets.
+  const tomorrow = new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth(), 16));
+  const { id: postId, shippedEmailsDueAt } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true, shippedEmailsDueAt: true } });
+  expect(shippedEmailsDueAt).toEqual(tomorrow);
+
+  // Tomorrow, late in the day (past a look-back from when it was held): the safety net sends the rest.
+  vi.setSystemTime(new Date(tomorrow.getTime() + 23 * 60 * 60_000));
+  await handlers.resubmitShippedEmails({}, log);
+  expect(shipped()).toBe(2);
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).toBeNull();
+});
+
+test("a paused project's held posts don't fill the shipped safety net's batch", async () => {
+  const { project, team } = await setup();
+  const { post } = await votedPost(project);
+  await call(updatePost, team, { number: post.number, status: "completed" });
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { shippedEmailsDueAt: month() } });
+  await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
+  // Others' posts aside (the file shares a database), none of this project's is taken.
+  await prisma.post.updateMany({ where: { projectId: { not: project.id } }, data: { shippedEmailsDueAt: null } });
+  expect(await handlers.resubmitShippedEmails({}, log)).toEqual({ found: 0, queued: 0 });
+});
+
+test("held email whose send fails falls back to the safety nets' look-back, not retried every run for months", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 5; }));
+  const { project, team } = await setup();
+  const { voters, post } = await votedPost(project);
+  await call(createComment, team, { number: post.number, body: "It's out.", emailVoters: true });
+  // Held last month for this one; this month, one voter's address refuses it.
+  await prisma.replyEmail.deleteMany({ where: { comment: { projectId: project.id }, userId: voters[1]!.id } });
+  await prisma.comment.updateMany({ where: { projectId: project.id }, data: { votersEmailDueAt: month() } });
+  mailbox.refuseNext(voters[1]!.email);
+  await handlers.resubmitReplyEmails({}, log);
+  const { votersEmailDueAt } = await prisma.comment.findFirstOrThrow({ where: { projectId: project.id } });
+  expect(votersEmailDueAt!.getTime()).toBeGreaterThan(month().getTime());
+  expect(votersEmailDueAt!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+});
+
+test("a shipped email whose send fails gives its slot back: the month counts what was sent", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 5; }));
+  const { project } = await setup();
+  const { voters } = await votedPost(project);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  mailbox.refuseNext(voters[0]!.email);
+  await expect(handlers.postShipped({ postId }, log)).rejects.toThrow(/failed/);
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 5 });
 });
 
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {

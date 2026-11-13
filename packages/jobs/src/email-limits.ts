@@ -96,14 +96,20 @@ export async function monthlyLimitReached(projectId: string, now = new Date()): 
 }
 
 /**
- * When what a run held should be due again: next month where the project's monthly limit held it (the safety nets look
- * back only a day or two, so they find it once the month resets, and also take ones due later whose project has room
- * again, after an upgrade), now otherwise (tomorrow's cap, or a pause).
+ * When what a run held should be due again: when the cap that held it resets, so the safety nets (which look back only
+ * a day or two, and leave capped projects out till then) find it then. Next month's first day where the monthly limit
+ * held it (taken once that month comes, or before where the project has room again, after an upgrade), tomorrow (UTC)
+ * where a new project's daily cap did, and now otherwise (a pause, whose resume lets it go or drops it).
  */
 export async function dueAgain(projectId: string, now = new Date()): Promise<Date> {
-  // Paused meanwhile: due now, so the resume finds it (and drops it, as it does what a pause holds).
   const paused = pausing() && (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
-  return !paused && (await monthlyLimitReached(projectId, now)) ? nextMonth(now) : now;
+  if (paused) {
+    return now;
+  }
+  if (await monthlyLimitReached(projectId, now)) {
+    return nextMonth(now);
+  }
+  return (await cappedProjects(now)).includes(projectId) ? new Date(today(now).getTime() + 24 * 60 * 60_000) : now;
 }
 
 /**
