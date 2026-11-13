@@ -208,6 +208,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await card.click();
   await visitor.waitForURL(/\/docs\/getting-started$/);
   await expect(visitor.getByRole("heading", { level: 1 })).toHaveText("Getting started");
+  // Its icon before its name in the muted text colour, not the accent.
+  await expect(visitor.getByRole("heading", { level: 1 }).locator("svg.lucide-rocket")).toHaveCSS("color", await token(visitor, "--muted-foreground"));
   await visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" }).click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
   const article = visitor.getByRole("article", { name: "Inviting your team" });
@@ -221,6 +223,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
   await expect(tree.getByRole("link", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
   await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
+  // The open collection's articles with no line down them.
+  await expect(tree.locator("details[open] > div").first()).toHaveCSS("border-left-width", "0px");
   const onThisPage = visitor.getByRole("navigation", { name: "On this page" });
   await expect(onThisPage.getByRole("link")).toHaveText(["Who can invite", "Roles"]);
   // How long it takes to read, under the title.
@@ -1324,6 +1328,10 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(cards.first().locator("span:has(> svg.lucide-rocket)")).toHaveCSS("background-color", await token(visitor, "--secondary"));
   await expect(cards.first().locator("svg.lucide-rocket")).toHaveCSS("color", await token(visitor, "--foreground"));
   await expect(main.getByRole("region", { name: "Popular articles" })).toHaveCSS("box-shadow", "none");
+  // The suggested articles under the big box are grey chips, with no edge.
+  const chip = main.getByRole("list", { name: "Suggested articles" }).getByRole("link").first();
+  await expect(chip).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(chip).toHaveCSS("border-top-width", "0px");
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(main.getByRole("search")).toHaveCount(1);
@@ -1372,6 +1380,10 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Results for “listing”");
   await expect(visitor).toHaveTitle(/^Results for “listing” · Docs/);
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Listing posts"]);
+  // Results are rows on the paper: titles in the text colour, a hairline under each.
+  const result = main.getByRole("list", { name: "Search results" }).getByRole("listitem").first();
+  await expect(result.getByRole("link")).toHaveCSS("color", await token(visitor, "--foreground"));
+  await expect(result).toHaveCSS("border-bottom-width", "1px");
   const docsTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API" })).not.toHaveAttribute("aria-current");
@@ -1798,7 +1810,9 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // Another question it can't answer.
   const another = "Is there a dark mode?";
   await visitor.goto(`/docs?${new URLSearchParams({ q: another })}`);
-  // Ask AI is the search page's one filled primary.
+  // The answer is a card (the soft shadow, no edge); Ask AI the search page's one filled primary.
+  await expect(ai).not.toHaveCSS("box-shadow", "none");
+  await expect(ai).toHaveCSS("border-top-width", "0px");
   await expect(ai.getByRole("button", { name: "Ask AI" })).toHaveCSS("background-color", await token(visitor, "--primary"));
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
@@ -2295,6 +2309,15 @@ test("an article ends with the previous and next in reading order, related ones,
   const main = visitor.getByRole("main");
   // Previous and next in reading order: into Billing at Getting started's end.
   const steps = main.getByRole("navigation", { name: "Previous and next" });
+  // Cards that only lift on hover: their ring (the card's edge) doesn't turn to the accent.
+  const ringOf = (shadow: string) => /[a-z]+\([^)]*\) 0px 0px 0px 1px/.exec(shadow)?.[0] ?? "";
+  const nextCard = steps.getByRole("link", { name: /Next/ });
+  const restingRing = ringOf(await nextCard.evaluate((element) => getComputedStyle(element).boxShadow));
+  await nextCard.hover();
+  await expect.poll(() => nextCard.evaluate((element) => getComputedStyle(element).boxShadow)).toMatch(/0px 0px 0px 1px/);
+  await visitor.waitForTimeout(400); // the shadow's transition
+  expect(ringOf(await nextCard.evaluate((element) => getComputedStyle(element).boxShadow))).toBe(restingRing);
+  await visitor.mouse.move(0, 0);
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Welcome/, /Next\s*Plans/]);
   // Related: the one alike in meaning, from another collection.
   await expect(main.getByRole("region", { name: "Related articles" }).getByRole("link")).toHaveText(["Paying invoices"]);
