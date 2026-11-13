@@ -743,8 +743,11 @@
   overflow-x: auto;
   padding: 1.25rem 1.5rem;
 }
-/* Its focus ring inside it: the block clips anything outside. */
+/* Its focus ring on its block, inside the edge: the card clips anything outside, and the code's fade would fade it. */
 :root:has([data-portal-top]) .article-text :where(pre > code:focus-visible) {
+  outline: none;
+}
+:root:has([data-portal-top]) .article-text :where(pre:has(> code:focus-visible)) {
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
