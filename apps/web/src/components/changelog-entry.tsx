@@ -1,10 +1,11 @@
 import type { ChangelogTag } from "@tuti/db";
 import { RichText } from "@tuti/content/react";
-import type { Doc, MediaUrls } from "@tuti/content";
+import { excerpt as excerptOf, type Doc, type MediaUrls } from "@tuti/content";
 import { ArrowRightIcon, LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ChangelogExcerpt } from "@/components/changelog-excerpt";
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { TagBadge } from "@/components/changelog-tag";
 import { PortalPageHeader } from "@/components/portal-page-header";
@@ -18,6 +19,9 @@ import { cn } from "@/lib/utils";
 /** "7 Nov 2026": the timeline's margin (every month three letters, as "Sep", not "Sept"). */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+
+/** The list's excerpts: the newest entry's medium one, the others' short; at most these characters and lines (its clamp). */
+const EXCERPT = { medium: { chars: 600, lines: 8 }, short: { chars: 300, lines: 3 } };
 
 export type PublishedEntry = {
   id: string;
@@ -46,6 +50,7 @@ export function ChangelogEntryView({
   base = "",
   dateMargin = false,
   back,
+  excerpt,
 }: {
   entry: PublishedEntry;
   mediaUrls: MediaUrls | null;
@@ -60,17 +65,23 @@ export function ChangelogEntryView({
   dateMargin?: boolean;
   /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
   back?: ReactNode;
+  /** The changelog's list: its text as an excerpt linking to its page, "medium" (with its cover; the newest) or "short". */
+  excerpt?: "medium" | "short";
 }) {
   const Title = heading;
   // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and bigger (still grey)
   // tags; the widget's panel (an h1 too) keeps the base.
   const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
+  // In the list the title's link stretches over the entry (its text, its cover), so they open its page too, while one link
+  // per entry is all keyboards and screen readers meet; what's clickable or hoverable on its own (the tags, the ideas, the
+  // reactions) sits above it. Its own z keeps it over the faded excerpt, whose mask paints it in a layer of its own.
+  const above = excerpt ? "relative z-10 max-w-full self-start" : undefined;
   // In the list, short ("7 Nov 2026"), as in its margin.
   const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
   // Its tags (grey; Breaking red) and, on phones or its own page, its date: above the title, or under it on its page.
   const meta = (
-    <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+    <span className={cn("flex flex-wrap items-center gap-2 text-sm text-muted-foreground", above)}>
       {entry.tags.map((tag) => (
         <TagBadge key={tag} tag={tag} className={cn(onPage && "h-6 rounded-md px-2 text-[0.8125rem] font-semibold")} />
       ))}
@@ -87,7 +98,7 @@ export function ChangelogEntryView({
           <span aria-hidden className="absolute top-[2.875rem] left-0 size-[0.5625rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-background shadow-[0_0_0_1.5px_var(--color-muted-foreground),0_0_0_5px_var(--color-background)]" />
         </p>
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className={cn("flex min-w-0 flex-1 flex-col gap-3", excerpt && "relative")}>
         {back ? (
           <PortalPageHeader back={back} title={entry.title} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
         ) : (
@@ -101,7 +112,11 @@ export function ChangelogEntryView({
               )}
             >
               {heading === "h2" ? (
-                <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
+                <Link
+                  href={at(`/changelog/${entry.number}`)}
+                  target={linkTarget}
+                  className={cn("hover:underline", excerpt && "after:absolute after:inset-0 after:z-[1]")}
+                >
                   {entry.title}
                 </Link>
               ) : (
@@ -110,18 +125,22 @@ export function ChangelogEntryView({
             </Title>
           </>
         )}
-        {entry.cover && (
+        {entry.cover && excerpt !== "short" && (
           <RichText
             doc={entry.cover}
             mediaUrls={mediaUrls}
             className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-card-edge")}
           />
         )}
-        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+        {excerpt ? (
+          <Excerpt doc={entry.doc} size={excerpt} />
+        ) : (
+          <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+        )}
         {onPage && entry.posts.length > 0 ? (
           // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read
           // out after the pill's words); more than one: each pill shows its idea's title.
-          <ul className="flex flex-wrap gap-2">
+          <ul className={cn("flex flex-wrap gap-2", above)}>
             {entry.posts.map((post) => (
               <li key={post.number} className="min-w-0 max-w-full">
                 <Link
@@ -140,7 +159,7 @@ export function ChangelogEntryView({
             ))}
           </ul>
         ) : entry.posts.length > 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className={cn("text-sm text-muted-foreground", above)}>
             Completes{" "}
             {entry.posts.map((post, i) => (
               <span key={post.number}>
@@ -153,16 +172,24 @@ export function ChangelogEntryView({
           </p>
         )}
         {react && (
-          <ChangelogReactions
-            projectSlug={react.projectSlug}
-            number={entry.number}
-            counts={entry.reactions}
-            reacted={entry.reacted}
-            signedIn={react.signedIn}
-            quiet={dateMargin}
-          />
+          <div className={above}>
+            <ChangelogReactions
+              projectSlug={react.projectSlug}
+              number={entry.number}
+              counts={entry.reactions}
+              reacted={entry.reacted}
+              signedIn={react.signedIn}
+              quiet={dateMargin}
+            />
+          </div>
         )}
       </div>
     </article>
   );
+}
+
+/** An entry's text in the list: plain (no images, embeds or code), cut at its clamp's characters and lines. */
+function Excerpt({ doc, size }: { doc: Doc; size: "medium" | "short" }) {
+  const { text, cut } = excerptOf(doc, EXCERPT[size].chars, EXCERPT[size].lines);
+  return text ? <ChangelogExcerpt text={text} size={size} cut={cut} /> : null;
 }
