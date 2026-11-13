@@ -162,6 +162,12 @@ test("Get set up's cards wrap a long project name inside the card, on a phone an
   await fits();
   // On a phone the window scrolls the page, and bounces as usual.
   expect(await windowBounce()).toBe("auto");
+  // A touch tablet as wide keeps it too: its pull to refresh.
+  const tablet = await browser.newContext({ storageState: await owner.context().storageState(), viewport: { width: 1280, height: 800 }, hasTouch: true, isMobile: true });
+  const page = await tablet.newPage();
+  await page.goto(owner.url());
+  expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY)).toBe("auto");
 });
 
 test("a new project: Home leads with sample content and each setup step's action, no numbers; empty Feedback and Changelog each say what to do", async ({ browser }, testInfo) => {
