@@ -1,5 +1,5 @@
 import { Body, Column, Container, Head, Html, Img, Preview, Row, Section, Text } from "@react-email/components";
-import { luminance, textColorOn } from "@tuti/shared/colors";
+import { readableOn, SURFACES, textColorOn } from "@tuti/shared/colors";
 import type { ReactNode } from "react";
 
 // Brand colours: the light theme tokens in packages/ui/src/globals.css, as hex.
@@ -23,17 +23,17 @@ export const colors = {
 
 /**
  * A project's accent (`Project.brandColor`, `#rrggbb`; null for Tuti's green) in the emails sent on its behalf: the
- * colour, or the text colour where it's too faint on the white card (under 3:1, brandCss's threshold; the portal uses a darker shade there), with black
- * or white text on it; and for text in it (`link`: links at body size), the colour only where it reads as text (4.5:1).
+ * colour, or where it's too faint (under 3:1) the shade of it the portal's light mode uses (readableOn; the text colour
+ * for a grey), with black or white text on it; and for text in it (`link`: links at body size) the colour where it reads
+ * as text (4.5:1), else that shade. Judged against the portal's light page, as brandCss does, so a project's emails and
+ * portal match: the white card is lighter still, so what reads there reads on it.
  */
 export function accentColors(accent?: string | null): { accent: string; onAccent: string; link: string } {
   if (!accent || !/^#[0-9a-f]{6}$/i.test(accent)) {
     return { accent: colors.green, onAccent: colors.onGreen, link: colors.green };
   }
-  // Contrast with white is 1.05 / (L + 0.05).
-  const contrast = 1.05 / (luminance(accent) + 0.05);
-  const shown = contrast >= 3 ? accent : colors.text;
-  return { accent: shown, onAccent: textColorOn(shown), link: contrast >= 4.5 ? accent : colors.text };
+  const shown = readableOn(accent, SURFACES.light) ?? colors.text;
+  return { accent: shown, onAccent: textColorOn(shown), link: readableOn(accent, SURFACES.light, 4.5) ?? colors.text };
 }
 
 /** The main button's style, in the project's accent (accentColors). */

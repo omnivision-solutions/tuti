@@ -15,15 +15,9 @@ import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
 /** No paid plan: the billing file's default. The subscription stays recorded as the one that last held the plan. */
-const NO_PLAN = { plan: null, planEnum: "FREE", planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
+const NO_PLAN = { plan: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
 
 const at = (seconds: number) => new Date(seconds * 1000);
-
-/**
- * The plan as the release before plan keys stores it, written beside the key while a deploy runs both (its worker reads
- * it): Pro and Business theirs, any other plan Free. To drop with the enum column.
- */
-const enumOf = (plan: string) => (plan === "pro" ? "PRO" : plan === "business" ? "BUSINESS" : "FREE");
 
 /**
  * Brings the project's plan (and its "Powered by tuti" add-on) in step with subscription `id` as Stripe has it now, not as an event said it
@@ -70,7 +64,6 @@ export async function syncSubscription(id: string): Promise<string | null> {
         },
         data: {
           plan: paid.plan,
-          planEnum: enumOf(paid.plan),
           stripeSubscriptionId: id,
           stripeCustomerId: subscription.customer,
           planInterval: paid.interval,
