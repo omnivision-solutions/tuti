@@ -3,16 +3,6 @@ import { type Prisma, prisma } from "@tuti/db";
 
 type ContentResult = { doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string };
 
-/** Rich content from a form's `content` (the editor's JSON) or `body` (plain text) fields; see `readContent`. */
-export function contentFromForm(
-  formData: FormData,
-  profile: Profile,
-  options: { projectId: string; maxLength: number },
-): Promise<ContentResult> {
-  const body = formData.get("body");
-  return readContent(profile, { content: formData.get("content"), body: typeof body === "string" ? body : undefined }, options);
-}
-
 /**
  * Rich content to store: `content` (a document, or its JSON as forms send it,
  * checked against the profile) or, without it, plain `body` text (forms without

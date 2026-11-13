@@ -2,26 +2,20 @@ import { appUrl } from "./hosts";
 import { appPortalSlug } from "./project-slugs";
 
 /**
- * Tuti's own portal under a path of the app's domain (tuti.so/help/…), when APP_PORTAL_PROJECT names
- * its project ("help"): the project's slug is the path. Served like a portal under a path of a
- * team's site (see lib/portal-base.ts), with the app's own domain as the site, so sign-in there is
- * the app's (one account, one session). Its slug may be a reserved one ("help"; see isUsableSlug), which
- * only APP_PORTAL_OWNER may create the project with.
- */
-export function appPortalProject(): string | null {
-  return appPortalSlug();
-}
-
-/**
  * The first path segments the app already serves: Tuti's own portal can't be under one
  * (APP_PORTAL_PROJECT=api would take /api/docs, the API reference, and the API), so such a slug is
  * ignored. Paths of other sites on the domain (tuti.so's marketing pages) are the proxy's to keep apart.
  */
 const APP_PATHS = new Set(["app", "api", "portal", "_tuti", "_next"]);
 
-/** Where Tuti's own portal is on the app's domain, as a site mount, or null. */
+/**
+ * Where Tuti's own portal is on the app's domain (tuti.so/help/…), as a site mount, or null: when APP_PORTAL_PROJECT
+ * names its project ("help"), the project's slug is the path. Served like a portal under a path of a team's site (see
+ * lib/portal-base.ts), with the app's own domain as the site, so sign-in there is the app's (one account, one session).
+ * Its slug may be a reserved one ("help"; see isUsableSlug), which only APP_PORTAL_OWNER may create the project with.
+ */
 export function appPortalMount(): { slug: string; origin: string; path: string } | null {
-  const slug = appPortalProject();
+  const slug = appPortalSlug();
   if (!slug || APP_PATHS.has(slug)) {
     return null;
   }

@@ -82,7 +82,7 @@ const STATUS: Record<DnsStatus, { label: string; className: string }> = {
 };
 
 /** A record's status, a small pill: green once found, beak-orange while waited for, red if it failed. */
-export function DnsStatusPill({ status }: { status: DnsStatus }) {
+function DnsStatusPill({ status }: { status: DnsStatus }) {
   return <span className={cn("inline-flex rounded-md px-1.5 py-0.5 text-xs font-medium", STATUS[status].className)}>{STATUS[status].label}</span>;
 }
 
