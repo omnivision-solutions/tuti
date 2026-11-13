@@ -425,14 +425,14 @@ the list picks none to approve at once.
     beside the title (`phoneActions`: round icon buttons, a round + primary). No rule under it.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
-    underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in
+    underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
     the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
     On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
     (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
   - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
-    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (an
-    outline with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
+    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (a
+    secondary grey fill with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
     Then the Portal board search variant above, first and full width: after a typing pause it replaces the current URL
     without adding a history entry; Enter submits a new entry. Back and Forward cancel waiting typing and update the
     box only when the URL's search changes, keeping unsent words through sort- or status-only history changes. Links
@@ -453,7 +453,7 @@ the list picks none to approve at once.
     updates under the list.
   - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
     calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
-    voted, "Upvoted" in soft green), Subscribe an outline with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as
+    voted, "Upvoted" in the accent's soft tint with a thin inset ring in it), Subscribe a secondary grey fill with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as
     rows, Copy link and Share (the device's share sheet, where it has one), "Have another idea? Post it". On phones the
     same actions in a row under the body (Copy link and Share as icon buttons), the voters under them. Signed out, one
     "Join the conversation" bar (Sign in) above the thread instead of a comment box. In the thread, the team's replies
@@ -471,7 +471,7 @@ the list picks none to approve at once.
     "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" on a
     shipped one). On phones one column at a time, picked from a segmented control over them (`?column=`).
   - **The changelog**: a 48px title and "What's new, improved and fixed in <project>.", then one row: the tags as text
-    tabs (links, `?tag=`, only the tags its entries have) and RSS (outline) and **Subscribe** (filled; a popover with
+    tabs (links, `?tag=`, only the tags its entries have) and RSS (secondary, grey fill) and **Subscribe** (filled; a popover with
     the email form) at its end (above the tabs on phones). On wide screens a timeline: each entry's short date and a dot
     on a line in a 110px margin; beside it the tag (New soft green, Improved blue, Fixed the orange highlight, Breaking
     destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" (with more than one idea, each pill shows its title; with one, the title is read out after the pill's words)
@@ -517,7 +517,7 @@ the list picks none to approve at once.
     the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
     a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes
     as callouts (an info-blue rule and icon on the card's surface). At its end: "Was this helpful?" (Yes and No with
-    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). With two or more
+    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, secondary grey fills). With two or more
     sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
     the same desktop container (79rem, the header 82rem) so navigation keeps the logo, tree and article's left edge in place.
     The text keeps 65–70 characters a line between the two (a 46rem column; 64ch
