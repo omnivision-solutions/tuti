@@ -2,6 +2,7 @@
 
 import { type Doc, isEmptyDoc, readableBy } from "@tuti/content";
 import { useActionState, useId, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { votersNote } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
@@ -91,6 +92,10 @@ export function CommentForm({
     if (!result.error) {
       if (portal) {
         drafts.save(draftKey, null);
+        // The box is above the thread: a new comment may land out of view, so say it's posted (a reply's is under its box).
+        if (!replyTo) {
+          toast.success("Comment posted");
+        }
       }
       setSubmitted((n) => n + 1);
       // The next one is a reply again, emailing nobody, unless switched on again.

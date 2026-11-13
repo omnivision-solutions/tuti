@@ -173,6 +173,8 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await visitor.getByRole("button", { name: "Comment", exact: true }).click();
   const mine = visitor.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Me too, please!" });
   await expect(mine).toBeVisible();
+  // The box is above the thread, where the new comment may be out of view: it says it's posted.
+  await expect(visitor.getByText("Comment posted")).toBeVisible();
   // Not the team's: no tint, no badge.
   await expect(mine.locator(":scope > div").first()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(mine.getByText("Team", { exact: true })).toHaveCount(0);
