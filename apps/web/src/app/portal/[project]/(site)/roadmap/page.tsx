@@ -136,8 +136,8 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                 scroll={false}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex h-9 shrink-0 items-center rounded-full border px-4 text-[0.9375rem] font-medium whitespace-nowrap transition-colors",
-                  active ? "border-primary/40 bg-soft text-soft-foreground" : "border-input bg-card text-muted-foreground hover:text-foreground",
+                  "inline-flex h-9 shrink-0 items-center rounded-full px-4 text-[0.9375rem] font-medium whitespace-nowrap transition-colors",
+                  active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 {b.name}
@@ -158,7 +158,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold whitespace-nowrap",
-                active ? "bg-card text-foreground shadow-card ring-1 ring-border" : "text-muted-foreground",
+                active ? "bg-card text-foreground shadow-card ring-1 ring-card-edge" : "text-muted-foreground",
               )}
             >
               <span className="truncate">{STATUS_LABELS[status]}</span>{" "}
@@ -198,7 +198,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                     const entry = entries.get(post.id);
                     const eta = post.eta && etaOnPortal(post.eta, post.status, now) ? post.eta : null;
                     return (
-                      <li key={post.number} className="flex flex-col rounded-xl bg-card p-4 shadow-card ring-1 ring-border sm:px-5">
+                      <li key={post.number} className="flex flex-col rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge sm:px-5">
                         <p className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] font-medium text-muted-foreground">
                           <LayoutListIcon aria-hidden className="size-3.5" />
                           {post.board.name} <VisibilityBadge visibility={post.visibility} />

@@ -60,7 +60,9 @@ test("navigating between articles with and without sections keeps the docs align
   await reader.setViewportSize({ width: 1200, height: 900 });
   await tree.getByRole("link", { name: "Calendar basics", exact: true }).click();
   await expect(reader.getByRole("heading", { name: "Calendar basics", level: 1 })).toBeVisible();
-  expect((await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!.x).toBe(48);
+  // The page keeps the scrollbar's room (scrollbar-gutter), so the container is centred in what's left of the width.
+  const gutter = await reader.evaluate(() => window.innerWidth - document.body.getBoundingClientRect().width);
+  expect((await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!.x).toBe(48 - gutter / 2);
   expect((await reader.getByRole("article").boundingBox())!.width).toBe(43 * 16);
 
   // The overview fills the desktop container too: its first card lines up with the logo.

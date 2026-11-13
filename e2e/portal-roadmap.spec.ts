@@ -107,6 +107,17 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   const boards = visitor.getByRole("navigation", { name: "Board" });
   await expect(boards.getByRole("link")).toHaveText(["All boards", "Feature requests", "Bug reports"]);
   await expect(boards.getByRole("link", { name: "All boards" })).toHaveAttribute("aria-current", "page");
+  // Pills without an outline: the open one a neutral fill (not the accent), the others on the paper.
+  const accent = await visitor.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.color = "var(--accent)";
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  });
+  await expect(boards.getByRole("link", { name: "All boards" })).toHaveCSS("background-color", accent);
+  await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveCSS("border-top-width", "0px");
   await boards.getByRole("link", { name: "Bug reports" }).click();
   await visitor.waitForURL("**/roadmap?board=all");
   await expect(column("Planned")).toContainText("Nothing here yet.");

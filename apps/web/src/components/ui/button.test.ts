@@ -6,8 +6,17 @@ describe("buttonVariants", () => {
   it("lets a variant's border replace the base's transparent one, so link buttons show it", () => {
     expect(buttonVariants()).toContain("border-primary");
     expect(buttonVariants({ variant: "outline" })).toContain("border-input");
-    expect(buttonVariants()).not.toContain("border-transparent");
-    expect(buttonVariants({ variant: "outline" })).not.toContain("border-transparent");
+    expect(buttonVariants().split(" ")).not.toContain("border-transparent");
+    expect(buttonVariants({ variant: "outline" }).split(" ")).not.toContain("border-transparent");
+  });
+
+  it("gives an outline button the secondary's grey fill without an edge on the portal, the admin's outline elsewhere", () => {
+    const classes = buttonVariants({ variant: "outline" }).split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["border-input", "bg-card", "portal:border-transparent", "portal:bg-secondary", "portal:shadow-none"]));
+    // A caller's own fill for the portal replaces it.
+    const own = buttonVariants({ variant: "outline", className: "bg-soft portal:bg-soft" }).split(" ");
+    expect(own).toContain("portal:bg-soft");
+    expect(own).not.toContain("portal:bg-secondary");
   });
 
   it("lets a caller's classes replace the variant's", () => {

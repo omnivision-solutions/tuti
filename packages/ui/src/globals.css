@@ -17,6 +17,9 @@
 @custom-variant launcher (:root:has([data-app-widget]) &);
 /* On phones, where the app's tab bar is at the bottom of the screen (AppTabBar, on a part's own page). */
 @custom-variant tabbar (:root:has([data-tab-bar]) &);
+/* On the public portal's pages (PortalTop marks them): its own look for shared controls, the admin's untouched (docs/design.md
+   → Portals). */
+@custom-variant portal (:root:has([data-portal-top]) &);
 /* In the app on phones, where a page's actions are a menu from the top bar (PageActions). */
 @custom-variant phonebar {
   @media (width < 48rem) {
@@ -49,6 +52,9 @@
   --font-mono: var(--font-geist-mono), var(--font-symbols);
   --font-heading: var(--font-heading), var(--font-symbols);
   --color-soft: var(--soft);
+  --color-tuti: var(--tuti);
+  --color-divider: var(--divider);
+  --color-card-edge: var(--card-edge);
   --color-soft-foreground: var(--soft-foreground);
   --color-highlight: var(--highlight);
   --color-highlight-foreground: var(--highlight-foreground);
@@ -56,6 +62,8 @@
      too: toward the button's text colour, which always contrasts with the fill, so a near-black brand colour lightens
      visibly too. */
   --color-primary-hover: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
+  /* A secondary (grey) button's hover and open state on the portal: the grey a step toward the text. */
+  --color-secondary-hover: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
   --color-unread: var(--unread);
   --color-status-open: var(--status-open);
   --color-status-under-review: var(--status-under-review);
@@ -151,6 +159,11 @@
   --border: oklch(0.885 0.015 84.6);
   --input: oklch(0.845 0.018 86.2);
   --ring: oklch(0.529 0.125 155);
+  /* Tuti's own green, whatever a portal's accent: its mark in "Powered by tuti" (TutiMark's `brand`). */
+  --tuti: oklch(0.529 0.125 155);
+  /* A hairline between rows, and a card's edge: the border colour here; the portal's are lighter (below). */
+  --divider: var(--border);
+  --card-edge: var(--border);
   --soft: oklch(0.958 0.018 155.8);
   --soft-foreground: oklch(0.426 0.097 155.7);
   --highlight: oklch(0.945 0.035 60.4);
@@ -225,6 +238,9 @@
   --border: oklch(0.375 0.02 163.3);
   --input: oklch(0.43 0.022 163.3);
   --ring: oklch(0.759 0.168 154.6);
+  --tuti: oklch(0.759 0.168 154.6);
+  --divider: var(--border);
+  --card-edge: var(--border);
   --soft: oklch(0.294 0.045 157);
   --soft-foreground: oklch(0.856 0.111 157.3);
   --highlight: oklch(0.283 0.051 52.9);
@@ -261,6 +277,8 @@
  * lines on the paper, a neutral dark mode (no green tint; green stays the accent), one hue per post status (Under review
  * violet, Planned blue, In progress orange), neutral initials, an info blue for callouts, and 14px cards. The app keeps
  * its own (the same selectors' light block is less specific than the dark one, so dark mode still wins).
+ * Lines: `divider`, lighter than a control's edge (`input`), for the hairlines between rows (every default border here);
+ * cards (`ring-card-edge`) have no outline in light, the soft shadow alone, and a faint ring in dark.
  */
 :root:has([data-portal-top]) {
   --radius: 0.625rem;
@@ -283,6 +301,8 @@
   --tag-improved: oklch(0.47 0.14 255);
   --tag-improved-bg: oklch(0.95 0.03 250);
   --sunken: oklch(0.972 0.01 84.6);
+  --divider: oklch(0.925 0.01 84.6);
+  --card-edge: transparent;
   --portal-shadow: 0 1px 2px oklch(0.3 0.02 60 / 6%), 0 4px 16px -6px oklch(0.3 0.02 60 / 10%);
 }
 :root.dark:has([data-portal-top]) {
@@ -308,6 +328,8 @@
   --tag-improved: oklch(0.82 0.1 255);
   --tag-improved-bg: oklch(0.3 0.06 255);
   --sunken: oklch(0.185 0.004 160);
+  --divider: oklch(0.255 0.005 160);
+  --card-edge: var(--divider);
   --portal-shadow: 0 1px 2px oklch(0 0 0 / 30%), 0 6px 18px -8px oklch(0 0 0 / 50%);
 }
 @theme inline {
@@ -346,6 +368,12 @@
   /* On the portal, until PortalTop measures itself (never, without JavaScript): about its tallest, on a phone with every row. */
   html:has([data-portal-top]) {
     scroll-padding-top: var(--portal-header-height, 12rem);
+    /* The scrollbar's room is kept on short pages too, so the header never shifts sideways between pages. */
+    scrollbar-gutter: stable;
+  }
+  /* The portal's hairlines (between rows, under the header): the lighter divider. Controls keep their edge (`border-input`). */
+  :root:has([data-portal-top]) * {
+    border-color: var(--divider);
   }
   /* The marketing site's sticky 64px header: focus and anchor targets clear it. */
   html:has([data-marketing-header]) {

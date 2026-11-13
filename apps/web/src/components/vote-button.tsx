@@ -16,18 +16,22 @@ const SHAPE = "h-auto w-12 flex-col gap-0 py-1.5";
  * small) and `upvote` (a post's rail: "Upvote", then the count, the whole width).
  */
 const SHAPES = {
-  box: "h-[3.625rem] w-[3.25rem] shrink-0 flex-col gap-0 rounded-xl text-[0.9375rem] font-bold tabular-nums shadow-xs [&_svg]:size-[1.125rem]",
+  box: "h-[3.625rem] w-[3.25rem] shrink-0 flex-col gap-0 rounded-xl text-[0.9375rem] font-bold tabular-nums [&_svg]:size-[1.125rem]",
   chip: "h-9 shrink-0 gap-1 rounded-lg px-2.5 text-[0.9375rem] font-bold tabular-nums",
   upvote: "h-12 gap-2.5 rounded-xl px-5 text-base font-semibold tabular-nums",
 } as const;
 export type VoteShape = keyof typeof SHAPES;
-/** A portal shape's look: outline, or once voted, the soft green (the primary is the post's Upvote, before voting). */
+/**
+ * A portal shape's look: a grey fill without an edge, or once voted, the accent's soft tint with a thin inset ring in the
+ * accent and the chevron in it (the primary is the post's Upvote, before voting). The ring is the cue that isn't only a
+ * fill: with a grey or black accent, or Tuti's green, the tint is close to the grey.
+ */
 const portalLook = (shape: VoteShape, voted: boolean) =>
   voted
-    ? "border-primary/55 bg-soft text-soft-foreground hover:bg-soft [&_svg]:text-primary"
+    ? cn("border-transparent bg-soft text-soft-foreground shadow-none ring-1 ring-primary/45 ring-inset hover:bg-soft", shape !== "upvote" && "[&_svg]:text-primary")
     : shape === "upvote"
       ? ""
-      : "border-input bg-card [&_svg]:text-muted-foreground";
+      : "border-transparent bg-secondary [&_svg]:text-muted-foreground";
 
 /** The words and count inside a portal shape (`upvote` says what it does; the others are the chevron and count). */
 function Contents({ shape, count, voted }: { shape?: VoteShape; count: number; voted: boolean }) {
@@ -88,7 +92,7 @@ export function VoteButton({
   }
   return (
     <Button
-      variant={shape ? (shape === "upvote" && !optimistic.voted ? "default" : "outline") : optimistic.voted ? "default" : "outline"}
+      variant={shape ? (shape === "upvote" && !optimistic.voted ? "default" : "secondary") : optimistic.voted ? "default" : "outline"}
       disabled={disabled || pending}
       title={disabled ? "Sign in to vote" : undefined}
       aria-pressed={optimistic.voted}
@@ -118,7 +122,7 @@ function PortalSignInToVote({ count, votes, shape }: { count: number; votes: str
       href={useSignInHref()}
       // The post's says "Upvote": its words first (voice control), then what it does.
       aria-label={shape === "upvote" ? `Upvote (${votes}), sign in to vote` : `Sign in to vote (${votes})`}
-      className={cn(buttonVariants({ variant: shape === "upvote" ? "default" : "outline" }), shape ? cn(SHAPES[shape], portalLook(shape, false)) : SHAPE)}
+      className={cn(buttonVariants({ variant: shape === "upvote" ? "default" : shape ? "secondary" : "outline" }), shape ? cn(SHAPES[shape], portalLook(shape, false)) : SHAPE)}
     >
       <Contents shape={shape} count={count} voted={false} />
     </Link>
@@ -132,7 +136,7 @@ export function VoteCount({ count, shape }: { count: number; shape?: VoteShape }
       // As big as the vote button it stands for: a check for done, then the count.
       <p
         className={cn(
-          "inline-flex shrink-0 items-center justify-center gap-1 rounded-xl border border-status-completed/30 bg-status-completed/10 text-muted-foreground tabular-nums",
+          "inline-flex shrink-0 items-center justify-center gap-1 rounded-xl bg-status-completed/10 text-muted-foreground tabular-nums",
           shape === "box" ? "h-[3.625rem] w-[3.25rem] flex-col gap-0" : "h-9 rounded-lg px-2.5",
         )}
       >

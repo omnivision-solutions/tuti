@@ -219,7 +219,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               tab; the sort and `?status=` with a search; the sort and search with a status. Phones: no card, the title
               beside New idea. */}
           <section aria-label="Ideas" className="flex flex-col gap-2">
-            <div className="flex flex-col sm:rounded-xl sm:bg-card sm:shadow-card sm:ring-1 sm:ring-border">
+            <div className="flex flex-col sm:rounded-xl sm:bg-card sm:shadow-card sm:ring-1 sm:ring-card-edge">
               <div className="flex items-start gap-3 sm:px-7 sm:pt-7">
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
                   <h1 className="font-heading text-[1.625rem] leading-tight font-[650] tracking-[-0.022em] break-words sm:text-[2.125rem]">{board.name}</h1>
@@ -373,7 +373,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         <aside aria-label="About this board" className="hidden flex-col gap-6 lg:flex">
           <NewIdeaButton size="lg" className="h-12 w-full rounded-xl text-[0.9375rem]" label={newIdeaLabel} />
           {boards.length > 1 && (
-            <nav aria-label="Boards" className="flex flex-col gap-1 rounded-xl bg-card p-2.5 shadow-card ring-1 ring-border">
+            <nav aria-label="Boards" className="flex flex-col gap-1 rounded-xl bg-card p-2.5 shadow-card ring-1 ring-card-edge">
               <h2 className="group-label px-2.5 pt-2 pb-1.5">Boards</h2>
               <ul className="flex flex-col gap-0.5">
                 {boards.map((other) => (
@@ -385,7 +385,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
                       className={cn(
                         "flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-2 text-[0.9375rem] font-medium transition-colors",
-                        other.id === board.id ? "bg-soft text-soft-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                        other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                       )}
                     >
                       <span className="min-w-0 flex-1 break-words">{other.name}</span>

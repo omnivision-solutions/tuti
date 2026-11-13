@@ -8,11 +8,15 @@ import type { ReactNode } from "react";
 
 import { activeView } from "@/lib/active-link";
 
-/** A pill's classes (a filter, or a button that opens one's menu): rounded, outlined, the picked one a neutral fill. */
+/**
+ * A pill's classes (a filter, or a button that opens one's menu): rounded, outlined, the picked one a neutral fill. On the
+ * portal, no outline: the others muted text on the paper, the picked one the neutral fill (never the accent).
+ */
 export const pillClass = (picked = false, className?: string) =>
   cn(
     "inline-flex h-8 shrink-0 scroll-mx-12 items-center gap-1.5 rounded-full border bg-card px-3 text-sm font-medium whitespace-nowrap transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&_svg]:size-3.5 [&_svg]:shrink-0",
-    picked && "border-input bg-accent hover:bg-accent",
+    "portal:border-transparent portal:bg-transparent portal:text-muted-foreground portal:hover:bg-muted portal:hover:text-foreground",
+    picked && "border-input bg-accent hover:bg-accent portal:bg-accent portal:text-foreground portal:hover:bg-accent",
     className,
   );
 

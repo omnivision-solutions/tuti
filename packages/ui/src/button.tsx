@@ -10,10 +10,12 @@ const variants = cva(
         // Flat: one fill, its border the same colour, a soft shadow.
         default:
           "border-primary bg-primary text-primary-foreground shadow-xs hover:border-primary-hover hover:bg-primary-hover",
+        // On the public portal a secondary action is a grey fill, no edge (docs/design.md → Portals): the secondary's look.
+        // Those classes outrank plain ones there: a caller's own fill or edge for the portal says `portal:` too.
         outline:
-          "border-input bg-card shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-input bg-card shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 portal:border-transparent portal:bg-secondary portal:shadow-none portal:hover:bg-secondary-hover portal:aria-expanded:bg-secondary-hover",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-secondary-hover aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:

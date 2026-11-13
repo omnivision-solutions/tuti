@@ -168,7 +168,55 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
       await checkpoint(page, `${scheme} ${path}`);
     }
   }
-  // On a phone, the header's menu marks the open part in the accent's tint, not Tuti's green.
+  // The portal's shared look (docs/design.md → Portals → Accent, Surfaces), in light and dark: "Powered by tuti" in Tuti's
+  // own green, whatever the accent; secondary buttons and vote boxes grey fills without an edge, a vote cast the accent's
+  // tint; rows split by the light divider; cards without an outline in light, a faint ring in dark; the scrollbar's room
+  // always kept, so the header never shifts.
+  // A colour token as the browser computes an element's colour (custom properties keep the CSS's own spelling).
+  const token = (page: Page, name: string) =>
+    page.evaluate((n) => {
+      const probe = document.body.appendChild(document.createElement("i"));
+      probe.style.color = `var(${n})`;
+      const colour = getComputedStyle(probe).color;
+      probe.remove();
+      return colour;
+    }, name);
+  const ringOf = (shadow: string) => /[a-z]+\([^)]*\) 0px 0px 0px 1px/.exec(shadow)?.[0] ?? "";
+  for (const scheme of ["light", "dark"] as const) {
+    await reader.emulateMedia({ colorScheme: scheme });
+    await reader.goto("/feedback/feature-requests");
+    const main = reader.getByRole("main");
+    await expect(reader.locator("html")).toHaveCSS("scrollbar-gutter", "stable");
+    await expect(reader.locator('a[href="https://tuti.so"] svg path').first()).toHaveCSS("fill", await token(reader, "--tuti"));
+    const secondary = await token(reader, "--secondary");
+    const getUpdates = reader.getByRole("button", { name: "Get updates" }).filter({ visible: true }).first();
+    await expect(getUpdates).toHaveCSS("background-color", secondary);
+    await expect(getUpdates).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    const notVoted = main.getByRole("button", { name: /^Upvote \(/ }).first();
+    await expect(notVoted).toHaveCSS("background-color", secondary);
+    await expect(notVoted).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    const voted = main.getByRole("button", { name: /^Remove vote \(/ });
+    await expect(voted).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    if (scheme === "light") {
+      expect(await voted.evaluate((button) => getComputedStyle(button).backgroundColor)).toMatch(/^oklch\(0\.955 0\.035 29[0-9.]+\)$/);
+    }
+    await expect(main.locator("ul.divide-y > li").nth(1)).toHaveCSS("border-top-color", await token(reader, "--divider"));
+    await reader.goto("/roadmap");
+    const card = reader.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).first();
+    const ring = ringOf(await card.evaluate((element) => getComputedStyle(element).boxShadow));
+    if (scheme === "light") {
+      expect(ring === "" || ring.startsWith("rgba(0, 0, 0, 0)")).toBe(true);
+    } else {
+      expect(ring).toContain(await token(reader, "--divider"));
+    }
+  }
+  // The widget and the app keep the browser's scrollbar (it's only the portal's pages that keep its room).
+  await reader.goto("/widget");
+  await expect(reader.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
+  await owner.goto(`/app/${slug}`);
+  await expect(owner.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
+
+  // On a phone, the header's menu marks the open part with a neutral fill, not the accent nor Tuti's green.
   await reader.setViewportSize({ width: 390, height: 844 });
   await reader.emulateMedia({ colorScheme: "light" });
   await reader.goto("/feedback/feature-requests");
@@ -176,8 +224,7 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   const menu = reader.getByRole("dialog", { name: "Menu" });
   const open = menu.getByRole("navigation", { name: "Portal" }).locator('[aria-current="page"]');
   await expect(open).toHaveText("Feedback");
-  // The tint (globals.css's oklch, from the accent): a pale purple, not transparent.
-  expect(await open.evaluate((link) => getComputedStyle(link).backgroundColor)).toMatch(/^oklch\(0\.955 0\.035 29[0-9.]+\)$/);
+  expect(await open.evaluate((link) => getComputedStyle(link).backgroundColor)).toBe(await token(reader, "--accent"));
   expect(await greens(reader)).toEqual([]);
   await checkpoint(reader, "phone-menu");
   await reader.setViewportSize({ width: 1280, height: 720 });
@@ -218,4 +265,58 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   await owner.reload();
   await expect(hex).toHaveValue("#7c3aed");
   await expect(useAccent).toHaveCount(0);
+});
+
+test("a vote cast and a reaction of yours show more than a tint, with Tuti's green or a near-black accent", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/posts", { board: "feature-requests", title: "Calendar sync" });
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  const entry = (await api("/changelog", { title: "CSV export is here", body: "Download any report as a CSV file.", tags: ["new"] })) as unknown as { number: number };
+  await api(`/changelog/${entry.number}/publish`, {});
+
+  const reader = await signUp(browser, portalUrl(slug), "Ada Reader");
+  await reader.setViewportSize({ width: 1280, height: 900 });
+  const main = reader.getByRole("main");
+  const rowOf = (title: string) => main.getByRole("listitem").filter({ has: reader.getByRole("link", { name: title, exact: true }) });
+  // A 1px ring in a colour that shows (the tint alone can be the grey's twin): the box-shadow's, if any.
+  const ring = (locator: ReturnType<typeof reader.locator>) =>
+    locator.evaluate((element) => {
+      const shadow = getComputedStyle(element).boxShadow;
+      const found = /([a-z]+\([^)]*\)) 0px 0px 0px 1px/.exec(shadow)?.[1] ?? "";
+      return found && !/^rgba\([^)]*, 0\)$/.test(found) && !/\/ 0\)$/.test(found) ? found : "";
+    });
+  await reader.goto("/feedback/feature-requests");
+  await rowOf("Calendar sync").getByRole("button", { name: /^Upvote \(/ }).click();
+  await expect(rowOf("Calendar sync").getByRole("button", { name: /^Remove vote \(/ })).toBeEnabled();
+  await reader.goto(`/changelog/${entry.number}`);
+  const thumbs = main.getByRole("button", { name: /^React with 👍/ });
+  await thumbs.click();
+  await expect(thumbs).toHaveAttribute("aria-pressed", "true");
+  await expect(thumbs).toBeEnabled();
+
+  for (const color of [null, "#222222"]) {
+    if (color) {
+      await api("/branding", { color }, "PATCH");
+    }
+    await reader.goto("/feedback/feature-requests");
+    await expect.soft.poll(() => ring(rowOf("Calendar sync").getByRole("button", { name: /^Remove vote \(/ })), `${color} vote cast`).not.toBe("");
+    expect.soft(await ring(rowOf("Dark mode").getByRole("button", { name: /^Upvote \(/ })), `${color} no vote`).toBe("");
+    await checkpoint(reader, `board ${color ?? "default"}`, { fullPage: false });
+    await reader.goto(`/changelog/${entry.number}`);
+    await expect(thumbs).toHaveAttribute("aria-pressed", "true");
+    expect.soft(await ring(thumbs), `${color} reaction of yours`).not.toBe("");
+    expect.soft(await ring(main.getByRole("button", { name: /^React with 🎉/ })), `${color} no reaction`).toBe("");
+    // Keyboard focus still shows on it: the focus ring replaces the thin one.
+    const unfocused = await thumbs.evaluate((element) => getComputedStyle(element).boxShadow);
+    await main.getByRole("button", { name: /^React with ❤️/ }).focus();
+    await reader.keyboard.press("Shift+Tab");
+    await expect(thumbs).toBeFocused();
+    // (polled: the button's shadow transitions)
+    await expect.soft.poll(() => thumbs.evaluate((element) => getComputedStyle(element).boxShadow), `${color} focused reaction of yours`).not.toBe(unfocused);
+    await checkpoint(reader, `changelog ${color ?? "default"}`, { fullPage: false });
+  }
 });

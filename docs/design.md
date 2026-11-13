@@ -60,6 +60,9 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
+| `divider`, `card-edge` | A hairline between rows, a card's ring: `border` in the app; on the portal lighter, and no card ring in light (Layout → Portals → Surfaces) |
+| `tuti` | Tuti's own green, whatever a portal's accent: only the mark in "Powered by tuti" (`TutiMark brand`) |
+| `secondary-hover` | A secondary (grey) button's hover and open state on the portal: the grey a step toward the text |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -385,7 +388,7 @@ the list picks none to approve at once.
   - **Look.** Inter for headings and text by default (preloaded; headings 650, tracked −0.022em; body 15–17px); a project's own
     fonts (Settings → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
-    paper (`border` 0.87 L, `input` 0.81 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
+    paper (`border` 0.87 L, `input` 0.81 L; rows' hairlines the lighter `divider`, 0.925 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
     0.205, lines 0.32/0.40, chroma ≈0.005; green stays the accent), 14px cards and 10px controls (`--radius` 0.625rem),
     a soft card shadow (`shadow-card`), `sunken` for inline code, `info` for callouts and `tag-improved` for the changelog.
     Statuses there are one hue each in both themes: Under review violet, Planned blue, In progress orange, Completed
@@ -394,25 +397,43 @@ the list picks none to approve at once.
     neutral style (`PortalAvatar`; the `avatar-*` tokens are all `secondary` there), the team's soft green.
   - **Accent.** "Green" on the portal means the project's accent (Settings → Branding), Tuti's green only when it has
     none: `brandCss` (`lib/colors.ts`) sets `primary`, its text, the focus `ring` and the `soft` tint and its text (at
-    Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. So the
-    accent is the letter mark, the one filled button, links, focus rings, selection, a vote cast, the open board, part or
-    article, the team's replies, the New tag, numbered steps, the widget's header and launcher (unless Settings → Widget
-    gives it a colour of its own, or the accent wouldn't stand out on a light page and a dark one: the launcher is one
-    colour on any site, so it's the brand green then). What keeps a
-    colour of its own, whatever the accent: statuses (Completed stays green: it says what happened), the changelog's
-    other tags, destructive red, the info blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own
-    mark). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
+    Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. Used
+    sparingly: the accent is only the letter mark, the page's one filled primary, links, focus rings, toggles that are
+    on, a vote cast (its soft tint and a thin inset ring in it, the chevron in the accent: never a fill alone, as a grey or
+    black accent's tint is near the grey; your own changelog reaction the same), the open part's underline in the header, the team's replies (a soft tint),
+    the widget's header and launcher (unless Settings → Widget gives it a colour of its own, or the accent wouldn't stand
+    out on a light page and a dark one: the launcher is one colour on any site, so it's the brand green then). Every
+    other selected state is neutral (`bg-accent text-foreground`): the open board in a rail, the picked pill, the open
+    item in a nav list, the docs tree's article, the phone menu's part. What keeps a colour of its own, whatever the
+    accent: statuses (Completed stays green: it says what happened), the changelog's tags, destructive red, the info
+    blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own mark, always in the `tuti` green: the
+    only Tuti green on a portal). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
     `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.
+  - **Surfaces.** One level: the paper, and cards (`bg-card shadow-card ring-1 ring-card-edge`: the soft shadow, no
+    outline in light, a faint ring in dark) only for one object (a roadmap idea, a board, a collection, a form).
+    Lists are rows on the paper; hairlines only between rows, in `divider` (every default border on the portal is one;
+    lighter than a control's edge), and the header's bottom line, the docs "On this page" line, the changelog's timeline
+    and `kbd` keep theirs. No rule under a page's header or above the footer. Asides (empty states, "Can't find it?",
+    callouts, tags) are fills, not outlines. Controls keep their edges: fields and search boxes (`border-input`) and
+    focus rings. Secondary buttons are grey fills without an edge (the `outline` Button variant takes the `secondary`
+    look there, by the `portal:` variant), round icon buttons too; filter pills (`FilterPills`) have no outline, the
+    others muted text on the paper and the picked one the neutral fill; vote boxes and counts are grey fills (voted the
+    `soft` tint with a 1px inset ring in the accent, a completed idea's the Completed tint). The page keeps the scrollbar's room (`scrollbar-gutter:
+    stable`), so the header never shifts between short and long pages.
+  - **Page header** (`PortalPageHeader`): every list and detail page the same shape, on the paper (no header card):
+    the back link, a 36px title (28px on phones) and its one muted line, then one row with the pills on the left
+    (`pills`) and the actions on the right (`actions`, the page's one filled primary last); on phones the actions
+    beside the title (`phoneActions`: round icon buttons, a round + primary). No rule under it.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
-    underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in
+    underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
     the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
     On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
     (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
   - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
-    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (an
-    outline with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
+    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (a
+    secondary grey fill with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
     Then the Portal board search variant above, first and full width: after a typing pause it replaces the current URL
     without adding a history entry; Enter submits a new entry. Back and Forward cancel waiting typing and update the
     box only when the URL's search changes, keeping unsent words through sort- or status-only history changes. Links
@@ -422,18 +443,18 @@ the list picks none to approve at once.
     with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on
     the page and inset to the card's text: the status label above the title (none for Open), a 17px title, two lines of
     excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`: chevron over
-    the count, 52×58; voted, soft green with a green edge; a completed idea's a green-tinted box with a check). Under the
+    the count, 52×58, a grey fill; voted, the accent's soft tint with a thin inset ring and the chevron in the accent; a completed idea's a green-tinted box with a check). Under the
     default list "That's all N ideas still to come in <board>. Share yours"; under a search's results "Not here? Post it".
     The rail, nothing else competing with the list: **New idea** (the page's one filled button; it opens the board's form
     in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post",
     which comes back with the title; without JavaScript the old box is in the page; after a search that found nothing it
-    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one soft green),
+    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one a neutral fill),
     and the latest shipped idea as one line ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu).
     Phones: New idea beside the title, no card, the status menu's count without its words, the shipped line and Get
     updates under the list.
   - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
     calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
-    voted, "Upvoted" in soft green), Subscribe an outline with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as
+    voted, "Upvoted" in the accent's soft tint with a thin inset ring in it), Subscribe a secondary grey fill with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as
     rows, Copy link and Share (the device's share sheet, where it has one), "Have another idea? Post it". On phones the
     same actions in a row under the body (Copy link and Share as icon buttons), the voters under them. Signed out, one
     "Join the conversation" bar (Sign in) above the thread instead of a comment box. In the thread, the team's replies
@@ -451,7 +472,7 @@ the list picks none to approve at once.
     "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" on a
     shipped one). On phones one column at a time, picked from a segmented control over them (`?column=`).
   - **The changelog**: a 48px title and "What's new, improved and fixed in <project>.", then one row: the tags as text
-    tabs (links, `?tag=`, only the tags its entries have) and RSS (outline) and **Subscribe** (filled; a popover with
+    tabs (links, `?tag=`, only the tags its entries have) and RSS (secondary, grey fill) and **Subscribe** (filled; a popover with
     the email form) at its end (above the tabs on phones). On wide screens a timeline: each entry's short date and a dot
     on a line in a 110px margin; beside it the tag (New soft green, Improved blue, Fixed the orange highlight, Breaking
     destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" (with more than one idea, each pill shows its title; with one, the title is read out after the pill's words)
@@ -492,12 +513,12 @@ the list picks none to approve at once.
     didn't come for sits one click away (a menu, a disclosure) rather than in another column.
   - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a line beside it the page's height): each
     collection a row with its icon that opens (`<details>`), the page's own open with a line down its articles and the
-    current one soft green; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
+    current one a neutral fill; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
     width, on an article with sections) and Copy page at
     the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
     a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes
     as callouts (an info-blue rule and icon on the card's surface). At its end: "Was this helpful?" (Yes and No with
-    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). With two or more
+    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, secondary grey fills). With two or more
     sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
     the same desktop container (79rem, the header 82rem) so navigation keeps the logo, tree and article's left edge in place.
     The text keeps 65–70 characters a line between the two (a 46rem column; 64ch
