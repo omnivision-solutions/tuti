@@ -324,6 +324,9 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
     return colour;
   });
   await expect(file).toHaveCSS("color", cardText);
+  // Its focus outline is the ring's, seen on the card, not the bubble's text colour.
+  await file.focus();
+  await expect(file).not.toHaveCSS("outline-color", await file.locator("xpath=ancestor::*[contains(@class,'inbox-bubble')]").evaluate((bubble) => getComputedStyle(bubble).color));
 
   await owner.setViewportSize({ width: 390, height: 844 });
   await reply.click();
