@@ -1,5 +1,5 @@
 /** Colour maths shared by the server and the app's previews (no server imports here). */
-import { luminance, textColorOn } from "@tuti/shared/colors";
+import { readableOn, readsOn, textColorOn } from "@tuti/shared/colors";
 
 /** A colour typed as hex (`#rrggbb`, or `#rgb` expanded; the `#` optional) as `#rrggbb` in lower case; null if it isn't one. */
 export function parseHex(typed: string): string | null {
@@ -14,16 +14,6 @@ export { luminance, textColorOn } from "@tuti/shared/colors";
  * page background in light mode, cards in dark mode.
  */
 const SURFACES = { light: 0.9823, dark: 0.0106 };
-/** WCAG's minimum for buttons, focus rings and large text. */
-const MIN_CONTRAST = 3;
-
-/** WCAG's minimum for text at body size: a shade made for a too-faint accent is also its links' colour. */
-const TEXT_CONTRAST = 4.5;
-
-const readsOn = (color: string, surface: number, min = MIN_CONTRAST) => {
-  const l = luminance(color);
-  return (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= min;
-};
 
 /** Whether `color` stands out from the page in light mode and in dark (a button on any site: the widget's launcher). */
 export const readsEverywhere = (color: string) => readsOn(color, SURFACES.light) && readsOn(color, SURFACES.dark);
@@ -38,33 +28,9 @@ const softCss = (color: string, dark: boolean) =>
     : `--soft:oklch(from ${color} 0.955 min(c, 0.035) h);--soft-foreground:oklch(from ${color} 0.43 min(c, 0.13) h)`;
 
 /**
- * `color`, or where it's too faint on `surface` the nearest shade of it that reads: mixed toward black on the light page,
- * toward white on the dark one (the same hue), by as little as reads as text at body size (its links). Null for a grey that doesn't read
- * (white on the light page, or a pale tint whose shade is near grey): a mid grey would look disabled, so the text colour is the accent there.
- */
-const toHex = (channels: number[]) => `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-
-const readableOn = (color: string, surface: number): string | null => {
-  if (readsOn(color, surface)) {
-    return color;
-  }
-  const target = surface > 0.5 ? 0 : 255;
-  const channels = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-  const mix = (t: number) => channels.map((c) => Math.round(c + (target - c) * t));
-  let [low, high] = [0, 1];
-  for (let step = 0; step < 16; step++) {
-    const middle = (low + high) / 2;
-    [low, high] = readsOn(toHex(mix(middle)), surface, TEXT_CONTRAST) ? [low, middle] : [middle, high];
-  }
-  const shade = mix(high);
-  // Judged on the shade: a pale tint (beige) keeps too little colour once it's dark enough to read.
-  return Math.max(...shade) - Math.min(...shade) < 24 ? null : toHex(shade);
-};
-
-/**
  * CSS that makes `color` the accent (`--primary`, with black or white text on it, and the
  * focus ring) and its tint (`--soft`). In a mode where it would be too faint against the page (a pale yellow in light
- * mode, a navy in dark mode), the accent there is the nearest shade of it that reads (readableOn): a grey's, the text colour. Null without a colour.
+ * mode, a navy in dark mode), the accent there is the nearest shade of it that reads (readableOn, as in emails): a grey's, the text colour. Null without a colour.
  */
 export function brandCss(color: string | null): string | null {
   if (!color) {
