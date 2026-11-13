@@ -65,7 +65,7 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(outsider).toContain(`This account is signed in through another site's single sign-on, so ${project.name} doesn't email it about posts.`);
   expect(outsider).toMatch(/<a [^>]*href="[^"]*\/sign-in[^"]*"[^>]*>Sign in<\/a> to choose your emails here./);
   // Their name and their (empty) lists stay.
-  expect(outsider).toContain("My posts");
+  expect(outsider).toContain("Your posts");
   // Their placeholder address isn't confirmed either, but there's nothing to confirm here.
   expect(outsider).not.toContain("Confirm your email address");
 
@@ -103,7 +103,7 @@ test("the Account shows the name, changed in the Tuti account on the app; an acc
   actAs(await signUp("Ada Reader"));
   const own = await account();
   expect(own).toContain("Ada Reader");
-  expect(own).toContain(`${link} class="self-start text-muted-foreground underline underline-offset-4">Change your name in your Tuti account</a>`);
+  expect(own).toContain(`${link} class="self-start text-primary underline underline-offset-4">Change your name in your Tuti account</a>`);
   expect(own).not.toContain('id="account-name"');
 
   const sso = await signUp("Sam From The App");
@@ -150,11 +150,21 @@ test('"Email me nothing" greys the switches above it, off and disabled, their na
   actAs(reader);
   const html = renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never));
   expect(html).toMatch(/<input [^>]*id="email-unsubscribed"[^>]*checked=""/);
-  expect(html).toMatch(/<label for="email-unsubscribed" class="text-sm font-medium">Email me nothing from /);
+  expect(html).toMatch(/<label for="email-unsubscribed" class="text-\[0.9375rem\] font-medium">Email me nothing from /);
   for (const setting of ["ownPosts", "followedPosts"]) {
     const input = html.match(new RegExp(`<input [^>]*id="email-${setting}"[^>]*>`))![0];
     expect(input).toContain('disabled=""');
     expect(input).not.toContain('checked=""');
     expect(html).toMatch(new RegExp(`<label for="email-${setting}" class="[^"]*text-muted-foreground[^"]*">`));
   }
+});
+
+test("with no posts or votes, Account offers the boards; a portal without boards has no link to them", async () => {
+  const project = await createProject(await signUp("Owner"));
+  const account = async () => renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  actAs(await signUp("Reader"));
+  expect((await account()).match(/>Browse ideas</g)).toHaveLength(2);
+  // A changelog-only portal: /feedback would be a page not found.
+  await prisma.board.deleteMany({ where: { projectId: project.id } });
+  expect(await account()).not.toContain("Browse ideas");
 });

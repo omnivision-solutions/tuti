@@ -4,7 +4,6 @@ import { cn } from "cn";
 import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { setEmailPreference } from "@/server/email-preferences";
 
@@ -83,10 +82,11 @@ export function EmailSettings({
   };
 
   const row = (setting: Setting, label: string, description: string, disabled = false) => (
-    <div className="flex items-start justify-between gap-4">
+    // No lines between rows, except above "Email me nothing", which turns off the ones above it.
+    <div className={cn("flex items-start justify-between gap-4 px-4 py-3.5 sm:gap-6 sm:px-5 sm:py-4", setting === "unsubscribed" && "border-t")}>
       <div className="flex flex-col gap-0.5">
         {/* Greyed with its switch (while "Email me nothing" is on, nothing it names is sent), still readable. */}
-        <label htmlFor={`email-${setting}`} className={cn("text-sm font-medium", disabled && "text-muted-foreground")}>
+        <label htmlFor={`email-${setting}`} className={cn("text-[0.9375rem] font-medium", disabled && "text-muted-foreground")}>
           {label}
         </label>
         <p id={`email-${setting}-description`} className="text-sm text-muted-foreground">
@@ -106,15 +106,9 @@ export function EmailSettings({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>Emails</h2>
-        </CardTitle>
-        <CardDescription>What {projectName} emails you about.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {notice}
+    <>
+      {notice}
+      <div className="flex flex-col rounded-xl bg-card shadow-card ring-1 ring-card-edge">
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
         {posts && row("ownPosts", "Posts I wrote", "When they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
         {posts &&
@@ -132,7 +126,7 @@ export function EmailSettings({
           // Already stopped, it can still be turned back on.
           !canStop && !settings.unsubscribed,
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </>
   );
 }

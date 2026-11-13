@@ -39,13 +39,12 @@ function useSignOut() {
   };
 }
 
-/** Sign out on a page (the portal's Account), as the account menu's. */
+/** Sign out on a page (the portal's Account, a quiet text button at the end of its Profile row), as the account menu's. */
 export function SignOutButton() {
   const signOut = useSignOut();
   const [pending, startTransition] = useTransition();
   return (
-    <Button variant="outline" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
-      <LogOutIcon />
+    <Button variant="ghost" className="shrink-0" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
       Sign out
     </Button>
   );

@@ -487,12 +487,20 @@ the list picks none to approve at once.
     "Vote, comment and follow ideas. We'll email you when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and
     "Team member? Sign in with Tuti".
+  - **Account** (`/account`): the page header ("Account", "Signed in as <address>"), then a section list beside the
+    sections, one page: Profile, Emails, Your posts and Your votes with their counts, the current one a neutral fill as
+    the board rail's (`AccountSections`; each jumps to its section, `#profile`…, and the one scrolled to is marked). On
+    phones the list is a row of pills that scrolls sideways and jumps the same way. Each section a heading and its muted
+    line over its content, the pages' full width: Profile one card row (the face, the name, "Change your name in your
+    Tuti account", and **Sign out** a quiet text button at its end, the page's only one); Emails one card of switch rows
+    with no lines between them, but one above "Email me nothing", which turns off the rest; Your posts and Your votes as
+    rows on the paper (a grey vote chip, the title, its status), none a soft grey fill with the reason and "Browse ideas".
   - **One-message pages** (the changelog's email links, unsubscribe, the SSO error, a page not found):
     one card (`PortalMessage`, max-w-sm) with a tinted icon, a 20px heading-font title, 15px text and
     full-width buttons, centred in the page. The 404 is the portal's (`not-found.tsx`), in its header
     and footer, no part marked, with links to Roadmap, Changelog and Docs. Sign-in pages (sign-in,
     forgot password, the link's page, the SSO error) are the same width at one fixed offset under the
-    header, which has no Sign in there; the SSO error says it in plain words first, the technical
+    header, cards without a line inside them, which has no Sign in there; the SSO error says it in plain words first, the technical
     detail as a small footnote, "Try again" its primary.
   - **Docs** has one box for searching and asking, the header's ("Search or ask AI" with AI answers on, ⌘K; below
     tablet width a line of its own, the whole width). Searching never happens in the box itself: it opens the search

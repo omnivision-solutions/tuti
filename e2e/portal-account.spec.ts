@@ -41,9 +41,21 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(profile.getByRole("textbox")).toHaveCount(0);
   await expect(profile.getByRole("link", { name: "Change your name in your Tuti account" })).toHaveAttribute("href", `${APP_URL}/app/account`);
   await checkpoint(bo, "portal-account-profile");
-  await expect(bo.getByRole("region", { name: "My posts" }).getByRole("link")).toHaveText(["Export invoices"]);
-  await expect(bo.getByRole("region", { name: "My votes" }).getByRole("link")).toHaveText(["Offline mode", "Dark mode"]);
-  await bo.getByRole("region", { name: "My votes" }).getByRole("link", { name: "Dark mode" }).click();
+  await expect(bo.getByRole("heading", { level: 1 })).toHaveText("Account");
+  await expect(bo.getByRole("region", { name: "Your posts" }).getByRole("link")).toHaveText(["Export invoices"]);
+  await expect(bo.getByRole("region", { name: "Your votes" }).getByRole("link")).toHaveText(["Offline mode", "Dark mode"]);
+  // The section list jumps within the page, the one picked marked; scrolling back up marks the one there.
+  const sections = bo.getByRole("navigation", { name: "Account sections" });
+  await expect(sections.getByRole("link")).toHaveText(["Profile", "Emails", "Your posts 1", "Your votes 2"]);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await sections.getByRole("link", { name: /Your votes/ }).click();
+  await expect(bo).toHaveURL(/\/account#votes$/);
+  await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
+  await expect(sections.getByRole("link", { name: "Profile" })).not.toHaveAttribute("aria-current");
+  await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  await bo.mouse.wheel(0, -5000);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Dark mode" }).click();
   await expect(bo.getByRole("heading", { level: 1 })).toHaveText("Dark mode");
 
   // Bo stops emails about posts he voted on; it's kept.
@@ -204,10 +216,22 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
       const page = await (await browser.newContext({ baseURL: portalUrl(slug), viewport, colorScheme, storageState: signedIn })).newPage();
       await page.goto("/account");
       await expect(page.getByRole("switch", { name: "Posts I voted on or follow" })).not.toBeChecked();
-      // Who's signed in, and Sign out, on the page.
+      // Who's signed in, and Sign out in the Profile card (the page's only one).
       await expect(page.getByText(`Signed in as ${bo.email}`)).toBeVisible();
-      await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Profile" }).getByRole("button", { name: "Sign out" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(1);
+      // The sections' list, one of its two shapes for the width: a rail beside them, or pills above them on phones.
+      const list = page.getByRole("navigation", { name: "Account sections" });
+      await expect(list).toBeVisible();
+      await expect(list.getByRole("link", { name: "Emails" })).toHaveClass(name === "phone" ? /rounded-full/ : /rounded-lg/);
+      if (name === "phone") {
+        await list.getByRole("link", { name: /Your posts/ }).click();
+        await expect(page.getByRole("heading", { name: "Your posts" })).toBeInViewport();
+        await expect(list.getByRole("link", { name: /Your posts/ })).toHaveAttribute("aria-current", "location");
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      // The sections fill the pages' width beside the list, not a narrow column.
+      if (name === "desktop") expect((await page.getByRole("region", { name: "Profile" }).boundingBox())!.width).toBeGreaterThan(800);
       await checkpoint(page, `portal-account-${name}-${colorScheme}`);
       await page.context().close();
     }
@@ -254,6 +278,11 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(cy.getByRole("switch", { name: "The changelog" })).toBeDisabled();
   await cy.getByRole("button", { name: "Resend email" }).click();
   await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
+  // No posts or votes: each says so on a soft fill, with the way to the boards.
+  const noVotes = cy.getByRole("region", { name: "Your votes" });
+  await expect(noVotes).toContainText("You haven't voted on others' posts here yet.");
+  await expect(noVotes.getByRole("link", { name: "Browse ideas" })).toHaveAttribute("href", /\/feedback$/);
+  await expect(cy.getByRole("region", { name: "Your posts" })).toContainText("You haven't posted here yet.");
   await checkpoint(cy, "portal-account-unconfirmed");
   // Sign out on the page: a failed one, refused or never sent (offline), says so and stays, the button ready again; then
   // back on the portal's home, signed out.
