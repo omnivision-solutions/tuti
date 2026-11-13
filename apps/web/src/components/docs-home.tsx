@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextIcon, TrendingUpIcon } from "lucide-react";
+import { ChevronRightIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 
 import { usePortalLook } from "@/components/portal-look";
@@ -41,7 +41,7 @@ export function PopularChips({ articles }: { articles: { href: string; title: st
         <li key={article.href}>
           <Link
             href={article.href}
-            className="inline-flex h-9 items-center rounded-full border whitespace-nowrap border-input bg-background px-3.5 text-[0.9375rem] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            className="inline-flex h-9 items-center rounded-full bg-secondary px-3.5 text-[0.9375rem] whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary-hover hover:text-foreground"
           >
             {article.title}
           </Link>
@@ -51,26 +51,23 @@ export function PopularChips({ articles }: { articles: { href: string; title: st
   );
 }
 
-/** A tab's most-read articles (popularArticles), when the team shows them (Customize → Docs home) and there are a few: a card, in two columns. */
+/** A tab's most-read articles (popularArticles), when the team shows them (Customize → Docs home) and there are a few: rows on the paper, in two columns. */
 export function PopularArticles({ articles }: { articles: { href: string; title: string }[] }) {
   if (!useShowsPopular(articles)) {
     return null;
   }
   return (
-    <section aria-labelledby="popular-articles" className="flex flex-col rounded-xl bg-card px-2.5 pt-1 pb-2.5 shadow-card ring-1 ring-card-edge">
-      <h2 id="popular-articles" className="flex items-center gap-2 border-b px-3 py-4 font-sans text-base font-semibold">
-        <TrendingUpIcon aria-hidden className="size-4 text-primary" />
+    <section aria-labelledby="popular-articles" className="flex flex-col gap-3">
+      <h2 id="popular-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
         Popular articles
       </h2>
-      <ul className="grid pt-1.5 sm:grid-cols-2">
+      <ul className="grid sm:grid-cols-2 sm:gap-x-10">
         {articles.map((article) => (
-          <li key={article.href}>
-            <Link
-              href={article.href}
-              className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[0.9375rem] font-medium break-words transition-colors hover:bg-accent"
-            >
+          <li key={article.href} className="border-b">
+            <Link href={article.href} className="group flex items-center gap-3 py-3 text-[0.9375rem] break-words transition-colors hover:text-primary">
               <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
               <span className="min-w-0 flex-1">{article.title}</span>
+              <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </Link>
           </li>
         ))}

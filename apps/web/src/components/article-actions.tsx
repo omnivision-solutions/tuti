@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { usePortalLook } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /**
@@ -24,13 +25,13 @@ export function ArticleActions({ markdown, markdownUrl }: { markdown: string; ma
     </DropdownMenuItem>
   );
   return (
-    // Its own width: under the title on phones, it would otherwise stretch across the page.
-    <div className="flex shrink-0 items-center self-start rounded-lg border">
+    // Its own width: under the title on phones, it would otherwise stretch across the page. On the portal a grey fill, as secondaries are.
+    <div className="flex shrink-0 items-center self-start rounded-lg border portal:border-0 portal:bg-secondary">
       {contentActions.copyMarkdown && (
         <Button
           variant="ghost"
           size="sm"
-          className="rounded-r-none border-r"
+          className="rounded-r-none border-r portal:border-background portal:hover:bg-secondary-hover"
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(markdown);
@@ -46,7 +47,7 @@ export function ArticleActions({ markdown, markdownUrl }: { markdown: string; ma
       )}
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size={contentActions.copyMarkdown ? "icon-sm" : "sm"} className={contentActions.copyMarkdown ? "rounded-l-none" : undefined} />}
+          render={<Button variant="ghost" size={contentActions.copyMarkdown ? "icon-sm" : "sm"} className={cn("portal:hover:bg-secondary-hover", contentActions.copyMarkdown && "rounded-l-none")} />}
           aria-label={contentActions.copyMarkdown ? "More page actions" : undefined}
         >
           {!contentActions.copyMarkdown && "Page actions"}

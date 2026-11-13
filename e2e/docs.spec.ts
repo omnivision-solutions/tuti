@@ -208,6 +208,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await card.click();
   await visitor.waitForURL(/\/docs\/getting-started$/);
   await expect(visitor.getByRole("heading", { level: 1 })).toHaveText("Getting started");
+  // Its icon before its name in the muted text colour, not the accent.
+  await expect(visitor.getByRole("heading", { level: 1 }).locator("svg.lucide-rocket")).toHaveCSS("color", await token(visitor, "--muted-foreground"));
   await visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" }).click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
   const article = visitor.getByRole("article", { name: "Inviting your team" });
@@ -221,6 +223,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
   await expect(tree.getByRole("link", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
   await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
+  // The open collection's articles with no line down them.
+  await expect(tree.locator("details[open] > div").first()).toHaveCSS("border-left-width", "0px");
   const onThisPage = visitor.getByRole("navigation", { name: "On this page" });
   await expect(onThisPage.getByRole("link")).toHaveText(["Who can invite", "Roles"]);
   // How long it takes to read, under the title.
@@ -1185,6 +1189,15 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
+  // An underlined row the whole width under the site bar, which gives it its line; the open tab underlined in the foreground.
+  // (It covers the header's own line, which stays for when the row is hidden.)
+  const header = (await visitor.locator("header.portal-header").boundingBox())!;
+  const row = visitor.locator("[data-part-row]");
+  expect((await row.boundingBox())!.y).toBe(header.y + header.height - 1);
+  await expect(row).toHaveCSS("background-color", await token(visitor, "--background"));
+  await expect(row).toHaveCSS("border-bottom-width", "1px");
+  await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveCSS("border-bottom-color", await token(visitor, "--foreground"));
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveCSS("border-bottom-color", "rgba(0, 0, 0, 0)");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
   await checkpoint(visitor, "portal-docs-tabs");
   await docsTabs.getByRole("link", { name: "Guides" }).click();
@@ -1311,6 +1324,14 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(cards).toHaveText([/^Getting started.*1 article$/, /^Billing.*2 articles$/, /^Teams.*1 article$/]);
   await expect(cards.first()).toContainText("The basics, in five minutes.");
   await expect(cards.first().locator("svg.lucide-rocket")).toBeVisible();
+  // The icon on a neutral tile, not in the accent; popular articles are rows on the paper, not a card.
+  await expect(cards.first().locator("span:has(> svg.lucide-rocket)")).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(cards.first().locator("svg.lucide-rocket")).toHaveCSS("color", await token(visitor, "--foreground"));
+  await expect(main.getByRole("region", { name: "Popular articles" })).toHaveCSS("box-shadow", "none");
+  // The suggested articles under the big box are grey chips, with no edge.
+  const chip = main.getByRole("list", { name: "Suggested articles" }).getByRole("link").first();
+  await expect(chip).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(chip).toHaveCSS("border-top-width", "0px");
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(main.getByRole("search")).toHaveCount(1);
@@ -1359,6 +1380,10 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Results for “listing”");
   await expect(visitor).toHaveTitle(/^Results for “listing” · Docs/);
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Listing posts"]);
+  // Results are rows on the paper: titles in the text colour, a hairline under each.
+  const result = main.getByRole("list", { name: "Search results" }).getByRole("listitem").first();
+  await expect(result.getByRole("link")).toHaveCSS("color", await token(visitor, "--foreground"));
+  await expect(result).toHaveCSS("border-bottom-width", "1px");
   const docsTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API" })).not.toHaveAttribute("aria-current");
@@ -1614,6 +1639,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.goto("/docs");
   // The docs home's big box has Ask AI at its end too, straight to the assistant.
   await expect(visitor.getByRole("main").getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
+  // The home's one filled primary.
+  await expect(visitor.getByRole("main").getByRole("button", { name: "Ask AI", exact: true })).toHaveCSS("background-color", await token(visitor, "--primary"));
   await typeSearch(visitor, question);
   const first = visitor.getByRole("dialog").getByRole("option").first();
   await expect(first).toContainText("Ask AI:");
@@ -1783,6 +1810,10 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // Another question it can't answer.
   const another = "Is there a dark mode?";
   await visitor.goto(`/docs?${new URLSearchParams({ q: another })}`);
+  // The answer is a card (the soft shadow, no edge); Ask AI the search page's one filled primary.
+  await expect(ai).not.toHaveCSS("box-shadow", "none");
+  await expect(ai).toHaveCSS("border-top-width", "0px");
+  await expect(ai.getByRole("button", { name: "Ask AI" })).toHaveCSS("background-color", await token(visitor, "--primary"));
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   const answers = (await modelRequests()).length;
@@ -2278,6 +2309,20 @@ test("an article ends with the previous and next in reading order, related ones,
   const main = visitor.getByRole("main");
   // Previous and next in reading order: into Billing at Getting started's end.
   const steps = main.getByRole("navigation", { name: "Previous and next" });
+  // Cards that only lift on hover: their ring (the card's edge) doesn't turn to the accent.
+  const ringOf = (shadow: string) => /[a-z]+\([^)]*\) 0px 0px 0px 1px/.exec(shadow)?.[0] ?? "";
+  const nextCard = steps.getByRole("link", { name: /Next/ });
+  // Without its transition, the hovered shadow is the final one at once (no clock to wait on).
+  await nextCard.evaluate((element) => (element.style.transition = "none"));
+  const resting = await nextCard.evaluate((element) => getComputedStyle(element).boxShadow);
+  const restingRing = ringOf(resting);
+  // The ring was found: an empty match on both sides would pass whatever the hover does.
+  expect(restingRing).not.toBe("");
+  await nextCard.hover();
+  // Hovered: it lifts (its shadow changes), and its ring stays as it was.
+  await expect.poll(() => nextCard.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(resting);
+  expect(ringOf(await nextCard.evaluate((element) => getComputedStyle(element).boxShadow))).toBe(restingRing);
+  await visitor.mouse.move(0, 0);
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Welcome/, /Next\s*Plans/]);
   // Related: the one alike in meaning, from another collection.
   await expect(main.getByRole("region", { name: "Related articles" }).getByRole("link")).toHaveText(["Paying invoices"]);
@@ -2285,8 +2330,16 @@ test("an article ends with the previous and next in reading order, related ones,
   const stuck = main.getByRole("region", { name: "Still stuck?" });
   await expect(stuck.getByRole("button", { name: "Ask AI" })).toBeVisible();
   await expect(stuck.getByRole("link")).toHaveCount(0);
-  // "Was this helpful?" stays.
+  // "Was this helpful?" stays, without a rule above it.
   await expect(main.getByRole("region", { name: "Was this helpful?" })).toBeVisible();
+  await expect(main.getByRole("region", { name: "Was this helpful?" })).toHaveCSS("border-top-width", "0px");
+  // "Still stuck?" a soft grey fill, not a card; the title 36px; the tree without a rule beside it.
+  await expect(stuck).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(stuck).toHaveCSS("box-shadow", "none");
+  await expect(main.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "36px");
+  // Copy page a grey fill, as the portal's secondaries are.
+  await expect(main.getByRole("button", { name: "Copy page" }).locator("..")).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(visitor.locator("aside").filter({ has: visitor.getByRole("navigation", { name: "Docs", exact: true }) })).toHaveCSS("border-right-width", "0px");
   // Ask AI opens the widget's assistant.
   await stuck.getByRole("button", { name: "Ask AI" }).click();
   const stuckAssistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
@@ -2312,6 +2365,20 @@ test("an article ends with the previous and next in reading order, related ones,
 
   await checkpoint(visitor, "portal-article-end");
   await visitor.emulateMedia({ colorScheme: "dark" });
+  // In dark too, hovering its buttons steps their fill toward the text (secondary-hover), not to a muted tint the fill hides.
+  await expect(stuck).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  const stepped = await visitor.evaluate(() => {
+    // `secondary-hover` (globals.css; an inline theme colour, so no variable of its own to read).
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.backgroundColor = "color-mix(in oklch, var(--secondary), var(--foreground) 5%)";
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  });
+  expect(stepped).not.toBe(await token(visitor, "--secondary"));
+  await contactUs.hover();
+  await expect(contactUs).toHaveCSS("background-color", stepped);
+  await visitor.mouse.move(0, 0);
   await checkpoint(visitor, "portal-article-end-dark");
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(contactUs).toBeVisible();
@@ -2327,6 +2394,79 @@ test("an article ends with the previous and next in reading order, related ones,
   await expect(steps.getByRole("link")).toHaveText([/Next\s*Installing/]);
   await visitor.goto("/docs/paying-invoices");
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Plans/]);
+});
+
+test("on the portal an article's asides are fills: inline code, callouts, details and step numbers, and a code block's label strip", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const text = (value: string, marks?: object[]) => ({ type: "text", text: value, ...(marks && { marks }) });
+  const p = (...content: object[]) => ({ type: "paragraph", content });
+  const code = (value: string) => text(value, [{ type: "code" }]);
+  const step = (title: string) => ({ type: "step", content: [{ type: "stepTitle", content: [text(title)] }] });
+  const steps = { type: "steps", content: [step("Open Settings"), step("Pick Sync")] };
+  const content = {
+    type: "doc",
+    content: [
+      p(text("Run "), code("acme login"), text(" first.")),
+      steps,
+      { type: "blockquote", content: [p(text("Then run "), code("acme sync"), text(".")), { type: "steps", content: [step("Check the log")] }] },
+      { type: "details", content: [{ type: "detailsSummary", content: [text("More")] }, { type: "detailsContent", content: [p(text("Or run "), code("acme sync --all"), text("."))] }] },
+      { type: "codeBlock", attrs: { language: "bash", filename: "Terminal" }, content: [text("acme sync --all")] },
+      {
+        type: "codeTabs",
+        content: [
+          { type: "codeBlock", attrs: { filename: "npm" }, content: [text("npm i acme")] },
+          { type: "codeBlock", attrs: { filename: "pnpm" }, content: [text("pnpm add acme")] },
+        ],
+      },
+    ],
+  };
+  const article = await api("/articles", { title: "Syncing", content });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto(`/docs/${article.slug}`);
+  const main = visitor.getByRole("main");
+  const [grey, card] = [await token(visitor, "--secondary"), await token(visitor, "--card")];
+  const background = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const before = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element, "::before").backgroundColor);
+  // On the paper: inline code and a step's number on the grey fill, with no edge.
+  const inline = main.locator("p > code").filter({ hasText: "acme login" });
+  expect(await background(inline)).toBe(grey);
+  await expect(inline).toHaveCSS("border-top-width", "0px");
+  const firstStep = main.locator(".rich-steps > li").first();
+  expect(await before(firstStep)).toBe(grey);
+  // No line from one step's number down to the next.
+  expect(await firstStep.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
+  // A callout and a details block are grey fills without an edge; inline code in them on the card's colour.
+  const callout = main.locator("blockquote");
+  expect(await background(callout)).toBe(grey);
+  await expect(callout).toHaveCSS("border-top-width", "0px");
+  expect(await background(callout.locator("code"))).toBe(card);
+  // A step's number in the callout on the card's colour too.
+  expect(await before(callout.locator(".rich-steps > li"))).toBe(card);
+  const details = main.locator(".rich-details");
+  expect(await background(details)).toBe(grey);
+  await expect(details).toHaveCSS("border-top-width", "0px");
+  await details.getByText("More").click();
+  expect(await background(details.locator("code"))).toBe(card);
+  // A code block's label in a grey strip, no line under it.
+  const strip = main.getByRole("figure", { name: "Terminal" }).locator("figcaption");
+  expect(await background(strip)).toBe(grey);
+  await expect(strip).toHaveCSS("border-bottom-width", "0px");
+  // Code tabs: the block is the card (its shadow), its tab row a grey strip with no line under it, the tab's code on the card.
+  const tabs = main.locator(".rich-code-tabs");
+  await expect(tabs).not.toHaveCSS("box-shadow", "none");
+  expect(await background(tabs)).toBe(card);
+  const tabRow = tabs.locator(".rich-code-tab-row");
+  expect(await background(tabRow)).toBe(grey);
+  await expect(tabRow).toHaveCSS("border-bottom-width", "0px");
+  const shown = tabs.locator("pre").filter({ hasText: "npm i acme" });
+  await expect(shown).toBeVisible();
+  await expect(shown).toHaveCSS("box-shadow", "none");
+  expect(await background(shown)).toBe("rgba(0, 0, 0, 0)");
 });
 
 test("a link in an article to another of the portal's articles stays on the portal and previews it; in the widget it opens in the panel", async ({ browser }, testInfo) => {
@@ -2446,3 +2586,14 @@ test("an article's editor bar: saved state, Publish and the pinned tools fit fro
     expect(await team.evaluate(() => document.documentElement.scrollWidth), `at ${width}px`).toBeLessThanOrEqual(width);
   }
 });
+
+/** A colour token (`--primary`) as the browser computes it, to compare with an element's computed colour. */
+function token(page: Page, name: string) {
+  return page.evaluate((n) => {
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.color = `var(${n})`;
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, name);
+}

@@ -549,9 +549,9 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
   return (
     <section
       aria-labelledby="still-stuck"
-      className="flex flex-wrap items-center gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge sm:flex-nowrap sm:px-6"
+      className="flex flex-wrap items-center gap-4 rounded-xl bg-secondary p-5 sm:flex-nowrap sm:px-6"
     >
-      <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-lg bg-soft text-soft-foreground">
+      <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-lg bg-card max-sm:hidden">
         <MessageCircleIcon className="size-5" />
       </span>
       <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
@@ -564,7 +564,7 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
       </div>
       <div className="flex shrink-0 gap-2">
         {ask && (
-          <Button variant="outline" onClick={assistant.open} className="font-semibold">
+          <Button variant="ghost" onClick={assistant.open} className="font-semibold portal:hover:bg-secondary-hover">
             <SparklesIcon />
             Ask AI
           </Button>
@@ -580,7 +580,7 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
                 widget.open({ tab: "messages" });
               }
             }}
-            className={buttonVariants({ variant: "outline", className: "font-semibold" })}
+            className={buttonVariants({ variant: "ghost", className: "font-semibold portal:hover:bg-secondary-hover" })}
           >
             Contact us
           </a>

@@ -38,7 +38,7 @@ export function ArticleFeedback({ projectSlug, slug, className }: { projectSlug:
     });
 
   return (
-    <section aria-label="Was this helpful?" className={cn("flex flex-col gap-3 border-t pt-6", className)}>
+    <section aria-label="Was this helpful?" className={cn("flex flex-col gap-3", className)}>
       {step === "ask" && (
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="font-sans text-[0.9375rem] font-semibold">Was this helpful?</h2>

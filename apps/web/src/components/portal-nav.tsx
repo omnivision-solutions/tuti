@@ -166,7 +166,7 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
 
 /**
  * A part's row under the header (`label` names it): only with two or more entries, scrolling sideways as the parts do.
- * In the header's container. A `locked` entry (a docs tab this reader may not read) has a lock.
+ * In the header's container; the header's line moves under it (the whole width). A `locked` entry (a docs tab this reader may not read) has a lock.
  */
 export function PartRow({
   label,
@@ -182,7 +182,8 @@ export function PartRow({
     return null;
   }
   return (
-    <div className={cn("border-b [:root:has([data-portal-not-found])_&]:hidden", className)}>
+    // Over the header's line (-mt-px, the paper's colour), so that line is under the row; where the row is hidden, the header keeps it.
+    <div data-part-row className={cn("relative -mt-px border-b bg-background [:root:has([data-portal-not-found])_&]:hidden", className)}>
       <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 [:root:has([data-docs-wide])_&]:max-w-[82rem] xl:[:root:has([data-docs-layout])_&]:max-w-[82rem] px-4 sm:px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
@@ -191,8 +192,9 @@ export function PartRow({
             aria-current={active ? "page" : undefined}
             data-active={active || undefined}
             className={cn(
-              "shrink-0 scroll-mx-12 border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",
-              active ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
+              "shrink-0 scroll-mx-12 border-b-2 px-3 py-2.5 text-[0.9375rem] font-medium whitespace-nowrap transition-colors first:-ml-3",
+              // The open one underlined in the foreground: the accent's underline is the site bar's.
+              active ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {name}
