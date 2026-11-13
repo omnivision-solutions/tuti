@@ -66,6 +66,9 @@ const INBOX_BACK = "@min-[52.5rem]/inbox:hidden";
 /** The title there, with nothing before it: a pane title again (20px, heading font), as PaneHeader styles one without a way back. */
 const INBOX_TITLE = "@min-[52.5rem]/inbox:font-heading @min-[52.5rem]/inbox:text-xl @min-[52.5rem]/inbox:tracking-[-0.015em]";
 
+/** Messages from one sender this close together read as a run: one avatar, and their name and time once, under the last. */
+const RUN_MS = 5 * 60_000;
+
 /** A conversation shows its latest this many messages, and this many earlier ones with each "Show earlier messages" (`?messages=`). */
 const MESSAGES_PER_PAGE = 50;
 
@@ -209,6 +212,21 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const canSnooze = !conversation.spam && conversation.status !== "CLOSED";
   const snoozedUntil = canSnooze && conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null;
   const posts = conversation.posts.map((link) => link.post);
+  type Message = (typeof conversation.messages)[number];
+  // Someone else on the email (in Cc) shows as their address.
+  const byName = (message: Message) =>
+    message.author === "USER" ? (message.fromAddress ?? personName) : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
+  // A team reply's email, under it. Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase).
+  const emailed = (message: Message) =>
+    message.author !== "TEAM" || message.note
+      ? undefined
+      : message.seenAt
+        ? "Seen"
+        : message.importId
+          ? "Imported from Featurebase"
+          : message.emailStatus
+            ? EMAIL_STATUS[message.emailStatus](message.emailError)
+            : waits || undefined;
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
@@ -270,21 +288,32 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 first={conversation.messages[0]?.id ?? ""}
                 more={conversation._count.messages > shown}
               />
-              <ol className="inbox-messages flex flex-col gap-3 pb-2" aria-label="Messages">
+              <ol className="inbox-messages flex flex-col gap-1 pb-2" aria-label="Messages">
                 {conversation.messages.map((message, index) => {
                   const fromTeam = message.author !== "USER";
-                  // Someone else on the email (in Cc) shows as their address.
-                  const name =
-                    message.author === "USER" ? (message.fromAddress ?? personName) : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
+                  const name = byName(message);
+                  const status = emailed(message);
+                  // A run from one sender, as in a messaging app: the next message from them within minutes, its line under it the
+                  // same, carries the avatar and that line for both.
+                  const next = conversation.messages[index + 1];
+                  const runs =
+                    !!next &&
+                    !message.note &&
+                    !next.note &&
+                    next.author === message.author &&
+                    byName(next) === name &&
+                    next.createdAt.getTime() - message.createdAt.getTime() < RUN_MS &&
+                    timeAgo(next.createdAt) === timeAgo(message.createdAt) &&
+                    emailed(next) === status;
                   return (
                     <li key={message.id} data-message={message.id}>
                       <MessageDay at={message.createdAt.toISOString()} previous={conversation.messages[index - 1]?.createdAt.toISOString()} />
                       <div className={cn("inbox-message flex items-end gap-2", fromTeam && "team flex-row-reverse justify-start", message.note && "note mx-5 flex-row justify-center @max-[57rem]/app:mx-3.75 @min-[77rem]/app:group-data-[details=hidden]/thread:mx-17.5")}>
-                        <Avatar className={cn("inbox-chat-avatar mb-5.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden")}>
+                        <Avatar className={cn("inbox-chat-avatar mb-5.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden", runs && "invisible mb-0")}>
                           <AvatarFallback>{initial(name)}</AvatarFallback>
                         </Avatar>
-                        <div className={cn("inbox-message-body min-w-0 max-w-[min(65ch,calc(100%_-_3.75rem))] max-md:max-w-[calc(100%_-_2.8125rem)]", message.note && "max-w-full max-md:max-w-full")}>
-                          <div className={cn("inbox-bubble rounded-xl rounded-bl-sm bg-inbox-customer px-3.25 py-2.25 wrap-anywhere max-md:px-2.75 [&_p]:text-sm [&>p:not(.inbox-message-by)]:leading-normal", fromTeam && "rounded-bl-xl rounded-br-sm bg-inbox-team", message.note && "rounded-lg border border-dashed border-highlight-foreground/40 bg-inbox-note px-3 py-2 max-md:px-3 max-md:py-2 [&_.inbox-note-by]:text-xs [&_.inbox-note-by]:leading-4.5")}>
+                        <div className={cn("inbox-message-body min-w-0 max-w-[min(30rem,72%)] max-md:max-w-[82%]", message.note && "max-w-full max-md:max-w-full")}>
+                          <div className={cn("inbox-bubble rounded-2xl bg-inbox-customer px-3.25 py-2.25 wrap-anywhere max-md:px-2.75 [&_p]:text-sm [&>p:not(.inbox-message-by)]:leading-normal", !runs && (fromTeam ? "rounded-br-sm" : "rounded-bl-sm"), message.attachments.length === 0 && "w-fit max-w-full", fromTeam && !message.note && "ml-auto bg-primary text-primary-foreground [&_details]:text-primary-foreground/80", message.note && "mx-auto rounded-lg border border-dashed border-highlight-foreground/40 bg-inbox-note px-3 py-2 max-md:px-3 max-md:py-2 [&_.inbox-note-by]:text-xs [&_.inbox-note-by]:leading-4.5")}>
                             {message.note && (
                               <p className="inbox-note-by mb-0.5 flex items-center gap-1.25 text-xs leading-4.5 font-semibold text-highlight-foreground [&>svg]:size-3.25 [&>svg]:flex-none">
                                 <LockKeyholeIcon aria-hidden />
@@ -309,23 +338,13 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </details>
                             )}
                           </div>
-                          <p className={cn("inbox-message-by m-0 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center")}>
-                            {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
-                            {!message.note && `${name} · `}
-                            {timeAgo(message.createdAt)}{" "}
-                            {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waits) && (
-                              <span>
-                                {/* Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase). */}
-                                {message.seenAt
-                                  ? "Seen"
-                                  : message.importId
-                                    ? "Imported from Featurebase"
-                                    : message.emailStatus
-                                      ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                                      : waits}
-                              </span>
-                            )}
-                          </p>
+                          {!runs && (
+                            <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center")}>
+                              {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
+                              {!message.note && `${name} · `}
+                              {timeAgo(message.createdAt)} {status && <span>{status}</span>}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </li>

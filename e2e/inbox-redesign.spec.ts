@@ -238,3 +238,67 @@ test("long names and subjects fit both laptop widths with wrapping details label
     await checkpoint(owner, `long-content-${width}`, { fullPage: false });
   }
 });
+
+test("messages read as chat bubbles, a run from one sender under one name, and the reply box lights up as one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme Calendar", slug);
+  await verifyEmail(owner);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", {
+    user: { id: "demo-sam", name: "Sam Smith", email: "e2e-sam@example.com" },
+    subject: "Can I export my reports?",
+    body: "Can I export reports for our weekly planning? We plan every Monday and would love to share them with the whole team.",
+  });
+  await api("/conversations/1/messages", { body: "Hi Sam! Yes, from Reports → Export." });
+  await api("/conversations/1/messages", { body: "Would a CSV work, or do you need a PDF?" });
+  await api("/conversations/1/messages", { body: "thanks!!", author: { id: "demo-sam" } });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const messages = owner.getByRole("list", { name: "Messages" });
+  const bubbles = messages.locator(".inbox-bubble");
+  await expect(bubbles).toHaveCount(4);
+
+  // The team's two replies are a run: one avatar shown, their name and time once, under the second.
+  await expect(messages.getByText("Olive Owner ·")).toHaveCount(1);
+  await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "hidden");
+  await expect(messages.locator(".team .inbox-chat-avatar").last()).toHaveCSS("visibility", "visible");
+  // The team's in the primary colour; the customer's long message stays well short of the pane's width.
+  const primary = await owner.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "bg-primary";
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  });
+  await expect(bubbles.nth(1)).toHaveCSS("background-color", primary);
+  const list = (await messages.boundingBox())!;
+  expect((await bubbles.first().boundingBox())!.width).toBeLessThanOrEqual(list.width * 0.72);
+  // A short one stays short.
+  expect((await bubbles.last().boundingBox())!.width).toBeLessThan(120);
+
+  // The reply box, not its text field, lights up while it's written in.
+  const composer = owner.locator("form.inbox-composer");
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  await reply.click();
+  expect(await reply.evaluate((field) => getComputedStyle(field).boxShadow)).not.toMatch(/0px 0px 0px [1-9]/);
+  await expect(composer).not.toHaveCSS("box-shadow", /^none$/);
+  await reply.fill("Thanks for flagging this, I’ve refunded the charge");
+  await checkpoint(owner, "laptop-reply-focused", { fullPage: false });
+  // On Note the whole box takes the note's colours.
+  const card = await composer.evaluate((form) => getComputedStyle(form).backgroundColor);
+  await owner.getByRole("tab", { name: "Note" }).click();
+  await expect(composer).not.toHaveCSS("background-color", card);
+  await owner.getByRole("textbox", { name: "Note" }).fill("Refunded in Stripe, check again Friday");
+  await checkpoint(owner, "laptop-note-focused", { fullPage: false });
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.getByRole("tab", { name: "Reply" }).click();
+  await reply.click();
+  await checkpoint(owner, "phone-bubbles", { fullPage: false });
+  expect((await bubbles.first().boundingBox())!.width).toBeLessThanOrEqual((await messages.boundingBox())!.width * 0.82 + 1);
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "phone-bubbles-dark", { fullPage: false });
+});
