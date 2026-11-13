@@ -219,11 +219,12 @@ export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullR
 
 /**
  * The lines Autopilot wrote into these pull requests' bullets (writeChangelogLine, or one the team approved as it was):
- * not one the team reworded before approving it, which is theirs.
+ * only those in the draft (applied: not one still waiting, dismissed or undone, whose words the team may have typed
+ * themselves), and not one the team reworded before approving it, which is theirs.
  */
 export async function autopilotLines(projectId: string, urls: string[]): Promise<string[]> {
   const actions = await prisma.codeChangeAction.findMany({
-    where: { kind: "CHANGELOG_LINE", codeChange: { projectId, url: { in: urls } } },
+    where: { kind: "CHANGELOG_LINE", status: "APPLIED", codeChange: { projectId, url: { in: urls } } },
     select: { payload: true },
   });
   return actions.flatMap(({ payload }) => {
