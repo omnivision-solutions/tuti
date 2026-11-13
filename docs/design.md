@@ -429,7 +429,8 @@ the list picks none to approve at once.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
-    the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
+    one 82rem container on every page (the docs' columns), so the logo never moves between parts; outside Docs the
+    pages' own narrower containers sit centred under it.
     On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it, on Docs, the docs tabs' row when there are two or more: an underlined row
     the whole width, scrolling sideways on phones, the open tab underlined in the foreground (the accent's underline is
