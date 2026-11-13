@@ -182,3 +182,11 @@ test("an account whose first project was made without a trial on offer gets none
   // And it's counted as had: a later project doesn't start one either.
   expect((await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { trialStartedAt: true } })).trialStartedAt).not.toBeNull();
 });
+
+test("an owner of someone else's project (invited) still gets a trial on the first project they make", async () => {
+  const other = await signUp("Other owner");
+  const theirs = await projectOf(other);
+  await prisma.teamMember.create({ data: { projectId: theirs.id, userId: owner.id, role: "OWNER" } });
+  const mine = await newProject();
+  expect(mine.trialEndsAt).not.toBeNull();
+});

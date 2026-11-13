@@ -8,19 +8,13 @@ import { planDisplay, trialTerms } from "@tuti/shared";
  * the trial's AI credits until then; a plan bought meanwhile ends it (syncSubscription). In `tx`, with the project made.
  */
 export async function startTrial(tx: Prisma.TransactionClient, projectId: string, ownerId: string): Promise<void> {
-  const trial = trialTerms();
-  if (!trial) {
-    return;
-  }
   const now = new Date();
-  // Claimed with the trial, so two projects made at once can't both have one.
+  // An account's first project made claims its trial, whether or not one is on offer then (so turning trials on later
+  // gives none to a second project); claimed in this transaction, so two projects made at once can't both have one.
+  // Being made an owner of someone else's project doesn't claim it.
   const { count } = await tx.user.updateMany({ where: { id: ownerId, trialStartedAt: null }, data: { trialStartedAt: now } });
-  if (count === 0) {
-    return;
-  }
-  // Nor for an owner who already owns another project (made before trials, or while a deploy ran the release before):
-  // the marker is set now, and the trial is only ever an account's first project's.
-  if ((await tx.teamMember.count({ where: { userId: ownerId, role: "OWNER", projectId: { not: projectId } } })) > 0) {
+  const trial = trialTerms();
+  if (count === 0 || !trial) {
     return;
   }
   const trialEndsAt = new Date(now.getTime() + trial.days * 86_400_000);
