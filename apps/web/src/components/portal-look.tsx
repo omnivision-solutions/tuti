@@ -3,15 +3,27 @@
 import { LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { createContext, useContext, useId, useSyncExternalStore } from "react";
+import { createContext, useContext, useId, useState, useSyncExternalStore } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@tuti/ui/tuti-logo";
-import { DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME, THEME_DEFAULT_KEY } from "@/lib/portal-look";
+import { type ColorScheme, DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME, THEME_DEFAULT_KEY } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 /** In Customize's preview: a frame named PREVIEW_FRAME (its own page, or the widget's panel in it). */
 export const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
+
+/**
+ * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
+ * (the frame shares the portal's storage with the team member's own visits to it).
+ */
+export function showTheme(scheme: ColorScheme) {
+  const mode = scheme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : scheme;
+  const html = document.documentElement;
+  html.classList.remove("light", "dark");
+  html.classList.add(mode);
+  html.style.colorScheme = mode;
+}
 
 export const LookContext = createContext<PortalLook | null>(null);
 
@@ -183,10 +195,12 @@ const noStore = () => () => {};
 /**
  * The reader's light or dark mode (Customize → Branding lets the team hide it): three quiet icons, native radios, so arrow
  * keys move between them. Kept where next-themes keeps it, as the reader's own pick (not the portal's default; see
- * ColorSchemeScript). None shows as picked until the page has run: the server doesn't know the pick.
+ * ColorSchemeScript). None shows as picked until the page has run: the server doesn't know the pick. In Customize's
+ * preview, only on the page (showTheme).
  */
 function ThemeSwitch() {
   const { theme, setTheme } = useTheme();
+  const [tried, setTried] = useState<ColorScheme | null>(null);
   const name = useId();
   const hydrated = useSyncExternalStore(noStore, () => true, () => false);
   return (
@@ -202,8 +216,13 @@ function ThemeSwitch() {
             name={name}
             value={value}
             aria-label={label}
-            checked={hydrated && (theme ?? "system") === value}
+            checked={hydrated && (tried ?? theme ?? "system") === value}
             onChange={() => {
+              if (inPreview()) {
+                setTried(value);
+                showTheme(value);
+                return;
+              }
               localStorage.removeItem(THEME_DEFAULT_KEY);
               setTheme(value);
             }}

@@ -141,17 +141,21 @@ test("the colour scheme, the logo's text and link, sidebar links and the search 
   });
   await expect(update({ logoLink: "javascript:alert(1)" })).rejects.toMatchObject({ status: 400 });
   await expect(update({ colorScheme: "sepia" as never })).rejects.toMatchObject({ status: 400 });
-  // The readers' light/dark switch: on until the team turns it off, and Customize's form turns it off by leaving it out.
+  // The readers' light/dark switch: on until the team turns it off.
   expect((await update({ themeSwitch: false })).themeSwitch).toBe(false);
   expect((await update({ themeSwitch: true })).themeSwitch).toBe(true);
+  // Customize's form sends an empty field beside the switch, then "on" if it's on; a form without it leaves it as it is.
   actAs(owner);
   const look = new FormData();
   look.set("part", "look");
   look.set("color", "#12804a");
   look.set("colorScheme", "dark");
   await saveBranding(project.slug, {}, look);
+  expect((await get()).themeSwitch).toBe(true);
+  look.append("themeSwitch", "");
+  await saveBranding(project.slug, {}, look);
   expect((await get()).themeSwitch).toBe(false);
-  look.set("themeSwitch", "on");
+  look.append("themeSwitch", "on");
   await saveBranding(project.slug, {}, look);
   expect((await get()).themeSwitch).toBe(true);
   await expect(update({ seo: { description: "x".repeat(161) } })).rejects.toMatchObject({ message: expect.stringContaining("up to 160 characters") });

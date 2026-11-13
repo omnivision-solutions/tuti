@@ -100,7 +100,7 @@ export function BrandingSettings({
       logo: image(data, "logo"),
       logoDark: image(data, "logoDark"),
       colorScheme: (COLOR_SCHEMES as readonly string[]).includes(text(data, "colorScheme")) ? (text(data, "colorScheme") as ColorScheme) : "system",
-      themeSwitch: data.get("themeSwitch") === "on",
+      themeSwitch: data.getAll("themeSwitch").includes("on"),
       logoText: text(data, "logoText").trim(),
       // A link only once it's a whole address, as saving needs.
       logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
@@ -126,6 +126,8 @@ export function BrandingSettings({
             </label>
           ))}
         </div>
+        {/* Sent off or on (see saveBranding). */}
+        <input type="hidden" name="themeSwitch" value="" />
         <SwitchRow name="themeSwitch" label="Let readers switch theme" description="A light/dark switch in the portal's footer." defaultChecked={themeSwitch} />
         <Field>
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
