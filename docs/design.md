@@ -211,7 +211,7 @@ the list picks none to approve at once.
   the bottom of the screen as the messages scroll under it, however many there are.
   Its list, conversation and details are white panes on the shell's canvas, 8px apart.
   Rows put who, the subject and the latest message on separate lines. Messages are plain text plus attachments,
-  in chat bubbles as in a messaging app: as wide as their text, up to 72% of the conversation (82% on phones), the team's
+  in chat bubbles as in a messaging app: as wide as their text, up to 72% of the conversation and at most 30rem, so a line stays readable on a wide screen (82% on phones), the team's
   in primary with primary's text colour and the customer's in `inbox-customer`; messages from one sender within five minutes,
   their name and email status the same, are a run with one avatar and that line once, under the last. Internal notes
   are centred with the highlight tint. The composer is one card: Reply and Note are underline tabs across its top, its text
