@@ -3,7 +3,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { cappedProjects, claimProjectEmail, dueAgain, monthCappedProjects, nextMonth, releaseProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail } from "./email-limits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
@@ -358,8 +358,8 @@ export async function resubmitChangelogEmails(_input: JobInput<"resubmitChangelo
   const capped = await cappedProjects();
   const due = await prisma.changelogEntry.findMany({
     where: {
-      // Due a while ago, or held for next month by the monthly limit (dueAgain) where the project has room again (an upgrade).
-      OR: [{ subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { subscribersEmailDueAt: nextMonth(new Date()) }],
+      // Due a while ago, or held by the monthly limit (dueAgain): once its month has reset, or now where the project has room again (an upgrade).
+      OR: [{ subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { subscribersEmailDueAt: { in: heldDueDates() } }],
       // One taken off the portal waits to be published again (which queues it).
       publishedAt: { not: null },
       ...(plansEnabled() && { project: { emailPausedAt: null } }),

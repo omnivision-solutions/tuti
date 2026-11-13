@@ -5,7 +5,7 @@ import type { JobInput } from "@tuti/shared";
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
-import { cappedProjects, claimProjectEmail, dueAgain, monthCappedProjects, nextMonth, releaseProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -256,8 +256,8 @@ export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEma
   const capped = await cappedProjects();
   const due = await prisma.post.findMany({
     where: {
-      // Due a while ago, or held for next month by the monthly limit (dueAgain) where the project has room again (an upgrade).
-      OR: [{ shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { shippedEmailsDueAt: nextMonth(new Date()) }],
+      // Due a while ago, or held by the monthly limit (dueAgain): once its month has reset, or now where the project has room again (an upgrade).
+      OR: [{ shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { shippedEmailsDueAt: { in: heldDueDates() } }],
       ...(capped.length > 0 && { projectId: { notIn: capped } }),
     },
     select: { id: true },

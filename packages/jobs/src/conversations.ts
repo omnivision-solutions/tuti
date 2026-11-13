@@ -7,7 +7,7 @@ import { ses } from "@tuti/shared/ses";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
-import { cappedProjects, claimProjectEmail, releaseProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, monthCappedProjects, releaseProjectEmail, tellEmailLimit } from "./email-limits";
 import { sesTenantHeaders } from "./ses-tenant";
 
 /** Tuti's loop header (apps/web lib/email-noise.ts): mail that comes back with it is known as ours. */
@@ -183,6 +183,14 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
   }
   // New projects past their daily cap wait for tomorrow, and aren't picked, so they can't crowd out the rest.
   const capped = await cappedProjects(now);
+  // Those whose month is full and have replies waiting: their teams hear (once a month), though no claim is refused.
+  const full = await monthCappedProjects(now);
+  if (full.length > 0) {
+    const waiting = await prisma.conversationMessage.findMany({ where: { projectId: { in: full }, ...unsent(now) }, distinct: ["projectId"], select: { projectId: true } });
+    for (const { projectId } of waiting) {
+      await tellEmailLimit(projectId, now);
+    }
+  }
   // Fair across projects: each project's longest-waiting conversation first, then each one's second, and so on, so one
   // project's backlog can't hold up everyone else's replies. Mirrors `unsent` (sendReplies' claim checks it again).
   const due = await prisma.$queryRaw<{ conversationId: string; projectId: string }[]>`

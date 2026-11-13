@@ -1,6 +1,6 @@
 import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
-import { emailsThisMonth, handlers, resumeToken } from "@tuti/jobs";
+import { claimProjectEmail, emailsThisMonth, handlers, resumeToken } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -153,7 +153,7 @@ test("a reply that isn't emailed after all (nobody to email) doesn't count", asy
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 0, limit: 1 });
 });
 
-test("the owner hears when the month's last email goes, though what waits comes in a later run", async () => {
+test("the owner hears once an email waits, not when the last one goes, though what waits comes in a later run", async () => {
   const { owner, project, team } = await setup();
   const address = supportAddress(await mailSubdomain(project.id), DOMAIN);
   const reply = async (n: number, from: string) => {
@@ -163,10 +163,56 @@ test("the owner hears when the month's last email goes, though what waits comes 
     await handlers.sendConversationReplies({}, log);
   };
   await reply(1, `e2e-kim-${project.slug}@example.com`);
-  expect(limitEmails(owner.email)).toHaveLength(1);
+  // The month's last went: nothing waits yet.
+  expect(limitEmails(owner.email)).toHaveLength(0);
   await reply(2, `e2e-lee-${project.slug}@example.com`);
   expect(emailsTo(`e2e-lee-${project.slug}@example.com`)).toHaveLength(0);
   expect(limitEmails(owner.email)).toHaveLength(1);
+  await handlers.sendConversationReplies({}, log);
+  expect(limitEmails(owner.email)).toHaveLength(1);
+});
+
+test("a new project's daily cap refusing the month's last email doesn't tell the team its month is used up", async () => {
+  const { owner, project } = await setup();
+  // In its first week, with today's cap used up.
+  await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+  await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 } });
+  expect(await claimProjectEmail(project.id)).toBe(false);
+  expect(limitEmails(owner.email)).toHaveLength(0);
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 0, limit: 1 });
+
+  // A week old: the month's one is taken, and only the next, which waits, tells the team.
+  await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
+  expect(await claimProjectEmail(project.id)).toBe(true);
+  expect(limitEmails(owner.email)).toHaveLength(0);
+  expect(await claimProjectEmail(project.id)).toBe(false);
+  expect(limitEmails(owner.email)).toHaveLength(1);
+});
+
+test("telling the team can't fail their users' email: it's best-effort", async () => {
+  const { owner, project, team } = await setup();
+  const emailed = await twoReplies(project, team);
+  // Building the notice throws (no usable app address for its link).
+  vi.stubEnv("APP_URL", "not a url");
+  await expect(handlers.sendConversationReplies({}, log)).resolves.toBeDefined();
+  expect(emailed()).toBe(1);
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 1 });
+  expect(limitEmails(owner.email)).toHaveLength(0);
+});
+
+test("email held for a month that has reset goes whenever the safety net runs, past its look-back; nothing sent goes twice", async () => {
+  const { project, team } = await setup();
+  const { voters, post } = await votedPost(project);
+  await call(createComment, team, { number: post.number, body: "It's out.", emailVoters: true });
+  const replied = () => voters.filter((voter) => emailsTo(voter.email).some((email) => email.subject === "Re: Dark mode")).length;
+  expect(replied()).toBe(1);
+  // Held last month for this one, which reset two weeks ago (MID_MONTH): past the safety net's day of look-back.
+  await prisma.comment.updateMany({ where: { projectId: project.id }, data: { votersEmailDueAt: month() } });
+  await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+  await handlers.resubmitReplyEmails({}, log);
+  expect(replied()).toBe(2);
+  expect(voters.map((voter) => emailsTo(voter.email).filter((email) => email.subject === "Re: Dark mode").length)).toEqual([1, 1]);
+  expect((await prisma.comment.findFirstOrThrow({ where: { projectId: project.id } })).votersEmailDueAt).toBeNull();
 });
 
 test("a send that fails gives its slot back: the month counts what was sent", async () => {

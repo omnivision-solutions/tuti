@@ -22,8 +22,7 @@ export const nextMonth = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), 
  * and changelog emails; sign-in links, invitations and the team's own email never wait), on a server selling plans:
  * its plan's emailsPerMonth each calendar month (UTC), and in its first week NEW_PROJECT_EMAILS_PER_DAY a day, so a
  * new project's spam reaches only so many before its bounces and complaints show. Each claimed in one statement, so
- * sends at once can't pass it together. The month's last email (or the first held, after a downgrade) tells the project's
- * owners and admins.
+ * sends at once can't pass it together. The first email the month's limit holds tells the project's owners and admins.
  */
 export async function claimProjectEmail(projectId: string, now = new Date()): Promise<boolean> {
   if (!plansEnabled()) {
@@ -46,11 +45,10 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
     ON CONFLICT ("projectId", "month") DO UPDATE SET "emails" = "project_email_month"."emails" + 1
     WHERE ${limit}::int IS NULL OR "project_email_month"."emails" < ${limit}::int
     RETURNING "emails"`;
-  // The last one this month, or none left: the team hears (once a month), even if the rest wait in a later run.
-  if (counted.length === 0 || (limit !== null && counted[0]!.emails >= limit)) {
-    await tellEmailLimit(projectId, now);
-  }
   if (counted.length === 0) {
+    // None left: this email waits, and the team hears (once a month). Never on the claim that takes the last one, which
+    // the daily cap or its send may still give back.
+    await tellEmailLimit(projectId, now);
     return false;
   }
   if (!capping() || now.getTime() - createdAt.getTime() >= NEW_FOR_MS) {
@@ -108,6 +106,14 @@ export async function dueAgain(projectId: string, now = new Date()): Promise<Dat
   return !paused && (await monthlyLimitReached(projectId, now)) ? nextMonth(now) : now;
 }
 
+/**
+ * The due dates the monthly limit holds email to (dueAgain): next month's first day, this month's, and the year before's.
+ * The safety nets take these whenever they're due (and next month's once the project has room), not only within their
+ * short look-back, so what waited for a month that has since reset is never left behind.
+ */
+export const heldDueDates = (now = new Date()) =>
+  Array.from({ length: 14 }, (_, back) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1 - back, 1)));
+
 /** The projects whose plan's emails for this month are used up: their email to their users waits for next month. */
 export async function monthCappedProjects(now = new Date()): Promise<string[]> {
   const limits = listedPlans().map(emailsPerMonth).filter((limit) => limit !== null);
@@ -142,9 +148,19 @@ export async function cappedProjects(now = new Date()): Promise<string[]> {
 
 /**
  * Tells a project's owners and admins, once a month, that it reached its plan's monthly email limit: what waits, until
- * when, and the plan with more room. Claimed before sending (best-effort: a failed send isn't tried again this month).
+ * when, and the plan with more room. Claimed before sending, and best-effort: it never throws, and a failed send isn't
+ * tried again this month.
  */
-async function tellEmailLimit(projectId: string, now: Date) {
+export async function tellEmailLimit(projectId: string, now: Date) {
+  try {
+    await tellEmailLimitOnce(projectId, now);
+  } catch (error) {
+    // Best-effort: the team's notice never holds up or costs their users' email.
+    log.error("Telling a team that its project reached its monthly email limit failed", { projectId, error });
+  }
+}
+
+async function tellEmailLimitOnce(projectId: string, now: Date) {
   if (!emailConfigured() || !process.env.APP_URL) {
     return;
   }
