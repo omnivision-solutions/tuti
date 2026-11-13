@@ -3,7 +3,7 @@
 # Configure it with environment variables (see apps/web/.env.example); the
 # container applies database migrations, then serves on $PORT (3000).
 FROM mirror.gcr.io/library/node:22-alpine AS base
-RUN apk add --no-cache libc6-compat openssl
+RUN apk add --no-cache libc6-compat openssl && apk upgrade --no-cache zlib
 # pnpm, the version in package.json's packageManager
 RUN corepack enable
 

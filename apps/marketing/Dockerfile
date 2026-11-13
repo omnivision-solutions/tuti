@@ -3,7 +3,7 @@
 # It needs one setting at run time, APP_URL: the app's public address, for its plans (README, "Production routing").
 # Serves on $PORT (3000).
 FROM mirror.gcr.io/library/node:22-alpine AS base
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat && apk upgrade --no-cache zlib
 # pnpm, the version in package.json's packageManager
 RUN corepack enable
 
