@@ -39,8 +39,9 @@ test("the settings the file replaced, left without one, stop the server rather t
   vi.stubEnv("BILLING_CONFIG", "");
   vi.stubEnv("PLANS", "on");
   vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "price_pro");
-  expect(() => billingConfig()).toThrow("PLANS, STRIPE_PRICE_PRO_MONTHLY are set, but plans are now sold from the file at BILLING_CONFIG");
-  vi.stubEnv("PLANS", "");
+  expect(() => billingConfig()).toThrow("PLANS, STRIPE_PRICE_PRO_MONTHLY are set, but plans and the \"Powered by tuti\" add-on (licences too) are now sold from the file at BILLING_CONFIG");
+  // Any other PLANS was billing off, as no file is.
+  vi.stubEnv("PLANS", "off");
   vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
   expect(billingConfig()).toBeNull();
 });
