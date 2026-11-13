@@ -59,10 +59,12 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
       orderBy: { entry: { publishedAt: "desc" } },
       select: { postId: true, entry: { select: { number: true, title: true } } },
     }),
-    // Each board's ideas on the roadmap, for its pill (every board's, whichever is shown).
+    // Each board's ideas on the roadmap, for its pill (every board's, whichever is shown), counted as the cards are
+    // picked: a public idea on a board that isn't listed (Team only) is a card under All boards, so it counts there.
+    // ponytail: the columns show 50 each; past that a pill counts more than its cards.
     prisma.post.groupBy({
       by: ["boardId"],
-      where: { projectId: project.id, status: { in: ROADMAP.map((c) => c.status) }, duplicateOfId: null, boardId: { in: project.boards.map((b) => b.id) }, ...visiblePosts(viewer) },
+      where: { projectId: project.id, status: { in: ROADMAP.map((c) => c.status) }, duplicateOfId: null, ...visiblePosts(viewer) },
       _count: true,
     }),
   ]);
