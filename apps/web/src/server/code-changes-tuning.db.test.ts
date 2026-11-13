@@ -110,22 +110,22 @@ test("owners only: an admin sees the values and can't change them, a member neit
 
 test("on Business only: Free and Pro are told so (402); after a downgrade the values are kept and not used, and Business uses them again", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  for (const plan of ["FREE", "PRO"] as const) {
+  for (const plan of ["free", "pro"] as const) {
     await prisma.project.update({ where: { id: project.id }, data: { plan } });
     await expect(call(updateCodeChangesTuning, as(owner), { "decide.rounds": 6 })).rejects.toMatchObject({
       status: 402,
       message: "Advanced tuning needs the Business plan. See Settings → Billing.",
     });
   }
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   expect((await call(updateCodeChangesTuning, as(owner), { "decide.rounds": 6 })).values["decide.rounds"].value).toBe(6);
 
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const downgraded = await call(getCodeChangesTuning, as(owner), {});
   expect(downgraded.available).toBe(false);
   expect(downgraded.values["decide.rounds"]).toMatchObject({ value: 12, default: 12, saved: 6 });
 
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   expect((await call(getCodeChangesTuning, as(owner), {})).values["decide.rounds"]).toMatchObject({ value: 6, saved: 6 });
 });
 

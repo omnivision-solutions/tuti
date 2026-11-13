@@ -624,7 +624,7 @@ test("the AI report reads the same whatever the database's time zone: days and t
 
 test("reports.get by plan: Free refused, Pro up to a month, Business every range; every range without plans", async () => {
   const report = (range: RangeKey) => call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { range });
-  const plan = (to: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan: to } });
+  const plan = (to: "free" | "pro" | "business") => prisma.project.update({ where: { id: project.id }, data: { plan: to } });
   expect((await report("year")).docs.days).toHaveLength(365);
 
   vi.stubEnv("BILLING_CONFIG", billingFile());
@@ -632,7 +632,7 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
   // Nor its numbers through docs.insights (the past 30 days).
   const insights = () => call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   await expect(insights()).rejects.toMatchObject({ status: 402 });
-  await plan("PRO");
+  await plan("pro");
   for (const range of ["today", "month", "last-month", "30d"] as const) {
     await expect(report(range)).resolves.toHaveProperty("docs");
   }
@@ -640,12 +640,12 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
   for (const range of ["quarter", "year"] as const) {
     await expect(report(range)).rejects.toMatchObject({ status: 402, message: "Longer ranges need the Business plan. See Settings → Billing." });
   }
-  await plan("BUSINESS");
+  await plan("business");
   expect((await report("year")).docs.days).toHaveLength(365);
 
   // A plan with less than the default 30 days: unpicked, the longest range it has, never a locked one.
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => { free.limits.reportingDays = 7; pro.limits.reportingDays = 7; }));
-  await plan("PRO");
+  await plan("pro");
   const unpicked = await call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(unpicked.docs.days).toHaveLength(7);
   // Its pages too, for no range, a locked one or one that isn't a range (an old bookmark).
@@ -674,7 +674,7 @@ test("on Free, Reporting's pages are made-up numbers, blurred under a card sayin
   expect(member).not.toContain("See plans");
   expect(member).not.toContain("Our secret article");
 
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const pro = await page(ReportingOverviewPage, { range: "year" });
   expect(pro).not.toContain("Reporting needs");
   expect(pro).toContain("7,777");

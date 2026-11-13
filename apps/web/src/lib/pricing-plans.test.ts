@@ -140,3 +140,11 @@ test("a plan without prices is free where it's the default, and otherwise by quo
   // Its credits would come with paid invoices, which it has none of.
   expect(business!.highlights.some(({ text }) => text.includes("AI credits"))).toBe(false);
 });
+
+test("a hidden plan (a default nobody picks) is left off, and the first plan shown lists everything", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.hidden = true; }));
+  const [pro, business] = pricingPlans();
+  expect(pricingPlans().map(({ name }) => name)).toEqual(["Pro", "Business"]);
+  expect([pro!.intro, pro!.features.some(({ text }) => text === "Unlimited end users")]).toEqual([undefined, true]);
+  expect(business!.intro).toBe("Everything in Pro, plus:");
+});

@@ -18,10 +18,10 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/sett
   if (!project) {
     notFound();
   }
-  const [brand, license, { badgeAddOn, plan, planInterval }] = await Promise.all([
+  const [brand, license, { badgeAddOn, planStatus, planInterval }] = await Promise.all([
     branding({ id: project.id }).then((found) => found!),
     projectLicense(project.id),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { badgeAddOn: true, plan: true, planInterval: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { badgeAddOn: true, planStatus: true, planInterval: true } }),
   ]);
   return (
     <PortalSettingsPane page="branding" preview={await portalPreview(slug, "/")}>
@@ -49,7 +49,7 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/sett
             poweredBy={brand.poweredBy}
             licensedUntil={license.licensedUntil}
             buyLicenseUrl={license.buyUrl}
-            plan={plansEnabled() ? { addOn: badgeAddOn, billingUrl: `/app/${slug}/settings/billing`, perMonth: badgeOffered(plan, planInterval) } : null}
+            plan={plansEnabled() ? { addOn: badgeAddOn, billingUrl: `/app/${slug}/settings/billing`, perMonth: badgeOffered({ planStatus, planInterval }) } : null}
           />
         </CardContent>
       </Card>

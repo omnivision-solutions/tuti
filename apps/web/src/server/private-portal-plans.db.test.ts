@@ -32,11 +32,11 @@ afterEach(() => {
 });
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
-const onPlan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
+const onPlan = (plan: null | "pro" | "business") => prisma.project.update({ where: { id: project.id }, data: { plan } });
 const BETA = [{ property: "groups", op: "is" as const, value: "beta" }];
 
 test("a private portal, groups, readers by email and content for groups need Business", async () => {
-  await onPlan("PRO");
+  await onPlan("pro");
   const refused = { status: 402, code: "plan_required", message: "A private portal and reader groups need the Business plan. See Settings → Billing." };
   await expect(call(updatePortal, as(), { access: "private" })).rejects.toMatchObject(refused);
   await expect(call(createGroup, as(), { name: "Beta", conditions: BETA })).rejects.toMatchObject(refused);
@@ -45,9 +45,9 @@ test("a private portal, groups, readers by email and content for groups need Bus
   expect(await prisma.readerGroup.count({ where: { projectId: project.id } })).toBe(0);
   expect(await prisma.portalReader.count({ where: { projectId: project.id } })).toBe(0);
 
-  await onPlan("BUSINESS");
+  await onPlan("business");
   await call(createGroup, as(), { name: "Beta", conditions: BETA });
-  await onPlan("PRO");
+  await onPlan("pro");
   await expect(call(updateGroup, as(), { group: "beta", name: "Beta testers" })).rejects.toMatchObject(refused);
   await expect(call(createArticle, as(), { title: "Roadmap", body: "Soon", access: "groups", groups: ["beta"] })).rejects.toMatchObject(refused);
   // Taking things back to public always works.
@@ -57,7 +57,7 @@ test("a private portal, groups, readers by email and content for groups need Bus
 });
 
 test("on a lower plan, a private portal stays private and is the team's only; its readers are back with the plan", async () => {
-  await onPlan("BUSINESS");
+  await onPlan("business");
   await call(updatePortal, as(), { access: "private" });
   const reader = await signUp("Reader");
   await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
@@ -65,22 +65,22 @@ test("on a lower plan, a private portal stays private and is the team's only; it
   const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "From the app", email: `e2e-${randomUUID()}@example.com` });
   expect([await canReadPortal({ id: project.id }, reader.id), await canReadPortal({ id: project.id }, ssoUser)]).toEqual([true, true]);
 
-  await onPlan("FREE");
+  await onPlan(null);
   expect([await canReadPortal({ id: project.id }, reader.id), await canReadPortal({ id: project.id }, ssoUser)]).toEqual([false, false]);
   expect(await canReadPortal({ id: project.id }, owner.id)).toBe(true);
   expect(await canReadPortal({ id: project.id }, null)).toBe(false);
   expect(await prisma.portalReader.count({ where: { projectId: project.id } })).toBe(1);
 
-  await onPlan("BUSINESS");
+  await onPlan("business");
   expect(await canReadPortal({ id: project.id }, reader.id)).toBe(true);
 });
 
 test("on a lower plan, nobody past the team is in a group, so content for groups is the team's only", async () => {
-  await onPlan("BUSINESS");
+  await onPlan("business");
   await call(createGroup, as(), { name: "Beta", conditions: BETA });
   const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "Beta tester", email: `e2e-${randomUUID()}@example.com`, properties: { groups: ["beta"] } });
   expect(await readerOf(project.id, ssoUser)).toEqual({ signedIn: true, groups: ["beta"] });
-  await onPlan("PRO");
+  await onPlan("pro");
   expect(await readerOf(project.id, ssoUser)).toEqual({ signedIn: true, groups: [] });
   expect(await readerOf(project.id, owner.id)).toBeNull();
 });

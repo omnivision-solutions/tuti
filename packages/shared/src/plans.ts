@@ -5,16 +5,13 @@ export function plansEnabled(): boolean {
   return billingConfig() !== null;
 }
 
-// ponytail: a project's plan is still the database's enum; plan keys (any number of plans) once projects store a plan's key.
-export type PaidPlan = "PRO" | "BUSINESS";
-export type PlanKey = "FREE" | PaidPlan;
+/** A project's plan as it's stored: a plan's key in the billing file, or null without a paid one (the file's default plan). */
+export type PlanKey = string | null;
 export type PlanInterval = "month" | "year";
-
-const PLAN_KEYS: readonly PlanKey[] = ["FREE", "PRO", "BUSINESS"];
 
 /** `plan` as the billing file has it, or null where the file doesn't list it (or billing is off). */
 function listed(plan: PlanKey): BillingPlan | null {
-  return billingConfig()?.plans.find(({ key }) => key === plan.toLowerCase()) ?? null;
+  return billingConfig()?.plans.find(({ key }) => key === plan) ?? null;
 }
 
 /** What a project on `plan` gets: its plan in the billing file, or the file's default plan where it isn't listed. Billing on only. */
@@ -23,19 +20,20 @@ function terms(plan: PlanKey): BillingPlan {
   return listed(plan) ?? config.plans.find(({ key }) => key === config.defaultPlan)!;
 }
 
-const keyOf = (plan: BillingPlan) => plan.key.toUpperCase() as PlanKey;
-
 /** Whether a plan can be bought (it has a price): the only ones an upgrade names. */
 const sold = (plan: BillingPlan) => Object.values(plan.prices).some((price) => price.sold);
 
 /** A price as sold now: none where it's only recognised for those already paying it (`sold: false`). */
 const forSale = <P extends { sold: boolean }>(price: P | undefined): P | null => (price?.sold ? price : null);
 
-/** The plans the billing file lists, cheapest first, as projects store them; none without plans. */
-export const listedPlans = (): PlanKey[] => billingConfig()?.plans.map(keyOf) ?? [];
+/** The plans the billing file lists, cheapest first, by key; none without plans. */
+export const listedPlans = (): string[] => billingConfig()?.plans.map(({ key }) => key) ?? [];
 
-/** The plan a project without a paid one is on. */
-export const defaultPlanKey = (): PlanKey => (billingConfig()?.defaultPlan.toUpperCase() ?? "FREE") as PlanKey;
+/** The key of the plan a project without a paid one is on; null without plans. */
+export const defaultPlanKey = (): string | null => billingConfig()?.defaultPlan ?? null;
+
+/** Whether a project on `plan` is on the default plan: none stored, one the file doesn't list, or the default's own key. */
+export const onDefaultPlan = (plan: PlanKey): boolean => !listed(plan) || plan === defaultPlanKey();
 
 /** The Stripe price a plan is sold at (the first of its prices for `interval`), or null where it isn't for sale. */
 export function planPrice(plan: PlanKey, interval: PlanInterval): string | null {
@@ -43,11 +41,11 @@ export function planPrice(plan: PlanKey, interval: PlanInterval): string | null 
 }
 
 /** Which plan a Stripe price is (sold now, or before), or null for any other price. */
-export function planOfPrice(price: string | null | undefined): { plan: PaidPlan; interval: PlanInterval } | null {
+export function planOfPrice(price: string | null | undefined): { plan: string; interval: PlanInterval } | null {
   for (const plan of billingConfig()?.plans ?? []) {
     for (const interval of ["month", "year"] as const) {
       if (price && plan.prices[interval]?.stripe.includes(price)) {
-        return { plan: keyOf(plan) as PaidPlan, interval };
+        return { plan: plan.key, interval };
       }
     }
   }
@@ -75,16 +73,16 @@ export function badgePerMonth(interval?: PlanInterval): number | null {
 export const planTerms = (plan: PlanKey): BillingPlan => terms(plan);
 
 /**
- * What the add-on costs a month for a project on `plan`, billed each `interval` (its own billing: the add-on bills alike), or
- * what it starts at on the default plan; null where it isn't sold so.
+ * What the add-on costs a month for a project: with a live subscription (Stripe's status), billed as it is (the add-on
+ * bills alike), whatever plan is stored; without one, what it starts at. Null where it isn't sold so.
  */
-export const badgeOffered = (plan: PlanKey, interval: string | null): number | null =>
-  plan === defaultPlanKey() ? badgePerMonth() : badgePerMonth(interval === "year" ? "year" : "month");
+export const badgeOffered = (project: { planStatus: string | null; planInterval: string | null }): number | null =>
+  project.planStatus !== null ? badgePerMonth(project.planInterval === "year" ? "year" : "month") : badgePerMonth();
 
 /** A plan's name and what it shows a month, billed monthly and yearly (null where it isn't sold that way). */
 export function planDisplay(plan: PlanKey): { name: string; price: { month: number | null; year: number | null } } {
-  const terms = listed(plan);
-  return { name: terms?.name ?? plan.charAt(0) + plan.slice(1).toLowerCase(), price: { month: forSale(terms?.prices.month)?.perMonth ?? null, year: forSale(terms?.prices.year)?.perMonth ?? null } };
+  const terms = plansEnabled() ? (listed(plan) ?? planTerms(plan)) : null;
+  return { name: terms?.name ?? "Free", price: { month: forSale(terms?.prices.month)?.perMonth ?? null, year: forSale(terms?.prices.year)?.perMonth ?? null } };
 }
 
 /** Whether a Stripe price is the "Powered by tuti" add-on's (sold now, or before). */
@@ -109,9 +107,21 @@ export function planCredits(plan: PlanKey): number {
  */
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
-/** The plans that include `feature`, for filtering projects by it; null without plans (every project has it). */
-export function plansWith(feature: PlanFeature): PlanKey[] | null {
-  return plansEnabled() ? PLAN_KEYS.filter((plan) => planIncludes(plan, feature)) : null;
+/**
+ * Which stored plans include `feature`, for filtering projects by it: the keys (`keys`), and whether the default plan does
+ * (`orDefault`: then so do projects with none stored, or one the file doesn't list, `listed`). Null without plans (every
+ * project has it).
+ */
+export function plansWith(feature: PlanFeature): { keys: string[]; orDefault: boolean; listed: string[] } | null {
+  const config = billingConfig();
+  if (!config) {
+    return null;
+  }
+  return {
+    keys: config.plans.filter((plan) => plan.features.includes(feature)).map(({ key }) => key),
+    orDefault: planIncludes(null, feature),
+    listed: listedPlans(),
+  };
 }
 
 /** The first plan for sale (cheapest first) that includes a feature, for saying what to upgrade to; null if none does. */
@@ -161,7 +171,7 @@ export function roomierPlan(plan: PlanKey, limit: (plan: PlanKey) => number | nu
     return null;
   }
   return plansAbove(plan).find((next) => {
-    const room = limit(keyOf(next));
+    const room = limit(next.key);
     return room === null || room > own;
   }) ?? null;
 }

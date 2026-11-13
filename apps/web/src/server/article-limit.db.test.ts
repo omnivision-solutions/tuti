@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
-const setPlan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
+const setPlan = (plan: null | "pro" | "business") => prisma.project.update({ where: { id: project.id }, data: { plan } });
 const published = () => prisma.article.count({ where: { projectId: project.id, publishedAt: { not: null } } });
 const FREE_FULL = { status: 402, code: "article_limit", message: "Your plan publishes up to 50 articles. Unpublish some, or upgrade to Pro." };
 
@@ -52,11 +52,11 @@ test("Free publishes up to 50 articles: the 50th goes live, the 51st is refused 
 test("past its limit (a downgrade), a project saves freely but publishes nothing until it unpublishes enough", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 2; }));
   const [first, second, third] = [await draft("First"), await draft("Second"), await draft("Third")];
-  await setPlan("PRO");
+  await setPlan("pro");
   for (const article of [first, second, third]) {
     await call(publishArticle, team(), { slug: article.slug });
   }
-  await setPlan("FREE");
+  await setPlan(null);
 
   // Saving changes to a published article always works; they wait unpublished.
   const saved = await call(updateArticle, team(), { slug: first.slug, title: "First, edited" });
@@ -85,9 +85,9 @@ test("two publishes at once can't both take the last place", async () => {
 
 test("Pro and Business publish without a limit, unless the operator sets one", async () => {
   await publishedArticles(50);
-  await setPlan("PRO");
+  await setPlan("pro");
   await call(publishArticle, team(), { slug: (await draft("On Pro")).slug });
-  await setPlan("BUSINESS");
+  await setPlan("business");
   await call(publishArticle, team(), { slug: (await draft("On Business")).slug });
   expect(await published()).toBe(52);
 
@@ -97,7 +97,7 @@ test("Pro and Business publish without a limit, unless the operator sets one", a
     message: "Your plan publishes up to 52 articles. Unpublish some.",
   });
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => { free.limits.articles = 10; pro.limits.articles = 10; }));
-  await setPlan("PRO");
+  await setPlan("pro");
   await expect(call(publishArticle, team(), { slug: "over" })).rejects.toMatchObject({ message: "Your plan publishes up to 10 articles. Unpublish some, or upgrade to Business." });
 });
 
@@ -118,11 +118,11 @@ test("sample articles are published only while the plan has room; the rest are d
 });
 
 test("the refusal names the first plan above with more room, and none where no plan has more", () => {
-  expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Pro.");
+  expect(articlesFull("free", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Pro.");
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.limits.articles = 50; }));
-  expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Business.");
+  expect(articlesFull("free", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Business.");
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => { pro.limits.articles = 50; business.limits.articles = 50; }));
-  expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
-  expect(articlesFull("PRO", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
-  expect(articlesFull("BUSINESS", 1)).toBe("Your plan publishes up to 1 article. Unpublish some.");
+  expect(articlesFull("free", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
+  expect(articlesFull("pro", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
+  expect(articlesFull("business", 1)).toBe("Your plan publishes up to 1 article. Unpublish some.");
 });

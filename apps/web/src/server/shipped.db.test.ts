@@ -142,7 +142,7 @@ describe("when a post ships", () => {
     const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "From the app", email: ssoEmail });
     const post = await call(createPost, as(reader.id), { board: "feature-requests", title: "Webhooks" });
     await call(setVote, as(ssoUser), { number: post.number, voted: true });
-    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "PRO" } });
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "pro" } });
 
     await setStatus(post.number, "completed");
 

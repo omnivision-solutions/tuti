@@ -398,7 +398,7 @@ describe("on the free plan (where plans are sold)", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ error: FULL });
     expect(await createInvitation(project.slug, pending, "ADMIN")).toMatchObject({ emailSent: true });
     // On Pro, no limit.
-    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
   });
 
@@ -418,12 +418,12 @@ describe("on the free plan (where plans are sold)", () => {
   });
 
   test("a project that dropped to Free keeps its team, but an invite sent before can't take a place it no longer has", async () => {
-    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
     const email = newEmail();
     const { url } = await createInvitation(project.slug, email, "MEMBER");
     await addMember(project.id, "MEMBER");
     await addMember(project.id, "MEMBER");
-    await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+    await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
     const invitee = await signUp("Ivy", email);
     actAs(invitee);
     expect(await acceptInvitation(tokenOf(url!))).toEqual({
@@ -432,7 +432,7 @@ describe("on the free plan (where plans are sold)", () => {
     expect(await isMember(invitee.id)).toBe(false);
     expect(await prisma.teamMember.count({ where: { projectId: project.id } })).toBe(3);
     // The invite is still there: it works once the plan is back.
-    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
     expect(await redirectTarget(acceptInvitation(tokenOf(url!)))).toBe(`/app/${project.slug}`);
   });
 

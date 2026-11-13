@@ -352,11 +352,14 @@ model Project {
   /// When owners and admins were emailed that AI credits ran low (AI_CREDITS_LOW) or out: once each until the next grant, which clears both (a trigger on ai_credit_grant).
   aiCreditsLowEmailedAt DateTime?
   aiCreditsOutEmailedAt DateTime?
-  /// The project's plan on tuti.so (docs/plan.md, Plans; only where PLANS=on), kept in step with its
-  /// Stripe subscription by Stripe's webhook (server/subscriptions.ts): FREE without a live one. Its
+  /// The project's plan where plans are sold (docs/plan.md, Plans): its key in the billing file (BILLING_CONFIG), kept in
+  /// step with its Stripe subscription by Stripe's webhook (server/subscriptions.ts); null without a live one, which is the
+  /// file's default plan (as is a key the file no longer lists). Its
   /// Stripe customer stays once made, so a later plan is billed to the same one; the subscription is the live
   /// one, or once it ended the last one that held the plan (until another does).
-  plan                  Plan         @default(FREE)
+  plan                  String?      @map("planKey")
+  /// The plan as the release before plan keys stored it: kept, unread, for that release while a deploy runs both; to drop.
+  planEnum              Plan         @default(FREE) @map("plan")
   stripeCustomerId      String?      @unique
   stripeSubscriptionId  String?      @unique
   /// The live subscription's billing: "month" or "year", Stripe's status ("active", "trialing",

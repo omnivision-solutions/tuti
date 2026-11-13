@@ -51,7 +51,7 @@ beforeEach(async () => {
   owner = await signUp("Olive Owner");
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   project = await createProject(owner);
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   actAs(owner);
 });
 
@@ -119,7 +119,7 @@ test("left out, and said so: the importer, people on the team (verified), people
 
 test("on the free plan, only the room left is invited (members and pending invites, sent or not); the rest are counted", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
   const sentAlready = newAddress();
   await prisma.invitation.create({ data: { projectId: project.id, email: sentAlready, tokenHash: hashInvitationToken(generateInvitationToken()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) } });
   const addresses = [newAddress(), newAddress(), newAddress()];

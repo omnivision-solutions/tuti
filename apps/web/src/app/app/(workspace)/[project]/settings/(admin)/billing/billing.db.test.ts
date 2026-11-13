@@ -57,7 +57,7 @@ test("the add-on's card shows only where it's sold", async () => {
 
 test("a project on a plan sold by quote sees its plan, with no price", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
-  await prisma.project.update({ where: { id: projectId }, data: { plan: "BUSINESS", planStatus: "active" } });
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "business", planStatus: "active" } });
   const page = await billing();
   expect(page).toContain("Business plan");
   expect(page).not.toContain("Not billed");
@@ -65,7 +65,7 @@ test("a project on a plan sold by quote sees its plan, with no price", async () 
 
 test("an add-on that's on shows no amount: it may be billed at an older price than the file's", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  await prisma.project.update({ where: { id: projectId }, data: { plan: "PRO", planInterval: "month", planStatus: "active", badgeAddOn: true, stripeSubscriptionId: `sub_${projectId}` } });
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "month", planStatus: "active", badgeAddOn: true, stripeSubscriptionId: `sub_${projectId}` } });
   const page = await billing();
   expect(page).toContain("Hidden on this project's plan. It ends with the plan.");
   expect(page).toContain("Show the badge again");
@@ -73,9 +73,26 @@ test("an add-on that's on shows no amount: it may be billed at an older price th
 
 test("an add-on that's on keeps its card where it's no longer sold for the plan's billing (sold: false), so it can be removed", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.sold = false; }));
-  await prisma.project.update({ where: { id: projectId }, data: { plan: "PRO", planInterval: "year", planStatus: "active", badgeAddOn: true, stripeSubscriptionId: `sub_${projectId}` } });
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active", badgeAddOn: true, stripeSubscriptionId: `sub_${projectId}` } });
   const page = await billing();
   expect(page).toContain("Hidden on this project's plan. It ends with the plan.");
   expect(page).toContain("Show the badge again");
   expect(page).not.toContain("Hide the badge");
+});
+
+test("a project on a plan the file no longer lists sees the plans to buy, as on the default plan", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "retired" } });
+  const page = await billing();
+  expect(page).toContain("Upgrade to Pro");
+  expect(page).not.toContain("Manage plan");
+});
+
+test("a project still paying for a plan the file no longer lists is offered the add-on at its own billing's price", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    config.plans = config.plans.filter(({ key }) => key !== "pro");
+    config.badge!.year!.perMonth = 39;
+  }));
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active", stripeSubscriptionId: `sub_${projectId}` } });
+  expect(await billing()).toContain("hide it for $39 a month");
 });

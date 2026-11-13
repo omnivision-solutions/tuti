@@ -182,3 +182,11 @@ test("with the add-on, the team may untick and tick the badge in Customize", asy
   expect(await shown()).toBe(false);
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { poweredBy: true } })).toEqual({ poweredBy: false });
 });
+
+test("the add-on comes off Stripe even for a project whose plan the file no longer lists", async () => {
+  const subscription = await subscribe();
+  await badge(true);
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.plans = config.plans.filter(({ key }) => key !== "pro"); }));
+  expect(await badge(false)).toEqual({ on: false });
+  expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_MONTHLY.id]);
+});

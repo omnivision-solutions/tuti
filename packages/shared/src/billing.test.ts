@@ -30,9 +30,14 @@ test("an invalid file stops the server, naming what's wrong", () => {
   expect(() => billingConfig()).toThrow(/is listed twice/);
 });
 
-test("the default plan is free while projects store the database's plans", () => {
-  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.defaultPlan = "pro"; }));
-  expect(() => billingConfig()).toThrow(/must be free for now\n {2}→ at defaultPlan/);
+test("any plans: keys and the default are the file's own", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { free, pro, business }) => {
+    free.key = "lapsed";
+    pro.key = "starter";
+    business.key = "scale";
+    config.defaultPlan = "lapsed";
+  }));
+  expect(billingConfig()?.plans.map(({ key }) => key)).toEqual(["lapsed", "starter", "scale"]);
 });
 
 test("the settings the file replaced, left without one, stop the server rather than turn billing off", () => {

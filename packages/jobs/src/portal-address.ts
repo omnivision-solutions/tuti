@@ -17,7 +17,16 @@ import { portalOrigin } from "./events";
 /** Projects whose plan includes `feature` (every project, without plans): on a lower plan, its own address isn't served or linked to, and its Tuti address is. */
 export function projectWith(feature: PlanFeature): Prisma.ProjectWhereInput {
   const plans = plansWith(feature);
-  return plans ? { plan: { in: plans } } : {};
+  if (!plans) {
+    return {};
+  }
+  // On a plan that has it; or, where the default plan has it, with none stored or one the file doesn't list (the default's).
+  return {
+    OR: [
+      { plan: { in: plans.keys } },
+      ...(plans.orDefault ? [{ plan: null }, { plan: { notIn: plans.listed } }] : []),
+    ],
+  };
 }
 
 export const liveDomain = { verifiedAt: { not: null }, OR: [{ certificate: null }, { certificate: "ACTIVE" }] } satisfies Prisma.CustomDomainWhereInput;

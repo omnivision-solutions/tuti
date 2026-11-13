@@ -103,7 +103,7 @@ test("the portal at its own address doesn't count as one of the team's sites eit
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const hostname = `help-${project.slug}.example.com`;
   await prisma.customDomain.create({ data: { projectId: project.id, hostname, verificationToken: "t", verifiedAt: new Date() } });
   const { protocol, port } = new URL(portalUrl(project.slug));
@@ -116,7 +116,7 @@ test("a portal under a path of the team's site: the site still counts (the widge
   vi.stubEnv("BILLING_CONFIG", billingFile());
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   await prisma.siteMount.create({ data: { projectId: project.id, origin: "https://www.acme.example", path: "/portal", verificationToken: "t", verifiedAt: new Date() } });
   // With a custom domain too (links go to the mount; the portal is still served there): that domain isn't the team's site.
@@ -133,7 +133,7 @@ test("the portal's own tag (from=portal) never counts, even under a path of the 
   vi.stubEnv("BILLING_CONFIG", billingFile());
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   await prisma.siteMount.create({ data: { projectId: project.id, origin: "https://www.acme.example", path: "/portal", verificationToken: "t", verifiedAt: new Date() } });
   const seen = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt;

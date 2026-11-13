@@ -1,4 +1,4 @@
-import { historyDays, longestHistoryDays } from "@tuti/shared";
+import { historyDays, longestHistoryDays, type PlanKey } from "@tuti/shared";
 import Link from "next/link";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
  * or the like, with nothing done in them for longer than the plan keeps. A link to Billing for owners and admins while
  * a plan keeps more. A note, not an alert: it's there each time the list is.
  */
-export function PastHistoryNotice({ what, plan, projectSlug, admin }: { what: string; plan: "FREE" | "PRO" | "BUSINESS"; projectSlug: string; admin: boolean }) {
+export function PastHistoryNotice({ what, plan, projectSlug, admin }: { what: string; plan: PlanKey; projectSlug: string; admin: boolean }) {
   const days = historyDays(plan);
   return (
     <Alert role="note">

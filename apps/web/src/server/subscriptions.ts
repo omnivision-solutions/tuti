@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
-import { isBadgePrice, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
+import { defaultPlanKey, isBadgePrice, listedPlans, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
 
 import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 
@@ -14,10 +14,16 @@ import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 /** Statuses in which a subscription's plan holds: past_due too, while Stripe retries a failed payment. Any other is the free plan. */
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
-/** The free plan. The subscription stays recorded as the one that last held the plan. */
-const NO_PLAN = { plan: "FREE", planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
+/** No paid plan: the billing file's default. The subscription stays recorded as the one that last held the plan. */
+const NO_PLAN = { plan: null, planEnum: "FREE", planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
 
 const at = (seconds: number) => new Date(seconds * 1000);
+
+/**
+ * The plan as the release before plan keys stores it, written beside the key while a deploy runs both (its worker reads
+ * it): Pro and Business theirs, any other plan Free. To drop with the enum column.
+ */
+const enumOf = (plan: string) => (plan === "pro" ? "PRO" : plan === "business" ? "BUSINESS" : "FREE");
 
 /**
  * Brings the project's plan (and its "Powered by tuti" add-on) in step with subscription `id` as Stripe has it now, not as an event said it
@@ -53,10 +59,18 @@ export async function syncSubscription(id: string): Promise<string | null> {
       }
       const periodEnd = at(item.current_period_end);
       const { count } = await tx.project.updateMany({
-        // Its own, or the plan is free (none yet, or the last one ended).
-        where: { id: projectId, OR: [{ stripeSubscriptionId: id }, { plan: "FREE" }] },
+        // Its own, or none live (none yet, or the last one ended: its status is cleared) on the default plan: none stored,
+        // one the file no longer lists, or the default's own key. A plan the file sells set by hand (by quote) stays.
+        where: {
+          id: projectId,
+          OR: [
+            { stripeSubscriptionId: id },
+            { planStatus: null, OR: [{ plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])] },
+          ],
+        },
         data: {
           plan: paid.plan,
+          planEnum: enumOf(paid.plan),
           stripeSubscriptionId: id,
           stripeCustomerId: subscription.customer,
           planInterval: paid.interval,

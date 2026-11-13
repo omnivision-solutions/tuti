@@ -53,6 +53,10 @@ const plan = z
       })
       .strict(),
     extras: z.array(z.string().min(1)).default([]).describe('More lines its pricing card lists after what the file says it has, e.g. "Priority support".'),
+    hidden: z
+      .boolean()
+      .default(false)
+      .describe("Left off the pricing page and Billing's plans (a default plan nobody picks, such as one a trial ends on); the next plan shown lists everything."),
     featured: z.boolean().default(false).describe("Its card stands out on the pricing page, and its Upgrade is Billing's main button."),
     monthlyCredits: count.default(0).describe("AI credits each paid month gives (a year: twelve months' worth), with AI credits on."),
   })
@@ -78,16 +82,9 @@ export const billingSchema = z
       if (keys.indexOf(key) !== index) {
         context.addIssue({ code: "custom", path: ["plans", index, "key"], message: `"${key}" is listed twice` });
       }
-      // ponytail: plans are still the database's FREE, PRO and BUSINESS; any key once projects store a plan's key.
-      if (!["free", "pro", "business"].includes(key)) {
-        context.addIssue({ code: "custom", path: ["plans", index, "key"], message: "must be free, pro or business for now" });
-      }
     });
     if (!keys.includes(config.defaultPlan)) {
       context.addIssue({ code: "custom", path: ["defaultPlan"], message: `"${config.defaultPlan}" isn't one of the plans` });
-    } else if (config.defaultPlan !== "free") {
-      // ponytail: a project without a paid plan is stored as FREE; any default once projects store a plan's key.
-      context.addIssue({ code: "custom", path: ["defaultPlan"], message: "must be free for now" });
     }
     // Each plan has everything the one before it has ("Everything in Pro, plus:"): its features, and limits no lower (null: none;
     // a Reporting range only where the plan has Reporting).

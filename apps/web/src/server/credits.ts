@@ -20,7 +20,7 @@ export async function buyCredits(projectSlug: string, dollars: number): Promise<
 }
 
 /** "Upgrade" to a plan (see plan.subscribe). */
-export async function subscribe(projectSlug: string, plan: "pro" | "business", interval: "month" | "year"): Promise<{ error?: string; url?: string }> {
+export async function subscribe(projectSlug: string, plan: string, interval: "month" | "year"): Promise<{ error?: string; url?: string }> {
   return stripePage(projectSlug, "Only project owners and admins can change the plan", async (context) => (await call(subscribePlan, context, { plan, interval })).url);
 }
 

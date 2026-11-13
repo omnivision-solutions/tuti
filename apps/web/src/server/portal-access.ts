@@ -1,4 +1,5 @@
-import { type Plan, prisma } from "@tuti/db";
+import { prisma } from "@tuti/db";
+import type { PlanKey } from "@tuti/shared";
 import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
@@ -41,7 +42,7 @@ export async function canReadPortal(where: { id: string } | { slug: string }, us
  * On the project's team (onTeam: never with a portal's session), or, on a plan with private portals, signed in by its SSO
  * or one of its readers (with that email verified). `session`: the request's, for proxy.ts.
  */
-async function isPrivateReader(project: { id: string; plan: Plan }, userId: string, session?: Session | null): Promise<boolean> {
+async function isPrivateReader(project: { id: string; plan: PlanKey }, userId: string, session?: Session | null): Promise<boolean> {
   const projectId = project.id;
   const readers = planIncludes(project.plan, "privatePortal");
   const [member, sso, reader] = await Promise.all([

@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { historySince, SEARCHES_KEPT_DAYS } from "@tuti/jobs";
-import { historyKeptDays, type PaidPlan, reportingDays, reportingRangeNeeded } from "@tuti/shared";
+import { historyKeptDays, type PlanKey, reportingDays, reportingRangeNeeded } from "@tuti/shared";
 import { z } from "zod";
 
 import { DEFAULT_RANGE, RANGE_KEYS, type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
@@ -17,13 +17,13 @@ import { requirePlan } from "./plan";
  */
 
 /** The ranges a project on `plan` can't pick: those longer than reportingDays (Pro: a month). */
-export const lockedRanges = (plan: "FREE" | PaidPlan): RangeKey[] => {
+export const lockedRanges = (plan: PlanKey): RangeKey[] => {
   const max = reportingDays(plan);
   return max === null ? [] : RANGE_KEYS.filter((key) => reportRange(key).days.length > max);
 };
 
 /** The range a project on `plan` sees unless it picks one: the default, or where that's locked the longest it has. */
-export function defaultRange(plan: "FREE" | PaidPlan): RangeKey {
+export function defaultRange(plan: PlanKey): RangeKey {
   const locked = lockedRanges(plan);
   if (!locked.includes(DEFAULT_RANGE)) {
     return DEFAULT_RANGE;

@@ -67,7 +67,7 @@ async function setup() {
         ...more,
       },
     });
-  const plan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
+  const plan = (plan: null | "pro" | "business") => prisma.project.update({ where: { id: project.id }, data: { plan } });
   const listed = async () => (await call(listConversations, team, {})).conversations.map((c) => c.number).sort((a, b) => a - b);
   return { owner, project, team, userId, conversation, plan, listed, auth: { token: widgetToken(project.id, userId) } };
 }
@@ -90,13 +90,13 @@ test("with plans, closed conversations past the plan's history are hidden; open,
   await expect(call(getConversation, team, { number: 99 })).rejects.toThrow(new OperationError(404, "not_found", "There's no conversation #99"));
 
   // Pro: 30 days; Business: 90.
-  await plan("PRO");
+  await plan("pro");
   expect(await listed()).toEqual([1, 2, 3, 4, 5]);
-  await plan("BUSINESS");
+  await plan("business");
   expect(await listed()).toEqual([1, 2, 3, 4, 5, 6]);
 
   // Back on Free with a longer history set for it.
-  await plan("FREE");
+  await plan(null);
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.historyDays = 14; }));
   expect(await listed()).toEqual([1, 2, 3, 4, 5]);
   vi.stubEnv("BILLING_CONFIG", billingFile());
@@ -149,7 +149,7 @@ test("search, a person's conversations and a post's linked ones leave out what's
   expect(await panel()).not.toContain("Subject 1");
   expect(await postPage()).not.toContain("Subject 1");
 
-  await plan("PRO");
+  await plan("pro");
   expect(await found("Subject")).toEqual(["Subject 1"]);
   expect(await found("#1")).toEqual(["Subject 1"]);
   expect(await panel()).toContain("Subject 1");
@@ -186,7 +186,7 @@ test("the widget's Messages and Users' counts leave out what's past the plan's h
   expect(await widgetConversation(project.slug, auth, 1)).toHaveProperty("error");
   expect(await counted()).toBe(1);
 
-  await plan("PRO");
+  await plan("pro");
   expect(await numbers()).toEqual([2, 1]);
   expect(await widgetConversation(project.slug, auth, 1)).toHaveProperty("subject", "Subject 1");
   expect(await counted()).toBe(2);
@@ -205,18 +205,18 @@ test("Reporting's AI conversations lists those asked in within the plan's histor
   // The one left out is said, not just missing.
   expect((await aiReport(project.id, reportRange(undefined))).pastHistory).toBe(1);
   expect((await aiReport(project.id, reportRange(undefined))).totals.conversations).toBe(2);
-  await plan("PRO");
+  await plan("pro");
   expect(await questions()).toEqual(["Recent", "Older"]);
   expect((await aiReport(project.id, reportRange(undefined))).pastHistory).toBe(0);
   vi.stubEnv("BILLING_CONFIG", "");
-  await plan("FREE");
+  await plan(null);
   expect(await questions()).toEqual(["Recent", "Older"]);
 });
 
 test("Reporting's Past year still counts AI conversations past every plan's history after the daily job: they're kept a year", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   const { project } = await setup();
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   for (const days of [10, 200]) {
     await prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", status: "ANSWERED", question: `${days}`, createdAt: daysAgo(days) } });
   }
@@ -334,13 +334,13 @@ test("past the plan's history, an upgrade is offered only while some plan would 
   await expect(call(getConversation, team, { number: 2 })).rejects.toThrow(new OperationError(404, "not_found", "Conversation #2 is past your plan's history"));
 
   // On Business, the longest: nothing to upgrade to.
-  await plan("BUSINESS");
+  await plan("business");
   expect(await page(2)).toContain("Nothing has happened in it for more than 90 days");
   expect(await page(2)).not.toContain(upgrade);
   expect(await page(2)).not.toContain("See plans");
 
   // A member is told who can upgrade, with no button.
-  await plan("FREE");
+  await plan(null);
   const member = await addMember(project.id, "MEMBER");
   actAs(member);
   expect(await page(1)).toContain("An owner or admin can upgrade to see it again.");

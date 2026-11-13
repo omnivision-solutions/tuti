@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
 import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
@@ -41,7 +43,7 @@ const planGrants = () =>
   prisma.aiCreditGrant.findMany({ where: { projectId: project.id, source: "PLAN" }, orderBy: { createdAt: "asc" }, select: { credits: true, expiresAt: true, stripeInvoiceId: true } });
 
 /** Starts `which` for the project and pays for it; returns its subscription's id and the events Stripe sends. */
-async function subscribe(which: "pro" | "business" = "pro", interval: "month" | "year" = "month") {
+async function subscribe(which = "pro", interval: "month" | "year" = "month") {
   await call(subscribePlan, as(), { plan: which, interval });
   const events = stripe.pay(stripe.sessions.at(-1)!.id);
   return { subscription: stripe.sessions.at(-1)!.subscription!, events };
@@ -262,4 +264,93 @@ test("a project deleted meanwhile: Stripe's events are answered, and nothing is 
   await prisma.project.delete({ where: { id: project.id } });
   await deliver(...events);
   expect(await prisma.aiCreditGrant.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("the migration gives each project its plan's key: Pro and Business theirs, Free none (the default plan)", async () => {
+  const projects = await Promise.all((["FREE", "PRO", "BUSINESS"] as const).map(async (planEnum) => (await prisma.project.update({ where: { id: (await createProject(owner)).id }, data: { planEnum } })).id));
+  // As before the migration: no key (cleared without writing the enum, which the trigger would follow).
+  await prisma.$executeRaw`UPDATE project SET "planKey" = NULL WHERE id = ANY(${projects})`;
+  expect((await prisma.project.findMany({ where: { id: { in: projects } }, select: { plan: true } })).map(({ plan }) => plan)).toEqual([null, null, null]);
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113180000_plan_keys/migration.sql", import.meta.url), "utf8");
+  // The column is there already (every migration ran); its fill, again on these rows.
+  await prisma.$executeRawUnsafe(sql.slice(sql.indexOf("UPDATE"), sql.indexOf(";", sql.indexOf("UPDATE")) + 1));
+  const plans = await prisma.project.findMany({ where: { id: { in: projects } }, select: { id: true, plan: true } });
+  expect(projects.map((id) => plans.find((project) => project.id === id)!.plan)).toEqual([null, "pro", "business"]);
+});
+
+test("any plan the file sells is bought by its key, and Stripe's webhook stores that key", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { free, pro, business }) => {
+    free.key = "lapsed";
+    pro.key = "starter";
+    business.key = "scale";
+    config.defaultPlan = "lapsed";
+  }));
+  const { subscription, events } = await subscribe("scale");
+  await deliver(...events);
+  expect(await plan()).toMatchObject({ plan: "scale" });
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  expect(await plan()).toMatchObject({ plan: "lapsed" });
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } })).plan).toBeNull();
+  await expect(call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" })).rejects.toMatchObject({ status: 503 });
+});
+
+test("while a deploy runs both releases, the previous one's plan writes follow into the key, and this one keeps the enum in step", async () => {
+  const id = project.id;
+  const key = async () => (await prisma.project.findUniqueOrThrow({ where: { id }, select: { plan: true, planEnum: true } }));
+  // The previous release's webhook: the enum only (a paid plan with its status, then ended with its status cleared).
+  await prisma.$executeRaw`UPDATE project SET plan = 'PRO', "planStatus" = 'active' WHERE id = ${id}`;
+  expect(await key()).toEqual({ plan: "pro", planEnum: "PRO" });
+  await prisma.$executeRaw`UPDATE project SET plan = 'FREE', "planStatus" = NULL WHERE id = ${id}`;
+  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
+  // A key changed on its own (a plan renamed in the file), then this release's write of Free beside it: the key stays.
+  await prisma.$executeRaw`UPDATE project SET plan = 'PRO', "planStatus" = 'active' WHERE id = ${id}`;
+  await prisma.$executeRaw`UPDATE project SET "planKey" = 'starter' WHERE id = ${id}`;
+  await prisma.project.update({ where: { id }, data: { plan: "starter", planEnum: "FREE" } });
+  expect(await key()).toEqual({ plan: "starter", planEnum: "FREE" });
+  // The previous release's Pro over a paid plan it has no name for (a second subscription): the key stays.
+  await prisma.$executeRaw`UPDATE project SET plan = 'PRO' WHERE id = ${id}`;
+  expect((await key()).plan).toBe("starter");
+  await prisma.$executeRaw`UPDATE project SET plan = 'FREE' WHERE id = ${id}`;
+  expect((await key()).plan).toBe("starter");
+  // That plan ended by the previous release (its enum already Free): the key follows.
+  await prisma.$executeRaw`UPDATE project SET plan = 'FREE', "planStatus" = NULL WHERE id = ${id}`;
+  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
+  // This release writes both: a key the enum has no name for stays.
+  await prisma.project.update({ where: { id }, data: { plan: "scale", planEnum: "FREE" } });
+  expect((await key()).plan).toBe("scale");
+  await prisma.project.update({ where: { id }, data: { plan: null } });
+  // Its webhook keeps the enum in step for the previous release's worker.
+  const { subscription, events } = await subscribe("business");
+  await deliver(...events);
+  expect(await key()).toMatchObject({ plan: "business", planEnum: "BUSINESS" });
+  // And once it ends: the previous release's worker sees Free too.
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
+});
+
+test("a project on a plan the file no longer lists is on the default plan: it can buy one, and the webhook gives it", async () => {
+  // Set by hand once (a Business no longer sold), with no subscription.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "retired" } });
+  // plan.get says so: the default plan's key, not one the file doesn't have.
+  expect(await plan()).toMatchObject({ plan: "free" });
+  const { events } = await subscribe("pro");
+  await deliver(...events);
+  expect(await plan()).toMatchObject({ plan: "pro" });
+});
+
+test("a project still paying for a plan the file no longer lists can't buy a second one", async () => {
+  const { events } = await subscribe("pro");
+  await deliver(...events);
+  // Pro taken out of the file (it should be kept, sold: false), its subscription still live.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.plans = config.plans.filter(({ key }) => key !== "pro"); }));
+  await expect(call(subscribePlan, as(), { plan: "business", interval: "month" })).rejects.toMatchObject({ status: 409, code: "has_plan" });
+});
+
+test("a plan the file sells set by hand (by quote) isn't overwritten by a stray subscription's webhook", async () => {
+  // A Checkout opened on the default plan, then the project set to Business by hand, then the old Checkout paid.
+  await call(subscribePlan, as(), { plan: "pro", interval: "month" });
+  const session = stripe.sessions.at(-1)!;
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
+  await deliver(...stripe.pay(session.id));
+  expect(await plan()).toMatchObject({ plan: "business" });
 });
