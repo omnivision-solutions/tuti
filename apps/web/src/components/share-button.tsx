@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 /** A post's link to copy: in words in its rail, an icon (named "Copy link") in the phone's row of actions. */
 export function CopyLinkButton({ url }: { url: string }) {
   return (
-    <Button type="button" variant="ghost" aria-label="Copy link" className="text-muted-foreground max-lg:size-10 max-lg:border max-lg:px-0 portal:max-lg:border-transparent portal:max-lg:bg-secondary portal:max-lg:portal:hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]" onClick={() => copyText(url)}>
+    <Button type="button" variant="ghost" aria-label="Copy link" className="text-muted-foreground max-lg:size-10 max-lg:border max-lg:px-0 portal:max-lg:border-transparent portal:max-lg:bg-secondary portal:max-lg:hover:bg-secondary-hover" onClick={() => copyText(url)}>
       <LinkIcon />
       <span className="max-lg:hidden">Copy link</span>
     </Button>

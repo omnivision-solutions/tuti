@@ -62,6 +62,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
 | `divider`, `card-edge` | A hairline between rows, a card's ring: `border` in the app; on the portal lighter, and no card ring in light (Layout → Portals → Surfaces) |
 | `tuti` | Tuti's own green, whatever a portal's accent: only the mark in "Powered by tuti" (`TutiMark brand`) |
+| `secondary-hover` | A secondary (grey) button's hover and open state on the portal: the grey a step toward the text |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |

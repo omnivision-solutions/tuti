@@ -62,6 +62,8 @@
      too: toward the button's text colour, which always contrasts with the fill, so a near-black brand colour lightens
      visibly too. */
   --color-primary-hover: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
+  /* A secondary (grey) button's hover and open state on the portal: the grey a step toward the text. */
+  --color-secondary-hover: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
   --color-unread: var(--unread);
   --color-status-open: var(--status-open);
   --color-status-under-review: var(--status-under-review);
