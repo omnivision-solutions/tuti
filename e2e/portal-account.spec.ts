@@ -340,12 +340,15 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await tall.goto("/account");
   expect(await tall.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
   const tallList = tall.getByRole("navigation", { name: "Account sections" });
+  // Once the list has read the page: the server's HTML marks Profile whatever the page shows.
+  await expect(tallList).toHaveAttribute("data-settled");
   await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
   await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
   // Opened with a section's hash the browser didn't scroll to (it can't scroll here; a reload or Back that restores the
   // page elsewhere is the same): the section the page shows, not the hash's.
   await tall.goto("/roadmap");
   await tall.goto("/account#votes");
+  await expect(tallList).toHaveAttribute("data-settled");
   await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
   await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
   // A hash change on the page that doesn't move it (typed, or Back within the page restoring it elsewhere): the same. From

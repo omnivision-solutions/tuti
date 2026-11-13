@@ -20,6 +20,8 @@ type Section = { id: keyof typeof ICONS; title: string; count?: number };
 export function AccountSections({ sections }: { sections: Section[] }) {
   const [current, setCurrent] = useState(sections[0]!.id);
   const picked = useRef(false);
+  const pills = useScrollingRow(current, sections);
+  const rail = useRef<HTMLElement>(null);
 
   useEffect(() => {
     // Under the sticky header, with a little room: the line a section's top passes to be the current one.
@@ -60,6 +62,8 @@ export function AccountSections({ sections }: { sections: Section[] }) {
       }
     };
     settle();
+    // The list has read the page (the server's HTML marks the first section, whatever the page shows): for the journeys.
+    for (const nav of [pills.current, rail.current]) nav?.setAttribute("data-settled", "");
     window.addEventListener("scroll", follow, { passive: true });
     window.addEventListener("hashchange", settle);
     // The reader's own scrolling (the scrollbar's drag too), or the jump's end: the list follows the page again.
@@ -69,9 +73,8 @@ export function AccountSections({ sections }: { sections: Section[] }) {
       window.removeEventListener("hashchange", settle);
       for (const event of RELEASE) window.removeEventListener(event, release);
     };
-  }, [sections]);
+  }, [sections, pills]);
 
-  const pills = useScrollingRow(current, sections);
   // As a hash link does (the router's Link doesn't): to the section, again when the address already has its hash, and
   // focus there, so the next Tab and a screen reader go on from it.
   const pick = (id: Section["id"], event: React.MouseEvent) => {
@@ -103,7 +106,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
           </Link>
         ))}
       </nav>
-      <nav aria-label="Account sections" className="sticky top-[calc(var(--portal-header-height,4rem)+1.5rem)] hidden flex-col gap-0.5 self-start md:flex">
+      <nav ref={rail} aria-label="Account sections" className="sticky top-[calc(var(--portal-header-height,4rem)+1.5rem)] hidden flex-col gap-0.5 self-start md:flex">
         {sections.map((section) => {
           const Icon = ICONS[section.id];
           return (
