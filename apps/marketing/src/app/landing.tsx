@@ -41,7 +41,7 @@ import "./landing.css";
 function Start({ ghost = false, arrow = true }: { ghost?: boolean; arrow?: boolean }) {
   return (
     <a href={SIGN_UP} className={ghost ? "btn btn-s" : "btn btn-p"}>
-      Start free
+      Start free trial
       {arrow && <ArrowRightIcon aria-hidden size={16} />}
     </a>
   );
@@ -86,7 +86,7 @@ function Hero() {
         <h1>
           The help center that stays <em>in sync with your&nbsp;code.</em>
         </h1>
-        <p className="lead">AI answers, an inbox and a feedback board. One tool, free to start.</p>
+        <p className="lead">AI answers, an inbox and a feedback board. One tool for all of it.</p>
         <Ctas />
         <HeroTabs
           panels={[
@@ -980,7 +980,7 @@ function Pricing({ ai }: { ai: boolean }) {
           <div className="l">
             <div className="eyebrow">Pricing</div>
             <h2>
-              Free to start.
+              Try it free.
               <br />
               Never per seat.
             </h2>
@@ -994,7 +994,7 @@ function Pricing({ ai }: { ai: boolean }) {
           </div>
           <div className="r">
             <div className="big">
-              $0<small>to start</small>
+              7 days<small>free</small>
             </div>
             <div className="cap in-every">In every plan</div>
             <ul className="inc">
@@ -1021,7 +1021,7 @@ function Faq() {
     ["Where do AI answers come from?", "From your help center. Every answer links the articles it used."],
     ["Can I move from another tool?", "Yes. Import from Intercom, Featurebase, Ferndesk, Canny, Frill, Nolt or any help center by URL. Your old links redirect."],
     ["Can the help center use my domain?", "Yes, with your logo, colours and fonts."],
-    ["Is it really free?", "Yes. A free plan, not a trial. Upgrade when you need more."],
+    ["How does the free trial work?", "Every plan starts with 7 days free. No card needed."],
   ];
   return (
     <section className="flush">

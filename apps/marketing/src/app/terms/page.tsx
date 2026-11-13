@@ -88,7 +88,7 @@ export default function TermsPage() {
       <p>
         We work to keep the Service available and secure, but don&apos;t promise it will be uninterrupted or error-free.
         We may change, add or remove features. If we remove something material from a paid plan, we&apos;ll tell you in
-        advance. Free plans have limits, which we may change.
+        advance. Plans and free trials have limits, which we may change.
       </p>
 
       <h2>Ending</h2>

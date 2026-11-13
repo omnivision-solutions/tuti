@@ -76,7 +76,7 @@ export function MobileNav() {
             Sign in
           </a>
           <a href={SIGN_UP} className={buttonVariants({ size: "lg" })}>
-            Start free
+            Start free trial
           </a>
         </div>
       </nav>
@@ -84,7 +84,7 @@ export function MobileNav() {
   );
 }
 
-/** The header's Sign in and Start free: plain links, into the app (another app on this domain). */
+/** The header's Sign in and Start free trial: plain links, into the app (another app on this domain). */
 export function SignedOutLinks() {
   return (
     <>
@@ -93,7 +93,7 @@ export function SignedOutLinks() {
       </a>
       {/* On phones too, beside the menu: the page's main action stays in reach. */}
       <a href={SIGN_UP} className={buttonVariants()}>
-        Start free
+        Start free trial
       </a>
     </>
   );
