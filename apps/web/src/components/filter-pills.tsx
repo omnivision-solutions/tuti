@@ -33,6 +33,8 @@ export function FilterPills({ label, items, current: given }: { label: string; i
         return (
           <Link key={item.href} href={item.href} scroll={false} aria-current={active ? "page" : undefined} data-active={active || undefined} className={pillClass(active)}>
             {item.title}
+            {/* A space for its name ("All 38"); a flex row drops it from the layout. */}
+            {item.count != null && " "}
             {item.count != null && <span className="text-muted-foreground tabular-nums">{item.count}</span>}
           </Link>
         );

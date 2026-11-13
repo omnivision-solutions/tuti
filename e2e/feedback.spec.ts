@@ -68,7 +68,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(feedbackItem).toContainText("2 to triage");
   await expect(team.getByRole("link", { name: "Feedback", exact: true }).first()).toHaveAccessibleDescription("2 to triage");
   // J and K step to the older post and back (by number). Not while a list of choices is open: a letter there picks one.
-  await team.getByLabel("Status").click();
+  await team.getByLabel("Status", { exact: true }).click();
   await expect(team.getByRole("listbox")).toBeVisible();
   await team.keyboard.press("j");
   // A step would have gone by now (it's not instant: wait for one, and expect none).
@@ -84,8 +84,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.waitForURL(`**/app/${slug}/p/1`);
   await team.keyboard.press("k");
   await team.waitForURL(`**/app/${slug}/p/2`);
-  // The team merges the duplicate into the original, from the page's other actions…
-  await team.getByRole("button", { name: "More actions" }).click();
+  // The team merges the duplicate into the original, from the pane header's actions…
   await team.getByRole("button", { name: "Merge into…" }).click();
   await team.getByRole("button", { name: /Dark mode/ }).click();
   await checkpoint(team, "team-merge-confirm", { fullPage: false });
@@ -118,7 +117,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("button", { name: "Add note" }).click();
   await expect(team.getByRole("listitem").filter({ hasText: "Acme asked for this on their call too." })).toContainText("Internal note");
   await expect(team.getByRole("tab", { name: "Reply" })).toHaveAttribute("aria-selected", "true");
-  await team.getByLabel("Status").click();
+  await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
   await expect(team.getByText("Status: Planned")).toBeVisible();
@@ -137,9 +136,12 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/Bo$/, /Ada$/]);
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Tess Team moved it to Planned");
-  // Its title is the page's sticky heading; the post merged into it is listed.
+  // Its title is in the pane header, after the way back to the list, and large over the post; the post merged into
+  // it is listed.
+  await expect(team.locator('[data-slot="pane-header"]').getByRole("link", { name: "All posts" })).toHaveAttribute("href", `/app/${slug}/feedback?status=all`);
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
-  await expect(heading).toHaveCSS("font-size", "32px");
+  await expect(heading).toBeVisible();
+  await expect(team.getByRole("main").locator("p", { hasText: /^Dark mode$/ })).toHaveCSS("font-size", "28px");
   // The post is Feedback's: the sidebar keeps Feedback marked on its page.
   await expect(team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: /^Feedback/ })).toHaveAttribute("data-active");
   expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(0);
@@ -237,15 +239,20 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await search.fill("light");
   await search.press("Enter");
   await expect(team.getByText("No posts match")).toBeVisible();
-  // The status tabs, the search and Filters are one row above the list; at 1920px its rows stop at 72rem.
+  // The status pills, the search and Filters are the list's pane header, one row; beside it Feedback's menu: its views,
+  // boards and statuses with their counts, the one open marked.
   await team.setViewportSize({ width: 1920, height: 1080 });
   await team.goto(`/app/${slug}/feedback?status=all`);
   const filtersButton = team.getByRole("button", { name: /^Filters/ });
   const tabsBox = (await tabs.boundingBox())!;
   const searchBox = (await search.boundingBox())!;
-  expect(Math.abs(tabsBox.y + tabsBox.height - (searchBox.y + searchBox.height))).toBeLessThan(12);
+  expect(Math.abs(tabsBox.y + tabsBox.height / 2 - (searchBox.y + searchBox.height / 2))).toBeLessThan(4);
   expect((await filtersButton.boundingBox())!.y).toBeLessThan(tabsBox.y + tabsBox.height);
-  expect((await team.getByRole("main").getByRole("list", { name: "Posts" }).first().boundingBox())!.width).toBeLessThanOrEqual(72 * 16);
+  const menu = team.getByRole("navigation", { name: "Feedback" });
+  await expect(menu.getByRole("link", { name: "All posts 1" })).toHaveAttribute("aria-current", "page");
+  await expect(menu.getByRole("link", { name: "Planned 1" })).toHaveAttribute("href", `/app/${slug}/feedback?status=planned`);
+  await expect(menu.getByRole("link", { name: "Feature requests 1" })).toHaveAttribute("href", `/app/${slug}/feedback?board=feature-requests&status=all`);
+  await expect(menu.getByRole("link", { name: "Roadmap" })).toHaveAttribute("href", `/app/${slug}/feedback/roadmap`);
   await checkpoint(team, "team-feedback-toolbar-wide");
   await team.setViewportSize({ width: 1280, height: 720 });
   // Trending: the most votes this week first; the tab and the search stay. The board, voters and sort are under Filters.
@@ -259,11 +266,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // A status without a tab (an old link to Closed, say) lists All.
   await team.goto(`/app/${slug}/feedback?status=closed`);
   await expect(tabs.getByRole("link", { name: "All 1" })).toHaveAttribute("aria-current", "page");
+  // The menu marks All posts too, not Needs triage (the address has no status of its own there).
+  await expect(menu.getByRole("link", { name: "All posts 1" })).toHaveAttribute("aria-current", "page");
+  await expect(menu.getByRole("link", { name: /^Needs triage/ })).not.toHaveAttribute("aria-current");
   await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
-  // The portal's address isn't in the header (the project switcher has it).
-  await expect(team.locator('[data-slot="page-header"]').getByRole("link", { name: new URL(portalUrl(slug)).host })).toHaveCount(0);
-  // One short line under the page's title says what it's for.
-  await expect(team.locator('[data-slot="page-header"] p')).toHaveText(["Ideas and problems your users posted, by status."]);
   // A row shows values, no form controls: its board as a label, who posted it, its status's menu.
   const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
   await expect(row).toContainText("Feature requestsDark mode");
@@ -297,12 +303,6 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
     await team.setViewportSize({ width, height });
     await team.goto(`/app/${slug}/feedback`);
     await expectOneRowOfTabs(team, tabs);
-    // At laptop width, beside the post's pane, all seven fit: no fade.
-    if (width === 1440) {
-      expect(await tabs.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
-      await expect(tabs).not.toHaveAttribute("data-more");
-      expect(await tabs.evaluate((row) => getComputedStyle(row).maskImage)).toBe("none");
-    }
     await checkpoint(team, `feedback-${width}`, { fullPage: false });
   }
   // On a phone the row fades out at the end that has more, and a mouse's wheel scrolls it, not the page.
@@ -395,6 +395,46 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
   await expect(tabs.getByRole("link", { name: "Needs triage 9" })).toBeVisible();
   await expect(tabs).not.toHaveAttribute("data-more");
+});
+
+test("Feedback's menu: beside its pages from tablet width up, a drawer on a phone; its + adds a board", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  await team.setViewportSize({ width: 1280, height: 800 });
+  await team.goto(`/app/${slug}/feedback`);
+  const menu = team.getByRole("navigation", { name: "Feedback" });
+  await expect(menu.getByRole("link", { name: /^Needs triage/ })).toHaveAttribute("aria-current", "page");
+  // Its + beside Boards adds one, listed under it with its posts' count.
+  await menu.getByRole("button", { name: "Add a board" }).click();
+  await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
+  await team.getByRole("dialog", { name: "New board" }).getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Bug reports 0" })).toHaveAttribute("href", `/app/${slug}/feedback?board=bug-reports&status=all`);
+  // A board's posts: the board's link is the open one, and the list's title says which.
+  await menu.getByRole("link", { name: "Bug reports 0" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback?board=bug-reports&status=all`);
+  await expect(menu.getByRole("link", { name: "Bug reports 0" })).toHaveAttribute("aria-current", "page");
+  await expect(menu.getByRole("link", { name: /^All posts/ })).not.toHaveAttribute("aria-current");
+  await expect(team.getByRole("heading", { name: "Bug reports", level: 1 })).toBeAttached();
+  // The menu is on the Boards page and the Roadmap too, marking it.
+  await menu.getByRole("link", { name: "Manage boards" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback/boards`);
+  await expect(menu.getByRole("link", { name: "Manage boards" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(team, "feedback-menu-boards");
+  // On a phone the menu is a drawer from the pane header's button; a link in it goes there and closes it.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/feedback`);
+  await expect(menu).toBeHidden();
+  await team.getByRole("button", { name: "Open the menu" }).click();
+  const drawer = team.getByRole("dialog", { name: "Feedback" });
+  await expect(drawer.getByRole("link", { name: /^Needs triage/ })).toHaveAttribute("aria-current", "page");
+  await checkpoint(team, "feedback-menu-phone");
+  await drawer.getByRole("link", { name: "Roadmap" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback/roadmap`);
+  await expect(drawer).toBeHidden();
+  await expect(team.getByRole("heading", { name: "Roadmap", level: 1 })).toBeVisible();
 });
 
 test("long lists load 50 posts at a time, keeping the place in the address", async ({ browser }, testInfo) => {
@@ -1433,6 +1473,40 @@ test("Feedback's search field follows Clear search and browser history", async (
   await expect(search).toHaveValue("");
 });
 
+test("Feedback's search keeps what was typed before the page's scripts ran", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  // The page's scripts held until after typing (a slow phone, a busy machine): typed into the server's field.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  // (Scripts only: its stylesheets are there too, and holding them would hold the page's first paint.)
+  const scripts = (url: URL) => url.pathname.includes("/_next/static/chunks/") && url.pathname.endsWith(".js");
+  await team.route(scripts, async (route) => {
+    await released;
+    await route.continue().catch(() => {});
+  });
+  await team.goto(`/app/${slug}/feedback`, { waitUntil: "commit" });
+  const search = team.getByRole("searchbox", { name: "Search feedback" });
+  await search.fill("dark");
+  release();
+  // Hydrated, its effects run: J (Feedback's keys, listening from an effect in the same page, hydrated and run with
+  // the field's) opens the first post only then. Tried until it does, from the page (not typed into the field).
+  await search.blur();
+  await expect(async () => {
+    await team.keyboard.press("j");
+    await expect(team).toHaveURL(/[?&]post=\d+/, { timeout: 1000 });
+  }).toPass();
+  // What was typed is still there, and Enter searches for it.
+  await expect(search).toHaveValue("dark");
+  await search.press("Enter");
+  await expect(team).toHaveURL(/\?q=dark$/);
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  await team.unroute(scripts);
+});
+
 test("Feedback's search keeps newer typing while its results load", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1615,11 +1689,11 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.setViewportSize({ width: 1920, height: 1080 });
   // All of them (a post triaged in the pane stays in the list).
   await team.goto(`/app/${slug}/feedback?status=all`);
-  await expect(team.getByRole("complementary", { name: "Post" })).toHaveCount(0);
   const pane = team.getByRole("region", { name: /^Post #/ });
+  await expect(pane).toHaveCount(0);
 
-  // The open row is highlighted out to the list card's edges, the first and last rows into its corners: no box in a box.
-  const card = team.locator('[data-slot="card"]').filter({ has: team.getByRole("link", { name: "Calendar sync", exact: true }) });
+  // The open row is highlighted out to the list's edges, the first and last rows into its corners: no box in a box.
+  const card = team.getByRole("main").getByRole("list", { name: "Posts" }).filter({ has: team.getByRole("link", { name: "Calendar sync", exact: true }) });
   const rows = card.getByRole("listitem");
   await checkpoint(team, "team-feedback-left-edge-wide");
   const line = (index: number) => rows.nth(index).evaluate((li) => getComputedStyle(li).borderBottomColor);
@@ -1643,12 +1717,10 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   }
   await checkpoint(team, "team-feedback-left-edge-wide-open");
   await team.setViewportSize({ width: 1440, height: 900 });
-  // Beside the open post the statuses are the first three tabs and More (reading as All, the one open): the row
-  // fits, with Needs triage in sight.
+  // Beside the open post the status pills are one row in the list's narrower header, scrolled to All (the one open).
   const statuses = team.getByRole("navigation", { name: "Statuses" });
-  await expect(statuses.getByRole("link")).toHaveText([/^Needs triage/, /^Under review/, /^Planned/]);
-  await expect(statuses.getByRole("button", { name: /^All 3/ })).toHaveAttribute("aria-current", "page");
-  expect(await statuses.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+  await expect(statuses.getByRole("link", { name: /^All 3/ })).toHaveAttribute("aria-current", "page");
+  await expectOneRowOfTabs(team, statuses);
   await checkpoint(team, "team-feedback-statuses-beside-post");
   // On a smaller laptop, where the list's column is too narrow for one row beside a post, the toolbar is two rows with
   // or without one open: the list doesn't move as a post opens.
@@ -1685,14 +1757,15 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   // Scrolled down the pane (to its reply box) on a short laptop screen, the next post starts at its top. (Planned now,
   // Calendar sync is in All's last group, after the open ones: K steps to the one before it, J back.)
   await team.setViewportSize({ width: 1440, height: 420 });
-  await team.getByRole("complementary", { name: "Post" }).evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+  // (The post's pane scrolls by itself.)
+  await pane.locator("..").evaluate((body) => body.scrollTo(0, body.scrollHeight));
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).not.toBeInViewport();
   await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const titles = await team.getByRole("list", { name: "Posts" }).getByRole("link").allTextContents();
   const previous = titles[titles.indexOf("Calendar sync") - 1]!;
   await team.keyboard.press("k");
   await expect(pane.getByRole("heading", { name: previous, exact: true })).toBeInViewport();
-  await team.getByRole("complementary", { name: "Post" }).evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+  await pane.locator("..").evaluate((body) => body.scrollTo(0, body.scrollHeight));
   await team.keyboard.press("j");
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeInViewport();
   await team.setViewportSize({ width: 1440, height: 900 });
@@ -1717,7 +1790,6 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
   await team.locator("body").press("Escape");
   await expect(pane).toHaveCount(0);
-  await expect(team.getByRole("complementary", { name: "Post" })).toHaveCount(0);
 
   // Open full page: the post's own page, with the reply.
   await team.getByRole("link", { name: "Dark mode", exact: true }).click();
@@ -1854,7 +1926,170 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect.poll(scrollY).toBe(300);
 });
 
+test("Feedback's list keeps its place as a post opens and closes beside it, in a small laptop's window", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await Promise.all(Array.from({ length: 30 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  // 900px, the sidebar on its rail: the panes are the window's height, the list scrolling in its own.
+  await team.setViewportSize({ width: 900, height: 700 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const sidebar = team.locator('[data-slot="sidebar-container"]');
+  if ((await sidebar.boundingBox())!.width > 100) {
+    await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+  }
+  await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(100);
+  expect(await team.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+  // A row far down the list, opened: the post beside the list, which stays where it was.
+  const row = team.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem").nth(24).getByRole("link");
+  await row.scrollIntoViewIfNeeded();
+  await row.click();
+  const pane = team.getByRole("region", { name: /^Post #/ });
+  await expect(pane).toBeVisible();
+  await expect(row).toBeInViewport();
+  await checkpoint(team, "feedback-split-small-laptop", { fullPage: false });
+  // Closed (Esc, then Close): still there.
+  await team.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(row).toBeInViewport();
+  await row.click();
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect(pane).toHaveCount(0);
+  await expect(row).toBeInViewport();
+});
+
+test("on a laptop another view of the list starts at its top; a post opened and closed beside it keeps the list's place", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await Promise.all(Array.from({ length: 30 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  await team.setViewportSize({ width: 1280, height: 800 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const rows = team.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem");
+  const last = rows.last().getByRole("link");
+  // The list scrolls in its own pane, not the window.
+  await last.scrollIntoViewIfNeeded();
+  expect(await team.evaluate(() => window.scrollY)).toBe(0);
+  await expect(rows.first()).not.toBeInViewport();
+  // A post opened beside it and closed: the list where it was.
+  await last.click();
+  await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
+  await expect(last).toBeInViewport();
+  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
+  await expect(team.getByRole("region", { name: /^Post #/ })).toHaveCount(0);
+  await expect(last).toBeInViewport();
+  // Another view, from Feedback's menu: it starts at its top.
+  await team.getByRole("navigation", { name: "Feedback" }).getByRole("link", { name: /^Needs triage/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
+  await expect(rows.first()).toBeInViewport();
+  await checkpoint(team, "feedback-view-from-top", { fullPage: false });
+  // Back to All posts: where it was left, at its last row (Back puts a view back, it doesn't start it over).
+  await team.goBack();
+  await team.waitForURL(`**/app/${slug}/feedback?status=all`);
+  await expect(last).toBeInViewport();
+  await expect(rows.first()).not.toBeInViewport();
+  // And from the status pills (All still scrolled to its end): Needs triage starts at its top.
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Needs triage/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
+  await expect(rows.first()).toBeInViewport();
+  // Reloaded (no places kept from before), scrolled to its end, then Back: All posts has no saved place to go back
+  // to, so it starts at its top, not at Needs triage's place.
+  await team.reload();
+  await last.scrollIntoViewIfNeeded();
+  await expect(rows.first()).not.toBeInViewport();
+  await team.goBack();
+  await team.waitForURL(`**/app/${slug}/feedback?status=all`);
+  await expect(rows.first()).toBeInViewport();
+});
+
+test("a post's page and the list at tablet and laptop widths: the header stays in view, the properties beside the post", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Export reports to CSV", body: "Our team needs the full report.\n\n".repeat(40) });
+  await Promise.all(Array.from({ length: 20 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  const sidebar = team.locator('[data-slot="sidebar-container"]');
+  const onRail = async () => {
+    if ((await sidebar.boundingBox())!.width > 100) {
+      await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+    }
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(100);
+  };
+  const header = team.locator('[data-slot="pane-header"]').first();
+  // A tablet (768px, the sidebar on its rail): the window scrolls the page; the pane's header stays at its top.
+  await team.setViewportSize({ width: 768, height: 1024 });
+  await team.goto(`/app/${slug}/p/1`);
+  await onRail();
+  const reply = team.getByRole("textbox", { name: "Comment", exact: true });
+  await reply.scrollIntoViewIfNeeded();
+  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(header.getByRole("link", { name: "All posts" })).toBeInViewport();
+  await expect(header.getByRole("button", { name: "More actions" })).toBeInViewport();
+  expect(Math.round((await header.boundingBox())!.y)).toBe(0);
+  // The focused reply clears it.
+  await reply.focus();
+  await expect.poll(async () => (await reply.boundingBox())!.y).toBeGreaterThanOrEqual((await header.boundingBox())!.height);
+  await checkpoint(team, "post-tablet-scrolled", { fullPage: false });
+  // The list's header too: its pills, search and Filters.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(team.getByRole("button", { name: /^Filters/ })).toBeInViewport();
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toBeInViewport();
+  // Another view from the stuck header's pills starts at the list's top (the window brought back, as it's what scrolls).
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Needs triage/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
+  await expect(team.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem").first()).toBeInViewport();
+  // A short tablet window (768×600, the rail): the header scrolls away with the page, so the post and the list keep
+  // the height, and the page reserves no room for it; a window made taller (only its height) makes it stick, and
+  // shorter again lets it go.
+  const html = team.locator("html");
+  for (const path of ["/p/1", "/feedback?status=all"]) {
+    await team.setViewportSize({ width: 768, height: 600 });
+    await team.goto(`/app/${slug}${path}`);
+    await onRail();
+    await team.evaluate(() => window.scrollTo(0, 400));
+    await expect(header).not.toHaveCSS("position", "sticky");
+    await expect(html).toHaveCSS("scroll-padding-top", "0px");
+    await team.setViewportSize({ width: 768, height: 1024 });
+    await expect(header).toHaveCSS("position", "sticky");
+    await expect.poll(() => html.evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+    await team.setViewportSize({ width: 768, height: 600 });
+    await expect(header).not.toHaveCSS("position", "sticky");
+    await expect(html).toHaveCSS("scroll-padding-top", "0px");
+  }
+  // A laptop (1024px on the rail, and 1366px with the sidebar open): the post's properties beside it, open, not
+  // folded to a line.
+  for (const [width, open] of [
+    [1024, false],
+    [1366, true],
+  ] as const) {
+    await team.setViewportSize({ width, height: 800 });
+    await team.goto(`/app/${slug}/p/1`);
+    if (open) {
+      if ((await sidebar.boundingBox())!.width < 100) await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+      await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(240);
+    } else {
+      await onRail();
+    }
+    const properties = team.getByRole("complementary", { name: "Properties" });
+    await expect(properties.getByRole("combobox", { name: "Owner" })).toBeVisible();
+    await expect(team.getByRole("button", { name: "Show properties" })).toBeHidden();
+    const post = (await team.getByRole("region", { name: "Comments", exact: true }).boundingBox())!;
+    expect((await properties.boundingBox())!.x).toBeGreaterThanOrEqual(post.x + post.width);
+    await checkpoint(team, `post-laptop-${width}`, { fullPage: false });
+  }
+});
+
 test("Feedback's rows picked for Set status, Move to board and Merge; Completed asks first", async ({ browser }, testInfo) => {
+  // A long journey: every action on picked rows, at four widths.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
@@ -1879,6 +2114,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const bar = team.getByRole("toolbar", { name: "Selected posts" });
   const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
   await expect(bar).toHaveCount(0);
+  // All, mixing statuses, groups them: each group's fold names it and its count.
+  await expect(team.getByRole("region", { name: "Planned" }).locator("summary")).toHaveAccessibleName("Planned 1");
   // The team writes a post on their portal, from the header.
   const newPost = team.getByRole("link", { name: "New post (on your portal)" });
   await expect(newPost).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);
@@ -1887,7 +2124,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(row("Night theme")).toContainText(/^\s*2 votes\s*Feature requests\s*Night theme/);
   await expect(row("Night theme").getByRole("button", { name: "Status: Open" })).toBeVisible();
   const background = (title: string) => row(title).evaluate((li) => getComputedStyle(li).backgroundColor);
-  const fill = () => newPost.evaluate((link) => getComputedStyle(link).backgroundColor);
+  // (By its address: under the bar for picked rows it's out of the accessibility tree, still there.)
+  const fill = () => team.locator(`a[href="${portalUrl(slug)}/feedback"][target="_blank"]`).first().evaluate((link) => getComputedStyle(link).backgroundColor);
   const primary = await fill();
   const unpicked = await background("Calendar sync");
   // Where the list starts, on a phone and on a laptop.
@@ -1938,7 +2176,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await expect(bar).toContainText("2 selected");
   await expect.poll(() => background("Calendar sync")).toBe(openAndPicked);
-  // The open post has its own primary button: New post isn't one beside it.
+  // The open post has its own primary button: New post isn't one beside it (under the bar, still there).
   await expect.poll(fill).not.toBe(primary);
   // Beside the open post the list's column is narrower than the window suggests: the bar's words follow the
   // column, and it's still one row the filters' height.
@@ -1954,8 +2192,14 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   }
   await expect(bar).toContainText("2 selected");
   await checkpoint(team, "team-feedback-bulk-beside-post");
-  // Narrower still (a small laptop, the post open): the count stays whole, the actions scroll.
-  await team.setViewportSize({ width: 1024, height: 720 });
+  // Beside the post on the smallest laptop that has both panes, the count is whole too.
+  await team.setViewportSize({ width: 1008, height: 720 });
+  expect(await countWhole()).toBe(true);
+  // Narrower still (a 320px phone; the post closed, the picks kept): the count stays whole, the actions scroll.
+  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
+  await team.waitForURL((url) => !url.searchParams.has("post"));
+  await team.setViewportSize({ width: 320, height: 720 });
+  await expect(bar).toContainText("2 selected");
   expect(await countWhole()).toBe(true);
   // The actions past the end are faded there, as the tabs are: a cue that the row scrolls.
   const actions = bar.locator("[data-more]");
@@ -1973,10 +2217,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const mergeButton = bar.getByRole("button", { name: "Merge…" });
   await expect(mergeButton).toBeFocused();
   await expect.poll(async () => (await mergeButton.boundingBox())!.x + (await mergeButton.boundingBox())!.width).toBeLessThanOrEqual((await actions.boundingBox())!.x + (await actions.boundingBox())!.width - 32 + 1);
-  await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
+  await checkpoint(team, "team-feedback-bulk-narrow-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
-  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
-  await team.waitForURL((url) => !url.searchParams.has("post"));
   await expect.poll(fill).toBe(primary);
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Planned" }).click();
@@ -2054,17 +2296,12 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
   await team.keyboard.press("Escape");
 
-  // At 1280px with the labelled sidebar, the toolbar is two rows: picking keeps the tabs usable above the bar.
+  // At 1280px with the labelled sidebar, the bar covers the pane header's row (its status pills too); Feedback's menu
+  // beside the list still works while rows are picked, and changing the view clears the picks.
   await expect(bar).toContainText("1 selected");
-  const statuses = team.getByRole("navigation", { name: "Statuses" });
-  await expect(statuses).toBeVisible();
-  const tabsBox = (await statuses.boundingBox())!;
-  const barBox = (await bar.boundingBox())!;
-  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeGreaterThanOrEqual(0);
-  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeLessThanOrEqual(24);
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toHaveCount(0);
   await checkpoint(team, "team-feedback-bulk-statuses-laptop");
-  // A status tab still works while rows are picked, and changing it clears the picks.
-  await statuses.getByRole("link", { name: /^Planned/ }).focus();
+  await team.getByRole("navigation", { name: "Feedback" }).getByRole("link", { name: /^Planned/ }).focus();
   await team.keyboard.press("Enter");
   await team.waitForURL(/status=planned/);
   await expect(bar).toHaveCount(0);
@@ -2234,14 +2471,14 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   // doesn't take it to the filters either.
   await box.evaluate((input: HTMLInputElement) => input.click());
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).focus();
-  await team.getByRole("heading", { name: "Feedback", level: 1 }).click();
+  await team.locator('[data-slot="pane-layout"]').click({ position: { x: 2, y: 2 } });
   await expect.poll(() => team.evaluate(() => document.activeElement?.tagName)).toBe("BODY");
   await box.evaluate((input: HTMLInputElement) => input.click());
   await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
   await expect(board).not.toBeFocused();
 });
 
-test("Feedback's picked rows' bar keeps the filters' place on a phone, the list where it was", async ({ browser }, testInfo) => {
+test("Feedback's picked rows' bar takes the header's row on a phone, the status pills under it and the list where they were", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
@@ -2257,7 +2494,8 @@ test("Feedback's picked rows' bar keeps the filters' place on a phone, the list 
   for (const title of ["Dark mode", "Night theme"]) {
     await api("/posts", { board: "integrations", title });
   }
-  // On a phone the filters are one button (its popover), beside the search: the bar takes that row's place.
+  // On a phone the filters are one button (its popover), beside the search: the bar takes that row's place, the
+  // status pills' row under it kept.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/feedback?status=all&board=integrations`);
   await expect(team.getByRole("button", { name: /^Filters/ })).toBeVisible();
@@ -2271,8 +2509,8 @@ test("Feedback's picked rows' bar keeps the filters' place on a phone, the list 
   await expect(statuses).toBeVisible();
   const tabsBox = (await statuses.boundingBox())!;
   const barBox = (await bar.boundingBox())!;
-  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeGreaterThanOrEqual(0);
-  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeLessThanOrEqual(24);
+  expect(tabsBox.y - (barBox.y + barBox.height)).toBeGreaterThanOrEqual(0);
+  expect(tabsBox.y - (barBox.y + barBox.height)).toBeLessThanOrEqual(24);
   await checkpoint(team, "team-feedback-bulk-wrapped-filters-phone");
   await statuses.getByRole("link", { name: /^Planned/ }).click();
   await team.waitForURL(/status=planned/);

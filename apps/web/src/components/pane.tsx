@@ -10,6 +10,15 @@ import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/she
 import { activeView } from "@/lib/active-link";
 
 /**
+ * A pane's header where the window scrolls the page, not the pane: under 48rem of the shell from a 48rem window
+ * (the sidebar open on a tablet), where there's no phone bar to say what the page is, it stays at the top (in a
+ * window at least 40rem tall, as `PageHeader`). For what holds a pane's header (Feedback's bar for picked rows).
+ */
+// Its z-index only there too: a grid item with one paints over what follows it in its cell (Feedback's bar).
+export const STICKY_PANE_HEADER =
+  "bg-card rounded-t-2xl topbar:[@media(height>=40rem)]:@max-[48rem]/app:sticky topbar:[@media(height>=40rem)]:@max-[48rem]/app:top-0 topbar:[@media(height>=40rem)]:@max-[48rem]/app:z-10";
+
+/**
  * The admin's panes (docs/design.md → Panes): white panels on the shell's canvas, 8px apart. A page is a `PaneLayout`
  * of an optional `SectionPane` (the area's menu) and one or more `Pane`s, each starting with a `PaneHeader`.
  * `data-slot="pane-layout"`: the shell gives it the whole width; `data-panes`: on its canvas (AppShell).
@@ -35,7 +44,8 @@ export function PaneLayout({ children, className }: { children: ReactNode; class
 /** One white panel. Its parts scroll inside it (`PaneBody`), never the panel's rounded edge. */
 export function Pane({ children, className, "aria-label": label }: { children: ReactNode; className?: string; "aria-label"?: string }) {
   return (
-    <section aria-label={label} data-slot="pane" className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-card text-card-foreground ring-1 ring-border", className)}>
+    // Clipped where it's the window's height; under that the window scrolls, and its header sticks (STICKY_PANE_HEADER).
+    <section aria-label={label} data-slot="pane" className={cn("flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl bg-card text-card-foreground ring-1 ring-border @min-[48rem]/app:overflow-hidden", className)}>
       {children}
     </section>
   );
@@ -51,6 +61,13 @@ if (typeof window !== "undefined") {
     document.addEventListener(event, () => (traversal = false), true);
   }
 }
+/** Whether each pane body's latest layout effect (its latest URL) put a saved place back (Back or Forward to it). */
+const restored = new WeakMap<HTMLElement, boolean>();
+/**
+ * Whether `box`, a pane body, was just put back where it was on this URL: read in a passive effect of something in it,
+ * which runs after the body's layout effect for the same navigation (Feedback's list starting a new view at its top).
+ */
+export const restoredPlace = (box: HTMLElement | null | undefined) => (box ? (restored.get(box) ?? false) : false);
 
 /**
  * What scrolls in a pane, under its header, in place of the window: so it returns to where it was on Back and Forward,
@@ -64,8 +81,10 @@ export function PaneBody({ children, className, resetOnNavigate = false }: { chi
     const box = ref.current;
     if (!box) return;
     const place = `${[...document.querySelectorAll("[data-slot=pane-body]")].indexOf(box)} ${url}`;
-    if (traversal) box.scrollTop = places.get(place) ?? box.scrollTop;
+    const saved = traversal ? places.get(place) : undefined;
+    if (traversal) box.scrollTop = saved ?? box.scrollTop;
     else if (resetOnNavigate) box.scrollTop = 0;
+    restored.set(box, saved !== undefined);
     const keep = () => places.set(place, box.scrollTop);
     // Every URL the body shows has a place, scrolled or not: a body kept across a navigation keeps it on Back.
     keep();
@@ -109,7 +128,7 @@ export function PaneHeader({
   const menu = useContext(SectionMenuContext);
   const Heading = level === 1 ? "h1" : "h2";
   return (
-    <header data-slot="pane-header" data-title-in-form={titleInForm || undefined} className="shrink-0 border-b">
+    <header data-slot="pane-header" data-title-in-form={titleInForm || undefined} className={cn("shrink-0 border-b", STICKY_PANE_HEADER)}>
       <div className={cn("flex min-h-15 min-w-0 items-center gap-2 px-3 py-2 @min-[48rem]/app:px-4 @min-[48rem]/app:pl-5", className)}>
         {menu && (
           // Shown with a section pane on the page (hidden from tablet width up, where the pane is beside it).
@@ -149,7 +168,7 @@ export function PaneHeader({
  * Its links are found in its children (in groups, fragments and arrays, and what server components render): a client
  * component that renders SectionLinks hides them, so pass them in as elements, or give them `active`.
  */
-export function SectionPane({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function SectionPane({ title, actions, className, children }: { title: ReactNode; actions?: ReactNode; /** The pane's own (not the drawer's). */ className?: string; children: ReactNode }) {
   const menu = useContext(SectionMenuContext);
   // The drawer closes as this pane shows beside the page (the shell's 48rem, a container query: watched as it renders),
   // whenever it mounts (a page of its own, streamed in).
@@ -178,7 +197,7 @@ export function SectionPane({ title, actions, children }: { title: ReactNode; ac
   );
   return (
     <>
-      <aside ref={watch} data-slot="section-pane" className="hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex">
+      <aside ref={watch} data-slot="section-pane" className={cn("hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex", className)}>
         {content()}
       </aside>
       {menu && (
@@ -256,6 +275,8 @@ export function SectionLink({
       {icon}
       {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dot }} />}
       <span className="min-w-0 flex-1 truncate">{children}</span>
+      {/* A space for its name ("Planned 4"); a flex row drops it from the layout. */}
+      {count != null && " "}
       {count != null && <span className="text-xs text-muted-foreground tabular-nums">{count}</span>}
     </Link>
   );

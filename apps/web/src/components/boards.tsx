@@ -48,7 +48,17 @@ function slugify(value: string) {
 }
 
 /** "New board" on Feedback → Boards: its form in a dialog, closed once the board is made. */
-export function NewBoardDialog({ projectSlug, tile = false }: { projectSlug: string; /** A dashed card in the boards' grid, after them. */ tile?: boolean }) {
+export function NewBoardDialog({
+  projectSlug,
+  tile = false,
+  icon = false,
+}: {
+  projectSlug: string;
+  /** A dashed card in the boards' grid, after them. */
+  tile?: boolean;
+  /** A small + (beside Boards in Feedback's menu). */
+  icon?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -58,6 +68,10 @@ export function NewBoardDialog({ projectSlug, tile = false }: { projectSlug: str
         >
           <PlusIcon aria-hidden className="size-5" />
           Add a board
+        </DialogTrigger>
+      ) : icon ? (
+        <DialogTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Add a board" className="-mr-1.5" />}>
+          <PlusIcon />
         </DialogTrigger>
       ) : (
         <DialogTrigger render={<Button />}>New board</DialogTrigger>

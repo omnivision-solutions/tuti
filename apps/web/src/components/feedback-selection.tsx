@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { STICKY_PANE_HEADER } from "@/components/pane";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import {
   AlertDialog,
@@ -151,16 +152,15 @@ export function PickedRow({
 }
 
 /**
- * The list's filters and sort behind one "Filters" button (with how many are set, the sort too), opening them in a
- * popover: the row above the list is the status tabs, the search and this. In place of the list's filters while rows are
- * picked, the bar takes that whole row, its bottom (on phones, the search's line under the tabs).
+ * The list's filters and sort behind one round "Filters" button in its pane header (with how many are set, the sort
+ * too), opening them in a popover.
  */
-export function FiltersFold({ set, compact = false, children }: { set: number; /** Its icon alone (a post open beside the list). */ compact?: boolean; children: ReactNode }) {
+export function FiltersFold({ set, children }: { set: number; children: ReactNode }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="outline" title={compact ? "Filters" : undefined} />}>
+      <PopoverTrigger data-filters render={<Button variant="outline" size={set > 0 ? "sm" : "icon-sm"} title="Filters" />}>
         <SlidersHorizontalIcon />
-        <span className={compact ? "sr-only" : undefined}>Filters</span>
+        <span className="sr-only">Filters</span>
         {set > 0 && <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{set}</span>}
       </PopoverTrigger>
       <PopoverContent aria-label="Filters" align="end" className="w-64 [&_[data-slot=select-trigger]]:w-full [&>div>div]:flex-col [&>div>div]:items-stretch">
@@ -186,12 +186,10 @@ const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 /**
  * What can be done to the picked posts, once some are: Set status (Completed asks first: it emails their
  * voters), Move to board, Merge (into the one kept, the most voted for by default), Clear. Each post is done
- * as on its own; what fails is said and the rest still go. In place of `children` (the list's filters): both in
- * one grid cell, the filters hidden (and out of reach) while the bar shows, so the cell keeps the taller one's
- * height and the list doesn't move. Below 64rem the navigation stays usable above that cell; at 64rem and up,
- * the bar spans the whole toolbar and hides its navigation too.
+ * as on its own; what fails is said and the rest still go. Over the first row of `children` (the list's pane
+ * header: its title, views, search and Filters), so the list doesn't move; on phones the views' row under it stays.
  */
-export function FeedbackBulk({ projectSlug, boards, navigation, children }: { projectSlug: string; boards: { slug: string; name: string }[]; navigation: ReactNode; children: ReactNode }) {
+export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: string; boards: { slug: string; name: string }[]; /** The list's pane header. */ children: ReactNode }) {
   const { picked, clear, pending, startTransition } = useSelection();
   const router = useRouter();
   const [completing, setCompleting] = useState(false);
@@ -211,9 +209,9 @@ export function FeedbackBulk({ projectSlug, boards, navigation, children }: { pr
   const barHeld = useRef(false);
   useEffect(() => {
     if (hadBar.current && picked.length === 0 && barHeld.current && document.activeElement === document.body) {
-      // The first button shown past the tabs (Filters), once it's visible: its transitions take `visibility` with them, so it can't
+      // Filters, once it's visible: its transitions take `visibility` with them, so it can't
       // take focus until they're done.
-      const button = [...(filtersRef.current?.querySelectorAll<HTMLElement>("button:not(nav *)") ?? [])].find((one) => one.getClientRects().length > 0);
+      const button = filtersRef.current?.querySelector<HTMLElement>("[data-filters]");
       void Promise.allSettled(button?.getAnimations().map((animation) => animation.finished) ?? []).then(() => {
         if (document.activeElement === document.body) button?.focus({ preventScroll: true });
       });
@@ -243,15 +241,12 @@ export function FeedbackBulk({ projectSlug, boards, navigation, children }: { pr
       row.removeEventListener("focusin", focusClearOfFade);
     };
   }, [picked.length]);
+  // The bar over the header's first row (its title, views and actions hidden, out of reach), so the list doesn't move;
+  // on phones the views' own row under it stays usable.
   const toolbar = (bar?: ReactNode) => (
-    <div className="grid min-w-0 grid-cols-1 items-end gap-3 @min-[64rem]/page:grid-cols-[minmax(0,1fr)_auto] @min-[64rem]/page:gap-4 @min-[64rem]/page:shadow-[inset_0_-1px_0_var(--color-border)]">
-      {/* Visibility also removes wide-screen tabs from keyboard and accessibility navigation; narrow tabs stay usable. */}
-      <div className={cn("min-w-0 [grid-area:1/1]", bar && "@min-[64rem]/page:invisible")}>
-        {navigation}
-      </div>
-      <div ref={filtersRef} className={cn("min-w-0 [grid-area:2/1] @min-[64rem]/page:[grid-area:1/2]", bar && "invisible")} inert={!!bar}>
-        {children}
-      </div>
+    // Its header stays at the top where the window scrolls: this, which holds it, does (STICKY_PANE_HEADER).
+    <div ref={filtersRef} className={cn("grid min-w-0 grid-cols-1", STICKY_PANE_HEADER, bar && "[&>div>header>div:first-child]:invisible")}>
+      <div className="contents [&>*]:min-w-0 [&>*]:[grid-area:1/1]">{children}</div>
       {bar}
     </div>
   );
@@ -293,7 +288,7 @@ export function FeedbackBulk({ projectSlug, boards, navigation, children }: { pr
       }}
       // Narrower still (a post open beside the list on a small laptop): the count stays whole, the actions scroll
       // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
-      className="flex min-w-0 items-center gap-2 text-sm [grid-area:2/1] @max-md:gap-1.5 @min-[64rem]/page:[grid-area:1/1/2/3]">
+      className="@container relative z-20 flex h-15 min-w-0 items-center gap-2 self-start rounded-t-2xl bg-card px-3 text-sm [grid-area:1/1] @min-[48rem]/app:px-5">
       <span className="shrink-0 font-medium">{picked.length} selected</span>
       <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-12", FADE_AT_MORE)}>
         <DropdownMenu>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { feedbackStep, sameFeedbackList } from "@/lib/feedback-steps";
+import { restoredPlace } from "@/components/pane";
 import { pageShortcut } from "@/lib/shortcut-keys";
 
 /**
@@ -26,7 +27,8 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
 
   // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its
   // top; closed, the list goes back to where it was. Kept as a post is opened (a click on the list, or J), before
-  // the pane hides the list (and the browser moves the page up).
+  // the pane hides the list (and the browser moves the page up). (Where the list is beside the pane, in a window
+  // under 64rem, the window doesn't scroll: both are no-ops there, and the list's pane keeps its own place.)
   const listScroll = useRef<number | null>(null);
   useEffect(() => {
     const phone = window.matchMedia("(max-width: 63.99rem)").matches;
@@ -80,4 +82,28 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
     return () => window.removeEventListener("keydown", onKey, true);
   }, [router, order, open, base]);
   return null;
+}
+
+/**
+ * The list back at its top (its pane body, or the window where that scrolls it) as the list itself changes (a view, a status, a board, a search, the sort), which
+ * keeps the page and so the pane's scroll: not as a post opens or closes beside it (`list` leaves out `post`), nor as
+ * more of it loads (nor `page`), nor where Back or Forward put it back (`restoredPlace`). Put first in its PaneBody.
+ */
+export function ListScrollReset({ list }: { list: string }) {
+  const marker = useRef<HTMLSpanElement>(null);
+  const shown = useRef(list);
+  useEffect(() => {
+    if (shown.current !== list) {
+      shown.current = list;
+      // Not where PaneBody has just put the list back where it was on this address (Back or Forward to a place it
+      // saved); Back with none saved (after a reload) starts at the top too. A passive effect: after PaneBody's.
+      const body = marker.current?.parentElement;
+      if (!body || restoredPlace(body)) return;
+      // What scrolls the list: its pane body where the pane is the window's height, else (under 48rem of the shell,
+      // its header stuck to the top) the window.
+      if (body.scrollHeight > body.clientHeight) body.scrollTo({ top: 0 });
+      else window.scrollTo({ top: 0 });
+    }
+  }, [list]);
+  return <span ref={marker} hidden />;
 }

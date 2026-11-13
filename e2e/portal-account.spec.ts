@@ -215,7 +215,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
 
   // Shipping Dark mode tells Ada, who wrote it, and not Bo, who voted for it: the team is told it emails one person.
   await team.goto(`/app/${slug}/p/1`);
-  await team.getByLabel("Status").click();
+  await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Completed" }).click();
   const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
   await expect(ask).toContainText("This emails up to 1 person who asked for it that it shipped.");

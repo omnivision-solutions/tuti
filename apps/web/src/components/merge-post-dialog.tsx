@@ -3,7 +3,7 @@
 import type { PostVisibility } from "@tuti/db";
 import { MergeIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { type ComponentProps, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,13 +25,25 @@ export function MergePostDialog({
   projectSlug,
   post,
   candidates,
+  open: given,
+  onOpenChange,
+  triggerClassName,
+  finalFocus,
 }: {
   projectSlug: string;
   post: { id: string; number: number; title: string; visibility?: PostVisibility; authorId?: string };
   candidates: PickablePost[];
+  /** Opened from elsewhere too (a menu's item, PostActions on phones). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  triggerClassName?: string;
+  /** Where focus goes as it closes, when that's not its own button (hidden where a menu opened it). */
+  finalFocus?: ComponentProps<typeof DialogContent>["finalFocus"];
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [own, setOwn] = useState(false);
+  const open = given ?? own;
+  const setOpen = onOpenChange ?? setOwn;
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<PickablePost>();
   const [pending, startTransition] = useTransition();
@@ -46,11 +58,11 @@ export function MergePostDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+      <DialogTrigger render={<Button variant="outline" size="sm" className={triggerClassName} />}>
         <MergeIcon />
         Merge into…
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent finalFocus={finalFocus}>
         {!target ? (
           <>
             <DialogHeader>

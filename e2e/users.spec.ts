@@ -39,7 +39,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   // One pane: Users in its header, its views as pills (People with how many), Sync from your app at its right end.
   const header = owner.getByRole("region", { name: "Users" }).locator('[data-slot="pane-header"]');
   await expect(header.getByRole("heading", { name: "Users", level: 1 })).toBeVisible();
-  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People3", "Companies"]);
+  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People 3", "Companies"]);
   await expect(header.getByRole("link", { name: /^People\s*3$/ })).toHaveAttribute("aria-current", "page");
   await expect(header.getByRole("link", { name: "Sync from your app" })).toHaveAttribute("href", "/api/docs#users.sync");
   const table = owner.getByRole("main").getByRole("table");

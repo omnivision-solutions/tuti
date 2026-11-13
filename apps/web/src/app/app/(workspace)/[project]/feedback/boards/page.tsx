@@ -6,7 +6,8 @@ import { notFound } from "next/navigation";
 
 import { BoardMenu, BoardOnButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
 import { VisibilityBadge } from "@/components/visibility-badge";
-import { PageHeader } from "@/components/page-header";
+import { feedbackMenu } from "@/components/feedback-menu";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -61,13 +62,15 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   const someOff = boards.some((board) => board.off);
 
   return (
-    <>
-      <PageHeader
-        back={{ href: `/app/${project.slug}/feedback`, label: "Feedback" }}
+    <PaneLayout>
+      {await feedbackMenu({ project: { ...project, plan }, role })}
+      <Pane aria-label="Boards">
+      <PaneHeader
         title="Boards"
         description="Where people post ideas and problems on your portal."
         actions={isAdmin && !full && <NewBoardDialog projectSlug={project.slug} />}
       />
+      <PaneBody className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-5">
 
       {isAdmin && full && (
         <Alert>
@@ -84,8 +87,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       )}
 
       {/* A card a board: its name and who sees it, its description, its posts, where it is on the portal; then its actions. */}
-      {/* The whole width, as Feedback's list (data-wide). */}
-      <ul aria-label="Boards" data-wide className="grid gap-4 md:grid-cols-2">
+      <ul aria-label="Boards" className="grid gap-4 md:grid-cols-2">
         {boards.map((board) => (
           <li key={board.id}>
             {/* The whole card opens its posts (its name's link stretched over it); its buttons sit above that. */}
@@ -152,6 +154,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
           </li>
         ))}
       </ul>
-    </>
+      </PaneBody>
+      </Pane>
+    </PaneLayout>
   );
 }
