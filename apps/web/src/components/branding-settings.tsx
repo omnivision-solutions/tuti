@@ -112,8 +112,8 @@ export function BrandingSettings({
   return (
     <form {...form} className="flex flex-col gap-6">
       <input type="hidden" name="part" value="look" />
-      <CustomizeSection title="Colour scheme" description="For readers who haven't picked light or dark mode themselves.">
-        <div role="radiogroup" aria-label="Colour scheme" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+      <CustomizeSection title="Default theme" description="What readers see first.">
+        <div role="radiogroup" aria-label="Default theme" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
           {SCHEMES.map(([value, name, Icon]) => (
             <label
               key={value}

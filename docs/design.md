@@ -594,7 +594,7 @@ the list picks none to approve at once.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
-  Light or dark as the portal's colour scheme says (Settings → Branding; by default the visitor's
+  Light or dark as the portal's default theme says (Settings → Branding; by default the visitor's
   device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
   from its first paint, and the button unless it has its own colour (Settings → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
