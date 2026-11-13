@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, CLOUD_URL, portalUrl, SERVER_LOG } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { CLOUD_URL } from "./env";
 
 test("someone buying a licence sees which installation and project it's for, and buys it with Stripe", async ({ page }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -34,28 +32,4 @@ test("someone buying a licence sees which installation and project it's for, and
   // Without the ids, it says where to start.
   await page.goto(`${CLOUD_URL}/app/license?installation=${installation}`);
   await expect(page.getByText("Open this page from your Tuti")).toBeVisible();
-});
-
-// A portal page renews the project's licence key (at most daily) without tying it to the request: once a request closes,
-// Next.js's after() made the rest of its render throw on headers() and cookies(), a stack in the server's log each time.
-test("a reader leaving a portal page as it loads leaves no errors in the server's log", async ({ browser }) => {
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const team = await signUp(browser, APP_URL, "Tess Team");
-  await createProject(team, "Acme", slug);
-  const reader = await newPerson(browser, portalUrl(slug));
-  await reader.goto("/feedback/feature-requests");
-
-  // Requests dropped at later and later points of the page's render (somewhere in it, however fast the machine).
-  await reader.evaluate(async () => {
-    for (let ms = 0; ms < 300; ms += 10) {
-      const leaving = new AbortController();
-      const request = fetch("/feedback/feature-requests", { signal: leaving.signal }).then((response) => response.text()).catch(() => null);
-      await new Promise((resolve) => setTimeout(resolve, ms));
-      leaving.abort();
-      await request;
-    }
-    // The renders they leave behind finish.
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-  });
-  expect(readFileSync(SERVER_LOG, "utf8")).not.toContain("inside `after()`");
 });

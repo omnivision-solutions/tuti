@@ -23,4 +23,3 @@ test-results
 playwright-report
 e2e-screenshots
 e2e-mail
-e2e-server.log

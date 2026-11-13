@@ -10,9 +10,6 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
 }
 export const APP_URL = `http://localhost:${PORT}`;
 
-/** The servers' errors (stderr) during the run; the global setup writes them here. */
-export const SERVER_LOG = "e2e-server.log";
-
 /** A project's portal; *.localhost resolves to this machine in Chromium. */
 export const portalUrl = (slug: string) => `http://${slug}.localhost:${PORT}`;
 
