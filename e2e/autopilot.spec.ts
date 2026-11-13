@@ -88,7 +88,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await checkpoint(owner, "home-catch-up");
   const list = owner.getByRole("complementary", { name: "Changes" });
   // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page. A tab
-  // picked while it opens (its page held back till then) stays picked.
+  // picked while it opens (its page held back till then) opens its own first instead: the pull request.
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
   let opens = () => {};
@@ -107,13 +107,14 @@ test("a merged pull request becomes a code change; the team completes the post i
   await openingFirst;
   await list.getByRole("tab", { name: "Activity" }).click();
   release();
-  await owner.waitForURL(`**/app/${slug}/autopilot/feedback/*`);
-  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await owner.waitForURL(`**/app/${slug}/autopilot/activity/*`);
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
   await owner.unroute("**/autopilot/feedback/**");
   // Once: back to the list from inside Autopilot, it stays there, saying what a row opens. Opening by itself again
   // would ask for the post's page as the list shows (not a prefetch): none is asked for.
   await list.getByRole("tab", { name: /^To review/ }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   const reopened: string[] = [];
   const reopening = (request: Request) => {
     if (request.url().includes("/autopilot/feedback/") && request.headers()["rsc"] && !request.headers()["next-router-prefetch"]) {
@@ -135,8 +136,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   // (Once the page has settled: an opening by itself would have fetched the post's review by now.)
   await owner.waitForLoadState("networkidle");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot\\?gone=post$`));
-  // An opening by itself that another page beat (the article picked before the post's page came) is over too: a tab
-  // picked later, then the post reached from a pull request's page, shows the post's tab.
+  // An opening by itself that another page beat (the article picked before the post's page came) is over too: the
+  // post reached from a pull request's page shows the post's tab. A tab with nothing in it opens nothing.
   let letGo = () => {};
   const heldAgain = new Promise<void>((resolve) => (letGo = resolve));
   let asked = () => {};
@@ -159,10 +160,13 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   letGo();
   await owner.unroute("**/autopilot/feedback/**");
-  await list.getByRole("tab", { name: "Activity" }).click();
-  await list.getByRole("link", { name: pr }).click();
-  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
   await list.getByRole("tab", { name: "Reviewed" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
+  await expect(list.getByText("Nothing reviewed yet")).toBeVisible();
+  await expect(owner.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
+  await list.getByRole("tab", { name: "Activity" }).click();
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
+  await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
   await owner.getByRole("region", { name: "Review changes" }).getByRole("link", { name: new RegExp(title) }).click();
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 2" })).toHaveAttribute("aria-selected", "true");
@@ -318,6 +322,18 @@ test("a merged pull request becomes a code change; the team completes the post i
   // who completing it emails), one Approve; why Autopilot suggests it is in its pull request's chip.
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
+  // Reviewed opens its own first row beside it (the article), never the post still waiting with its Approve; Activity
+  // its pull request; To review the post again.
+  await list.getByRole("tab", { name: "Reviewed" }).click();
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
+  await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+  await checkpoint(owner, "autopilot-reviewed-opens-its-first", { fullPage: false });
+  await list.getByRole("tab", { name: "Activity" }).click();
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
+  await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
+  await list.getByRole("tab", { name: "To review 1" }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   const happens = owner.getByRole("region", { name: "What happens to the post" });
   await expect(happens).toContainText("Open → Completed");
   // Why it waits, in plain words: its only follower is the team's, so completing it emails nobody, and it's the setting
@@ -384,14 +400,14 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.reload();
   await expect(happened).toContainText("Couldn't tell whether it went out: check the post before doing it again.");
   await expect(reviewedPost).toContainText("Couldn't tell whether it went out: check it");
+  // An empty tab opens nothing; Reviewed opens its first row (Feedback's post).
   await list.getByRole("tab", { name: "To review 0" }).click();
   await expect(list.getByText("Nothing to review")).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/autopilot$`));
   await list.getByRole("tab", { name: "Reviewed" }).click();
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("link", { name: title })).toHaveAttribute("aria-current", "page");
   await checkpoint(owner, "autopilot-reviewed");
-  // With none open, beside the list: what Reviewed's rows open.
-  await owner.goto(`/app/${slug}/autopilot`);
-  await list.getByRole("tab", { name: "Reviewed" }).click();
-  await expect(owner.getByText("Pick a post or an article to see what became of it")).toBeVisible();
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
@@ -437,8 +453,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.goto(`/app/${slug}/code-changes`);
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await list.getByRole("tab", { name: "Activity" }).click();
-  // Beside the list, what Activity's rows open.
-  await expect(owner.getByText("Pick a pull request to see what it changed for users")).toBeVisible();
+  // Beside the list, Activity's first row.
+  await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
