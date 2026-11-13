@@ -2,7 +2,7 @@ import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
-import { EyeIcon, ClockIcon, ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
+import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -408,7 +408,6 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <span>Not snoozed</span>
             )}
           </div>
-          <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
           <PersonPanel
             projectId={projectId}
             slug={slug}
@@ -416,12 +415,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             besides={conversation.number}
             inbox={{ view, pages, userId: membership.userId }}
           />
-          <DetailSection title="Recent page visits" count={0} icon={EyeIcon}>
-            <p className="text-sm text-muted-foreground">No page visits recorded.</p>
-          </DetailSection>
-          <DetailSection title="Events" count={0} icon={ClockIcon}>
-            <p className="text-sm text-muted-foreground">No events recorded.</p>
-          </DetailSection>
+          <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
           <DetailSection title="Conversation attributes" count={3} icon={ListIcon}>
             <dl className="grid grid-cols-[auto_1fr] gap-2 text-sm">
               <dt>Channel</dt>
@@ -432,7 +426,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <dd>{person.verified ? "Yes" : "No"}</dd>
             </dl>
           </DetailSection>
-          <p className="inbox-detail-foot mt-4.5 text-xs leading-normal text-muted-foreground">
+          <p className="inbox-detail-foot border-t pt-3 text-xs leading-normal text-muted-foreground">
             Started from {ORIGINS[conversation.origin]} · {timeAgo(conversation.createdAt)}
           </p>
         </DetailsPanel>

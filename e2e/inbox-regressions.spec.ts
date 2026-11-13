@@ -146,6 +146,8 @@ test("inline link trigger retains keyboard focus when dismissed while saving", a
   await api("/users", { users: [{ id: "author", name: "Sam", email: "e2e-author@example.com" }] });
   await api("/posts", { board: "feature-requests", title: "Report exports", body: "Export reports", author: { id: "author" } });
   await owner.goto(url);
+  // Nothing linked yet: Linked posts starts folded.
+  await owner.locator("summary", { hasText: "Linked posts" }).click();
   const trigger = owner.getByRole("button", { name: "Link a post to this conversation", includeHidden: true });
   await trigger.click();
   const dialog = owner.getByRole("dialog", { name: "Link a post" });
@@ -175,7 +177,7 @@ test("other conversations use a status dot alongside the text", async ({ browser
   await api("/conversations", { email: "e2e-reader@example.com", subject: "Previous question", body: "All sorted" });
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await owner.goto(url);
-  await owner.locator("summary", { hasText: "Other conversations from this person" }).click();
+  await owner.locator("summary", { hasText: "Other conversations" }).click();
   const other = owner.getByRole("region", { name: "Other conversations", exact: true });
   await expect(other).toContainText("Closed");
   await expect(other.locator(".bg-status-closed")).toBeVisible();
@@ -205,9 +207,9 @@ test("conversation dates use the viewer's day and a written month", async ({ bro
   await page.locator("summary", { hasText: "Conversation attributes" }).click();
   const started = page.getByText("Started", { exact: true }).locator("+ dd");
   await expect.soft(started).toHaveText("7 March 2026");
-  await page.locator("summary", { hasText: "Other conversations from this person" }).click();
+  await page.locator("summary", { hasText: "Other conversations" }).click();
   const other = page.getByRole("region", { name: "Other conversations", exact: true });
-  await expect.soft(other).toContainText("#2 · 7 March");
+  await expect.soft(other).toContainText(/7 March · [^·]+ · #2/);
   await checkpoints(testInfo)(page, "viewer-local-conversation-dates");
   await context.close();
 });

@@ -221,9 +221,11 @@ the list picks none to approve at once.
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,
   leaving room for the conversation even with the app sidebar open. The toggle uses the same rem threshold
   and current root font size as the CSS, so the sheet stays reachable with larger text.
-  Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
-  Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
-  Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
+  The sections, each with an icon, count and chevron and a line above it: Customer details (who they are, all their
+  properties, groups, posts and votes), Other conversations, Linked posts, Looks related and Conversation attributes.
+  Customer details starts open, and the posts once there are some; the rest start folded. A section opened or folded by
+  hand stays so in that browser for every conversation. Other conversations is a timeline, newest first: a dot in the
+  status's colour on a line, a muted date · status · number line, the title, and one line of the latest message.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
   13px muted text. Inbox layout uses component Tailwind utilities; its message bubbles' fills use
   primary (the team's) and the `inbox-customer` and `inbox-note` tokens in `globals.css`.
@@ -235,8 +237,7 @@ the list picks none to approve at once.
   the details sheet instead. Conversation actions stay
   beside the subject, which shows its full text on hover (and wraps in full on phones). A Docs page's header is one row that never wraps: a narrow article editor drops its state's details, never its actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
-  Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
-  recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
+  The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked

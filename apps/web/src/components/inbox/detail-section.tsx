@@ -1,7 +1,11 @@
 import { ChevronRightIcon, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { RememberedDetails } from "./remembered-details";
 
-/** Work starts open; background context starts folded, with its real count still visible. */
+/**
+ * A part of a conversation's details, folded or open as this browser last left it; until then, `open` (Customer details,
+ * and the posts once there are some). Its count shows either way.
+ */
 export function DetailSection({
   title,
   count,
@@ -16,7 +20,7 @@ export function DetailSection({
   children: ReactNode;
 }) {
   return (
-    <details className="inbox-detail-section group/section my-0.75" open={open}>
+    <RememberedDetails title={title} open={open} className="inbox-detail-section group/section border-t">
       <summary className="flex cursor-pointer list-none items-center gap-2 py-2.5 text-xs leading-4.5 font-[550] [&::-webkit-details-marker]:hidden group-[.inbox-details-sheet]/details:py-2.25 group-[.inbox-details-sheet]/details:text-[0.875rem]">
         <Icon aria-hidden className="size-4 flex-none text-muted-foreground" />
         <span className="min-w-0 flex-1">{title}</span>
@@ -24,6 +28,6 @@ export function DetailSection({
         <ChevronRightIcon aria-hidden className="section-chevron size-3 flex-none text-muted-foreground group-open/section:rotate-90" />
       </summary>
       <div className="inbox-section-body pt-0.75 pb-3 pl-6">{children}</div>
-    </details>
+    </RememberedDetails>
   );
 }
