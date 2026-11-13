@@ -141,6 +141,27 @@ test("only needs reply uses the attention colour in header and status picker", a
   }
 });
 
+test("a folded section opens for the focus after an unlink, and stays folded as remembered", async ({ browser }) => {
+  const { owner, slug, api } = await inbox(browser);
+  await api("/conversations", { email: "e2e-reader@example.com", subject: "Export reports", body: "Can I export my reports?" });
+  for (const title of ["Export reports to CSV", "Export reports to PDF"]) await api("/posts", { board: "feature-requests", title, author: { id: "user-42" } });
+  await api("/conversations/2/posts", { post: 1 });
+  await owner.goto(`/app/${slug}/inbox/2`);
+  const section = (name: string) => owner.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
+  await expect(section("Looks related")).toHaveAttribute("open");
+  await section("Looks related").locator("summary").click();
+  await expect(section("Looks related")).not.toHaveAttribute("open");
+  await owner.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await expect(owner.getByText("Unlinked #1")).toBeVisible();
+  // Its Link is in Looks related now: the section opens so the focus can be on it.
+  await expect(owner.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeFocused();
+  await expect(section("Looks related")).toHaveAttribute("open");
+  // Opened for them, not by them: still folded on the next load.
+  await owner.reload();
+  await expect(section("Looks related").locator("summary small")).toHaveText("2");
+  await expect(section("Looks related")).not.toHaveAttribute("open");
+});
+
 test("inline link trigger retains keyboard focus when dismissed while saving", async ({ browser }) => {
   const { owner, api, url } = await inbox(browser);
   await api("/users", { users: [{ id: "author", name: "Sam", email: "e2e-author@example.com" }] });
