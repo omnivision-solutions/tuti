@@ -37,3 +37,9 @@ didn't fix it; then say why in the new finding.
 
 For each finding give the file, a line of the new file that the diff adds or changes, and a
 short body: what's wrong, a concrete input or sequence that shows it, and the fix.
+
+Start the body with `**Non-blocking:**` when the finding is minor: a visual or scroll-position
+detail that only shows at an uncommon window width or after an unusual sequence, with nothing
+lost, hidden or unreachable. Never mark data loss, security, authorization, a broken flow, an
+accessibility blocker or a missing test as non-blocking. Each push to fix a finding costs a
+full CI run, and non-blocking ones don't hold up the merge.
