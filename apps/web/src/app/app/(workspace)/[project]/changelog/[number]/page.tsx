@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
-import { aiPaused, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -72,16 +72,6 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   // A draft not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to
   // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts). Still the pull requests' titles,
   // or the one line each Autopilot wrote into the running draft: neither is release notes.
-  const autopilotLines = async () =>
-    (
-      await prisma.codeChangeAction.findMany({
-        where: { kind: "CHANGELOG_LINE", codeChange: { projectId: membership.project.id, url: { in: entry.pullRequests.map((pr) => pr.url) } } },
-        select: { payload: true },
-      })
-    ).flatMap(({ payload }) => {
-      const line = (payload as { line?: unknown } | null)?.line;
-      return typeof line === "string" ? [line] : [];
-    });
   const unwritten =
     entry.publishedAt !== null
       ? undefined
@@ -89,7 +79,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         ? entry.body.trim()
           ? "titles"
           : "empty"
-        : entry.pullRequests.length > 0 && onlyPullRequestTitles(entry.content, entry.pullRequests, await autopilotLines())
+        : entry.pullRequests.length > 0 && onlyPullRequestTitles(entry.content, entry.pullRequests, await autopilotLines(membership.project.id, entry.pullRequests.map((pr) => pr.url)))
           ? "lines"
           : undefined;
   // In the text's column it's shown as wide as the column, so not at the sidebar thumbnail's size: the largest stored

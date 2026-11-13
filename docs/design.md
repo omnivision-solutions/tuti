@@ -245,7 +245,8 @@ the list picks none to approve at once.
   "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The cover shows under the title in the
   text's column, as readers see it. One way into AI: while the text is still the pull requests'
-  titles, the toolbar's Draft with AI (the main action); once it's written, Edit with AI's menu
+  titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
+  toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.
   Autopilot's column is what it updates, under To review (updates waiting for the
   team or going out by themselves) and Reviewed, each in two sections, Feedback (posts

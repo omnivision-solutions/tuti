@@ -218,6 +218,21 @@ export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullR
 }
 
 /**
+ * The lines Autopilot wrote into these pull requests' bullets (writeChangelogLine, or one the team approved as it was):
+ * not one the team reworded before approving it, which is theirs.
+ */
+export async function autopilotLines(projectId: string, urls: string[]): Promise<string[]> {
+  const actions = await prisma.codeChangeAction.findMany({
+    where: { kind: "CHANGELOG_LINE", codeChange: { projectId, url: { in: urls } } },
+    select: { payload: true },
+  });
+  return actions.flatMap(({ payload }) => {
+    const { line, edited } = (payload ?? {}) as { line?: unknown; edited?: unknown };
+    return typeof line === "string" && edited !== true ? [line] : [];
+  });
+}
+
+/**
  * A merged pull request whose analysis failed leaves the running draft's text while its bullet still says the
  * pull request's title (an edited line stays): a title isn't release notes. It stays in the entry, for Draft
  * with AI. Only while its code change has never had its changelog line written: an analysis that works then writes

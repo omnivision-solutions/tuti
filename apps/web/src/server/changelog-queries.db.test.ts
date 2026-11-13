@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, closeRunningDraft, onlyPullRequestTitles, setChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, autopilotLines, closeRunningDraft, onlyPullRequestTitles, setChangelogLine } from "@tuti/jobs";
 import { describe, expect, test } from "vitest";
 
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
@@ -156,4 +156,32 @@ test("a draft's text is still its pull requests' titles until someone writes it"
   // An entry without pull requests never is.
   await call(createChangelogEntry, context, { title: "Hello", body: "" });
   expect(await titlesOnly(3)).toBe(false);
+});
+
+test("Autopilot's lines are those it wrote or the team approved as they were, not one the team reworded", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  const lineFor = (number: number, payload: object) =>
+    prisma.codeChange.create({
+      data: {
+        projectId: project.id,
+        repoId: 1,
+        repo: "acme/app",
+        number,
+        url: `https://github.com/acme/app/pull/${number}`,
+        title: `Change ${number}`,
+        author: "octo",
+        mergedAt: new Date(),
+        state: "READY",
+        actions: { create: [{ kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", payload }] },
+      },
+    });
+  await lineFor(1, { line: "Dark theme", undo: { previous: "Change 1 (acme/app#1)", added: null } });
+  await lineFor(2, { line: "Faster search", edited: false });
+  await lineFor(3, { line: "Search, now in every board", edited: true });
+  await lineFor(4, { line: "Not in this entry" });
+  const urls = [1, 2, 3].map((number) => `https://github.com/acme/app/pull/${number}`);
+  expect((await autopilotLines(project.id, urls)).sort()).toEqual(["Dark theme", "Faster search"]);
+  // Another project's pull request at the same address isn't this one's.
+  expect(await autopilotLines((await createProject(owner)).id, urls)).toEqual([]);
 });
