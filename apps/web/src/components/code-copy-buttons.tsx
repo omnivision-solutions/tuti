@@ -26,7 +26,7 @@ export function CodeCopyButtons() {
       button.innerHTML = `${COPY_ICON}<span>Copy</span>`;
       button.setAttribute("aria-label", "Copy code");
       button.className =
-        "inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 font-sans text-[0.8125rem] font-semibold text-muted-foreground transition-colors hover:text-foreground";
+        "inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 font-sans portal:border-transparent portal:bg-secondary text-[0.8125rem] font-semibold text-muted-foreground transition-colors hover:text-foreground";
       // The code alone (not this button's word, inside an unlabelled block).
       const code = pre.querySelector("code") ?? pre;
       button.addEventListener("click", () => copyText(code.innerText));
