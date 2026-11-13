@@ -240,23 +240,24 @@ export function toPlainText(node: JSONContent): string {
 const NOT_PROSE = new Set(["image", "file", "video", "codeBlock"]);
 
 /**
- * A preview's text (the changelog's list): the doc's prose as plain text, blocks on their own lines, cut at `max`
- * characters at a word's end with "…"; `cut` says whether it was.
+ * A preview's text (the changelog's list): the doc's prose as plain text, blocks on their own lines, at most `lines`
+ * of them and `max` characters (cut at a word's end), with "…" where it's cut; `cut` says whether it was.
  */
-export function excerpt(doc: Doc, max: number): { text: string; cut: boolean } {
+export function excerpt(doc: Doc, max: number, lines = Infinity): { text: string; cut: boolean } {
   const prose = (node: JSONContent): JSONContent => ({
     ...node,
     content: node.content?.filter((child) => !NOT_PROSE.has(child.type ?? "")).map(prose),
   });
-  const text = toPlainText(prose(doc));
-  if (text.length <= max) {
-    return { text, cut: false };
+  const all = toPlainText(prose(doc)).split("\n");
+  let text = all.slice(0, lines).join("\n");
+  const cut = all.length > lines || text.length > max;
+  if (text.length > max) {
+    // At the last word's end that fits, if it's near the limit; otherwise (text without spaces, as Chinese, or one long
+    // word) at the limit, never halfway through a character.
+    const end = text.slice(0, max + 1).search(/\s\S*$/);
+    text = end >= max * 0.8 ? text.slice(0, end) : text.slice(0, max).replace(/[\uD800-\uDBFF]$/, "");
   }
-  // At the last word's end that fits, if it's near the limit; otherwise (text without spaces, as Chinese, or one long
-  // word) at the limit, never halfway through a character.
-  const end = text.slice(0, max + 1).search(/\s\S*$/);
-  const kept = end >= max * 0.8 ? text.slice(0, end) : text.slice(0, max).replace(/[\uD800-\uDBFF]$/, "");
-  return { text: `${kept.replace(/[\s.,;:!?]+$/, "")}…`, cut: true };
+  return cut ? { text: `${text.replace(/[\s.,;:!?]+$/, "")}…`, cut } : { text, cut };
 }
 
 export type Heading = { id: string; text: string; level: 2 | 3 };

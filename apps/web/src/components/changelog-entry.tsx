@@ -19,8 +19,8 @@ import { cn } from "@/lib/utils";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 
-/** The list's excerpts: the newest entry's medium one (up to eight lines), the others' two or three; in characters. */
-const EXCERPT = { medium: 600, short: 300 };
+/** The list's excerpts: the newest entry's medium one, the others' short; at most these characters and lines (its clamp). */
+const EXCERPT = { medium: { chars: 600, lines: 8 }, short: { chars: 300, lines: 3 } };
 
 export type PublishedEntry = {
   id: string;
@@ -72,6 +72,9 @@ export function ChangelogEntryView({
   // tags; the widget's panel (an h1 too) keeps the base.
   const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
+  // In the list the title's link stretches over the entry (its text, its cover), so they open its page too, while one link
+  // per entry is all keyboards and screen readers meet; what's clickable on its own sits above it.
+  const above = excerpt ? "relative z-10 self-start" : undefined;
   // In the list, short ("7 Nov 2026"), as in its margin.
   const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
   // Its tags (grey; Breaking red) and, on phones or its own page, its date: above the title, or under it on its page.
@@ -93,7 +96,7 @@ export function ChangelogEntryView({
           <span aria-hidden className="absolute top-[2.875rem] left-0 size-[0.5625rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-background shadow-[0_0_0_1.5px_var(--color-muted-foreground),0_0_0_5px_var(--color-background)]" />
         </p>
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className={cn("flex min-w-0 flex-1 flex-col gap-3", excerpt && "relative")}>
         {back ? (
           <PortalPageHeader back={back} title={entry.title} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
         ) : (
@@ -107,7 +110,11 @@ export function ChangelogEntryView({
               )}
             >
               {heading === "h2" ? (
-                <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
+                <Link
+                  href={at(`/changelog/${entry.number}`)}
+                  target={linkTarget}
+                  className={cn("hover:underline", excerpt && "after:absolute after:inset-0")}
+                >
                   {entry.title}
                 </Link>
               ) : (
@@ -124,14 +131,14 @@ export function ChangelogEntryView({
           />
         )}
         {excerpt ? (
-          <Excerpt entry={entry} size={excerpt} href={at(`/changelog/${entry.number}`)} />
+          <Excerpt entry={entry} size={excerpt} />
         ) : (
           <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         )}
         {onPage && entry.posts.length > 0 ? (
           // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read
           // out after the pill's words); more than one: each pill shows its idea's title.
-          <ul className="flex flex-wrap gap-2">
+          <ul className={cn("flex flex-wrap gap-2", above)}>
             {entry.posts.map((post) => (
               <li key={post.number} className="min-w-0 max-w-full">
                 <Link
@@ -150,7 +157,7 @@ export function ChangelogEntryView({
             ))}
           </ul>
         ) : entry.posts.length > 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className={cn("text-sm text-muted-foreground", above)}>
             Completes{" "}
             {entry.posts.map((post, i) => (
               <span key={post.number}>
@@ -163,14 +170,16 @@ export function ChangelogEntryView({
           </p>
         )}
         {react && (
-          <ChangelogReactions
-            projectSlug={react.projectSlug}
-            number={entry.number}
-            counts={entry.reactions}
-            reacted={entry.reacted}
-            signedIn={react.signedIn}
-            quiet={dateMargin}
-          />
+          <div className={above}>
+            <ChangelogReactions
+              projectSlug={react.projectSlug}
+              number={entry.number}
+              counts={entry.reactions}
+              reacted={entry.reacted}
+              signedIn={react.signedIn}
+              quiet={dateMargin}
+            />
+          </div>
         )}
       </div>
     </article>
@@ -178,25 +187,23 @@ export function ChangelogEntryView({
 }
 
 /**
- * An entry's text in the list: plain (no images, embeds or code), cut at a word's end, the medium one fading out where
- * it's cut; the rest is on its page, which it links to (the title is the link for keyboards and screen readers).
+ * An entry's text in the list: plain (no images, embeds or code), cut at a word's end and at its clamp's lines, the medium
+ * one fading out where it's cut; the rest is on its page (the title's link, stretched over it, opens it).
  */
-function Excerpt({ entry, size, href }: { entry: PublishedEntry; size: "medium" | "short"; href: string }) {
-  const { text, cut } = excerptOf(entry.doc, EXCERPT[size]);
+function Excerpt({ entry, size }: { entry: PublishedEntry; size: "medium" | "short" }) {
+  const { text, cut } = excerptOf(entry.doc, EXCERPT[size].chars, EXCERPT[size].lines);
   if (!text) {
     return null;
   }
   return (
-    <Link href={href} tabIndex={-1} className="block">
-      <p
-        className={cn(
-          "text-base leading-7 break-words whitespace-pre-line text-foreground/85",
-          size === "medium" ? "line-clamp-8" : "line-clamp-3",
-          size === "medium" && cut && "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]",
-        )}
-      >
-        {text}
-      </p>
-    </Link>
+    <p
+      className={cn(
+        "text-base leading-7 break-words whitespace-pre-line text-foreground/85",
+        size === "medium" ? "line-clamp-8" : "line-clamp-3",
+        size === "medium" && cut && "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]",
+      )}
+    >
+      {text}
+    </p>
   );
 }

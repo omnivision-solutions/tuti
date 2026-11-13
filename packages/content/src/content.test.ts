@@ -173,6 +173,10 @@ describe("plain text", () => {
     // Without spaces near the limit it's cut there, not back at an earlier line, and never inside a character.
     expect(excerpt(doc(p(text("New")), p(text("界".repeat(30)))) as never, 20).text).toBe(`New\n${"界".repeat(16)}…`);
     expect(excerpt(doc(p(text("😀".repeat(10)))) as never, 5).text).toBe("😀😀…");
+    // A long list of short lines, well under the characters: cut at its lines too.
+    const bullets = Array.from({ length: 12 }, (_, i) => `Fix ${i + 1}.`);
+    expect(excerpt(doc(list(...bullets)) as never, 600, 8)).toEqual({ text: `${bullets.slice(0, 7).join("\n")}\nFix 8…`, cut: true });
+    expect(excerpt(doc(list(...bullets.slice(0, 8))) as never, 600, 8)).toEqual({ text: bullets.slice(0, 8).join("\n"), cut: false });
   });
 });
 

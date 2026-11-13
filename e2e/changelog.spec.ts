@@ -716,8 +716,12 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   expect(await style(excerptOf("Release 21"), "mask-image")).toContain("gradient");
   expect(await lines(excerptOf("Release 20"))).toBeLessThanOrEqual(3);
   await expect(main.getByText("exports in CSV")).toHaveCount(0);
-  // The excerpt opens the entry's page.
-  await excerptOf("Release 20").click();
+  // One link per entry (its title), stretched over the entry: the excerpt opens the entry's page too.
+  await expect(main.getByRole("article", { name: "Release 21" }).getByRole("link")).toHaveCount(1);
+  await expect(main.getByRole("article", { name: "Release 20" }).getByRole("link")).toHaveCount(1);
+  await expect(main.getByRole("article", { name: "Release 20" }).getByRole("link")).toHaveAccessibleName("Release 20");
+  // (forced: the title's link over the text is what takes the click, which Playwright otherwise reads as blocked)
+  await excerptOf("Release 20").click({ force: true });
   await expect(reader).toHaveURL(/\/changelog\/20$/);
   await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
   await reader.goBack();
