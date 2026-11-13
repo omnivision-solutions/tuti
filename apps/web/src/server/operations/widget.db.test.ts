@@ -83,6 +83,15 @@ test("a colour the launcher has of its own stays its own once the accent becomes
   expect((await call(getWidgetSettings, team(), {})).color).toBeNull();
 });
 
+test("the brand green kept as the launcher's own colour while there was an accent is the default again once the accent goes", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed", widgetColor: "#12804a" } });
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: null } });
+  const { GET } = await import("@/app/api/widget/latest/route");
+  const latest = (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as { launcher: object };
+  // Served as no colour: the loader's green, with its dark-mode shade.
+  expect(latest.launcher).toMatchObject({ color: null, textColor: null });
+});
+
 test("the form's colour, left at the default it showed, keeps following the accent, even one changed since it was opened", async () => {
   actAs(owner);
   await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });

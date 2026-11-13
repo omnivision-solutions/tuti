@@ -186,4 +186,21 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   await useAccent.click();
   await expect(hex).toHaveValue("#7c3aed");
   await expect(useAccent).toHaveCount(0);
+  // A colour of its own, saved, stays its own when the accent becomes the same colour...
+  await hex.fill("#0f766e");
+  const save = owner.getByRole("button", { name: "Save changes" });
+  await save.click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await api("/branding", { color: "#0f766e" }, "PATCH");
+  await owner.reload();
+  await expect(hex).toHaveValue("#0f766e");
+  // ...until the team says it follows the accent again: then it does, through later changes to the accent.
+  await useAccent.click();
+  await expect(useAccent).toHaveCount(0);
+  await save.click();
+  await expect(owner.getByText("Widget saved").last()).toBeVisible();
+  await api("/branding", { color: "#7c3aed" }, "PATCH");
+  await owner.reload();
+  await expect(hex).toHaveValue("#7c3aed");
+  await expect(useAccent).toHaveCount(0);
 });

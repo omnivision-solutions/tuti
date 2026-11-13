@@ -443,12 +443,14 @@ test("the colour becomes the accent and its tint, with readable text on it; wher
   // The tint (a voted idea, the open board, the team's replies) is the colour's own in both modes, never Tuti's green.
   const soft = (c: string) => `--soft:oklch(from ${c} 0.955 min(c, 0.035) h);--soft-foreground:oklch(from ${c} 0.43 min(c, 0.13) h)`;
   const softDark = (c: string) => `--soft:oklch(from ${c} 0.3 min(c, 0.05) h);--soft-foreground:oklch(from ${c} 0.86 min(c, 0.11) h)`;
+  // Tints only where the browser has relative colours (elsewhere the default tint stays, rather than none).
+  const tints = (c: string) => `@supports (color:oklch(from red l c h)){html:not(.dark){${soft(c)}}html.dark{${softDark(c)}}}`;
   // A blue reads on both backgrounds, with white text on it.
   expect(brandCss("#2563eb")).toBe(
-    `html:not(.dark){--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb;${soft("#2563eb")}}html.dark{--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb;${softDark("#2563eb")}}`,
+    `html:not(.dark){--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}html.dark{--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}${tints("#2563eb")}`,
   );
   // A pale yellow is lost on the light page, fine on the dark one (with black text).
-  expect(brandCss("#fde047")).toBe(`html:not(.dark){${theme};${soft("#fde047")}}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047;${softDark("#fde047")}}`);
+  expect(brandCss("#fde047")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}${tints("#fde047")}`);
   // A navy is the other way round.
-  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554;${soft("#172554")}}html.dark{${theme};${softDark("#172554")}}`);
+  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{${theme}}${tints("#172554")}`);
 });

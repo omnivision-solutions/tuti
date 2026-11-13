@@ -43,7 +43,7 @@ export function WidgetSettings({
   color,
   defaultColor,
   defaultColorLabel,
-  ownColor,
+  colorFollows,
   position,
   links,
   icon: initialIcon,
@@ -62,8 +62,8 @@ export function WidgetSettings({
   defaultColor: string;
   /** The button that picks `defaultColor` again (ColorField). */
   defaultColorLabel?: string;
-  /** The launcher's own colour as saved, null while it follows the default. */
-  ownColor: string | null;
+  /** The launcher has no colour of its own: it follows the default (ColorField's `follows`). */
+  colorFollows: boolean;
   position: "bottom-right" | "bottom-left";
   links: { label: string; url: string }[];
   icon: WidgetIcon;
@@ -126,7 +126,7 @@ export function WidgetSettings({
                 color={color}
                 defaultColor={defaultColor}
                 defaultLabel={defaultColorLabel}
-                follows={!ownColor}
+                follows={colorFollows}
               />
             </Field>
             <fieldset className="flex flex-col gap-2">

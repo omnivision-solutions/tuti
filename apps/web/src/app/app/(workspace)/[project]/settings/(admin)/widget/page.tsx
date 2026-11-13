@@ -60,7 +60,8 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
         label={widget.label}
         color={color}
         defaultColor={defaultColor}
-        ownColor={widget.color}
+        // The brand green kept as its own while it's the default anyway (picked while the accent was another colour) follows it.
+        colorFollows={!widget.color || (widget.color === DEFAULT_WIDGET_COLOR && defaultColor === DEFAULT_WIDGET_COLOR)}
         defaultColorLabel={defaultColor !== DEFAULT_WIDGET_COLOR ? "Use the accent colour" : undefined}
         position={widget.position}
         links={widget.links}
