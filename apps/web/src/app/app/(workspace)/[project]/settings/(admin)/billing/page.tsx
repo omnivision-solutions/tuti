@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { creditBalance } from "@tuti/jobs";
+import { creditBalance, emailsThisMonth } from "@tuti/jobs";
 import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -29,9 +29,11 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   if (!project) {
     notFound();
   }
-  const [{ balance, grants }, plan] = await Promise.all([
+  const [{ balance, grants }, plan, emails] = await Promise.all([
     creditsEnabled() ? creditBalance(project.id) : { balance: 0, grants: [] },
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true } }),
+    // Its email to its users this month, against its plan's limit (null without plans).
+    emailsThisMonth(project.id),
   ]);
   // Back from Stripe's payment page: the credits or the plan come with Stripe's word that it's paid, usually within seconds.
   const searchParams = await props.searchParams;
@@ -72,6 +74,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               <Alert variant="destructive">
                 <AlertDescription>The last payment didn&apos;t go through. Stripe tries again; update the card in Manage plan.</AlertDescription>
               </Alert>
+            )}
+            {emails && (
+              <p className="text-sm text-muted-foreground">
+                {emails.limit === null
+                  ? `${emails.emails.toLocaleString("en")} emails sent this month`
+                  : `${emails.emails.toLocaleString("en")} of ${emails.limit.toLocaleString("en")} emails sent this month`}
+              </p>
             )}
             {onPaidPlan ? (
               <ManagePlan projectSlug={slug} />

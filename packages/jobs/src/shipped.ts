@@ -5,7 +5,7 @@ import type { JobInput } from "@tuti/shared";
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
-import { claimProjectEmail } from "./email-limits";
+import { claimProjectEmail, dueAgain } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -188,7 +188,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     if (!claimedAt) {
       continue;
     }
-    // A new project's daily cap, taken once they're ours to email (and a pause since the run began):
+    // A new project's daily cap and the month's limit, taken once they're ours to email (and a pause since the run began):
     // past it, they're let go and wait.
     if (!(await claimProjectEmail(projectId))) {
       await prisma.shippedEmail.deleteMany({ where: { postId, userId: id, claimedAt } });
@@ -221,10 +221,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
   }
   if (held) {
-    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go.
-    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: new Date() } });
-    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait (the project's daily cap, or a pause)`);
-    return { emailed, waiting: "the project's daily cap, or a pause" };
+    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go; past the month's limit, from next month.
+    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: await dueAgain(projectId) } });
+    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait (the project's daily cap, its monthly limit, or a pause)`);
+    return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
   await prisma.post.updateMany({

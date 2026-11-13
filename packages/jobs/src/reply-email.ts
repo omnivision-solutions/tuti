@@ -3,7 +3,7 @@ import { type PostVisibility, prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { cappedProjects, claimProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain } from "./email-limits";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
@@ -154,7 +154,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
     if (!claimedAt) {
       continue;
     }
-    // A new project's daily cap (and a pause since the run began): past it, they're let go and wait.
+    // A new project's daily cap, the month's limit (and a pause since the run began): past it, they're let go and wait.
     if (!(await claimProjectEmail(projectId))) {
       await prisma.replyEmail.deleteMany({ where: { commentId, userId: id, claimedAt } });
       held = true;
@@ -191,9 +191,9 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
     throw new Error(`${failed} reply email(s) for comment ${commentId} failed; retrying those`);
   }
   if (held) {
-    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go.
-    await prisma.comment.updateMany({ where: { id: commentId, votersEmailDueAt: { not: null } }, data: { votersEmailDueAt: new Date() } });
-    return { emailed, waiting: "the project's daily cap, or a pause" };
+    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go; past the month's limit, from next month.
+    await prisma.comment.updateMany({ where: { id: commentId, votersEmailDueAt: { not: null } }, data: { votersEmailDueAt: await dueAgain(projectId) } });
+    return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron finds it.
   await prisma.comment.updateMany({ where: { id: commentId, replyEmails: { none: { sentAt: null } } }, data: { votersEmailDueAt: null } });

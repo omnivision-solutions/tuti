@@ -96,3 +96,14 @@ test("a project still paying for a plan the file no longer lists is offered the 
   await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active", stripeSubscriptionId: `sub_${projectId}` } });
   expect(await billing()).toContain("hide it for $39 a month");
 });
+
+test("the plan's card counts this month's email to the project's users against its plan's limit; without plans, nothing", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const month = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+  await prisma.projectEmailMonth.create({ data: { projectId, month, emails: 1234 } });
+  expect(await billing()).toContain("1,234 of 1,000 emails sent this month");
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "business" } });
+  expect(await billing()).toContain("1,234 emails sent this month");
+  vi.stubEnv("BILLING_CONFIG", "");
+  expect(await billing()).not.toContain("emails sent this month");
+});

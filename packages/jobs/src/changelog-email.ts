@@ -3,7 +3,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { cappedProjects, claimProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain } from "./email-limits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
@@ -284,7 +284,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     if (!claimedAt) {
       continue;
     }
-    // A new project's daily cap (and a pause since the run began): past it, they're let go and wait.
+    // A new project's daily cap, the month's limit (and a pause since the run began): past it, they're let go and wait.
     if (!(await claimProjectEmail(projectId))) {
       await prisma.changelogEmail.deleteMany({ where: { entryId, subscriberId: id, claimedAt } });
       held = true;
@@ -324,9 +324,9 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { emailed, waiting: "the entry was unpublished, or its portal made private" };
   }
   if (held) {
-    // Due from now, so the cron keeps bringing it back (it looks back two days) until the rest may go.
-    await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } });
-    return { emailed, waiting: "the project's daily cap, or a pause" };
+    // Due from now, so the cron keeps bringing it back (it looks back two days) until the rest may go; past the month's limit, from next month.
+    await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: await dueAgain(projectId) } });
+    return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
   // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.

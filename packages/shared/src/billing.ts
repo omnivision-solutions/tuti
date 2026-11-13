@@ -50,6 +50,10 @@ const plan = z
         historyDays: days.describe("How many days back closed inbox conversations and AI conversations show."),
         articleVersions: days.describe("Saved versions of a help center article its team sees, the latest included."),
         reportingDays: days.nullable().describe("The longest range Reporting shows, in days; null: every range."),
+        emailsPerMonth: count
+          .nullable()
+          .default(null)
+          .describe("Emails a project sends its users each calendar month (UTC): support replies, \"it shipped\" and changelog emails; past it they wait for the next month. null: no limit."),
       })
       .strict(),
     extras: z.array(z.string().min(1)).default([]).describe('More lines its pricing card lists after what the file says it has, e.g. "Priority support".'),
@@ -99,7 +103,7 @@ export const billingSchema = z
       if (missing.length > 0) {
         context.addIssue({ code: "custom", path: ["plans", index, "features"], message: `lacks ${missing.join(", ")}, which ${before.key} has: each plan has everything the one before it has` });
       }
-      for (const name of ["seats", "boards", "articles", "historyDays", "articleVersions"] as const) {
+      for (const name of ["seats", "boards", "articles", "historyDays", "articleVersions", "emailsPerMonth"] as const) {
         if (room(plan.limits[name]) < room(before.limits[name])) {
           context.addIssue({ code: "custom", path: ["plans", index, "limits", name], message: `is lower than ${before.key}'s` });
         }

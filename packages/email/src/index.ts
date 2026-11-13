@@ -4,6 +4,7 @@ export { changelogConfirmEmail } from "./changelog-confirm-email";
 export { conversationEmail } from "./conversation-email";
 export { conversationReplyEmail } from "./conversation-reply-email";
 export { creditsEmail } from "./credits-email";
+export { emailLimitEmail } from "./email-limit-email";
 export { emailPausedEmail, emailPausedTeamEmail, pausedNotice } from "./email-paused-email";
 export { inviteEmail } from "./invite-email";
 export { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";

@@ -224,6 +224,15 @@ export function articleLimit(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.articles : null;
 }
 
+/**
+ * How many emails a project on `plan` sends its users each calendar month (UTC), or null for no limit (always, without
+ * plans): support replies, "it shipped" and changelog emails, never sign-in, invitation or team emails. Past it they wait
+ * for the next month (packages/jobs/src/email-limits.ts).
+ */
+export function emailsPerMonth(plan: PlanKey): number | null {
+  return plansEnabled() ? terms(plan).limits.emailsPerMonth : null;
+}
+
 /** The longest range Reporting shows a project on `plan`, in days, or null for every range (always, without plans). */
 export function reportingDays(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.reportingDays : null;

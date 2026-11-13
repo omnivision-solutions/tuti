@@ -1,5 +1,5 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, historySince, inSomePlansHistory, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
@@ -189,16 +189,19 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
   const person = conversationPerson(conversation);
   // Where replies would be emailed at all: they wait while the project's email is paused, and in its
-  // first week past its daily cap, until tomorrow.
+  // first week past its daily cap, until tomorrow, and past its plan's monthly limit, until next month.
   const blocked = person.email
     ? await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: person.email.toLowerCase() } }, select: { email: true } })
     : null;
   const emailable = !conversation.spam && !!person.email && !blocked;
   const waitsForPause = emailPaused && emailable;
-  const capped = !emailPaused && emailable && (await cappedProjects()).includes(projectId);
+  const monthFull = !emailPaused && emailable && (await monthlyLimitReached(projectId));
+  const capped = !emailPaused && emailable && !monthFull && (await cappedProjects()).includes(projectId);
   const waits = waitsForPause
     ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
-    : capped
+    : monthFull
+      ? "Emailed next month: your plan's emails for this month are used (Settings → Billing)"
+      : capped
       ? `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`
       : undefined;
   const online =

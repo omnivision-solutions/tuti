@@ -55,9 +55,16 @@ test("each plan has everything the one before it has, as its card says", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => {
     business.features = business.features.filter((feature) => feature !== "emailDomain");
     business.limits.boards = 3;
+    business.limits.emailsPerMonth = 5000;
   }));
   expect(() => billingConfig()).toThrow(/lacks emailDomain, which pro has[\s\S]*plans\[2\]\.features/);
   expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.boards/);
+  expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.emailsPerMonth/);
+});
+
+test("a file without monthly email limits is valid: none", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => config.plans.forEach((plan) => delete (plan.limits as { emailsPerMonth?: number | null }).emailsPerMonth)));
+  expect(billingConfig()!.plans.map(({ limits }) => limits.emailsPerMonth)).toEqual([null, null, null]);
 });
 
 test("prices are whole dollars", () => {
