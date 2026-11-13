@@ -285,3 +285,35 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await expect(ada.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");
   await expect(ada.getByRole("button", { name: "Request a feature" })).toBeVisible();
 });
+
+test("on a phone the Feedback overview's board cards fit the screen, however long their ideas' titles", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // A long title beside its status: in one row it's cut short, it doesn't widen the card.
+  await api("/posts", { board: "feature-requests", title: "Two-way Google Calendar synchronisation with shared team calendars" });
+  await api("/posts/1", { status: "in_progress" }, "PATCH");
+  // A second board, so Feedback is the overview of their cards.
+  await owner.goto(`/app/${slug}/feedback/boards`);
+  await owner.getByRole("button", { name: "New board" }).click();
+  await owner.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
+  await owner.getByRole("dialog", { name: "New board" }).getByRole("button", { name: "Create board" }).click();
+  await expect(owner.getByText("Board created")).toBeVisible();
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  for (const width of [390, 1280]) {
+    await visitor.setViewportSize({ width, height: 844 });
+    await visitor.goto("/feedback");
+    const cards = visitor.getByRole("main").getByRole("region", { name: /^(Feature requests|Bug reports)$/ });
+    await expect(cards).toHaveCount(2);
+    expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    for (const card of await cards.all()) {
+      const box = (await card.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    await checkpoint(visitor, `portal-feedback-overview-long-title-${width}`);
+  }
+});
