@@ -13,6 +13,10 @@ export function RoadmapColumnLink(props: React.ComponentProps<typeof Link>) {
       {...props}
       scroll={false}
       onClick={(event) => {
+        // Opened in a new tab or window: this one keeps its place.
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+          return;
+        }
         const bar = event.currentTarget.closest("[data-roadmap-switcher]")!;
         const columns = document.querySelector("[data-roadmap-columns]")!;
         const past = bar.getBoundingClientRect().bottom - columns.getBoundingClientRect().top;
