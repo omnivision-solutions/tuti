@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp } from "./helpers";
 
 test("a reader picks dark mode in the portal's footer and keeps it; with the switch turned off, every reader gets the team's default", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
@@ -87,4 +87,25 @@ test("with storage blocked by the browser, the footer switch still changes the t
   const theme = reader.getByRole("contentinfo").getByRole("radiogroup", { name: "Theme" });
   await theme.getByRole("radio", { name: "Dark" }).locator("..").click();
   await expect(reader.locator("html")).toHaveClass(/\bdark\b/);
+});
+
+test("a reader's own pick, even the team's default, survives the team changing its default", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/branding", { colorScheme: "light" }, "PATCH");
+  const reader = await (await browser.newContext({ baseURL: portalUrl(slug), colorScheme: "light" })).newPage();
+  await reader.goto("/feedback/feature-requests");
+  const html = reader.locator("html");
+  const theme = reader.getByRole("contentinfo").getByRole("radiogroup", { name: "Theme" });
+  // Dark, then back to Light: now Light is theirs, not the default they were shown.
+  await theme.getByRole("radio", { name: "Dark" }).locator("..").click();
+  await expect(html).toHaveClass(/\bdark\b/);
+  await theme.getByRole("radio", { name: "Light" }).locator("..").click();
+  await expect(html).toHaveClass(/\blight\b/);
+  await api("/branding", { colorScheme: "dark" }, "PATCH");
+  await reader.reload();
+  await expect(theme.getByRole("radio", { name: "Light" })).toBeChecked();
+  await expect(html).toHaveClass(/\blight\b/);
 });
