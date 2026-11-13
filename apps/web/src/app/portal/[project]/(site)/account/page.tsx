@@ -65,8 +65,9 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
 
   // A section of the page, its heading outside its card, as the section list jumps to it (AccountSections).
   const section = (id: string, title: string, description: ReactNode, children: ReactNode) => (
-    // Focusable (not in the Tab order): the section list moves focus here, as a hash link would.
-    <section id={id} tabIndex={-1} role="region" aria-labelledby={`${id}-title`} className="flex scroll-mt-[calc(var(--portal-header-height,4rem)+1.5rem)] flex-col gap-3 outline-none">
+    // Focusable (not in the Tab order): the section list moves focus here, as a hash link would. Its margin is only 24px:
+    // the portal's html already pads scrolling by the header's height, and the two add up (a jump stops it at the list's line).
+    <section id={id} tabIndex={-1} role="region" aria-labelledby={`${id}-title`} className="flex scroll-mt-6 flex-col gap-3 outline-none">
       <div className="flex flex-col gap-0.5">
         <h2 id={`${id}-title`} className="font-heading text-lg font-semibold">
           {title}

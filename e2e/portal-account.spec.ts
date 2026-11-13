@@ -82,6 +82,23 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(bo).toHaveURL(/\/account#votes$/);
   await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
   await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
+  // A section mid-page (Emails, which the page can bring to its top): the jump stops it at the line under the header, so
+  // it stays marked as the reader scrolls on a little, and when the page is opened at its hash.
+  const wide = bo.viewportSize()!;
+  await bo.setViewportSize({ width: 1280, height: 480 });
+  const emailsTop = () => bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top + window.scrollY);
+  expect(await bo.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeGreaterThan((await emailsTop()) + 100);
+  await sections.getByRole("link", { name: "Emails" }).click();
+  await expect(bo).toHaveURL(/\/account#emails$/);
+  await bo.mouse.wheel(0, 10);
+  await expect.poll(() => bo.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await bo.waitForTimeout(200);
+  await expect(sections.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "location");
+  await bo.goto("/roadmap");
+  await bo.goto("/account#emails");
+  await expect(bo.getByRole("heading", { name: "Emails" })).toBeInViewport();
+  await expect(sections.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "location");
+  await bo.setViewportSize(wide);
   await bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Dark mode" }).click();
   await expect(bo.getByRole("heading", { level: 1 })).toHaveText("Dark mode");
 
