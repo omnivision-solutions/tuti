@@ -10,7 +10,12 @@ import { Input } from "@/components/ui/input";
 export function FeedbackSearch({ action, q, children }: { action: string; q?: string; children: ReactNode }) {
   const input = useRef<HTMLInputElement>(null);
   const submitted = useRef<string | null>(null);
+  // The `q` the field was last set to: the server rendered it with this one, so its first run has nothing to follow,
+  // and what's in it by then was typed before the page's scripts ran (kept, not wiped).
+  const followed = useRef(q);
   useEffect(() => {
+    if (followed.current === q) return;
+    followed.current = q;
     const box = input.current;
     const query = q ?? "";
     // Only our own results may keep a newer draft. Clear search and history always follow the URL, even with focus.

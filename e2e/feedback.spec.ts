@@ -1473,6 +1473,38 @@ test("Feedback's search field follows Clear search and browser history", async (
   await expect(search).toHaveValue("");
 });
 
+test("Feedback's search keeps what was typed before the page's scripts ran", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  // The page's scripts held until after typing (a slow phone, a busy machine): typed into the server's field.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  // (Scripts only: its stylesheets are there too, and holding them would hold the page's first paint.)
+  const scripts = (url: URL) => url.pathname.includes("/_next/static/chunks/") && url.pathname.endsWith(".js");
+  await team.route(scripts, async (route) => {
+    await released;
+    await route.continue().catch(() => {});
+  });
+  await team.goto(`/app/${slug}/feedback`, { waitUntil: "commit" });
+  const search = team.getByRole("searchbox", { name: "Search feedback" });
+  await search.fill("dark");
+  release();
+  // Hydrated (React has the field) and its effects run: what was typed is still there, and Enter searches for it.
+  await team.waitForFunction(() => {
+    const box = document.querySelector('input[name="q"]');
+    return !!box && Object.keys(box).some((key) => key.startsWith("__reactFiber"));
+  });
+  await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 200))));
+  await expect(search).toHaveValue("dark");
+  await search.press("Enter");
+  await expect(team).toHaveURL(/\?q=dark$/);
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  await team.unroute(scripts);
+});
+
 test("Feedback's search keeps newer typing while its results load", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
