@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { cn } from "cn";
 import { CircleAlertIcon, LockIcon } from "lucide-react";
+import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth-form";
 import { PortalMark } from "@/components/portal-look";
@@ -29,9 +30,13 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   const refused = isPrivate && session && !(await canReadPortal({ slug: project }, session.user.id)) ? session.user.email : null;
   // A reader the team added, whose address isn't verified yet: an emailed sign-in link verifies it.
   const unverified = refused && portal && (await invitedReader(portal.id, session!.user.id)) === "unverified";
-  // "Continue with <project>": its own app signs them in and sends them back through /sso with `redirect`.
+  // With SSO and the project's app's sign-in page, people sign in with their account there: its app signs them in and
+  // sends them back through /sso with `redirect`. A failed sign-in link or handoff stays to say so, with the button.
   const ssoUrl = portal?.ssoSecret && portal.ssoSignInUrl ? URL.parse(portal.ssoSignInUrl) : null;
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
+  if (ssoUrl && handoff !== "failed" && link !== "failed") {
+    redirect(ssoUrl.href);
+  }
 
   return (
     <div data-auth-page className="mx-auto flex w-full max-w-sm flex-col gap-4 sm:mt-12">

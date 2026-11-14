@@ -72,14 +72,14 @@ https://<project>.tuti.so/sso?token=<token>&redirect=<path>
 A common pattern is a route in your app, e.g. `/feedback`, that signs a token for the
 current user and redirects, so "Feedback" links in your app always sign users in.
 
-## "Continue with" on the portal's sign-in page
+## Signing in on the portal with your app's accounts
 
-In the same settings, **Your app's sign-in page** (an `https://` address) adds
-**Continue with <project>** at the top of the portal's sign-in page. It sends people to
-that address with `redirect`, the portal path to come back to, e.g.
+In the same settings, **Your app's sign-in page** (an `https://` address) makes it the portal's
+sign-in: **Sign in** (and sign-up) on the portal sends people to that address with `redirect`,
+the portal path to come back to, e.g.
 `https://app.example.com/tuti?redirect=%2Ffeedback%2Ffeature-requests`. Sign them in
 there if they aren't yet, then send them on as in step 3 with that `redirect`. Leave it
-empty to take the button away.
+empty to keep the portal's own sign-in (email and Tuti accounts).
 
 ## In the widget
 

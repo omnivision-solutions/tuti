@@ -65,11 +65,11 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await expect(replay).toHaveURL(/code=sso_not_enabled$/);
 });
 
-test("“Continue with Acme” on the portal's sign-in page: the team's app signs people in and sends them back", async ({ browser }, testInfo) => {
+test("with SSO and the team's app's sign-in page, signing in on the portal is the app's: it signs people in and sends them back", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  // A long name (up to 60 characters), so the button has to wrap on a phone.
+  // A long name (up to 60 characters), so the button a failed sign-in shows has to wrap on a phone.
   const name = "Acme Customer Feedback, Roadmap and Product Updates Center";
   await createProject(owner, name, slug);
   await owner.goto(`/app/${slug}/settings/sso`);
@@ -90,33 +90,43 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
 
   // The team's app, signed in already: it signs a token and sends them back with the redirect it was given.
   const sam = await newPerson(browser, portalUrl(slug));
+  const asked: string[] = [];
   await sam.route("https://app.acme.example/**", (route) => {
     const redirect = new URL(route.request().url()).searchParams.get("redirect") ?? "/";
+    asked.push(redirect);
     const token = ssoToken(secret, { sub: "user-7", name: "Sam from Acme" });
     return route.fulfill({ status: 302, headers: { location: `${portalUrl(slug)}/sso?token=${token}&redirect=${encodeURIComponent(redirect)}` } });
   });
   await sam.goto("/roadmap");
   await sam.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
-  const main = sam.getByRole("main");
-  const continueWithAcme = main.getByRole("link", { name: `Continue with ${name}` });
-  await expect(continueWithAcme).toHaveAttribute("href", "https://app.acme.example/tuti?redirect=%2Froadmap");
-  // First, above the email.
-  expect((await continueWithAcme.boundingBox())!.y).toBeLessThan((await main.getByLabel("Email").boundingBox())!.y);
-  for (const colorScheme of ["light", "dark"] as const) {
-    await sam.emulateMedia({ colorScheme });
-    await checkpoint(sam, `portal-sign-in-sso-desktop-${colorScheme}`);
-    await sam.setViewportSize({ width: 390, height: 844 });
-    // The name wraps inside the button rather than running out of it.
-    expect(await continueWithAcme.evaluate((link) => link.scrollWidth <= link.clientWidth)).toBe(true);
-    await checkpoint(sam, `portal-sign-in-sso-phone-${colorScheme}`);
-    await sam.setViewportSize({ width: 1280, height: 720 });
-  }
-  await continueWithAcme.click();
   await sam.waitForURL(`${portalUrl(slug)}/roadmap`);
   await expect(sam.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveCount(0);
+  expect(asked).toEqual(["/roadmap"]);
 
-  // Without the app's sign-in page, or with SSO off, the button goes.
+  // Signing up is the app's too. (Where a page sends people, read off its redirect: a page's route doesn't see the hops of one.)
   const visitor = await newPerson(browser, portalUrl(slug));
+  const sentTo = async (path: string) => (await visitor.request.get(`${portalUrl(slug)}${path}`, { maxRedirects: 0 })).headers().location;
+  expect(await sentTo("/sign-up")).toBe("/sign-in");
+  expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F");
+
+  // A sign-in that failed stays to say so, with the way back to the app first, above the email.
+  await visitor.goto("/sign-in?continue=failed");
+  const main = visitor.getByRole("main");
+  await expect(main.getByText("That sign-in didn't work. Try again.")).toBeVisible();
+  const continueWithAcme = main.getByRole("link", { name: `Continue with ${name}` });
+  await expect(continueWithAcme).toHaveAttribute("href", "https://app.acme.example/tuti?redirect=%2F");
+  expect((await continueWithAcme.boundingBox())!.y).toBeLessThan((await main.getByLabel("Email").boundingBox())!.y);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await visitor.emulateMedia({ colorScheme });
+    await checkpoint(visitor, `portal-sign-in-sso-failed-desktop-${colorScheme}`);
+    await visitor.setViewportSize({ width: 390, height: 844 });
+    // The name wraps inside the button rather than running out of it.
+    expect(await continueWithAcme.evaluate((link) => link.scrollWidth <= link.clientWidth)).toBe(true);
+    await checkpoint(visitor, `portal-sign-in-sso-failed-phone-${colorScheme}`);
+    await visitor.setViewportSize({ width: 1280, height: 720 });
+  }
+
+  // Without the app's sign-in page, or with SSO off, the portal's own sign-in is back.
   await signInPage.fill("");
   await owner.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Sign-in page saved")).toBeVisible();
@@ -126,14 +136,11 @@ test("“Continue with Acme” on the portal's sign-in page: the team's app sign
   await signInPage.fill("https://app.acme.example/tuti");
   await owner.getByRole("button", { name: "Save" }).click();
   // The first save's toast may still be up: look until it's saved.
-  await expect(async () => {
-    await visitor.reload();
-    await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toBeVisible({ timeout: 1_000 });
-  }).toPass();
+  await expect(async () => expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F")).toPass();
   await owner.getByRole("button", { name: "Disable" }).click();
   await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
   await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
-  await visitor.reload();
+  await visitor.goto("/sign-in");
   await expect(visitor.getByLabel("Email")).toBeVisible();
   await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toHaveCount(0);
 });

@@ -8,10 +8,11 @@ import { portalLinks } from "@/server/portal-base";
 export default async function PortalSignUpPage(props: PageProps<"/portal/[project]/sign-up">) {
   const [{ project }, { next }] = await Promise.all([props.params, props.searchParams]);
   const nextPath = typeof next === "string" ? safeRedirectPath(next, "") : "";
-  // A private portal's readers are its team and SSO users: an account made here couldn't read it.
-  const portal = await prisma.project.findUnique({ where: { slug: project }, select: { portalAccess: true } });
+  // A private portal's readers are its team and SSO users: an account made here couldn't read it. With SSO and its app's
+  // sign-in page, accounts are the project's app's: sign-in sends people there.
+  const portal = await prisma.project.findUnique({ where: { slug: project }, select: { portalAccess: true, ssoSecret: true, ssoSignInUrl: true } });
   const at = await portalLinks();
-  if (portal?.portalAccess === "PRIVATE") {
+  if (portal?.portalAccess === "PRIVATE" || (portal?.ssoSecret && portal.ssoSignInUrl)) {
     redirect(at(nextPath ? `/sign-in?${new URLSearchParams({ next: nextPath })}` : "/sign-in"));
   }
   redirect(at(`/continue?${new URLSearchParams({ ...(nextPath && { redirect: nextPath }), "sign-up": "1" })}`));
