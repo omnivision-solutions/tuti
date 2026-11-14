@@ -59,6 +59,7 @@ function FeaturesMenu() {
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      window.clearTimeout(timer.current);
       setOpenOn(null);
       // Back to the button only from inside the menu: opened by hover, focus stays wherever it was.
       if (root.current?.contains(document.activeElement)) button.current?.focus();
@@ -74,7 +75,11 @@ function FeaturesMenu() {
     };
   }, [open]);
 
-  const close = () => setOpenOn(null);
+  // Calls off a pending hover open too, so it can't open the panel after focus has left.
+  const close = () => {
+    window.clearTimeout(timer.current);
+    setOpenOn(null);
+  };
   return (
     <div
       ref={root}
