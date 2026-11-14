@@ -90,11 +90,6 @@ const Shot = ({ src, alt, max, sizes, className, preload }: { src: StaticImageDa
   <Image src={src} alt={alt} sizes={sizes ?? `(max-width: ${max}px) 100vw, ${max}px`} className={className} preload={preload} />
 );
 
-// The Autopilot steps' pictures fill a 300px-tall box (260px on phones) one, two or four to a row (`.st .pic`): the
-// landscape crops are as wide as that height makes them, or the column where it's wider; the portrait one the column.
-const STEP_CROP = "(max-width: 640px) 380px, (max-width: 1080px) max(440px, calc(50vw - 37px)), 440px";
-const STEP_PORTRAIT = "(max-width: 640px) calc(100vw - 40px), (max-width: 1080px) calc(50vw - 37px), 275px";
-
 // The widths the bento draws its pictures at (`.cell img.bl` in landing.css): 640px on phones (wider than the screen,
 // cropped by the cell), its cell less the 28px inset where the cell is full width (tablets), else a fixed width.
 const BENTO_WIDE = "(max-width: 640px) 640px, (max-width: 1080px) calc(100vw - 86px), 730px";
@@ -194,13 +189,13 @@ function Autopilot() {
             </div>
           </Step>
           <Step n="1" title="Help center rewritten" line="The article now says what shipped.">
-            <Shot src={cropSync} sizes={STEP_CROP} alt="The article “Sync with Google Calendar”, its old import steps struck out and the new sync steps added" />
+            <Shot src={cropSync} max={300} alt="The article “Sync with Google Calendar”, its old import steps struck out and the new sync steps added" />
           </Step>
           <Step n="2" title="Feature request completed" line="Every voter gets the news.">
-            <Shot src={cropCompleting} sizes={STEP_CROP} alt="The feature request “Dark mode” moving from Planned to Completed, with an email to the 27 people on it" />
+            <Shot src={cropCompleting} max={300} alt="The feature request “Dark mode” moving from Planned to Completed, with an email to the 27 people on it" />
           </Step>
           <Step n="3" title="Changelog drafted" line="Ready to publish, in your words.">
-            <Shot src={widgetNews} sizes={STEP_PORTRAIT} alt="The changelog entry “Fewer duplicate reminders” in the in-app widget's What's new" />
+            <Shot src={widgetNews} max={300} alt="The changelog entry “Fewer duplicate reminders” in the in-app widget's What's new" />
           </Step>
         </ol>
       </div>

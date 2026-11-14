@@ -75,12 +75,11 @@
   }
   /* Room for the focus ring: the row scrolls sideways, so it clips what overflows it. */
   .tabs { display: flex; gap: 6px; justify-content: safe center; margin: -7px -34px 15px; padding: 7px 34px; }
-  /* White on forest at half opacity: 4.5:1 or more even on the frame's lightest green. */
   .tab {
     flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 12px; font-weight: 600; font-size: 15px;
-    color: #fff; background: rgba(11, 21, 16, 0.5); border: 1px solid transparent; cursor: pointer;
+    color: rgba(255, 255, 255, 0.88); border: 1px solid transparent; cursor: pointer;
   }
-  .tab:hover { background: rgba(11, 21, 16, 0.62); }
+  .tab:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
   .tab[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.3); }
   .tab[aria-pressed="true"] svg { color: var(--g); }
   /* The frame's gradient runs from dark to light green, too light for white alone at its end: a forest band on each
@@ -90,7 +89,7 @@
   .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line2); background: #fcfbf8; }
   .dots { display: flex; gap: 6px; }
   .dots i { width: 10px; height: 10px; border-radius: 50%; background: #e4e1d9; }
-  .url { margin: 0 auto; font-size: 13px; color: var(--muted); background: #f2f0ea; border-radius: 7px; padding: 3px 14px; }
+  .url { margin: 0 auto; font-size: 12.5px; color: var(--muted); background: #f2f0ea; border-radius: 7px; padding: 3px 14px; }
   .panel-wrap { animation: lp-fade 0.35s ease; }
   .panel-wrap img { display: block; width: 100%; height: auto; }
 
@@ -112,8 +111,8 @@
   .prc .r { display: flex; gap: 8px; align-items: center; color: var(--muted); }
   .prc .t { font: 700 18px/1.3 var(--font-heading); letter-spacing: -0.02em; }
   .prc .t span { color: var(--muted); font-weight: 500; }
-  .merged { align-self: flex-start; display: inline-flex; gap: 5px; align-items: center; background: #8250df; color: #fff; border-radius: 99px; padding: 3px 10px; font-size: 13px; font-weight: 600; }
-  .prc .f { font: 13px var(--font-mono); color: var(--muted); display: grid; gap: 5px; padding-top: 12px; border-top: 1px solid var(--line2); overflow-wrap: anywhere; }
+  .merged { align-self: flex-start; display: inline-flex; gap: 5px; align-items: center; background: #8250df; color: #fff; border-radius: 99px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; }
+  .prc .f { font: 12.5px var(--font-mono); color: var(--muted); display: grid; gap: 5px; padding-top: 12px; border-top: 1px solid var(--line2); overflow-wrap: anywhere; }
   .prc .f b { color: #1a7f37; font-weight: 500; }
   .prc .f em { color: #cf222e; font-style: normal; }
 
@@ -191,7 +190,7 @@
   .tag { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; font-weight: 700; border-radius: 99px; padding: 4px 10px; background: var(--g50); color: var(--g7); margin-bottom: 16px; }
   .card.self .tag { background: #183323; color: #7fdca0; }
   .term { align-self: stretch; margin-bottom: 24px; background: #07100b; border: 1px solid #23392b; border-radius: 16px; overflow: hidden; font: 14px var(--font-mono); color: #cfe8d6; }
-  .term .tb { display: flex; gap: 7px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #1b2e22; color: #7f9c89; font-size: 13px; }
+  .term .tb { display: flex; gap: 7px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #1b2e22; color: #7f9c89; font-size: 12.5px; }
   .term .tb i { width: 10px; height: 10px; border-radius: 50%; background: #2a4033; }
   .term .tb span { margin-left: 8px; }
   .term pre { font: inherit; line-height: 1.8; margin: 0; padding: 20px 22px; white-space: pre; overflow-x: auto; }
@@ -288,8 +287,7 @@
     .chip { padding: 14px; }
     .card { padding: 26px 22px; }
     .card h3 { font-size: 26px; }
-    /* 13px, the smallest size (docs/design.md, Type scale): the long commands scroll sideways. */
-    .term { font-size: 13px; }
+    .term { font-size: 12.5px; }
     .term pre { padding: 16px; }
     .pricing { padding: 40px 12px; }
     .strip { padding: 36px 24px; border-radius: 24px; }
