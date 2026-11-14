@@ -903,6 +903,103 @@ describe("the project's email limits", () => {
     vi.stubEnv("BILLING_CONFIG", billingFile());
   });
 
+  describe("past the plan's monthly limit", () => {
+    // Mid-month (one month throughout), past its first week, on a plan of 1 email a month.
+    const midMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15, 12));
+    const thisMonth = new Date(Date.UTC(midMonth.getUTCFullYear(), midMonth.getUTCMonth(), 1));
+    const nextMonth = new Date(Date.UTC(midMonth.getUTCFullYear(), midMonth.getUTCMonth() + 1, 1));
+    beforeEach(async () => {
+      vi.useFakeTimers({ toFake: ["Date"], now: midMonth });
+      vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 1; }));
+      await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
+    });
+    afterEach(async () => {
+      vi.useRealTimers();
+      // What these leave due isn't the file's other tests' (they share a database).
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: null } });
+    });
+    const due = async () => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailDueAt;
+    // The file's entries aside: only this project's is found.
+    const others = () => prisma.changelogEntry.updateMany({ where: { projectId: { not: project.id } }, data: { subscribersEmailDueAt: null } });
+
+    test("a new project past its daily cap: an entry due now whose job never ran is moved to a minute past tomorrow's start", async () => {
+      await confirmed(newAddress());
+      await publishEntry("Dark mode");
+      await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+      await prisma.projectEmailDay.upsert({
+        where: { projectId_day: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)) } },
+        create: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 },
+        update: { claimed: 200 },
+      });
+      // Its month has room: only the daily cap holds it.
+      await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: new Date(Date.now() - 15 * 60_000) } });
+      await handlers.resubmitChangelogEmails({}, log);
+      expect(await due()).toEqual(new Date(Date.UTC(midMonth.getUTCFullYear(), midMonth.getUTCMonth(), 16, 0, 1)));
+    });
+
+    test("held for a month that has reset, an entry whose send fails is due from now, not retried every run for months", async () => {
+      const [kim, lee] = [newAddress(), newAddress()];
+      await confirmed(kim);
+      await confirmed(lee);
+      await publishEntry("Dark mode");
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: thisMonth } });
+      await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+      const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+      const unsent = entryEmailsTo(kim).length === 0 ? kim : lee;
+      mailbox.refuseNext(unsent);
+      await expect(handlers.changelogEmailed({ entryId }, log)).rejects.toThrow(/failed/);
+      expect((await due())!.getTime()).toBe(Date.now());
+    });
+
+    test("an entry's rest wait for next month; the safety net leaves it while the month's full, and an upgrade lets it go", async () => {
+      const [kim, lee] = [newAddress(), newAddress()];
+      await confirmed(kim);
+      await confirmed(lee);
+      await publishEntry("Dark mode");
+      expect(entryEmailsTo(kim).length + entryEmailsTo(lee).length).toBe(1);
+      expect(await due()).toEqual(nextMonth);
+      await others();
+      expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
+      await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+      expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
+      expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
+      expect(await due()).toBeNull();
+    });
+
+    test("held for a month that has reset, the safety net sends it past its look-back", async () => {
+      const [kim, lee] = [newAddress(), newAddress()];
+      await confirmed(kim);
+      await confirmed(lee);
+      await publishEntry("Dark mode");
+      // Held last month for this one, two weeks ago: past the two days the safety net looks back.
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: thisMonth } });
+      await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+      await others();
+      expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
+      expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
+    });
+
+    test("a full project's entry due now (its job never ran) is moved to next month, never left behind", async () => {
+      await confirmed(newAddress());
+      await publishEntry("Dark mode");
+      await prisma.projectEmailMonth.updateMany({ where: { projectId: project.id }, data: { emails: 1 } });
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: new Date(Date.now() - 15 * 60_000) } });
+      await handlers.resubmitChangelogEmails({}, log);
+      expect(await due()).toEqual(nextMonth);
+    });
+
+    test("an entry unpublished since isn't moved to next month, nor told about: it wouldn't be sent anyway", async () => {
+      await confirmed(newAddress());
+      await publishEntry("Dark mode");
+      await prisma.projectEmailMonth.updateMany({ where: { projectId: project.id }, data: { emails: 1 } });
+      const dueAt = new Date(Date.now() - 15 * 60_000);
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: dueAt, publishedAt: null } });
+      await handlers.resubmitChangelogEmails({}, log);
+      expect(await due()).toEqual(dueAt);
+    });
+  });
+
   test("past a new project's daily cap the rest wait, still due, and the cron sends them once they may", async () => {
     // One day throughout (the cap is per UTC day).
     vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
@@ -998,9 +1095,9 @@ describe("the project's email limits", () => {
     });
     await publishEntry("Dark mode");
     expect(entryEmailsTo(kim).length + entryEmailsTo(lee).length).toBe(1);
-    // The cap's day goes on till midnight: the cron leaves it. Ten minutes into the next day it's 24h05m due.
+    // The cap's day goes on till midnight: the cron leaves it. It's due a minute past (dueAgain), and late ten minutes on.
     vi.setSystemTime(Date.now() + 24 * 60 * 60_000);
-    vi.setSystemTime(Date.now() + 5 * 60_000);
+    vi.setSystemTime(Date.now() + 7 * 60_000);
     await handlers.resubmitChangelogEmails({}, log);
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
   });

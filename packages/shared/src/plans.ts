@@ -224,6 +224,15 @@ export function articleLimit(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.articles : null;
 }
 
+/**
+ * How many emails a project on `plan` sends its users each calendar month (UTC), or null for no limit (always, without
+ * plans): support replies, "it shipped" and changelog emails, never sign-in, invitation or team emails. Past it they wait
+ * for the next month (packages/jobs/src/email-limits.ts).
+ */
+export function emailsPerMonth(plan: PlanKey): number | null {
+  return plansEnabled() ? terms(plan).limits.emailsPerMonth : null;
+}
+
 /** The longest range Reporting shows a project on `plan`, in days, or null for every range (always, without plans). */
 export function reportingDays(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.reportingDays : null;
@@ -271,6 +280,21 @@ export const trialTerms = () => billingConfig()?.trial ?? null;
 export function effectivePlan(plan: PlanKey, trialEndsAt: Date | null, now = new Date()): PlanKey {
   const trial = trialTerms();
   return trial && trialEndsAt && trialEndsAt > now && onDefaultPlan(plan) ? trial.plan : plan;
+}
+
+/**
+ * How many emails a project sends its users each calendar month (UTC), or null for no limit: while its trial runs (no plan
+ * of its own, trialEndsAt ahead), the trial's own allowance (`trial.emails`) where the file sets one, else its plan's
+ * emailsPerMonth (the trial's plan while it runs). `plan` as stored (select trialEndsAt with it: see @tuti/db).
+ */
+export function monthlyEmailLimit(project: { plan: PlanKey; trialEndsAt: Date | null }, now = new Date()): number | null {
+  return trialEmailAllowance(project, now) ?? emailsPerMonth(effectivePlan(project.plan, project.trialEndsAt, now));
+}
+
+/** A free trial's own monthly email allowance (`trial.emails`), while the project's trial runs; null otherwise. */
+export function trialEmailAllowance(project: { plan: PlanKey; trialEndsAt: Date | null }, now = new Date()): number | null {
+  const trialing = effectivePlan(project.plan, project.trialEndsAt, now) !== project.plan;
+  return trialing ? (trialTerms()?.emails ?? null) : null;
 }
 
 /**

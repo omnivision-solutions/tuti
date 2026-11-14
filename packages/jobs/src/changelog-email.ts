@@ -3,7 +3,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { cappedProjects, claimProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
@@ -284,8 +284,9 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     if (!claimedAt) {
       continue;
     }
-    // A new project's daily cap (and a pause since the run began): past it, they're let go and wait.
-    if (!(await claimProjectEmail(projectId))) {
+    // A new project's daily cap, the month's limit (and a pause since the run began): past it, they're let go and wait.
+    const now = new Date();
+    if (!(await claimProjectEmail(projectId, now))) {
       await prisma.changelogEmail.deleteMany({ where: { entryId, subscriberId: id, claimedAt } });
       held = true;
       break;
@@ -310,12 +311,16 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     );
     if (error) {
       failed++;
+      await releaseProjectEmail(projectId, now);
       log.warn(`couldn't email changelog entry ${entryId} to a subscriber: ${error.message}`);
       continue;
     }
     emailed++;
   }
   if (failed > 0) {
+    // Held for a month (dueAgain), the safety nets would take it every run, for good: due from now instead, so it's retried
+    // like any other failure, within their look-back.
+    await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { in: heldDueDates() } }, data: { subscribersEmailDueAt: new Date() } });
     throw new Error(`${failed} changelog email(s) for entry ${entryId} failed; retrying those`);
   }
   if (stopped) {
@@ -324,9 +329,9 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { emailed, waiting: "the entry was unpublished, or its portal made private" };
   }
   if (held) {
-    // Due from now, so the cron keeps bringing it back (it looks back two days) until the rest may go.
-    await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: new Date() } });
-    return { emailed, waiting: "the project's daily cap, or a pause" };
+    // Due from now, so the cron keeps bringing it back (it looks back two days) until the rest may go; past the month's limit, from next month.
+    await prisma.changelogEntry.updateMany({ where: { id: entryId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: await dueAgain(projectId) } });
+    return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
   // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.
@@ -342,14 +347,40 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
 
 /** The safety net: an entry whose emails are still due after a while gets its job again. Claims keep that from emailing anyone twice. */
 export async function resubmitChangelogEmails(_input: JobInput<"resubmitChangelogEmails">, log: JobLogger): Promise<JobResult> {
-  // Not a paused project's, nor a new one's past its daily cap: they'd wait again. The longest due first.
+  // Not a paused project's: it'd wait again. The longest due first.
+  // A project whose month is full: what's due now waits for next month, where these find it (a job that never ran
+  // would otherwise leave it here, past the look-back, for good).
+  const full = await monthCappedProjects();
+  if (full.length > 0) {
+    // Not a paused one's: what the pause holds, its resume lets go (or drops).
+    // Nor sample content, which never has effects outside (the team's notice included).
+    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, sample: false, publishedAt: { not: null }, subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
+    const projects = await prisma.changelogEntry.findMany({ where: moving, distinct: ["projectId"], select: { projectId: true } });
+    await prisma.changelogEntry.updateMany({ where: moving, data: { subscribersEmailDueAt: nextMonth(new Date()) } });
+    // Their teams hear (once a month), as when a claim is refused.
+    for (const { projectId } of projects) {
+      await tellEmailLimit(projectId, new Date());
+    }
+  }
   const capped = await cappedProjects();
+  // A new project past its daily cap: what's due now (its job never ran) is due when the cap resets, as what a run held
+  // is (dueAgain), so it's still within the look-back then.
+  const daily = capped.filter((id) => !full.includes(id));
+  if (daily.length > 0) {
+    await prisma.changelogEntry.updateMany({
+      where: { projectId: { in: daily }, project: { emailPausedAt: null }, subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      data: { subscribersEmailDueAt: tomorrow(new Date()) },
+    });
+  }
   const due = await prisma.changelogEntry.findMany({
     where: {
-      subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) },
+      // Due a while ago, or held by the monthly limit (dueAgain): once its month has reset, or now where the project has room again (an upgrade).
+      OR: [{ subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { subscribersEmailDueAt: { in: heldDueDates() } }],
       // One taken off the portal waits to be published again (which queues it).
       publishedAt: { not: null },
       ...(plansEnabled() && { project: { emailPausedAt: null } }),
+      // Not a capped project's (its month full, or a new one's daily cap): it'd wait again. What they hold is due when
+      // the cap resets (dueAgain), within the look-back then.
       ...(capped.length > 0 && { projectId: { notIn: capped } }),
     },
     orderBy: { subscribersEmailDueAt: "asc" },

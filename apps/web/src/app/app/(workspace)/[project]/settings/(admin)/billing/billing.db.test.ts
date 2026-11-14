@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -95,4 +95,26 @@ test("a project still paying for a plan the file no longer lists is offered the 
   }));
   await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active", stripeSubscriptionId: `sub_${projectId}` } });
   expect(await billing()).toContain("hide it for $39 a month");
+});
+
+test("the plan's card counts this month's email to the project's users against its plan's limit; without plans, nothing", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  // Mid-month, so the count and the page read the same month.
+  const month = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(month.getTime() + 14 * 24 * 60 * 60_000) });
+  onTestFinished(() => void vi.useRealTimers());
+  await prisma.projectEmailMonth.create({ data: { projectId, month, emails: 1234 } });
+  expect(await billing()).toContain("1,234 of 1,000 emails sent this month");
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "business" } });
+  expect(await billing()).toContain("1,234 emails sent this month");
+  vi.stubEnv("BILLING_CONFIG", "");
+  expect(await billing()).not.toContain("emails sent this month");
+});
+
+test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  expect(await billing()).toContain("0 of 500 emails sent this month");
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
+  expect(await billing()).toContain("0 of 1,000 emails sent this month");
 });

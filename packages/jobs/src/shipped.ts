@@ -1,11 +1,11 @@
 import { type PostVisibility, prisma } from "@tuti/db";
 import { sendEmail, shippedEmail } from "@tuti/email";
-import type { JobInput } from "@tuti/shared";
+import { type JobInput, plansEnabled } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
-import { claimProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -188,9 +188,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     if (!claimedAt) {
       continue;
     }
-    // A new project's daily cap, taken once they're ours to email (and a pause since the run began):
+    // A new project's daily cap and the month's limit, taken once they're ours to email (and a pause since the run began):
     // past it, they're let go and wait.
-    if (!(await claimProjectEmail(projectId))) {
+    const now = new Date();
+    if (!(await claimProjectEmail(projectId, now))) {
       await prisma.shippedEmail.deleteMany({ where: { postId, userId: id, claimedAt } });
       held = true;
       break;
@@ -212,19 +213,23 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     );
     if (error) {
       failed++;
+      await releaseProjectEmail(projectId, now);
       log.warn(`couldn't email that post ${postId} shipped: ${error.message}`);
       continue;
     }
     emailed++;
   }
   if (failed > 0) {
+    // Held for a month (dueAgain), the safety nets would take it every run, for good: due from now instead, so it's retried
+    // like any other failure, within their look-back.
+    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { in: heldDueDates() } }, data: { shippedEmailsDueAt: new Date() } });
     throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
   }
   if (held) {
-    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go.
-    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: new Date() } });
-    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait (the project's daily cap, or a pause)`);
-    return { emailed, waiting: "the project's daily cap, or a pause" };
+    // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go; past the month's limit, from next month.
+    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: await dueAgain(projectId) } });
+    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait (the project's daily cap, its monthly limit, or a pause)`);
+    return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
   await prisma.post.updateMany({
@@ -240,8 +245,41 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
  * never queued, or died mid-send) gets its job again. Claims keep that from emailing anyone twice.
  */
 export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEmails">, log: JobLogger): Promise<JobResult> {
+  // A project whose month is full: what's due now waits for next month, where these find it (a job that never ran
+  // would otherwise leave it here, past the look-back, for good).
+  const full = await monthCappedProjects();
+  if (full.length > 0) {
+    // Not a paused one's: what the pause holds, its resume lets go (or drops).
+    // Nor sample content, which never has effects outside (the team's notice included).
+    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, sample: false, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
+    const projects = await prisma.post.findMany({ where: moving, distinct: ["projectId"], select: { projectId: true } });
+    await prisma.post.updateMany({ where: moving, data: { shippedEmailsDueAt: nextMonth(new Date()) } });
+    // Their teams hear (once a month), as when a claim is refused.
+    for (const { projectId } of projects) {
+      await tellEmailLimit(projectId, new Date());
+    }
+  }
+  const capped = await cappedProjects();
+  // A new project past its daily cap: what's due now (its job never ran) is due when the cap resets, as what a run held
+  // is (dueAgain), so it's still within the look-back then.
+  const daily = capped.filter((id) => !full.includes(id));
+  if (daily.length > 0) {
+    await prisma.post.updateMany({
+      where: { projectId: { in: daily }, project: { emailPausedAt: null }, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      data: { shippedEmailsDueAt: tomorrow(new Date()) },
+    });
+  }
   const due = await prisma.post.findMany({
-    where: { shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+    where: {
+      // Due a while ago, or held by the monthly limit (dueAgain): once its month has reset, or now where the project has room again (an upgrade).
+      OR: [{ shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } }, { shippedEmailsDueAt: { in: heldDueDates() } }],
+      // Not a capped project's (its month full, or a new one's daily cap): it'd wait again. What they hold is due when
+      // the cap resets (dueAgain), within the look-back then.
+      ...(capped.length > 0 && { projectId: { notIn: capped } }),
+      // Not a paused project's: they'd wait again, and fill the batch before ones that can go.
+      ...(plansEnabled() && { project: { emailPausedAt: null } }),
+    },
+    orderBy: { shippedEmailsDueAt: "asc" },
     select: { id: true },
     take: 500,
   });

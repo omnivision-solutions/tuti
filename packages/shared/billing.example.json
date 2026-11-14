@@ -7,7 +7,7 @@
       "key": "free",
       "name": "Free",
       "features": ["codeChanges"],
-      "limits": { "seats": 3, "boards": 2, "articles": 50, "historyDays": 7, "articleVersions": 2, "reportingDays": 31 }
+      "limits": { "seats": 3, "boards": 2, "articles": 50, "historyDays": 7, "articleVersions": 2, "reportingDays": 31, "emailsPerMonth": 1000 }
     },
     {
       "key": "pro",
@@ -17,7 +17,7 @@
         "year": { "perMonth": 32, "stripe": ["price_pro_yearly"] }
       },
       "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
-      "limits": { "seats": null, "boards": 5, "articles": null, "historyDays": 30, "articleVersions": 5, "reportingDays": 31 },
+      "limits": { "seats": null, "boards": 5, "articles": null, "historyDays": 30, "articleVersions": 5, "reportingDays": 31, "emailsPerMonth": 10000 },
       "monthlyCredits": 1000,
       "featured": true
     },
@@ -29,7 +29,7 @@
         "year": { "perMonth": 79, "stripe": ["price_business_yearly"] }
       },
       "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath", "aiTuning"],
-      "limits": { "seats": null, "boards": null, "articles": null, "historyDays": 90, "articleVersions": 50, "reportingDays": null },
+      "limits": { "seats": null, "boards": null, "articles": null, "historyDays": 90, "articleVersions": 50, "reportingDays": null, "emailsPerMonth": null },
       "monthlyCredits": 5000,
       "extras": ["Priority support"]
     }

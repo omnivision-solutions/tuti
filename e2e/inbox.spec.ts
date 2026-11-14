@@ -6,7 +6,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { spendCredits } from "./credits";
 import { publishMx } from "./dns";
-import { setTodaysEmails } from "./email-days";
+import { setThisMonthsEmails, setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, expectMoreView, moreView, openPersonDetails, png, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
@@ -2030,6 +2030,13 @@ test("on a server selling plans, a new project's email is capped in its first we
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
   await checkpoint(owner, "reply-waits-for-daily-cap");
+  // Its plan's emails for the month used up too (Free: 1,000): it waits for next month, which the notice says over tomorrow.
+  await setThisMonthsEmails(slug, 1000);
+  await owner.reload();
+  await expect(owner.getByText("Emailed next month: your plan's emails for this month are used (Settings → Billing)")).toBeVisible();
+  await expect(owner.getByText("Emailed tomorrow: in its first week")).toHaveCount(0);
+  await checkpoint(owner, "reply-waits-for-monthly-limit");
+  await setThisMonthsEmails(slug, 0);
 
   // 2 of 100 bounced: paused, and the operator is told.
   const projectId = await setTodaysEmails(slug, { sent: 100, bounced: 1 });

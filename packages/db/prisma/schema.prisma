@@ -397,6 +397,7 @@ model Project {
   inboundEmails           InboundEmail[]
   emailBlocks             EmailBlock[]
   emailDays               ProjectEmailDay[]
+  emailMonths             ProjectEmailMonth[]
   emailDomain             EmailDomain?
   votes                   Vote[]
   comments                Comment[]
@@ -1228,6 +1229,22 @@ model ProjectEmailDay {
 
   @@id([projectId, day])
   @@map("project_email_day")
+}
+
+/// A project's email to its users by calendar month (UTC), on a server selling plans: taken from its plan's emailsPerMonth
+/// as it's sent (packages/jobs/src/email-limits.ts).
+model ProjectEmailMonth {
+  projectId   String
+  /// The month's first day.
+  month       DateTime  @db.Date
+  emails      Int       @default(0)
+  /// When its owners and admins were told it reached its limit this month.
+  limitToldAt DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, month])
+  @@map("project_email_month")
 }
 
 /// An address that marked a project's email as spam: replies by email stop for it (the widget still works).
