@@ -32,7 +32,7 @@ const CLICK_AFTER_HOVER_MS = 600;
 /**
  * "Features": a panel under the header with every feature page (features.ts), by group, each an icon, its name and a
  * line. Opens on hover (mouse only), a click, or Enter, Space or ↓ (↓ also focuses its first link); Tab goes through
- * its links. Escape closes it (focus back on the button), as do a click outside, focus leaving it and going to another page.
+ * its links. Escape closes it (focus back on the button if it was in the menu), as do a click outside, focus leaving it and going to another page.
  */
 function FeaturesMenu() {
   // Open on the page it was opened on, so going anywhere else closes it (as MobileNav).
@@ -60,7 +60,8 @@ function FeaturesMenu() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpenOn(null);
-      button.current?.focus();
+      // Back to the button only from inside the menu: opened by hover, focus stays wherever it was.
+      if (root.current?.contains(document.activeElement)) button.current?.focus();
     };
     const onPointerDown = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpenOn(null);
