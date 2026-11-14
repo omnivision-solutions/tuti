@@ -5,7 +5,7 @@ import { expect, type Locator, type Page, type Request, test } from "./fixtures"
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduleAgain, scheduledDraft } from "./autopilot";
+import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduledDraft, setPostUpdate } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, fillSignUp, signUp } from "./helpers";
 import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
@@ -340,22 +340,27 @@ test("a merged pull request becomes a code change; the team completes the post i
   // The latest pick wins: Activity picked, then To review again before Activity's page came (held), the post stays.
   let letActivityGo = () => {};
   const activityHeld = new Promise<void>((resolve) => (letActivityGo = resolve));
-  let activityAsked = () => {};
-  const activityAsking = new Promise<void>((resolve) => (activityAsked = resolve));
+  let activityAsked = (_request: Request) => {};
+  const activityAsking = new Promise<Request>((resolve) => (activityAsked = resolve));
   await owner.route("**/autopilot/activity/**", async (route) => {
     if (route.request().headers()["next-router-prefetch"]) {
       await route.continue();
       return;
     }
-    activityAsked();
+    activityAsked(route.request());
     await activityHeld;
     await route.continue().catch(() => {});
   });
   await list.getByRole("tab", { name: "Activity" }).click();
-  await activityAsking;
+  const heldActivity = await activityAsking;
   await list.getByRole("tab", { name: "To review 1" }).click();
+  // Let Activity's page come, and wait till it has (or was dropped), then for the page to settle: had it won, it would
+  // be open by then.
+  const activityDone = Promise.race([heldActivity.response().then(() => {}), owner.waitForEvent("requestfailed", (request) => request === heldActivity).then(() => {})]);
   letActivityGo();
+  await activityDone;
   await owner.waitForLoadState("networkidle");
+  await owner.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   await owner.unroute("**/autopilot/activity/**");
   await expect(owner).toHaveURL(/\/autopilot\/feedback\//);
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
@@ -963,12 +968,25 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await owner.waitForURL((url) => url.pathname !== "/app/auth/sign-in");
   await owner.goto(review);
   await expect(update).toHaveValue("Typed here, never sent.");
-  await scheduleAgain(slug, posts[0]!);
+  await setPostUpdate(slug, posts[0]!, "SCHEDULED");
   await owner.reload();
   await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
   // (Dropped once the page runs in the browser, where a draft would show.)
   await expect.poll(kept).toBe(0);
   await expect(update).toHaveValue(`${posts[0]!} are out.`);
+  // The same while the page stays open: waiting (as Autopilot left it, not stopped) with a comment typed, it's set to
+  // go out by itself meanwhile, the same update (its version unchanged); an Approve refused for it refreshes the page
+  // in place, which shows its own comment, not the one typed.
+  await setPostUpdate(slug, posts[0]!, "PENDING");
+  await owner.reload();
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  await update.fill("Typed, then it went out by itself.");
+  await setPostUpdate(slug, posts[0]!, "SCHEDULED");
+  await owner.getByRole("button", { name: "Approve", exact: true }).click();
+  await owner.getByRole("alertdialog", { name: "Approve the update?" }).getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(update).toHaveValue(`${posts[0]!} are out.`);
+  await expect.poll(kept).toBe(0);
 
   // The other post's, dismissed from its bar (asking why, as Dismiss does): it's gone from To review.
   await list.getByRole("link", { name: posts[1]! }).click();

@@ -124,7 +124,9 @@ export function PostReview({
   }
   // A comment to post: a progress update's, or one completing it with progress updates folded in.
   const commented = update.kind === "moves_forward" || update.comment !== undefined;
-  const text = edits[key] ?? saved ?? update.comment ?? "";
+  // What the team typed only while it waits: once it goes out by itself (refreshed in place, the same version), what
+  // goes is its own comment.
+  const text = (pendingNow ? (edits[key] ?? saved) : null) ?? update.comment ?? "";
   const emails = update.emails ?? 0;
   const waiting = update.status === "pending";
   // Completing it with no comment of its own: the team may write one, which goes into the email.

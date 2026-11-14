@@ -208,16 +208,20 @@ export async function scheduledDraft(slug: string, title: string): Promise<strin
   }
 }
 
-/** A post's progress update, stopped by the team, set to go out by itself again (as Autopilot's hold puts it). */
-export async function scheduleAgain(slug: string, title: string) {
+/**
+ * A post's progress update set waiting for the team (not stopped by anyone) or going out by itself (as Autopilot's hold
+ * puts it), whichever it is now.
+ */
+export async function setPostUpdate(slug: string, title: string, status: "PENDING" | "SCHEDULED") {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();
   try {
     const { rowCount } = await client.query(
-      `UPDATE code_change_action a SET status = 'SCHEDULED', "waitReason" = NULL, "dueAt" = (now() AT TIME ZONE 'UTC') + interval '1 day'
+      `UPDATE code_change_action a SET status = $3::"CodeChangeActionStatus", "waitReason" = NULL, "decidedById" = NULL,
+         "dueAt" = CASE WHEN $3 = 'SCHEDULED' THEN (now() AT TIME ZONE 'UTC') + interval '1 day' END
        FROM post p JOIN project pr ON pr.id = p."projectId"
-       WHERE a."postId" = p.id AND p.title = $2 AND pr.slug = $1 AND a.kind = 'MOVES_FORWARD' AND a.status = 'PENDING'`,
-      [slug, title],
+       WHERE a."postId" = p.id AND p.title = $2 AND pr.slug = $1 AND a.kind = 'MOVES_FORWARD' AND a.status IN ('PENDING', 'SCHEDULED')`,
+      [slug, title, status],
     );
     expect(rowCount).toBe(1);
   } finally {
