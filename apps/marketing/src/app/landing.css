@@ -45,7 +45,8 @@
   /* On a dark card or band */
   .btn-d { background: rgba(255, 255, 255, 0.08); color: #fff; border: 1px solid rgba(255, 255, 255, 0.22); }
   .btn-d:hover { background: rgba(255, 255, 255, 0.14); }
-  .ctas { display: flex; gap: 12px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
+  /* Above the hero glow (.frame::before), which reaches up under them. */
+  .ctas { position: relative; z-index: 1; display: flex; gap: 12px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
   .ctas.left { justify-content: flex-start; }
   /* A section's text link beside its button */
   .tlink { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 48px; padding: 0 10px; font-weight: 600; color: var(--g7); }
@@ -106,6 +107,8 @@
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--g) 14%, transparent), 0 8px 20px -10px rgba(16, 60, 32, 0.45);
   }
   .tab[aria-pressed="true"] svg { color: var(--g); }
+  /* White between the tab and its green ring, so the ring stands out from the glow too. */
+  .tab:focus-visible { box-shadow: 0 0 0 2px #fff; }
   .show { padding: 0 10px; }
   /* The window fades into the page at the bottom rather than ending on a hard edge. */
   .win {
