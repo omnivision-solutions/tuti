@@ -17,6 +17,8 @@ import { type ReactNode, useState } from "react";
 
 import { TutiMark } from "@tuti/ui/tuti-logo";
 
+import { SIGN_UP } from "./links";
+
 import canny from "./logos/canny.svg";
 import featurebase from "./logos/featurebase.svg";
 import ferndesk from "./logos/ferndesk.svg";
@@ -115,6 +117,12 @@ export function Switch() {
               );
             })}
           </ul>
+        </div>
+        <div className="ctas">
+          <a href={SIGN_UP} className="btn btn-p">
+            Switch to Tuti
+            <ArrowRightIcon aria-hidden size={16} />
+          </a>
         </div>
       </div>
     </section>

@@ -4,9 +4,11 @@ import { TutiLogo } from "@tuti/ui/tuti-logo";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { CONTACT_EMAIL } from "./legal";
 import { DOCS, REPO_URL } from "./links";
 import { FEATURES } from "./features";
 import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
+import { TutiWidget } from "./widget";
 
 import "./globals.css";
 
@@ -23,6 +25,8 @@ export const metadata: Metadata = {
  * a class this site never sets). The app is another app on the same domain (README, "Production routing").
  */
 export default function MarketingLayout({ children }: LayoutProps<"/">) {
+  // Tuti's own project, whose widget every page carries (tuti.so: "help"); unset (a self-hosted build), no widget.
+  const widgetProject = process.env.WIDGET_PROJECT?.trim();
   return (
     <html lang="en" className={`${brandFonts} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
@@ -74,11 +78,15 @@ export default function MarketingLayout({ children }: LayoutProps<"/">) {
                 <Link href="/terms" className="hover:text-foreground">
                   Terms
                 </Link>
+                <a href={`mailto:${CONTACT_EMAIL}`} data-talk-to-us className="hover:text-foreground">
+                  Talk to us
+                </a>
               </div>
             </nav>
           </div>
         </footer>
         <Analytics />
+        {widgetProject && <TutiWidget project={widgetProject} />}
       </body>
     </html>
   );

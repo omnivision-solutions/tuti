@@ -22,6 +22,7 @@ import { GithubMark } from "@tuti/ui/github-mark";
 import { TutiMark } from "@tuti/ui/tuti-logo";
 
 import { HeroTabs } from "./hero-tabs";
+import { CONTACT_EMAIL } from "./legal";
 import { DOCS, REPO_URL, SIGN_UP } from "./links";
 import { Switch } from "./switch";
 import "./landing.css";
@@ -61,6 +62,16 @@ function Start({ arrow = true }: { arrow?: boolean }) {
       Start free trial
       {arrow && <ArrowRightIcon aria-hidden size={16} />}
     </a>
+  );
+}
+
+/** A section's way on: the trial, with a text link beside it. */
+function Next({ children }: { children?: ReactNode }) {
+  return (
+    <div className="ctas">
+      <Start />
+      {children}
+    </div>
   );
 }
 
@@ -223,6 +234,11 @@ function Autopilot() {
             <StepChangelog />
           </Step>
         </ol>
+        <Next>
+          <Link className="tlink" href="/pricing">
+            See pricing <ArrowRightIcon aria-hidden size={16} />
+          </Link>
+        </Next>
       </div>
     </section>
   );
@@ -294,6 +310,11 @@ function Bento() {
             <CellAiTools />
           </Cell>
         </div>
+        <Next>
+          <a className="tlink" href={DOCS}>
+            See a live help center <ArrowRightIcon aria-hidden size={16} />
+          </a>
+        </Next>
       </div>
     </section>
   );
@@ -424,6 +445,9 @@ function Faq() {
               <p>{a}</p>
             </details>
           ))}
+          <a className="tlink ask" href={`mailto:${CONTACT_EMAIL}`} data-talk-to-us>
+            Another question? Talk to us <ArrowRightIcon aria-hidden size={16} />
+          </a>
         </div>
       </div>
     </section>

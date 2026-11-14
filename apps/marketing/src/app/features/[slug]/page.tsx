@@ -93,7 +93,7 @@ export default async function FeaturePage({ params }: PageProps<"/features/[slug
           </ul>
         </div>
       </section>
-      <Final title="Try it on your next release." sub="Everything in Tuti, free for 7 days." secondary={seePricing} />
+      <Final title="Try it on your next release." sub="Set up in minutes, free for 7 days." secondary={seePricing} />
     </div>
   );
 }
