@@ -1746,11 +1746,18 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
 
   // Customize → Widget: a name, a colour, the left corner, an icon and a quick link (https only), beside a stand-in for the
   // site with the widget open above its launcher, what the team came to see (focus stays on the page).
+  // The page's own scripts held back, as on a slow machine: the panel is up first, and still takes the settings as they're set.
+  const appScripts = (url: URL) => url.origin === APP_URL && url.pathname.endsWith(".js");
+  await owner.route(appScripts, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await route.continue();
+  });
   await owner.goto(`/app/${slug}/settings/widget`);
   const previewLauncher = (name: string) => owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: `Launcher: ${name}` });
   await expect(previewLauncher("Feedback")).toHaveAttribute("aria-expanded", "true");
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
   await expect(owner.locator('iframe[title="Widget panel preview"]')).not.toBeFocused();
+  await owner.unroute(appScripts);
   await checkpoint(owner, "widget-preview-open");
   // The script tag for the team's site, to copy.
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
