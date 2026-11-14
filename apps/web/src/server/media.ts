@@ -253,6 +253,9 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
     await enqueue("imageUploaded", { mediaId: media.id });
   } catch (error) {
     log.error("Processing an uploaded image failed", { mediaId: media.id, error });
+    // No job will finish this row: nothing is kept, and it stops counting against the quota.
+    await storage.delete(key);
+    await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
     return { error: "The image couldn't be processed" };
   }
   return {};
