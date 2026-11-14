@@ -392,6 +392,32 @@
   .step-sc { display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 20px; }
   .step-sc .sc-entry { margin-top: 6px; }
 
+  /* The hero's picture builds in, piece by piece, each time its tab opens (a shown panel restarts its animations):
+     the merge, then what it changed; the question, then the answer; the conversation, message by message. */
+  .hero-sc :is(.sc-pr, .sc-from > *, .sc-diff > *, .sc-answer > *, .sc-tiles, .sc-list > *, .sc-thread > *, .sc-boardhead, .sc-votes > *, .sc-entry) { animation: lp-pop 0.45s var(--d, 0s) both; }
+  .sc-from > :nth-child(1) { --d: 0.25s; }
+  .sc-from > :nth-child(2) { --d: 0.4s; }
+  .sc-from .sc-diff > :nth-child(1) { --d: 0.6s; }
+  .sc-from .sc-diff > :nth-child(2) { --d: 0.8s; }
+  .sc-from .sc-diff > :nth-child(3) { --d: 1s; }
+  .sc-from > :nth-child(3) { --d: 1.2s; }
+  .sc-from > :nth-child(4) { --d: 1.35s; }
+  .sc-hc .sc-ai { --d: 0.3s; }
+  .sc-hc .sc-tiles { --d: 0.5s; }
+  .sc-list > :nth-child(2), .sc-votes > :nth-child(1) { --d: 0.1s; }
+  .sc-list > :nth-child(3), .sc-votes > :nth-child(2), .sc-cl .sc-entry + .sc-entry { --d: 0.2s; }
+  .sc-votes > :nth-child(3) { --d: 0.3s; }
+  .sc-votes > :nth-child(4) { --d: 0.4s; }
+  .sc-thread > :nth-child(1) { --d: 0.20s; }
+  .sc-thread > :nth-child(2) { --d: 0.32s; }
+  .sc-thread > :nth-child(3) { --d: 0.44s; }
+  .sc-thread > :nth-child(4) { --d: 0.56s; }
+  .sc-thread > :nth-child(5) { --d: 0.68s; }
+  .sc-thread > :nth-child(6) { --d: 0.80s; }
+  .sc-thread > :nth-child(7) { --d: 0.92s; }
+  .sc-thread > :nth-child(8) { --d: 1.04s; }
+  .sc-thread > :nth-child(9) { --d: 1.16s; }
+
   /* In the bento's cells, under their words */
   .cell-sc { margin-top: auto; padding-top: 24px; }
   .c-help .cell-sc, .c-inbox .cell-sc { max-width: 600px; }
