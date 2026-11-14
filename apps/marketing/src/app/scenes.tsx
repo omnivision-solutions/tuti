@@ -214,7 +214,7 @@ export function HeroHelp() {
 
 export function HeroInbox() {
   return (
-    <Pic className="hero-sc sc-ib" label="The inbox: a customer's question answered by AI from the help center, then handed to a teammate, with the customer's details and the feature request it's linked to">
+    <Pic className="hero-sc sc-ib" label="The inbox: a customer's question answered by AI from the help center, then handed to a teammate, with the customer's details and the post it's linked to">
       <div className="sc-list">
         {[
           ["Ana Abbott", "Google Calendar sync", "2m"],
@@ -257,7 +257,7 @@ export function HeroInbox() {
           </div>
         ))}
         <div className="sc-card">
-          <small>Linked request</small>
+          <small>Linked post</small>
           <b>{REQUEST}</b>
           <Pill tone="prog">In progress</Pill>
         </div>
@@ -402,7 +402,7 @@ export function CellRoadmap() {
   );
 }
 
-/** The roadmap page: each column's requests with a category, or the day it shipped, and their votes. */
+/** The roadmap page: each column's posts with their board (or, once shipped, the changelog) and votes. */
 export function HeroRoadmap() {
   const columns: [string, string, [string, string, number][]][] = [
     [
@@ -429,10 +429,10 @@ export function HeroRoadmap() {
       "Completed",
       "done",
       [
-        ["Time zones", "Shipped Oct 28", 38],
-        ["Keyboard shortcuts", "Shipped Oct 14", 22],
-        ["Reminders by SMS", "Shipped Sep 30", 19],
-        ["iCal export", "Shipped Sep 12", 9],
+        ["Time zones", "In the changelog", 38],
+        ["Keyboard shortcuts", "In the changelog", 22],
+        ["Reminders by SMS", "In the changelog", 19],
+        ["iCal export", "In the changelog", 9],
       ],
     ],
   ];
