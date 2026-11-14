@@ -415,7 +415,7 @@
   .sc-mcp { background: var(--forest); color: #dfe8e1; border-radius: 16px; padding: 14px 18px 18px; font: 13.5px/1.6 var(--font-mono); }
   .sc-mcp .tb { display: flex; gap: 6px; margin-bottom: 10px; }
   .sc-mcp .tb i { width: 9px; height: 9px; border-radius: 50%; background: #2a4033; }
-  .sc-mcp p { margin: 0; }
+  .sc-mcp p { margin: 0; font-size: inherit; }
   .sc-mcp .p { color: #4cc27c; }
   .sc-mcp .m { color: #8ea596; }
 
