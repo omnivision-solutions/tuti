@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { after } from "next/server";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
@@ -74,8 +74,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   if (!project || !brand) {
     notFound();
   }
-  // Once the page is sent: renews the project's licence key from tuti.so, at most daily (and only if it has one or asked for one).
-  after(() => renewLicense(project.id, { olderThan: DAY_MS }));
+  // Renews the project's licence key from tuti.so, at most daily (and only if it has one or asked for one). Not awaited, and not
+  // in after(): once a request closes, after() makes the rest of its render (a reader who left as the page loaded) throw on headers().
+  void renewLicense(project.id, { olderThan: DAY_MS }).catch((error) => log.error("Couldn't renew the licence key", { projectId: project.id, error }));
   // Portal sessions are per host: this is the user signed in on this portal.
   const session = await getSession();
   const requestHeaders = await headers();
