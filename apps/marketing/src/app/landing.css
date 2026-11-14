@@ -230,7 +230,9 @@
   .strip .btn-p { background: #fff; color: var(--g8); }
   .strip .btn-p:hover { background: #eef8f1; }
   .big { font-size: 96px; letter-spacing: -0.05em; }
-  .strip .cap { margin-top: 22px; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #a7e3bb; }
+  /* The trial's caption under the figure, then a rule: the list below is what every plan includes, not the trial. */
+  .strip .trial { margin: 14px 0 0; font-size: 20px; color: #cfe7d6; }
+  .strip .cap { margin-top: 32px; padding-top: 32px; border-top: 1px solid rgba(255, 255, 255, 0.18); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #a7e3bb; }
   .inc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-top: 12px; }
   .inc li { display: flex; gap: 10px; align-items: center; font-weight: 600; }
   .inc li svg { color: #7fdca0; }

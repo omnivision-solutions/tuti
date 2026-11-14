@@ -404,7 +404,8 @@ function Pricing({ ai }: { ai: boolean }) {
         <div className="r">
           {/* "Try it free" is the heading: the figure alone stays on one line in the narrow column. */}
           <div className="big">7 days</div>
-          <div className="cap">In every plan</div>
+          <p className="trial">free trial, no card needed</p>
+          <div className="cap">Every plan includes</div>
           <ul className="inc">
             {included.map((item) => (
               <li key={item}>
