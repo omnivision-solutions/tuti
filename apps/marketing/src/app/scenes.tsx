@@ -143,6 +143,8 @@ const POSTS: [number, string, ReactNode][] = [
   [27, "Dark mode", <Pill key="p" tone="plan">Planned</Pill>],
   [18, "Recurring events", <Pill key="p" tone="plan">Planned</Pill>],
   [12, "Export to a spreadsheet", <Pill key="p" tone="open">Open</Pill>],
+  [11, "Booking pages", <Pill key="p" tone="plan">Planned</Pill>],
+  [6, "Week numbers", <Pill key="p" tone="open">Open</Pill>],
 ];
 
 function Votes({ rows = 3 }: { rows?: number }) {
@@ -212,20 +214,54 @@ export function HeroHelp() {
 
 export function HeroInbox() {
   return (
-    <Pic className="hero-sc sc-ib" label="The inbox: a customer's question answered by AI from the help center, then handed to a teammate">
+    <Pic className="hero-sc sc-ib" label="The inbox: a customer's question answered by AI from the help center, then handed to a teammate, with the customer's details and the feature request it's linked to">
       <div className="sc-list">
         {[
-          ["Ana Abbott", "Google Calendar sync", true],
-          ["Nico Lund", "Export to a spreadsheet?", false],
-          ["Kira Kaur", "Seats on the annual plan", false],
-        ].map(([name, subject, on]) => (
-          <div key={name as string} className={on ? "on" : ""}>
-            <b>{name}</b>
+          ["Ana Abbott", "Google Calendar sync", "2m"],
+          ["Nico Lund", "Export to a spreadsheet?", "14m", true],
+          ["Kira Kaur", "Seats on the annual plan", "1h"],
+          ["Leo Park", "Invite a guest", "3h"],
+          ["Sofia Ruiz", "Reminders arrive twice", "5h"],
+          ["Tom Berg", "Thanks, all working now", "1d"],
+        ].map(([name, subject, time, unread], n) => (
+          <div key={name as string} className={n === 0 ? "on" : ""}>
+            <b>
+              {name}
+              {unread && <i className="dot" />}
+              <small>{time}</small>
+            </b>
             <span>{subject}</span>
           </div>
         ))}
       </div>
-      <Thread />
+      <div className="sc-conv">
+        <Thread />
+        <div className="sc-reply">
+          Reply to Ana… <span className="sc-btn">Send</span>
+        </div>
+      </div>
+      <div className="sc-who">
+        <div className="p">
+          <span>AA</span>
+          <b>Ana Abbott</b>
+          <small>ana@tidewater.co</small>
+        </div>
+        {[
+          ["Company", "Tidewater"],
+          ["Plan", "Team, 24 seats"],
+          ["Assigned", "Maya"],
+        ].map(([k, v]) => (
+          <div key={k}>
+            <small>{k}</small>
+            <b>{v}</b>
+          </div>
+        ))}
+        <div className="sc-card">
+          <small>Linked request</small>
+          <b>{REQUEST}</b>
+          <Pill tone="prog">In progress</Pill>
+        </div>
+      </div>
     </Pic>
   );
 }
@@ -237,16 +273,21 @@ export function HeroFeedback() {
         <b>Feature requests</b>
         <span className="sc-btn">Share an idea</span>
       </div>
-      <Votes rows={4} />
+      <Votes rows={6} />
     </Pic>
   );
 }
 
 export function HeroChangelog() {
   return (
-    <Pic className="hero-sc sc-cl" label="A changelog: Two-way Google Calendar sync, new, and an improvement before it">
+    <Pic className="hero-sc sc-cl" label="A changelog: Two-way Google Calendar sync, new, and an improvement and a fix before it">
+      <div className="sc-boardhead">
+        <b>Changelog</b>
+        <span className="sc-btn">Subscribe</span>
+      </div>
       <Entry date="Today" />
       <Entry tag="Improved" date="Last week" title="Fewer duplicate reminders" line="Each reminder now goes out once, however many devices you use." />
+      <Entry tag="Fixed" date="Oct 28" title="Time zones on shared events" line="Shared events now show in each guest's own time zone." />
     </Pic>
   );
 }
@@ -341,14 +382,14 @@ export const CellFeedback = () => (
   </Pic>
 );
 
-export function CellRoadmap({ hero }: { hero?: boolean }) {
+export function CellRoadmap() {
   const columns: [string, string[]][] = [
-    ["Planned", ["Dark mode", "Recurring events", ...(hero ? ["Outlook sync"] : [])]],
-    ["In progress", [REQUEST, ...(hero ? ["Shared calendars"] : [])]],
-    ["Completed", ["Time zones", "Keyboard shortcuts", ...(hero ? ["Reminders by SMS"] : [])]],
+    ["Planned", ["Dark mode", "Recurring events"]],
+    ["In progress", [REQUEST]],
+    ["Completed", ["Time zones", "Keyboard shortcuts"]],
   ];
   return (
-    <Pic className={hero ? "hero-sc sc-rm" : "cell-sc sc-rm"} label="A roadmap: Planned, In progress and Completed, with feature requests in each">
+    <Pic className="cell-sc sc-rm" label="A roadmap: Planned, In progress and Completed, with feature requests in each">
       {columns.map(([name, cards]) => (
         <div key={name}>
           <small>{name}</small>
@@ -357,6 +398,69 @@ export function CellRoadmap({ hero }: { hero?: boolean }) {
           ))}
         </div>
       ))}
+    </Pic>
+  );
+}
+
+/** The roadmap page: each column's requests with a category, or the day it shipped, and their votes. */
+export function HeroRoadmap() {
+  const columns: [string, string, [string, string, number][]][] = [
+    [
+      "Planned",
+      "plan",
+      [
+        ["Dark mode", "Theme", 27],
+        ["Recurring events", "Events", 18],
+        ["Outlook sync", "Integrations", 15],
+        ["Booking pages", "Sharing", 11],
+        ["Week numbers", "Calendar", 6],
+      ],
+    ],
+    [
+      "In progress",
+      "prog",
+      [
+        [REQUEST, "Integrations", 42],
+        ["Shared calendars", "Teams", 31],
+        ["Offline mode", "Apps", 14],
+      ],
+    ],
+    [
+      "Completed",
+      "done",
+      [
+        ["Time zones", "Shipped Oct 28", 38],
+        ["Keyboard shortcuts", "Shipped Oct 14", 22],
+        ["Reminders by SMS", "Shipped Sep 30", 19],
+        ["iCal export", "Shipped Sep 12", 9],
+      ],
+    ],
+  ];
+  return (
+    <Pic className="hero-sc sc-rmh" label="A roadmap: five requests planned, three in progress with Google Calendar sync on top, four completed, each with its votes">
+      <div className="sc-boardhead">
+        <b>Roadmap</b>
+        <span className="sc-btn">Share an idea</span>
+      </div>
+      <div className="cols">
+        {columns.map(([name, tone, cards]) => (
+          <div key={name} className="col">
+            <small className={tone}>
+              {name} <span>{cards.length}</span>
+            </small>
+            {cards.map(([title, meta, votes]) => (
+              <div key={title} className="card">
+                <b>{title}</b>
+                <span>{meta}</span>
+                <em>
+                  {votes}
+                  <small>votes</small>
+                </em>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </Pic>
   );
 }
@@ -441,9 +545,27 @@ export function HeroWidget() {
     <Pic className="hero-sc sc-hw" label={`An app with Tuti's widget open over it. ${WIDGET}`}>
       <div className="app" aria-hidden>
         <b>Calendar</b>
-        <i />
-        <i />
-        <i />
+        <div className="wk">
+          {(
+            [
+              ["Mon", [["9:00", "Standup"], ["11:30", "Design review"], ["15:00", "Hiring sync"]]],
+              ["Tue", [["9:00", "Standup"], ["10:00", "Customer call"], ["14:00", "1:1 with Maya"], ["16:30", "Gym"]]],
+              ["Wed", [["9:00", "Standup"], ["13:00", "Planning"], ["15:30", "Focus time"]]],
+              ["Thu", [["9:00", "Standup"], ["11:00", "Demo day"], ["12:30", "Team lunch"], ["17:00", "Book club"]]],
+              ["Fri", [["9:00", "Standup"], ["14:00", "Retro"], ["16:00", "Drinks"]]],
+            ] as [string, [string, string][]][]
+          ).map(([day, events]) => (
+            <div key={day}>
+              <small>{day}</small>
+              {events.map(([time, name]) => (
+                <i key={name}>
+                  <small>{time}</small>
+                  {name}
+                </i>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
       <div className="sc-wdg">
         <WidgetPanel />
