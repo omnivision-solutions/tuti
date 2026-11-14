@@ -147,7 +147,7 @@ export function WidgetPreview({
           type="button"
           aria-label={`Launcher: ${label}`}
           aria-expanded={open}
-          aria-controls={open ? panelId : undefined}
+          aria-controls={open && hydrated ? panelId : undefined}
           title={label}
           onClick={() => {
             clicked.current = true;
