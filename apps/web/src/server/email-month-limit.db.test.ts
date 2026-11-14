@@ -274,8 +274,8 @@ test("a new project's shipped emails held by its daily cap are due when the cap 
   await call(updatePost, team, { number: post.number, status: "completed" });
   const shipped = () => voters.filter((voter) => emailsTo(voter.email).some((email) => email.subject.startsWith("Done:"))).length;
   expect(shipped()).toBe(1);
-  // Due at tomorrow's start (UTC), not now: held from now, it would leave the day's look-back before the cap resets.
-  const tomorrow = new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth(), 16));
+  // Due a minute past tomorrow's start (UTC), not now: held from now, it would leave the day's look-back before the cap resets.
+  const tomorrow = new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth(), 16, 0, 1));
   const { id: postId, shippedEmailsDueAt } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true, shippedEmailsDueAt: true } });
   expect(shippedEmailsDueAt).toEqual(tomorrow);
 
@@ -324,7 +324,7 @@ test("a shipped email whose send fails gives its slot back: the month counts wha
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 5 });
 });
 
-const tomorrow = () => new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth(), 16));
+const tomorrow = () => new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth(), 16, 0, 1));
 
 test("a new project past its daily cap: email due now whose job never ran is moved to the cap's reset, within the look-back then", async () => {
   const { project, team } = await setup();
@@ -361,6 +361,35 @@ test("a full month's sample post isn't moved, and tells nobody", async () => {
   await handlers.resubmitShippedEmails({}, log);
   expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).shippedEmailsDueAt).toEqual(late);
   expect(limitEmails(owner.email)).toHaveLength(0);
+});
+
+test("on a month's last day, a resume still drops what the daily cap held: its hold is never the monthly limit's marker", async () => {
+  const lastDay = new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth() + 1, 0, 12));
+  vi.setSystemTime(lastDay);
+  const { project } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+  await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 } });
+  await votedPost(project);
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date(Date.now() - 15 * 60_000) } });
+  await handlers.resubmitShippedEmails({}, log);
+  const due = async () => (await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).shippedEmailsDueAt;
+  // A minute past next month's first instant: the daily cap's, not the monthly limit's.
+  expect(await due()).toEqual(new Date(nextMonth().getTime() + 60_000));
+  const pausedAt = new Date(Date.now() - 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+  expect(await due()).toBeNull();
+});
+
+test("held for a month that has reset, a shipped email whose send fails is due from now, not retried every run for months", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 5; }));
+  const { project } = await setup();
+  const { voters } = await votedPost(project);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: month() } });
+  mailbox.refuseNext(voters[0]!.email);
+  await expect(handlers.postShipped({ postId }, log)).rejects.toThrow(/failed/);
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt!.getTime()).toBe(Date.now());
 });
 
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {

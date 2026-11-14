@@ -922,6 +922,36 @@ describe("the project's email limits", () => {
     // The file's entries aside: only this project's is found.
     const others = () => prisma.changelogEntry.updateMany({ where: { projectId: { not: project.id } }, data: { subscribersEmailDueAt: null } });
 
+    test("a new project past its daily cap: an entry due now whose job never ran is moved to a minute past tomorrow's start", async () => {
+      await confirmed(newAddress());
+      await publishEntry("Dark mode");
+      await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+      await prisma.projectEmailDay.upsert({
+        where: { projectId_day: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)) } },
+        create: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 },
+        update: { claimed: 200 },
+      });
+      // Its month has room: only the daily cap holds it.
+      await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: new Date(Date.now() - 15 * 60_000) } });
+      await handlers.resubmitChangelogEmails({}, log);
+      expect(await due()).toEqual(new Date(Date.UTC(midMonth.getUTCFullYear(), midMonth.getUTCMonth(), 16, 0, 1)));
+    });
+
+    test("held for a month that has reset, an entry whose send fails is due from now, not retried every run for months", async () => {
+      const [kim, lee] = [newAddress(), newAddress()];
+      await confirmed(kim);
+      await confirmed(lee);
+      await publishEntry("Dark mode");
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: thisMonth } });
+      await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+      const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+      const unsent = entryEmailsTo(kim).length === 0 ? kim : lee;
+      mailbox.refuseNext(unsent);
+      await expect(handlers.changelogEmailed({ entryId }, log)).rejects.toThrow(/failed/);
+      expect((await due())!.getTime()).toBe(Date.now());
+    });
+
     test("an entry's rest wait for next month; the safety net leaves it while the month's full, and an upgrade lets it go", async () => {
       const [kim, lee] = [newAddress(), newAddress()];
       await confirmed(kim);
@@ -1065,9 +1095,9 @@ describe("the project's email limits", () => {
     });
     await publishEntry("Dark mode");
     expect(entryEmailsTo(kim).length + entryEmailsTo(lee).length).toBe(1);
-    // The cap's day goes on till midnight: the cron leaves it. It's due from then (dueAgain), and late ten minutes on.
+    // The cap's day goes on till midnight: the cron leaves it. It's due a minute past (dueAgain), and late ten minutes on.
     vi.setSystemTime(Date.now() + 24 * 60 * 60_000);
-    vi.setSystemTime(Date.now() + 6 * 60_000);
+    vi.setSystemTime(Date.now() + 7 * 60_000);
     await handlers.resubmitChangelogEmails({}, log);
     expect([entryEmailsTo(kim).length, entryEmailsTo(lee).length]).toEqual([1, 1]);
   });

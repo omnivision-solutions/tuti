@@ -14,8 +14,11 @@ const capping = () => plansEnabled() && !!process.env.SUPPORT_EMAIL_DOMAIN?.trim
 
 /** The calendar month (UTC) `now` is in, as `project_email_month` keeps it (its first day), and the next one's. */
 const monthOf = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-/** When a new project's daily cap resets: tomorrow's start (UTC). */
-export const tomorrow = (now: Date) => new Date(today(now).getTime() + 24 * 60 * 60_000);
+/**
+ * When what a new project's daily cap held is due: a minute past tomorrow's start (UTC), when the cap has reset. Never a
+ * month's first instant, which marks what the monthly limit holds (dueAgain), so the two stay apart (a resume drops one).
+ */
+export const tomorrow = (now: Date) => new Date(today(now).getTime() + 24 * 60 * 60_000 + 60_000);
 export const nextMonth = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 
 /**

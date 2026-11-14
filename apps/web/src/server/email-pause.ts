@@ -26,14 +26,14 @@ export async function resumeEmailSending(token: string): Promise<FormState> {
       // What the pause held to many people (changelog entries, posts' shipped emails, replies' emails to voters) isn't sent:
       // they went to the list that bounced or complained. Replies to a conversation still go: someone's waiting on them.
       // Published ones only: an unpublished entry keeps what's left of its emails for when it's published again. Not
-      // what the monthly limit holds for next month (due on its first day): the pause didn't hold it. What the daily cap
-      // held (due at its reset, tomorrow) went to the same list: dropped with the rest.
+      // what the monthly limit holds for next month (due at its first instant): the pause didn't hold it. What the daily cap
+      // held (due a minute past tomorrow's start, never that instant) went to the same list: dropped with the rest.
       await tx.changelogEntry.updateMany({
-        where: { projectId: pause.projectId, publishedAt: { not: null }, subscribersEmailDueAt: { lt: nextMonth(now) } },
+        where: { projectId: pause.projectId, publishedAt: { not: null }, subscribersEmailDueAt: { not: nextMonth(now) } },
         data: { subscribersEmailDueAt: null },
       });
-      await tx.post.updateMany({ where: { projectId: pause.projectId, shippedEmailsDueAt: { lt: nextMonth(now) } }, data: { shippedEmailsDueAt: null } });
-      await tx.comment.updateMany({ where: { projectId: pause.projectId, votersEmailDueAt: { lt: nextMonth(now) } }, data: { votersEmailDueAt: null } });
+      await tx.post.updateMany({ where: { projectId: pause.projectId, shippedEmailsDueAt: { not: nextMonth(now) } }, data: { shippedEmailsDueAt: null } });
+      await tx.comment.updateMany({ where: { projectId: pause.projectId, votersEmailDueAt: { not: nextMonth(now) } }, data: { votersEmailDueAt: null } });
       // The cap's count (claimed) stays: it's today's either way.
       await tx.projectEmailDay.updateMany({
         where: { projectId: pause.projectId, day: new Date(now.toISOString().slice(0, 10)) },
