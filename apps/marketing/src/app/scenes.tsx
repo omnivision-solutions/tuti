@@ -20,7 +20,7 @@ function Pic({ label, className, children }: { label: string; className?: string
   );
 }
 
-const Pill = ({ tone, children }: { tone: "prog" | "done" | "plan" | "open" | "new"; children: ReactNode }) => <span className={`sc-pill ${tone}`}>{children}</span>;
+const Pill = ({ tone, children }: { tone: "prog" | "done" | "plan" | "open" | "upd"; children: ReactNode }) => <span className={`sc-pill ${tone}`}>{children}</span>;
 
 const ARTICLE = "Sync with Google Calendar";
 const REQUEST = "Google Calendar sync";
@@ -180,7 +180,7 @@ export function HeroAutopilot() {
         <small>From #230</small>
         <div className="sc-card">
           <div className="h">
-            <FileTextIcon {...i} /> {ARTICLE} <Pill tone="new">Updated</Pill>
+            <FileTextIcon {...i} /> {ARTICLE} <Pill tone="upd">Updated</Pill>
           </div>
           <Diff />
         </div>

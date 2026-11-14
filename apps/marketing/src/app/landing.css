@@ -295,7 +295,9 @@
   .sc small { display: flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
   .sc-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
   .sc-pill.prog { background: #fbe9de; color: #a0461e; }
-  .sc-pill.done, .sc-pill.new { background: var(--g50); color: var(--g7); }
+  .sc-pill.done { background: var(--g50); color: var(--g7); }
+  /* Autopilot's Updated: amber (docs/design.md, Autopilot). */
+  .sc-pill.upd { background: #f5ecd9; color: #7a5a17; }
   .sc-pill.plan { background: #e3edfb; color: #1f4f9a; }
   .sc-pill.open { background: #f1eee7; color: var(--muted); }
   .sc-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
@@ -395,6 +397,8 @@
   .sc-rep i { height: 8px; border-radius: 9px; background: #e8893a; }
 
   @media (max-width: 640px) {
+    /* The window grows with its scene, which stacks into one column. */
+    .win { max-height: none; }
     .hero-sc { padding: 18px 14px; min-height: 0; }
     .sc-ap, .sc-ib { grid-template-columns: 1fr; gap: 14px; }
     .sc-list { display: none; }
