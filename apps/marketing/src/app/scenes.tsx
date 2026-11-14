@@ -363,7 +363,7 @@ export const CellChangelog = () => (
 
 export function CellVerify() {
   return (
-    <Pic className="cell-sc sc-ver" label="An article checked against the code: two steps match, one says every 15 minutes where the code now syncs every 5">
+    <Pic className="cell-sc sc-ver" label="An article checked against the code: one step matches, another says every 15 minutes where the code now syncs every 5">
       <span>
         <CheckIcon {...i} /> Connect Google in Settings → Integrations.
       </span>
@@ -387,8 +387,10 @@ export function CellReporting() {
       {gaps.map(([query, count]) => (
         <div key={query}>
           <span>“{query}”</span>
-          <i style={{ width: `${count * 6}%` }} />
-          <b>{count}</b>
+          <span className="track">
+            <i style={{ width: `${(count / gaps[0][1]) * 85}%` }} />
+            <b>{count}</b>
+          </span>
         </div>
       ))}
     </Pic>

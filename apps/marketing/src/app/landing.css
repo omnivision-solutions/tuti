@@ -388,8 +388,9 @@
   .sc-ver .bad b { color: #f0a35a; width: 14px; text-align: center; }
   .sc-ver em { flex-basis: 100%; padding-left: 22px; font-style: normal; font-size: 12.5px; color: #f6c899; }
   .sc-rep { display: grid; gap: 8px; }
-  .sc-rep div { display: flex; align-items: center; gap: 12px; font-size: 14.5px; }
-  .sc-rep span { flex: none; width: 180px; }
+  /* Each bar a share of the track beside its search, the longest 85%. */
+  .sc-rep div { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 12px; font-size: 14.5px; }
+  .sc-rep .track { display: flex; align-items: center; gap: 10px; }
   .sc-rep i { height: 8px; border-radius: 9px; background: #e8893a; }
 
   @media (max-width: 640px) {
@@ -398,6 +399,6 @@
     .sc-list { display: none; }
     .sc-tiles { grid-template-columns: 1fr 1fr; }
     .sc-tiles span:last-child { display: none; }
-    .sc-rep span { width: 140px; }
+    .sc-rep div { grid-template-columns: 130px minmax(0, 1fr); }
   }
 }
