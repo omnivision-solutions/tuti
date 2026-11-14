@@ -180,16 +180,17 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         pills={
           <BoardPillRow>
             {boards.length > 1 && (
-              <BoardSwitcher
-                name={board.name}
-                allHref={at("/feedback")}
-                boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
-                className="min-w-0 shrink lg:hidden"
-              />
-            )}
-            {boards.length > 1 && (
-              <div className="ml-auto shrink-0 lg:hidden">
-                <BoardStatusMenu choices={statusChoices} counted={!searching} />
+              // Its own line, so a long board name is cut short rather than pushing the status menu to a row of its own.
+              <div className="flex min-w-0 basis-full items-center gap-1.5 lg:hidden">
+                <BoardSwitcher
+                  name={board.name}
+                  allHref={at("/feedback")}
+                  boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
+                  className="min-w-0 shrink"
+                />
+                <div className="ml-auto shrink-0">
+                  <BoardStatusMenu choices={statusChoices} counted={!searching} />
+                </div>
               </div>
             )}
             <div className={cn("shrink-0", boards.length > 1 && "max-lg:basis-full")}>

@@ -1246,7 +1246,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
     expect(statusBox.x).toBeGreaterThan(switcherBox.x + switcherBox.width);
     expect(trendingBox.y).toBeGreaterThan(switcherBox.y + switcherBox.height);
     expect(newBox.y).toBe(trendingBox.y);
-    await expect(switcher.locator("..")).not.toHaveAttribute("data-more");
+    await expect(switcher.locator("../..")).not.toHaveAttribute("data-more");
   }
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-board-row-phone", { fullPage: false });
@@ -2665,7 +2665,7 @@ test("a board on a phone: its pills in two rows, Tab in the order they show, and
   await visitor.goto("/feedback/feature-requests");
   const main = visitor.getByRole("main");
   const switcher = main.getByRole("button", { name: "Board: Feature requests" });
-  const row = switcher.locator("xpath=..");
+  const row = switcher.locator("xpath=../..");
   const status = main.getByRole("button", { name: /^Status: / });
   // Row 1 the switcher and the status menu, row 2 the sorts; nothing past the screen's 16px margin, nothing to scroll.
   const width = await visitor.evaluate(() => document.body.getBoundingClientRect().width);
