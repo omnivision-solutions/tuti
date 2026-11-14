@@ -65,7 +65,9 @@ function FeaturesMenu() {
       if (root.current?.contains(document.activeElement)) button.current?.focus();
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpenOn(null);
+      if (root.current?.contains(event.target as Node)) return;
+      window.clearTimeout(timer.current);
+      setOpenOn(null);
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPointerDown);
