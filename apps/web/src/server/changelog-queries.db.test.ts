@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, closeRunningDraft, onlyPullRequestTitles, setChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, autopilotLines, closeRunningDraft, onlyPullRequestTitles, setChangelogLine } from "@tuti/jobs";
 import { describe, expect, test } from "vitest";
 
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
@@ -156,4 +156,36 @@ test("a draft's text is still its pull requests' titles until someone writes it"
   // An entry without pull requests never is.
   await call(createChangelogEntry, context, { title: "Hello", body: "" });
   expect(await titlesOnly(3)).toBe(false);
+});
+
+test("Autopilot's lines are those in the draft that it wrote or the team approved as they were: not one the team reworded, nor one waiting, dismissed or undone", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  const lineFor = (number: number, payload: object, status: "APPLIED" | "PENDING" | "DISMISSED" | "UNDONE" = "APPLIED") =>
+    prisma.codeChange.create({
+      data: {
+        projectId: project.id,
+        repoId: 1,
+        repo: "acme/app",
+        number,
+        url: `https://github.com/acme/app/pull/${number}`,
+        title: `Change ${number}`,
+        author: "octo",
+        mergedAt: new Date(),
+        state: "READY",
+        actions: { create: [{ kind: "CHANGELOG_LINE", probability: 1, status, payload }] },
+      },
+    });
+  await lineFor(1, { line: "Dark theme", undo: { previous: "Change 1 (acme/app#1)", added: null } });
+  await lineFor(2, { line: "Faster search", edited: false });
+  await lineFor(3, { line: "Search, now in every board", edited: true });
+  await lineFor(4, { line: "Not in this entry" });
+  // Not in the draft: a line the team typed that says the same is theirs.
+  await lineFor(5, { line: "Waiting to be approved" }, "PENDING");
+  await lineFor(6, { line: "Dismissed by the team" }, "DISMISSED");
+  await lineFor(7, { line: "Put back by Undo" }, "UNDONE");
+  const urls = [1, 2, 3, 5, 6, 7].map((number) => `https://github.com/acme/app/pull/${number}`);
+  expect((await autopilotLines(project.id, urls)).sort()).toEqual(["Dark theme", "Faster search"]);
+  // Another project's pull request at the same address isn't this one's.
+  expect(await autopilotLines((await createProject(owner)).id, urls)).toEqual([]);
 });
