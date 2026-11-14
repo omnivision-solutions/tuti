@@ -11,8 +11,10 @@ import {
   MessageCircleIcon,
   PlusIcon,
   ShieldCheckIcon,
+  SparklesIcon,
   ZapIcon,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -23,7 +25,11 @@ import { HeroTabs } from "./hero-tabs";
 import { DOCS, REPO_URL, SIGN_UP } from "./links";
 import { Switch } from "./switch";
 import "./landing.css";
+import chatgpt from "./logos/chatgpt.svg";
+import claude from "./logos/claude.svg";
+import cursor from "./logos/cursor.svg";
 import {
+  CellAiTools,
   CellChangelog,
   CellFeedback,
   CellHelp,
@@ -43,7 +49,7 @@ import {
 } from "./scenes";
 
 /**
- * The home page (page.tsx; look in landing.css): the promise over a window onto each part of Tuti,
+ * The home page (page.tsx; look in landing.css): the promise over a window onto each part of Tuti, the problem,
  * Autopilot's steps, a grid of the rest, switching, open source, pricing and questions. Copy is short and unqualified:
  * plan details live on /pricing (docs/design.md, Marketing copy). Pictures are scenes in the product's style (scenes.tsx).
  */
@@ -75,6 +81,7 @@ export function Landing({ aiInEveryPlan }: { aiInEveryPlan: boolean | null }) {
   return (
     <div data-full className="lp">
       <Hero />
+      <Familiar />
       <Autopilot />
       <Bento />
       <Switch />
@@ -144,6 +151,32 @@ function Step({ n, title, line, children }: { n: ReactNode; title: string; line:
 }
 
 /** The problem Autopilot solves: the product moved on, the help center didn't. */
+function Familiar() {
+  const changes: [string, string][] = [
+    ["Renamed “Pro” to “Team”", "3 articles still say Pro"],
+    ["Moved Export to Settings", "Article shows the old menu"],
+    ["Shipped Google Calendar sync", "No article yet"],
+    ["Changed the reminder default", "Still says 1 day"],
+  ];
+  return (
+    <section className="fam">
+      <div className="wrap center">
+        <div className="eyebrow">Sound familiar?</div>
+        <h2>This week, you renamed a plan.</h2>
+        <p className="sub">Your help center still says the old name.</p>
+        <ul className="changes">
+          {changes.map(([change, stale]) => (
+            <li key={change}>
+              <b>{change}</b>
+              <span>{stale}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 function Autopilot() {
   return (
     <section id="autopilot" className="line">
@@ -204,6 +237,13 @@ function Cell({ id, className, icon: ic, label, title, line, children }: { id?: 
   );
 }
 
+// MCP clients that edit a help center through Tuti's MCP server (the app's /api/mcp).
+const AI_TOOLS = [
+  ["Claude Code", claude],
+  ["Cursor", cursor],
+  ["ChatGPT", chatgpt],
+] as const;
+
 function Bento() {
   return (
     <section className="bento-s">
@@ -239,6 +279,17 @@ function Bento() {
           </div>
           <Cell className="c-rep" icon={<ChartColumnIcon {...icon} />} label="Reporting" title="See what customers can't find.">
             <CellReporting />
+          </Cell>
+          <Cell id="ai-tools" className="c-mcp" icon={<SparklesIcon {...icon} />} label="AI tools" title="Run it from your AI tools." line="Write and update articles from Claude Code, Cursor or ChatGPT.">
+            <div className="tools">
+              {AI_TOOLS.map(([name, logo]) => (
+                <span key={name}>
+                  <Image src={logo} alt="" width={18} height={18} unoptimized />
+                  {name}
+                </span>
+              ))}
+            </div>
+            <CellAiTools />
           </Cell>
         </div>
       </div>
