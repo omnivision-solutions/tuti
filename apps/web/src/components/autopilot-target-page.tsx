@@ -266,6 +266,7 @@ export async function AutopilotTargetPage({
           ) : (
             <PostReview
               projectSlug={slug}
+              viewer={membership.userId}
               post={post!}
               reach={review.reach}
               update={postUpdate}

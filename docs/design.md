@@ -128,8 +128,8 @@ Feedback (its icon) → each board → its posts, Help center (a stack) → each
 under Help center; lines join each row to its parent. Boards and collections come in the
 order of their first post or article: under To review the most reached first (each one's
 too), under Reviewed the latest decided first. From laptop width up To review opens its first
-beside it (Reviewed and Activity say what their rows open), and once one is reviewed, the next row down
-opens. A row is the list's whole width,
+beside it, and a tab picked opens its own first row (never another tab's; none while it has none: it says what its
+rows open), and once one is reviewed, the next row down opens. A row is the list's whole width,
 highlighted while it's open beside it, and keeps each post or article to a line or two,
 to skim many: its title cut to one (in full on hover, and on its page), its badge at
 the end, then when it goes out by itself, if it does (or who stopped it). Each is reviewed on its page:

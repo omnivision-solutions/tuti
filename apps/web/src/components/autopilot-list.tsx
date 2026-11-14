@@ -130,10 +130,6 @@ export function AutopilotPanes({
   const [decided, setDecided] = useState<string | null>(null);
   // A new object each time: the same change opening twice in a row still opens.
   const [opening, setOpening] = useState<{ id: string } | null>(null);
-  // To review's first while it opens by itself on the way in (until it's open), and the one a tab was picked during:
-  // once it's open, the tab picked stays.
-  const autoOpening = useRef<string | null>(null);
-  const [pickedWhileOpening, setPickedWhileOpening] = useState<string | null>(null);
   const [seen, setSeen] = useState({ toReview, where });
   if (seen.toReview !== toReview || seen.where !== where) {
     setSeen({ toReview, where });
@@ -144,15 +140,23 @@ export function AutopilotPanes({
     if (next) {
       setTab("review");
       setOpening({ id: next });
-    } else if (where && where !== seen.where && selected !== pickedWhileOpening) {
+    } else if (where && where !== seen.where) {
       setTab(where);
-    }
-    if (pickedWhileOpening && where !== seen.where) {
-      setPickedWhileOpening(null);
     }
   }
   const opened = useRef<string | null>(null);
   const aside = useRef<HTMLElement>(null);
+  // The tab whose page a pick asked for and that hasn't come yet (null once the page moves): a later pick is
+  // compared with it, so the latest pick's page is the one that opens.
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    asked.current = null;
+  }, [selected]);
+  // From laptop width up the list and the open page are side by side (the CSS layout says so).
+  const beside = () => {
+    const panes = aside.current?.closest<HTMLElement>("[data-slot=pane-layout]");
+    return !!panes && getComputedStyle(panes).flexDirection === "row";
+  };
   useEffect(() => {
     if (opening) {
       opened.current = opening.id;
@@ -170,25 +174,28 @@ export function AutopilotPanes({
     }
     arrived.current = true;
     // Read the CSS layout once: opening a first item only makes sense while its list fits beside it.
-    const panes = aside.current?.closest<HTMLElement>("[data-slot=pane-layout]");
-    const beside = panes && getComputedStyle(panes).flexDirection === "row";
-    if (selected === null && tab === "review" && first && !notice && beside) {
-      autoOpening.current = first;
+    if (selected === null && tab === "review" && first && !notice && beside()) {
       router.replace(`/app/${projectSlug}/autopilot/${first}`);
     }
   }, [selected, tab, first, notice, router, projectSlug]);
-  // Over once any page opens (the first, or another picked before it landed, which drops it).
-  useEffect(() => {
-    if (selected !== null) {
-      autoOpening.current = null;
-    }
-  }, [selected]);
-  // A tab picked (its row, or To review's "see Activity"): kept if the opening on the way in is still under way.
+  // A tab picked (or To review's "see Activity"). Beside the list, the page shows one of the tab's own rows, never
+  // another tab's (a review still waiting, with its Approve, under Reviewed): its first, or none while it has none.
+  // A page opened by itself on the way in, or asked for by an earlier pick, not there yet, is dropped for it: back to
+  // the open page's own tab, that page again.
   const pick = (value: string) => {
-    if (autoOpening.current) {
-      setPickedWhileOpening(autoOpening.current);
-    }
     setTab(value);
+    if (value === (asked.current ?? where) || !beside()) {
+      return;
+    }
+    if (value === where) {
+      asked.current = null;
+      router.push(`/app/${projectSlug}/autopilot${selected ? `/${selected}` : ""}`);
+      return;
+    }
+    asked.current = value;
+    const rows = value === "review" ? treeOrder(toReview) : value === "reviewed" ? treeOrder(reviewed) : activity;
+    const top = rows[0]?.id ?? (value === "activity" ? "activity" : null);
+    router.push(top ? `/app/${projectSlug}/autopilot/${top}` : `/app/${projectSlug}/autopilot`);
   };
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
   // the button that was focused, went away); where the list is hidden, to the page's title, or on phones (where

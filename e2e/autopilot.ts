@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 import { expect } from "@playwright/test";
 import pg from "pg";
@@ -203,6 +203,42 @@ export async function scheduledDraft(slug: string, title: string): Promise<strin
       [slug, title],
     );
     return rows[0]!.id;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * A post's progress update set waiting for the team (not stopped by anyone) or going out by itself (as Autopilot's hold
+ * puts it), whichever it is now.
+ */
+export async function setPostUpdate(slug: string, title: string, status: "PENDING" | "SCHEDULED") {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      `UPDATE code_change_action a SET status = $3::"CodeChangeActionStatus", "waitReason" = NULL, "decidedById" = NULL,
+         "dueAt" = CASE WHEN $3 = 'SCHEDULED' THEN (now() AT TIME ZONE 'UTC') + interval '1 day' END
+       FROM post p JOIN project pr ON pr.id = p."projectId"
+       WHERE a."postId" = p.id AND p.title = $2 AND pr.slug = $1 AND a.kind = 'MOVES_FORWARD' AND a.status IN ('PENDING', 'SCHEDULED')`,
+      [slug, title, status],
+    );
+    expect(rowCount).toBe(1);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Adds an account (by email) to a project's team as an admin, without an invite. */
+export async function joinTeam(slug: string, email: string) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      `INSERT INTO team_member (id, "projectId", "userId", role) SELECT $1, p.id, u.id, 'ADMIN' FROM project p, "user" u WHERE p.slug = $2 AND u.email = $3`,
+      [randomUUID(), slug, email],
+    );
+    expect(rowCount).toBe(1);
   } finally {
     await client.end();
   }
