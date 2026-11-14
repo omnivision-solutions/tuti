@@ -399,8 +399,17 @@ function Final() {
     <section className="final">
       <div className="wrap">
         <TutiMark className="mark" />
-        <h2>Give every customer an answer.</h2>
+        <h2>Stop writing docs after every release.</h2>
+        <p className="sub">Tuti updates them as you ship, and you get your week back.</p>
         <Ctas />
+        <ul className="ticks">
+          {["7-day free trial, no card", "Import from Intercom, Ferndesk and more", "Redirects for old links", "Open source"].map((item) => (
+            <li key={item}>
+              <CheckIcon aria-hidden size={16} />
+              {item}
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
