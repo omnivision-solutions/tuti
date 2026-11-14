@@ -25,7 +25,7 @@ export const metadata: Metadata = {
  * a class this site never sets). The app is another app on the same domain (README, "Production routing").
  */
 export default function MarketingLayout({ children }: LayoutProps<"/">) {
-  // Tuti's own project, whose widget every page carries (tuti.so: "docs"); unset (a self-hosted build), no widget.
+  // Tuti's own project, whose widget every page carries (tuti.so: "help"); unset (a self-hosted build), no widget.
   const widgetProject = process.env.WIDGET_PROJECT?.trim();
   return (
     <html lang="en" className={`${brandFonts} h-full antialiased`}>
