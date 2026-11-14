@@ -87,7 +87,11 @@ function FeaturesMenu() {
         }, OPEN_DELAY_MS);
       }}
       onPointerLeave={(event) => {
-        if (event.pointerType === "mouse") later(close, CLOSE_DELAY_MS);
+        if (event.pointerType !== "mouse") return;
+        // With the keyboard in the panel it stays: hiding it would drop the focus; Escape, Tab out or a click closes it.
+        later(() => {
+          if (!panel.current?.contains(document.activeElement)) close();
+        }, CLOSE_DELAY_MS);
       }}
       onBlur={(event) => {
         // Focus going nowhere (a click on the panel's background) leaves it open: a click outside closes it (pointerdown).
