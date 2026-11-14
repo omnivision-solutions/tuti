@@ -22,8 +22,8 @@ export const pillClass = (picked = false, className?: string) =>
 
 /**
  * A page's views as pills in its pane header ("All 38", "Mine 4"): links, the open one filled (views in the query string
- * too: `activeView`). One row that never
- * wraps; with too little room it scrolls sideways, faded at the end that has more (`useScrollingRow`).
+ * too: `activeView`). One row that doesn't wrap (unless `className` says so, as a portal board's sorts on phones);
+ * with too little room it scrolls sideways, faded at the end that has more (`useScrollingRow`).
  */
 export function FilterPills({
   label,
