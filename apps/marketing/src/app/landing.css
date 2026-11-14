@@ -47,6 +47,10 @@
   .btn-d:hover { background: rgba(255, 255, 255, 0.14); }
   .ctas { display: flex; gap: 12px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
   .ctas.left { justify-content: flex-start; }
+  /* A section's text link beside its button */
+  .tlink { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 48px; padding: 0 10px; font-weight: 600; color: var(--g7); }
+  .tlink:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .tlink.ask { height: auto; padding: 0; margin-top: 24px; }
 
   /* Sections */
   section { padding: 120px 0; scroll-margin-top: 64px; }
@@ -211,7 +215,7 @@
   .faq > * { min-width: 0; }
   .faq h2 { margin-top: 0; }
   details { border-top: 1px solid var(--line); }
-  details:last-child { border-bottom: 1px solid var(--line); }
+  details:last-of-type { border-bottom: 1px solid var(--line); }
   summary {
     list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 0;
     font: 650 20px/1.3 var(--font-heading); letter-spacing: -0.02em;
