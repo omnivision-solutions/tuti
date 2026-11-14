@@ -88,7 +88,8 @@ function FeaturesMenu() {
         if (event.pointerType === "mouse") later(close, CLOSE_DELAY_MS);
       }}
       onBlur={(event) => {
-        if (!root.current?.contains(event.relatedTarget as Node | null)) close();
+        // Focus going nowhere (a click on the panel's background) leaves it open: a click outside closes it (pointerdown).
+        if (event.relatedTarget && !root.current?.contains(event.relatedTarget as Node)) close();
       }}
     >
       <button
@@ -104,9 +105,12 @@ function FeaturesMenu() {
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown") return;
           event.preventDefault();
-          focusFirst.current = true;
           if (open) panel.current?.querySelector("a")?.focus();
-          else setOpenOn(pathname);
+          else {
+            // Focused once the panel shows (the effect above).
+            focusFirst.current = true;
+            setOpenOn(pathname);
+          }
         }}
         className="flex items-center gap-1 hover:text-foreground aria-expanded:text-foreground"
       >
