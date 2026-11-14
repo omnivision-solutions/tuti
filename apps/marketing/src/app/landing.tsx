@@ -403,7 +403,7 @@ function Final() {
         <p className="sub">Tuti updates them as you ship, and you get your week back.</p>
         <Ctas />
         <ul className="ticks">
-          {["7-day free trial, no card", "Import from Intercom, Ferndesk and more", "Old links keep working", "Open source"].map((item) => (
+          {["7-day free trial, no card", "Import from Intercom, Ferndesk and more", "Redirects for old links", "Open source"].map((item) => (
             <li key={item}>
               <CheckIcon aria-hidden size={16} />
               {item}
