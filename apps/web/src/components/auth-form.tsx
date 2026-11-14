@@ -28,7 +28,7 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
  * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
  * on the way back to a portal: that portal's, so the reset comes back there). `pages` is where the other sign-in pages are:
- * the app's under /app/auth, a portal's at its root.
+ * the app's under /app/auth, a portal's at its root. `submitLabel` replaces the button's text (sign-up's "Start free trial").
  */
 export function AuthForm({
   mode,
@@ -46,6 +46,7 @@ export function AuthForm({
   mark,
   teamHref,
   pages = "",
+  submitLabel,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -63,6 +64,7 @@ export function AuthForm({
   mark?: React.ReactNode;
   teamHref?: string;
   pages?: string;
+  submitLabel?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -211,7 +213,7 @@ export function AuthForm({
         </CardContent>
         <CardFooter className={cn("mt-6 flex flex-col gap-3", portal && "mt-4 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10")}>
           <Button type="submit" disabled={pending} className={cn("w-full", portal && "h-11 rounded-lg text-[0.9375rem] font-semibold")}>
-            {pending ? "…" : isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link"}
+            {pending ? "…" : submitLabel ?? (isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link")}
           </Button>
           {/* A portal's (sign-in links): the password way and resetting it, then a line: new here, or on the team. */}
           {portal && (

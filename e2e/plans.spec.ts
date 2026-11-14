@@ -263,6 +263,9 @@ test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign
   const page = await browser.newPage({ baseURL: CLOUD_URL });
   await page.goto("/app/auth/sign-up");
   await expect(page.getByText("By signing up, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
+  // Selling plans without a trial in its billing file: no trial on offer.
+  await expect(page.getByText("Create an account", { exact: true })).toBeVisible();
+  await expect(page.getByText(/free trial/)).toHaveCount(0);
   await checkpoint(page, "sign-up-terms");
   // Sign-in's Continue with Google or GitHub signs up someone new, so it says so too.
   await page.goto("/app/auth/sign-in");
@@ -275,6 +278,10 @@ test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign
   const selfHosted = await browser.newPage({ baseURL: APP_URL });
   await selfHosted.goto("/app/auth/sign-up");
   await expect(selfHosted.getByRole("button", { name: "Sign up" })).toBeVisible();
+  // No trials on a self-hosted server: the same pitch without one.
+  await expect(selfHosted.getByRole("heading", { name: "Ship code. Your help center keeps up." })).toBeVisible();
+  await expect(selfHosted.getByText("Create an account", { exact: true })).toBeVisible();
+  await expect(selfHosted.getByText(/free trial/)).toHaveCount(0);
   await expect(selfHosted.getByText("By signing up")).toHaveCount(0);
   await selfHosted.goto("/app/auth/sign-in");
   await expect(selfHosted.getByRole("button", { name: "Sign in" })).toBeVisible();
