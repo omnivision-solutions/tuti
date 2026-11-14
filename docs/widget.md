@@ -126,11 +126,11 @@ Elements added to the page later (single-page apps) get their panel when they ap
 
 ## Light or dark
 
-The widget takes your portal's colour scheme (Settings → Branding): light, dark, or, by default,
+The widget takes your portal's default theme (Settings → Branding): light, dark, or, by default,
 each visitor's own setting. The panel's accent colour is the portal's too, and so is the button's, unless you give it one of its
 own (Settings → Widget) or the accent wouldn't stand out on both light and dark pages (then it's Tuti's
 green). If your site has one look, pick the widget's with `data-theme` on the script tag
-(or `theme` in `TutiSettings`): `light`, `dark`, or `auto` (the default, the portal's colour scheme).
+(or `theme` in `TutiSettings`): `light`, `dark`, or `auto` (the default, the portal's default theme).
 The panel and inline panels take it, on every page the panel opens, and so does a Tuti green button
 (a button in your colour or the accent is the same in both).
 
@@ -180,7 +180,7 @@ panel instead of leaving the page.
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.open({ ask: "<question>" })` | Where the server has AI answers on: opens it with the AI assistant answering the question (up to 300 characters; over Home the first time), following on from the visitor's conversation so far. `ask: true` opens the assistant as it was. Your portal's Ask AI uses this. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
-| `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's colour scheme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
+| `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's default theme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
 | `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. Parts you turned off on Home (Settings → Widget) count too. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |

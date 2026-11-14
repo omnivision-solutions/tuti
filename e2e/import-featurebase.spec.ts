@@ -395,12 +395,14 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   await visitor.goto("/changelog");
   await expect(visitor.getByRole("heading", { name: "Faster exports" })).toBeVisible();
   await expect(visitor.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
-  // Its cover, and the image in it.
-  await expect(visitor.getByRole("img", { name: "Dark mode is here", exact: true })).toBeVisible();
-  await expect(visitor.getByRole("img", { name: "Dark mode", exact: true })).toBeVisible();
   await expect(visitor.getByText("Single sign-on")).toHaveCount(0);
   await expect(visitor.getByText("For our beta group")).toHaveCount(0);
   await checkpoint(visitor, "portal-changelog-imported");
+  // On its page (the list shows the newest's cover alone): its cover, and the image in it.
+  await visitor.getByRole("link", { name: "Dark mode is here" }).click();
+  await expect(visitor).toHaveURL(/\/changelog\/\d+$/);
+  await expect(visitor.getByRole("img", { name: "Dark mode is here", exact: true })).toBeVisible();
+  await expect(visitor.getByRole("img", { name: "Dark mode", exact: true })).toBeVisible();
 
   // In the app: the entry Featurebase emailed says so, and isn't emailed again; the one it didn't, says that.
   await owner.goto(`/app/${slug}/changelog/1`);

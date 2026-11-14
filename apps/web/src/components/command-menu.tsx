@@ -11,7 +11,7 @@ import {
   LoaderCircleIcon,
   MapIcon,
   MegaphoneIcon,
-  MessagesSquareIcon,
+  LightbulbIcon,
   PaintbrushIcon,
   PlusIcon,
   SearchIcon,
@@ -28,8 +28,8 @@ import { type AppSearchResult, searchApp } from "@/server/app-search";
 // The sidebar's icon for each part of the app, so every option says where it leads.
 const SECTION_ICONS = {
   home: HouseIcon,
-  inbox: MessagesSquareIcon,
-  feedback: InboxIcon,
+  inbox: InboxIcon,
+  feedback: LightbulbIcon,
   boards: LayoutListIcon,
   roadmap: MapIcon,
   changelog: MegaphoneIcon,

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
 import { diffBlocks } from "./diff";
-import { docHeadings, fromPlainText, imageKeysIn, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
+import { docHeadings, excerpt, fromPlainText, imageKeysIn, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
 import { schemaFor } from "./profiles";
 import { RichText } from "./react";
@@ -159,6 +159,24 @@ describe("plain text", () => {
     expect(isEmptyDoc(fromPlainText("  \n\n "))).toBe(true);
     expect(isEmptyDoc(doc(video("vimeo", "76979871")))).toBe(false);
     expect(isEmptyDoc(doc({ type: "image", attrs: { mediaId: "clx0abcdefghijklmnopqrstu", alt: "" } }))).toBe(false);
+  });
+
+  test("an excerpt is the prose, without media or code, cut at a word's end", () => {
+    const code = { type: "codeBlock", content: [text("npm install tuti")] };
+    const entry = doc(p(text("Dark mode is here.")), image(), video("vimeo", "76979871"), code, list("Easier at night"));
+    expect(excerpt(entry as never, 100)).toEqual({ text: "Dark mode is here.\nEasier at night", cut: false });
+    expect(excerpt(entry as never, 11)).toEqual({ text: "Dark mode…", cut: true });
+    // No "here.…": the cut's own punctuation goes.
+    expect(excerpt(entry as never, 20)).toEqual({ text: "Dark mode is here…", cut: true });
+    expect(excerpt(doc(p(text("Supercalifragilistic"))) as never, 5)).toEqual({ text: "Super…", cut: true });
+    expect(excerpt(doc(image()) as never, 100)).toEqual({ text: "", cut: false });
+    // Without spaces near the limit it's cut there, not back at an earlier line, and never inside a character.
+    expect(excerpt(doc(p(text("New")), p(text("界".repeat(30)))) as never, 20).text).toBe(`New\n${"界".repeat(16)}…`);
+    expect(excerpt(doc(p(text("😀".repeat(10)))) as never, 5).text).toBe("😀😀…");
+    // A long list of short lines, well under the characters: cut at its lines too.
+    const bullets = Array.from({ length: 12 }, (_, i) => `Fix ${i + 1}.`);
+    expect(excerpt(doc(list(...bullets)) as never, 600, 8)).toEqual({ text: `${bullets.slice(0, 7).join("\n")}\nFix 8…`, cut: true });
+    expect(excerpt(doc(list(...bullets.slice(0, 8))) as never, 600, 8)).toEqual({ text: bullets.slice(0, 8).join("\n"), cut: false });
   });
 });
 

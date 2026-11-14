@@ -73,6 +73,16 @@ export const billingSchema = z
       .strict()
       .optional()
       .describe('The add-on hiding "Powered by tuti", priced for plans billed each month and each year (and self-hosted licences, on Tuti\'s licence server). Absent: not sold. Keep a retired price listed after the new one while anyone pays it: only listed prices are recognised as the add-on, to show it and to remove it.'),
+    trial: z
+      .object({
+        plan: z.string().describe("The plan the trial gives: one of the plans."),
+        days: days.describe("How long it lasts."),
+        credits: count.default(0).describe("AI credits it gives, expiring when it ends (with AI credits on)."),
+        emails: count.nullable().default(null).describe("The trial's email allowance (trialTerms), for email limits; null: none."),
+      })
+      .strict()
+      .optional()
+      .describe("A free trial, no card: an account's first project starts on `plan` for `days` days, then is on the default plan unless it bought one. Absent: no trials."),
     historyKeptDays: days.default(365).describe("Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history."),
   })
   .strict()
@@ -85,6 +95,17 @@ export const billingSchema = z
     });
     if (!keys.includes(config.defaultPlan)) {
       context.addIssue({ code: "custom", path: ["defaultPlan"], message: `"${config.defaultPlan}" isn't one of the plans` });
+    }
+    if (config.trial && !keys.includes(config.trial.plan)) {
+      context.addIssue({ code: "custom", path: ["trial", "plan"], message: `"${config.trial.plan}" isn't one of the plans` });
+    }
+    // A trial gives at least the default plan's features (what a project without one has), so filtering projects by a
+    // feature can count a trial's as having the trial plan's alone.
+    const trialPlan = config.trial && config.plans.find(({ key }) => key === config.trial!.plan);
+    const defaultPlan = config.plans.find(({ key }) => key === config.defaultPlan);
+    const lacks = trialPlan && defaultPlan ? defaultPlan.features.filter((feature) => !trialPlan.features.includes(feature)) : [];
+    if (lacks.length > 0) {
+      context.addIssue({ code: "custom", path: ["trial", "plan"], message: `lacks ${lacks.join(", ")}, which the default plan has` });
     }
     // Each plan has everything the one before it has ("Everything in Pro, plus:"): its features, and limits no lower (null: none;
     // a Reporting range only where the plan has Reporting).

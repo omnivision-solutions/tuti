@@ -242,7 +242,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
   const entry = ada.getByRole("article", { name: "Dark mode is here" });
-  await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
+  // The list shows its text as an excerpt, plain (its own page has the headings).
+  await expect(entry).toContainText("A darker look");
+  await expect(entry.getByRole("heading", { name: "A darker look" })).toHaveCount(0);
   await expect(entry).toContainText("New");
   // (On wide screens the tags are in the date's margin; a phone's copy, above the title, is hidden there.)
   await expect(entry.getByText("Breaking").filter({ visible: true })).toHaveCSS("color", breaking);
@@ -251,6 +253,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Readers react on the entry's own page, one of each, on and off; the team's list shows the counts.
   await entry.getByRole("link", { name: "Dark mode is here" }).click();
   await ada.waitForURL(/\/changelog\/1$/);
+  await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
   // Its page: the way back, the 36px title, its tags and date under it.
   await expect(entry.getByRole("link", { name: "Changelog" })).toHaveAttribute("href", "/changelog");
   const pageTitle = entry.getByRole("heading", { level: 1, name: "Dark mode is here" });
@@ -288,8 +291,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // On the list too, under the entry.
   await ada.goto("/changelog");
   await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 🎉/ })).toHaveAccessibleName("React with 🎉 (1)");
-  // There as grey fills too, not bare emoji.
-  await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 👍/ })).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // There as grey fills too, not bare emoji; and they react there, above the title's link stretched over the entry.
+  const listThumbs = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 👍/ });
+  await expect(listThumbs).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await listThumbs.click();
+  await expect(listThumbs).toHaveAttribute("aria-pressed", "true");
+  await expect(listThumbs).toBeEnabled();
+  await listThumbs.click();
+  await expect(listThumbs).toHaveAttribute("aria-pressed", "false");
+  await expect(listThumbs).toBeEnabled();
+  await expect(ada).toHaveURL(/\/changelog$/);
   await ada.goBack();
   // Taken back.
   await tada.click();
@@ -673,8 +684,16 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   // One more than a page holds (20): the odd ones new, the even ones fixes.
+  // The newest two run long: the list shows excerpts, the rest on their pages.
+  // (Release 20 shorter: one paragraph of ~380 characters, five lines on a laptop, past eight on a phone.)
+  const idea = (title: string) => api("/posts", { board: "feature-requests", title, body: "Details of the idea." }) as unknown as Promise<{ number: number }>;
+  const ideas = [(await idea("Export every board, its posts, votes and comments, to a spreadsheet in one go")).number, (await idea("Dark mode")).number];
+  const long = (repeats: number) => `${"Faster boards and fewer clicks. ".repeat(repeats)}\n\nAnd last, exports in CSV.`;
   for (let n = 1; n <= 21; n++) {
-    await api("/changelog", { title: `Release ${n}`, body: "Faster boards and fewer clicks.", tags: [n % 2 ? "new" : "fixed"] });
+    const body = n === 21 ? long(24) : n === 20 ? long(12) : "Faster boards and fewer clicks.";
+    // Release 19 shipped two ideas, one with a long title: a pill each, on the list too.
+    const posts = n === 19 ? ideas : undefined;
+    await api("/changelog", { title: `Release ${n}`, body, tags: [n % 2 ? "new" : "fixed"], posts });
     await api(`/changelog/${n}/publish`, {});
   }
   // Over three months: 12 to 21 in October, 2 to 11 in September, Release 1 in August (on page 2).
@@ -702,6 +721,36 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   const date = (await latest.locator("time:visible").boundingBox())!;
   const title = (await latest.getByRole("heading").boundingBox())!;
   expect(date.x + date.width).toBeLessThan(title.x);
+  // Excerpts: the newest a medium one (eight lines at most, fading out), the others two or three lines; neither
+  // reaches the long entries' last paragraph, which their pages have.
+  const lines = async (excerpt: Locator) => (await excerpt.evaluate((p) => p.getBoundingClientRect().height)) / 28;
+  const excerptOf = (title: string) => main.getByRole("article", { name: title }).locator("p", { hasText: "Faster boards" });
+  expect(await lines(excerptOf("Release 21"))).toBeGreaterThan(3);
+  expect(await lines(excerptOf("Release 21"))).toBeLessThanOrEqual(8);
+  expect(await style(excerptOf("Release 21"), "mask-image")).toContain("gradient");
+  expect(await lines(excerptOf("Release 20"))).toBeLessThanOrEqual(3);
+  await expect(main.getByText("exports in CSV")).toHaveCount(0);
+  // One link per entry (its title), stretched over the entry: the excerpt opens the entry's page too.
+  await expect(main.getByRole("article", { name: "Release 21" }).getByRole("link")).toHaveCount(1);
+  await expect(main.getByRole("article", { name: "Release 20" }).getByRole("link")).toHaveCount(1);
+  await expect(main.getByRole("article", { name: "Release 20" }).getByRole("link")).toHaveAccessibleName("Release 20");
+  // What a pointer hits: on the excerpt, faded or not, the title's link; on a tag, the tag (above the link).
+  const hit = (locator: Locator) =>
+    locator.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const at = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return { inside: el.contains(at), link: at?.closest("a")?.getAttribute("href") ?? null };
+    });
+  expect(await hit(excerptOf("Release 21"))).toEqual({ inside: false, link: "/changelog/21" });
+  expect(await hit(tagOf("Release 21", "New"))).toEqual({ inside: true, link: null });
+  // (forced: the title's link over the text is what takes the click, which Playwright otherwise reads as blocked)
+  await excerptOf("Release 21").click({ force: true });
+  await expect(reader).toHaveURL(/\/changelog\/21$/);
+  await reader.goBack();
+  await excerptOf("Release 20").click({ force: true });
+  await expect(reader).toHaveURL(/\/changelog\/20$/);
+  await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
+  await reader.goBack();
   // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
   const dot = latest.locator("p:has(> time) > span[aria-hidden]");
   expect(await style(dot, "background-color")).not.toBe(accent);
@@ -786,9 +835,27 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await checkpoint(reader, "portal-changelog-page-2");
   await main.getByRole("link", { name: "Newer entries" }).click();
   await expect(reader).toHaveURL(/\/changelog$/);
+  // Fixed's newest, Release 20, fits its eight lines on a laptop (no fade); on a phone it wraps past them, and fades
+  // where the clamp cuts it.
+  await reader.goto("/changelog?tag=fixed");
+  // (once it has measured itself: the server's page has no fade either way)
+  await expect(excerptOf("Release 20")).toHaveAttribute("data-measured", "true");
+  await expect(excerptOf("Release 20")).toHaveCSS("mask-image", "none");
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
+  await reader.goto("/changelog");
+  // A long idea's pill stays in its entry (its title shortened), and the page doesn't scroll sideways.
+  const shipped = main.getByRole("article", { name: "Release 19" });
+  const pill = (await shipped.getByRole("link", { name: /^Export every board/ }).boundingBox())!;
+  expect(pill.x + pill.width).toBeLessThanOrEqual((await shipped.boundingBox())!.x + (await shipped.boundingBox())!.width + 1);
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   // On a phone, the header's menu lists the entries by date (with their titles), the one being read marked.
   await reader.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(reader, "portal-changelog-phone", { fullPage: false });
+  await reader.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(reader, "portal-changelog-phone-dark", { fullPage: false });
+  await reader.emulateMedia({ colorScheme: "light" });
   await reader.goto("/changelog/21");
   await reader.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const entries = reader.getByRole("dialog", { name: "Menu" }).getByRole("navigation", { name: "Changelog entries" });
@@ -1075,6 +1142,14 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const widgetCover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
   await expect(widgetCover).toBeVisible();
   await expect.poll(() => widgetCover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  // Once a newer entry is out, the list shows only the newest's cover: this one's is on its page.
+  const { number: newer } = (await api("/changelog", { title: "Faster exports", body: "Exports finish sooner." })) as unknown as { number: number };
+  await api(`/changelog/${newer}/publish`, {});
+  await ada.goto("/changelog");
+  await expect(ada.getByRole("heading", { name: "Faster exports" })).toBeVisible();
+  await expect(cover).toHaveCount(0);
+  await ada.goto("/changelog/1");
+  await expect(cover).toBeVisible();
 
   // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
   await team.goto(`/app/${slug}/changelog/1`);

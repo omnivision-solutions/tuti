@@ -108,23 +108,28 @@ export function BrandingSettings({
     uploading > 0,
   );
   const busy = (delta: number) => setUploading((count) => count + delta);
+  const themeId = useId();
 
   return (
     <form {...form} className="flex flex-col gap-6">
       <input type="hidden" name="part" value="look" />
-      <CustomizeSection title="Colour scheme" description="For readers who haven't picked light or dark mode themselves.">
-        <div role="radiogroup" aria-label="Colour scheme" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-          {SCHEMES.map(([value, name, Icon]) => (
-            <label
-              key={value}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm"
-            >
-              <input type="radio" name="colorScheme" value={value} defaultChecked={colorScheme === value} className="sr-only" />
-              <Icon aria-hidden className="size-3.5" />
-              {name}
-            </label>
-          ))}
-        </div>
+      <CustomizeSection title="Theme" description="Light or dark, and your colour.">
+        <Field>
+          <FieldLabel id={`${themeId}-label`}>Default theme</FieldLabel>
+          <div role="radiogroup" aria-labelledby={`${themeId}-label`} aria-describedby={`${themeId}-description`} className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+            {SCHEMES.map(([value, name, Icon]) => (
+              <label
+                key={value}
+                className="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm"
+              >
+                <input type="radio" name="colorScheme" value={value} defaultChecked={colorScheme === value} className="sr-only" />
+                <Icon aria-hidden className="size-3.5" />
+                {name}
+              </label>
+            ))}
+          </div>
+          <FieldDescription id={`${themeId}-description`}>What readers see first.</FieldDescription>
+        </Field>
         {/* Sent off or on (see saveBranding). */}
         <input type="hidden" name="themeSwitch" value="" />
         <SwitchRow name="themeSwitch" label="Let readers switch theme" description="A light/dark switch in the portal's footer." defaultChecked={themeSwitch} />

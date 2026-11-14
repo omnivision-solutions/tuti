@@ -203,17 +203,34 @@ const blank = (node: Item & { text?: string }): boolean =>
 
 /**
  * Whether an entry with pull requests isn't written yet: its text is only their titles, as the running draft wrote
- * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or nothing (failed
- * analyses took them out). Nobody wrote it, by hand or with AI.
+ * them ("Add a dark theme (acme/app#301)", or the bare title a code change's line falls back to), or `lines` (the
+ * lines Autopilot wrote into their bullets, writeChangelogLine), or nothing (failed analyses took them out). Nobody
+ * wrote it, by hand or with AI.
  */
-export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[]): boolean {
-  const titles = new Set(pullRequests.flatMap((pr) => [bulletText(pr), pr.title]));
+export function onlyPullRequestTitles(content: unknown, pullRequests: Pick<PullRequest, "repo" | "number" | "title">[], lines: string[] = []): boolean {
+  const titles = new Set([...pullRequests.flatMap((pr) => [bulletText(pr), pr.title]), ...lines]);
   // Not a blank block of any kind (the editor saves an empty paragraph after a list), nor a bullet whose text was deleted.
   const blocks = ((content as Doc | null)?.content ?? []).filter((block) => !blank(block as Item));
   return (
     pullRequests.length > 0 &&
     blocks.every((block) => block.type === "bulletList" && ((block.content ?? []) as Item[]).every((item) => blank(item) || titles.has(textOf(item))))
   );
+}
+
+/**
+ * The lines Autopilot wrote into these pull requests' bullets (writeChangelogLine, or one the team approved as it was):
+ * only those in the draft (applied: not one still waiting, dismissed or undone, whose words the team may have typed
+ * themselves), and not one the team reworded before approving it, which is theirs.
+ */
+export async function autopilotLines(projectId: string, urls: string[]): Promise<string[]> {
+  const actions = await prisma.codeChangeAction.findMany({
+    where: { kind: "CHANGELOG_LINE", status: "APPLIED", codeChange: { projectId, url: { in: urls } } },
+    select: { payload: true },
+  });
+  return actions.flatMap(({ payload }) => {
+    const { line, edited } = (payload ?? {}) as { line?: unknown; edited?: unknown };
+    return typeof line === "string" && edited !== true ? [line] : [];
+  });
 }
 
 /**

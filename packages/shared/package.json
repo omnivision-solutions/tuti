@@ -17,6 +17,7 @@
     "./user-properties": "./src/user-properties.ts",
     "./portal-redirects": "./src/portal-redirects.ts",
     "./log": "./src/log.ts",
+    "./plans": "./src/plans.ts",
     "./colors": "./src/colors.ts"
   },
   "scripts": {

@@ -11,6 +11,7 @@ import { SignInLink } from "@/components/sign-in-link";
 import { FilterPills } from "@/components/filter-pills";
 import { NewPostMenu } from "@/components/new-post-menu";
 import { PortalPageHeader } from "@/components/portal-page-header";
+import { RoadmapColumnLink, RoadmapStickyHeight } from "@/components/roadmap-sticky";
 import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
@@ -123,29 +124,32 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
         actions={<NewPostMenu boards={postBoards} />}
         phoneActions={<NewPostMenu boards={postBoards} round />}
       />
-      {/* Below tablet width, a column at a time, picked from a segmented control. */}
-      <nav aria-label="Columns" className="flex rounded-xl bg-muted p-1 md:hidden">
-        {ROADMAP.map(({ status, key }, i) => {
-          const active = key === column;
-          return (
-            <Link
-              key={key}
-              href={columnHref(key)}
-              scroll={false}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold whitespace-nowrap",
-                active ? "bg-card text-foreground shadow-card ring-1 ring-card-edge" : "text-muted-foreground",
-              )}
-            >
-              <span className="truncate">{STATUS_LABELS[status]}</span>{" "}
-              <span className="text-xs font-semibold text-muted-foreground tabular-nums">{columns[i]!.length}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Below tablet width, a column at a time, picked from a segmented control that sticks under the header, on the
+          paper, so it's always clear which column the cards are in. */}
+      <div data-roadmap-switcher data-roadmap-sticky className="sticky top-[var(--portal-header-height,0px)] z-10 -my-2 bg-background py-2 md:hidden">
+        <nav aria-label="Columns" className="flex rounded-xl bg-muted p-1">
+          {ROADMAP.map(({ status, key }, i) => {
+            const active = key === column;
+            return (
+              <RoadmapColumnLink
+                key={key}
+                href={columnHref(key)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold whitespace-nowrap",
+                  active ? "bg-card text-foreground shadow-card ring-1 ring-card-edge" : "text-muted-foreground",
+                )}
+              >
+                <span className="truncate">{STATUS_LABELS[status]}</span>{" "}
+                <span className="text-xs font-semibold text-muted-foreground tabular-nums">{columns[i]!.length}</span>
+              </RoadmapColumnLink>
+            );
+          })}
+        </nav>
+      </div>
       {/* Three columns, each headed by its status's icon; a card per idea. */}
-      <div className="grid gap-x-6 gap-y-10 md:grid-cols-3">
+      <RoadmapStickyHeight />
+      <div data-roadmap-columns className="grid gap-x-6 gap-y-10 md:grid-cols-3">
         {ROADMAP.map(({ status, key }, i) => {
           const posts = columns[i]!;
           const Icon = STATUS_ICONS[status];
@@ -156,7 +160,9 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               aria-describedby={`roadmap-${status}-meaning`}
               className={cn("flex min-w-0 flex-col gap-3", key !== column && "max-md:hidden")}
             >
-              <div className="flex flex-col gap-1 pb-1 max-md:pb-0">
+              {/* Wider, each heading sticks under the header while its column's cards pass under it (the columns are
+                  one row, as tall as the tallest, so all three stay up till the board ends), on the paper. */}
+              <div data-roadmap-sticky className="flex flex-col gap-1 md:sticky md:top-[var(--portal-header-height,0px)] md:z-10 md:-mx-2 md:-mt-3 md:-mb-2 md:bg-background md:px-2 md:pt-3 md:pb-3">
                 {/* Below tablet width the control over the column names it. */}
                 <h2 className="flex items-center gap-2.5 font-heading text-[1.1875rem] font-[650] tracking-[-0.01em] max-md:sr-only">
                   <Icon aria-hidden data-status-icon className={cn("size-5 shrink-0", STATUS_TEXT[status])} />

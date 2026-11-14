@@ -2636,3 +2636,91 @@ test("Feedback's pane asks before Completed too, saying how many it emails", asy
   await team.reload();
   await expect(pane.getByRole("combobox", { name: "Status" })).toHaveText(/Open/);
 });
+
+test("a board on a phone: its pill row fades at the screen's edge while more is past it, and the page ends clear of the support launcher", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Calendar sync", "Slack alerts", "Export events to CSV", "Time zone per event", "Recurring events"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  // A second board, so the row starts with the board switcher and the sorts and status menu are past the screen's edge.
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
+  await team.getByRole("dialog", { name: "New board" }).getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto("/feedback/feature-requests");
+  const main = visitor.getByRole("main");
+  const switcher = main.getByRole("button", { name: "Board: Feature requests" });
+  const row = switcher.locator("xpath=..");
+  const status = main.getByRole("button", { name: /^Status: / });
+  // More past the right end: the row runs to the screen's edge, so its fade is over the next pill (the row's padding is the
+  // fade's clear end), not over the screen's margin with nothing to show.
+  await expect(row).toHaveAttribute("data-more", "end");
+  // (The page's width: a desktop browser keeps room for its scrollbar.)
+  const width = await visitor.evaluate(() => document.body.getBoundingClientRect().width);
+  const box = (await row.boundingBox())!;
+  expect(box.x + box.width).toBe(width);
+  expect((await switcher.boundingBox())!.x).toBe(16);
+  expect((await status.boundingBox())!.x).toBeGreaterThan(width);
+  expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(visitor, "portal-board-phone-pills", { fullPage: false });
+  // Scrolled to its end, the status menu is in full view, clear of the screen's margin.
+  await row.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
+  await expect(row).toHaveAttribute("data-more", "start");
+  const menu = (await status.boundingBox())!;
+  expect(menu.x + menu.width).toBeLessThanOrEqual(width - 16);
+  await checkpoint(visitor, "portal-board-phone-pills-end", { fullPage: false });
+
+  // Scrolled to the end of the page, the last idea's vote box is clear of the launcher.
+  const launcher = visitor.locator('body > button[aria-controls="tuti-widget"]');
+  await expect(launcher).toBeVisible();
+  await visitor.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const vote = (await main.getByRole("listitem").last().getByRole("link", { name: /^Sign in to vote/ }).boundingBox())!;
+  const button = (await launcher.boundingBox())!;
+  expect(vote.y + vote.height <= button.y || vote.x + vote.width <= button.x).toBe(true);
+  await checkpoint(visitor, "portal-board-phone-end", { fullPage: false });
+});
+
+test("a post's page on a phone keeps 16px on both sides: a long properties line doesn't widen it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  // A long name and an ETA make the properties' folded line (status · owner · ETA) wider than a phone.
+  const team = await signUp(browser, APP_URL, "Samantha Riverbank-Okonkwo");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Google Calendar sync", body: "" });
+  await api("/posts/1", { status: "in_progress", owner: team.email, eta: "2026-12" }, "PATCH");
+  await api("/posts/1/comments", { body: "Thanks all! Two-way sync is in progress: we're testing with a few teams now." });
+  for (const width of [390, 1280]) {
+    await team.setViewportSize({ width, height: 844 });
+    await team.goto(`/app/${slug}/p/1`);
+    const comment = team.getByRole("button", { name: "Comment", exact: true });
+    await expect(comment).toBeVisible();
+    expect(await team.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    // The pane's body scrolls up and down only.
+    const body = team.locator('[data-slot="pane-body"]', { has: comment });
+    expect(await body.evaluate((pane) => pane.scrollWidth <= pane.clientWidth)).toBe(true);
+    if (width === 390) {
+      const pane = (await body.boundingBox())!;
+      const boxes = {
+        properties: team.getByRole("complementary", { name: "Properties" }),
+        reply: team.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Thanks all!" }),
+        "reply box": team.getByRole("textbox", { name: "Comment" }),
+        Comment: comment,
+      };
+      for (const [name, locator] of Object.entries(boxes)) {
+        const box = (await locator.boundingBox())!;
+        expect(box.x - pane.x, `${name} from the left`).toBeGreaterThanOrEqual(16);
+        expect(pane.x + pane.width - (box.x + box.width), `${name} from the right`).toBeGreaterThanOrEqual(16);
+      }
+      await checkpoint(team, "post-phone-margins", { fullPage: false });
+    }
+  }
+});

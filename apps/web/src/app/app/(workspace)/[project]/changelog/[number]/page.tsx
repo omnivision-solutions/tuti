@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
-import { aiPaused, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -44,7 +44,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       importedPublishedAt: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
-      pullRequests: { select: { repo: true, number: true, title: true } },
+      pullRequests: { select: { repo: true, number: true, title: true, url: true } },
     },
   });
   if (!entry) {
@@ -70,9 +70,18 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   // Counted as the email job picks them (changelogReach); null on a private portal, which emails nobody.
   const subscribers = await subscriberCount(membership.project.id);
   // A draft not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to
-  // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts).
+  // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts). Still the pull requests' titles,
+  // or the one line each Autopilot wrote into the running draft: neither is release notes.
   const unwritten =
-    entry.publishedAt === null && onlyPullRequestTitles(entry.content, entry.pullRequests) ? (entry.body.trim() ? "titles" : "empty") : undefined;
+    entry.publishedAt !== null
+      ? undefined
+      : onlyPullRequestTitles(entry.content, entry.pullRequests)
+        ? entry.body.trim()
+          ? "titles"
+          : "empty"
+        : entry.pullRequests.length > 0 && onlyPullRequestTitles(entry.content, entry.pullRequests, await autopilotLines(membership.project.id, entry.pullRequests.map((pr) => pr.url)))
+          ? "lines"
+          : undefined;
   // In the text's column it's shown as wide as the column, so not at the sidebar thumbnail's size: the largest stored
   // up to 1600px.
   const cover = lastingImage(entry.cover);

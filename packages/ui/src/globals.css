@@ -361,6 +361,14 @@
     /* The scrollbar's room is kept on short pages too, so the header never shifts sideways between pages. */
     scrollbar-gutter: stable;
   }
+  /* The portal roadmap's sticky column headings (or, on phones, its column switcher) sit under the header too: focus
+     moving up a column scrolls a card out from under them (their height measured by RoadmapStickyHeight; about it until
+     then). On the cards' links and buttons, not the page's scroll-padding: the switcher's own links, stuck under the header,
+     would count as hidden there, and focusing one would scroll the page. Half a rem more, so a focused one's ring clears
+     them too. */
+  [data-roadmap-columns] :is(a, button) {
+    scroll-margin-top: calc(var(--roadmap-sticky-height, 6rem) + 0.5rem);
+  }
   /* The portal's hairlines (between rows, under the header): the lighter divider. Controls keep their edge (`border-input`). */
   :root:has([data-portal-top], [data-portal-look]) * {
     border-color: var(--divider);
@@ -465,8 +473,8 @@
   /* Too narrow for its tabs, the row scrolls, faded at the end that has more (scroll-driven, so no script). */
   @supports (animation-timeline: scroll()) {
     .rich-text :where(.rich-code-tab-row) {
-      mask-image: linear-gradient(to right, transparent, #000 var(--tab-fade-start), #000 calc(100% - var(--tab-fade-end)), transparent);
-      animation: rich-tab-row-fade linear both;
+      mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
+      animation: rich-scroll-fade linear both;
       animation-timeline: scroll(self inline);
     }
   }
@@ -675,38 +683,38 @@
   }
 }
 
-/* The code tab row's fades (see .rich-code-tab-row): none until the row scrolls. */
-@property --tab-fade-start {
+/* The fades of a code tab row (see .rich-code-tab-row) and a portal article's code: none until it scrolls. */
+@property --scroll-fade-start {
   syntax: "<length>";
   inherits: false;
   initial-value: 0px;
 }
-@property --tab-fade-end {
+@property --scroll-fade-end {
   syntax: "<length>";
   inherits: false;
   initial-value: 0px;
 }
-@keyframes rich-tab-row-fade {
+@keyframes rich-scroll-fade {
   0% {
-    --tab-fade-start: 0px;
-    --tab-fade-end: 1.5rem;
+    --scroll-fade-start: 0px;
+    --scroll-fade-end: 1.5rem;
   }
   10% {
-    --tab-fade-start: 1.5rem;
+    --scroll-fade-start: 1.5rem;
   }
   90% {
-    --tab-fade-end: 1.5rem;
+    --scroll-fade-end: 1.5rem;
   }
   100% {
-    --tab-fade-start: 1.5rem;
-    --tab-fade-end: 0px;
+    --scroll-fade-start: 1.5rem;
+    --scroll-fade-end: 0px;
   }
 }
 
 /*
  * The portal's articles (docs/design.md, Portal): 17px text, and asides as fills, not outlines: inline code, a callout (a
- * quote: an info blue rule and icon), a details block and a step's number on the grey fill; code blocks as cards (a
- * labelled one has its label in a grey strip over the code, with Copy: CodeCopyButtons). Unlayered, after `.article-text`,
+ * quote: an info blue rule and icon), a details block and a step's number on the grey fill; code blocks as cards, a grey
+ * strip over the code holding Copy (CodeCopyButtons) and the block's label or tabs. Unlayered, after `.article-text`,
  * so it wins over it.
  */
 :root:has([data-portal-top]) .article-text {
@@ -732,17 +740,65 @@
   box-shadow: var(--portal-shadow), 0 0 0 1px var(--color-card-edge);
 }
 :root:has([data-portal-top]) .article-text :where(pre) {
-  padding: 1.25rem 1.5rem;
+  overflow: hidden;
+  padding: 0;
   font-size: 0.875rem;
   line-height: 1.75rem;
+}
+/* The code scrolls, not its block, so Copy's strip above it stays put; a long line fades at the edge with more to see. */
+:root:has([data-portal-top]) .article-text :where(pre > code) {
+  display: block;
+  overflow-x: auto;
+  padding: 1.25rem 1.5rem;
+}
+/* Its focus ring on its block, inside the edge: the card clips anything outside, and the code's fade would fade it. */
+:root:has([data-portal-top]) .article-text :where(pre > code:focus-visible) {
+  outline: none;
+}
+:root:has([data-portal-top]) .article-text :where(pre:has(> code:focus-visible)) {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+@supports (animation-timeline: scroll()) {
+  :root:has([data-portal-top]) .article-text :where(pre > code) {
+    mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
+    animation: rich-scroll-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
 }
 :root:has([data-portal-top]) .article-text :where(.rich-code pre, .rich-code-tabs pre) {
   box-shadow: none;
   background: transparent;
 }
-:root:has([data-portal-top]) .article-text :where(.rich-code figcaption, .rich-code-tab-row) {
+:root:has([data-portal-top]) .article-text :where(.rich-code figcaption, .rich-code-tab-row, .code-copy-bar) {
   border-bottom: 0;
   background: var(--color-secondary);
+}
+/* Copy's strip (CodeCopyButtons): over an unlabelled block's code, or beside code tabs' row (the block a grid for it). */
+:root:has([data-portal-top]) .article-text :where(.code-copy-bar) {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.375rem 0.5rem;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-code-tabs:has(> .code-copy-bar)) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-code-tabs > .code-copy-bar) {
+  grid-area: 1 / 2;
+}
+/* The tab row as tall as the other strips (so Copy's coming doesn't move the page), its names level with Copy. */
+:root:has([data-portal-top]) .article-text :where(.rich-code-tab-row) {
+  min-height: 2.75rem;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-code-tab-row label) {
+  display: flex;
+  align-items: center;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-code-tabs > pre) {
+  grid-column: 1 / -1;
 }
 :root:has([data-portal-top]) .article-text :where(.rich-code figcaption) {
   display: flex;

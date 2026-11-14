@@ -13,7 +13,7 @@ cute at the expense of clarity.
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
   Emails sent on a project's behalf (to its customers and readers) take its accent for the card's top edge, buttons
-  and links, as its portal does (too faint on white: the text colour, where the portal uses a darker shade of it); the small "tuti" wordmark above stays green.
+  and links, as its portal does (too faint: the same darker shade of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint for text, 4.5:1); the small "tuti" wordmark above stays green.
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
   its own (Settings → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
@@ -245,7 +245,8 @@ the list picks none to approve at once.
   "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The cover shows under the title in the
   text's column, as readers see it. One way into AI: while the text is still the pull requests'
-  titles, the toolbar's Draft with AI (the main action); once it's written, Edit with AI's menu
+  titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
+  toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.
   Autopilot's column is what it updates, under To review (updates waiting for the
   team or going out by themselves) and Reviewed, each in two sections, Feedback (posts
@@ -495,17 +496,23 @@ the list picks none to approve at once.
     primary at the row's end: on every board "New post", a menu of each board's own button text with the board's name
     under it; on one board (picked, or the only one) that board's button text ("New post" without one), straight to its
     form (`NewPostMenu`). On phones it's a round + beside the title, named the same. Then three open columns headed by
-    the status's icon, name and count and its meaning, no line under them; a card per idea (the board, the title, two
+    the status's icon, name and count and its meaning, no line under them (the headings stick just under the site
+    bar while the cards pass under them, on the paper, each over its own column; no hairline when stuck either: the
+    cards' edges sliding under the paper read as the cut); a card per idea (the board, the title, two
     lines, "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" in
     the accent on a shipped one); an empty column a soft fill, "Nothing here yet.". On phones one column at a time,
-    picked from a segmented control over them (`?column=`; the portal's only segmented control).
+    picked from a segmented control over them (`?column=`; the portal's only segmented control), which sticks under
+    the site bar on the paper as the cards scroll; switching from deep in a column opens the other at its first card.
+    Focus moving up a column scrolls the card out from under the stuck headings (the cards' links and buttons get their measured
+    height as scroll-margin, so the switcher's own links, stuck, don't count as hidden).
   - **The changelog**: the page header (`PortalPageHeader`): "Changelog", "What's new, improved and fixed in
     <project>.", then one row: the tags as pills (`FilterPills`, links, `?tag=`, All and only the tags its entries
     have, each with its count) and RSS (a round grey icon button) and **Subscribe** (the one filled button; a popover
     with the email form) at its end; on phones a round RSS and a round filled bell beside the title. On wide screens a
     timeline: each entry's short date and a neutral dot (a ring in the muted text colour) on a `divider` line in a
-    110px margin; beside it the grey tag (Breaking destructive) above a 28px title, the cover framed as a card, the
-    text, "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
+    110px margin; beside it the grey tag (Breaking destructive) above a 28px title, then an excerpt of the text, plain
+    (no images, embeds or code) and linking to the entry's page: the first page's newest entry its cover framed as a
+    card and up to eight lines, fading out where it's cut; the others three lines, no cover. Then "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
     the title is read out after the pill's words) it shipped, and its reactions as grey pills, the emoji grey until
     picked (your own the accent's tint and ring); a line between entries. A "Jump to month" index beside the list past
     eight entries, plain rows (the page's month in the neutral fill): the latest six months, older ones under "Earlier
@@ -558,8 +565,9 @@ the list picks none to approve at once.
     current one a neutral fill; the articles in no collection under a line. Then "Documentation › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
     width, on an article with sections) and Copy page at
     the row's end, a 36px title (28px on phones), "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in grey circles, inline code,
-    details blocks and callouts as grey fills (a callout: quotes, with an info-blue rule and icon), code blocks as cards (a
-    labelled one with its label in a grey strip, no line under it, and Copy: `CodeCopyButtons`). At its end: "Was this
+    details blocks and callouts as grey fills (a callout: quotes, with an info-blue rule and icon), code blocks as cards with
+    a grey strip above the code, no line under it, holding Copy (`CodeCopyButtons`, never over the code) and the block's label
+    or code tabs; the code scrolls sideways under it, a long line faded at the edge while there's more). At its end: "Was this
     helpful?" (Yes and No with thumbs, no rule above), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI
     and Contact us as quiet buttons) on a soft grey fill. With two or more
     sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
@@ -594,7 +602,7 @@ the list picks none to approve at once.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
-  Light or dark as the portal's colour scheme says (Settings → Branding; by default the visitor's
+  Light or dark as the portal's default theme says (Settings → Branding; by default the visitor's
   device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
   from its first paint, and the button unless it has its own colour (Settings → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the

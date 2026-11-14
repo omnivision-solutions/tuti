@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { boardLimit } from "@tuti/shared";
-import { CopyIcon, InboxIcon, LayoutListIcon, MapIcon, Settings2Icon, SparklesIcon } from "lucide-react";
+import { CopyIcon, LayoutListIcon, LightbulbIcon, MapIcon, Settings2Icon, SparklesIcon } from "lucide-react";
 
 import { NewBoardDialog } from "@/components/boards";
 import { SectionGroup, SectionLink, SectionPane } from "@/components/pane";
@@ -54,7 +54,7 @@ export async function feedbackMenu({
   return (
     <SectionPane title="Feedback" className={className}>
       <SectionGroup>
-        <SectionLink href={`${base}?status=all`} icon={<InboxIcon />} count={counts.all} active={open("all")}>
+        <SectionLink href={`${base}?status=all`} icon={<LightbulbIcon />} count={counts.all} active={open("all")}>
           All posts
         </SectionLink>
         <SectionLink href={base} icon={<SparklesIcon />} count={counts.of("OPEN")} active={open("open")}>

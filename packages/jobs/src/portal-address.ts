@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { type PlanFeature, plansWith } from "@tuti/shared";
+import { defaultPlanKey, type PlanFeature, planIncludes, plansWith, trialTerms } from "@tuti/shared";
 
 import { portalOrigin } from "./events";
 
@@ -20,11 +20,14 @@ export function projectWith(feature: PlanFeature): Prisma.ProjectWhereInput {
   if (!plans) {
     return {};
   }
-  // On a plan that has it; or, where the default plan has it, with none stored or one the file doesn't list (the default's).
+  // On a plan that has it; or, where the default plan has it, with none stored or one the file doesn't list (the default's);
+  // or on the default plan during a trial of a plan that has it (effectivePlan).
+  const onDefault: Prisma.ProjectWhereInput[] = [{ plan: null }, { plan: { notIn: plans.listed } }];
+  const trial = trialTerms();
   return {
     OR: [
       { plan: { in: plans.keys } },
-      ...(plans.orDefault ? [{ plan: null }, { plan: { notIn: plans.listed } }] : []),
+      ...(plans.orDefault ? onDefault : trial && planIncludes(trial.plan, feature) ? [{ trialEndsAt: { gt: new Date() }, OR: [...onDefault, { plan: defaultPlanKey() }] }] : []),
     ],
   };
 }

@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleLimit, articleVersionsKept, badgeOffered, badgePerMonth, articleVersionsNote, articleVersionsStored, badgePrice, boardLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, upgradeFor } from "./plans";
+import { articleLimit, articleVersionsKept, badgeOffered, badgePerMonth, articleVersionsNote, articleVersionsStored, badgePrice, boardLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, trialState, trialTerms, upgradeFor, effectivePlan } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -132,4 +132,30 @@ test("a price no longer sold is recognised but neither sold nor shown, and a pla
   expect(planDisplay("pro").price).toEqual({ month: 39, year: null });
   expect([badgePrice("year"), isBadgePrice("price_fake_badge_yearly"), badgePerMonth("year")]).toEqual([null, true, null]);
   expect([planFor("privatePortal"), roomierPlan("pro", boardLimit)]).toEqual([null, null]);
+});
+
+test("a trial's plan holds until it ends, only on the default plan, and never after", () => {
+  const now = new Date("2026-11-13T12:00:00Z");
+  const later = new Date("2026-11-20T12:00:00Z");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  // No trial in the file: none given, whatever is stored.
+  expect([trialTerms(), effectivePlan(null, later, now)]).toEqual([null, null]);
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    config.trial = { plan: "business", days: 7, credits: 500, emails: 1000 };
+  }));
+  expect(trialTerms()).toEqual({ plan: "business", days: 7, credits: 500, emails: 1000 });
+  expect([effectivePlan(null, later, now), effectivePlan("free", later, now), effectivePlan(null, null, now)]).toEqual(["business", "business", null]);
+  // Ended: the plan stored, at once.
+  expect([effectivePlan(null, now, now), effectivePlan(null, later, later)]).toEqual([null, null]);
+  // A plan of its own wins.
+  expect(effectivePlan("pro", later, now)).toBe("pro");
+  expect(trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)).toEqual({ endsAt: later, ended: false });
+  expect(trialState({ plan: null, planStatus: null, trialEndsAt: now }, now)).toEqual({ endsAt: now, ended: true });
+  expect([trialState({ plan: null, planStatus: null, trialEndsAt: null }, now), trialState({ plan: "pro", planStatus: "active", trialEndsAt: later }, now)]).toEqual([null, null]);
+  // The file stops offering a trial: a project mid-trial isn't told it ended (it just has no trial).
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect(trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)).toBeNull();
+  // Billing off: no trials, every project has everything.
+  vi.stubEnv("BILLING_CONFIG", "");
+  expect([trialTerms(), effectivePlan(null, later, now), trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)]).toEqual([null, null, null]);
 });

@@ -68,7 +68,7 @@ export function BoardPillRow({ children }: { children: ReactNode }) {
     };
   }, []);
   return (
-    <div ref={ref} className={cn("flex items-center gap-1.5", SCROLLING_ROW)}>
+    <div ref={ref} className={cn("flex items-center gap-1.5 max-sm:-mx-4 max-sm:px-4", SCROLLING_ROW)}>
       {children}
     </div>
   );
