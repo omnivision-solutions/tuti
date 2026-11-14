@@ -1,6 +1,6 @@
 import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
-import { claimProjectEmail, emailsThisMonth, handlers, resumeToken } from "@tuti/jobs";
+import { cappedProjects, claimProjectEmail, emailsThisMonth, handlers, resumeToken } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -430,6 +430,26 @@ test("on a free trial, email is held at the trial's own allowance, not its plan'
   const after = limitEmails(owner.email);
   expect(after).toHaveLength(2);
   expect(after[1]!.text).toContain("has sent the 3 emails its Free plan includes this month");
+});
+
+test("a trialing project filled to a trial allowance below every plan's limit is month-full: the safety net defers its email and tells the team", async () => {
+  // Free 1,000, Pro 10,000, Business none: the trial's 1 is below them all.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 1 }; }));
+  const { owner, project, team } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  await votedPost(project);
+  await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: month(), emails: 1 } });
+  // Month-full, so the safety nets and the reply cron leave it out rather than run jobs that only wait.
+  expect(await cappedProjects()).toContain(project.id);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  const comment = await prisma.comment.create({
+    data: { projectId: project.id, postId, authorId: team.actor.userId, body: "It's out.", votersEmailDueAt: new Date(Date.now() - 15 * 60_000) },
+  });
+  // Others' comments aside (the file shares a database): this one is moved, not queued.
+  await prisma.comment.updateMany({ where: { projectId: { not: project.id } }, data: { votersEmailDueAt: null } });
+  expect(await handlers.resubmitReplyEmails({}, log)).toEqual({ found: 0, queued: 0 });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).votersEmailDueAt).toEqual(nextMonth());
+  expect(limitEmails(owner.email)).toHaveLength(1);
 });
 
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {
