@@ -34,7 +34,7 @@
   .btn:hover { transform: translateY(-1px); }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   /* On the green and dark surfaces the brand-green ring would vanish: white there. */
-  .frame, .strip, .card.self { --ring: #fff; }
+  .strip, .card.self { --ring: #fff; }
   .btn-p {
     background: var(--g); color: var(--primary-foreground);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 20px -8px color-mix(in oklch, var(--g) 60%, transparent);
@@ -73,24 +73,44 @@
   h1 { font-size: clamp(42px, 6.6vw, 84px); letter-spacing: -0.05em; line-height: 0.98; margin: 24px auto 0; max-width: 11em; }
   h1 em { font-style: normal; color: var(--g); }
   .lead { font-size: clamp(18px, 1.6vw, 21px); color: var(--muted); max-width: 30em; margin: 22px auto 0; line-height: 1.45; }
-  .frame {
-    margin: 64px auto 0; max-width: 1240px; padding: 34px 34px 0; border-radius: 36px 36px 0 0;
-    background: linear-gradient(135deg, #1f7a46, #3fae6f 45%, #b9e6a8);
+  /* No band: a soft, blurred green glow (with a little grain) behind the window, which fades into the page. */
+  .frame { position: relative; isolation: isolate; margin: 64px auto 0; max-width: 1240px; padding: 10px 34px 0; }
+  .frame::before {
+    content: ""; position: absolute; inset: -90px -8% -60px; z-index: -2; filter: blur(20px);
+    background:
+      radial-gradient(34% 46% at 22% 42%, color-mix(in oklch, var(--g) 60%, transparent), transparent 72%),
+      radial-gradient(36% 48% at 78% 36%, color-mix(in oklch, #6fd39a 70%, transparent), transparent 72%),
+      radial-gradient(40% 36% at 52% 18%, color-mix(in oklch, #c8f0c4 70%, transparent), transparent 75%),
+      radial-gradient(26% 30% at 62% 74%, color-mix(in oklch, #f4b77a 26%, transparent), transparent 75%);
+    mask: radial-gradient(closest-side, #000 55%, transparent);
+  }
+  .frame::after {
+    content: ""; position: absolute; inset: -40px -60px; z-index: -1; opacity: 0.22; mix-blend-mode: multiply;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mask: radial-gradient(60% 60% at 50% 45%, #000, transparent 80%);
   }
   /* Room for the focus ring: the row scrolls sideways, so it clips what overflows it. */
-  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: -7px -34px 15px; padding: 7px 34px; }
-  /* White on forest at half opacity: 4.5:1 or more even on the frame's lightest green. */
+  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: -7px -34px 22px; padding: 7px 34px; }
+  /* Frosted glass over the glow. */
   .tab {
     flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 12px; font-weight: 600; font-size: 15px;
-    color: #fff; background: rgba(11, 21, 16, 0.5); border: 1px solid transparent; cursor: pointer;
+    color: var(--ink); background: rgba(255, 255, 255, 0.5); border: 1px solid rgba(255, 255, 255, 0.75); backdrop-filter: blur(10px);
+    box-shadow: 0 1px 2px rgba(16, 48, 28, 0.06); cursor: pointer;
   }
-  .tab:hover { background: rgba(11, 21, 16, 0.62); }
-  .tab[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.3); }
+  .tab:hover { background: rgba(255, 255, 255, 0.8); }
+  .tab svg { color: var(--g7); }
+  .tab[aria-pressed="true"] {
+    background: var(--card); border-color: color-mix(in oklch, var(--g) 35%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--g) 14%, transparent), 0 8px 20px -10px rgba(16, 60, 32, 0.45);
+  }
   .tab[aria-pressed="true"] svg { color: var(--g); }
-  /* The frame's gradient runs from dark to light green, too light for white alone at its end: a forest band on each
-     side of the white ring, after the open tab's own shadow so it wins (forest is 3.5:1 or more on every part of it, and 18:1 with white). */
-  .frame :focus-visible { box-shadow: 0 0 0 6px var(--forest); }
-  .win { background: var(--card); border-radius: 16px 16px 0 0; overflow: hidden; max-height: 700px; text-align: left; }
+  .show { padding: 0 10px; }
+  /* A glass rim around the window, which fades out at the bottom rather than ending on a hard edge. */
+  .win {
+    background: var(--card); border-radius: 18px 18px 0 0; overflow: hidden; max-height: 600px; text-align: left;
+    box-shadow: 0 0 0 1px rgba(20, 83, 45, 0.1), 0 0 0 9px rgba(255, 255, 255, 0.5), 0 0 0 10px rgba(20, 83, 45, 0.08), 0 40px 90px -30px rgba(16, 60, 32, 0.5);
+    mask: linear-gradient(#000 72%, transparent);
+  }
   .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line2); background: #fcfbf8; }
   .dots { display: flex; gap: 6px; }
   .dots i { width: 10px; height: 10px; border-radius: 50%; background: #e4e1d9; }
@@ -268,8 +288,10 @@
     h1 { font-size: 40px; }
     .lead { font-size: 18px; margin-top: 18px; }
     .ctas { flex-direction: column; align-items: stretch; }
-    .frame { margin-top: 44px; padding: 20px 10px 0; border-radius: 24px 24px 0 0; }
-    .tabs { margin: -7px -10px 7px; padding: 7px 10px; }
+    .frame { margin-top: 44px; padding: 8px 14px 0; }
+    .frame::before { inset: -40px -40% 0; }
+    .show { padding: 0; }
+    .tabs { margin: -7px -14px 12px; padding: 7px 14px; }
     .tab { height: 38px; padding: 0 13px; font-size: 14px; }
     .win { border-radius: 12px 12px 0 0; }
     .bar { height: 30px; }
@@ -484,7 +506,7 @@
 
   @media (max-width: 640px) {
     /* The window grows with its scene, which stacks into one column. */
-    .win { max-height: none; }
+    .win { max-height: 620px; }
     .hero-sc { padding: 18px 14px; min-height: 0; }
     .sc-ap, .sc-ib, .sc-hw { grid-template-columns: 1fr; gap: 14px; }
     .sc-hw .app { display: none; }
