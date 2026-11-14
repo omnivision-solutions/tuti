@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleLimit, articleVersionsKept, articleVersionsNote, articleVersionsStored, badgeOffered, badgePerMonth, badgePrice, boardLimit, effectivePlan, emailsPerMonth, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, trialState, trialTerms, upgradeFor } from "./plans";
+import { articleLimit, articleVersionsKept, articleVersionsNote, articleVersionsStored, badgeOffered, badgePerMonth, badgePrice, boardLimit, effectivePlan, emailsPerMonth, monthlyEmailLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, trialState, trialTerms, upgradeFor } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -164,4 +164,19 @@ test("a trial's plan holds until it ends, only on the default plan, and never af
   // Billing off: no trials, every project has everything.
   vi.stubEnv("BILLING_CONFIG", "");
   expect([trialTerms(), effectivePlan(null, later, now), trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)]).toEqual([null, null, null]);
+});
+
+test("a project's monthly email limit: its plan's, or while its trial runs the trial's own allowance (else the trial plan's)", () => {
+  const [ahead, past] = [new Date(Date.now() + 60_000), new Date(Date.now() - 60_000)];
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
+  expect([
+    monthlyEmailLimit({ plan: null, trialEndsAt: ahead }),
+    monthlyEmailLimit({ plan: null, trialEndsAt: past }),
+    monthlyEmailLimit({ plan: "business", trialEndsAt: ahead }),
+    monthlyEmailLimit({ plan: null, trialEndsAt: null }),
+  ]).toEqual([500, 1000, null, 1000]);
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
+  expect(monthlyEmailLimit({ plan: null, trialEndsAt: ahead })).toBe(10000);
+  vi.stubEnv("BILLING_CONFIG", "");
+  expect(monthlyEmailLimit({ plan: null, trialEndsAt: ahead })).toBeNull();
 });

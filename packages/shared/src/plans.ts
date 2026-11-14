@@ -283,6 +283,18 @@ export function effectivePlan(plan: PlanKey, trialEndsAt: Date | null, now = new
 }
 
 /**
+ * How many emails a project sends its users each calendar month (UTC), or null for no limit: while its trial runs (no plan
+ * of its own, trialEndsAt ahead), the trial's own allowance (`trial.emails`) where the file sets one, else its plan's
+ * emailsPerMonth (the trial's plan while it runs). `plan` as stored (select trialEndsAt with it: see @tuti/db).
+ */
+export function monthlyEmailLimit(project: { plan: PlanKey; trialEndsAt: Date | null }, now = new Date()): number | null {
+  const plan = effectivePlan(project.plan, project.trialEndsAt, now);
+  const trialing = plan !== project.plan;
+  const allowance = trialTerms()?.emails ?? null;
+  return trialing && allowance !== null ? allowance : emailsPerMonth(plan);
+}
+
+/**
  * A project's trial as its team is told: when it ends and whether it has (`ended`); null without one, or once the
  * project has a plan of its own. `plan` as stored (select trialEndsAt with it: see @tuti/db).
  */

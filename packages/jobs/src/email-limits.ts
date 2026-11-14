@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured, emailLimitEmail, sendEmail } from "@tuti/email";
-import { emailsPerMonth, listedPlans, log, planDisplay, plansEnabled, upgradeFor } from "@tuti/shared";
+import { effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, plansEnabled, trialTerms, upgradeFor } from "@tuti/shared";
 
 /** In its first week on a server selling plans, a project sends this many emails a day at most. */
 export const NEW_PROJECT_EMAILS_PER_DAY = 200;
@@ -25,7 +25,7 @@ export const nextMonth = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), 
  * Takes one of a project's emails to its users from its limits, before it's sent: false when none is left, or the
  * project's email is paused, and it waits. The limits are for what a project sends its users (support replies, "shipped"
  * and changelog emails; sign-in links, invitations and the team's own email never wait), on a server selling plans:
- * its plan's emailsPerMonth each calendar month (UTC), and in its first week NEW_PROJECT_EMAILS_PER_DAY a day, so a
+ * its monthlyEmailLimit (its plan's emailsPerMonth, or a trial's allowance) each calendar month (UTC), and in its first week NEW_PROJECT_EMAILS_PER_DAY a day, so a
  * new project's spam reaches only so many before its bounces and complaints show. Each claimed in one statement, so
  * sends at once can't pass it together. The first email the month's limit holds tells the project's owners and admins.
  */
@@ -33,16 +33,17 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
   if (!plansEnabled()) {
     return true;
   }
-  const { createdAt, emailPausedAt, plan } = await prisma.project.findUniqueOrThrow({
+  // The plan as stored, with when its trial ends (monthlyEmailLimit).
+  const { createdAt, emailPausedAt, plan, trialEndsAt } = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { createdAt: true, emailPausedAt: true, plan: true },
+    select: { createdAt: true, emailPausedAt: true, plan: true, trialEndsAt: true },
   });
   // Paused since the run began (it checks each email, so one paused mid-run stops there).
   if (capping() && emailPausedAt) {
     return false;
   }
   // Counted on every plan (Billing shows it), limited where the plan has a limit.
-  const limit = emailsPerMonth(plan);
+  const limit = monthlyEmailLimit({ plan, trialEndsAt }, now);
   const month = monthOf(now);
   const counted = await prisma.$queryRaw<{ emails: number }[]>`
     INSERT INTO "project_email_month" ("projectId", "month", "emails")
@@ -88,10 +89,10 @@ export async function emailsThisMonth(projectId: string, now = new Date()): Prom
     return null;
   }
   const [project, row] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, trialEndsAt: true } }),
     prisma.projectEmailMonth.findUnique({ where: { projectId_month: { projectId, month: monthOf(now) } }, select: { emails: true } }),
   ]);
-  return { emails: row?.emails ?? 0, limit: emailsPerMonth(project.plan) };
+  return { emails: row?.emails ?? 0, limit: monthlyEmailLimit(project, now) };
 }
 
 /** Whether a project's email to its users waits for next month: its plan's emailsPerMonth are used up. */
@@ -127,17 +128,17 @@ export const heldDueDates = (now = new Date()) =>
 
 /** The projects whose plan's emails for this month are used up: their email to their users waits for next month. */
 export async function monthCappedProjects(now = new Date()): Promise<string[]> {
-  const limits = listedPlans().map(emailsPerMonth).filter((limit) => limit !== null);
+  const limits = [...listedPlans().map(emailsPerMonth), trialTerms()?.emails ?? null].filter((limit) => limit !== null);
   const months =
     limits.length > 0
       ? await prisma.projectEmailMonth.findMany({
           where: { month: monthOf(now), emails: { gte: Math.min(...limits) } },
-          select: { projectId: true, emails: true, project: { select: { plan: true } } },
+          select: { projectId: true, emails: true, project: { select: { plan: true, trialEndsAt: true } } },
         })
       : [];
   return months
     .filter(({ emails, project }) => {
-      const limit = emailsPerMonth(project.plan);
+      const limit = monthlyEmailLimit(project, now);
       return limit !== null && emails >= limit;
     })
     .map(({ projectId }) => projectId);
@@ -185,14 +186,15 @@ async function tellEmailLimitOnce(projectId: string, now: Date) {
   }
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { name: true, slug: true, plan: true, team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } } },
+    select: { name: true, slug: true, plan: true, trialEndsAt: true, team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } } },
   });
   const email = emailLimitEmail({
     projectName: project.name,
-    planName: planDisplay(project.plan).name,
-    limit: emailsPerMonth(project.plan) ?? 0,
+    planName: planDisplay(effectivePlan(project.plan, project.trialEndsAt, now)).name,
+    limit: monthlyEmailLimit(project, now) ?? 0,
     resets: nextMonth(now).toLocaleDateString("en", { month: "long", day: "numeric", timeZone: "UTC" }),
-    upgrade: upgradeFor(project.plan, emailsPerMonth, " for more."),
+    // From its own plan (a trial's is the default), with its own limit (a trial's allowance, while it runs).
+    upgrade: upgradeFor(project.plan, (plan) => (plan === project.plan ? monthlyEmailLimit(project, now) : emailsPerMonth(plan)), " for more."),
     url: `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`,
   });
   const sent = await Promise.allSettled(project.team.map(({ user }) => sendEmail({ to: user.email, ...email })));

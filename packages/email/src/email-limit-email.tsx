@@ -20,7 +20,7 @@ export function EmailLimitEmail({ projectName, planName, limit, resets, upgrade,
   return (
     <Layout preview={`${projectName}'s email to its users is waiting until ${resets}.`}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} emails its {planName} plan includes this month, so its email to
+        <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} its {planName} plan includes this month, so its email to
         your users (support replies, &quot;it shipped&quot; and changelog emails) is waiting until the month resets on {resets}. Nothing is lost:
         replies still show in the inbox and the widget.{upgrade && ` ${upgrade}`}
       </Text>

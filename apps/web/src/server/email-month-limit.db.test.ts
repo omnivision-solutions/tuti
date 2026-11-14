@@ -392,6 +392,30 @@ test("held for a month that has reset, a shipped email whose send fails is due f
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt!.getTime()).toBe(Date.now());
 });
 
+test("on a free trial, email is held at the trial's own allowance, not its plan's; once it ends, at the default plan's", async () => {
+  // The trial gives Pro (10,000 a month) with 1 email; Free, the default plan, sends 3.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { free }) => {
+    free.limits.emailsPerMonth = 3;
+    config.trial = { plan: "pro", days: 7, emails: 1 };
+  }));
+  const { owner, project, team } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  const emailed = await twoReplies(project, team);
+  await handlers.sendConversationReplies({}, log);
+  expect(emailed()).toBe(1);
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 1 });
+  // The team hears of the trial's allowance, and the plan with more room than it.
+  const [told] = limitEmails(owner.email);
+  expect(told?.text).toContain("has sent the 1 email its Pro plan includes");
+  expect(told?.text).toContain("Upgrade to Pro for more.");
+
+  // The trial over: Free's 3, so the waiting one goes.
+  await prisma.project.update({ where: { id: project.id }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 3 });
+  await handlers.sendConversationReplies({}, log);
+  expect(emailed()).toBe(2);
+});
+
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {
   const { project, team } = await setup();
   const emailed = await twoReplies(project, team);

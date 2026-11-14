@@ -110,3 +110,11 @@ test("the plan's card counts this month's email to the project's users against i
   vi.stubEnv("BILLING_CONFIG", "");
   expect(await billing()).not.toContain("emails sent this month");
 });
+
+test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  expect(await billing()).toContain("0 of 500 emails sent this month");
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
+  expect(await billing()).toContain("0 of 1,000 emails sent this month");
+});
