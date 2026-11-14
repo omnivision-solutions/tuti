@@ -36,7 +36,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   // handoff failed.
   const ssoUrl = portal?.ssoSecret && portal.ssoSignInUrl ? URL.parse(portal.ssoSignInUrl) : null;
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
-  const hasReaders = isPrivate && !!portal && !!(await prisma.portalReader.findFirst({ where: { projectId: portal.id }, select: { id: true } }));
+  const hasReaders = !!ssoUrl && isPrivate && !!portal && !!(await prisma.portalReader.findFirst({ where: { projectId: portal.id }, select: { id: true } }));
   if (ssoUrl && !hasReaders && via !== "email" && handoff !== "failed" && link !== "failed") {
     redirect(ssoUrl.href);
   }
