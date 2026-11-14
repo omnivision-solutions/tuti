@@ -108,6 +108,10 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   const sentTo = async (path: string) => (await visitor.request.get(`${portalUrl(slug)}${path}`, { maxRedirects: 0 })).headers().location;
   expect(await sentTo("/sign-up")).toBe("/sign-in");
   expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F");
+  // The portal's own sign-in stays for the team and readers added by email (their invitations link there), and to say a
+  // sign-in link failed.
+  expect(await sentTo("/sign-in?with=email")).toBeUndefined();
+  expect(await sentTo("/sign-in?link=failed")).toBeUndefined();
 
   // A sign-in that failed stays to say so, with the way back to the app first, above the email.
   await visitor.goto("/sign-in?continue=failed");

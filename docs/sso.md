@@ -79,7 +79,8 @@ sign-in: **Sign in** (and sign-up) on the portal sends people to that address wi
 the portal path to come back to, e.g.
 `https://app.example.com/tuti?redirect=%2Ffeedback%2Ffeature-requests`. Sign them in
 there if they aren't yet, then send them on as in step 3 with that `redirect`. Leave it
-empty to keep the portal's own sign-in (email and Tuti accounts).
+empty to keep the portal's own sign-in (email and Tuti accounts). Your team, and readers you add
+by email (their invitation links there), still sign in on the portal at `/sign-in?with=email`.
 
 ## In the widget
 

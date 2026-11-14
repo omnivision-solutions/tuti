@@ -137,7 +137,8 @@ export const addPortalReaders = defineOperation({
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true, brandColor: true } });
     const notify = input.notify && project.portalAccess === "PRIVATE" && emailConfigured();
     // Before the readers are added: if it failed after, a retry would find them added and email nobody.
-    const signInUrl = notify ? `${await portalAddress(project.slug)}/sign-in` : "";
+    // The portal's own sign-in, even where its sign-in is the project's app's (SSO): theirs is by email.
+    const signInUrl = notify ? `${await portalAddress(project.slug)}/sign-in?with=email` : "";
     // Under the project's lock, so adds at the same time can't go past the limits together.
     const { added, toEmail } = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);

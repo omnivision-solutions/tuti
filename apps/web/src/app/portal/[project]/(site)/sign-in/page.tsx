@@ -16,7 +16,7 @@ import { portalLinks } from "@/server/portal-base";
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
   const at = await portalLinks();
-  const [{ project }, { continue: handoff, link, next, title }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project }, { continue: handoff, link, next, title, with: via }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
   // A board's "Share an idea" posted here before its script ran: the title typed comes along, for the way back.
   const back = typeof next === "string" && typeof title === "string" && title.trim() ? withTitle(next, title.trim().slice(0, 200)) : next;
@@ -31,10 +31,11 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   // A reader the team added, whose address isn't verified yet: an emailed sign-in link verifies it.
   const unverified = refused && portal && (await invitedReader(portal.id, session!.user.id)) === "unverified";
   // With SSO and the project's app's sign-in page, people sign in with their account there: its app signs them in and
-  // sends them back through /sso with `redirect`. A failed sign-in link or handoff stays to say so, with the button.
+  // sends them back through /sso with `redirect`. The page itself, with the button first, for the team and readers it
+  // added by email (`?with=email`, as the readers' email links), and to say a sign-in link or handoff failed.
   const ssoUrl = portal?.ssoSecret && portal.ssoSignInUrl ? URL.parse(portal.ssoSignInUrl) : null;
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
-  if (ssoUrl && handoff !== "failed" && link !== "failed") {
+  if (ssoUrl && via !== "email" && handoff !== "failed" && link !== "failed") {
     redirect(ssoUrl.href);
   }
 
