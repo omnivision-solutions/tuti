@@ -193,7 +193,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 </div>
               </div>
             )}
-            <div className={cn("shrink-0", boards.length > 1 && "max-lg:basis-full")}>
+            <div className={cn("shrink-0 max-lg:max-w-full max-lg:min-w-0", boards.length > 1 && "max-lg:basis-full")}>
               <FilterPills
                 label="Sort"
                 current={tabHref(tab)}

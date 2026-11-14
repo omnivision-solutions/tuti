@@ -2653,6 +2653,22 @@ test("a board on a phone: its pills in two rows, Tab in the order they show, and
   for (const title of ["Dark mode", "Calendar sync", "Slack alerts", "Export events to CSV", "Time zone per event", "Recurring events"]) {
     await api("/posts", { board: "feature-requests", title });
   }
+  // One board, signed in: no switcher, four sorts (Mine too) then the status menu; at 360 and 390 they wrap rather than run past the edge.
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  for (const width of [360, 390]) {
+    await ada.setViewportSize({ width, height: 844 });
+    await ada.goto("/feedback/feature-requests");
+    await expect(ada.getByRole("button", { name: /^Board: / })).toHaveCount(0);
+    const sorts = ada.getByRole("navigation", { name: "Sort" }).getByRole("link");
+    await expect(sorts).toHaveText(["Trending", "Top", "New", "Mine"]);
+    for (const pill of [...(await sorts.all()), ada.getByRole("main").getByRole("button", { name: /^Status: / })]) {
+      const box = (await pill.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(16);
+      expect(box.x + box.width).toBeLessThanOrEqual(width - 16);
+    }
+    expect(await ada.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  await checkpoint(ada, "portal-board-one-board-phone", { fullPage: false });
   // A second board, so the pills start with the board switcher.
   await team.goto(`/app/${slug}/feedback/boards`);
   await team.getByRole("button", { name: "New board" }).click();
