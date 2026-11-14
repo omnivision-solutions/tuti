@@ -2020,6 +2020,9 @@ test("on a server selling plans, a new project's email is capped in its first we
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
   await setTodaysEmails(slug, { claimed: 200 });
   await owner.goto(`/app/${slug}/inbox/1`);
+  // Said over the reply box before Send.
+  const waits = owner.locator(".inbox-email-waits");
+  await expect(waits).toHaveText("Today's emails are used (a project's first week sends up to 200 a day): replies are emailed tomorrow.");
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Said as it's sent.
@@ -2028,14 +2031,28 @@ test("on a server selling plans, a new project's email is capped in its first we
   await expectMoreView(owner, /^Waiting on user 1/);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
-  await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
+  // Under the reply, in short (the whole reason as its title), on a line of its own where the author's doesn't fit.
+  await expect(owner.getByTitle("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toHaveText("Emailed tomorrow");
   await checkpoint(owner, "reply-waits-for-daily-cap");
   // Its plan's emails for the month used up too (Free: 1,000): it waits for next month, which the notice says over tomorrow.
   await setThisMonthsEmails(slug, 1000);
   await owner.reload();
-  await expect(owner.getByText("Emailed next month: your plan's emails for this month are used (Settings → Billing)")).toBeVisible();
-  await expect(owner.getByText("Emailed tomorrow: in its first week")).toHaveCount(0);
+  await expect(owner.getByTitle("Emailed next month: your plan's emails for this month are used (Settings → Billing)")).toHaveText("Emailed next month");
+  await expect(owner.getByText("Emailed tomorrow")).toHaveCount(0);
+  // Before the next Send, the reply box says so, and where to see the plan.
+  await expect(waits).toHaveText("This month's emails are used: replies are emailed next month. Billing");
+  await expect(waits.getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  // A note isn't emailed: nothing to say on Note.
+  await owner.getByRole("tab", { name: "Note" }).click();
+  await expect(waits).toHaveCount(0);
+  await owner.getByRole("tab", { name: "Reply" }).click();
   await checkpoint(owner, "reply-waits-for-monthly-limit");
+  // On a phone, the author's line stays whole: the status wraps under it.
+  const viewport = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(waits).toBeVisible();
+  await checkpoint(owner, "reply-waits-for-monthly-limit-phone");
+  await owner.setViewportSize(viewport);
   await setThisMonthsEmails(slug, 0);
 
   // 2 of 100 bounced: paused, and the operator is told.
@@ -2043,7 +2060,8 @@ test("on a server selling plans, a new project's email is capped in its first we
   const told = countEmailsTo(APP_PORTAL_OWNER);
   await sesBounce(CLOUD_URL, projectId);
   await owner.reload();
-  await expect(owner.getByText("Not emailed while your project's email is paused (Settings → Inbox and email)")).toBeVisible();
+  await expect(owner.getByTitle("Not emailed while your project's email is paused (Settings → Inbox and email)")).toHaveText("Not emailed yet");
+  await expect(waits).toHaveText("Your project's email is paused: replies are emailed once it's on again. Settings");
   // The composer makes no promise that replies are emailed while they wait.
   await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
   await checkpoint(owner, "reply-waits-while-paused");
