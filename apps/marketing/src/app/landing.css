@@ -47,6 +47,10 @@
   .btn-d:hover { background: rgba(255, 255, 255, 0.14); }
   .ctas { display: flex; gap: 12px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
   .ctas.left { justify-content: flex-start; }
+  /* A section's text link beside its button */
+  .tlink { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 48px; padding: 0 10px; font-weight: 600; color: var(--g7); }
+  .tlink:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .tlink.ask { height: auto; padding: 0; margin-top: 24px; }
 
   /* Sections */
   section { padding: 120px 0; scroll-margin-top: 64px; }
