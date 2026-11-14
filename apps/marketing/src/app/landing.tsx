@@ -85,10 +85,15 @@ export function Landing({ aiInEveryPlan }: { aiInEveryPlan: boolean | null }) {
 
 const icon = { "aria-hidden": true, size: 16 } as const;
 
-/** A screenshot as wide as the window it's in, up to `max` CSS pixels. */
-const Shot = ({ src, alt, max, className, preload }: { src: StaticImageData; alt: string; max: number; className?: string; preload?: boolean }) => (
-  <Image src={src} alt={alt} sizes={`(max-width: ${max}px) 100vw, ${max}px`} className={className} preload={preload} />
+/** A screenshot as wide as the window it's in, up to `max` CSS pixels; `sizes` where it's drawn otherwise. */
+const Shot = ({ src, alt, max, sizes, className, preload }: { src: StaticImageData; alt: string; max?: number; sizes?: string; className?: string; preload?: boolean }) => (
+  <Image src={src} alt={alt} sizes={sizes ?? `(max-width: ${max}px) 100vw, ${max}px`} className={className} preload={preload} />
 );
+
+// The widths the bento draws its pictures at (`.cell img.bl` in landing.css): 640px on phones (wider than the screen,
+// cropped by the cell), its cell less the 28px inset where the cell is full width (tablets), else a fixed width.
+const BENTO_WIDE = "(max-width: 640px) 640px, (max-width: 1080px) calc(100vw - 86px), 730px";
+const bento = (px: number) => `(max-width: 640px) 640px, ${px}px`;
 
 function Hero() {
   // The window is open on Autopilot first.
@@ -220,7 +225,7 @@ function Bento() {
         <div className="bento">
           <Cell id="help" className="c-help" icon={<BookOpenIcon {...icon} />} label="Help center" title="Answers customers trust." line="Search and AI answers in one box, every answer cited.">
             <div className="pics">
-              <Shot src={docs} max={760} className="bl" alt="A help center's home page: a search box over collections and popular articles" />
+              <Shot src={docs} sizes={BENTO_WIDE} className="bl" alt="A help center's home page: a search box over collections and popular articles" />
               <Shot src={cropAi} max={250} className="over" alt="An AI answer to “How do I cancel my plan?”, with its source linked" />
             </div>
           </Cell>
@@ -228,16 +233,16 @@ function Bento() {
             <Shot src={widgetHome} max={270} className="wdg" alt="The in-app widget: help search, popular articles, a message to the team and Share an idea" />
           </Cell>
           <Cell id="inbox" className="c-inbox" icon={<InboxIcon {...icon} />} label="Inbox" title="Every conversation, one inbox." line="AI answers first. Your team takes the rest.">
-            <Shot src={inbox} max={900} className="bl" alt="The inbox: conversations waiting for a reply, one open beside the customer's details" />
+            <Shot src={inbox} sizes={BENTO_WIDE} className="bl" alt="The inbox: conversations waiting for a reply, one open beside the customer's details" />
           </Cell>
           <Cell id="feedback" className="c-fb" icon={<LightbulbIcon {...icon} />} label="Feedback" title="Customers vote." line="See which feature requests matter most.">
-            <Shot src={board} max={560} className="bl" alt="A feedback board of feature requests, with their statuses and votes" />
+            <Shot src={board} sizes={bento(560)} className="bl" alt="A feedback board of feature requests, with their statuses and votes" />
           </Cell>
           <Cell className="c-rm" icon={<MapIcon {...icon} />} label="Roadmap" title="Show what's next.">
-            <Shot src={roadmap} max={700} className="bl" alt="A public roadmap with Planned, In progress and Completed columns" />
+            <Shot src={roadmap} sizes={bento(700)} className="bl" alt="A public roadmap with Planned, In progress and Completed columns" />
           </Cell>
           <Cell className="c-cl" icon={<MegaphoneIcon {...icon} />} label="Changelog" title="Tell everyone it shipped.">
-            <Shot src={changelog} max={700} className="bl" alt="A public changelog, its entries tagged New, Improved and Fixed" />
+            <Shot src={changelog} sizes={bento(700)} className="bl" alt="A public changelog, its entries tagged New, Improved and Fixed" />
           </Cell>
           <div className="cell c-dark">
             <Eyebrow icon={<ShieldCheckIcon {...icon} />}>Verify</Eyebrow>
@@ -245,7 +250,7 @@ function Bento() {
             <p>Every article, on demand.</p>
           </div>
           <Cell className="c-rep" icon={<ChartColumnIcon {...icon} />} label="Reporting" title="See what customers can't find.">
-            <Shot src={reporting} max={900} className="bl" alt="Help center reporting: article views, searches and searches that found nothing, by day" />
+            <Shot src={reporting} sizes={bento(900)} className="bl" alt="Help center reporting: article views, searches and searches that found nothing, by day" />
           </Cell>
         </div>
       </div>

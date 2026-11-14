@@ -74,7 +74,7 @@
     background: linear-gradient(135deg, #1f7a46, #3fae6f 45%, #b9e6a8);
   }
   /* Room for the focus ring: the row scrolls sideways, so it clips what overflows it. */
-  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: -5px -34px 17px; padding: 5px 34px; }
+  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: -7px -34px 15px; padding: 7px 34px; }
   .tab {
     flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 12px; font-weight: 600; font-size: 15px;
     color: rgba(255, 255, 255, 0.88); border: 1px solid transparent; cursor: pointer;
@@ -82,6 +82,9 @@
   .tab:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
   .tab[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.3); }
   .tab[aria-pressed="true"] svg { color: var(--g); }
+  /* The frame's gradient runs from dark to light green, too light for white alone at its end: a forest band on each
+     side of the white ring, after the open tab's own shadow so it wins (forest is 3.5:1 or more on every part of it, and 18:1 with white). */
+  .frame :focus-visible { box-shadow: 0 0 0 6px var(--forest); }
   .win { background: var(--card); border-radius: 16px 16px 0 0; overflow: hidden; max-height: 700px; text-align: left; }
   .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line2); background: #fcfbf8; }
   .dots { display: flex; gap: 6px; }
@@ -257,7 +260,7 @@
     .lead { font-size: 18px; margin-top: 18px; }
     .ctas { flex-direction: column; align-items: stretch; }
     .frame { margin-top: 44px; padding: 20px 10px 0; border-radius: 24px 24px 0 0; }
-    .tabs { margin: -5px -10px 9px; padding: 5px 10px; }
+    .tabs { margin: -7px -10px 7px; padding: 7px 10px; }
     .tab { height: 38px; padding: 0 13px; font-size: 14px; }
     .win { border-radius: 12px 12px 0 0; }
     .bar { height: 30px; }
@@ -269,6 +272,7 @@
     .bento { grid-auto-rows: 300px; margin-top: 40px; gap: 12px; }
     .cell { grid-column: span 6 !important; padding: 22px; }
     .c-help, .c-inbox, .c-fb, .c-wdg { grid-row: span 1; }
+    /* As wide on every phone (landing.tsx, the bento's `sizes`). */
     .cell img.bl { left: 22px; --w: 640px; }
     .c-help img.bl { top: 150px; }
     .c-help img.over { display: none; }
