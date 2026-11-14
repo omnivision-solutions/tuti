@@ -468,8 +468,9 @@ the list picks none to approve at once.
     in <board>. Share yours"; under a search's results "Not here? Post it". The rail, a plain column (no card) with
     sentence-case labels: Boards (the open one a neutral fill, counts) and Recently shipped, the latest as one line
     ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu). Phones: one title row with a round search (its
-    field in a popover) and a round + named by the board's button text; then one row of pills that scrolls sideways,
-    starting with the board switcher (a menu pill named after the board: All boards and each board); the shipped line
+    field in a popover) and a round + named by the board's button text; then two rows of pills, nothing off-screen:
+    the board switcher (a menu pill named after the board: All boards and each board; a long name cut short) with the
+    status menu on the right, then the sorts (one board: the sorts then the status menu, wrapping); the shipped line
     and Get updates under the list.
   - **A post**: the shared page header (back link to the board, the 36px title, 28px on phones), the byline, then the
     status pill and "Expected <month>" with a calendar, the body at 17px. The rail is a plain column, no card:

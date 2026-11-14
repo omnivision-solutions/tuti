@@ -175,7 +175,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         description={board.description || "Vote for the ideas you want most, or share your own."}
         // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
         // Below `lg` two rows (the rail's boards are on wide screens only): the board switcher and the status menu, then the
-        // sorts. With one board, the sorts then the status, wrapping if they must.
+        // sorts; the status menu is in the page twice (one shown), so Tab and screen readers follow the rows. With one board,
+        // the sorts then the status, wrapping if they must.
         pills={
           <BoardPillRow>
             {boards.length > 1 && (
@@ -186,7 +187,12 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 className="min-w-0 shrink lg:hidden"
               />
             )}
-            <div className={cn("shrink-0", boards.length > 1 && "max-lg:order-last max-lg:basis-full")}>
+            {boards.length > 1 && (
+              <div className="ml-auto shrink-0 lg:hidden">
+                <BoardStatusMenu choices={statusChoices} counted={!searching} />
+              </div>
+            )}
+            <div className={cn("shrink-0", boards.length > 1 && "max-lg:basis-full")}>
               <FilterPills
                 label="Sort"
                 current={tabHref(tab)}
@@ -205,7 +211,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               />
             </div>
             <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border max-lg:hidden" />
-            <div className={cn("shrink-0", boards.length > 1 && "max-lg:ml-auto")}>
+            <div className={cn("shrink-0", boards.length > 1 && "max-lg:hidden")}>
               <BoardStatusMenu choices={statusChoices} counted={!searching} />
             </div>
           </BoardPillRow>

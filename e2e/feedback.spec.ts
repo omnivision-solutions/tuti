@@ -2633,7 +2633,7 @@ test("Feedback's pane asks before Completed too, saying how many it emails", asy
   await expect(pane.getByRole("combobox", { name: "Status" })).toHaveText(/Open/);
 });
 
-test("a board on a phone: its pill row fades at the screen's edge while more is past it, and the page ends clear of the support launcher", async ({ browser }, testInfo) => {
+test("a board on a phone: its pills in two rows, Tab in the order they show, and the page ends clear of the support launcher", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -2642,7 +2642,7 @@ test("a board on a phone: its pill row fades at the screen's edge while more is 
   for (const title of ["Dark mode", "Calendar sync", "Slack alerts", "Export events to CSV", "Time zone per event", "Recurring events"]) {
     await api("/posts", { board: "feature-requests", title });
   }
-  // A second board, so the row starts with the board switcher and the sorts and status menu are past the screen's edge.
+  // A second board, so the pills start with the board switcher.
   await team.goto(`/app/${slug}/feedback/boards`);
   await team.getByRole("button", { name: "New board" }).click();
   await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
@@ -2656,23 +2656,24 @@ test("a board on a phone: its pill row fades at the screen's edge while more is 
   const switcher = main.getByRole("button", { name: "Board: Feature requests" });
   const row = switcher.locator("xpath=..");
   const status = main.getByRole("button", { name: /^Status: / });
-  // More past the right end: the row runs to the screen's edge, so its fade is over the next pill (the row's padding is the
-  // fade's clear end), not over the screen's margin with nothing to show.
-  await expect(row).toHaveAttribute("data-more", "end");
-  // (The page's width: a desktop browser keeps room for its scrollbar.)
+  // Row 1 the switcher and the status menu, row 2 the sorts; nothing past the screen's 16px margin, nothing to scroll.
   const width = await visitor.evaluate(() => document.body.getBoundingClientRect().width);
-  const box = (await row.boundingBox())!;
-  expect(box.x + box.width).toBe(width);
-  expect((await switcher.boundingBox())!.x).toBe(16);
-  expect((await status.boundingBox())!.x).toBeGreaterThan(width);
+  const trending = main.getByRole("link", { name: "Trending" });
+  const switcherBox = (await switcher.boundingBox())!;
+  const statusBox = (await status.boundingBox())!;
+  expect(switcherBox.x).toBe(16);
+  expect(statusBox.y).toBe(switcherBox.y);
+  expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(width - 16);
+  expect((await trending.boundingBox())!.y).toBeGreaterThan(switcherBox.y + switcherBox.height);
+  await expect(row).not.toHaveAttribute("data-more");
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // Tab goes as the rows read: the switcher, the status menu, then the sorts.
+  await switcher.focus();
+  await visitor.keyboard.press("Tab");
+  await expect(status).toBeFocused();
+  await visitor.keyboard.press("Tab");
+  await expect(trending).toBeFocused();
   await checkpoint(visitor, "portal-board-phone-pills", { fullPage: false });
-  // Scrolled to its end, the status menu is in full view, clear of the screen's margin.
-  await row.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
-  await expect(row).toHaveAttribute("data-more", "start");
-  const menu = (await status.boundingBox())!;
-  expect(menu.x + menu.width).toBeLessThanOrEqual(width - 16);
-  await checkpoint(visitor, "portal-board-phone-pills-end", { fullPage: false });
 
   // Scrolled to the end of the page, the last idea's vote box is clear of the launcher.
   const launcher = visitor.locator('body > button[aria-controls="tuti-widget"]');
