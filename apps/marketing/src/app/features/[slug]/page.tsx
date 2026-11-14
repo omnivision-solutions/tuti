@@ -60,7 +60,7 @@ export default async function FeaturePage({ params }: PageProps<"/features/[slug
       <section className="bento-s fp">
         <div className="wrap">
           {/* The cards' titles are h3s: a heading over them for screen readers, the pictures saying it on screen. */}
-          <h2 className="sr-only">What {f.name} does</h2>
+          <h2 className="sr-only">What it does</h2>
           <div className="bento">
             {sections.map(({ title, line, picture, wide, dark }) => (
               <div key={title} className={`cell${wide ? " wide" : ""}${dark ? " c-dark" : ""}`}>
