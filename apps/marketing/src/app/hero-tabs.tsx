@@ -19,22 +19,20 @@ export function HeroTabs({ panels }: { panels: { label: string; icon: ReactNode;
           </button>
         ))}
       </div>
-      <div className="stage">
-        <div className="win">
-          <div className="bar" aria-hidden>
-            <div className="dots">
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="url">{panels[open].url}</div>
+      <div className="win">
+        <div className="bar" aria-hidden>
+          <div className="dots">
+            <i />
+            <i />
+            <i />
           </div>
-          {panels.map((panel, i) => (
-            <div key={panel.label} hidden={i !== open} className="panel-wrap">
-              {panel.picture}
-            </div>
-          ))}
+          <div className="url">{panels[open].url}</div>
         </div>
+        {panels.map((panel, i) => (
+          <div key={panel.label} hidden={i !== open} className="panel-wrap">
+            {panel.picture}
+          </div>
+        ))}
       </div>
     </div>
   );

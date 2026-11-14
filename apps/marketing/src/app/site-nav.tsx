@@ -1,12 +1,13 @@
 "use client";
 
 import { buttonVariants } from "@tuti/ui/button";
+import { GithubMark } from "@tuti/ui/github-mark";
 import { MenuIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { DOCS, SIGN_IN, SIGN_UP } from "./links";
+import { DOCS, REPO_URL, SIGN_IN, SIGN_UP } from "./links";
 import { SECTIONS } from "./sections";
 
 const LINKS = [...SECTIONS, ["Pricing", "/pricing"]] as const;
@@ -71,6 +72,9 @@ export function MobileNav() {
         <a href={DOCS} onClick={close} className={row}>
           Docs
         </a>
+        <a href={REPO_URL} onClick={close} className={row}>
+          GitHub
+        </a>
         <div className="mt-6 flex flex-col gap-2">
           <a href={SIGN_IN} className={buttonVariants({ variant: "outline", size: "lg" })}>
             Sign in
@@ -84,10 +88,15 @@ export function MobileNav() {
   );
 }
 
-/** The header's Sign in and Start free trial: plain links, into the app (another app on this domain). */
+/** The header's GitHub, Sign in and Start free trial: plain links, into the app (another app on this domain). */
 export function SignedOutLinks() {
   return (
     <>
+      {/* Tuti is open source: its repository, from every page. */}
+      <a href={REPO_URL} className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
+        <GithubMark className="size-4" />
+        GitHub
+      </a>
       <a href={SIGN_IN} className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
         Sign in
       </a>
