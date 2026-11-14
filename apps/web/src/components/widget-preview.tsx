@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { usePreview } from "@/components/customize-shell";
 import { textColorOn } from "@/lib/colors";
@@ -63,6 +63,13 @@ export function WidgetPreview({
   const launcher = useRef<HTMLButtonElement>(null);
   // Open from the start, focus stays where it is: only the launcher's click puts it in the panel.
   const clicked = useRef(false);
+  // The panel only once this page has hydrated: on a slow machine one in the server's HTML can say it's up before
+  // anything here listens, and then never takes the settings as they're set.
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   useEffect(() => {
     if (!open) {
       return;
@@ -123,7 +130,7 @@ export function WidgetPreview({
       </div>
       {/* The panel takes up to 600px of the window's height under its bar, above the launcher. */}
       <div className={cn("absolute top-14 bottom-5 flex flex-col justify-end gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
-        {open && (
+        {open && hydrated && (
           <iframe
             ref={panel}
             id={panelId}
@@ -140,7 +147,7 @@ export function WidgetPreview({
           type="button"
           aria-label={`Launcher: ${label}`}
           aria-expanded={open}
-          aria-controls={open ? panelId : undefined}
+          aria-controls={open && hydrated ? panelId : undefined}
           title={label}
           onClick={() => {
             clicked.current = true;
