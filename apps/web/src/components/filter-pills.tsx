@@ -22,16 +22,26 @@ export const pillClass = (picked = false, className?: string) =>
 
 /**
  * A page's views as pills in its pane header ("All 38", "Mine 4"): links, the open one filled (views in the query string
- * too: `activeView`). One row that never
- * wraps; with too little room it scrolls sideways, faded at the end that has more (`useScrollingRow`).
+ * too: `activeView`). One row that doesn't wrap (unless `className` says so, as a portal board's sorts on phones);
+ * with too little room it scrolls sideways, faded at the end that has more (`useScrollingRow`).
  */
-export function FilterPills({ label, items, current: given }: { label: string; items: { title: ReactNode; href: string; count?: ReactNode }[]; current?: string }) {
+export function FilterPills({
+  label,
+  items,
+  current: given,
+  className,
+}: {
+  label: string;
+  items: { title: ReactNode; href: string; count?: ReactNode }[];
+  current?: string;
+  className?: string;
+}) {
   const pathname = usePathname();
   const search = useSearchParams().toString();
   const current = given ?? activeView(pathname, search, items.map((item) => item.href));
   const nav = useScrollingRow(current, items);
   return (
-    <nav ref={nav} aria-label={label} className={cn("flex min-w-0 gap-1.5", SCROLLING_ROW)}>
+    <nav ref={nav} aria-label={label} className={cn("flex min-w-0 gap-1.5", SCROLLING_ROW, className)}>
       {items.map((item) => {
         const active = item.href === current;
         return (

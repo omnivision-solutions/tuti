@@ -343,9 +343,10 @@ the list picks none to approve at once.
   `Tabs` (the reply box's Reply and Note are underline tabs across the top of its card instead, under Inbox) (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed, each with its count) are `FilterPills`, as the board's sort, so
   the portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
-  count): a second row of chips or tabs would put more between the visitor and the list. The portal roadmap's three columns, one at a time on phones, are a segmented control:
+  count): a second row of chips or tabs would put more between the visitor and the list. Below `lg` the board's pills
+  wrap instead, so nothing sits off-screen: the status menu beside the board switcher, the sorts under them (A board). The portal roadmap's three columns, one at a time on phones, are a segmented control:
   three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
-  never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
+  never wraps, except a portal board's pills on phones (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has a section pane of its own (Panes), in groups (Project,
   Portal, Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
@@ -468,8 +469,9 @@ the list picks none to approve at once.
     in <board>. Share yours"; under a search's results "Not here? Post it". The rail, a plain column (no card) with
     sentence-case labels: Boards (the open one a neutral fill, counts) and Recently shipped, the latest as one line
     ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu). Phones: one title row with a round search (its
-    field in a popover) and a round + named by the board's button text; then one row of pills that scrolls sideways,
-    starting with the board switcher (a menu pill named after the board: All boards and each board); the shipped line
+    field in a popover) and a round + named by the board's button text; then two rows of pills, nothing off-screen:
+    the board switcher (a menu pill named after the board: All boards and each board; a long name cut short) with the
+    status menu on the right, then the sorts (one board: the sorts then the status menu, wrapping); the shipped line
     and Get updates under the list.
   - **A post**: the shared page header (back link to the board, the 36px title, 28px on phones), the byline, then the
     status pill and "Expected <month>" with a calendar, the body at 17px. The rail is a plain column, no card:
@@ -779,7 +781,8 @@ widths, in light and dark (in development only).
   string too); the pane finds its links in its children, so a client component that renders SectionLinks hides them
   (pass them as elements, or give them `active`).
 - **`FilterPills`** (`pillClass` for a pill that isn't a link): a page's views as rounded pills with counts, the open
-  one filled; one row that scrolls sideways when it doesn't fit (`useScrollingRow`).
+  one filled; one row that scrolls sideways when it doesn't fit (`useScrollingRow`). A portal board's sorts wrap below
+  `lg` instead (`className`).
 - **`ItemGroup`**: a list's group (posts by status): a tinted (`muted`) bar with its icon, title and count that folds
   what's under it.
 - **`SettingsCard`** + **`SettingRow`** (`label`, `description`, `htmlFor`, `inline`): settings as one card of rows,

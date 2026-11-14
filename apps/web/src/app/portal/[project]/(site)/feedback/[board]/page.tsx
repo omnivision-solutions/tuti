@@ -174,24 +174,31 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         title={board.name}
         description={board.description || "Vote for the ideas you want most, or share your own."}
         // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
-        // Phones: one row that scrolls sideways, the board switcher first (the rail's boards are on wide screens only).
+        // Below `lg` two rows (the rail's boards are on wide screens only): the board switcher and the status menu, then the
+        // sorts; the status menu is in the page twice (one shown), so Tab and screen readers follow the rows. With one board,
+        // the sorts then the status, wrapping if they must.
         pills={
           <BoardPillRow>
             {boards.length > 1 && (
-              <>
+              // Its own line, so a long board name is cut short rather than pushing the status menu to a row of its own.
+              <div className="flex min-w-0 basis-full items-center gap-1.5 lg:hidden">
                 <BoardSwitcher
                   name={board.name}
                   allHref={at("/feedback")}
                   boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
-                  className="lg:hidden"
+                  className="min-w-0 shrink"
                 />
-                <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border lg:hidden" />
-              </>
+                <div className="ml-auto shrink-0">
+                  <BoardStatusMenu choices={statusChoices} counted={!searching} />
+                </div>
+              </div>
             )}
-            <div className="shrink-0">
+            <div className={cn("shrink-0 max-lg:max-w-full max-lg:min-w-0", boards.length > 1 && "max-lg:basis-full")}>
               <FilterPills
                 label="Sort"
                 current={tabHref(tab)}
+                // Signed in, Mine makes four: too wide for a 360px phone, so they wrap there too.
+                className="gap-y-2 max-lg:flex-wrap"
                 items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, name]) => {
                   const Icon = sortIcons[key];
                   return {
@@ -206,8 +213,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 })}
               />
             </div>
-            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
-            <BoardStatusMenu choices={statusChoices} counted={!searching} />
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border max-lg:hidden" />
+            <div className={cn("shrink-0", boards.length > 1 && "max-lg:hidden")}>
+              <BoardStatusMenu choices={statusChoices} counted={!searching} />
+            </div>
           </BoardPillRow>
         }
         actions={
