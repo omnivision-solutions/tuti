@@ -401,7 +401,7 @@
   .sc-votes .v.on small { color: var(--g7); }
 
   /* In the hero's window */
-  .hero-sc { padding: 36px 40px; min-height: 470px; background: #fbfaf6; }
+  .hero-sc { padding: 28px 40px 36px; min-height: 470px; background: #fbfaf6; }
   .sc-ap { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 28px; align-items: start; }
   .sc-from { display: grid; gap: 10px; }
   .sc-hc { display: flex; flex-direction: column; align-items: center; }
@@ -409,17 +409,46 @@
   .sc-hc .sc-answer, .sc-hc .sc-tiles { width: min(620px, 100%); }
   .sc-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
   .sc-tiles span { border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-weight: 600; font-size: 14px; background: var(--card); }
-  .sc-ib { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 28px; }
-  .sc-list { display: grid; gap: 6px; align-content: start; }
-  .sc-list div { display: grid; gap: 2px; border-radius: 12px; padding: 10px 12px; border: 1px solid transparent; }
+  /* Inbox: the conversations, the open one, and who it's with. */
+  .sc-ib { display: grid; grid-template-columns: 220px minmax(0, 1fr) 190px; gap: 28px; }
+  .sc-list { display: grid; gap: 4px; align-content: start; }
+  .sc-list div { display: grid; gap: 2px; border-radius: 12px; padding: 9px 12px; border: 1px solid transparent; }
   .sc-list .on { background: var(--card); border-color: var(--line); }
+  .sc-list b { display: flex; align-items: center; gap: 6px; }
+  .sc-list b small { margin-left: auto; font-size: 13px; font-weight: 500; }
+  .sc-list .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--g); }
   .sc-list span { color: var(--muted); font-size: 13.5px; }
-  .sc-ib .sc-thread { max-width: 580px; }
+  .sc-conv { display: grid; gap: 10px; align-content: start; }
+  .sc-ib .sc-thread p { padding: 8px 13px; margin-bottom: 4px; }
+  .sc-reply { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--muted); font-size: 14px; }
+  .sc-reply .sc-btn { padding: 5px 12px; }
+  .sc-who { display: grid; gap: 12px; align-content: start; padding-left: 22px; border-left: 1px solid var(--line2); font-size: 14px; }
+  .sc-who > div { display: grid; gap: 1px; }
+  .sc-who .p { grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: center; }
+  .sc-who .p span { grid-row: span 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--g50); color: var(--g7); font-size: 13px; font-weight: 700; }
+  .sc-who .p small { font-weight: 400; overflow-wrap: anywhere; }
+  .sc-who .sc-card { gap: 4px; justify-items: start; padding: 10px 12px; }
   .sc-fb > *, .sc-cl > * { max-width: 640px; margin-inline: auto; }
   .sc-boardhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .sc-boardhead b { font: 700 22px var(--font-heading); letter-spacing: -0.02em; }
-  .sc-cl { display: grid; gap: 18px; align-content: start; }
+  .sc-cl { display: grid; gap: 12px; align-content: start; }
   .sc-cl .sc-entry, .c-cl .sc-entry { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .sc-cl .sc-entry { gap: 4px; padding: 14px 20px; }
+  .sc-cl .sc-boardhead { width: 100%; margin-bottom: 0; }
+  .sc-fb .sc-votes .row { padding: 8px 0; }
+  /* Roadmap: three columns, each as tall as its cards. */
+  .sc-rmh .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; margin-top: 8px; }
+  .sc-rmh .col { display: grid; gap: 6px; background: var(--bg); border-radius: 12px; padding: 8px; }
+  .sc-rmh .col > small { padding: 2px 4px 4px; color: var(--ink); }
+  .sc-rmh .col > small::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--g); }
+  .sc-rmh .col > small.plan::before { background: #3f78d1; }
+  .sc-rmh .col > small.prog::before { background: #e0874a; }
+  .sc-rmh .col > small span { color: var(--muted); font-weight: 500; }
+  .sc-rmh .card { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; }
+  .sc-rmh .card b { font-size: 14px; font-weight: 600; overflow-wrap: break-word; hyphens: auto; }
+  .sc-rmh .card > span { grid-row: 2; color: var(--muted); font-size: 13px; }
+  .sc-rmh .card em { grid-area: 1 / 2 / span 2; padding: 2px 7px; border: 1px solid var(--line); border-radius: 8px; font-style: normal; font-weight: 700; font-size: 14px; line-height: 1.1; text-align: center; }
+  .sc-rmh .card em small { display: block; font-size: 13px; font-weight: 500; }
 
   /* In Autopilot's steps */
   .step-sc { display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 20px; }
@@ -427,7 +456,7 @@
 
   /* The hero's picture builds in, piece by piece, each time its tab opens (a shown panel restarts its animations):
      the merge, then what it changed; the question, then the answer; the conversation, message by message. */
-  .hero-sc :is(.sc-pr, .sc-from > *, .sc-diff > *, .sc-answer > *, .sc-tiles, .sc-list > *, .sc-thread > *, .sc-boardhead, .sc-votes > *, .sc-entry) { animation: lp-pop 0.45s var(--d, 0s) both; }
+  .hero-sc :is(.sc-pr, .sc-from > *, .sc-diff > *, .sc-answer > *, .sc-tiles, .sc-list > *, .sc-thread > *, .sc-reply, .sc-who, .sc-boardhead, .sc-votes > *, .sc-entry, .sc-rmh .col) { animation: lp-pop 0.45s var(--d, 0s) both; }
   .sc-from > :nth-child(1) { --d: 0.25s; }
   .sc-from > :nth-child(2) { --d: 0.4s; }
   .sc-from .sc-diff > :nth-child(1) { --d: 0.6s; }
@@ -439,8 +468,14 @@
   .sc-hc .sc-tiles { --d: 0.5s; }
   .sc-list > :nth-child(2), .sc-votes > :nth-child(1) { --d: 0.1s; }
   .sc-list > :nth-child(3), .sc-votes > :nth-child(2), .sc-cl .sc-entry + .sc-entry { --d: 0.2s; }
-  .sc-votes > :nth-child(3) { --d: 0.3s; }
-  .sc-votes > :nth-child(4) { --d: 0.4s; }
+  .sc-cl .sc-entry + .sc-entry + .sc-entry { --d: 0.4s; }
+  .sc-votes > :nth-child(3), .sc-list > :nth-child(4) { --d: 0.3s; }
+  .sc-votes > :nth-child(4), .sc-list > :nth-child(5) { --d: 0.4s; }
+  .sc-votes > :nth-child(5), .sc-list > :nth-child(6), .sc-who { --d: 0.5s; }
+  .sc-votes > :nth-child(6) { --d: 0.6s; }
+  .sc-rmh .col:nth-child(2) { --d: 0.15s; }
+  .sc-rmh .col:nth-child(3) { --d: 0.3s; }
+  .sc-reply { --d: 1.28s; }
   .sc-thread > :nth-child(1) { --d: 0.20s; }
   .sc-thread > :nth-child(2) { --d: 0.32s; }
   .sc-thread > :nth-child(3) { --d: 0.44s; }
@@ -500,15 +535,42 @@
   .sc-react { display: flex; gap: 8px; margin-top: 12px; }
   .sc-react span { border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; font-size: 14px; font-weight: 600; background: var(--card); }
   .sc-hw { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
-  .sc-hw .app { display: grid; gap: 12px; align-content: start; min-height: 400px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .sc-hw .app { display: grid; gap: 12px; align-content: start; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
   .sc-hw .app b { font: 700 20px var(--font-heading); letter-spacing: -0.02em; }
-  .sc-hw .app i { height: 46px; border-radius: 10px; background: #f1eee7; }
-  .sc-hw .app i:nth-child(3) { width: 70%; }
-  .sc-hw .app i:nth-child(4) { width: 45%; }
+  /* The app behind the widget: a week of events. */
+  .sc-hw .wk { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .sc-hw .wk div { display: grid; gap: 6px; align-content: start; }
+  .sc-hw .wk i { display: block; padding: 5px 7px; border-left: 3px solid var(--g); border-radius: 6px; background: var(--g50); color: var(--g7); font-style: normal; font-weight: 600; font-size: 13px; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .sc-hw .wk i:nth-child(odd) { border-color: #3f78d1; background: #e3edfb; color: #1f4f9a; }
+  .sc-hw .wk i small { display: block; font-size: 13px; font-weight: 500; color: inherit; opacity: 0.8; }
   @media (max-width: 1080px) {
     /* The terminal under the words. */
     .c-mcp { grid-template-columns: minmax(0, 1fr); }
     .c-mcp .sc-mcp { grid-column: 1; grid-row: auto; margin-top: 18px; }
+    /* The inbox keeps its list and conversation; the details step aside. */
+    .sc-ib { grid-template-columns: 220px minmax(0, 1fr); }
+    .sc-who { display: none; }
+  }
+
+  @media (max-width: 1180px) {
+    /* The widget's app shows three days, wide enough for its event names. */
+    .sc-hw .wk { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .sc-hw .wk div:nth-child(n + 4) { display: none; }
+  }
+
+  @media (max-width: 860px) {
+    /* Too narrow for the widget's app beside it: the widget alone, as on phones. */
+    .sc-hw { grid-template-columns: 1fr; }
+    .sc-hw .app { display: none; }
+    .sc-hw .sc-wdg { width: min(340px, 100%); justify-self: center; }
+    /* The roadmap's cards keep their titles and drop the rest. */
+    .sc-rmh .cols { gap: 6px; }
+    .sc-rmh .col { padding: 4px; }
+    .sc-rmh .col > small { gap: 4px; padding-inline: 2px; flex-wrap: wrap; }
+    .sc-rmh .col > small::before { display: none; }
+    .sc-rmh .card { padding: 5px 6px; }
+    .sc-rmh .card b { font-size: 13px; }
+    .sc-rmh .card > span, .sc-rmh .card em { display: none; }
   }
 
   @media (max-width: 640px) {
@@ -516,7 +578,6 @@
     .win { max-height: none; mask: linear-gradient(#000 calc(100% - 40px), transparent); }
     .hero-sc { padding: 18px 14px; min-height: 0; }
     .sc-ap, .sc-ib, .sc-hw { grid-template-columns: 1fr; gap: 14px; }
-    .sc-hw .app { display: none; }
     .fp-rel .land { grid-template-columns: 1fr; }
     .sc-list { display: none; }
     .sc-tiles { grid-template-columns: 1fr 1fr; }
