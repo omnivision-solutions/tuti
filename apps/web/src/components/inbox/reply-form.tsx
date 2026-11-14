@@ -121,6 +121,7 @@ export function ReplyForm({
   const errorId = useId();
   const shortcutId = useId();
   const pausedId = useId();
+  const waitsId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
@@ -240,7 +241,7 @@ export function ReplyForm({
           {!note && recipient && <span className="inbox-composer-to ml-auto truncate text-xs leading-normal text-muted-foreground">To {recipient}</span>}
         </div>
         {!note && emailWaits && (
-          <p className="inbox-email-waits -mx-2.5 -mt-1 mb-1 flex gap-1.5 border-b border-highlight-foreground/20 bg-highlight px-3 py-1.5 text-xs leading-normal text-highlight-foreground @max-[57rem]/app:-mx-2 [&>svg]:mt-0.75 [&>svg]:size-3.25 [&>svg]:flex-none">
+          <p id={waitsId} className="inbox-email-waits -mx-2.5 -mt-1 mb-1 flex gap-1.5 border-b border-highlight-foreground/20 bg-highlight px-3 py-1.5 text-xs leading-normal text-highlight-foreground @max-[57rem]/app:-mx-2 [&>svg]:mt-0.75 [&>svg]:size-3.25 [&>svg]:flex-none">
             <MailIcon aria-hidden />
             <span>
               {emailWaits.warning}
@@ -278,7 +279,8 @@ export function ReplyForm({
             readOnly={pending}
             className={cn("inbox-reply-text min-h-10 border-0 bg-transparent px-1 py-0.75 text-sm shadow-none focus-visible:ring-0 aria-invalid:ring-0 dark:bg-transparent dark:aria-invalid:ring-0", note && "inbox-reply-note")}
             aria-invalid={error ? true : undefined}
-            aria-describedby={error ? errorId : undefined}
+            // The warning too: heard in the reply box, where Tab from the tabs goes (a member's has no link to stop at first).
+            aria-describedby={[error && errorId, !note && emailWaits && waitsId].filter(Boolean).join(" ") || undefined}
           />
           {error && <FieldError id={errorId}>{error}</FieldError>}
         </Field>

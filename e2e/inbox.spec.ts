@@ -2042,6 +2042,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   // Before the next Send, the reply box says so, and where to see the plan.
   await expect(waits).toHaveText("This month's emails are used: replies are emailed next month. Billing");
   await expect(waits.getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveAccessibleDescription(/^This month's emails are used: replies are emailed next month\./);
   // A note isn't emailed: nothing to say on Note.
   await owner.getByRole("tab", { name: "Note" }).click();
   await expect(waits).toHaveCount(0);
@@ -2051,6 +2052,10 @@ test("on a server selling plans, a new project's email is capped in its first we
   const viewport = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(waits).toBeVisible();
+  const byLine = owner.locator(".inbox-message-by").filter({ hasText: "Olive Owner" });
+  const author = await byLine.getByText(/^Olive Owner · /).boundingBox();
+  // One line (18px) for who and when, the short status beside it or under it, never squeezing it.
+  expect(author!.height).toBeLessThan(20);
   await checkpoint(owner, "reply-waits-for-monthly-limit-phone");
   await owner.setViewportSize(viewport);
   await setThisMonthsEmails(slug, 0);
