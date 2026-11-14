@@ -354,14 +354,23 @@ test("a merged pull request becomes a code change; the team completes the post i
   await list.getByRole("tab", { name: "Activity" }).click();
   const heldActivity = await activityAsking;
   await list.getByRole("tab", { name: "To review 1" }).click();
-  // Let Activity's page come, and wait till it has (or was dropped), then for the page to settle: had it won, it would
-  // be open by then.
-  const activityDone = Promise.race([heldActivity.response().then(() => {}), owner.waitForEvent("requestfailed", (request) => request === heldActivity).then(() => {})]);
+  // Let Activity's page come, and wait till all of it has (its streamed body, not just its headers), or it was dropped.
+  // Had it won, its navigation commits once that body is in: given a few seconds for it (CPU-throttled sessions too),
+  // the address never moves to Activity's page.
+  const activityDone = Promise.race([
+    heldActivity.response().then((response) => response?.finished()),
+    owner.waitForEvent("requestfailed", (request) => request === heldActivity),
+  ]);
   letActivityGo();
   await activityDone;
-  await owner.waitForLoadState("networkidle");
-  await owner.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   await owner.unroute("**/autopilot/activity/**");
+  const wentToActivity = await owner.waitForURL(/\/autopilot\/activity\//, { timeout: 3_000 }).then(
+    () => true,
+    () => false,
+  );
+  expect(wentToActivity).toBe(false);
+  await expect(list.getByRole("link", { name: title })).toHaveAttribute("aria-current", "page");
+  await expect(list.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "false");
   await expect(owner).toHaveURL(/\/autopilot\/feedback\//);
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
