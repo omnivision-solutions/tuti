@@ -1,6 +1,7 @@
 {
   "$schema": "./billing.schema.json",
   "defaultPlan": "free",
+  "trial": { "plan": "pro", "days": 7, "credits": 500, "emails": 1000 },
   "plans": [
     {
       "key": "free",

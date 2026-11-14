@@ -78,6 +78,7 @@ test("paid, the project is on the plan, with the month's credits once, however o
     periodEnd: new Date(sub.items.data[0]!.current_period_end * 1000),
     endsAt: null,
     badge: false,
+    trial: null,
   });
   const grants = await planGrants();
   expect(grants).toHaveLength(1);
@@ -113,7 +114,7 @@ test("changes in the customer portal follow: another plan, a failed payment, can
   const end = new Date(stripe.subscriptions.get(subscription)!.items.data[0]!.current_period_end * 1000);
   expect(await plan()).toMatchObject({ plan: "business", endsAt: end });
   await deliver(stripe.update(subscription, { status: "canceled" }));
-  expect(await plan()).toEqual({ enabled: true, plan: "free", interval: null, status: null, periodEnd: null, endsAt: null, badge: false });
+  expect(await plan()).toEqual({ enabled: true, plan: "free", interval: null, status: null, periodEnd: null, endsAt: null, badge: false, trial: null });
   // The customer stays: a later plan is billed to it.
   await call(subscribePlan, as(), { plan: "pro", interval: "month" });
   expect(stripe.sessions.at(-1)).toMatchObject({ customer: stripe.subscriptions.get(subscription)!.customer, customer_email: null });

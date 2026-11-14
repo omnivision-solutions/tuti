@@ -8,7 +8,7 @@ import { FAKE_STRIPE_PRICES } from "./stripe-fake";
 type Price = { perMonth: number; stripe: string[]; sold?: boolean };
 type Limits = { seats: number | null; boards: number | null; articles: number | null; historyDays: number; articleVersions: number; reportingDays: number | null };
 type Plan = { key: string; name: string; prices: { month?: Price; year?: Price }; features: string[]; limits: Limits; monthlyCredits: number; extras?: string[]; featured?: boolean; hidden?: boolean };
-export type TestBilling = { plans: Plan[]; defaultPlan: string; badge?: { month?: Price; year?: Price }; historyKeptDays: number };
+export type TestBilling = { plans: Plan[]; defaultPlan: string; badge?: { month?: Price; year?: Price }; trial?: { plan: string; days: number; credits?: number; emails?: number | null }; historyKeptDays: number };
 
 const price = (perMonth: number, name: keyof typeof FAKE_STRIPE_PRICES): Price => ({ perMonth, stripe: [FAKE_STRIPE_PRICES[name].id] });
 

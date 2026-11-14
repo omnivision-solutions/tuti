@@ -25,9 +25,9 @@ import { manageSubscription, setBadge, subscribe } from "@/server/credits";
 /**
  * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), each with what
  * it includes (as on the pricing page), monthly or yearly; Upgrade goes to Stripe's payment page. The featured plan's is the
- * page's one primary button: the plan to move to.
+ * page's one primary button: the plan to move to. During a free trial (`trial`), the default plan is the one after it.
  */
-export function PlanPicker({ projectSlug, plans, current }: { projectSlug: string; plans: PricingPlan[]; current: string }) {
+export function PlanPicker({ projectSlug, plans, current, trial = false }: { projectSlug: string; plans: PricingPlan[]; current: string; trial?: boolean }) {
   const [interval, setBilled] = useState<"month" | "year">("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   return (
@@ -39,7 +39,7 @@ export function PlanPicker({ projectSlug, plans, current }: { projectSlug: strin
             <div>
               <h3 className="font-semibold">{plan.name}</h3>
               <p className="text-sm text-muted-foreground">
-                {[plan.price ? planPriceText(plan.price, interval) : plan.key === current ? "$0" : plan.byQuote ? "By quote" : "Not sold here", plan.key === current && "this project's plan"]
+                {[plan.price ? planPriceText(plan.price, interval) : plan.key === current ? "$0" : plan.byQuote ? "By quote" : "Not sold here", plan.key === current && (trial ? "after your trial" : "this project's plan")]
                   .filter(Boolean)
                   .join(", ")}
               </p>

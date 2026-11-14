@@ -9,7 +9,7 @@ import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
 import { SCREENSHOTS_DIR } from "./checkpoint";
-import { APP_URL, CLOUD_URL, cloudEnv, serverEnv } from "./env";
+import { APP_URL, CLOUD_URL, cloudEnv, serverEnv, TRIAL_URL, trialEnv } from "./env";
 import { MAIL_DIR } from "./mail";
 
 /**
@@ -18,13 +18,13 @@ import { MAIL_DIR } from "./mail";
  * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates), the Featurebase, Canny, Frill and Nolt fakes (imports) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline: twice, as a self-hosted server (APP_URL) and as Tuti's cloud,
- * which sells plans (CLOUD_URL), both on the same database.
+ * which sells plans (CLOUD_URL), and as the cloud with a free trial (TRIAL_URL), all on the same database.
  */
 export default async function globalSetup() {
   // A server already on the port (another checkout's run) would answer for ours, which then
   // fails to start: the journeys would quietly test that other code. (Checked again below: the
   // run waits for its own server to say it's listening.)
-  for (const url of [APP_URL, CLOUD_URL]) {
+  for (const url of [APP_URL, CLOUD_URL, TRIAL_URL]) {
     if (await portTaken(new URL(url))) {
       throw new Error(`Something is already serving ${url} (another test run?). Stop it, or set E2E_PORT to a free port.`);
     }
@@ -113,7 +113,7 @@ export default async function globalSetup() {
     ...nolt.env,
     NODE_ENV: "production",
   };
-  const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv })]);
+  const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv }), startServer(TRIAL_URL, { ...env, ...trialEnv })]);
   const servers = started.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   const failed = started.find((result) => result.status === "rejected");
   if (failed) {

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, effectivePlan, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled, trialState } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -31,14 +31,16 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   }
   const [{ balance, grants }, plan] = await Promise.all([
     creditsEnabled() ? creditBalance(project.id) : { balance: 0, grants: [] },
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true, trialEndsAt: true } }),
   ]);
   // Back from Stripe's payment page: the credits or the plan come with Stripe's word that it's paid, usually within seconds.
   const searchParams = await props.searchParams;
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
-  const shown = planDisplay(plan.plan);
-  // On a paid plan (a live subscription, or a plan the file sells set without one), or the default plan's.
+  // The plan as stored (trialEndsAt selected: see @tuti/db), and a free trial of another while it runs.
+  const trial = trialState(plan);
+  const shown = planDisplay(effectivePlan(plan.plan, plan.trialEndsAt));
+  // On a paid plan (a live subscription, or a plan the file sells set without one), or the default plan's (a trial's too).
   const onPaidPlan = plan.planStatus !== null || !onDefaultPlan(plan.plan);
   // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
   // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
@@ -54,9 +56,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       )}
       {plansEnabled() && (
         <SettingsCard
-          title={`${shown.name} plan`}
+          title={trial ? (trial.ended ? "Your trial has ended" : `${shown.name} trial`) : `${shown.name} plan`}
           description={
-            !onPaidPlan
+            trial
+              ? trial.ended
+                ? "Choose a plan to keep going. Plans are per project: readers are always unlimited."
+                : `Ends on ${day(trial.endsAt)}. Choose a plan to keep going.`
+              : !onPaidPlan
                 ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
                 : [
                     // None for a plan the file sells no way (by quote): it's billed as agreed.
@@ -76,7 +82,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             {onPaidPlan ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={defaultPlanKey()!} />
+              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={defaultPlanKey()!} trial={trial?.ended === false} />
             ) : (
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}
