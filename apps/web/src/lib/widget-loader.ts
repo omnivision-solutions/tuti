@@ -72,8 +72,11 @@ import {
  * later of the two times counts. A panel asking (`ask`) hears that same time, from before
  * what it shows now (What's new marks what's unread, Home counts it). A private portal's latest announcement
  * comes from there too, for someone signed in who may read the portal; nobody else's dot lights for it.
+ *
+ * `own`: Tuti's own portal (lib/app-portal.ts), whose panel is its address on the app's domain (tuti.so/help/widget), where
+ * the Tuti account's session is: at its portal host (help.tuti.so) nobody is ever signed in, as that host sends every page there.
  */
-export function widgetLoader(portalTemplate: string): string {
+export function widgetLoader(portalTemplate: string, own: { slug: string; url: string } | null = null): string {
   return `(function () {
   "use strict";
   var script = document.currentScript;
@@ -100,7 +103,9 @@ export function widgetLoader(portalTemplate: string): string {
   // On the portal, its value is the path the portal is under on the team's site (empty at its own address).
   var portalPath = onPortal ? script.getAttribute("data-on-portal") : "";
   if (!${BASE_PATTERN}.test(portalPath)) portalPath = "";
-  var portal = onPortal ? window.location.origin + portalPath : ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
+  var portal = onPortal
+    ? window.location.origin + portalPath
+    : ${own ? `slug === ${JSON.stringify(own.slug)} ? ${JSON.stringify(own.url)} : ` : ""}${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;

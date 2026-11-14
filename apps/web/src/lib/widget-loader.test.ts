@@ -98,8 +98,10 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, privateLatest, seenAfter, seenHere, narrow = false, motion, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, privateLatest, seenAfter, seenHere, narrow = false, motion, before, own = null }: {
   attributes?: Record<string, string>;
+  /** Tuti's own portal (widgetLoader's `own`). */
+  own?: { slug: string; url: string } | null;
   /** Whether the browser animates (elements have `animate`), and whether the visitor asked for less motion. */
   motion?: "full" | "reduced";
   settings?: object;
@@ -283,7 +285,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   for (const [name, value] of Object.entries(attributes)) script.setAttribute(name, value);
   page.document.currentScript = script;
   before?.(page);
-  new Function("window", "document", "fetch", widgetLoader("https://{project}.tuti.example"))(
+  new Function("window", "document", "fetch", widgetLoader("https://{project}.tuti.example", own))(
     page.window,
     page.document,
     page.window.fetch,
@@ -486,6 +488,16 @@ test("the portal's own tag (data-on-portal): the panel is the page's own address
   site.Tuti.open();
   expect(site.frame!.src).toBe("https://acme.tuti.example/widget");
   expect((site.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toContain("https://app.tuti.example/api/widget/latest?project=acme");
+});
+
+test("Tuti's own portal: the panel is its address on the app's domain, where the Tuti account is signed in; other projects' at their portal host", async () => {
+  const own = { slug: "acme", url: "https://app.tuti.example/help" };
+  const page = loadWidget({ own });
+  page.Tuti.open({ tab: "messages" });
+  expect(page.frame!.src).toBe("https://app.tuti.example/help/widget?tab=messages");
+  const other = loadWidget({ own: { ...own, slug: "help" } });
+  other.Tuti.open();
+  expect(other.frame!.src).toBe("https://acme.tuti.example/widget");
 });
 
 test("the portal's own tag under a path of the team's site: the panel is under that path; anything but a path is ignored", async () => {
