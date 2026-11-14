@@ -1867,13 +1867,12 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(status).toHaveAttribute("href", "https://status.example.com");
   await expect(status).toHaveAttribute("target", "_blank");
   await checkpoint(visitor, "widget-quick-links");
-  // In a narrow panel a long label wraps, its icon inside the panel.
-  await visitor.setViewportSize({ width: 360, height: 720 });
-  const icon = widget.getByRole("link", { name: /Averyverylong/ }).locator("svg").last();
-  const panel = (await visitor.locator("#tuti-widget").boundingBox())!;
-  expect((await icon.boundingBox())!.x + (await icon.boundingBox())!.width).toBeLessThanOrEqual(panel.x + panel.width);
   // On a phone the panel is the whole screen, over the launcher (its own close button at the top).
+  await visitor.setViewportSize({ width: 360, height: 720 });
   await expect.poll(() => visitor.locator("#tuti-widget").boundingBox()).toEqual({ x: 0, y: 0, width: 360, height: 720 });
+  // There a long label wraps, its icon inside the panel (once the panel's page has laid out at its new width).
+  const icon = widget.getByRole("link", { name: /Averyverylong/ }).locator("svg").last();
+  await expect.poll(async () => { const box = (await icon.boundingBox())!; return box.x + box.width; }).toBeLessThanOrEqual(360);
   const button = (await launcher.boundingBox())!;
   expect(await visitor.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("#tuti-widget") !== null, [button.x + button.width / 2, button.y + button.height / 2])).toBe(true);
   // Its page is up with its own Close: the loader's stand-in (for a page that never comes) is gone.
@@ -2001,6 +2000,8 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await expect(drawer).toBeHidden();
   await expect(launcher).toBeFocused();
   await launcher.click();
+  // Once it has slid in: a click inside the frame while it moves lands where the button was.
+  await expect.poll(() => drawer.boundingBox()).toEqual({ x: 600 - 400, y: 0, width: 400, height: 800 });
   await sidebar.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
 
