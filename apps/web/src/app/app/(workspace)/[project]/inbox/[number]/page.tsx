@@ -193,7 +193,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const blocked = person.email
     ? await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: person.email.toLowerCase() } }, select: { email: true } })
     : null;
-  const emailable = !conversation.spam && !!person.email && !blocked;
+  // A sample conversation's replies are never emailed (its person's address goes nowhere): nothing waits.
+  const emailable = !conversation.spam && !conversation.sample && !!person.email && !blocked;
   const waitsForPause = emailPaused && emailable;
   const monthFull = !emailPaused && emailable && (await monthlyLimitReached(projectId));
   const capped = !emailPaused && emailable && !monthFull && (await cappedProjects()).includes(projectId);

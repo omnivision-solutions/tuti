@@ -2058,6 +2058,31 @@ test("on a server selling plans, a new project's email is capped in its first we
   expect(author!.height).toBeLessThan(20);
   await checkpoint(owner, "reply-waits-for-monthly-limit-phone");
   await owner.setViewportSize(viewport);
+  const db = async (sql: string, values: string[]) => {
+    const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query(sql, values);
+    } finally {
+      await client.end();
+    }
+  };
+  // A member gets the warning without the link: Settings is for owners and admins.
+  const member = await signUp(browser, CLOUD_URL, "Mo Member");
+  await db(
+    `INSERT INTO team_member (id, "projectId", "userId", role) SELECT gen_random_uuid()::text, p.id, u.id, 'MEMBER' FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, member.email],
+  );
+  await member.goto(`/app/${slug}/inbox/1`);
+  await expect(member.locator(".inbox-email-waits")).toHaveText("This month's emails are used: replies are emailed next month.");
+  await expect(member.locator(".inbox-email-waits").getByRole("link")).toHaveCount(0);
+  // A sample conversation's replies are never emailed: nothing to wait for.
+  const sample = (on: boolean) => db(`UPDATE conversation SET sample = ${on} WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await sample(true);
+  await owner.reload();
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toBeVisible();
+  await expect(waits).toHaveCount(0);
+  await sample(false);
   await setThisMonthsEmails(slug, 0);
 
   // 2 of 100 bounced: paused, and the operator is told.
