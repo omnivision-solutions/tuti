@@ -2057,6 +2057,13 @@ test("on a server selling plans, a new project's email is capped in its first we
   // One line (18px) for who and when, the short status beside it or under it, never squeezing it.
   expect(author!.height).toBeLessThan(20);
   await checkpoint(owner, "reply-waits-for-monthly-limit-phone");
+  // Narrower still, the status no longer fits beside it: it goes under it, whole, the author's line still one line.
+  await owner.setViewportSize({ width: 320, height: 700 });
+  const narrow = (await byLine.getByText(/^Olive Owner · /).boundingBox())!;
+  const held = (await byLine.getByText("Emailed next month", { exact: true }).boundingBox())!;
+  expect(narrow.height).toBeLessThan(20);
+  expect(held.height).toBeLessThan(20);
+  expect(held.y).toBeGreaterThanOrEqual(narrow.y + narrow.height);
   await owner.setViewportSize(viewport);
   const db = async (sql: string, values: string[]) => {
     const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
