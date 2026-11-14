@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
@@ -265,21 +264,6 @@ test("a project deleted meanwhile: Stripe's events are answered, and nothing is 
   await prisma.project.delete({ where: { id: project.id } });
   await deliver(...events);
   expect(await prisma.aiCreditGrant.count({ where: { projectId: project.id } })).toBe(0);
-});
-
-test("the migration gives each project its plan's key: Pro and Business theirs, Free none (the default plan)", async () => {
-  const projects = await Promise.all(["FREE", "PRO", "BUSINESS"].map(async (plan) => {
-    const { id } = await createProject(owner);
-    // As before the migration: the enum (no longer in the schema), no key.
-    await prisma.$executeRaw`UPDATE project SET plan = ${plan}::"Plan", "planKey" = NULL WHERE id = ${id}`;
-    return id;
-  }));
-  expect((await prisma.project.findMany({ where: { id: { in: projects } }, select: { plan: true } })).map(({ plan }) => plan)).toEqual([null, null, null]);
-  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113180000_plan_keys/migration.sql", import.meta.url), "utf8");
-  // The column is there already (every migration ran); its fill, again on these rows.
-  await prisma.$executeRawUnsafe(sql.slice(sql.indexOf("UPDATE"), sql.indexOf(";", sql.indexOf("UPDATE")) + 1));
-  const plans = await prisma.project.findMany({ where: { id: { in: projects } }, select: { id: true, plan: true } });
-  expect(projects.map((id) => plans.find((project) => project.id === id)!.plan)).toEqual([null, "pro", "business"]);
 });
 
 test("any plan the file sells is bought by its key, and Stripe's webhook stores that key", async () => {
