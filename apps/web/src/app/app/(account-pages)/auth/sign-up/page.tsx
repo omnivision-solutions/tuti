@@ -1,5 +1,5 @@
 import { emailConfigured } from "@tuti/email";
-import { plansEnabled, trialTerms } from "@tuti/shared";
+import { planDisplay, plansEnabled, trialTerms } from "@tuti/shared";
 import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth-form";
@@ -21,10 +21,11 @@ export default async function SignUpPage(props: PageProps<"/app/auth/sign-up">) 
   }
   // From a portal's "Create an account": the account is for that portal, not a team.
   const portal = await continuingTo(nextPath);
-  // Tuti's cloud with free trials (the billing file's): a new team's first project starts one (server/trials.ts).
-  const trialDays = trialTerms()?.days;
+  // Tuti's cloud with free trials (the billing file's): a new team's first project starts one (server/trials.ts). Not on
+  // the way somewhere (`next`: an invite to a team's project, a portal), where no project of their own is made.
+  const trial = nextPath ? null : trialTerms();
   return (
-    <WithPitch continuingTo={portal} pitch={<SignUpPitch trialDays={trialDays} />}>
+    <WithPitch continuingTo={portal} pitch={<SignUpPitch trialDays={trial?.days} />}>
       <div className="flex flex-col gap-4">
         <AuthForm
           mode="sign-up"
@@ -34,8 +35,8 @@ export default async function SignUpPage(props: PageProps<"/app/auth/sign-up">) 
           redirectTo="/app"
           next={nextPath || undefined}
           defaultEmail={defaultEmail}
-          {...(trialDays && !portal
-            ? { title: "Start your free trial", description: `${trialDays} ${trialDays === 1 ? "day" : "days"} with every feature. No card needed.`, submitLabel: "Start free trial" }
+          {...(trial
+            ? { title: "Start your free trial", description: `${trial.days} ${trial.days === 1 ? "day" : "days"} of ${planDisplay(trial.plan).name}. No card needed.`, submitLabel: "Start free trial" }
             : { description: portal ? `Create your Tuti account to continue to ${portal.name}.` : undefined })}
           forgotPasswordHref={portal?.forgotPassword}
         />
