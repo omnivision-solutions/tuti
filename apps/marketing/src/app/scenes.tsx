@@ -411,9 +411,9 @@ export function HeroRoadmap() {
       [
         ["Dark mode", "Theme", 27],
         ["Recurring events", "Events", 18],
-        ["Outlook sync", "Integrations", 15],
         ["Booking pages", "Sharing", 11],
         ["Week numbers", "Calendar", 6],
+        ["Outlook sync", "Integrations", 5],
       ],
     ],
     [
@@ -421,8 +421,8 @@ export function HeroRoadmap() {
       "prog",
       [
         [REQUEST, "Integrations", 42],
-        ["Shared calendars", "Teams", 31],
-        ["Offline mode", "Apps", 14],
+        ["Shared calendars", "Teams", 5],
+        ["Offline mode", "Apps", 4],
       ],
     ],
     [
