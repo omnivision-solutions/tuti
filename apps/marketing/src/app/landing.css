@@ -105,11 +105,10 @@
   }
   .tab[aria-pressed="true"] svg { color: var(--g); }
   .show { padding: 0 10px; }
-  /* A glass rim around the window, which fades out at the bottom rather than ending on a hard edge. */
+  /* The window fades into the page at the bottom rather than ending on a hard edge. */
   .win {
     background: var(--card); border-radius: 18px 18px 0 0; overflow: hidden; max-height: 600px; text-align: left;
-    box-shadow: 0 0 0 1px rgba(20, 83, 45, 0.1), 0 0 0 9px rgba(255, 255, 255, 0.5), 0 0 0 10px rgba(20, 83, 45, 0.08), 0 40px 90px -30px rgba(16, 60, 32, 0.5);
-    mask: linear-gradient(#000 72%, transparent);
+    mask: linear-gradient(#000 calc(100% - 160px), transparent);
   }
   .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line2); background: #fcfbf8; }
   .dots { display: flex; gap: 6px; }
@@ -506,7 +505,7 @@
 
   @media (max-width: 640px) {
     /* The window grows with its scene, which stacks into one column. */
-    .win { max-height: 620px; }
+    .win { max-height: none; mask: linear-gradient(#000 calc(100% - 40px), transparent); }
     .hero-sc { padding: 18px 14px; min-height: 0; }
     .sc-ap, .sc-ib, .sc-hw { grid-template-columns: 1fr; gap: 14px; }
     .sc-hw .app { display: none; }
