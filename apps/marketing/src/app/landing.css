@@ -548,7 +548,10 @@
     /* The inbox keeps its list and conversation; the details step aside. */
     .sc-ib { grid-template-columns: 220px minmax(0, 1fr); }
     .sc-who { display: none; }
-    /* The widget's app shows three days, wide enough to read. */
+  }
+
+  @media (max-width: 1180px) {
+    /* The widget's app shows three days, wide enough for its event names. */
     .sc-hw .wk { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .sc-hw .wk div:nth-child(n + 4) { display: none; }
   }
@@ -557,6 +560,7 @@
     /* Too narrow for the widget's app beside it: the widget alone, as on phones. */
     .sc-hw { grid-template-columns: 1fr; }
     .sc-hw .app { display: none; }
+    .sc-hw .sc-wdg { width: min(340px, 100%); justify-self: center; }
     /* The roadmap's cards keep their titles and drop the rest. */
     .sc-rmh .cols { gap: 6px; }
     .sc-rmh .col { padding: 4px; }
