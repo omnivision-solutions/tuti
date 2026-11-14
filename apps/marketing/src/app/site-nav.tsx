@@ -79,6 +79,8 @@ function FeaturesMenu() {
       ref={root}
       onPointerEnter={(event) => {
         if (event.pointerType !== "mouse") return;
+        // Back on it while open (from the panel, across the gap): only the pending close is called off.
+        if (open) return window.clearTimeout(timer.current);
         later(() => {
           hoverOpenedAt.current = Date.now();
           setOpenOn(pathname);
