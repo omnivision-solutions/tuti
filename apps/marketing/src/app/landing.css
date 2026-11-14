@@ -75,6 +75,8 @@
   .lead { font-size: clamp(18px, 1.6vw, 21px); color: var(--muted); max-width: 30em; margin: 22px auto 0; line-height: 1.45; }
   /* No band: a soft, blurred green glow (with a little grain) behind the window, which fades into the page. */
   .frame { position: relative; isolation: isolate; margin: 64px auto 0; max-width: 1240px; padding: 10px 34px 0; }
+  /* Paint only: it reaches up under the hero buttons, which must still take clicks. */
+  .frame::before, .frame::after { pointer-events: none; }
   .frame::before {
     content: ""; position: absolute; inset: -90px -8% -60px; z-index: -2; filter: blur(20px);
     background:
