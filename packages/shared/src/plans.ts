@@ -288,10 +288,13 @@ export function effectivePlan(plan: PlanKey, trialEndsAt: Date | null, now = new
  * emailsPerMonth (the trial's plan while it runs). `plan` as stored (select trialEndsAt with it: see @tuti/db).
  */
 export function monthlyEmailLimit(project: { plan: PlanKey; trialEndsAt: Date | null }, now = new Date()): number | null {
-  const plan = effectivePlan(project.plan, project.trialEndsAt, now);
-  const trialing = plan !== project.plan;
-  const allowance = trialTerms()?.emails ?? null;
-  return trialing && allowance !== null ? allowance : emailsPerMonth(plan);
+  return trialEmailAllowance(project, now) ?? emailsPerMonth(effectivePlan(project.plan, project.trialEndsAt, now));
+}
+
+/** A free trial's own monthly email allowance (`trial.emails`), while the project's trial runs; null otherwise. */
+export function trialEmailAllowance(project: { plan: PlanKey; trialEndsAt: Date | null }, now = new Date()): number | null {
+  const trialing = effectivePlan(project.plan, project.trialEndsAt, now) !== project.plan;
+  return trialing ? (trialTerms()?.emails ?? null) : null;
 }
 
 /**

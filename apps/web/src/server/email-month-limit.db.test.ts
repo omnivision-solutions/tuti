@@ -406,7 +406,8 @@ test("on a free trial, email is held at the trial's own allowance, not its plan'
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 1 });
   // The team hears of the trial's allowance, and the plan with more room than it.
   const [told] = limitEmails(owner.email);
-  expect(told?.text).toContain("has sent the 1 email its Pro plan includes");
+  expect(told?.text).toContain("has sent the 1 email its Pro trial includes this month");
+  // The first plan to buy with more room than the allowance: here the trial's own.
   expect(told?.text).toContain("Upgrade to Pro for more.");
 
   // The trial over: Free's 3, so the waiting one goes.
@@ -414,6 +415,21 @@ test("on a free trial, email is held at the trial's own allowance, not its plan'
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 3 });
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(2);
+
+  // Next month, past Free's 3: said as the plan's.
+  const reset = nextMonth();
+  vi.setSystemTime(reset);
+  await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: reset, emails: 3 } });
+  const third = `e2e-third-${project.slug}@example.com`;
+  const address = supportAddress(await mailSubdomain(project.id), DOMAIN);
+  await postEmail(rawEmail({ from: third, to: address, subject: "Invoice missing" }), { recipient: address });
+  await call(replyToConversation, team, { number: 3, body: "It's under Billing." });
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${project.id}`;
+  await handlers.sendConversationReplies({}, log);
+  expect(emailsTo(third)).toHaveLength(0);
+  const after = limitEmails(owner.email);
+  expect(after).toHaveLength(2);
+  expect(after[1]!.text).toContain("has sent the 3 emails its Free plan includes this month");
 });
 
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {

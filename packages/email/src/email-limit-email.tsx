@@ -6,6 +6,8 @@ type EmailLimitProps = {
   projectName: string;
   /** The project's plan's name, and how many emails it sends a month. */
   planName: string;
+  /** The limit is a free trial's own allowance: "its Pro trial includes". */
+  trial?: boolean;
   limit: number;
   /** When the month resets, as the email says it: "December 1". */
   resets: string;
@@ -16,11 +18,11 @@ type EmailLimitProps = {
 };
 
 /** To a project's owners and admins, once a month: it reached its plan's monthly email limit (packages/jobs/src/email-limits.ts). */
-export function EmailLimitEmail({ projectName, planName, limit, resets, upgrade, url }: EmailLimitProps) {
+export function EmailLimitEmail({ projectName, planName, trial = false, limit, resets, upgrade, url }: EmailLimitProps) {
   return (
     <Layout preview={`${projectName}'s email to its users is waiting until ${resets}.`}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} its {planName} plan includes this month, so its email to
+        <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} its {planName} {trial ? "trial" : "plan"} includes this month, so its email to
         your users (support replies, &quot;it shipped&quot; and changelog emails) is waiting until the month resets on {resets}. Nothing is lost:
         replies still show in the inbox and the widget.{upgrade && ` ${upgrade}`}
       </Text>

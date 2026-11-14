@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured, emailLimitEmail, sendEmail } from "@tuti/email";
-import { effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, plansEnabled, trialTerms, upgradeFor } from "@tuti/shared";
+import { effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, plansEnabled, trialEmailAllowance, trialTerms, upgradeFor } from "@tuti/shared";
 
 /** In its first week on a server selling plans, a project sends this many emails a day at most. */
 export const NEW_PROJECT_EMAILS_PER_DAY = 200;
@@ -191,9 +191,12 @@ async function tellEmailLimitOnce(projectId: string, now: Date) {
   const email = emailLimitEmail({
     projectName: project.name,
     planName: planDisplay(effectivePlan(project.plan, project.trialEndsAt, now)).name,
+    // The trial's own allowance is the limit: said as the trial's, not its plan's.
+    trial: trialEmailAllowance(project, now) !== null,
     limit: monthlyEmailLimit(project, now) ?? 0,
     resets: nextMonth(now).toLocaleDateString("en", { month: "long", day: "numeric", timeZone: "UTC" }),
-    // From its own plan (a trial's is the default), with its own limit (a trial's allowance, while it runs).
+    // From its own plan (a trial's is the default), with its own limit (a trial's allowance, while it runs): the first plan
+    // to buy with more room, which can be the trial's own plan.
     upgrade: upgradeFor(project.plan, (plan) => (plan === project.plan ? monthlyEmailLimit(project, now) : emailsPerMonth(plan)), " for more."),
     url: `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`,
   });
