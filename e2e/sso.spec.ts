@@ -1,9 +1,11 @@
 import { createHmac, randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, portalUrl } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 /** An HS256 token, as a customer's app would sign it for /sso (see docs/sso.md). */
@@ -159,6 +161,30 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   await visitor.goto("/sign-in");
   await expect(visitor.getByLabel("Email")).toBeVisible();
   await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toHaveCount(0);
+});
+
+test("a private portal whose plan no longer has private portals keeps its sign-in page: the app's sign-in would come round again", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  // On Tuti's cloud, whose Free plan has no private portals.
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByLabel("Your app's sign-in page").fill("https://app.acme.example/tuti");
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Sign-in page saved")).toBeVisible();
+  const visitor = await newPerson(browser, cloudPortalUrl(slug));
+  const sentTo = async () => (await visitor.request.get(`${cloudPortalUrl(slug)}/sign-in`, { maxRedirects: 0 })).headers().location;
+  expect(await sentTo()).toBe("https://app.acme.example/tuti?redirect=%2F");
+  // Made private on a plan that had them, then moved to Free: the team's only, so people the app signs in can't read it.
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+  } finally {
+    await client.end();
+  }
+  expect(await sentTo()).toBeUndefined();
 });
 
 test("a collection for one reader group: people the app signs in with that group see it, everyone else doesn't", async ({ browser }, testInfo) => {

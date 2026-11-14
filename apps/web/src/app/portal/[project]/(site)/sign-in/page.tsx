@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
+import { planIncludes } from "@tuti/shared";
 import { cn } from "cn";
 import { CircleAlertIcon, LockIcon } from "lucide-react";
 import { redirect } from "next/navigation";
@@ -22,7 +23,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   const back = typeof next === "string" && typeof title === "string" && title.trim() ? withTitle(next, title.trim().slice(0, 200)) : next;
   const nextPath = typeof back === "string" ? safeRedirectPath(back, "") : "";
   const [portal, session] = await Promise.all([
-    prisma.project.findUnique({ where: { slug: project }, select: { id: true, name: true, portalAccess: true, ssoSecret: true, ssoSignInUrl: true } }),
+    prisma.project.findUnique({ where: { slug: project }, select: { id: true, name: true, plan: true, portalAccess: true, ssoSecret: true, ssoSignInUrl: true } }),
     getSession(),
   ]);
   const isPrivate = portal?.portalAccess === "PRIVATE";
@@ -32,12 +33,17 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   const unverified = refused && portal && (await invitedReader(portal.id, session!.user.id)) === "unverified";
   // With SSO and the project's app's sign-in page, people sign in with their account there: its app signs them in and
   // sends them back through /sso with `redirect`. The page itself, with the button first, for the team (`?with=email`),
-  // on a private portal with readers the team added by email (who sign in by email), and to say a sign-in link or
-  // handoff failed.
+  // on a private portal with readers the team added by email (who sign in by email), on a private portal whose plan no
+  // longer has private portals (the team's only: the app's sign-in would send people back here, round and round), and
+  // to say a sign-in link or handoff failed.
   const ssoUrl = portal?.ssoSecret && portal.ssoSignInUrl ? URL.parse(portal.ssoSignInUrl) : null;
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
-  const hasReaders = !!ssoUrl && isPrivate && !!portal && !!(await prisma.portalReader.findFirst({ where: { projectId: portal.id }, select: { id: true } }));
-  if (ssoUrl && !hasReaders && via !== "email" && handoff !== "failed" && link !== "failed") {
+  const keepPage =
+    !!ssoUrl &&
+    isPrivate &&
+    !!portal &&
+    (!planIncludes(portal.plan, "privatePortal") || !!(await prisma.portalReader.findFirst({ where: { projectId: portal.id }, select: { id: true } })));
+  if (ssoUrl && !keepPage && via !== "email" && handoff !== "failed" && link !== "failed") {
     redirect(ssoUrl.href);
   }
 

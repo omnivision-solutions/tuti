@@ -147,7 +147,7 @@ export function SsoSettings({
             <FieldDescription>
               Signing in on the portal comes here, to your app&apos;s accounts instead of Tuti&apos;s, with{" "}
               <code>redirect</code>, the page to come back to. Sign them in, then send them to <code>{ssoUrl}</code> with that{" "}
-              <code>redirect</code>. Your team signs in at <code>/sign-in?with=email</code>.
+              <code>redirect</code>. A private portal with readers you add by email keeps its sign-in page, with your app&apos;s button first. Your team signs in at <code>/sign-in?with=email</code>.
             </FieldDescription>
             {urlError && <FieldError>{urlError}</FieldError>}
           </Field>
