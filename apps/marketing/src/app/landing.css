@@ -103,7 +103,8 @@
   .tab:hover { background: rgba(255, 255, 255, 0.8); }
   .tab svg { color: var(--g7); }
   .tab[aria-pressed="true"] {
-    background: var(--card); border-color: color-mix(in oklch, var(--g) 35%, transparent);
+    /* A solid brand-green border: the open tab stands out (3:1 or more) from the glass ones and the glow. */
+    background: var(--card); border-color: var(--g);
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--g) 14%, transparent), 0 8px 20px -10px rgba(16, 60, 32, 0.45);
   }
   .tab[aria-pressed="true"] svg { color: var(--g); }
