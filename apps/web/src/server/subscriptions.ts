@@ -71,6 +71,8 @@ export async function syncSubscription(id: string): Promise<string | null> {
           planPeriodEnd: periodEnd,
           planEndsAt: subscription.cancel_at ? at(subscription.cancel_at) : subscription.cancel_at_period_end ? periodEnd : null,
           badgeAddOn: subscription.items.data.some((item) => isBadgePrice(item.price.id)),
+          // A plan bought ends the trial: once this subscription ends, the project is on the default plan.
+          trialEndsAt: null,
         },
       });
       if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {

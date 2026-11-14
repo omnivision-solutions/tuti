@@ -2471,6 +2471,75 @@ test("on the portal an article's asides are fills: inline code, callouts, detail
   expect(await background(shown)).toBe("rgba(0, 0, 0, 0)");
 });
 
+test("on the portal a code block's Copy sits in a strip above the code, never over it, and a long line fades at the edge while there's more", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const text = (value: string) => ({ type: "text", text: value });
+  const curl = 'curl -X POST https://api.acme-calendar.example/v1/calendars/team/import \\\n  -H "Authorization: Bearer $ACME_KEY" \\';
+  const content = {
+    type: "doc",
+    content: [
+      { type: "codeBlock", content: [text(curl)] },
+      { type: "codeBlock", attrs: { filename: "Short" }, content: [text("acme sync")] },
+      {
+        type: "codeTabs",
+        content: [
+          { type: "codeBlock", attrs: { filename: "Node.js" }, content: [text('await fetch(`${API}/calendars/team/import`, { method: "POST", headers, body: form });')] },
+          { type: "codeBlock", attrs: { filename: "Python" }, content: [text("requests.post(f'{API}/calendars/team/import', files=files)")] },
+        ],
+      },
+    ],
+  };
+  const article = await api("/articles", { title: "Importing", content });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto(`/docs/${article.slug}`);
+  const main = visitor.getByRole("main");
+  const copies = main.getByRole("button", { name: "Copy code" });
+  await expect(copies).toHaveCount(3);
+  const codes = main.locator("pre > code").filter({ visible: true });
+  for (const width of [1280, 390]) {
+    await visitor.setViewportSize({ width, height: 900 });
+    // Each Copy's box clear of every code's box.
+    const overlaps = await visitor.evaluate(() => {
+      const boxes = (selector: string) => [...document.querySelectorAll("main " + selector)].map((element) => element.getBoundingClientRect()).filter((box) => box.width > 0);
+      const codeBoxes = boxes("pre > code");
+      return boxes('button[aria-label="Copy code"]').filter((button) =>
+        codeBoxes.some((code) => button.left < code.right && code.left < button.right && button.top < code.bottom && code.top < button.bottom),
+      ).length;
+    });
+    expect(overlaps, `at ${width}px`).toBe(0);
+    await checkpoint(visitor, `portal-article-code-copy-${width}`);
+  }
+  // Long lines (the curl's on a phone, the Node.js tab's) fade at the right edge, until scrolled to their end; a short one never.
+  const fadeEnd = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).getPropertyValue("--scroll-fade-end"));
+  const [long, short, tab] = [codes.filter({ hasText: "curl" }), codes.filter({ hasText: "acme sync" }), codes.filter({ hasText: "await fetch" })];
+  await expect.poll(() => fadeEnd(long)).not.toBe("0px");
+  await expect.poll(() => fadeEnd(tab)).not.toBe("0px");
+  expect(await fadeEnd(short)).toBe("0px");
+  await long.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
+  await expect.poll(() => fadeEnd(long)).toBe("0px");
+  // Copy beside the tabs copies the tab shown; an unlabelled block's copies its code alone.
+  await visitor.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await main.getByText("Python", { exact: true }).click();
+  await main.locator(".rich-code-tabs").getByRole("button", { name: "Copy code" }).click();
+  await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe("requests.post(f'{API}/calendars/team/import', files=files)");
+  await copies.first().click();
+  await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe(curl);
+  // By keyboard: from that Copy into its code (which scrolls), the focus ring on its block, inside the card's edge.
+  await visitor.keyboard.press("Tab");
+  await expect(long).toBeFocused();
+  await expect(long.locator("..")).toHaveCSS("outline-style", "solid");
+  await expect(long.locator("..")).toHaveCSS("outline-offset", "-2px");
+  // The tabs' Copy comes right after the tabs, before their code.
+  const order = await main.locator(".rich-code-tabs").evaluate((tabs) => [...tabs.children].map((child) => child.className || child.tagName));
+  expect(order.slice(0, 2)).toEqual(["rich-code-tab-row", "code-copy-bar"]);
+});
+
 test("a link in an article to another of the portal's articles stays on the portal and previews it; in the widget it opens in the panel", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

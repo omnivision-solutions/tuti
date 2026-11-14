@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { articleLimit, badgePrice, defaultPlanKey, isBadgePrice, log, onDefaultPlan, planDisplay, type PlanFeature, planIncludes, type PlanKey, planNeeded, planPrice, planSalesEnabled, plansEnabled, upgradeFor } from "@tuti/shared";
+import { articleLimit, badgePrice, defaultPlanKey, effectivePlan, isBadgePrice, log, onDefaultPlan, planDisplay, type PlanFeature, planIncludes, type PlanKey, planNeeded, planPrice, planSalesEnabled, plansEnabled, trialState, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -46,7 +46,7 @@ const billingUrl = async (projectId: string) => new URL(`/app/${await projectSlu
 export const getPlan = defineOperation({
   name: "plan.get",
   summary:
-    "The project's plan, on a server that sells plans (`enabled`): its key (`plan`; the server's default plan without a paid one), and for a paid plan how it's billed (`interval`: month or year), Stripe's `status` (`past_due` while a failed payment is retried), when its period ends (`periodEnd`: it renews then), if it's cancelled, when it ends (`endsAt`), and whether it has the add-on hiding \"Powered by tuti\" (`badge`; see plan.badge)",
+    "The project's plan, on a server that sells plans (`enabled`): its key (`plan`; the server's default plan without a paid one, the trial's plan during a free trial), its free trial (`trial`: when it ends, `endsAt`, and whether it has, `ended`; null without one or once a plan is bought), and for a paid plan how it's billed (`interval`: month or year), Stripe's `status` (`past_due` while a failed payment is retried), when its period ends (`periodEnd`: it renews then), if it's cancelled, when it ends (`endsAt`), and whether it has the add-on hiding \"Powered by tuti\" (`badge`; see plan.badge)",
   method: "GET",
   path: "/plan",
   scope: "read",
@@ -55,12 +55,15 @@ export const getPlan = defineOperation({
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({
       where: { id: projectId },
-      select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true },
+      // trialEndsAt: the plan as stored (see @tuti/db).
+      select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true, trialEndsAt: true },
     });
+    const plan = effectivePlan(project.plan, project.trialEndsAt);
     return {
       enabled: plansEnabled(),
       // Its plan's key in the billing file; the default plan's without a paid one ("free" where nothing is sold).
-      plan: (project.plan !== null && !onDefaultPlan(project.plan) ? project.plan : defaultPlanKey()) ?? "free",
+      plan: (plan !== null && !onDefaultPlan(plan) ? plan : defaultPlanKey()) ?? "free",
+      trial: trialState(project),
       interval: project.planInterval as "month" | "year" | null,
       status: project.planStatus,
       periodEnd: project.planPeriodEnd,
@@ -86,11 +89,12 @@ export const subscribePlan = defineOperation({
       throw new OperationError(503, "plans_unavailable", "That plan isn't sold on this server");
     }
     const [project, buyer, billing] = await Promise.all([
-      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, planStatus: true, stripeCustomerId: true, name: true, slug: true } }),
+      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, planStatus: true, stripeCustomerId: true, name: true, slug: true, trialEndsAt: true } }),
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
       billingUrl(projectId),
     ]);
-    // A live subscription (Stripe's status, cleared once it ends), or a plan the file sells set without one.
+    // A live subscription (Stripe's status, cleared once it ends), or a plan the file sells set without one. A trial isn't
+    // one (the plan as stored: trialEndsAt selected): buying ends it.
     if (project.planStatus !== null || !onDefaultPlan(project.plan)) {
       throw new OperationError(409, "has_plan", "This project has a plan already. Change it from Manage plan.");
     }

@@ -302,6 +302,48 @@
       },
       "additionalProperties": false
     },
+    "trial": {
+      "description": "A free trial, no card: an account's first project starts on `plan` for `days` days, then is on the default plan unless it bought one. Absent: no trials.",
+      "type": "object",
+      "properties": {
+        "plan": {
+          "type": "string",
+          "description": "The plan the trial gives: one of the plans."
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "How long it lasts."
+        },
+        "credits": {
+          "default": 0,
+          "description": "AI credits it gives, expiring when it ends (with AI credits on).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "emails": {
+          "default": null,
+          "description": "The trial's email allowance (trialTerms), for email limits; null: none.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "plan",
+        "days"
+      ],
+      "additionalProperties": false
+    },
     "historyKeptDays": {
       "default": 365,
       "description": "Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history.",

@@ -216,7 +216,7 @@ test("the team writes install steps as code tabs and a config file as named code
   await expect(article.getByText("yarn add acme")).toBeVisible();
   // The config file under its name.
   await expect(article.getByRole("figure", { name: "acme.json" })).toContainText('{ "project": "acme" }');
-  // Each block's Copy copies its code alone: the named one's in its strip, the tab shown's at its corner.
+  // Each block's Copy copies its code alone: the named one's in its strip, the tabs' beside them (the tab shown).
   await visitor.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await article.getByRole("figure", { name: "acme.json" }).getByRole("button", { name: "Copy code" }).click();
   await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe('{ "project": "acme" }');

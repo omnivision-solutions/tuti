@@ -121,6 +121,18 @@ test("names, prices and team sizes come from the billing file", () => {
   expect(business!.intro).toBe("Everything in Growth, plus:");
 });
 
+test("with a free trial, each plan sold starts one at sign-up", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { business }) => {
+    config.trial = { plan: "pro", days: 7 };
+    business.prices = {};
+  }));
+  expect(pricingPlans().map(({ cta }) => [cta.label, cta.href.startsWith("mailto:") ? "mailto" : cta.href])).toEqual([
+    ["Start free", "/app/auth/sign-up"],
+    ["Start free trial", "/app/auth/sign-up"],
+    ["Contact us", "mailto"],
+  ]);
+});
+
 test("the cards are the file's plans, each listing what the file gives it", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => {
     config.plans = config.plans.filter(({ key }) => key !== "business");

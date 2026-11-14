@@ -36,6 +36,8 @@ model User {
   placeholderProjectId String?
   placeholderProject   Project?     @relation("Placeholders", fields: [placeholderProjectId], references: [id], onDelete: Cascade)
   placeholderFor       String?
+  /// When their first project started its free trial (the billing file's `trial`): one trial per account, so their later projects start on the default plan.
+  trialStartedAt    DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          Session[]
@@ -375,6 +377,10 @@ model Project {
   /// The "Powered by tuti" add-on ($49 a month) is on the live subscription: with it the project may hide the
   /// badge, as with a licence key (server/license.ts). False once either the add-on or the plan ends.
   badgeAddOn            Boolean      @default(false)
+  /// When its free trial ends (the billing file's `trial`): until then a project on the default plan is on the trial's
+  /// plan (effectivePlan). Every read of `plan` through @tuti/db gets that plan, unless the select names trialEndsAt too,
+  /// which reads the plan as stored. Cleared once a subscription is live; kept once it ended ("Your trial has ended").
+  trialEndsAt           DateTime?
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 

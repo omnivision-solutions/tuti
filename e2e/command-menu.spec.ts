@@ -39,8 +39,8 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await expect(icon("New changelog entry")).toHaveClass(/lucide-plus/);
   await expect(icon("New post (on your portal)")).toHaveClass(/lucide-plus/);
   await expect(icon("Home")).toHaveClass(/lucide-house/);
-  await expect(icon("Inbox")).toHaveClass(/lucide-messages-square/);
-  await expect(icon("Feedback")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Inbox")).toHaveClass(/lucide-inbox/);
+  await expect(icon("Feedback")).toHaveClass(/lucide-lightbulb/);
   await expect(icon("Roadmap")).toHaveClass(/lucide-map/);
   await expect(icon("Users")).toHaveClass(/lucide-contact-round/);
   await expect(icon("Single sign-on")).toHaveClass(/lucide-settings/);
@@ -64,7 +64,7 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await expect(menu.getByRole("option", { name: /Dark mode/ })).toBeVisible();
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toBeVisible();
   // Found ones have their part's icon too, and their group read out: a post Feedback's, an article Docs'.
-  await expect(menu.getByRole("option", { name: /^Dark mode/ }).locator("svg")).toHaveClass(/lucide-inbox/);
+  await expect(menu.getByRole("option", { name: /^Dark mode/ }).locator("svg")).toHaveClass(/lucide-lightbulb/);
   await expect(menu.getByRole("option", { name: /^Dark mode/ })).toHaveAccessibleDescription("Posts");
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ }).locator("svg")).toHaveClass(/lucide-book-open/);
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toHaveAccessibleDescription("Docs");
