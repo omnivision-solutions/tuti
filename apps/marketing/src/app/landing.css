@@ -131,6 +131,10 @@
   .c-dark .big { font-size: 34px; letter-spacing: -0.04em; margin-top: 12px; }
   .c-dark p { color: #a9c4b2; }
   .c-rep { grid-column: span 4; }
+  .c-mcp { grid-column: span 6; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 540px); column-gap: 40px; align-content: start; }
+  .c-mcp > * { grid-column: 1; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .tools span { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px 5px 8px; font-weight: 600; font-size: 14px; background: var(--card); }
 
   /* Switch: the switchboard */
   .sw { background: linear-gradient(180deg, var(--bg), #f1eee5); }
@@ -225,6 +229,14 @@
   .ticks li { display: flex; gap: 6px; align-items: center; }
   .ticks svg { color: var(--g); }
 
+  /* Sound familiar: what changed, and what the help center still says */
+  .fam { padding-bottom: 20px; }
+  .changes { display: grid; gap: 10px; max-width: 580px; margin: 44px auto 0; text-align: left; }
+  .changes li { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px; }
+  .changes li b { font-weight: 600; }
+  .changes li span { margin-left: auto; font-size: 13px; font-weight: 600; color: #a0461e; background: #fbe9de; border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
+  .changes li:last-child { opacity: 0.5; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before { animation: none !important; transition: none !important; }
   }
@@ -284,6 +296,8 @@
     summary { font-size: 18px; }
     details p { padding-right: 0; }
     .final { padding: 96px 0; }
+    .changes li { flex-wrap: wrap; gap: 6px; }
+    .changes li span { margin-left: 0; }
   }
 }
 
@@ -398,6 +412,13 @@
   .sc-rep div { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 12px; font-size: 14.5px; }
   .sc-rep .track { display: flex; align-items: center; gap: 10px; }
   .sc-rep i { height: 8px; border-radius: 9px; background: #e8893a; }
+  .c-mcp .sc-mcp { grid-column: 2; grid-row: 1 / span 4; align-self: center; margin: 0; padding-top: 14px; }
+  .sc-mcp { background: var(--forest); color: #dfe8e1; border-radius: 16px; padding: 14px 18px 18px; font: 13.5px/1.6 var(--font-mono); }
+  .sc-mcp .tb { display: flex; gap: 6px; margin-bottom: 10px; }
+  .sc-mcp .tb i { width: 9px; height: 9px; border-radius: 50%; background: #2a4033; }
+  .sc-mcp p { margin: 0; }
+  .sc-mcp .p { color: #4cc27c; }
+  .sc-mcp .m { color: #8ea596; }
 
   @media (max-width: 640px) {
     /* The window grows with its scene, which stacks into one column. */
@@ -407,6 +428,9 @@
     .sc-list { display: none; }
     .sc-tiles { grid-template-columns: 1fr 1fr; }
     .sc-tiles span:last-child { display: none; }
+    /* The terminal under the words. */
+    .c-mcp { grid-template-columns: minmax(0, 1fr); }
+    .c-mcp .sc-mcp { grid-column: 1; grid-row: auto; margin-top: 18px; }
     .sc-rep div { grid-template-columns: 130px minmax(0, 1fr); }
     .sc-rm { gap: 6px; }
     .sc-rm div { padding: 7px; }

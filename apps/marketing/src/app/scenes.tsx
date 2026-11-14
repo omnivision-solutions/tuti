@@ -396,3 +396,22 @@ export function CellReporting() {
     </Pic>
   );
 }
+
+export function CellAiTools() {
+  return (
+    <Pic className="cell-sc sc-mcp" label="An AI coding tool asked to fix the billing article: Tuti's articles_update tool updates it, ready to publish">
+      <div className="tb">
+        <i />
+        <i />
+        <i />
+      </div>
+      <p>
+        <span className="p">›</span> Cancel moved to Settings → Plan. Fix the billing article.
+      </p>
+      <p className="m">tuti · articles_update “Cancel or change your plan”</p>
+      <p>
+        <span className="p">✓</span> Updated 2 steps. Ready to publish.
+      </p>
+    </Pic>
+  );
+}
