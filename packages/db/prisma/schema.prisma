@@ -363,8 +363,6 @@ model Project {
   /// Stripe customer stays once made, so a later plan is billed to the same one; the subscription is the live
   /// one, or once it ended the last one that held the plan (until another does).
   plan                  String?      @map("planKey")
-  /// The plan as the release before plan keys stored it: kept, unread, for that release while a deploy runs both; to drop.
-  planEnum              Plan         @default(FREE) @map("plan")
   stripeCustomerId      String?      @unique
   stripeSubscriptionId  String?      @unique
   /// The live subscription's billing: "month" or "year", Stripe's status ("active", "trialing",
@@ -2246,13 +2244,6 @@ enum DocsNoAnswerCause {
   NO_CREDITS
   /// Asked before causes were recorded.
   UNKNOWN
-}
-
-/// What a project pays for on tuti.so (docs/plan.md, Plans).
-enum Plan {
-  FREE
-  PRO
-  BUSINESS
 }
 
 /// Who may read a project's portal.
