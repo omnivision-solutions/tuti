@@ -196,6 +196,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               <FilterPills
                 label="Sort"
                 current={tabHref(tab)}
+                // Signed in, Mine makes four: too wide for a 360px phone, so they wrap there too.
+                className="gap-y-2 max-lg:flex-wrap"
                 items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, name]) => {
                   const Icon = sortIcons[key];
                   return {

@@ -1195,6 +1195,17 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
         const phoneUpdates = (await page.getByRole("main").getByRole("button", { name: "Get updates" }).boundingBox())!;
         expect(phoneUpdates.y).toBeGreaterThan(phoneShipped.y);
       }
+      if (width === 390 && colorScheme === "light") {
+        // Signed in, four sorts (Mine too): at 360 they wrap rather than run under the edge.
+        await page.setViewportSize({ width: 360, height: 900 });
+        const sorts = page.getByRole("navigation", { name: "Sort" }).getByRole("link");
+        await expect(sorts).toHaveText(["Trending", "Top", "New", "Mine"]);
+        for (const sort of await sorts.all()) {
+          const box = (await sort.boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(360 - 16);
+        }
+        await page.setViewportSize({ width, height: 900 });
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await checkpoint(page, `portal-board-sidebar-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
     }
