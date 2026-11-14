@@ -13,7 +13,6 @@ import {
   ShieldCheckIcon,
   ZapIcon,
 } from "lucide-react";
-import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -24,25 +23,29 @@ import { HeroTabs } from "./hero-tabs";
 import { DOCS, REPO_URL, SIGN_UP } from "./links";
 import { Switch } from "./switch";
 import "./landing.css";
-// Screenshots of the app and a portal, with the made-up company "Lumen"'s data, 2× pixels. Next resizes them per screen.
-import apSync from "./shots/app-autopilot-sync.webp";
-import inbox from "./shots/app-inbox-2.webp";
-import reporting from "./shots/app-reporting.webp";
-import cropAi from "./shots/crop-ai.webp";
-import cropCompleting from "./shots/crop-completing.webp";
-import cropSync from "./shots/crop-sync.webp";
-import aiAnswer from "./shots/portal-ai-answer.webp";
-import board from "./shots/portal-board.webp";
-import changelog from "./shots/portal-changelog.webp";
-import docs from "./shots/portal-docs.webp";
-import roadmap from "./shots/portal-roadmap.webp";
-import widgetHome from "./shots/widget-home.webp";
-import widgetNews from "./shots/widget-news.webp";
+import {
+  CellChangelog,
+  CellFeedback,
+  CellHelp,
+  CellInbox,
+  CellReporting,
+  CellRoadmap,
+  CellVerify,
+  CellWidget,
+  HeroAutopilot,
+  HeroChangelog,
+  HeroFeedback,
+  HeroHelp,
+  HeroInbox,
+  StepArticle,
+  StepChangelog,
+  StepRequest,
+} from "./scenes";
 
 /**
- * The home page (page.tsx; look in landing.css): the promise over a window onto each part of Tuti, Autopilot's steps,
- * a grid of the rest, switching, open source, pricing and questions. Copy is short and unqualified: plan details live on
- * /pricing (docs/design.md, Marketing copy). Pictures are real screenshots of the app.
+ * The home page (page.tsx; look in landing.css): the promise over a window onto each part of Tuti,
+ * Autopilot's steps, a grid of the rest, switching, open source, pricing and questions. Copy is short and unqualified:
+ * plan details live on /pricing (docs/design.md, Marketing copy). Pictures are scenes in the product's style (scenes.tsx).
  */
 
 // Links into the app are plain links (another app on this domain), not client navigation.
@@ -85,29 +88,15 @@ export function Landing({ aiInEveryPlan }: { aiInEveryPlan: boolean | null }) {
 
 const icon = { "aria-hidden": true, size: 16 } as const;
 
-/** A screenshot as wide as the window it's in, up to `max` CSS pixels; `sizes` where it's drawn otherwise. */
-const Shot = ({ src, alt, max, sizes, className, preload }: { src: StaticImageData; alt: string; max?: number; sizes?: string; className?: string; preload?: boolean }) => (
-  <Image src={src} alt={alt} sizes={sizes ?? `(max-width: ${max}px) 100vw, ${max}px`} className={className} preload={preload} />
-);
-
-// The Autopilot steps' pictures fill a 300px-tall box (260px on phones) one, two or four to a row (`.st .pic`): the
-// landscape crops are as wide as that height makes them, or the column where it's wider; the portrait one the column.
-const STEP_CROP = "(max-width: 640px) max(380px, calc(100vw - 40px)), (max-width: 1080px) max(440px, calc(50vw - 37px)), 440px";
-const STEP_PORTRAIT = "(max-width: 640px) calc(100vw - 40px), (max-width: 1080px) calc(50vw - 37px), 275px";
-
-// The widths the bento draws its pictures at (`.cell img.bl` in landing.css): 640px on phones (wider than the screen,
-// cropped by the cell), its cell less the 28px inset where the cell is full width (tablets), else a fixed width.
-const BENTO_WIDE = "(max-width: 640px) 640px, (max-width: 1080px) calc(100vw - 86px), 730px";
-const bento = (px: number) => `(max-width: 640px) 640px, ${px}px`;
 
 function Hero() {
   // The window is open on Autopilot first.
-  const panels: [string, ReactNode, string, StaticImageData, string][] = [
-    ["Autopilot", <ZapIcon key="i" {...icon} />, "tuti.so/app/lumen/autopilot", apSync, "Autopilot's review of a help article rewritten after pull request #230: the old steps struck out, the new ones added"],
-    ["Help center", <BookOpenIcon key="i" {...icon} />, "help.lumen.app", aiAnswer, "A help center with an AI answer to “How do I cancel my plan?”, citing the article it came from"],
-    ["Inbox", <InboxIcon key="i" {...icon} />, "tuti.so/app/lumen/inbox", inbox, "The inbox: conversations waiting for a reply, one open beside the customer's details"],
-    ["Feedback", <LightbulbIcon key="i" {...icon} />, "help.lumen.app/feedback", board, "A feedback board of feature requests, with their statuses and votes"],
-    ["Changelog", <MegaphoneIcon key="i" {...icon} />, "help.lumen.app/changelog", changelog, "A public changelog, its entries tagged New, Improved and Fixed"],
+  const panels: [string, ReactNode, string, ReactNode][] = [
+    ["Autopilot", <ZapIcon key="i" {...icon} />, "tuti.so/app/lumen/autopilot", <HeroAutopilot key="p" />],
+    ["Help center", <BookOpenIcon key="i" {...icon} />, "help.lumen.app", <HeroHelp key="p" />],
+    ["Inbox", <InboxIcon key="i" {...icon} />, "tuti.so/app/lumen/inbox", <HeroInbox key="p" />],
+    ["Feedback", <LightbulbIcon key="i" {...icon} />, "help.lumen.app/feedback", <HeroFeedback key="p" />],
+    ["Changelog", <MegaphoneIcon key="i" {...icon} />, "help.lumen.app/changelog", <HeroChangelog key="p" />],
   ];
   return (
     <header className="hero">
@@ -127,12 +116,7 @@ function Hero() {
       </div>
       <div className="frame">
         <HeroTabs
-          panels={panels.map(([label, ic, url, src, alt], i) => ({
-            label,
-            icon: ic,
-            url,
-            picture: <Shot src={src} alt={alt} max={1180} preload={i === 0} />,
-          }))}
+panels={panels.map(([label, ic, url, picture]) => ({ label, icon: ic, url, picture }))}
         />
       </div>
     </header>
@@ -159,6 +143,7 @@ function Step({ n, title, line, children }: { n: ReactNode; title: string; line:
   );
 }
 
+/** The problem Autopilot solves: the product moved on, the help center didn't. */
 function Autopilot() {
   return (
     <section id="autopilot" className="line">
@@ -194,13 +179,13 @@ function Autopilot() {
             </div>
           </Step>
           <Step n="1" title="Help center rewritten" line="The article now says what shipped.">
-            <Shot src={cropSync} sizes={STEP_CROP} alt="The article “Sync with Google Calendar”, its old import steps struck out and the new sync steps added" />
+            <StepArticle />
           </Step>
           <Step n="2" title="Feature request completed" line="Every voter gets the news.">
-            <Shot src={cropCompleting} sizes={STEP_CROP} alt="The feature request “Dark mode” moving from Planned to Completed, with an email to the 27 people on it" />
+            <StepRequest />
           </Step>
           <Step n="3" title="Changelog drafted" line="Ready to publish, in your words.">
-            <Shot src={widgetNews} sizes={STEP_PORTRAIT} alt="The changelog entry “Fewer duplicate reminders” in the in-app widget's What's new" />
+            <StepChangelog />
           </Step>
         </ol>
       </div>
@@ -229,33 +214,31 @@ function Bento() {
         </div>
         <div className="bento">
           <Cell id="help" className="c-help" icon={<BookOpenIcon {...icon} />} label="Help center" title="Answers customers trust." line="Search and AI answers in one box, every answer cited.">
-            <div className="pics">
-              <Shot src={docs} sizes={BENTO_WIDE} className="bl" alt="A help center's home page: a search box over collections and popular articles" />
-              <Shot src={cropAi} max={250} className="over" alt="An AI answer to “How do I cancel my plan?”, with its source linked" />
-            </div>
+            <CellHelp />
           </Cell>
           <Cell className="c-wdg" icon={<MessageCircleIcon {...icon} />} label="Widget" title="All of it, in your app." line="One script tag.">
-            <Shot src={widgetHome} max={270} className="wdg" alt="The in-app widget: help search, popular articles, a message to the team and Share an idea" />
+            <CellWidget />
           </Cell>
           <Cell id="inbox" className="c-inbox" icon={<InboxIcon {...icon} />} label="Inbox" title="Every conversation, one inbox." line="AI answers first. Your team takes the rest.">
-            <Shot src={inbox} sizes={BENTO_WIDE} className="bl" alt="The inbox: conversations waiting for a reply, one open beside the customer's details" />
+            <CellInbox />
           </Cell>
           <Cell id="feedback" className="c-fb" icon={<LightbulbIcon {...icon} />} label="Feedback" title="Customers vote." line="See which feature requests matter most.">
-            <Shot src={board} sizes={bento(560)} className="bl" alt="A feedback board of feature requests, with their statuses and votes" />
+            <CellFeedback />
           </Cell>
           <Cell className="c-rm" icon={<MapIcon {...icon} />} label="Roadmap" title="Show what's next.">
-            <Shot src={roadmap} sizes={bento(700)} className="bl" alt="A public roadmap with Planned, In progress and Completed columns" />
+            <CellRoadmap />
           </Cell>
           <Cell className="c-cl" icon={<MegaphoneIcon {...icon} />} label="Changelog" title="Tell everyone it shipped.">
-            <Shot src={changelog} sizes={bento(700)} className="bl" alt="A public changelog, its entries tagged New, Improved and Fixed" />
+            <CellChangelog />
           </Cell>
           <div className="cell c-dark">
             <Eyebrow icon={<ShieldCheckIcon {...icon} />}>Verify</Eyebrow>
             <h3 className="big">Checked against your code.</h3>
             <p>Every article, on demand.</p>
+            <CellVerify />
           </div>
           <Cell className="c-rep" icon={<ChartColumnIcon {...icon} />} label="Reporting" title="See what customers can't find.">
-            <Shot src={reporting} sizes={bento(900)} className="bl" alt="Help center reporting: article views, searches and searches that found nothing, by day" />
+            <CellReporting />
           </Cell>
         </div>
       </div>
