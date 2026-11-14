@@ -144,7 +144,7 @@ const POSTS: [number, string, ReactNode][] = [
   [18, "Recurring events", <Pill key="p" tone="plan">Planned</Pill>],
   [12, "Export to a spreadsheet", <Pill key="p" tone="open">Open</Pill>],
   [11, "Booking pages", <Pill key="p" tone="plan">Planned</Pill>],
-  [6, "Week numbers", <Pill key="p" tone="open">Open</Pill>],
+  [6, "Week numbers", <Pill key="p" tone="plan">Planned</Pill>],
 ];
 
 function Votes({ rows = 3 }: { rows?: number }) {
