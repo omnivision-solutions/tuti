@@ -1,4 +1,4 @@
-import { ArrowRightIcon, CheckIcon, FileTextIcon, GitMergeIcon, MailIcon, MessageCircleIcon, SearchIcon, SparklesIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, FileTextIcon, GitMergeIcon, GlobeIcon, MailIcon, MessageCircleIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { GithubMark } from "@tuti/ui/github-mark";
@@ -296,32 +296,38 @@ export const CellHelp = () => (
   </Pic>
 );
 
-export function CellWidget() {
+function WidgetPanel() {
   return (
-    <Pic className="cell-sc sc-wdg" label="The in-app widget: help search, popular articles, a message to the team and Share an idea">
-      <div className="w">
-        <b>How can we help?</b>
-        <div className="sc-search">
-          <SearchIcon {...i} /> Search for help
-        </div>
-        <div className="lst">
-          <span>
-            <FileTextIcon {...i} /> {ARTICLE}
-          </span>
-          <span>
-            <FileTextIcon {...i} /> Invite your team
-          </span>
-          <span>
-            <MessageCircleIcon {...i} /> Send us a message
-          </span>
-          <span>
-            <SparklesIcon {...i} /> Share an idea
-          </span>
-        </div>
+    <div className="w">
+      <b>How can we help?</b>
+      <div className="sc-search">
+        <SearchIcon {...i} /> Search for help
       </div>
-    </Pic>
+      <div className="lst">
+        <span>
+          <FileTextIcon {...i} /> {ARTICLE}
+        </span>
+        <span>
+          <FileTextIcon {...i} /> Invite your team
+        </span>
+        <span>
+          <MessageCircleIcon {...i} /> Send us a message
+        </span>
+        <span>
+          <SparklesIcon {...i} /> Share an idea
+        </span>
+      </div>
+    </div>
   );
 }
+
+const WIDGET = "The in-app widget: help search, popular articles, a message to the team and Share an idea";
+
+export const CellWidget = () => (
+  <Pic className="cell-sc sc-wdg" label={WIDGET}>
+    <WidgetPanel />
+  </Pic>
+);
 
 export const CellInbox = () => (
   <Pic className="cell-sc" label="A conversation: the customer asks, AI answers from the help center, then a teammate takes over">
@@ -335,14 +341,14 @@ export const CellFeedback = () => (
   </Pic>
 );
 
-export function CellRoadmap() {
+export function CellRoadmap({ hero }: { hero?: boolean }) {
   const columns: [string, string[]][] = [
-    ["Planned", ["Dark mode", "Recurring events"]],
-    ["In progress", [REQUEST]],
-    ["Completed", ["Time zones", "Keyboard shortcuts"]],
+    ["Planned", ["Dark mode", "Recurring events", ...(hero ? ["Outlook sync"] : [])]],
+    ["In progress", [REQUEST, ...(hero ? ["Shared calendars"] : [])]],
+    ["Completed", ["Time zones", "Keyboard shortcuts", ...(hero ? ["Reminders by SMS"] : [])]],
   ];
   return (
-    <Pic className="cell-sc sc-rm" label="A roadmap: Planned, In progress and Completed, with feature requests in each">
+    <Pic className={hero ? "hero-sc sc-rm" : "cell-sc sc-rm"} label="A roadmap: Planned, In progress and Completed, with feature requests in each">
       {columns.map(([name, cards]) => (
         <div key={name}>
           <small>{name}</small>
@@ -415,3 +421,149 @@ export function CellAiTools() {
     </Pic>
   );
 }
+
+// ---- The feature pages' (features/[slug]) ----
+
+export function HeroAsk() {
+  return (
+    <Pic className="hero-sc sc-hc" label="A help center answering “How do I cancel my plan?” with AI, citing the article it came from, with Ask a person under it">
+      <div className="brand">Lumen Help</div>
+      <Answer wide />
+      <div className="sc-ask">
+        Still stuck? <span className="sc-btn ghost">Ask a person</span>
+      </div>
+    </Pic>
+  );
+}
+
+export function HeroWidget() {
+  return (
+    <Pic className="hero-sc sc-hw" label={`An app with Tuti's widget open over it. ${WIDGET}`}>
+      <div className="app" aria-hidden>
+        <b>Calendar</b>
+        <i />
+        <i />
+        <i />
+      </div>
+      <div className="sc-wdg">
+        <WidgetPanel />
+      </div>
+    </Pic>
+  );
+}
+
+export function CellReview() {
+  return (
+    <Pic className="cell-sc" label={`Autopilot's update to “${ARTICLE}”, waiting with Approve and Dismiss`}>
+      <div className="sc-card">
+        <div className="h">
+          <FileTextIcon {...i} /> {ARTICLE} <Pill tone="upd">Updated</Pill>
+        </div>
+        <Diff short />
+        <div className="sc-acts">
+          <span className="sc-btn">Approve</span>
+          <span className="sc-btn ghost">Dismiss</span>
+        </div>
+      </div>
+    </Pic>
+  );
+}
+
+export const CellEmail = () => (
+  <Pic className="cell-sc" label="An email reply from a customer, in the same conversation as their widget messages">
+    <div className="sc-mail">
+      <small>
+        <MailIcon {...i} size={12} /> Email from Ana Abbott
+      </small>
+      <b>Re: Google Calendar sync</b>
+      <span>That worked, thanks! Synced both ways now.</span>
+    </div>
+  </Pic>
+);
+
+export const CellInsert = () => (
+  <Pic className="cell-sc sc-thread" label={`A teammate's reply with the help article “${ARTICLE}” in it`}>
+    <small className="r">Maya · Lumen</small>
+    <p className="tm">Here&apos;s how to connect it:</p>
+    <span className="sc-src">
+      <FileTextIcon {...i} size={12} /> {ARTICLE}
+    </span>
+  </Pic>
+);
+
+export const CellLinked = () => (
+  <Pic className="cell-sc" label={`The feature request “${REQUEST}”: 42 votes and 6 conversations from the inbox linked to it`}>
+    <div className="sc-card">
+      <div className="h">
+        <MessageCircleIcon {...i} /> {REQUEST} <Pill tone="prog">In progress</Pill>
+      </div>
+      <span className="sc-mute">42 votes · 6 conversations</span>
+      <div className="sc-faces" aria-hidden>
+        {["AA", "NL", "KK", "TO", "JR"].map((initials) => (
+          <span key={initials}>{initials}</span>
+        ))}
+      </div>
+    </div>
+  </Pic>
+);
+
+export const CellDuplicate = () => (
+  <Pic className="cell-sc" label={`A new post, “Sync my Google calendar”, flagged as a possible duplicate of “${REQUEST}”, with Merge`}>
+    <div className="sc-card">
+      <div className="h">
+        <MessageCircleIcon {...i} /> Sync my Google calendar <Pill tone="prog">Possible duplicate</Pill>
+      </div>
+      <span className="sc-mute">Looks like “{REQUEST}”</span>
+      <div className="sc-acts">
+        <span className="sc-btn">Merge</span>
+      </div>
+    </div>
+  </Pic>
+);
+
+export const CellImport = () => (
+  <Pic className="cell-sc" label="128 articles imported from Intercom, each old link redirected to its new page">
+    <div className="sc-card">
+      <div className="sc-move">
+        <Pill tone="open">Intercom</Pill>
+        <ArrowRightIcon {...i} />
+        <Pill tone="done">Lumen Help</Pill>
+      </div>
+      <span className="sc-mute">128 articles · old links redirect</span>
+    </div>
+  </Pic>
+);
+
+export const CellDomain = () => (
+  <Pic className="cell-sc" label="The help center on help.lumen.app, connected">
+    <div className="sc-search">
+      <GlobeIcon {...i} size={15} /> help.lumen.app
+      <Pill tone="done">
+        <CheckIcon {...i} size={12} /> Connected
+      </Pill>
+    </div>
+  </Pic>
+);
+
+export const CellSubscribe = () => (
+  <Pic className="cell-sc" label={`A changelog email to subscribers: “${ENTRY}”`}>
+    <div className="sc-mail">
+      <small>
+        <MailIcon {...i} size={12} /> To subscribers
+      </small>
+      <b>New: {ENTRY}</b>
+      <span>Events you change in Google show up in Lumen.</span>
+    </div>
+  </Pic>
+);
+
+export const CellReactions = () => (
+  <Pic className="cell-sc" label={`The changelog entry “${ENTRY}” with reactions: 24 thumbs up, 12 party poppers, 9 hearts`}>
+    <Entry date="Today" />
+    <div className="sc-react">
+      {["👍 24", "🎉 12", "❤️ 9"].map((r) => (
+        <span key={r}>{r}</span>
+      ))}
+    </div>
+  </Pic>
+);

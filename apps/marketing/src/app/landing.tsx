@@ -64,14 +64,16 @@ function Start({ arrow = true }: { arrow?: boolean }) {
   );
 }
 
-function Ctas() {
+/** Start free trial, then `secondary` (by default Tuti's own help center, on Tuti). */
+export function Ctas({ secondary }: { secondary?: ReactNode }) {
   return (
     <div className="ctas">
       <Start />
-      {/* Tuti's own help center, on Tuti. */}
-      <a className="btn btn-s" href={DOCS}>
-        See a live help center
-      </a>
+      {secondary ?? (
+        <a className="btn btn-s" href={DOCS}>
+          See a live help center
+        </a>
+      )}
     </div>
   );
 }
@@ -130,7 +132,7 @@ panels={panels.map(([label, ic, url, picture]) => ({ label, icon: ic, url, pictu
   );
 }
 
-function Eyebrow({ icon: ic, children }: { icon: ReactNode; children: ReactNode }) {
+export function Eyebrow({ icon: ic, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <div className="eyebrow">
       {ic}
@@ -428,14 +430,23 @@ function Faq() {
   );
 }
 
-function Final() {
+/** The closing call to action: the home page's, or a page's own words and second button. */
+export function Final({
+  title = "Stop writing docs after every release.",
+  sub = "Tuti updates them as you ship, and you get your week back.",
+  secondary,
+}: {
+  title?: string;
+  sub?: string;
+  secondary?: ReactNode;
+}) {
   return (
     <section className="final">
       <div className="wrap">
         <TutiMark className="mark" />
-        <h2>Stop writing docs after every release.</h2>
-        <p className="sub">Tuti updates them as you ship, and you get your week back.</p>
-        <Ctas />
+        <h2>{title}</h2>
+        <p className="sub">{sub}</p>
+        <Ctas secondary={secondary} />
         <ul className="ticks">
           {["7-day free trial, no card", "Import from Intercom, Ferndesk and more", "Redirects for old links", "Open source"].map((item) => (
             <li key={item}>
