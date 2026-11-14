@@ -94,7 +94,8 @@ variable, `APP_URL`: the app's public address (`https://tuti.so`; the app answer
 `docker build -f apps/marketing/Dockerfile -t tuti-marketing .` (port 3000). In development each runs on
 its own port, and the site's links go to the app's dev server. Both send page views to PostHog, cookieless,
 when `POSTHOG_KEY` is set (and `POSTHOG_HOST`, PostHog's EU cloud by default); a self-hosted server leaves it
-unset and sends nothing.
+unset and sends nothing. The site carries Tuti's own widget when `WIDGET_PROJECT` names its project (`docs`);
+unset, it loads none.
 
 ## Self-hosting
 

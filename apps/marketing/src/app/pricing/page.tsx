@@ -92,7 +92,7 @@ function Enterprise({ features, cta, top }: Plans["enterprise"] & { top?: string
           ))}
         </ul>
       </div>
-      <a href={cta.href} className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 shrink-0 border-primary/60 text-base text-primary hover:text-primary")}>
+      <a href={cta.href} data-talk-to-us={cta.href.startsWith("mailto:") || undefined} className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 shrink-0 border-primary/60 text-base text-primary hover:text-primary")}>
         {cta.label}
       </a>
     </section>
