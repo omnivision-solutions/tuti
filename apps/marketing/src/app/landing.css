@@ -55,7 +55,7 @@
   h2 { font-size: clamp(38px, 4.8vw, 58px); letter-spacing: -0.04em; margin-top: 16px; }
   .sub { font-size: 20px; color: var(--muted); margin-top: 18px; max-width: 30em; line-height: 1.45; }
   .center { text-align: center; }
-  .center .sub { margin-left: auto; margin-right: auto; }
+  .center .sub, .final .sub { margin-left: auto; margin-right: auto; }
 
   /* Hero: the promise, then the product window in a green frame */
   .hero { padding: 70px 0 0; text-align: center; background: radial-gradient(900px 500px at 50% 0%, color-mix(in oklch, var(--g) 10%, transparent), transparent 70%); }
@@ -232,6 +232,9 @@
   .final { padding: 130px 0; text-align: center; background: radial-gradient(700px 360px at 50% 100%, color-mix(in oklch, var(--g) 14%, transparent), transparent 70%); }
   .final h2 { font-size: clamp(42px, 6.4vw, 76px); max-width: 15ch; margin: 22px auto 0; letter-spacing: -0.045em; }
   .final .mark { width: 64px; height: 64px; margin: 0 auto; }
+  .ticks { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; margin-top: 28px; color: var(--muted); font-size: 15px; }
+  .ticks li { display: flex; gap: 6px; align-items: center; }
+  .ticks svg { color: var(--g); }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before { animation: none !important; transition: none !important; }
