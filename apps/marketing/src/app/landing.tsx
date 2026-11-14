@@ -443,7 +443,7 @@ function Faq() {
               <p>{a}</p>
             </details>
           ))}
-          <a className="tlink ask" href={`mailto:${CONTACT_EMAIL}`}>
+          <a className="tlink ask" href={`mailto:${CONTACT_EMAIL}`} data-talk-to-us>
             Another question? Talk to us <ArrowRightIcon aria-hidden size={16} />
           </a>
         </div>
