@@ -85,7 +85,7 @@ function Entry({ title = ENTRY, line = "Events you change in Google show up in L
   return (
     <div className="sc-entry">
       <div className="m">
-        <Pill tone={tag === "New" ? "new" : "open"}>{tag}</Pill>
+        <Pill tone="open">{tag}</Pill>
         {date && <small>{date}</small>}
       </div>
       <b>{title}</b>

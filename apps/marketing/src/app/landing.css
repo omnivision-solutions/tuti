@@ -290,12 +290,12 @@
 .lp {
   .sc { font-size: 15px; line-height: 1.4; color: var(--ink); text-align: left; }
   /* Not the cells' own paragraph look. */
-  .cell .sc p { color: inherit; max-width: none; }
+  :where(.cell) .sc p { color: inherit; max-width: none; }
   .sc small { display: flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
   .sc-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
-  .sc-pill.prog { background: #e3edfb; color: #1f4f9a; }
+  .sc-pill.prog { background: #fbe9de; color: #a0461e; }
   .sc-pill.done, .sc-pill.new { background: var(--g50); color: var(--g7); }
-  .sc-pill.plan { background: #f5ecd9; color: #7a5a17; }
+  .sc-pill.plan { background: #e3edfb; color: #1f4f9a; }
   .sc-pill.open { background: #f1eee7; color: var(--muted); }
   .sc-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
   .sc-card .h { display: flex; align-items: center; gap: 8px; font-weight: 600; flex-wrap: wrap; }
