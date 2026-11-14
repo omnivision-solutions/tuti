@@ -6,7 +6,7 @@ import Link from "next/link";
 
 import { CONTACT_EMAIL } from "./legal";
 import { DOCS, REPO_URL } from "./links";
-import { SECTIONS } from "./sections";
+import { FEATURES } from "./features";
 import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
 import { TutiWidget } from "./widget";
 
@@ -52,9 +52,9 @@ export default function MarketingLayout({ children }: LayoutProps<"/">) {
             <nav aria-label="Footer" className="flex flex-wrap gap-16 md:ml-auto max-md:gap-9">
               <div className="flex flex-col gap-2.5">
                 <p className="mb-1 font-semibold text-foreground">Product</p>
-                {SECTIONS.map(([label, href]) => (
-                  <Link key={href} href={href} className="hover:text-foreground">
-                    {label}
+                {FEATURES.map(({ slug, name }) => (
+                  <Link key={slug} href={`/features/${slug}`} className="hover:text-foreground">
+                    {name}
                   </Link>
                 ))}
                 <Link href="/pricing" className="hover:text-foreground">

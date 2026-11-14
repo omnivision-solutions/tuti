@@ -449,6 +449,33 @@
   .sc-mcp .p { color: #4cc27c; }
   .sc-mcp .m { color: #8ea596; }
 
+  /* The feature pages' (features/[slug]): two cards a row, a wide one alone; Autopilot's steps as a card's picture. */
+  .fp .cell { grid-column: span 3; }
+  .fp .cell.wide { grid-column: span 6; }
+  .cell > .step-sc { height: auto; margin-top: auto; padding: 24px 0 0; }
+  .fp-rel { padding-bottom: 0; }
+  .fp-rel h2 { margin: 0 0 40px; }
+  .fp-rel .land { max-width: 920px; margin: 0 auto; text-align: left; }
+  .fp-rel .chip { height: 100%; transition: border-color 0.15s, transform 0.15s; }
+  .fp-rel .chip:hover { border-color: var(--g); transform: translateY(-2px); }
+  .sc-btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+  .sc-acts { display: flex; gap: 8px; margin-top: 12px; }
+  .sc-ask { display: flex; align-items: center; gap: 10px; margin-top: 18px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .sc-search .sc-pill { margin-left: auto; }
+  .sc-thread > .sc-src { align-self: flex-end; }
+  .sc-faces { display: flex; margin-top: 12px; padding-left: 6px; }
+  .sc-faces span {
+    display: grid; place-items: center; width: 30px; height: 30px; margin-left: -6px; border-radius: 50%; font-size: 11px; font-weight: 700;
+    background: var(--g50); color: var(--g7); box-shadow: 0 0 0 2px var(--card);
+  }
+  .sc-react { display: flex; gap: 8px; margin-top: 12px; }
+  .sc-react span { border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; font-size: 14px; font-weight: 600; background: var(--card); }
+  .sc-hw { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
+  .sc-hw .app { display: grid; gap: 12px; align-content: start; min-height: 400px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .sc-hw .app b { font: 700 20px var(--font-heading); letter-spacing: -0.02em; }
+  .sc-hw .app i { height: 46px; border-radius: 10px; background: #f1eee7; }
+  .sc-hw .app i:nth-child(3) { width: 70%; }
+  .sc-hw .app i:nth-child(4) { width: 45%; }
   @media (max-width: 1080px) {
     /* The terminal under the words. */
     .c-mcp { grid-template-columns: minmax(0, 1fr); }
@@ -459,7 +486,9 @@
     /* The window grows with its scene, which stacks into one column. */
     .win { max-height: none; }
     .hero-sc { padding: 18px 14px; min-height: 0; }
-    .sc-ap, .sc-ib { grid-template-columns: 1fr; gap: 14px; }
+    .sc-ap, .sc-ib, .sc-hw { grid-template-columns: 1fr; gap: 14px; }
+    .sc-hw .app { display: none; }
+    .fp-rel .land { grid-template-columns: 1fr; }
     .sc-list { display: none; }
     .sc-tiles { grid-template-columns: 1fr 1fr; }
     .sc-tiles span:last-child { display: none; }
