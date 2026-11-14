@@ -41,3 +41,38 @@ test("an image the queue refused is failed, not left processing forever: no orig
   expect(await prisma.media.findUniqueOrThrow({ where: { id: created.mediaId } })).toMatchObject({ status: "FAILED", size: 0 });
   expect(s3.objects.has(originalKey(created.mediaId))).toBe(false);
 });
+
+
+test("a worker that finished before enqueue reports an error keeps READY and its file", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const file = Buffer.from("completed by the worker");
+  const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+  await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file), headers: { "content-type": "image/jpeg" } });
+  jobs.enqueue.mockImplementationOnce(async () => {
+    await prisma.media.update({ where: { id: created.mediaId }, data: { status: "READY", width: 10, height: 10 } });
+    throw new Error("Hatchet response lost after accepting the job");
+  });
+
+  expect(await finishUpload(created.mediaId)).toEqual({ error: "The image couldn't be processed" });
+  expect(await prisma.media.findUniqueOrThrow({ where: { id: created.mediaId } })).toMatchObject({ status: "READY", size: file.length });
+  expect(s3.objects.has(originalKey(created.mediaId))).toBe(true);
+});
+
+test("a failed cleanup still marks the refused upload FAILED", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const file = Buffer.from("not processed");
+  const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+  await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file), headers: { "content-type": "image/jpeg" } });
+  jobs.enqueue.mockRejectedValueOnce(new Error("Hatchet unreachable"));
+  s3.failDeletes.add(originalKey(created.mediaId));
+  try {
+    expect(await finishUpload(created.mediaId)).toEqual({ error: "The image couldn't be processed" });
+    expect(await uploadStatus(created.mediaId)).toEqual({ status: "FAILED" });
+  } finally {
+    s3.failDeletes.delete(originalKey(created.mediaId));
+  }
+});

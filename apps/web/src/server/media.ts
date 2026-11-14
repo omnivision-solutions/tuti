@@ -248,14 +248,24 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
     return {};
   }
 
-  await prisma.media.update({ where: { id: media.id }, data: { status: "PROCESSING" } });
+  if ((await settle({ status: "PROCESSING" })).count === 0) {
+    return { error: "Upload not found" };
+  }
   try {
     await enqueue("imageUploaded", { mediaId: media.id });
   } catch (error) {
     log.error("Processing an uploaded image failed", { mediaId: media.id, error });
-    // No job will finish this row: nothing is kept, and it stops counting against the quota.
-    await storage.delete(key);
-    await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
+    // A timed-out enqueue may still have started a worker. Preserve a row it already completed.
+    const failed = await prisma.media.updateMany({
+      where: { id: media.id, status: "PROCESSING" },
+      data: { status: "FAILED", size: 0 },
+    });
+    if (failed.count > 0) {
+      // Nothing is kept, and it stops counting against the quota.
+      await storage.delete(key).catch((deleteError: unknown) =>
+        log.error("Deleting a refused upload failed", { mediaId: media.id, error: deleteError }),
+      );
+    }
     return { error: "The image couldn't be processed" };
   }
   return {};
