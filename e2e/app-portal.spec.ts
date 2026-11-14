@@ -44,6 +44,16 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await owner.getByRole("menuitem", { name: "Account settings" }).click();
   await owner.waitForURL(`${APP_URL}/app/account`);
 
+  // Its widget on another site on the app's domain (tuti.so's marketing pages): the panel is under the path too, where the
+  // account is signed in (at its portal host nobody is), so it greets them.
+  await owner.route(`${APP_URL}/e2e-site`, (route) =>
+    route.fulfill({ contentType: "text/html", body: `<!doctype html><title>Site</title><script src="/api/widget.js" data-project="${APP_PORTAL_SLUG}"></script>` }),
+  );
+  await owner.goto("/e2e-site");
+  await owner.getByRole("button", { name: "Feedback" }).click();
+  await expect(owner.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${own}/widget`);
+  await expect(owner.frameLocator('iframe[title="Feedback"]').getByText("Hi Olive")).toBeVisible();
+
   // The rest of the app is as it was: its home, and the API reference under /api/docs.
   await owner.goto("/api/docs");
   await expect(owner.getByRole("heading", { level: 1 })).toBeVisible();
