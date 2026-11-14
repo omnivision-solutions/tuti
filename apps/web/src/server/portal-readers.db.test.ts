@@ -57,7 +57,7 @@ test("readers are added by email (lowercase, once each) and emailed a link to th
   expect(email.subject).toBe(`Olive Owner gave you access to ${project.name}`);
   expect(email.html).toContain("border-top:4px solid #7c3aed");
   expect(email.replyTo).toContain(owner.email);
-  expect(email.text).toContain(`http://${project.slug}.localhost:3100/sign-in?with=email`);
+  expect(email.text).toContain(`http://${project.slug}.localhost:3100/sign-in`);
   expect(email.text).toContain(`Sign in as ${ada}`);
 
   // Again: already there, nobody emailed twice.

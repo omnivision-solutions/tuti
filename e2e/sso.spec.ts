@@ -141,6 +141,18 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   await owner.getByRole("button", { name: "Save" }).click();
   // The first save's toast may still be up: look until it's saved.
   await expect(async () => expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F")).toPass();
+  // A private portal with readers the team added by email keeps its sign-in page, for them (with the button first).
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F");
+  const readers = owner.getByRole("region", { name: "Readers" });
+  await readers.getByLabel("Email addresses").fill(`e2e-${randomUUID()}@example.com`);
+  await readers.getByRole("button", { name: "Add readers" }).click();
+  await expect(owner.getByText(/1 reader added/)).toBeVisible();
+  expect(await sentTo("/sign-in")).toBeUndefined();
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Disable" }).click();
   await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
   await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();

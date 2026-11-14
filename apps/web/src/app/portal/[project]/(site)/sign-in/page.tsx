@@ -31,11 +31,13 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   // A reader the team added, whose address isn't verified yet: an emailed sign-in link verifies it.
   const unverified = refused && portal && (await invitedReader(portal.id, session!.user.id)) === "unverified";
   // With SSO and the project's app's sign-in page, people sign in with their account there: its app signs them in and
-  // sends them back through /sso with `redirect`. The page itself, with the button first, for the team and readers it
-  // added by email (`?with=email`, as the readers' email links), and to say a sign-in link or handoff failed.
+  // sends them back through /sso with `redirect`. The page itself, with the button first, for the team (`?with=email`),
+  // on a private portal with readers the team added by email (who sign in by email), to someone signed in who may not
+  // read it, and to say a sign-in link or handoff failed.
   const ssoUrl = portal?.ssoSecret && portal.ssoSignInUrl ? URL.parse(portal.ssoSignInUrl) : null;
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
-  if (ssoUrl && via !== "email" && handoff !== "failed" && link !== "failed") {
+  const hasReaders = isPrivate && !!portal && !!(await prisma.portalReader.findFirst({ where: { projectId: portal.id }, select: { id: true } }));
+  if (ssoUrl && !refused && !hasReaders && via !== "email" && handoff !== "failed" && link !== "failed") {
     redirect(ssoUrl.href);
   }
 
