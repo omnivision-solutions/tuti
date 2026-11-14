@@ -1200,7 +1200,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
     }
   }
 
-  // More boards than a phone's width: the switcher pill names the board and lists them all; the pill row scrolls, the page doesn't.
+  // More boards than a phone's width, one with a long name: the switcher pill names the board and lists them all.
   const more = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await more.connect();
   // Eight more boards, a second apart so their order is theirs, then Integrations last.
@@ -1218,31 +1218,27 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   const switcher = visitor.getByRole("button", { name: "Board: Integrations and the public API" });
   await expect(switcher).toBeVisible();
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // Two rows, nothing off the side or scrolled away: the switcher (its long name cut short) and the status menu, then the sorts.
+  for (const width of [390, 360]) {
+    await visitor.setViewportSize({ width, height: 844 });
+    expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    const statusPill = visitor.getByRole("button", { name: /^Status: / });
+    const sorts = visitor.getByRole("navigation", { name: "Sort" }).getByRole("link");
+    await expect(sorts).toHaveText(["Trending", "Top", "New"]);
+    const boxes = await Promise.all([switcher, statusPill, ...(await sorts.all())].map(async (pill) => (await pill.boundingBox())!));
+    for (const box of boxes) {
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    const [switcherBox, statusBox, trendingBox, , newBox] = boxes;
+    expect(statusBox.y).toBe(switcherBox.y);
+    expect(statusBox.x).toBeGreaterThan(switcherBox.x + switcherBox.width);
+    expect(trendingBox.y).toBeGreaterThan(switcherBox.y + switcherBox.height);
+    expect(newBox.y).toBe(trendingBox.y);
+    await expect(switcher.locator("..")).not.toHaveAttribute("data-more");
+  }
+  await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-board-row-phone", { fullPage: false });
-  // The pill row (switcher, sorts, status) is wider than the phone: faded at its end, a mouse's wheel scrolls it sideways
-  // (not the page), and a pill reached with Tab comes out of the fade.
-  const pillRow = switcher.locator("..");
-  await expect(pillRow).toHaveAttribute("data-more", "end");
-  expect(await pillRow.evaluate((row) => getComputedStyle(row).maskImage)).not.toBe("none");
-  const rowBox = (await pillRow.boundingBox())!;
-  await visitor.mouse.move(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2);
-  await visitor.mouse.wheel(0, 200);
-  await expect.poll(() => pillRow.evaluate((row) => row.scrollLeft)).toBeGreaterThan(0);
-  expect(await visitor.evaluate(() => window.scrollY)).toBe(0);
-  await expect(pillRow).toHaveAttribute("data-more", /start|both/);
-  // The status menu, the row's last pill, 10px from the row's end (under the fade); Tab to it from the sort before it.
-  const statusPill = visitor.getByRole("button", { name: /^Status: / });
-  await visitor.getByRole("navigation", { name: "Sort" }).getByRole("link", { name: "New", exact: true }).focus();
-  await statusPill.evaluate((pill) => {
-    const row = pill.parentElement!;
-    row.scrollLeft += pill.getBoundingClientRect().right - (row.getBoundingClientRect().right - 10);
-  });
-  expect((await statusPill.boundingBox())!.x + (await statusPill.boundingBox())!.width).toBeGreaterThan(rowBox.x + rowBox.width - 32 + 1);
-  await visitor.keyboard.press("Tab");
-  await expect(statusPill).toBeFocused();
-  // The row's last pill: it scrolls to its end, where nothing more is faded.
-  await expect(pillRow).toHaveAttribute("data-more", "start");
-  expect(await pillRow.evaluate((row) => row.scrollWidth - row.clientWidth - row.scrollLeft)).toBeLessThanOrEqual(1);
   await switcher.click();
   const boardMenu = visitor.getByRole("menu");
   await expect(boardMenu.getByRole("menuitem")).toHaveCount(12);

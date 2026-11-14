@@ -28,7 +28,7 @@ export function BoardSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger aria-label={`Board: ${name}`} className={pillClass(false, className)}>
         <LayoutListIcon aria-hidden />
-        {name}
+        <span className="truncate">{name}</span>
         <ChevronDownIcon aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-auto min-w-56">
@@ -45,8 +45,8 @@ export function BoardSwitcher({
 }
 
 /**
- * A board header's one row of pills (the switcher, the sorts, the status menu): it scrolls sideways, faded at the end with
- * more, and starts at its start (the switcher in view, not centred on the picked sort).
+ * A board header's pills (the switcher, the sorts, the status menu). Below `lg` they wrap (nothing off-screen); from `lg`
+ * one row that scrolls sideways, faded at the end with more, and starts at its start.
  */
 export function BoardPillRow({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -68,7 +68,7 @@ export function BoardPillRow({ children }: { children: ReactNode }) {
     };
   }, []);
   return (
-    <div ref={ref} className={cn("flex items-center gap-1.5 max-sm:-mx-4 max-sm:px-4", SCROLLING_ROW)}>
+    <div ref={ref} className={cn("flex items-center gap-x-1.5 gap-y-2 max-lg:flex-wrap max-sm:-mx-4 max-sm:px-4", SCROLLING_ROW)}>
       {children}
     </div>
   );

@@ -174,21 +174,19 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         title={board.name}
         description={board.description || "Vote for the ideas you want most, or share your own."}
         // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
-        // Phones: one row that scrolls sideways, the board switcher first (the rail's boards are on wide screens only).
+        // Below `lg` two rows (the rail's boards are on wide screens only): the board switcher and the status menu, then the
+        // sorts. With one board, the sorts then the status, wrapping if they must.
         pills={
           <BoardPillRow>
             {boards.length > 1 && (
-              <>
-                <BoardSwitcher
-                  name={board.name}
-                  allHref={at("/feedback")}
-                  boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
-                  className="lg:hidden"
-                />
-                <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border lg:hidden" />
-              </>
+              <BoardSwitcher
+                name={board.name}
+                allHref={at("/feedback")}
+                boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
+                className="min-w-0 shrink lg:hidden"
+              />
             )}
-            <div className="shrink-0">
+            <div className={cn("shrink-0", boards.length > 1 && "max-lg:order-last max-lg:basis-full")}>
               <FilterPills
                 label="Sort"
                 current={tabHref(tab)}
@@ -206,8 +204,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 })}
               />
             </div>
-            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
-            <BoardStatusMenu choices={statusChoices} counted={!searching} />
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border max-lg:hidden" />
+            <div className={cn("shrink-0", boards.length > 1 && "max-lg:ml-auto")}>
+              <BoardStatusMenu choices={statusChoices} counted={!searching} />
+            </div>
           </BoardPillRow>
         }
         actions={
