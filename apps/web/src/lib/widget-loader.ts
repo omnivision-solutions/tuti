@@ -393,6 +393,8 @@ export function widgetLoader(portalTemplate: string): string {
     if (cover) {
       if (!covering) {
         covering = true;
+        // For the page's CSS: while the panel is the whole screen (a portal gives up its scrollbar's room then).
+        panel.setAttribute("data-covering", "");
         // In reach: a modal's library that made it inert (as it was, closed before) may have put that back.
         panel.removeAttribute("inert");
         layoutPanel();
@@ -416,6 +418,7 @@ export function widgetLoader(portalTemplate: string): string {
       if (stillFading()) checkAgain();
     } else {
       covering = false;
+      panel.removeAttribute("data-covering");
       // Opened again, a modal still at opacity 0 may fade in then: watched afresh.
       fading = [];
       for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");

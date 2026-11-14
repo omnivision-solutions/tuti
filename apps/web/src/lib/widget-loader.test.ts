@@ -876,6 +876,12 @@ test("by default the panel opens above the launcher; on a phone it's the whole s
   // Clear of the phone's status bar and home indicator, where the page runs under them.
   expect(phone.panel.style).toMatchObject({ boxSizing: "border-box", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" });
   expect(phone.backdrop).toBeUndefined();
+  // Marked while it's the whole screen (for the page's CSS), not as a card, nor once it's closed.
+  expect(phone.panel.hasAttribute("data-covering")).toBe(true);
+  phone.Tuti.close();
+  expect(phone.panel.hasAttribute("data-covering")).toBe(false);
+  page.button!.click();
+  expect(page.panel.hasAttribute("data-covering")).toBe(false);
 });
 
 test("data-display or TutiSettings.display picks the mode, the attribute first; an unknown one is reported and it's the launcher", async () => {
@@ -1725,12 +1731,14 @@ test("on a phone, help opened over a modal of the page's is a card, the modal in
     page.Tuti.open();
     expect(page.panel.style.top).toBe("auto");
     expect(page.panel.style.borderRadius).toBe("14px");
+    expect(page.panel.hasAttribute("data-covering")).toBe(false);
     // As it closes, the modal's library puts back the panel's inert as it found it (closed before).
     shown = false;
     page.panel.setAttribute("inert", "");
     vi.advanceTimersByTime(300);
     expect(app.hasAttribute("inert")).toBe(true);
     expect(page.panel.style.top).toBe("0");
+    expect(page.panel.hasAttribute("data-covering")).toBe(true);
     expect(page.panel.hasAttribute("inert")).toBe(false);
   } finally {
     vi.useRealTimers();
