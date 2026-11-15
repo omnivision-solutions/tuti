@@ -178,14 +178,16 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
     RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    // Approved (waiting for the team) it emails the post's people, as completing does; going out by itself, nobody.
+    // Approved (or published now) it emails the post's people, as completing does; going out by itself, nobody.
     MOVES_FORWARD: done
       ? "In progress, with this comment"
       : uncommented(action)
         ? "Marks it in progress: write its comment first"
-        : action.status === "PENDING" && statusMoveEmails(action.post?.status ?? "OPEN", "IN_PROGRESS") === "progress"
-          ? "Marks it in progress with this comment, emailing the people who asked"
-          : "Marks it in progress, with this comment",
+        : statusMoveEmails(action.post?.status ?? "OPEN", "IN_PROGRESS") !== "progress"
+          ? "Marks it in progress, with this comment"
+          : action.status === "SCHEDULED"
+            ? "Marks it in progress with this comment; Publish now emails the people who asked"
+            : "Marks it in progress with this comment, emailing the people who asked",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
     // On a draft it stays in the draft, for the team to publish.
     ARTICLE_EDIT: action.article && !action.article.publishedAt ? (done ? "Kept this edit in the draft" : "Keeps this edit in the draft only your team sees") : done ? "Published this edit" : "Publishes this edit",

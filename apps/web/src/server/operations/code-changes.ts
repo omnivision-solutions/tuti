@@ -467,7 +467,9 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
     )
     .map((action) => action.post!.id);
   // Approving a progress update emails the same people when it moves the post forward; going out by itself, nobody.
-  const progresses = (action: ActionRow) => action.kind === "MOVES_FORWARD" && action.status === "PENDING" && !!action.post && !action.post.duplicateOfId && movesForward(action.post.status);
+  // Waiting, or going out by itself: by itself it emails nobody, but a teammate's Publish now does.
+  const progresses = (action: ActionRow) =>
+    action.kind === "MOVES_FORWARD" && (action.status === "PENDING" || action.status === "SCHEDULED") && !!action.post && !action.post.duplicateOfId && movesForward(action.post.status);
   const progressing = actions.filter(progresses).map((action) => action.post!.id);
   // For Undo to say first: those already emailed that it shipped, or (a progress update) that it's in progress, since it
   // was approved (they can't be unemailed).
@@ -482,9 +484,10 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         }),
     ),
   );
-  const [portal, emails, made, places] = await Promise.all([
+  const [portal, emails, progressEmails, made, places] = await Promise.all([
     projectPortal(projectId),
-    emailedOnCompletion(projectId, [...completing, ...progressing]),
+    emailedOnCompletion(projectId, completing),
+    emailedOnCompletion(projectId, progressing, "IN_PROGRESS"),
     // Approved new articles' drafts: the collection approving made, which Undo removes with it (as it was made, with
     // nothing else in it), by name.
     Promise.all(
@@ -519,11 +522,9 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
       /** For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back). */
       ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
-      /** For a post it completes, or (waiting for the team) moves forward: how many people approving it emails. */
-      ...(action.post &&
-        ((action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED")) || progresses(action)) && {
-          emails: emails.get(action.post.id) ?? 0,
-        }),
+      /** For a post it completes or moves forward: how many people approving (or publishing) it emails. */
+      ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+      ...(progresses(action) && { emails: progressEmails.get(action.post!.id) ?? 0 }),
       reason: action.reason,
       /** The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too). */
       ...((action.kind === "MOVES_FORWARD" || (action.kind === "RESOLVES" && payload.comment !== undefined)) && { comment: payload.comment ?? "" }),

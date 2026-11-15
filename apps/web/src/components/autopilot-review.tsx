@@ -180,8 +180,8 @@ export function PostReview({
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="text-base font-semibold">
             {statusChange(update.kind, post.status)}
-            {/* A completion's, or a progress update's waiting for the team (going out by itself, it emails nobody). */}
-            {emails > 0 && <span className="font-normal text-muted-foreground"> · emails up to {plural(emails, "person", "people")}</span>}
+            {/* A completion's, or a progress update's waiting for the team (going out by itself, it emails nobody; Publish now asks). */}
+            {emails > 0 && (update.kind === "resolves" || waiting) && <span className="font-normal text-muted-foreground"> · emails up to {plural(emails, "person", "people")}</span>}
           </p>
           <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm underline underline-offset-4">
             Open the post
@@ -230,6 +230,7 @@ export function PostReview({
             actionIds={parts.map((part) => part.id)}
             emails={emails}
             posts={emails ? 1 : 0}
+            {...(update.kind === "moves_forward" && { warning: progressWarning(emails) })}
             disabled={pending}
             before={(busy) => <DismissButton size="sm" disabled={pending || busy} onDismiss={dismiss} />}
           />
