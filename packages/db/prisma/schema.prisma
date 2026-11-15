@@ -68,6 +68,7 @@ model User {
   emailOptOuts          EmailOptOut[]
   emailPreferences      EmailPreference[]
   shippedEmails         ShippedEmail[]
+  statusEmails          StatusEmail[]
   replyEmails           ReplyEmail[]
   articleRevisions      ArticleRevision[]
   codeChangeActions     CodeChangeAction[]
@@ -990,7 +991,8 @@ model Post {
   commentCount       Int        @default(0)
   /// Set when this post is merged into another one; votes move to the original.
   duplicateOfId      String?
-  /// Set when the post is completed, cleared once everyone is emailed; the shipped-emails-resubmit cron re-runs late ones.
+  /// Set when the post moves to a status its people hear about (Planned, In progress, Completed), cleared once everyone
+  /// is emailed about the one it has; the shipped-emails-resubmit cron re-runs late ones.
   shippedEmailsDueAt DateTime?
   /// Who on the team looks after it (the team's only); null: nobody yet.
   ownerId            String?
@@ -1010,6 +1012,7 @@ model Post {
   duplicateOf            Post?                 @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates             Post[]                @relation("PostDuplicates")
   shippedEmails          ShippedEmail[]
+  statusEmails           StatusEmail[]
   changelogEntries       ChangelogEntryPost[]
   votes                  Vote[]
   subscriptions          PostSubscription[]
@@ -1039,7 +1042,7 @@ model Post {
 
 /// A change of a post's status, for its activity (the team's post page; the portal's status history):
 /// who made it (null: Tuti itself, or someone since deleted), from what to what, when, and for one to
-/// Completed, how many people the shipped email reached.
+/// Planned, In progress or Completed, how many people its email reached.
 model PostEvent {
   id               String     @id @default(cuid())
   postId           String
@@ -1055,6 +1058,7 @@ model PostEvent {
   actor          User?           @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
   changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
   shippedEmails  ShippedEmail[]
+  statusEmails   StatusEmail[]
 
   @@index([postId, createdAt])
   @@index([actorId])
@@ -1628,6 +1632,27 @@ model ShippedEmail {
   @@index([userId])
   @@index([eventId])
   @@map("shipped_email")
+}
+
+/// Emailing someone that a post moved to Planned or In progress: claimed, then sent (once per post, person and status),
+/// as ShippedEmail is for Completed.
+model StatusEmail {
+  postId    String
+  userId    String
+  status    PostStatus
+  claimedAt DateTime   @default(now())
+  sentAt    DateTime?
+  /// The status change it's for: sent, it's counted there.
+  eventId   String?
+
+  post  Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event PostEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@id([postId, userId, status])
+  @@index([userId])
+  @@index([eventId])
+  @@map("status_email")
 }
 
 // ─── Changelog (Phase 8) ─────────────────────────────────────────────────────

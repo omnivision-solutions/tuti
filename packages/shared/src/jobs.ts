@@ -142,7 +142,7 @@ export const jobs = {
       publishedAt: z.string(),
     }),
   },
-  /** A post became Completed: email the people behind it (each once; a retry emails only those not reached). */
+  /** A post moved to Planned, In progress or Completed: email the people behind it (each once per status; a retry emails only those not reached). */
   postShipped: {
     name: "post-shipped",
     input: z.object({ postId: z.string() }),

@@ -12,6 +12,7 @@ export { portalReaderEmail } from "./portal-reader-email";
 export { deliveredMessageId, emailConfigured, sendEmail } from "./send";
 export { replyEmail } from "./reply-email";
 export { shippedEmail } from "./shipped-email";
+export { type ProgressStatus, statusEmail } from "./status-email";
 export { signInLinkEmail } from "./sign-in-link-email";
 export { emailDomainTestEmail } from "./support-email";
 export { verifyArticleEmail } from "./verify-article-email";

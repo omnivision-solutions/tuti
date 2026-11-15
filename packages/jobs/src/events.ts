@@ -72,7 +72,7 @@ export async function queueDeliveries(ids: string[]) {
 
 /**
  * Every status change goes through here: it tells the project's webhooks and,
- * when the post is now Completed, emails the people behind it (post-shipped job).
+ * when the post is now Planned, In progress or Completed, emails the people behind it (post-shipped job).
  */
 export async function postStatusChanged(
   projectId: string,
@@ -87,9 +87,15 @@ export async function postStatusChanged(
   await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
   // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
   // on later mustn't find its emails still due, an earlier completion's either.
-  if (post.status === toApiStatus("COMPLETED") && post.visibility === "team") {
-    await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: null } });
-  } else if (post.status === toApiStatus("COMPLETED")) {
+  // Completed however it's reached; Planned and In progress only moving forward (from Open, Under review, Closed or an
+  // earlier step), so an Undo or a reopened post moving back tells nobody. A move that emails nobody leaves nothing due
+  // (an earlier move's held emails would go out about this status).
+  const steps = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
+  const to = steps.findIndex((status) => post.status === toApiStatus(status));
+  const emailed = to === steps.length - 1 || (to >= 0 && to > steps.findIndex((status) => status === previousStatus));
+  if (!emailed || post.visibility === "team") {
+    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
+  } else {
     try {
       // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
       await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });

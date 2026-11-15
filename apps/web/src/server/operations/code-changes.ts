@@ -1394,7 +1394,7 @@ export const applyCodeChangeAction = defineOperation({
     let unsureComment = false;
     try {
       if (reuse) {
-        // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
+        // Before moving it: the email that sends quotes that comment (postShipped reads `note`).
         shared.commentId = reuse;
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
       }
@@ -1426,15 +1426,16 @@ export const applyCodeChangeAction = defineOperation({
           await linkEntryPosts(prisma, entries.map(({ entryId }) => ({ entryId, postId: post.id })), { skipDuplicates: true });
         }
       }
-      // Completing it with the team's comment: the comment first, so the email the completion sends has it (postShipped
-      // quotes it); a failure after it takes it out again. Else the comment last: once it's being posted, a failure may
-      // come after it was saved.
-      first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim() && !reuse;
+      // Completing it, or moving it to In progress, with the team's comment: the comment first, so the email the move
+      // sends has it (postShipped quotes it); a failure after it takes it out again. Else the comment last: once it's
+      // being posted, a failure may come after it was saved.
+      const moves = whole?.completes ? post.status !== "COMPLETED" : progress && NOT_STARTED.has(post.status);
+      first = moves && commenting && !!comment.trim() && !reuse;
       if (first) {
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
         posting = false;
-        // The email completing it sends quotes this comment and no other (postShipped reads `note`).
+        // The email moving it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note } } })));
       }

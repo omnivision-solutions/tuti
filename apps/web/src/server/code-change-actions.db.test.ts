@@ -104,6 +104,22 @@ describe("applying", () => {
     expect((await postOf(later.post.id)).status).toBe("COMPLETED");
   });
 
+  test("moving it to In progress emails its people when the update goes out, quoting the update's comment", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    expect(shippedTo(voter.email)).toEqual([]);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    const [email, ...more] = shippedTo(voter.email);
+    expect(more).toEqual([]);
+    expect(email!.subject).toBe(`In progress: Dark mode MOVES_FORWARD`);
+    expect(email!.text).toContain("Olive Owner from the team:");
+    expect(email!.text).toContain("Weekly repeats are out.");
+    // Undone (back to Planned: nobody's told), then moved on again by hand: In progress was told already.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+    await call(updatePost, team(), { number: post.number, status: "in_progress" });
+    expect(shippedTo(voter.email).map((e) => e.subject)).toEqual([email!.subject]);
+  });
+
   test("completing with the team's comment: posted just before the post completes, and quoted in the email it sends", async () => {
     const { post, action } = await proposal("RESOLVES");
     await call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here: pick Dark in Settings → Appearance." });
@@ -121,8 +137,9 @@ describe("applying", () => {
     // Reopened, then completed by hand at once: that completion's email quotes nothing, not the review's earlier comment.
     await call(updatePost, team(), { number: post.number, status: "in_progress" });
     await call(updatePost, team(), { number: post.number, status: "completed" });
-    expect(shippedTo(voter.email).at(-1)!.subject).toBe(email!.subject);
-    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    const done = shippedTo(voter.email).filter((sent) => sent.subject.startsWith("Done:"));
+    expect(done.at(-1)!.subject).toBe(email!.subject);
+    expect(done.at(-1)!.text).not.toContain("from the team:");
     // Completed by hand after a teammate's comment: nothing quoted either.
     const byHand = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { board: "feature-requests", title: "Week numbers" });
     await call(createComment, team(), { number: byHand.number, body: "Thanks, we're tracking this." });
@@ -189,7 +206,8 @@ describe("applying", () => {
   });
 
   test("once the comment may be saved, a failure after it leaves the action applied, so it isn't posted twice", async () => {
-    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // Already In progress, so the comment is all it posts (a move's goes first, and is taken out again on a failure).
+    const { post, action } = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Getting there." });
     // The comment is saved; the lookup right after it fails.
     failTeamLookupAfterComment(post.id);
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
