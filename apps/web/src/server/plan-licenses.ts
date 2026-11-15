@@ -4,6 +4,9 @@ import { type Prisma, prisma } from "@tuti/db";
 import { applyPlanLicense, grantLicenseCredits, lockPlanLicense, lockProject, releasePlanLicense } from "@tuti/jobs";
 import { onDefaultPlan } from "@tuti/shared";
 import { refresh } from "next/cache";
+import { redirect } from "next/navigation";
+
+import { verifyValue } from "@/lib/signed";
 
 import { getAdminProject } from "./membership";
 import { getAccountSession } from "./session";
@@ -96,4 +99,34 @@ export async function unassignPlanLicense(licenseId: string): Promise<{ error?: 
     return { error: "Sign in to manage your licenses" };
   }
   return change(session.user.id, String(licenseId), (tx) => releasePlanLicense(tx, licenseId), true);
+}
+
+/**
+ * "Add to my account" on the redeem page: claims the license a claim names (claimToken: AppSumo's sign-in named it, an
+ * hour ago at most) to the signed-in account, then on to Licenses to assign it. Refused when another account has it (each
+ * license is one account's; support can move it), when it's revoked, or when its source hasn't told us of it yet.
+ */
+export async function claimPlanLicense(claim: string): Promise<{ error?: string }> {
+  const session = await getAccountSession();
+  if (!session) {
+    return { error: "Sign in to add the license to your account" };
+  }
+  const [source, key] = verifyValue("plan-license-claim", String(claim)) ?? [];
+  if (!source || !key) {
+    return { error: "This link has expired. Redeem the license from AppSumo again." };
+  }
+  const license = await prisma.planLicense.findUnique({ where: { source_externalKey: { source, externalKey: key } }, select: { id: true, userId: true, revokedAt: true } });
+  if (!license) {
+    return { error: "We haven't heard from AppSumo about this license yet. Try again in a minute." };
+  }
+  if (license.revokedAt) {
+    return { error: "This license was deactivated on AppSumo." };
+  }
+  if (license.userId !== session.user.id) {
+    const { count } = await prisma.planLicense.updateMany({ where: { id: license.id, userId: null }, data: { userId: session.user.id, claimedAt: new Date() } });
+    if (count === 0) {
+      return { error: "This license is on another Tuti account. Sign in to that one, or contact support." };
+    }
+  }
+  redirect("/app/licenses");
 }

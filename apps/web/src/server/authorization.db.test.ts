@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { hashInvitationToken } from "@tuti/jobs";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
+import { claimToken } from "@/server/appsumo";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 import { testLicensePrivateKey } from "@/test/license";
@@ -576,6 +577,8 @@ const matrix: Matrix = {
   "plan-licenses": {
     assignPlanLicense: { allowed: "ADMIN", takesIds: true, call: (slug, f) => planLicenses.assignPlanLicense(slug, f.planLicenseId) },
     unassignPlanLicense: { allowed: "signed in", refusesSsoUsers: true, call: (_, f) => planLicenses.unassignPlanLicense(f.assignedPlanLicenseId) },
+    // A claim for an unclaimed license (from AppSumo's sign-in): it redirects to Licenses once claimed.
+    claimPlanLicense: { allowed: "signed in", refusesSsoUsers: true, call: (_, f) => planLicenses.claimPlanLicense(f.planLicenseClaim) },
   },
   "similar-posts": {
     findSimilarPosts: { allowed: "public", call: (slug) => similarPosts.findSimilarPosts(slug, "Dark mode please") },
@@ -970,6 +973,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     select: { id: true, actions: { select: { id: true, kind: true, status: true } } },
   });
   const planLicense = await prisma.planLicense.create({ data: { source: "manual", externalKey: crypto.randomUUID(), plan: "pro", userId: users.ADMIN.id } });
+  const unclaimed = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: crypto.randomUUID(), plan: "pro" } });
   const outsiderProject = await createProject(users.outsider);
   const assignedPlanLicense = await prisma.planLicense.create({
     data: { source: "manual", externalKey: crypto.randomUUID(), plan: "pro", userId: users.outsider.id, projectId: outsiderProject.id },
@@ -978,6 +982,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     slug: project.slug,
     planLicenseId: planLicense.id,
     assignedPlanLicenseId: assignedPlanLicense.id,
+    planLicenseClaim: claimToken("appsumo", unclaimed.externalKey),
     codeChangeId: codeChange.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
     dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "PENDING")!.id,
