@@ -3,7 +3,6 @@ import { log } from "@tuti/shared";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
@@ -22,34 +21,40 @@ import { appUrl, portalUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { hidesLauncher } from "@/lib/widget-launcher";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
-import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { mayRead } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
 import { TeamHtml } from "@/components/team-html";
-import { requestTarget, siteMount } from "@/server/custom-domains";
+import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
+import { portalSite, SHARE_IMAGE } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
 import { PORTAL_BOARDS } from "@/server/post-visibility";
 
-/** Read once per request by both the layout and its metadata. */
-const portalBranding = cache((slug: string) => branding({ slug }));
-
+/**
+ * What every portal page starts from: the portal's search listing (Customize → SEO), its address (the base of every
+ * link in it, on its custom domain or the team's site), its name after each page's title, a large Twitter card, and its
+ * share image: the team's own (Customize → SEO), their choice for the portal as a whole, else one made for it. Pages
+ * with their own (portalPageMetadata) replace these with theirs.
+ */
 export async function generateMetadata({ params }: LayoutProps<"/portal/[project]">): Promise<Metadata> {
   const slug = (await params).project;
-  const [brand, project] = await Promise.all([portalBranding(slug), prisma.project.findUnique({ where: { slug }, select: { name: true } })]);
-  // The portal's search listing (Customize → SEO), for its pages that don't have their own.
-  const title = brand?.seo.title || project?.name;
+  const [site, address] = await Promise.all([portalSite(slug), portalAddress(slug)]);
+  const description = site?.brand.seo.description || undefined;
+  const image = site?.brand.seoImage ?? { url: `${address}/og`, ...SHARE_IMAGE };
   const seo: Metadata = {
-    ...(title && { title }),
-    ...(brand?.seo.description && { description: brand.seo.description }),
+    metadataBase: new URL(address),
+    ...(site && { title: { default: site.name, template: `%s · ${site.name}` } }),
+    ...(description && { description }),
     openGraph: {
-      ...(title && { siteName: title }),
-      ...(brand?.seo.description && { description: brand.seo.description }),
-      ...(brand?.seoImage && { images: [{ url: brand.seoImage.url, width: brand.seoImage.width, height: brand.seoImage.height }] }),
+      type: "website",
+      ...(site && { siteName: site.name, title: site.name }),
+      ...(description && { description }),
+      images: [{ url: image.url, width: image.width, height: image.height }],
     },
+    twitter: { card: "summary_large_image" },
   };
-  if (brand?.favicon) {
-    return { ...seo, icons: { icon: [{ url: brand.favicon.url, type: "image/webp" }] } };
+  if (site?.brand.favicon) {
+    return { ...seo, icons: { icon: [{ url: site.brand.favicon.url, type: "image/webp" }] } };
   }
   // Under a path of a team's site, Tuti's own icon is there too (/icon.svg would be the site's).
   const base = await portalBase();
@@ -69,7 +74,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       where: { slug },
       select: { id: true, name: true, widgetOnPortal: true, boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
     }),
-    portalBranding(slug),
+    portalSite(slug).then((site) => site?.brand),
   ]);
   if (!project || !brand) {
     notFound();

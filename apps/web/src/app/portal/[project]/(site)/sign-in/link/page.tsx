@@ -6,8 +6,9 @@ import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/comp
 import { safeRedirectPath } from "@/lib/redirects";
 import { failedSignInLinkPath, pendingSignInLink } from "@/server/sign-in-link-lookup";
 import { portalLinks } from "@/server/portal-base";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
 
-export const metadata: Metadata = { robots: { index: false } };
+export const metadata: Metadata = { title: "Sign in", ...PRIVATE_PAGE };
 
 /**
  * <project>.tuti.so/sign-in/link?token=…&next=… is the link in a sign-in email

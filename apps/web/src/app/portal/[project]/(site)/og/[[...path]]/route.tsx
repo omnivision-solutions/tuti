@@ -1,0 +1,162 @@
+import { prisma } from "@tuti/db";
+
+import { STATUS_LABELS } from "@/components/post-status-badge";
+import { formatDate } from "@/lib/format";
+import { DOCS_HEADING } from "@/lib/portal-look";
+import { postNumberFromParam } from "@/lib/post-urls";
+import { publishedEntries } from "@/server/changelog-queries";
+import { portalAddress } from "@/server/custom-domains";
+import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
+import { currentPostViewer, currentReader, mayRead } from "@/server/portal-access";
+import { portalSite } from "@/server/portal-metadata";
+import { canSeePost, seesBoard, shownBoards, visiblePosts } from "@/server/post-visibility";
+import { type ShareCard, shareCard } from "@/server/share-card";
+
+/**
+ * A portal page's link card (server/share-card.tsx): /og<the page's path>, e.g. /og/docs/billing. The page's own
+ * rules decide what it shows (as its metadata does): a page this reader can't open has no card, and on a private
+ * portal only its readers get one (proxy.ts sends everyone else to sign in; checked here too). Shared caches may keep
+ * only what anyone signed out sees.
+ */
+export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/og/[[...path]]">) {
+  const { project: slug, path = [] } = await params;
+  const site = await portalSite(slug);
+  if (!site || !(await mayRead(site.project.id))) {
+    return notFound();
+  }
+  const card = await cardFor(slug, site, path);
+  if (!card) {
+    return notFound();
+  }
+  const [address, reader, viewer] = await Promise.all([portalAddress(slug), currentReader(site.project.id), currentPostViewer(site.project.id)]);
+  // What anyone signed out sees (no session, preview or widget reader here).
+  const signedOut = reader !== null && !reader.signedIn && !viewer.userId;
+  // ponytail: an hour's public copy at most; a page made private since shows its old card that long, as the sitemap does its links.
+  const cacheControl = signedOut ? "public, max-age=3600" : "private, no-store";
+  return shareCard(site, card, address, { "cache-control": cacheControl });
+}
+
+const notFound = () => new Response("Not found", { status: 404, headers: { "cache-control": "private, no-store" } });
+
+type Site = NonNullable<Awaited<ReturnType<typeof portalSite>>>;
+
+async function cardFor(slug: string, site: Site, path: string[]): Promise<ShareCard | null> {
+  const [part, ...rest] = path;
+  switch (part) {
+    case undefined:
+      // The portal itself: its search listing's description under its title, else its title.
+      return site.brand.seo.description ? { eyebrow: site.name, title: site.brand.seo.description } : { eyebrow: "", title: site.name };
+    case "docs":
+      return rest.length === 0 ? docsCard(site, await docsHome(slug)) : rest.length === 1 ? docsPageCard(site, await docsPage(slug, rest[0]!)) : null;
+    case "feedback":
+      return feedbackCard(site.project.id, rest);
+    case "roadmap":
+      return rest.length === 0 ? roadmapCard(site.project.id) : null;
+    case "changelog":
+      return changelogCard(slug, site, rest);
+    default:
+      return null;
+  }
+}
+
+/** /docs: what it shows (the first tab's article or collection in its place, else the docs' home). */
+function docsCard(site: Site, home: Awaited<ReturnType<typeof docsHome>>): ShareCard {
+  return landingCard(home.landing) ?? { eyebrow: "Documentation", title: site.brand.docsHome.title || DOCS_HEADING.title };
+}
+
+function landingCard(landing: TabLanding): ShareCard | null {
+  return landing.kind === "overview" ? null : docsPageCard(null, landing);
+}
+
+function docsPageCard(site: Site | null, page: DocsPage | TabLanding | null): ShareCard | null {
+  switch (page?.kind) {
+    case "article": {
+      const { article } = page;
+      return {
+        eyebrow: article.collection ? `Documentation · ${article.collection.name}` : "Documentation",
+        title: article.title,
+        facts: article.updatedAt ? [`Updated ${formatDate(article.updatedAt)}`] : [],
+      };
+    }
+    case "locked":
+      return { eyebrow: page.article.collection ? `Documentation · ${page.article.collection.name}` : "Documentation", title: page.article.title };
+    case "collection": {
+      const count = articleCount(page.collection);
+      return { eyebrow: "Documentation", title: page.collection.name, facts: count ? [plural(count, "article")] : [] };
+    }
+    case "tab":
+      return (page.tab.locked ? null : landingCard(page.landing)) ?? { eyebrow: "Documentation", title: page.tab.name };
+    case "overview":
+      return site && { eyebrow: "Documentation", title: site.brand.docsHome.title || DOCS_HEADING.title };
+    default:
+      return null;
+  }
+}
+
+async function feedbackCard(projectId: string, [board, post, ...more]: string[]): Promise<ShareCard | null> {
+  const viewer = await currentPostViewer(projectId);
+  if (!board) {
+    return { eyebrow: "Feedback", title: "Vote for the ideas you want most, or share your own." };
+  }
+  if (more.length) {
+    return null;
+  }
+  if (!post) {
+    const found = await prisma.board.findUnique({
+      where: { projectId_slug: { projectId, slug: board } },
+      select: { name: true, postVisibility: true, off: true, _count: { select: { posts: { where: { duplicateOfId: null, ...visiblePosts(viewer) } } } } },
+    });
+    return found && seesBoard(viewer, found) ? { eyebrow: "Feedback", title: found.name, facts: found._count.posts ? [plural(found._count.posts, "idea")] : [] } : null;
+  }
+  const number = postNumberFromParam(post);
+  const found =
+    number === null
+      ? null
+      : await prisma.post.findFirst({
+          where: { projectId, number, duplicateOfId: null },
+          select: {
+            title: true,
+            status: true,
+            voteCount: true,
+            visibility: true,
+            authorId: true,
+            board: { select: { name: true, off: true } },
+            _count: { select: { comments: true } },
+          },
+        });
+  if (!found || !canSeePost(viewer, found)) {
+    return null;
+  }
+  return {
+    eyebrow: found.board.name,
+    title: found.title,
+    facts: [STATUS_LABELS[found.status], plural(found.voteCount, "vote"), ...(found._count.comments ? [plural(found._count.comments, "comment")] : [])],
+  };
+}
+
+async function roadmapCard(projectId: string): Promise<ShareCard> {
+  const viewer = await currentPostViewer(projectId);
+  const counts = await prisma.post.groupBy({
+    by: ["status"],
+    where: { projectId, duplicateOfId: null, status: { in: ["PLANNED", "IN_PROGRESS"] }, board: shownBoards(viewer), ...visiblePosts(viewer) },
+    _count: { _all: true },
+  });
+  const count = (status: string) => counts.find((row) => row.status === status)?._count._all ?? 0;
+  const facts = [count("PLANNED") && `${count("PLANNED")} planned`, count("IN_PROGRESS") && `${count("IN_PROGRESS")} in progress`].filter((fact): fact is string => !!fact);
+  return { eyebrow: "Roadmap", title: "What's planned, what we're building and what's done.", facts };
+}
+
+async function changelogCard(slug: string, site: Site, rest: string[]): Promise<ShareCard | null> {
+  // /changelog and its later pages (/changelog/page/2).
+  if (rest.length === 0 || (rest.length === 2 && rest[0] === "page")) {
+    const [latest] = await publishedEntries(slug, { take: 1 });
+    return { eyebrow: "Changelog", title: `What's new, improved and fixed in ${site.project.name}.`, facts: latest?.publishedAt ? [`Latest ${formatDate(latest.publishedAt)}`] : [] };
+  }
+  if (rest.length !== 1 || !/^\d{1,9}$/.test(rest[0]!)) {
+    return null;
+  }
+  const [entry] = await publishedEntries(slug, { number: Number(rest[0]), take: 1 });
+  return entry ? { eyebrow: "Changelog", title: entry.title, facts: entry.publishedAt ? [formatDate(entry.publishedAt)] : [] } : null;
+}
+
+const plural = (n: number, word: string) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;

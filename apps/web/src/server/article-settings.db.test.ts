@@ -6,6 +6,7 @@ import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/ro
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { SIGNED_OUT } from "@/lib/read-access";
+import { portalUrl } from "@/lib/hosts";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { saveArticle, saveArticleSettings } from "./docs";
@@ -258,10 +259,9 @@ describe("readers' pages", () => {
     });
     const plain = await published("Refunds");
     expect(await generateMetadata(params({ slug: plain }) as never)).toMatchObject({ description: "Plans are billed monthly, by card." });
-    // The portal's share image and name (the layout's Open Graph) stay under the article's own.
-    const portal = { openGraph: { siteName: "Acme Help", images: [{ url: new URL("https://media.example.com/share.jpg") }], description: "The portal's" } };
-    expect(await generateMetadata(params({ slug: own }) as never, Promise.resolve(portal) as never)).toMatchObject({
-      openGraph: { siteName: "Acme Help", images: [{ url: new URL("https://media.example.com/share.jpg") }], title: "Billing", description: "How we charge." },
+    // Its own link card: the portal's name, the article's own share image, as an article.
+    expect(await generateMetadata(params({ slug: own }) as never)).toMatchObject({
+      openGraph: { siteName: project.name, type: "article", images: [{ url: `${portalUrl(project.slug)}/og/docs/${own}`, width: 1200, height: 630 }] },
     });
   });
 

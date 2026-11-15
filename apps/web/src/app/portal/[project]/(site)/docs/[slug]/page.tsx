@@ -1,30 +1,30 @@
-import type { Metadata, ResolvingMetadata } from "next";
+import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 
-import { DocsArticle, DocsCollectionPage, docsPageMetadata, DocsTabPage, withPortalOpenGraph } from "@/components/portal-docs";
-import { portalAddress } from "@/server/custom-domains";
+import { DocsArticle, DocsCollectionPage, docsPageListing, DocsTabPage } from "@/components/portal-docs";
 import { docsPage } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
+import { portalPageMetadata } from "@/server/portal-metadata";
 
 /**
  * Search results show the page's title and its first lines (an article's) or its description (a
  * collection's). A tab showing an article or collection in its place has that one's, with the tab's
  * address as canonical.
  */
-export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">, parent?: ResolvingMetadata): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">): Promise<Metadata> {
   const { project, slug } = await props.params;
   const page = await docsPage(project, slug);
   if (!page || page.kind === "redirect") {
     return {};
   }
-  const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs/${slug}` } };
+  const path = `/docs/${slug}`;
   if (page.kind === "tab") {
-    if (page.tab.locked) {
-      return { title: `${page.tab.name} · Documentation`, robots: { index: false }, ...canonical };
+    if (page.tab.locked || page.landing.kind === "overview") {
+      return portalPageMetadata(project, { title: `${page.tab.name} · Documentation`, path, noindex: page.tab.locked });
     }
-    return withPortalOpenGraph({ ...(page.landing.kind === "overview" ? { title: `${page.tab.name} · Documentation` } : docsPageMetadata(page.landing)), ...canonical }, parent);
+    return portalPageMetadata(project, { ...docsPageListing(page.landing), path });
   }
-  return withPortalOpenGraph({ ...docsPageMetadata(page), ...canonical }, parent);
+  return portalPageMetadata(project, { ...docsPageListing(page), path });
 }
 
 /** /docs/<slug>: an article, a tab or a collection (one name each), or where one went since. */

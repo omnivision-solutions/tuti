@@ -24,6 +24,7 @@ import { accountEmails } from "@/server/operations/email-preferences";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
+import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 
 const PAGE_SIZE = 20;
@@ -85,12 +86,19 @@ export async function ChangelogMenu({ slug, current }: { slug: string; current?:
   );
 }
 
-/** Feed readers find the RSS feed from the page: a full URL on the project's portal. */
-export async function changelogMetadata(slug: string): Promise<Metadata> {
-  return {
-    alternates: { types: { "application/rss+xml": [{ url: `${await portalAddress(slug)}/changelog/rss.xml`, title: "Changelog" }] } },
-  };
+/** A page of the changelog (`page`: 1 for /changelog); feed readers find the RSS feed from it: a full URL on the project's portal. */
+export async function changelogMetadata(slug: string, page = 1): Promise<Metadata> {
+  const [site, address] = await Promise.all([portalSite(slug), portalAddress(slug)]);
+  const metadata = await portalPageMetadata(slug, {
+    title: "Changelog",
+    description: changelogDescription(site?.project.name),
+    path: page > 1 ? `/changelog/page/${page}` : "/changelog",
+  });
+  return { ...metadata, alternates: { ...metadata.alternates, types: { "application/rss+xml": [{ url: `${address}/changelog/rss.xml`, title: "Changelog" }] } } };
 }
+
+/** Under the changelog's title. */
+const changelogDescription = (name: string | undefined) => `What's new, improved and fixed${name ? ` in ${name}` : ""}.`;
 
 /**
  * The changelog by email, on public portals only (subscribeToChangelog), where email is set up: a signed-in reader's
@@ -218,7 +226,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
           end; on phones both round, beside the title. */}
       <PortalPageHeader
         title="Changelog"
-        description={`What's new, improved and fixed${project ? ` in ${project.name}` : ""}.`}
+        description={changelogDescription(project?.name)}
         pills={
           tags.length > 0 && (
             <FilterPills

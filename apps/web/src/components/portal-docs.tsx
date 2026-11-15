@@ -2,7 +2,6 @@ import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react";
-import type { Metadata, ResolvingMetadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 
@@ -251,38 +250,25 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
 }
 
 /**
- * An article's or collection's title and description for search engines and link previews (the
- * caller adds the canonical address). A locked one: its title only, and not for search engines.
+ * An article's or collection's search listing and link card (portalPageMetadata: the caller adds its path). A locked
+ * one: its title only, and not for search engines.
  */
-export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "locked" | "collection" }>): Metadata {
+export function docsPageListing(page: Extract<DocsPage, { kind: "article" | "locked" | "collection" }>) {
   if (page.kind === "locked") {
-    return { title: `${page.article.title} · Documentation`, robots: { index: false } };
+    return { title: `${page.article.title} · Documentation`, noindex: true };
   }
   if (page.kind === "collection") {
     const { name, description, locked, sample } = page.collection;
-    return { title: `${name} · Documentation`, ...(description && { description }), ...((locked || sample) && { robots: { index: false } }) };
+    return { title: `${name} · Documentation`, description, noindex: locked || sample };
   }
   const { article } = page;
-  const description = articleDescription(article);
   return {
-    title: `${article.title} · ${article.project.name}`,
-    description,
-    openGraph: { title: article.title, description },
+    title: article.title,
+    description: articleDescription(article),
+    article: { publishedTime: article.publishedAt, modifiedTime: article.updatedAt ?? article.publishedAt },
     // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing, nor sample content.
-    ...((article.listing === "UNLISTED" || article.noindex || article.sample) && { robots: { index: false } }),
+    noindex: article.listing === "UNLISTED" || article.noindex || article.sample,
   };
-}
-
-/**
- * A docs page's metadata, with the portal's own Open Graph (its share image and name, from the
- * layout) under the page's: Next.js takes a page's `openGraph` in place of the layout's, not on top.
- */
-export async function withPortalOpenGraph(metadata: Metadata, parent: ResolvingMetadata | undefined): Promise<Metadata> {
-  if (!metadata.openGraph || !parent) {
-    return metadata;
-  }
-  const portal = (await parent).openGraph;
-  return { ...metadata, openGraph: { ...(portal && { siteName: portal.siteName ?? undefined, images: portal.images }), ...metadata.openGraph } };
 }
 
 /** A collection's page: its articles, then the collections in it. */

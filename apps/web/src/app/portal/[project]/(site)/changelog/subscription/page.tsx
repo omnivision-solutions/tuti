@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 
 import { Button } from "@/components/ui/button";
@@ -5,6 +6,10 @@ import { CONFIRM_LINK_HOURS, findConfirmation, findSubscription, reachSentence }
 import { portalLinks } from "@/server/portal-base";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { BellIcon } from "lucide-react";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
+
+/** For the reader alone: not for search engines. */
+export const metadata: Metadata = { title: "Changelog emails", ...PRIVATE_PAGE };
 
 const heading = MESSAGE_TITLE;
 const text = MESSAGE_TEXT;

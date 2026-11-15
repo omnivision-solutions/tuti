@@ -37,13 +37,40 @@ import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { portalAddress } from "@/server/custom-domains";
+import { portalPageMetadata } from "@/server/portal-metadata";
+import { summary } from "@/lib/article-links";
 
-/** Sample content (server/sample-content.ts) is kept from search engines. */
+/** Only a post this reader may see, at its current address; sample content (server/sample-content.ts) is kept from search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]/[post]">): Promise<Metadata> {
-  const { project, post } = await props.params;
-  const number = postNumberFromParam(post);
-  const sample = number !== null && (await prisma.post.count({ where: { project: { slug: project }, number, sample: true } })) > 0;
-  return sample ? { robots: { index: false } } : {};
+  const { project, post: param } = await props.params;
+  const number = postNumberFromParam(param);
+  const post =
+    number !== null &&
+    (await prisma.post.findFirst({
+      where: { project: { slug: project }, number, duplicateOfId: null },
+      select: {
+        projectId: true,
+        number: true,
+        title: true,
+        body: true,
+        visibility: true,
+        authorId: true,
+        sample: true,
+        createdAt: true,
+        updatedAt: true,
+        board: { select: { slug: true, off: true } },
+      },
+    }));
+  if (!post || !canSeePost(await currentPostViewer(post.projectId), post)) {
+    return {};
+  }
+  return portalPageMetadata(project, {
+    title: post.title,
+    description: summary(post.body),
+    path: postPath(post),
+    article: { publishedTime: post.createdAt, modifiedTime: post.updatedAt },
+    noindex: post.sample,
+  });
 }
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/feedback/[board]/[post]">) {

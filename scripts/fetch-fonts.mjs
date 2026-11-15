@@ -9,7 +9,7 @@
 // symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
 // about 32 kB. packages/ui/src/brand-fonts.ts loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,3 +96,22 @@ try {
 }
 writeFileSync(new URL("noto-sans-math.OFL.txt", BRAND), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
 console.log("noto-sans-math.woff2", SYMBOLS);
+
+// Share cards (apps/web/src/server/share-card.tsx): static TTF cuts of the brand fonts, since the image renderer reads
+// neither WOFF2 nor variable fonts. fontTools' instancer, which comes with pyftsubset.
+const CARDS = new URL("../apps/web/src/fonts/og/", import.meta.url);
+mkdirSync(CARDS, { recursive: true });
+for (const [font, file, axes] of [
+  ["bricolage-grotesque.woff2", "bricolage-grotesque-700.ttf", "wght=700 opsz=96"],
+  ["figtree.woff2", "figtree-500.ttf", "wght=500"],
+  ["figtree.woff2", "figtree-700.ttf", "wght=700"],
+]) {
+  const out = fileURLToPath(new URL(file, CARDS));
+  execFileSync("fonttools", ["varLib.instancer", fileURLToPath(new URL(font, BRAND)), ...axes.split(" "), "--output", out]);
+  // Plain TTF, not WOFF2 like its source.
+  execFileSync("python3", ["-c", "import sys; from fontTools.ttLib import TTFont; f = TTFont(sys.argv[1]); f.flavor = None; f.save(sys.argv[1])", out]);
+  console.log(file, axes);
+}
+for (const name of ["bricolage-grotesque", "figtree"]) {
+  writeFileSync(new URL(`${name}.OFL.txt`, CARDS), readFileSync(new URL(`${name}.OFL.txt`, BRAND)));
+}

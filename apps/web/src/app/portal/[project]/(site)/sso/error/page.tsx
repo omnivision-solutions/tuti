@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 
@@ -6,6 +7,10 @@ import { SSO_ERROR_CODES, type SsoErrorCode } from "@/lib/sso";
 import { portalLinks } from "@/server/portal-base";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { cn } from "@/lib/utils";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
+
+/** For the reader alone: not for search engines. */
+export const metadata: Metadata = { title: "Couldn't sign you in", ...PRIVATE_PAGE };
 
 const MESSAGES: Record<SsoErrorCode, string> = {
   sso_not_enabled: "Single sign-on isn't enabled for this project.",
