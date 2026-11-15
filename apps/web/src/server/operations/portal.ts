@@ -162,17 +162,14 @@ export const addPortalReaders = defineOperation({
       });
       const url = signInUrl;
       // Inside each send: setting up the project's sender or reading its brand failing is a failed email, never a failed add.
-      const sender = projectSender(projectId, inviter?.email);
-      const brand = emailBrand(projectId);
+      // Both awaited together, so a failing brand is handled even when the sender failed first.
+      const setup = Promise.all([projectSender(projectId, inviter?.email), emailBrand(projectId)]);
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
-        toEmail.map(async (email) =>
-          sendEmail({
-            to: email,
-            ...(await sender),
-            ...portalReaderEmail({ ...(await brand), inviterName: inviter?.name ?? project.name, email, url }),
-          }),
-        ),
+        toEmail.map(async (email) => {
+          const [sender, brand] = await setup;
+          return sendEmail({ to: email, ...sender, ...portalReaderEmail({ ...brand, inviterName: inviter?.name ?? project.name, email, url }) });
+        }),
       );
       for (const result of sent) {
         if (result.status === "rejected") {
