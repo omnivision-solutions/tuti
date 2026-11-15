@@ -40,7 +40,6 @@ import {
   waitsBecause,
 } from "@tuti/jobs";
 import { ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
-import { statusMoveEmails } from "@tuti/shared/status-emails";
 import { z } from "zod";
 
 import { inArticleOrder } from "@/lib/article-order";
