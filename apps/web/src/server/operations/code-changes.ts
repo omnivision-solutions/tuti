@@ -1444,18 +1444,28 @@ export const applyCodeChangeAction = defineOperation({
         const note = shared.commentId;
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note } } })));
       }
+      // Only from the status read: one the team set while the comment was posted (even the one this moves it to) is kept,
+      // and the update waits again. Refused so, nothing was moved: there's no status to put back, which would overwrite theirs.
+      const move = async (to: PostStatus, as: typeof context) => {
+        shared.status = post.status;
+        try {
+          await call(updatePost, as, { number: post.number, status: toApiStatus(to), from: toApiStatus(post.status) });
+        } catch (error) {
+          if (error instanceof OperationError && error.code === "changed") {
+            shared.status = null;
+          }
+          throw error;
+        }
+      };
       if (whole?.completes) {
         if (post.status !== "COMPLETED") {
-          shared.status = post.status;
           // Completing emails its people however it went out (by itself only once an owner turned that on): never `quietly`.
-          await call(updatePost, { actor: context.actor, projectId }, { number: post.number, status: toApiStatus("COMPLETED"), from: toApiStatus(post.status) });
+          await move("COMPLETED", { actor: context.actor, projectId });
         }
       } else if (progress && NOT_STARTED.has(post.status)) {
-        shared.status = post.status;
-        // Only from the status read: one the team set while the comment was posted (Completed, say) is kept, and the
-        // update waits again. Applied by the runner after the hold (`quietly`: nobody on the team approved it), it emails
-        // nobody: only completing does, and that waits for someone unless an owner turns it on.
-        await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS"), from: toApiStatus(post.status) });
+        // Applied by the runner after the hold (`quietly`: nobody on the team approved it), it emails nobody: only
+        // completing does, and that waits for someone unless an owner turns it on.
+        await move("IN_PROGRESS", context);
       }
       if (commenting && comment.trim() && !first && !reuse) {
         posting = true;
@@ -1600,7 +1610,12 @@ async function putBackPost(
   const movedTo = kind === "RESOLVES" ? "COMPLETED" : "IN_PROGRESS";
   const now = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: { status: true } });
   if (undo.status && now.status === movedTo) {
-    await call(updatePost, context, { number: post.number, status: toApiStatus(undo.status as PostStatus) });
+    // Only while it still has the status this moved it to: one a teammate set since is kept (nothing to put back).
+    await call(updatePost, context, { number: post.number, status: toApiStatus(undo.status as PostStatus), from: toApiStatus(movedTo) }).catch((error: unknown) => {
+      if (!(error instanceof OperationError && error.code === "changed")) {
+        throw error;
+      }
+    });
   }
 }
 

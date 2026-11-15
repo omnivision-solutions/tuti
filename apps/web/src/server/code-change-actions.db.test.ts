@@ -123,23 +123,37 @@ describe("applying", () => {
     expect(shippedTo(voter.email).map((e) => e.subject)).toEqual([email!.subject]);
   });
 
-  test("a teammate completing the post while a progress update's comment is posted: Completed stays, and the update waits again", async () => {
-    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
-    // Right after the comment is saved (its author's team lookup), the teammate completes it.
+  /** A teammate sets the post's status right after the update's comment is saved (its author's team lookup). */
+  function teammateSetsDuringComment(postId: string, status: PostStatus) {
     const findMember = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
-    let completed = false;
+    let set = false;
     vi.spyOn(prisma.teamMember, "findUnique").mockImplementation((async (args: { where?: { projectId_userId?: unknown } }) => {
-      if (!completed && args?.where?.projectId_userId !== undefined && (await prisma.comment.count({ where: { postId: post.id } })) > 0) {
-        completed = true;
-        await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
+      if (!set && args?.where?.projectId_userId !== undefined && (await prisma.comment.count({ where: { postId } })) > 0) {
+        set = true;
+        await prisma.post.update({ where: { id: postId }, data: { status } });
       }
       return findMember(args);
     }) as never);
-    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The post's status changed since");
-    expect(completed).toBe(true);
-    expect(await postOf(post.id)).toMatchObject({ status: "COMPLETED", comments: [] });
-    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
-    expect(shippedTo(voter.email).filter((email) => email.subject.startsWith("In progress:"))).toEqual([]);
+    return () => set;
+  }
+
+  test("a teammate setting a status while an update's comment is posted keeps theirs (even the one it moves to), and the update waits again", async () => {
+    for (const [kind, status] of [
+      ["MOVES_FORWARD", "COMPLETED"],
+      ["MOVES_FORWARD", "IN_PROGRESS"],
+      ["RESOLVES", "COMPLETED"],
+    ] as const) {
+      const { post, action } = await proposal(kind, { comment: "Getting there." });
+      const set = teammateSetsDuringComment(post.id, status);
+      // A completion's comment is the team's (Autopilot proposes none): given here, so it's posted first.
+      await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Getting there." })).rejects.toThrow("The post's status changed since");
+      vi.restoreAllMocks();
+      expect(set()).toBe(true);
+      // Theirs, never put back to Planned; the update's comment taken out again.
+      expect(await postOf(post.id)).toMatchObject({ status, comments: [] });
+      expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    }
+    expect(shippedTo(voter.email)).toEqual([]);
   });
 
   test("completing with the team's comment: posted just before the post completes, and quoted in the email it sends", async () => {
