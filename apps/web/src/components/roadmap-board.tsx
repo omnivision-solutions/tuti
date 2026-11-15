@@ -37,7 +37,8 @@ type Card = {
   /** Who sees it besides the team (a badge when it isn't everyone). */
   visibility: PostVisibility;
   asking: string | null;
-  emails: number;
+  /** How many people moving it to each of the roadmap's statuses emails. */
+  emails: Partial<Record<PostStatus, number>>;
   eta: string | null;
   owner: { name: string; image: string | null } | null;
   /** The start of what was asked, under the title. */
@@ -78,10 +79,16 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [over, setOver] = useState<PostStatus | null>(null);
   // The move asked about: its card and the status it goes to.
   const [asking, setAsking] = useState<{ card: Card; status: PostStatus } | null>(null);
+  // The last move asked about, kept while its question fades out.
+  const [question, setQuestion] = useState<{ card: Card; status: PostStatus } | null>(null);
+  const ask = (card: Card, status: PostStatus) => {
+    setAsking({ card, status });
+    setQuestion({ card, status });
+  };
   // Whether moving `card` to `status` asks first: Completed always (saying when nobody is emailed), Planned and In
   // progress when they email someone (statusMoveEmails).
   const asks = (card: Card, status: PostStatus) =>
-    status === "COMPLETED" ? card.status !== status : card.emails > 0 && statusMoveEmails(card.status, status) !== null;
+    status === "COMPLETED" ? card.status !== status : (card.emails[status] ?? 0) > 0 && statusMoveEmails(card.status, status) !== null;
   // The column a phone shows (the others are beside it from tablet width up).
   const [shown, setShown] = useState<PostStatus>(columns[0]?.status ?? "PLANNED");
   // A card moved, and the pointer presses so far as it was moved if the move began with a key on one of its controls
@@ -141,7 +148,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   };
 
   // The status asked about, as the question says it: "completed", "in progress".
-  const label = STATUS_LABELS[asking?.status ?? "COMPLETED"].toLowerCase();
+  const label = STATUS_LABELS[question?.status ?? "COMPLETED"].toLowerCase();
+  const reach = question ? (question.card.emails[question.status] ?? 0) : 0;
 
   const drop = (status: PostStatus) => {
     const card = dragging;
@@ -151,7 +159,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
       return;
     }
     if (asks(card, status)) {
-      setAsking({ card, status });
+      ask(card, status);
     } else {
       move(card, status);
     }
@@ -244,7 +252,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                         // The column says the status.
                         badge={false}
                         // From the menu (the keyboard's and a phone's way) a move that emails asks first too.
-                        onAsk={(status) => asks(card, status) && (setAsking({ card, status }), true)}
+                        onAsk={(status) => asks(card, status) && (ask(card, status), true)}
                         onChanged={(status) => {
                           setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 });
                           // Off the roadmap (Open, Closed…): the column shown stays.
@@ -293,11 +301,11 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle className="wrap-anywhere">
-              Mark “{asking?.card.title}” {label}?
+              Mark “{question?.card.title}” {label}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {asking?.card.emails
-                ? `This emails up to ${asking.card.emails} ${asking.card.emails === 1 ? "person" : "people"} who asked for it that ${asking.status === "COMPLETED" ? "it shipped" : `it's ${label}`}.`
+              {reach
+                ? `This emails up to ${reach} ${reach === 1 ? "person" : "people"} who asked for it that ${question?.status === "COMPLETED" ? "it shipped" : `it's ${label}`}.`
                 : "Nobody is emailed."}
             </AlertDialogDescription>
           </AlertDialogHeader>
