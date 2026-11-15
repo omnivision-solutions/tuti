@@ -164,6 +164,21 @@ export const jobs = {
     input: z.object({}),
     cron: "*/10 * * * *",
   },
+  /** Someone else's comments on a post that are due (comment-emails-due): email them to its author, in one email. */
+  commentsEmailed: {
+    name: "comments-emailed",
+    input: z.object({ postId: z.string() }),
+    retries: 5,
+    // As post-shipped: rides out a mail provider's outage.
+    backoff: { factor: 5, maxSeconds: 60 * 60 },
+    concurrencyKey: "input.postId",
+  },
+  /** Queues comments-emailed for posts with comments due to their authors (their batching wait is over, or the run died). */
+  commentEmailsDue: {
+    name: "comment-emails-due",
+    input: z.object({}),
+    cron: "* * * * *",
+  },
   /** A changelog entry was published with Email subscribers: email it to its confirmed subscribers (each once). */
   changelogEmailed: {
     name: "changelog-emailed",

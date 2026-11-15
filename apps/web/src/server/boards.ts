@@ -168,6 +168,7 @@ export async function setBoardOff(projectSlug: string, boardId: string, off: boo
       // Emails still due about its posts (a delayed job's, a retry's) go to nobody now, nor once it's turned on again.
       await tx.post.updateMany({ where: { boardId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
       await tx.comment.updateMany({ where: { post: { boardId }, votersEmailDueAt: { not: null } }, data: { votersEmailDueAt: null } });
+      await tx.comment.updateMany({ where: { post: { boardId }, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: null } });
     }
     return null;
   });

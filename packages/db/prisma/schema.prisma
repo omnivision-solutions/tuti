@@ -1458,6 +1458,9 @@ model Comment {
   /// The team's reply, sent to the post's voters too (Email voters): due from then until each of them was
   /// emailed (reply_email), so the cron brings back one whose job never ran or died.
   votersEmailDueAt DateTime?
+  /// Someone else's comment, to be emailed to the post's author: due a few minutes on, so comments close together go in
+  /// one email (comment-email), until it's sent or dropped. The claim is a reply_email row, as the reply's to voters.
+  authorEmailDueAt DateTime?
   /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's comment even if its author is on
   /// the team, so it isn't shown as the team's.
   asReader         Boolean   @default(false)
@@ -1477,6 +1480,7 @@ model Comment {
   @@index([parentId])
   @@index([authorId])
   @@index([votersEmailDueAt])
+  @@index([authorEmailDueAt])
   @@map("comment")
 }
 
@@ -1494,8 +1498,9 @@ model CommentLike {
   @@map("comment_like")
 }
 
-/// The team's reply emailed to one of the post's voters (Email voters): claimed before sending, so a retry or
-/// a second run emails each of them once.
+/// A comment emailed to one person: the team's reply to one of the post's voters (Email voters), or someone's comment
+/// to the post's author (Comment.authorEmailDueAt). Claimed before sending, so a retry, a second run or the other
+/// email emails each of them once about a comment.
 model ReplyEmail {
   commentId String
   userId    String
