@@ -1,7 +1,7 @@
 import { creditsEnabled, freeCredits, plansEnabled } from "@tuti/shared";
 
 import { yearlyNote } from "@/lib/plans";
-import { ENTERPRISE, pricingPlans } from "@/lib/pricing-plans";
+import { ENTERPRISE, planFacts, pricingPlans, pricingTerms } from "@/lib/pricing-plans";
 
 /**
  * The plans this server sells, for Tuti's marketing site (apps/marketing: its pricing page and the home page's pricing
@@ -13,8 +13,11 @@ export function GET() {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
   const plans = pricingPlans();
+  const facts = planFacts();
   return Response.json({
-    plans,
+    // `facts`: the plan's numbers and yes/no features, for the pricing page's comparison (the cards' lines are Billing's too).
+    plans: plans.map((plan, index) => ({ ...plan, facts: facts[index] })),
+    ...pricingTerms(),
     enterprise: ENTERPRISE,
     yearlyNote: yearlyNote(plans.flatMap(({ price }) => (price ? [price] : []))),
     // AI answers and Autopilot are in every plan where none has to buy AI credits, or Free starts with some.

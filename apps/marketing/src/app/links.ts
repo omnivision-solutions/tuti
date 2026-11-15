@@ -10,8 +10,25 @@ export const SIGN_UP = inApp("/app/auth/sign-up");
 export const DOCS = inApp("/help/docs");
 export const REPO_URL = "https://github.com/omnivision-solutions/tuti";
 
+/** A plan's numbers (null: no limit) and yes/no features, as the app's pricing-plans.ts (planFacts) has them. */
+export type PlanFacts = {
+  credits: number | null;
+  creditsBuy: { answers: number; changes: number | null } | null;
+  articles: number | null;
+  versions: number;
+  boards: number | null;
+  emails: number | null;
+  historyDays: number | null;
+  team: number | null;
+  aiAnswers: boolean;
+  features: Record<"customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "aiTuning" | "emailDomain", boolean>;
+  extras: string[];
+};
+
 export type Plans = {
-  plans: PricingPlan[];
+  plans: (PricingPlan & { facts: PlanFacts })[];
+  badgePerMonth: number | null;
+  trialDays: number | null;
   enterprise: { features: string[]; cta: { label: string; href: string } };
   yearlyNote: string | null;
   aiInEveryPlan: boolean;

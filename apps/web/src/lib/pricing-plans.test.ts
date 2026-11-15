@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { pricingPlans } from "./pricing-plans";
+import { planFacts, pricingPlans, pricingTerms } from "./pricing-plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -168,4 +168,33 @@ test("a hidden plan (a default nobody picks) is left off, and the first plan sho
   expect(pricingPlans().map(({ name }) => name)).toEqual(["Pro", "Business"]);
   expect([pro!.intro, pro!.features.some(({ text }) => text === "Unlimited end users")]).toEqual([undefined, true]);
   expect(business!.intro).toBe("Everything in Pro, plus:");
+});
+
+test("the pricing page's comparison gets each plan's numbers and features from the billing file", () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("AI_CREDITS_FREE", "");
+  vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
+  const [free, pro, business] = planFacts();
+  expect(free).toMatchObject({ credits: null, creditsBuy: null, aiAnswers: false, boards: 2, emails: 1000, articles: 50, versions: 2, historyDays: 7, team: 3, extras: [] });
+  expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 2000, changes: 400 }, aiAnswers: true, boards: 5, team: null, articles: null });
+  expect(business).toMatchObject({ credits: 5000, boards: null, emails: null, historyDays: 90, versions: 50, extras: ["Priority support"] });
+  expect([free, pro, business].map(({ features }) => [features.customDomain, features.sitePath, features.privatePortal, features.aiTuning, features.codeChanges])).toEqual([
+    [false, false, false, false, true],
+    [true, false, false, false, true],
+    [true, true, true, true, true],
+  ]);
+  // Email from your domain only where the server offers it, as on the cards.
+  expect(business!.features.emailDomain).toBe(false);
+  expect(pricingTerms()).toEqual({ badgePerMonth: 49, trialDays: 7 });
+
+  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { delete config.badge; pro.extras = ["Onboarding call"]; }));
+  expect(planFacts().map(({ credits, aiAnswers, extras }) => [credits, aiAnswers, extras])).toEqual([
+    [null, true, []],
+    [null, true, ["Onboarding call"]],
+    [null, true, ["Onboarding call", "Priority support"]],
+  ]);
+  expect(pricingTerms()).toEqual({ badgePerMonth: null, trialDays: null });
 });
