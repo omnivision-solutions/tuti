@@ -191,6 +191,10 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   // Email from your domain only where the server offers it, as on the cards.
   expect(business!.features.emailDomain).toBe(false);
   expect(pricingTerms()).toEqual({ badgePerMonth: 49, badgeYearPerMonth: 49, trialDays: 7 });
+  // A badge sold yearly only has no monthly price, so the page can say it's billed yearly.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; delete config.badge!.month; }));
+  expect(pricingTerms()).toEqual({ badgePerMonth: null, badgeYearPerMonth: 49, trialDays: 7 });
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
 
   // Free's starter credits bring its AI answers, and Autopilot with them; it buys no monthly credits.
   vi.stubEnv("AI_CREDITS_FREE", "100");

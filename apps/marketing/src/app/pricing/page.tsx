@@ -48,9 +48,12 @@ export default async function PricingPage() {
         <>
           <PricingTable plans={plans.plans} yearlyNote={plans.yearlyNote} />
           <section className="grid gap-4 sm:grid-cols-3">
-            {plans.badgePerMonth !== null && (
+            {(plans.badgePerMonth ?? plans.badgeYearPerMonth) !== null && (
               <Extra title="Remove the Tuti badge">
-                ${plans.badgePerMonth} a month{plans.badgeYearPerMonth !== null && plans.badgeYearPerMonth !== plans.badgePerMonth && `, or $${plans.badgeYearPerMonth} a month billed yearly`}, on any paid plan.
+                {plans.badgePerMonth === null
+                  ? `$${plans.badgeYearPerMonth} a month, billed yearly`
+                  : `$${plans.badgePerMonth} a month${plans.badgeYearPerMonth !== null && plans.badgeYearPerMonth !== plans.badgePerMonth ? `, or $${plans.badgeYearPerMonth} a month billed yearly` : ""}`}
+                , on any paid plan.
               </Extra>
             )}
             <Extra title="Self-hosted" link={{ label: "Self-host Tuti", href: REPO_URL }}>

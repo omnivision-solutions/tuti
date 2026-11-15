@@ -222,7 +222,7 @@ export function planFacts(): PlanFacts[] {
 }
 
 /** The "Powered by tuti" add-on's price a month (and a month billed yearly), and the free trial's length: null where not offered. */
-export const pricingTerms = () => ({ badgePerMonth: badgePerMonth(), badgeYearPerMonth: badgePerMonth("year"), trialDays: trialTerms()?.days ?? null });
+export const pricingTerms = () => ({ badgePerMonth: badgePerMonth("month"), badgeYearPerMonth: badgePerMonth("year"), trialDays: trialTerms()?.days ?? null });
 
 /** Enterprise, beside the plans: by quote. */
 export const ENTERPRISE = {
