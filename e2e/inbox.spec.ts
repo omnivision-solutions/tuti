@@ -2068,6 +2068,9 @@ test("on a server selling plans, a new project's email is capped in its first we
   expect(narrow.height).toBeLessThan(20);
   expect(held.height).toBeLessThan(20);
   expect(held.y).toBeGreaterThanOrEqual(narrow.y + narrow.height);
+  // The mail icon stays on the author's line, not alone above it.
+  const icon = (await byLine.locator("svg").first().boundingBox())!;
+  expect(Math.abs(icon.y + icon.height / 2 - (narrow.y + narrow.height / 2))).toBeLessThan(4);
   await owner.setViewportSize(viewport);
   const db = async (sql: string, values: string[]) => {
     const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
@@ -2081,7 +2084,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   // A long status (a bounce's error) wraps inside the message's column on a phone, its start not cut off.
   await db(
     `UPDATE conversation_message m SET "emailStatus" = 'BOUNCED', "emailError" = $2 FROM conversation c, project p
-     WHERE m."conversationId" = c.id AND c."projectId" = p.id AND p.slug = $1 AND m.author = 'TEAM' AND NOT m.note`,
+     WHERE m."conversationId" = c.id AND c."projectId" = p.id AND p.slug = $1 AND m.author = 'TEAM' AND NOT m.note AND m."emailStatus" IS NULL`,
     [slug, "550 5.1.1 <e2e-kim@example.com>: Recipient address rejected: User unknown in virtual mailbox table"],
   );
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -2095,8 +2098,8 @@ test("on a server selling plans, a new project's email is capped in its first we
   // Held again, for what follows.
   await db(
     `UPDATE conversation_message m SET "emailStatus" = NULL, "emailError" = NULL FROM conversation c, project p
-     WHERE m."conversationId" = c.id AND c."projectId" = p.id AND p.slug = $1 AND m."emailStatus" = 'BOUNCED'`,
-    [slug],
+     WHERE m."conversationId" = c.id AND c."projectId" = p.id AND p.slug = $1 AND m."emailError" = $2`,
+    [slug, "550 5.1.1 <e2e-kim@example.com>: Recipient address rejected: User unknown in virtual mailbox table"],
   );
   // A member gets the warning without the link: Settings is for owners and admins.
   const member = await signUp(browser, CLOUD_URL, "Mo Member");

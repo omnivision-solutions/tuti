@@ -366,11 +366,13 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                             // Folded, it's said from the copy below instead (a line of no height can be skipped).
                             aria-hidden={runs || undefined}
                           >
-                            {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
-                            {/* Who and when as one, the status after it, wrapping as a whole onto a line of its own where they don't fit. */}
-                            <span>
-                              {!message.note && `${name} · `}
-                              {timeAgo(message.createdAt)}
+                            {/* The icon, who and when as one, the status after it, wrapping as a whole onto a line of its own where they don't fit. */}
+                            <span className="inline-flex min-w-0 items-center gap-x-1.25">
+                              {message.note ? <LockKeyholeIcon aria-hidden className="size-3.25 flex-none" /> : <MailIcon aria-hidden className="size-3.25 flex-none" />}
+                              <span className="min-w-0">
+                                {!message.note && `${name} · `}
+                                {timeAgo(message.createdAt)}
+                              </span>
                             </span>
                             {/* Held: the short status shows whole, and the full reason is its tooltip and what screen readers hear. */}
                             {status && (status === wait?.status ? (
