@@ -52,6 +52,11 @@ test("on a pale colour the panel's shapes are dark, as white ones would vanish; 
   expect(card("#f5d90a", "roadmap")).toContain("rgba(28,25,23,");
   expect(card("#f5d90a", "roadmap")).not.toContain("rgba(255,255,255,");
   expect(card("#6d4aff", "roadmap")).toContain("rgba(255,255,255,");
+  // White cards on a white panel get an edge.
+  for (const picture of ["page", "board", { votes: 3 }] as const) {
+    expect(card("#ffffff", picture)).toContain("rgba(28,25,23,0.18)");
+    expect(card("#6d4aff", picture)).not.toContain("rgba(28,25,23,0.18)");
+  }
   // Yellow on white doesn't read: the number is a darker yellow.
   expect(card("#f5d90a", { votes: 3 })).not.toMatch(/[;"]color:#f5d90a/);
 });

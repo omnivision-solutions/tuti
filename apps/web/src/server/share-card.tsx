@@ -132,6 +132,8 @@ function Panel({ color, picture, poweredBy }: { color: string; picture: Picture;
   const ink = pale ? "rgba(28,25,23," : "rgba(255,255,255,";
   // The votes' number in the colour where it reads on white, else the text colour.
   const onWhite = readableOn(color, 1, 3) ?? "#1c1917";
+  // White cards on a near-white colour (#ffffff, a light grey) get an edge, or they'd have none.
+  const edge = pale ? "3px solid rgba(28,25,23,0.18)" : "3px solid transparent";
   return (
     <div
       style={{
@@ -151,7 +153,7 @@ function Panel({ color, picture, poweredBy }: { color: string; picture: Picture;
         paddingBottom: poweredBy ? 76 : 0,
       }}
     >
-      <Drawing picture={picture} ink={ink} solid={pale ? "#1c1917" : "#ffffff"} number={onWhite} />
+      <Drawing picture={picture} ink={ink} solid={pale ? "#1c1917" : "#ffffff"} number={onWhite} edge={edge} />
       {poweredBy && (
         <div style={{ position: "absolute", bottom: 26, left: 0, right: 0, display: "flex", justifyContent: "center" }}>
           <div
@@ -192,11 +194,11 @@ function MonoMark() {
 
 const box = (style: Record<string, unknown>, key?: number) => <div key={key} style={{ display: "flex", ...style }} />;
 
-function Drawing({ picture, ink, solid, number }: { picture: Picture; ink: string; solid: string; number: string }) {
+function Drawing({ picture, ink, solid, number, edge }: { picture: Picture; ink: string; solid: string; number: string; edge: string }) {
   if (typeof picture === "object") {
     const votes = picture.votes.toLocaleString("en");
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 220, height: 240, borderRadius: 36, background: "#ffffff", color: number, gap: 4 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 220, height: 240, borderRadius: 36, background: "#ffffff", border: edge, color: number, gap: 4 }}>
         <svg width={52} height={44} viewBox="0 0 26 22">
           <path d="M13 0 26 22H0Z" fill={number} />
         </svg>
@@ -239,7 +241,7 @@ function Drawing({ picture, ink, solid, number }: { picture: Picture; ink: strin
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {[1, 0.75, 0.5].map((o, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, width: 290, height: 72, borderRadius: 16, background: "#ffffff", opacity: o, padding: "0 16px" }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, width: 290, height: 72, borderRadius: 16, background: "#ffffff", border: edge, opacity: o, padding: "0 16px" }}>
               {box({ width: 40, height: 46, borderRadius: 10, border: `3px solid ${number}` })}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {box({ width: [170, 140, 150][i], height: 12, borderRadius: 6, background: "#44403c" })}
@@ -254,7 +256,7 @@ function Drawing({ picture, ink, solid, number }: { picture: Picture; ink: strin
       return (
         <div style={{ display: "flex", position: "relative", width: 250, height: 290 }}>
           {box({ position: "absolute", left: 30, top: 0, width: 220, height: 270, borderRadius: 22, background: `${ink}0.35)` })}
-          <div style={{ position: "absolute", left: 0, top: 20, width: 220, height: 270, borderRadius: 22, background: "#ffffff", display: "flex", flexDirection: "column", padding: 28, gap: 14 }}>
+          <div style={{ position: "absolute", left: 0, top: 20, width: 220, height: 270, borderRadius: 22, background: "#ffffff", border: edge, display: "flex", flexDirection: "column", padding: 28, gap: 14 }}>
             {box({ width: 150, height: 20, borderRadius: 6, background: number })}
             {[120, 160, 100, 140, 120].map((w, i) => box({ width: w, height: 12, borderRadius: 6, background: "#e7e5e4" }, i))}
           </div>
