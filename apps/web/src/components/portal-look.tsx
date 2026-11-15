@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { createContext, useContext, useId, useSyncExternalStore } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
-import { TutiMark } from "@tuti/ui/tuti-logo";
+import { TutiMark, TutiWordmark } from "@tuti/ui/tuti-logo";
 import { type ColorScheme, DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME, THEME_DEFAULT_KEY } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
@@ -262,7 +262,7 @@ export function PoweredByTuti({ className }: { className?: string }) {
     >
       Powered by
       <TutiMark mono className="size-4" />
-      <span className="font-heading font-bold text-foreground">tuti</span>
+      <TutiWordmark className="text-foreground" />
     </a>
   );
 }
