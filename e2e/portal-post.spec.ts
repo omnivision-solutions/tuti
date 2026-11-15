@@ -120,6 +120,9 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await visitor.getByRole("main").getByRole("link", { name: "Sign in", exact: true }).click();
   await visitor.waitForURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === "/feedback/feature-requests/dark-mode-1");
   await visitor.getByRole("link", { name: "Create an account" }).click();
+  // The portal's sign-up (its sign-in has a "Use a password instead" too), then the app's.
+  await visitor.waitForURL((url) => url.pathname === "/sign-up");
+  await visitor.getByRole("link", { name: "Use a password instead" }).click();
   await fillSignUp(visitor, "Cy", `e2e-${randomUUID()}@example.com`);
   await visitor.waitForURL((url) => url.pathname === "/app/auth/continue");
   await backToPortal(visitor);

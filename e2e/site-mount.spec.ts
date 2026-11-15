@@ -124,6 +124,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Fdocs`);
   // The account is made on the app (a password is never typed on the team's site), and back under the path.
   await visitor.getByRole("link", { name: "Create an account" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-up?next=%2Fdocs`);
+  await visitor.getByRole("link", { name: "Use a password instead" }).click();
   await expect(visitor).toHaveURL(new RegExp(`^${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/app/auth/sign-up\\?`));
   const email = `e2e-${randomUUID()}@example.com`;
   await fillSignUp(visitor, "Ada", email);
@@ -344,7 +346,7 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   await checkpoint(visitor, "widget-under-path-ai");
 
   // Signed in there, Messages listens for changes through the site too.
-  await visitor.goto("/help/sign-up");
+  await visitor.goto("/help/continue?sign-up=1");
   await fillSignUp(visitor, "Ada", `e2e-${randomUUID()}@example.com`);
   await visitor.waitForURL((url) => url.pathname === "/app/auth/continue");
   await backToPortal(visitor);
