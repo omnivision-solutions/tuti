@@ -137,7 +137,7 @@ test("a public post on a Team only board: its card doesn't name the board", asyn
   await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM", name: "Secret plans" } });
   vi.mocked(shareCard).mockClear();
   expect((await image(project.slug, ["feedback", board.slug, "dark-mode-7"])).status).toBe(200);
-  expect(vi.mocked(shareCard).mock.calls[0]?.[1]).toEqual({ eyebrow: "Feedback", title: "Dark mode", facts: ["Open", "12 votes"] });
+  expect(vi.mocked(shareCard).mock.calls[0]?.[1]).toEqual({ eyebrow: "Feedback", title: "Dark mode", facts: ["Open", "12 votes"], picture: { votes: 12 } });
 });
 
 test("the page the portal opens on has the team's own description and share image; every other page has its card", async () => {

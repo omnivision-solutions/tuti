@@ -1,7 +1,10 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import satori from "satori";
 import { expect, test, vi } from "vitest";
 
-import { drawable, fonts, logoSize } from "./share-card";
+import type { Branding } from "@/server/operations/branding";
+
+import { cardElement, drawable, fonts, logoSize, type ShareCard } from "./share-card";
 
 test("a card's text loses emoji and their parts, which its fonts can't draw", () => {
   expect(drawable("Launch 🇫🇷 day")).toBe("Launch day");
@@ -29,4 +32,14 @@ test("the card's fonts draw every character a card keeps: symbols (✓ ⋯ →) 
   const element = { type: "div", key: null, props: { style: { display: "flex", fontFamily: "Figtree" }, children: text } };
   await satori(element, { width: 1200, height: 100, fonts: await fonts, loadAdditionalAsset: missing });
   expect(missing.mock.calls).toEqual([]);
+});
+
+test('a card says "Powered by tuti" as the portal does: not once the team has hidden it', () => {
+  const site = (poweredBy: boolean) => ({ project: { name: "Acme" }, brand: { color: "#6d4aff", colorScheme: "light", logoText: null, poweredBy } as unknown as Branding });
+  const card = { eyebrow: "Feature requests", title: "Dark mode", facts: ["Planned", "42 votes"], picture: { votes: 42 } } satisfies ShareCard;
+  const shown = renderToStaticMarkup(cardElement(site(true), card, "https://acme.example", null));
+  expect(shown).toContain("Powered by");
+  // The votes on the panel, in the team's colour.
+  expect(shown).toContain(">42<");
+  expect(renderToStaticMarkup(cardElement(site(false), card, "https://acme.example", null))).not.toContain("Powered by");
 });
