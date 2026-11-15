@@ -89,7 +89,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
               : "No card needed"}
       </p>
       {/* The plan's three numbers, value above label. */}
-      <dl className="grid grid-cols-3 rounded-xl bg-muted px-1.5 py-3 text-center">
+      <dl className={cn("grid rounded-xl bg-muted px-1.5 py-3 text-center", credits ? "grid-cols-3" : "grid-cols-2")}>
         {[
           ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} />, plan.byQuote ? "By quote" : facts.credits === null ? <NotIncluded /> : number(facts.credits)] as const] : []),
           ["feedback boards", compact(facts.boards)] as const,
@@ -287,7 +287,7 @@ function Comparison({ plans, interval }: { plans: Plan[]; interval: Interval }) 
 /** A dash that screen readers read as "Not included". */
 function NotIncluded() {
   return (
-    <span role="img" aria-label="Not included" className="text-input">
+    <span role="img" aria-label="Not included" className="text-muted-foreground">
       —
     </span>
   );
