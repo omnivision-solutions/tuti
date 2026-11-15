@@ -51,6 +51,7 @@ import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
 import { postsLikeConversation } from "@/server/post-lists";
+import { pageTitle } from "@/lib/page-title";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
 /** A team message's email, as its page says it (bounces and complaints from Amazon SES's events). */
@@ -86,7 +87,7 @@ export async function generateMetadata(props: PageProps<"/app/[project]/inbox/[n
           select: { subject: true },
         })
       : null;
-  return { title: conversation?.subject || "Inbox" };
+  return { title: conversation?.subject ? pageTitle(conversation.subject) : "Inbox" };
 }
 
 /**

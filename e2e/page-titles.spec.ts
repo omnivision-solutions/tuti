@@ -27,6 +27,11 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toBe("image/png");
 
+  // The API's reference: its own title, kept out of search too.
+  await visitor.goto("/api/docs");
+  await expect(visitor).toHaveTitle("API · Tuti");
+  expect(await meta(visitor, 'name="robots"')).toBe("noindex, nofollow");
+
   // Signed in: the page, then the project ("Inbox · Acme"); a post's tab is its title.
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -44,9 +49,9 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner).toHaveTitle("Docs · Acme");
   // A conversation's subject, an article's title, a changelog entry's.
-  await api("/conversations", { email: "e2e-asker@example.com", subject: "Can't export to CSV", body: "It spins forever." });
+  await api("/conversations", { email: "e2e-asker@example.com", subject: "Charged $$ twice", body: "Two charges on my card this month." });
   await owner.goto(`/app/${slug}/inbox/1`);
-  await tabSays(owner, "Can't export to CSV · Acme");
+  await tabSays(owner, "Charged $$ twice · Acme");
   await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page." });
   await owner.goto(`/app/${slug}/docs/inviting-your-team`);
   await tabSays(owner, "Inviting your team · Acme");

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ROLE_LABELS } from "@/lib/roles";
 import { getInvitation } from "@/server/invitation-lookup";
 import { getSession } from "@/server/session";
+import { pageTitle } from "@/lib/page-title";
 
 const UNAVAILABLE = {
   invalid: "This invite link isn't valid.",
@@ -22,7 +23,7 @@ const UNAVAILABLE = {
  */
 export async function generateMetadata(props: PageProps<"/app/auth/invite/[token]">): Promise<Metadata> {
   const invitation = await getInvitation((await props.params).token);
-  return { title: invitation.status === "valid" ? `Join ${invitation.projectName}` : "Invite" };
+  return { title: invitation.status === "valid" ? `Join ${pageTitle(invitation.projectName)}` : "Invite" };
 }
 
 export default async function InvitePage(props: PageProps<"/app/auth/invite/[token]">) {

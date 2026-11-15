@@ -39,6 +39,7 @@ import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 import { TEAM_VIEWER } from "@/server/post-visibility";
 import { howShipped, likeFirst, postNeighbours, postsLike, postVoters, votersToEmail, voterTotals } from "@/server/post-lists";
+import { pageTitle } from "@/lib/page-title";
 
 /** The tab: the post's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/p/[number]">): Promise<Metadata> {
@@ -49,7 +50,7 @@ export async function generateMetadata(props: PageProps<"/app/[project]/p/[numbe
     membership && Number.isInteger(number) && number > 0
       ? await prisma.post.findUnique({ where: { projectId_number: { projectId: membership.project.id, number } }, select: { title: true } })
       : null;
-  return { title: post?.title || "Feedback" };
+  return { title: post?.title ? pageTitle(post.title) : "Feedback" };
 }
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */

@@ -43,6 +43,7 @@ import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 import { articleVerifications, verifyUnavailable } from "@/server/operations/verify";
 import { markedRun } from "@/lib/docs-review";
+import { pageTitle } from "@/lib/page-title";
 
 /** The tab: the article's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/docs/[slug]">): Promise<Metadata> {
@@ -55,7 +56,8 @@ export async function generateMetadata(props: PageProps<"/app/[project]/docs/[sl
       })
     : null;
   // As its heading: the title being edited, before it's published.
-  return { title: (article?.changes ?? article)?.title || "Docs" };
+  const title = (article?.changes ?? article)?.title;
+  return { title: title ? pageTitle(title) : "Docs" };
 }
 
 export default async function ArticlePage(

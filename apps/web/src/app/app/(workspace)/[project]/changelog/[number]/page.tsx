@@ -20,6 +20,7 @@ import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
 import { lastingImage, lastingMediaUrl, mediaUrls } from "@/server/media-urls";
+import { pageTitle } from "@/lib/page-title";
 
 /** The tab: the entry's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/changelog/[number]">): Promise<Metadata> {
@@ -30,7 +31,7 @@ export async function generateMetadata(props: PageProps<"/app/[project]/changelo
     membership && Number.isInteger(number) && number > 0
       ? await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId: membership.project.id, number } }, select: { title: true } })
       : null;
-  return { title: entry?.title ? `${entry.title} · Changelog` : "Changelog" };
+  return { title: entry?.title ? `${pageTitle(entry.title)} · Changelog` : "Changelog" };
 }
 
 export default async function ChangelogEntryPage(props: PageProps<"/app/[project]/changelog/[number]">) {
