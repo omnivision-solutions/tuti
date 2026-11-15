@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
@@ -11,6 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { teamDocs, treeArticle } from "@/server/team-docs";
+
+export const metadata: Metadata = { title: "Docs" };
 
 /** A tab's page in the app: what's in it (Content), who can read it (Access), and its name and landing page (Settings). */
 export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs/[tab]">) {

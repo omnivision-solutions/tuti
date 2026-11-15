@@ -1,4 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
+import { cache } from "react";
 
 import { lastingImage } from "./media-urls";
 import { toReviewCounts } from "./operations/code-changes";
@@ -11,8 +12,8 @@ const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;
 /** Owners and admins: the roles Settings is for. */
 export const isAdminRole = (role: string) => (ADMIN_ROLES as readonly string[]).includes(role);
 
-/** The signed-in user's membership in a project, if any. */
-export async function getMembership(slug: string) {
+/** The signed-in user's membership in a project, if any; looked up once per request (a layout and its metadata both ask). */
+export const getMembership = cache(async (slug: string) => {
   const session = await getSession();
   // Signed in on the app: a portal's session (lib/auth.ts) is never the team's, not even on its own project, whose
   // portal's site or custom domain any admin may run.
@@ -23,7 +24,7 @@ export async function getMembership(slug: string) {
     where: { userId: session.user.id, project: { slug } },
     select: { role: true, userId: true, project: { select: { id: true, slug: true, name: true, plan: true, ssoSecret: true, ssoSignInUrl: true, askingProperty: true, propertyFormats: true } } },
   });
-}
+});
 
 /** Someone's role in a project now (null: not on its team), for a change to read under the project's lock. */
 export const teamRoleIn = async (tx: Prisma.TransactionClient, projectId: string, userId: string) =>

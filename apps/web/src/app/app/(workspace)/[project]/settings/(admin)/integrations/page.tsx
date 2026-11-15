@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { aiProvider, codeChangesEnabled } from "@tuti/shared";
 import { ChevronRightIcon, GitMergeIcon, HashIcon, SquareKanbanIcon, TicketIcon } from "lucide-react";
@@ -16,6 +17,8 @@ import { formatDate, timeAgo } from "@/lib/format";
 import { githubConfig } from "@/lib/github";
 import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Integrations · Settings" };
 
 /** What's on the way (docs/plan.md, Later), so a team sees it's coming. */
 const COMING_SOON = [

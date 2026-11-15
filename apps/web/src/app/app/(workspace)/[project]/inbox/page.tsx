@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { inboxPages, InboxPanes, inboxView } from "@/components/inbox/inbox-panes";
+
+export const metadata: Metadata = { title: "Inbox" };
 
 /** The inbox in a view (`?view=`), with no conversation open yet: the Inbox's numbers beside the list. */
 export default async function InboxPage(props: PageProps<"/app/[project]/inbox">) {

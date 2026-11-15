@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "API · Tuti",
   description: "Read and change your project's feedback from code with Tuti's REST API.",
+  // A reference for the signed-in teams who use it (Settings → Developers links here), not a search result.
+  robots: { index: false, follow: false },
 };
 
 type Schema = { type?: string; enum?: unknown[]; default?: unknown; minimum?: number; maximum?: number };

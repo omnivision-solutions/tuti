@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
@@ -9,6 +10,8 @@ import { claimsOf } from "@/lib/reader-groups";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { teamDocs } from "@/server/team-docs";
+
+export const metadata: Metadata = { title: "Collection settings · Docs" };
 
 /** A collection's settings, on one page: its name, icon, description and place, then who can read it, with one Save. */
 export default async function CollectionSettingsPage(props: PageProps<"/app/[project]/docs/collections/[collection]/settings">) {

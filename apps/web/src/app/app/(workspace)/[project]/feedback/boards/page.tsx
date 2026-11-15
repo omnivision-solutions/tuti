@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma, type PostStatus } from "@tuti/db";
 import { boardLimit, planDisplay, roomierPlan } from "@tuti/shared";
 import { ArrowUpRightIcon } from "lucide-react";
@@ -15,6 +16,8 @@ import { ACTIVE_STATUSES } from "@/lib/post-filters";
 import { isAdminRole } from "@/lib/roles";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Boards" };
 
 /** Feedback → Boards: the portal's boards, each with its settings; "New board" in a dialog (owners and admins). */
 export default async function BoardsPage(props: PageProps<"/app/[project]/feedback/boards">) {

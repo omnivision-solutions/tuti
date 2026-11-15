@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { codeChangesEnabled } from "@tuti/shared";
@@ -14,6 +15,8 @@ import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { SOCIAL_PROVIDER_NAMES, type SocialProvider } from "@/lib/social-sign-in";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "Account" };
 
 export default async function AccountPage() {
   const session = await getSession();

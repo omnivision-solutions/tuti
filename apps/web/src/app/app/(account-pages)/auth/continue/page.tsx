@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -10,6 +11,8 @@ import { isSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
 import { portalAddress } from "@/server/custom-domains";
 import { getAccountSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "Continue" };
 
 /** "Continue as <name>": a portal sent someone here to sign in with their Tuti account (see lib/portal-handoff.ts). */
 export default async function ContinuePage(props: PageProps<"/app/auth/continue">) {

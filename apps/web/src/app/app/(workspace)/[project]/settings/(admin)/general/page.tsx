@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,6 +8,8 @@ import { SettingRow, SettingsCard, SettingsPane } from "@/components/settings-ca
 import { buttonVariants } from "@/components/ui/button";
 import { portalAddress } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
+
+export const metadata: Metadata = { title: "General · Settings" };
 
 /** Settings → General: the project's name, and where its portal is (changed in Domain). */
 export default async function GeneralSettingsPage(props: PageProps<"/app/[project]/settings/general">) {

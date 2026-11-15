@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { emailConfigured } from "@tuti/email";
 import { notFound } from "next/navigation";
 
 import { ForgotPasswordForm } from "@/components/password-reset-forms";
 import { safeRedirectPath } from "@/lib/redirects";
+
+export const metadata: Metadata = { title: "Forgot password" };
 
 export default async function ForgotPasswordPage(props: PageProps<"/app/auth/forgot-password">) {
   // Reset links need email that really goes out.

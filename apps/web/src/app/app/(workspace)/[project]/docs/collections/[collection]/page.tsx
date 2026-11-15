@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { ChevronRightIcon, FolderIcon, GripVerticalIcon } from "lucide-react";
 import Link from "next/link";
@@ -14,6 +15,8 @@ import { Card } from "@/components/ui/card";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { accessBadgeFor, contentsMeta, teamDocs } from "@/server/team-docs";
+
+export const metadata: Metadata = { title: "Docs" };
 
 /** A collection's page in the app: what's in it (its articles as the docs' home lists them, then the collections in it); its Settings are its other tab. */
 export default async function CollectionPage(props: PageProps<"/app/[project]/docs/collections/[collection]">) {

@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { AutopilotTargetPage } from "@/components/autopilot-target-page";
+
+export const metadata: Metadata = { title: "Autopilot" };
 
 /** An article's review in Autopilot (or a new article's, by its update's id until its draft exists): its updates from every pull request on it. */
 export default async function AutopilotArticlePage(props: PageProps<"/app/[project]/autopilot/articles/[id]">) {

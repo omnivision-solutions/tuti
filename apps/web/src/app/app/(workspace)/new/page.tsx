@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { CreateProjectForm } from "@/components/create-project-form";
@@ -5,6 +6,8 @@ import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Card, CardContent } from "@/components/ui/card";
 import { portalTemplate } from "@/lib/hosts";
 import { getSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "New project" };
 
 export default async function NewProjectPage() {
   if (!(await getSession())) {

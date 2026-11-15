@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { planIncludes, planNeeded } from "@tuti/shared";
 import { notFound } from "next/navigation";
@@ -13,6 +14,8 @@ import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { customDomain } from "@/server/operations/domain";
 import { siteMountView } from "@/server/operations/site";
+
+export const metadata: Metadata = { title: "Domain · Settings" };
 
 /**
  * Settings → Domain: where the portal lives (its Tuti address, a domain of the team's own, or a path of

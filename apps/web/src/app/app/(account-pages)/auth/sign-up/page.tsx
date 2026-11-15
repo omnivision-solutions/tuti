@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { emailConfigured } from "@tuti/email";
 import { planDisplay, plansEnabled, trialTerms } from "@tuti/shared";
 import { redirect } from "next/navigation";
@@ -9,6 +10,8 @@ import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
 import { continuingTo, SignUpPitch, WithPitch } from "../../with-pitch";
+
+export const metadata: Metadata = { title: "Create your account" };
 
 export default async function SignUpPage(props: PageProps<"/app/auth/sign-up">) {
   const { next, email, error, via } = await props.searchParams;

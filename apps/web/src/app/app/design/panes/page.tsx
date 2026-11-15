@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
-export const metadata: Metadata = { title: "Panes — Tuti" };
+export const metadata: Metadata = { title: "Panes" };
 
 const POSTS: [PostStatus, [string, string, number][]][] = [
   ["IN_PROGRESS", [["Google Calendar sync", "Feature requests · 4 comments", 41], ["Recurring events", "Feature requests · 3 comments", 34]]],

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { NewPasswordForm } from "@/components/password-reset-forms";
 import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "@/server/sign-in-link-lookup";
 
-export const metadata: Metadata = { robots: { index: false } };
+export const metadata: Metadata = { title: "Choose a new password" };
 
 /** tuti.so/reset-password?token=… is the link in every reset email, wherever it was asked for (server/password-reset.ts). */
 export default async function ResetPasswordPage(props: PageProps<"/app/auth/reset-password">) {

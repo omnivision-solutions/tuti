@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
@@ -7,6 +8,8 @@ import { ReaderGroups } from "@/components/reader-groups";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { groupsWithReaders, propertyNames } from "@/server/operations/groups";
+
+export const metadata: Metadata = { title: "Groups · Settings" };
 
 /** Settings → Users → Groups: the groups single sign-on puts readers in, by their properties (was in Access). */
 export default async function GroupsSettingsPage(props: PageProps<"/app/[project]/settings/groups">) {

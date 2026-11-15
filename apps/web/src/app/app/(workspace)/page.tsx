@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -9,6 +10,8 @@ import { portalTemplate } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "Welcome" };
 
 export default async function AppHome() {
   const session = await getSession();

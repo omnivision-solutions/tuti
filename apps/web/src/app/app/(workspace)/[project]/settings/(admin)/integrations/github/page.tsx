@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { codeChangesEnabled } from "@tuti/shared";
 import { listedRepositories } from "@tuti/jobs";
@@ -18,6 +19,8 @@ import { repositoryRows } from "@/lib/github-repository-rows";
 import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
 import { getSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "GitHub · Settings" };
 
 const GITHUB_RESULTS: Record<string, string> = {
   connected: "GitHub is connected. Add the repositories that belong to this project.",

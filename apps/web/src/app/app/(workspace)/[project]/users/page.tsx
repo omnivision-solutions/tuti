@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, SearchIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -23,6 +24,8 @@ import { call } from "@/server/operations/run";
 import { listUsers, USER_SORTS } from "@/server/operations/users";
 import { getSession } from "@/server/session";
 import { cn } from "@/lib/utils";
+
+export const metadata: Metadata = { title: "Users" };
 
 const PER_PAGE = 50;
 

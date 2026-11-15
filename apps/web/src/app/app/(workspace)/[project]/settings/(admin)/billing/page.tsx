@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { creditBalance, emailsThisMonth } from "@tuti/jobs";
 import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, effectivePlan, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled, trialState } from "@tuti/shared";
@@ -14,6 +15,8 @@ import { pricingPlans } from "@/lib/pricing-plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
+
+export const metadata: Metadata = { title: "Billing · Settings" };
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 

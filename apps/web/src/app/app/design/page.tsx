@@ -19,7 +19,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export const metadata: Metadata = { title: "Design — Tuti" };
+export const metadata: Metadata = { title: "Design" };
 
 const COLORS = [
   ["background", "bg-background"],
