@@ -81,7 +81,7 @@ test("a license replaces a running trial's plan, and the trial is back once it's
   expect(await planOf()).toBe("pro");
 });
 
-test("only its holder assigns it, to a project they own or administer, and unassigns it", async () => {
+test("only its holder assigns it, to a project they own or administer; its holder or the project's owners and admins unassign it", async () => {
   const someone = await signUp("Someone");
   const theirs = await license(someone.id);
   expect(await assignPlanLicense(project.slug, theirs.id)).toEqual({ error: "That license isn't on your account" });
@@ -91,17 +91,23 @@ test("only its holder assigns it, to a project they own or administer, and unass
   const member = await addMember(project.id, "MEMBER");
   actAs(member);
   expect(await assignPlanLicense(project.slug, (await license(member.id)).id)).toEqual({ error: "Only project owners and admins can change the plan" });
-  // An admin can; the owner can't take it off, its holder can.
+  // An admin can; a member can't take it off, its holder can, and so can the project's owner.
   const admin = await addMember(project.id, "ADMIN");
   actAs(admin);
   const admins = await license(admin.id);
   expect(await assignPlanLicense(project.slug, admins.id)).toEqual({});
-  actAs(owner);
+  actAs(member);
   expect(await unassignPlanLicense(admins.id)).toEqual({ error: "That license isn't on your account" });
   expect(await planOf()).toBe("appsumo-2");
   actAs(admin);
   expect(await unassignPlanLicense(admins.id)).toEqual({});
-  expect(await prisma.planLicense.count({ where: { projectId: { not: null } } })).toBe(0);
+  expect(await assignPlanLicense(project.slug, admins.id)).toEqual({});
+  // Its holder gone from the team, the owner takes it off, and the project can buy a plan.
+  await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: admin.id } });
+  actAs(owner);
+  expect(await unassignPlanLicense(admins.id)).toEqual({});
+  expect(await planOf()).toBe("free");
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: admins.id } })).toMatchObject({ userId: admin.id, projectId: null });
 });
 
 test("a license is on one project at a time, a project has one, and a revoked one goes nowhere", async () => {
@@ -185,8 +191,16 @@ test("each month the license is assigned and not revoked, its project gets the m
   expect(next!.expiresAt).toEqual(through);
   expect((await creditBalance(project.id)).balance).toBe(2000);
 
-  // Revoked, or unassigned, none.
-  await prisma.planLicense.update({ where: { id: held.id }, data: { revokedAt: new Date() } });
+  // Unassigned, none; assigned again weeks after its month ended, a month from then, not from the old one.
+  expect(await unassignPlanLicense(held.id)).toEqual({});
   await grantPlanLicenseCredits(new Date(through!.getTime() + 60_000));
   expect(await grants()).toHaveLength(2);
+  await prisma.planLicense.update({ where: { id: held.id }, data: { projectId: project.id, creditsThrough: new Date(Date.now() - 20 * 86_400_000) } });
+  await grantPlanLicenseCredits();
+  const [, , restarted] = await grants();
+  expect(restarted!.expiresAt!.getTime() - Date.now()).toBeGreaterThan(27 * 86_400_000);
+  // Revoked, none.
+  await prisma.planLicense.update({ where: { id: held.id }, data: { revokedAt: new Date(), creditsThrough: new Date() } });
+  await grantPlanLicenseCredits();
+  expect(await grants()).toHaveLength(3);
 });

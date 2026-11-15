@@ -16,11 +16,15 @@ import { getAccountSession } from "./session";
 
 class Refused extends Error {}
 
-/** Takes the change in a transaction holding the license's row (if `userId` holds it) and the project's. */
-async function change(userId: string, licenseId: string, run: (tx: Prisma.TransactionClient) => Promise<void>) {
+/**
+ * Takes the change in a transaction holding the license's row, if `userId` holds it, or (`orProjectAdmin`) owns or
+ * administers the project it's on.
+ */
+async function change(userId: string, licenseId: string, run: (tx: Prisma.TransactionClient) => Promise<void>, orProjectAdmin = false) {
+  const theirs = { OR: [{ userId }, ...(orProjectAdmin ? [{ project: { team: { some: { userId, role: { in: ["OWNER" as const, "ADMIN" as const] } } } } }] : [])] };
   try {
     await prisma.$transaction(async (tx) => {
-      if (!(await lockPlanLicense(tx, licenseId)) || !(await tx.planLicense.count({ where: { id: licenseId, userId } }))) {
+      if (!(await lockPlanLicense(tx, licenseId)) || !(await tx.planLicense.count({ where: { id: licenseId, ...theirs } }))) {
         throw new Refused("That license isn't on your account");
       }
       await run(tx);
@@ -81,11 +85,15 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
   return result;
 }
 
-/** "Unassign" a license on the account from its project: the project is back on its own plan (the default, or its trial's). */
+/**
+ * "Unassign" a license from its project: the project is back on its own plan (the default, or its trial's). Its holder,
+ * or the project's owners and admins (a license whose holder left the team, or that was revoked, mustn't keep the
+ * project from buying a plan).
+ */
 export async function unassignPlanLicense(licenseId: string): Promise<{ error?: string }> {
   const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in to manage your licenses" };
   }
-  return change(session.user.id, String(licenseId), (tx) => releasePlanLicense(tx, licenseId));
+  return change(session.user.id, String(licenseId), (tx) => releasePlanLicense(tx, licenseId), true);
 }
