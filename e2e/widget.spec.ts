@@ -182,7 +182,10 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // The tabs at the bottom (no Help center or Messages: there are no articles and the inbox is off), then the badge.
   const tabs = widget.getByRole("navigation", { name: "Widget" });
   await expect(tabs.getByRole("link")).toHaveText(["Home", "Feedback"]);
-  await expect(widget.getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so");
+  await expect(widget.getByRole("link", { name: /Powered by/ })).toHaveAttribute(
+    "href",
+    `https://tuti.so/?utm_source=widget&utm_medium=powered_by&utm_campaign=badge&utm_content=${slug}`,
+  );
   // What's new isn't a tab: Home's card, with the latest update and how many are new to this browser
   // (the announcement; quiet ones aren't news), opens it.
   const whatsNewCard = widget.getByRole("link", { name: /^What's new/ });
