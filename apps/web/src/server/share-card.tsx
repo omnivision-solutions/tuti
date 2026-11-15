@@ -66,6 +66,9 @@ export async function shareCard(site: Site, card: ShareCard, address: string, he
   return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", ...headers } });
 }
 
+/** A name or logo text on the logo's row: one line, cut short with an ellipsis rather than run under the panel. */
+const oneLine = { display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 } as const;
+
 export function cardElement(site: Site, card: ShareCard, address: string, logo: Logo) {
   const theme = THEMES[site.brand.colorScheme === "dark" ? "dark" : "light"];
   const color = site.brand.color ?? TUTI_GREEN;
@@ -83,12 +86,12 @@ export function cardElement(site: Site, card: ShareCard, address: string, logo: 
             // eslint-disable-next-line @next/next/no-img-element -- an image in the share card, not a page.
             <img src={logo.src} width={logo.width} height={logo.height} alt="" style={{ objectFit: "contain" }} />
           ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-              <div style={{ width: 56, height: 56, borderRadius: 14, background: color, display: "flex" }} />
-              <div style={{ fontSize: 34, fontWeight: 700 }}>{drawable(site.project.name)}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 0 }}>
+              <div style={{ flexShrink: 0, width: 56, height: 56, borderRadius: 14, background: color, display: "flex" }} />
+              <div style={{ ...oneLine, fontSize: 34, fontWeight: 700 }}>{drawable(site.project.name)}</div>
             </div>
           )}
-          {logo && site.brand.logoText && <div style={{ fontSize: 34, fontWeight: 700, marginLeft: 18 }}>{drawable(site.brand.logoText)}</div>}
+          {logo && site.brand.logoText && <div style={{ ...oneLine, fontSize: 34, fontWeight: 700, marginLeft: 18 }}>{drawable(site.brand.logoText)}</div>}
         </div>
         <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, justifyContent: "center", paddingBottom: 16 }}>
           {shown.eyebrow && <div style={{ fontSize: 26, fontWeight: 700, color: accent, marginBottom: 16, display: "flex" }}>{shown.eyebrow}</div>}
@@ -275,18 +278,18 @@ export const drawable = (text: string) =>
   text.replace(/(?![©®™])[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
 
 /**
- * The logo's size on the card (at most 64px tall and 520 wide), and the stored width to read: the smallest that's twice
+ * The logo's size on the card (at most 64px tall and 360 wide: the text's side is 652), and the stored width to read: the smallest that's twice
  * that (the original's, at most), so it's never scaled up.
  */
 export function logoSize(logo: { width: number; height: number }) {
-  const scale = Math.min(64 / logo.height, 520 / logo.width);
+  const scale = Math.min(64 / logo.height, 360 / logo.width);
   const [width, height] = [Math.round(logo.width * scale), Math.round(logo.height * scale)];
   const widths = imageWidths(logo.width);
   return { width, height, stored: widths.find((w) => w >= width * 2) ?? widths.at(-1)! };
 }
 
 /**
- * The logo as a PNG (the renderer can't read the stored WebP), at most 64px tall and 520 wide; null without one, or if
+ * The logo as a PNG (the renderer can't read the stored WebP), at most 64px tall and 360 wide; null without one, or if
  * it can't be read (the card shows the portal's name instead).
  */
 async function logoImage(logo: Branding["logo"]) {

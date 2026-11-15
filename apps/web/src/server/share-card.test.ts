@@ -17,8 +17,8 @@ test("a card's text loses emoji and their parts, which its fonts can't draw", ()
 });
 
 test("a logo is read at the smallest stored width twice what the card shows it at, never scaled up", () => {
-  // A wide wordmark: 512×64 on the card, from the 1600px copy (480 or 960 would be blown up).
-  expect(logoSize({ width: 2000, height: 250 })).toEqual({ width: 512, height: 64, stored: 1600 });
+  // A wide wordmark: 360 wide at most (the text's side is 652), from the 960px copy (480 would be blown up).
+  expect(logoSize({ width: 2000, height: 250 })).toEqual({ width: 360, height: 45, stored: 960 });
   // A square mark: 64×64, from the smallest copy.
   expect(logoSize({ width: 512, height: 512 })).toEqual({ width: 64, height: 64, stored: 480 });
   // Smaller than twice its size on the card: the original.
