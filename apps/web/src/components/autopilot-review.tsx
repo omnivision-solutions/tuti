@@ -24,7 +24,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { commentToApprove, type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
+import { commentToApprove, type Outcome as OutcomeKind, outcomeOf, plural, POST_COMMENT_LIMIT, postWaits, progressWarning, STATUS_LABELS, statusChange, undoQuestion, whenApproved } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
@@ -180,7 +180,8 @@ export function PostReview({
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="text-base font-semibold">
             {statusChange(update.kind, post.status)}
-            {update.kind === "resolves" && emails > 0 && <span className="font-normal text-muted-foreground"> · emails up to {plural(emails, "person", "people")}</span>}
+            {/* A completion's, or a progress update's waiting for the team (going out by itself, it emails nobody). */}
+            {emails > 0 && <span className="font-normal text-muted-foreground"> · emails up to {plural(emails, "person", "people")}</span>}
           </p>
           <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm underline underline-offset-4">
             Open the post
@@ -248,7 +249,9 @@ export function PostReview({
         <AlertDialogContent closeDisabled={pending} finalFocus={() => !went.current}>
           <AlertDialogHeader>
             <AlertDialogTitle>Approve the update?</AlertDialogTitle>
-            <AlertDialogDescription>{lines.join(". ")}.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {lines.join(". ")}.{update.kind === "moves_forward" && emails > 0 && ` ${progressWarning(emails)}`}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>

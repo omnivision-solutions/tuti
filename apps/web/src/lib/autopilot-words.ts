@@ -414,6 +414,10 @@ export function completingWarning(posts: number, emails: number): string {
     : `Completing ${posts} posts emails up to ${people} who asked for them that they shipped. That can't be taken back.`;
 }
 
+/** Approve's confirm on a progress update that emails people (`emails`: how many, more than none). */
+export const progressWarning = (emails: number) =>
+  `Moving the post to In progress emails up to ${plural(emails, "person", "people")} who asked for it. That can't be taken back.`;
+
 /**
  * What an article's Dismiss takes out: every edit still to go out (waiting, scheduled or out of date, not one decided),
  * the newest first, so none is under another when it's taken out.

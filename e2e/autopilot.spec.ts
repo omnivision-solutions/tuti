@@ -1441,6 +1441,8 @@ test("pull requests' progress updates on one post are one update: its status cha
   const api = await apiFor(owner, slug);
   const title = `Recurring events ${id}`;
   await api("/posts", { board: "feature-requests", title });
+  // A customer asked for it too: approving the move to In progress emails them.
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-ada", name: "Ada", email: `e2e-ada-${id}@example.com` } });
   const installationId = await connectGithub(owner, slug);
 
   // Each pull request moves the post forward, under the bar (95%): they wait for the team, as one update.
@@ -1471,7 +1473,7 @@ test("pull requests' progress updates on one post are one update: its status cha
   const chips = owner.getByRole("list", { name: "Pull requests" });
   await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(2);
   const happens = owner.getByRole("region", { name: "What happens to the post" });
-  await expect(happens).toContainText("Open → In progress");
+  await expect(happens).toContainText("Open → In progress · emails up to 1 person");
   const box = happens.getByRole("textbox", { name: "Progress update on #1" });
   await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}`);
   await expect(owner.getByRole("checkbox")).toHaveCount(0);
@@ -1523,8 +1525,12 @@ test("pull requests' progress updates on one post are one update: its status cha
   await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}`);
 
   // Approved once: one comment, both pull requests linked, both parts done (each chip says so; the third's, Dismissed).
+  // It asks first, saying whom moving it emails.
   await owner.getByRole("button", { name: "Approve", exact: true }).click();
-  await owner.getByRole("alertdialog", { name: "Approve the update?" }).getByRole("button", { name: "Approve" }).click();
+  const approving = owner.getByRole("alertdialog", { name: "Approve the update?" });
+  await expect(approving).toContainText("1 progress update posted. Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
+  await checkpoint(owner, "post-update-approve-emails", { fullPage: false });
+  await approving.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved", { exact: true })).toBeVisible();
   const happened = owner.getByRole("region", { name: "What happened" });
   await expect(happened).toContainText("In progress · approved by Olive Owner");

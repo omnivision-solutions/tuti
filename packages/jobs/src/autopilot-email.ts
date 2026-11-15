@@ -1,7 +1,8 @@
 import { type DiffLine, diffLines, nearChanges } from "@tuti/content";
-import { type CodeChangeActionKind, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 
 import { hasTeammateEdit, newestRevision } from "./article-layers";
 import { type AutopilotButton, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postUpdate, reviewPath, signAutopilotButton } from "./autopilot";
@@ -122,7 +123,7 @@ type ActionRow = {
   payload: unknown;
   postId: string | null;
   articleId: string | null;
-  post: { title: string; status: string } | null;
+  post: { title: string; status: PostStatus } | null;
   article: { title: string; publishedAt: Date | null } | null;
 };
 
@@ -177,7 +178,14 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
     RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    MOVES_FORWARD: done ? "In progress, with this comment" : uncommented(action) ? "Marks it in progress: write its comment first" : "Marks it in progress, with this comment",
+    // Approved (waiting for the team) it emails the post's people, as completing does; going out by itself, nobody.
+    MOVES_FORWARD: done
+      ? "In progress, with this comment"
+      : uncommented(action)
+        ? "Marks it in progress: write its comment first"
+        : action.status === "PENDING" && statusMoveEmails(action.post?.status ?? "OPEN", "IN_PROGRESS") === "progress"
+          ? "Marks it in progress with this comment, emailing the people who asked"
+          : "Marks it in progress, with this comment",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
     // On a draft it stays in the draft, for the team to publish.
     ARTICLE_EDIT: action.article && !action.article.publishedAt ? (done ? "Kept this edit in the draft" : "Keeps this edit in the draft only your team sees") : done ? "Published this edit" : "Publishes this edit",
