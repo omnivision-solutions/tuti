@@ -1,4 +1,4 @@
-import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, emailsPerMonth, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled, trialTerms } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, badgePerMonth, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, emailsPerMonth, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled, trialTerms } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
@@ -109,14 +109,16 @@ const reporting = (plan: PlanKey): PlanLine[] => {
 const feature = (plan: PlanKey, name: PlanFeature, text: string): PlanLine[] =>
   planIncludes(plan, name) && (name !== "emailDomain" || (process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses())) ? [{ text }] : [];
 
+// The plans shown: a hidden one (a default nobody picks) is left off, and the first shown lists everything.
+const shownPlans = () => listedPlans().filter((plan) => !planTerms(plan).hidden);
+
 /**
  * The plans the billing file lists, as the pricing page shows them (and Settings → Billing compares them), cheapest first:
  * the first lists everything, each next one what it has more of ("Everything in Pro, plus:"). Server only: it reads the
  * server's settings.
  */
 export function pricingPlans(): PricingPlan[] {
-  // The plans shown: a hidden one (a default nobody picks) is left off, and the first shown lists everything.
-  const plans = listedPlans().filter((plan) => !planTerms(plan).hidden);
+  const plans = shownPlans();
   return plans.map((plan, index) => {
     const previous = plans[index - 1];
     // Its lines that the plan before it doesn't have (all of them on the first).
@@ -160,6 +162,67 @@ export function pricingPlans(): PricingPlan[] {
     };
   });
 }
+
+/** What a plan has, as numbers and yes/no, for tuti.so's comparison table. Limits: null is no limit. */
+export type PlanFacts = {
+  /** AI credits each paid month gives; null where AI isn't paid with credits or the plan gets none a month (free, by quote). */
+  credits: number | null;
+  /** The credits a free default plan starts with (AI_CREDITS_FREE), once; null elsewhere or where there are none. */
+  startCredits: number | null;
+  /** About how many AI answers, and changes checked by Autopilot (where the plan has it), those credits pay for. */
+  creditsBuy: { answers: number; changes: number | null } | null;
+  articles: number | null;
+  versions: number;
+  boards: number | null;
+  emails: number | null;
+  historyDays: number | null;
+  team: number | null;
+  /** AI answers run: AI isn't paid with credits, the plan comes with some, or it's sold by quote (its credits agreed with it). */
+  aiAnswers: boolean;
+  /** The yes/no features the table compares, by the same rules as the cards (email from your domain needs SES and a support email domain). */
+  features: Record<"customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "aiTuning" | "emailDomain", boolean>;
+  /** The billing file's extra lines ("Priority support"), the plan's and the plans' before it. */
+  extras: string[];
+};
+
+/** Each plan pricingPlans() shows, in its order, as PlanFacts. Server only. */
+export function planFacts(): PlanFacts[] {
+  const plans = shownPlans();
+  const has = (plan: PlanKey, name: PlanFeature) => feature(plan, name, name).length > 0;
+  return plans.map((plan, index) => {
+    const priced = shown(plan).price !== null;
+    const credits = creditsEnabled() && priced ? planCredits(plan) : null;
+    const start = plan === defaultPlanKey() ? freeCredits() : (credits ?? 0);
+    // A plan sold by quote has its credits agreed with it, so AI comes with it.
+    const byQuote = !priced && plan !== defaultPlanKey();
+    // AI answers and Autopilot's checks both spend credits, so they come together.
+    const ai = !creditsEnabled() || start > 0 || (credits ?? 0) > 0 || byQuote;
+    return {
+      credits,
+      startCredits: creditsEnabled() && plan === defaultPlanKey() && start > 0 ? start : null,
+      creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: planIncludes(plan, "codeChanges") ? about(credits, CHANGE_COST) : null } : null,
+      articles: articleLimit(plan),
+      versions: articleVersionsKept(plan),
+      boards: boardLimit(plan),
+      emails: emailsPerMonth(plan),
+      historyDays: historyDays(plan),
+      team: teamLimit(plan),
+      aiAnswers: ai,
+      features: {
+        customDomain: has(plan, "customDomain"),
+        sitePath: has(plan, "sitePath"),
+        privatePortal: has(plan, "privatePortal"),
+        codeChanges: ai && has(plan, "codeChanges"),
+        aiTuning: has(plan, "aiTuning"),
+        emailDomain: has(plan, "emailDomain"),
+      },
+      extras: [...new Set(plans.slice(0, index + 1).flatMap((key) => planTerms(key).extras))],
+    };
+  });
+}
+
+/** The "Powered by tuti" add-on's price a month (and a month billed yearly), and the free trial's length: null where not offered. */
+export const pricingTerms = () => ({ badgePerMonth: badgePerMonth("month"), badgeYearPerMonth: badgePerMonth("year"), trialDays: trialTerms()?.days ?? null });
 
 /** Enterprise, beside the plans: by quote. */
 export const ENTERPRISE = {
