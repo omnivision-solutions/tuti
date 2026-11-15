@@ -1106,11 +1106,16 @@ test("a teammate's Stop landing after the runner checked a post's update and too
   for (const { codeChangeId } of [first, second]) {
     await scheduleByItself(project.id, codeChangeId);
   }
-  await prisma.codeChangeAction.updateMany({ where: { id: { in: [first.action.id, second.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // The first due first, so the runner takes it (due at the same moment, which it takes is the database's choice: taking
+  // the second, the teammate's Stop below never comes, and all of it rightly goes out).
+  await prisma.codeChangeAction.updateMany({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 2000) } });
+  await prisma.codeChangeAction.updateMany({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   // The runner reads the post's update (both going out) and takes the first off the schedule; as the apply reads it
   // (its second read of the parts), a teammate stops the second.
   vi.restoreAllMocks();
   const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  // Restored whatever happens: left in place, the next tests' reads would look for this test's actions.
+  onTestFinished(() => vi.restoreAllMocks());
   const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
     const read = await findMany(...args);
     // The apply's read: once the runner holds the first (taken off the schedule, as the owner's).

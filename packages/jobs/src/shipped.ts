@@ -1,6 +1,7 @@
 import { type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
 import { type ProgressStatus, sendEmail, shippedEmail, statusEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
@@ -159,16 +160,29 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   }
   const { projectId, project, status } = post;
   const { table, key } = claims(prisma, status);
+  // Planned and In progress only as the move that set it was one forward (statusMoveEmails), checked here too: a due
+  // time a move back left (the previous release's, during a deploy) emails nobody about it.
+  if (status !== "COMPLETED") {
+    const moved = await prisma.postEvent.findFirst({ where: { postId, to: status }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { from: true } });
+    if (!moved || statusMoveEmails(moved.from, status) !== "progress") {
+      await prisma.post.updateMany({ where: { id: postId, status }, data: { shippedEmailsDueAt: null } });
+      return { skipped: true };
+    }
+  }
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const people = await postAudience(projectId, project, post, [
+  const everyone = await postAudience(projectId, project, post, [
     post.authorId,
     ...post.votes.map((v) => v.userId),
     ...post.comments.map((c) => c.authorId),
     ...post.subscriptions.map((s) => s.userId),
   ]);
+  // Planned and In progress promise an email when it ships: not for people told it shipped already (reopened since).
+  const shippedTo =
+    status === "COMPLETED" ? new Set<string>() : new Set((await prisma.shippedEmail.findMany({ where: { postId, sentAt: { not: null } }, select: { userId: true } })).map(({ userId }) => userId));
+  const people = everyone.filter((person) => !shippedTo.has(person.id));
   // Claims a failed or crashed try left unsent for people it won't email now (they unsubscribed, a private portal
   // that's the team's only): dropped, so the post isn't due again and again. A run still sending keeps its claim (not
   // stale yet), so it can mark it sent. The few stale claims are read and checked here: no list of the whole audience
