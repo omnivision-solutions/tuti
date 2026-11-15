@@ -2619,7 +2619,8 @@ test("Completed's question fits a phone, whatever the post's title (a long link)
   await expect(team.getByRole("tab", { name: /^Planned/ })).toHaveAttribute("aria-selected", "true");
 });
 
-test("Completed for picked rows counts only who it emails: one completed already emails nobody again", async ({ browser }) => {
+test("Completed, Planned and In progress for picked rows count only who they email: one past the status emails nobody", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(team, "Acme", slug);
@@ -2637,6 +2638,26 @@ test("Completed for picked rows counts only who it emails: one completed already
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
   await expect(team.getByRole("alertdialog").getByText("This emails up to 1 person who asked for them that it shipped, as when one post is completed.", { exact: true })).toBeVisible();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+
+  // Planned emails too, asked first: only the open one's people (the completed one moving back emails nobody).
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Planned" }).click();
+  const ask = team.getByRole("alertdialog", { name: "Mark 2 posts as Planned?" });
+  await expect(ask.getByText("This emails up to 1 person who asked for them that they're planned.", { exact: true })).toBeVisible();
+  await checkpoint(team, "bulk planned asks first", { fullPage: false });
+  await ask.getByRole("button", { name: "Mark planned" }).click();
+  await expect(team.getByText("2 posts: Planned")).toBeVisible();
+
+  // In progress, from Planned, asks too.
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "In progress" }).click();
+  const started = team.getByRole("alertdialog", { name: "Mark 1 post as In progress?" });
+  await expect(started.getByText("This emails up to 1 person who asked for them that they're in progress.", { exact: true })).toBeVisible();
+  await started.getByRole("button", { name: "Mark in progress" }).click();
+  await expect(team.getByText("1 post: In progress")).toBeVisible();
 });
 
 test("Feedback's pane asks before Completed too, saying how many it emails", async ({ browser }) => {

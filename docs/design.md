@@ -695,7 +695,7 @@ Use these instead of hand-rolling layout:
     away (the action done, Clear), focus moves to the first filter (Feedback: its Filters button, once its
     transitions are done: `invisible` takes `visibility` with them, and a hidden button can't take focus). Each is done as it is
     for one; what fails is said, the rest still go. What emails people
-    (Completed) or can't be undone (Merge) asks first, naming how many.
+    (Completed, and Planned or In progress moving forward) or can't be undone (Merge) asks first, naming how many.
   - Feedback's rows (`PickedRow`), the same at every width: the votes in a small bordered box (`VoteBox`); the
     board as a small uppercase label over the title (17px semibold), a line of the post, then who · when · comments;
     at the right the owner's face (tablet width up) and the status menu, a quiet "⋯" (`PostStatusMenu
