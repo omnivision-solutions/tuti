@@ -5,8 +5,8 @@
 <h1 align="center">Tuti</h1>
 
 <p align="center">
-  <b>Your help center keeps up.</b><br>
-  Help center, inbox, feedback board and changelog, updated every time you ship.
+  <b>The AI-native help desk that updates itself.</b><br>
+  Help center, inbox, feedback board and changelog. Tuti reads every pull request you merge and keeps your help center, feedback board and changelog in step with what you ship.
 </p>
 
 <p align="center">
