@@ -35,3 +35,20 @@ test("a bulk move counts only the posts it emails: one already past the status c
   const planned = [open, started, done].reduce((sum, post) => sum + (counts.get(post.id)?.PLANNED ?? 0), 0);
   expect(planned).toBe(2);
 });
+
+test("people emailed about a status already aren't counted again when a post moves back there", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+  const [author, voter] = [await signUp("Author"), await signUp("Voter")];
+  await prisma.user.updateMany({ where: { id: { in: [author.id, voter.id] } }, data: { emailVerified: true } });
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, as(voter.id), { number: post.number, voted: true });
+  await call(updatePost, as(owner.id), { number: post.number, status: "in_progress" });
+  await call(updatePost, as(owner.id), { number: post.number, status: "open" });
+  const reopened = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } }, select: { id: true, status: true } });
+  expect(await prisma.statusEmail.count({ where: { postId: reopened.id, status: "IN_PROGRESS", sentAt: { not: null } } })).toBe(2);
+
+  // Told it's in progress already: nobody again. Planned hasn't emailed them yet.
+  expect((await emailedOnMove(project.id, [reopened])).get(reopened.id)).toEqual({ PLANNED: 2, IN_PROGRESS: 0, COMPLETED: 2 });
+});
