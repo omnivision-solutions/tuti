@@ -1,4 +1,5 @@
 import { type TeamRole, prisma } from "@tuti/db";
+import { cache } from "react";
 
 import { hashInvitationToken } from "@tuti/jobs";
 
@@ -7,8 +8,8 @@ export type InvitationState =
   | { status: "expired" | "used" | "revoked"; projectName: string }
   | { status: "valid"; projectName: string; projectSlug: string; role: TeamRole; email: string | null };
 
-/** Looks up an invite link for the accept page. */
-export async function getInvitation(token: string): Promise<InvitationState> {
+/** Looks up an invite link for the accept page; once per request (the page and its metadata both ask). */
+export const getInvitation = cache(async (token: string): Promise<InvitationState> => {
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashInvitationToken(token) },
     select: {
@@ -40,7 +41,7 @@ export async function getInvitation(token: string): Promise<InvitationState> {
     role: invitation.role,
     email: invitation.email,
   };
-}
+});
 
 /**
  * Pending invites addressed to this account, for the dashboard. Only once its email
