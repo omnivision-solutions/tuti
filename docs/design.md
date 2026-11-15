@@ -409,8 +409,8 @@ the list picks none to approve at once.
     other selected state is neutral (`bg-accent text-foreground`): the open board in a rail, the picked pill, the open
     item in a nav list, the docs tree's article, the phone menu's part. What keeps a colour of its own, whatever the
     accent: statuses (Completed stays green: it says what happened), destructive red (a Breaking changelog tag too), the info
-    blue, the unread orange and people's initials. "Powered by tuti" has no colour of its own: its mark is grey, in the text's
-    colour with the beak lighter (`TutiMark mono`), as Tuti's green and orange clash with a team's colours. The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
+    blue, the unread orange and people's initials. Tuti's mark has no colour of its own on a portal (in "Powered by tuti" and on sign-in's "Continue with your Tuti
+    account"): grey, in the text's colour with the beak lighter (`TutiMark mono`), as Tuti's green and orange clash with a team's colours. The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
     `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.
   - **Surfaces.** One level: the paper, and cards (`bg-card shadow-card ring-1 ring-card-edge`: the soft shadow, no
     outline in light, a faint ring in dark) only for one object (a roadmap idea, a board, a collection, a form).
