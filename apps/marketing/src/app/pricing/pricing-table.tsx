@@ -41,7 +41,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
   const { facts } = plan;
   const more = previous ? yesNo(facts).filter(([text, has]) => has && !yesNo(previous.facts).some(([other, had]) => other === text && had)) : [];
   return (
-    <li className={cn("flex flex-col gap-3.5 rounded-[18px] border bg-card p-[22px] sm:p-[26px]", plan.featured && "border-primary shadow-[0_0_0_1px_var(--primary),0_18px_40px_-18px_rgb(18_128_74/.35)]")}>
+    <li className={cn("flex flex-col gap-3.5 rounded-[18px] border bg-card p-[22px] sm:p-[26px]", plan.featured && "border-primary shadow-[0_0_0_1px_var(--primary),0_18px_40px_-18px_color-mix(in_oklch,var(--primary)_35%,transparent)]")}>
       <div className="flex items-center justify-between">
         <h2 className="font-heading text-[22px] font-bold tracking-tight">{plan.name}</h2>
         {plan.featured && <span className="rounded-full bg-soft px-2.5 py-0.5 text-[13px] font-semibold text-soft-foreground">Most popular</span>}
@@ -68,7 +68,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
       <Cta plan={plan} className="h-11 w-full text-base" />
       <dl className="mt-1 flex flex-col text-[15px]">
         {[
-          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} />, facts.credits === null ? "—" : number(facts.credits)] as const] : []),
+          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} />, plan.byQuote ? "By quote" : facts.credits === null ? <NotIncluded /> : number(facts.credits)] as const] : []),
           ["Feedback boards", number(facts.boards)] as const,
           ["Emails a month", number(facts.emails)] as const,
         ].map(([label, value], index) => (
@@ -147,7 +147,7 @@ type Row = { label: ReactNode; cells: Cell[] };
 
 /** The comparison's groups and rows, from each plan's facts. A row no plan has (or whose feature this server lacks) is left out. */
 function groups(plans: Plan[]): { title: string; icon: ReactNode; rows: Row[] }[] {
-  const row = (label: ReactNode, cell: (facts: PlanFacts) => Cell): Row => ({ label, cells: plans.map(({ facts }) => cell(facts)) });
+  const row = (label: ReactNode, cell: (facts: PlanFacts, plan: Plan) => Cell): Row => ({ label, cells: plans.map((plan) => cell(plan.facts, plan)) });
   const credited = plans.find(({ facts }) => facts.creditsBuy);
   const extras = [...new Set(plans.flatMap(({ facts }) => facts.extras))];
   const icon = "size-5 text-primary";
@@ -168,7 +168,7 @@ function groups(plans: Plan[]): { title: string; icon: ReactNode; rows: Row[] }[
       icon: <SparklesIcon aria-hidden className={icon} />,
       rows: [
         ...(plans.some(({ facts }) => facts.credits !== null)
-          ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} />, (facts) => (facts.credits === null ? false : number(facts.credits)))]
+          ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} />, (facts, plan) => (plan.byQuote ? "By quote" : facts.credits === null ? false : number(facts.credits)))]
           : []),
         row("AI answers", (facts) => facts.aiAnswers),
         row("Autopilot", (facts) => facts.features.codeChanges),
@@ -211,7 +211,8 @@ function Comparison({ plans, interval }: { plans: Plan[]; interval: Interval }) 
       <h2 className="mb-4 text-center font-heading text-[26px] font-extrabold tracking-tight sm:text-[32px]">Everything, plan by plan</h2>
       <div role="table" aria-label="Plans compared">
         <div role="row" className={cn(grid, "sticky top-16 z-10 border-b bg-background")}>
-          <div role="columnheader" className="max-sm:hidden" />
+          {/* Hidden on phones but kept for screen readers, so each row's cells still line up with their plan. */}
+          <div role="columnheader" className="max-sm:sr-only" />
           {plans.map((plan, index) => {
             const price = perMonth(plan, interval);
             return (
@@ -249,9 +250,7 @@ function Comparison({ plans, interval }: { plans: Plan[]; interval: Interval }) 
                         {cell === true ? (
                           <CheckIcon role="img" aria-label="Included" className="size-4 text-primary" strokeWidth={2.5} />
                         ) : cell === false ? (
-                          <span role="img" aria-label="Not included" className="text-input">
-                            —
-                          </span>
+                          <NotIncluded />
                         ) : (
                           cell
                         )}
@@ -265,5 +264,14 @@ function Comparison({ plans, interval }: { plans: Plan[]; interval: Interval }) 
         ))}
       </div>
     </section>
+  );
+}
+
+/** A dash that screen readers read as "Not included". */
+function NotIncluded() {
+  return (
+    <span role="img" aria-label="Not included" className="text-input">
+      —
+    </span>
   );
 }

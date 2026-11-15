@@ -175,7 +175,7 @@ export type PlanFacts = {
   emails: number | null;
   historyDays: number | null;
   team: number | null;
-  /** AI answers run: AI isn't paid with credits, or the plan comes with some. */
+  /** AI answers run: AI isn't paid with credits, the plan comes with some, or it's sold by quote (its credits agreed with it). */
   aiAnswers: boolean;
   /** The yes/no features the table compares, by the same rules as the cards (email from your domain needs SES and a support email domain). */
   features: Record<"customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "aiTuning" | "emailDomain", boolean>;
@@ -191,6 +191,8 @@ export function planFacts(): PlanFacts[] {
     const priced = shown(plan).price !== null;
     const credits = creditsEnabled() && priced ? planCredits(plan) : null;
     const start = plan === defaultPlanKey() ? freeCredits() : (credits ?? 0);
+    // A plan sold by quote has its credits agreed with it, so AI comes with it.
+    const byQuote = !priced && plan !== defaultPlanKey();
     return {
       credits,
       creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: planIncludes(plan, "codeChanges") ? about(credits, CHANGE_COST) : null } : null,
@@ -200,7 +202,7 @@ export function planFacts(): PlanFacts[] {
       emails: emailsPerMonth(plan),
       historyDays: historyDays(plan),
       team: teamLimit(plan),
-      aiAnswers: !creditsEnabled() || start > 0,
+      aiAnswers: !creditsEnabled() || start > 0 || byQuote,
       features: {
         customDomain: has(plan, "customDomain"),
         sitePath: has(plan, "sitePath"),
