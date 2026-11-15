@@ -32,6 +32,11 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   expect(line("Free", "30 AI credits")?.more?.points).toEqual(["About 15 AI answers for your customers"]);
   vi.stubEnv("AI_CREDITS_FREE", "50");
   expect(line("Free", "50 AI credits")?.more?.points[1]).toBe("Or about 1 change you ship, checked by Autopilot against your help center and feedback");
+  // One answer's worth: "answer" singular; less: the line alone, with no empty card.
+  vi.stubEnv("AI_CREDITS_FREE", "2");
+  expect(line("Free", "2 AI credits")?.more?.points).toEqual(["About 1 AI answer for your customers"]);
+  vi.stubEnv("AI_CREDITS_FREE", "1");
+  expect(line("Free", "1 AI credits")).toEqual({ text: "1 AI credits to start" });
   vi.stubEnv("AI_CREDITS_FREE", "100");
 
   // With Stripe, credits can be topped up, and the card says so.

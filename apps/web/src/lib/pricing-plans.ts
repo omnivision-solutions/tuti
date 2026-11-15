@@ -34,21 +34,13 @@ function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
   }
   const answers = about(count, ANSWER_COST);
   const changes = changesFor(plan, count);
-  return [
-    {
-      text: `${number(count)} AI credits ${per}`,
-      more: {
-        title: "What credits buy",
-        points: [
-          ...(answers >= 1 ? [`About ${number(answers)} AI ${answers === 1 ? "answer" : "answers"} for your customers`] : []),
-          ...(changes === null
-            ? []
-            : [`Or about ${number(changes)} ${changes === 1 ? "change" : "changes"} you ship, checked by Autopilot against your help center and feedback`]),
-          ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
-        ],
-      },
-    },
+  const points = [
+    ...(answers >= 1 ? [`About ${number(answers)} AI ${answers === 1 ? "answer" : "answers"} for your customers`] : []),
+    ...(changes === null ? [] : [`Or about ${number(changes)} ${changes === 1 ? "change" : "changes"} you ship, checked by Autopilot against your help center and feedback`]),
+    ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
   ];
+  // Nothing to say they buy: the line alone, not an empty card.
+  return [{ text: `${number(count)} AI credits ${per}`, ...(points.length > 0 && { more: { title: "What credits buy", points } }) }];
 }
 
 const AUTOPILOT: PlanLine = {
