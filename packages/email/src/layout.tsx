@@ -148,6 +148,9 @@ export function Layout({
                     <tbody>
                       <tr>
                         <td
+                          // The name beside it says it: no "A Acme" for screen readers or in the plain text.
+                          aria-hidden="true"
+                          data-skip-in-text="true"
                           width={32}
                           height={32}
                           align="center"

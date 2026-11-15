@@ -19,7 +19,7 @@ test("emails on a project's behalf show its name and initial at the top, not Tut
   vi.stubEnv("APP_URL", "https://tuti.example");
   const html = await render(shippedEmail(shipped).body);
   const text = await render(shippedEmail(shipped).body, { plainText: true });
-  expect(text).toMatch(/^A\s+Acme\n/);
+  expect(text).toMatch(/^Acme\n/);
   expect(html).not.toContain("email-tuti.png");
   expect(html).not.toContain("email-logo.png");
   // Why they get it and how to stop, under the card.
