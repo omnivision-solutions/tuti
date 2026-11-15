@@ -36,9 +36,9 @@ type CommentProps = {
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-/** Who commented, by first name: "Sam", "Sam and Ada", "Sam and 2 others". */
+/** Who commented (each name once), by first name: "Sam", "Sam and Ada", "Sam and 2 others". */
 function who(comments: CommentProps["comments"]) {
-  const names = [...new Set(comments.map((comment) => firstName(comment.authorName)))];
+  const names = [...new Set(comments.map((comment) => comment.authorName))].map(firstName);
   if (names.length <= 2) {
     return names.join(" and ");
   }

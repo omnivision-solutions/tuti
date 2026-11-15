@@ -15,8 +15,9 @@ import { claim, LATE_MINUTES, quotedText, whileClaimed } from "./reply-email";
  * comments on a post within this of its first go in one email, so a quick back-and-forth is one email, not five.
  */
 export const COMMENT_BATCH_MINUTES = 5;
-/** After a day, a comment isn't news: one still due (its runs kept failing) is left. */
+/** After a day, a comment isn't news: one still due then (its runs kept failing, a limit held it) is dropped. */
 const LOOK_BACK_HOURS = 24;
+const lookBack = () => new Date(Date.now() - LOOK_BACK_HOURS * 3_600_000);
 
 /**
  * Emails a post's author the comments others wrote on it that are due, in one email (comment-email): only as
@@ -40,15 +41,26 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       comments: {
         where: { authorEmailDueAt: { not: null } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, authorId: true, body: true, content: true, author: { select: { name: true } } },
+        select: { id: true, authorId: true, body: true, content: true, createdAt: true, authorEmailDueAt: true, author: { select: { name: true } } },
       },
     },
   });
-  if (!post || post.comments.length === 0) {
+  if (!post) {
+    return { skipped: true };
+  }
+  // Past the look-back (unless what the monthly limit held is due now), not news any more: dropped, never sent with a
+  // newer comment's email.
+  const held = heldDueDates().map((date) => date.getTime());
+  const old = post.comments.filter((comment) => comment.createdAt < lookBack() && !held.includes(comment.authorEmailDueAt!.getTime()));
+  if (old.length > 0) {
+    await prisma.comment.updateMany({ where: { id: { in: old.map((comment) => comment.id) } }, data: { authorEmailDueAt: null } });
+  }
+  const comments = post.comments.filter((comment) => !old.includes(comment));
+  if (comments.length === 0) {
     return { skipped: true };
   }
   const { projectId, project } = post;
-  const ids = post.comments.map((comment) => comment.id);
+  const ids = comments.map((comment) => comment.id);
   // Done once nobody's email about them is left in flight (another run's, or the reply's to voters): the cron takes
   // one that is again later, and its claim says whether it went.
   const done = () => prisma.comment.updateMany({ where: { id: { in: ids }, replyEmails: { none: { sentAt: null } } }, data: { authorEmailDueAt: null } });
@@ -64,8 +76,8 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   // Each comment claimed before sending (one time for all, as whileClaimed renews them), so a retry, a second run or the
   // reply's email to voters doesn't email it twice. Their own comments never become due; left out all the same.
   const claimedAt = new Date();
-  const claimed: typeof post.comments = [];
-  for (const comment of post.comments) {
+  const claimed: typeof comments = [];
+  for (const comment of comments) {
     if (comment.authorId !== author.id && (await claim(comment.id, author.id, seenAs(post), "authorEmailDueAt", claimedAt))) {
       claimed.push(comment);
     }
@@ -123,10 +135,10 @@ export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log
   const now = new Date();
   const due = await prisma.comment.findMany({
     where: {
-      // ponytail: what a limit held past the look-back is left unless it's the monthly limit's (heldDueDates), as the
-      // daily cap's rarely is; reply-emails-resubmit's rescheduling is the upgrade if that matters.
+      // ponytail: what the daily cap held past the look-back isn't sent (the job drops it), only the monthly limit's
+      // (heldDueDates); reply-emails-resubmit's rescheduling is the upgrade if that matters.
       OR: [
-        { authorEmailDueAt: { lte: now }, createdAt: { gt: new Date(now.getTime() - LOOK_BACK_HOURS * 3_600_000) } },
+        { authorEmailDueAt: { lte: now }, createdAt: { gt: lookBack() } },
         { authorEmailDueAt: { in: heldDueDates(now), lte: now } },
       ],
       ...(plansEnabled() && { project: { emailPausedAt: null } }),

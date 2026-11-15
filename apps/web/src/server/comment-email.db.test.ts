@@ -1,9 +1,11 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
+import { log as logger } from "@tuti/shared";
 import { billingFile } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createComment, createPost } from "@/server/operations/create";
+import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
@@ -70,7 +72,7 @@ test("another reader's comment is emailed to the post's author a few minutes on,
   expect(email!.headers["list-unsubscribe"]).toMatch(/\?token=[^.>]+\.[\w-]+>$/);
   // Not to the one who commented, and done: never again.
   expect(commentEmails(reader.email)).toEqual([]);
-  expect(await prisma.comment.count({ where: { authorEmailDueAt: { not: null } } })).toBe(0);
+  expect(await prisma.comment.count({ where: { projectId: project.id, authorEmailDueAt: { not: null } } })).toBe(0);
   await minutesLater();
   expect(commentEmails(author.email)).toHaveLength(1);
 });
@@ -113,7 +115,7 @@ test("nothing for an author who turned off Posts I wrote, or unsubscribed", asyn
   await call(createComment, as(reader.id), { number: post.number, body: "Still nice." });
   await minutesLater();
   expect(commentEmails(author.email)).toEqual([]);
-  expect(await prisma.comment.count({ where: { authorEmailDueAt: { not: null } } })).toBe(0);
+  expect(await prisma.comment.count({ where: { projectId: project.id, authorEmailDueAt: { not: null } } })).toBe(0);
 });
 
 test("the team's reply emailed to voters isn't emailed to the author again; one to voters the author isn't among is", async () => {
@@ -144,4 +146,38 @@ test("past the project's monthly email limit it waits for next month", async () 
   expect(commentEmails(author.email)).toEqual([]);
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).toEqual(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)));
   expect(await prisma.replyEmail.count({ where: { commentId: comment.id } })).toBe(0);
+});
+
+test("a send that fails is tried again, emailing the author once", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  vi.spyOn(logger, "warn").mockImplementation(() => {});
+  await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  mailbox.refuseNext(author.email, { code: 421 });
+  await minutesLater();
+  expect(commentEmails(author.email)).toEqual([]);
+  // Still due, its claim released: the next run (or Hatchet's retry) sends it.
+  await minutesLater();
+  expect(commentEmails(author.email)).toHaveLength(1);
+  await minutesLater();
+  expect(commentEmails(author.email)).toHaveLength(1);
+});
+
+test("a comment past the look-back isn't sent with a newer one, and one on a post merged away isn't sent", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  const old = await call(createComment, as(reader.id), { number: post.number, body: "Old news." });
+  await prisma.comment.update({ where: { id: old.id }, data: { createdAt: new Date(Date.now() - 25 * 3_600_000) } });
+  await call(createComment, as(reader.id), { number: post.number, body: "Fresh." });
+  await minutesLater();
+  const [email] = commentEmails(author.email);
+  expect(email!.text).toContain("Fresh.");
+  expect(email!.text).not.toContain("Old news.");
+  expect(await prisma.comment.count({ where: { projectId: project.id, authorEmailDueAt: { not: null } } })).toBe(0);
+
+  const other = await call(createPost, as(owner.id), { board: "feature-requests", title: "Night theme" });
+  await call(createComment, as(reader.id), { number: post.number, body: "Before the merge." });
+  await call(mergePost, as(owner.id), { number: post.number, into: other.number });
+  await minutesLater();
+  expect(commentEmails(author.email)).toHaveLength(1);
 });
