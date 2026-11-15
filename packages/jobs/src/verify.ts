@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { canonicalDoc, type Doc, toPlainText } from "@tuti/content";
+import { canonicalDoc, type DiffLine, type Doc, toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, sendEmail, verifyAllEmail, verifyArticleEmail } from "@tuti/email";
 import { type Ai, codeChangesEnabled, codeChangesFix, complete, type JobInput } from "@tuti/shared";
@@ -8,6 +8,7 @@ import { type Ai, codeChangesEnabled, codeChangesFix, complete, type JobInput } 
 import { aiFor } from "./ai-usage";
 import { docOf, landEdit, newestRevision, scheduleArticle } from "./article-layers";
 import { autopilotSettingsSelect, VERIFY_WAITS } from "./autopilot";
+import { emailDiff } from "./autopilot-email";
 import { articleNotes, replyJson } from "./code-change-docs";
 import { analysisOn } from "./code-changes";
 import { aiPaused, OutOfCredits } from "./credits";
@@ -381,7 +382,7 @@ async function verifyOne(input: JobInput<"verifyArticle">, log: JobLogger): Prom
     log.info(`Verify ${run.id} (${snapshot.repo}@${snapshot.commit.slice(0, 7)}): ${counts.current} current, ${counts.outdated} out of date, ${counts.unclear} unclear; ${outcome}`);
     // Sample content never emails anyone (its fix still waits in it, to try Verify out). A Verify all emails once, at its end.
     if (outcome === "fixed" && !article.sample && !run.verifyAllId) {
-      await emailOwners(run, version.title, counts, fix!.reason).catch((error: unknown) => log.warn(`Verify ${run.id}: emailing its owners failed (${String(error)})`));
+      await emailOwners(run, version.title, counts, fix!.reason, emailDiff(toPlainText(doc), toPlainText(fix!.doc))).catch((error: unknown) => log.warn(`Verify ${run.id}: emailing its owners failed (${String(error)})`));
     }
     return { ...counts, outcome };
   } catch (error) {
@@ -400,6 +401,7 @@ async function emailOwners(
   articleTitle: string,
   counts: { current: number; outdated: number; unclear: number },
   reason: string,
+  edit: { diff: DiffLine[]; diffMore?: number },
 ) {
   if (!emailConfigured()) {
     return;
@@ -409,7 +411,7 @@ async function emailOwners(
     select: { user: { select: { email: true } } },
   });
   const origin = process.env.APP_URL ? new URL(process.env.APP_URL).origin : "";
-  const email = verifyArticleEmail({ projectName: run.project.name, articleTitle, counts, reason, url: `${origin}/app/${run.project.slug}/autopilot/articles/${run.articleId}` });
+  const email = verifyArticleEmail({ projectName: run.project.name, articleTitle, counts, reason, ...edit, url: `${origin}/app/${run.project.slug}/autopilot/articles/${run.articleId}` });
   await Promise.all(owners.map(({ user }) => sendEmail({ to: user.email, ...email })));
 }
 

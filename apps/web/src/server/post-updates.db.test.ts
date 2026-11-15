@@ -256,7 +256,7 @@ test("a part a teammate stopped: the email has no one-click Approve for its upda
   // Its update shows (both pull requests' words), with Edit: Review on the page, which shows the Stop and asks.
   expect(email.text).toMatch(/\+ Weekly repeats are out\.\s+Monthly ones are out too\./);
   expect(email.text).not.toMatch(/Approve http/);
-  expect(email.text).toMatch(/Edit http\S+\/autopilot\/feedback\//);
+  expect(email.text).toMatch(/Review first → http\S+\/autopilot\/feedback\//);
   expect(await click(first.codeChangeId!, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}`);
   expect((await postNow()).comments).toEqual([]);
 });

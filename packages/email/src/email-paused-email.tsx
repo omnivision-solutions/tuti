@@ -1,6 +1,6 @@
 import { Button, Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, colors, Eyebrow, Layout, Note, textStyle, Title } from "./layout";
 
 const buttonStyle = { backgroundColor: colors.green, color: "#ffffff", borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 };
 
@@ -45,12 +45,11 @@ export const pausedNotice = (reason: string) =>
 export function EmailPausedTeamEmail({ projectName, reason, url }: PausedProps & { url: string }) {
   return (
     <Layout preview={`Email sending for ${projectName} is paused.`}>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        {pausedNotice(reason)} If you know what happened, reply to this email.
-      </Text>
-      <Button href={url} style={buttonStyle}>
-        Open settings
-      </Button>
+      <Eyebrow>{projectName} · Email</Eyebrow>
+      <Title>We paused {projectName}&apos;s emails</Title>
+      <Note kind="warn">{pausedNotice(reason)}</Note>
+      <Text style={textStyle}>If you know what happened, reply to this email.</Text>
+      <Buttons href={url} label="Open settings" />
     </Layout>
   );
 }

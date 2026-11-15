@@ -1,6 +1,6 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Eyebrow, Layout, textStyle, Title } from "./layout";
 
 type InviteProps = { inviterName: string; projectName: string; roleLabel: string; url: string };
 
@@ -16,16 +16,13 @@ export function InviteEmail({ inviterName, projectName, roleLabel, url }: Invite
         </>
       }
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        {inviterName} invited you to join <strong>{projectName}</strong> on Tuti as {article(roleLabel)}{" "}
-        {roleLabel.toLowerCase()}.
+      <Eyebrow>You&apos;re invited</Eyebrow>
+      <Title>Join {projectName} on Tuti</Title>
+      <Text style={textStyle}>
+        <strong>{inviterName}</strong> invited you to join {projectName} on Tuti as {article(roleLabel)} <strong>{roleLabel.toLowerCase()}</strong>: feedback,
+        roadmap, changelog and help center in one place.
       </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        Accept invite
-      </Button>
+      <Buttons href={url} label="Accept the invite" />
     </Layout>
   );
 }

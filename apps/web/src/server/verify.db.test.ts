@@ -136,6 +136,8 @@ test("Verify reads the default branch's latest commit, finds what's true, out of
   expect(owned(owner.email)).toHaveLength(1);
   expect(owned(owner.email)[0]!.text).toContain("Plans have 10 seats now, not 5.");
   expect(owned(owner.email)[0]!.text).toContain("1 out of date");
+  // What its fix changes, line by line.
+  expect(owned(owner.email)[0]!.text).toMatch(/− Each plan has 5 seats\.\s+\+ Each plan has 10 seats\./);
 
   // Its history keeps it.
   expect((await call(listVerifications, team(), { slug: article.slug })).verifications).toEqual([expect.objectContaining({ id: run.id, state: "done" })]);

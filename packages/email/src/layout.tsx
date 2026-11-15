@@ -1,6 +1,7 @@
-import { Body, Column, Container, Head, Heading, Html, Img, Link, Preview, Row, Section, Text } from "@react-email/components";
+import { Body, Button, Column, Container, Head, Heading, Html, Img, Link, Preview, Row, Section, Text } from "@react-email/components";
+import type { DiffLine } from "@tuti/content";
 import { readableOn, SURFACES, textColorOn } from "@tuti/shared/colors";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 // Brand colours: the light theme tokens in packages/ui/src/globals.css, as hex.
 export const colors = {
@@ -79,6 +80,96 @@ export function Title({ children }: { children: ReactNode }) {
 export function Note({ kind = "muted", children }: { kind?: "muted" | "warn"; children: ReactNode }) {
   const [backgroundColor, color] = kind === "warn" ? ["#fff4ea", colors.onHighlight] : ["#fafaf9", "#57534e"];
   return <Text style={{ fontSize: 14, lineHeight: "22px", padding: "12px 14px", borderRadius: 10, backgroundColor, color, margin: "16px 0" }}>{children}</Text>;
+}
+
+/** A paragraph in the card. */
+export const textStyle = { fontSize: 15, lineHeight: "24px", color: "#44403c", margin: "0 0 16px" };
+
+/** A soft fill under a tile, a message or a diff's unchanged line. */
+const SOFT_FILL = "#fafaf9";
+
+/** The main button, and a second one (a grey fill) beside it: a table, so they sit side by side in every client. */
+export function Buttons({ href, label, second, small = false }: { href: string; label: string; second?: { href: string; label: string }; small?: boolean }) {
+  const size = small ? { padding: "8px 14px", fontSize: 14, borderRadius: 8 } : {};
+  return (
+    <table role="presentation" cellPadding={0} cellSpacing={0} style={{ margin: small ? "12px 0 0" : "22px 0 4px", borderCollapse: "separate" }}>
+      <tbody>
+        <tr>
+          <td>
+            <Button href={href} style={{ ...buttonStyle(), ...size }}>
+              {label}
+            </Button>
+          </td>
+          {second && (
+            <td style={{ paddingLeft: 10 }}>
+              {/* Apart in plain text too, so each link stays whole. */}{" "}
+              <Button href={second.href} style={{ ...secondaryButtonStyle, ...size }}>
+                {second.label}
+              </Button>
+            </td>
+          )}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+/** Numbers side by side, each on a soft tile over what it counts ("8", "still true"). */
+export function Stats({ items }: { items: { n: number | string; label: string }[] }) {
+  return (
+    <table role="presentation" width="100%" cellPadding={0} cellSpacing={0} style={{ margin: "18px 0", borderCollapse: "separate" }}>
+      <tbody>
+        <tr>
+          {items.map((item, i) => (
+            <Fragment key={i}>
+              {/* 10px apart: a spacer cell, as cells take no margin in email. */}
+              {i > 0 && <td width={10} style={{ width: 10 }} />}
+              <td width={`${Math.floor(96 / items.length)}%`} style={{ backgroundColor: SOFT_FILL, borderRadius: 12, padding: "12px 14px", verticalAlign: "top" }}>
+                <Text style={{ fontSize: 13, lineHeight: "18px", color: colors.muted, margin: 0 }}>
+                  <span style={{ display: "block", fontSize: 22, lineHeight: "28px", fontWeight: 700, letterSpacing: -0.4, color: colors.text }}>{item.n}</span> {item.label}
+                </Text>
+              </td>
+            </Fragment>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * An edit as its lines: removed ones struck through on a soft red, added ones on a soft green, unchanged ones on a soft
+ * grey, each with its sign (for plain text too, and where the colours don't show).
+ */
+export function Diff({ lines, more }: { lines: DiffLine[]; more?: number }) {
+  const looks = {
+    removed: { sign: "−", color: "#7f1d1d", backgroundColor: colors.destructiveSoft, textDecoration: "line-through" },
+    added: { sign: "+", color: colors.onSoft, backgroundColor: colors.soft, textDecoration: "none" },
+    same: { sign: " ", color: colors.muted, backgroundColor: SOFT_FILL, textDecoration: "none" },
+  };
+  return (
+    <>
+      <table role="presentation" width="100%" cellPadding={0} cellSpacing={0} style={{ margin: "10px 0 0", borderCollapse: "separate", borderRadius: 10, overflow: "hidden" }}>
+        <tbody>
+          {lines.map((line, i) => {
+            const { sign, ...look } = looks[line.kind];
+            return (
+              <tr key={i}>
+                <td style={{ backgroundColor: look.backgroundColor, padding: "6px 12px" }}>
+                  {/* A paragraph: a line of its own in plain text. */}
+                  <Text style={{ fontSize: 14, lineHeight: "21px", color: look.color, margin: 0 }}>
+                    <span style={{ fontWeight: 700, opacity: 0.6 }}>{sign} </span>
+                    <span style={{ textDecoration: look.textDecoration }}>{line.text}</span>
+                  </Text>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {!!more && <Text style={{ fontSize: 13, color: colors.muted, margin: "6px 0 0" }}>{more === 1 ? "1 more line" : `${more} more lines`} in Tuti</Text>}
+    </>
+  );
 }
 
 /**

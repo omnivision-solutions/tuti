@@ -1,7 +1,7 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 import { CREDIT_FEATURES } from "@tuti/shared";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Eyebrow, Layout, textStyle, Title } from "./layout";
 
 type CreditsProps = {
   projectName: string;
@@ -25,7 +25,9 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
         </>
       }
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
+      <Eyebrow>{projectName} · Billing</Eyebrow>
+      <Title>{out ? "Out of AI credits" : `${left} AI credits left`}</Title>
+      <Text style={textStyle}>
         {out ? (
           <>
             <strong>{projectName}</strong> is out of AI credits, so {CREDIT_FEATURES} are paused until it has
@@ -38,12 +40,7 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
           </>
         )}
       </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        See Billing
-      </Button>
+      <Buttons href={url} label="See Billing" />
     </Layout>
   );
 }

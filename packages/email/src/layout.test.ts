@@ -14,7 +14,7 @@ import { conversationEmail } from "./conversation-email";
 import { creditsEmail } from "./credits-email";
 import { emailLimitEmail } from "./email-limit-email";
 import { inviteEmail } from "./invite-email";
-import { accentColors, colors, Eyebrow, Note, POWERED_BY_URL, Title } from "./layout";
+import { accentColors, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
 import { verifyAllEmail } from "./verify-all-email";
 import { verifyArticleEmail } from "./verify-article-email";
@@ -168,4 +168,37 @@ test("every email to a project's customers drops Powered by tuti when the projec
     const html = await render(email.body);
     expect({ name, badge: html.includes(`href="${POWERED_BY_URL.replaceAll("&", "&amp;")}"`) }).toEqual({ name, badge: true });
   }
+});
+
+test("Verify's emails count what it found on tiles: each number over what it counts", async () => {
+  const url = "https://tuti.example/x";
+  const article = await render(verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 8, outdated: 2, unclear: 1 }, reason: "Moved.", url }).body, { plainText: true });
+  expect(article).toMatch(/8 still true\s+2 out of date\s+1 unclear/);
+  expect(article).toContain("Help center · Verify");
+  const all = await render(verifyAllEmail({ projectName: "Acme", checked: 8, total: 12, fixed: ["Export", "Seats"], stopped: "", url }).body, { plainText: true });
+  expect(all).toMatch(/8 checked\s+4 not checked\s+2 fixes waiting/);
+  expect(all).toMatch(/Fix waiting Export\s+Fix waiting Seats/);
+  // All of them checked: no tile for what wasn't.
+  const done = await render(verifyAllEmail({ projectName: "Acme", checked: 12, total: 12, fixed: ["Export"], stopped: "", url }).body, { plainText: true });
+  expect(done).toMatch(/12 checked\s+1 fix waiting/);
+  expect(done).not.toContain("not checked");
+  // The tiles' numbers big, over a muted label.
+  const html = await render(Stats({ items: [{ n: 8, label: "still true" }] }));
+  expect(html).toMatch(/font-size:22px[^>]*>8<\/span> (<!-- -->)?still true/);
+});
+
+test("a diff: removed lines struck through on soft red, added on soft green, each with its sign; the lines left out under it", async () => {
+  const lines = [
+    { kind: "removed" as const, text: "Open the board and choose Export." },
+    { kind: "added" as const, text: "Go to Settings → Data and choose Export CSV." },
+  ];
+  const html = await render(Diff({ lines, more: 4 }));
+  expect(html).toMatch(new RegExp(`background-color:${colors.destructiveSoft}[\\s\\S]*?text-decoration:line-through">Open the board and choose Export.<`));
+  expect(html).toMatch(new RegExp(`background-color:${colors.soft}[\\s\\S]*?text-decoration:none">Go to Settings → Data and choose Export CSV.<`));
+  // Verify's email shows its fix's.
+  const text = await render(
+    verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 1, outdated: 1, unclear: 0 }, reason: "Moved.", diff: lines, diffMore: 4, url: "https://tuti.example/x" }).body,
+    { plainText: true },
+  );
+  expect(text).toMatch(/− Open the board and choose Export.\s+\+ Go to Settings → Data and choose Export CSV.\s+4 more lines in Tuti/);
 });

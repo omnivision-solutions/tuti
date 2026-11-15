@@ -74,7 +74,7 @@ test("signing up sends a verification email; its link verifies the address and s
   const email = await signUp("/app");
   const { message, link } = await verificationLink(email);
   expect(message.subject).toBe("Verify your email for Tuti");
-  expect(message.text).toContain("Hi Ada,");
+  expect(message.html).toMatch(/<h1[^>]*>Welcome to Tuti, (<!-- -->)?Ada<\/h1>/);
   expect(await isVerified(email)).toBe(false);
 
   const response = await auth.handler(new Request(link));

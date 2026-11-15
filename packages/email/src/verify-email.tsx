@@ -1,6 +1,6 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Layout, textStyle, Title } from "./layout";
 
 export const verifyEmailSubject = "Verify your email for Tuti";
 
@@ -14,16 +14,9 @@ export function VerifyEmail({ name, url }: { name: string; url: string }) {
         </>
       }
     >
-      <Text style={{ fontSize: 16, color: colors.text }}>Hi {name},</Text>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        Confirm that this is your email address to finish setting up your Tuti account.
-      </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        Verify email
-      </Button>
+      <Title>Welcome to Tuti, {name}</Title>
+      <Text style={textStyle}>Confirm that this is your email address to finish setting up your Tuti account.</Text>
+      <Buttons href={url} label="Verify my email" />
     </Layout>
   );
 }

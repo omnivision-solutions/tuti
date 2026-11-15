@@ -1,6 +1,6 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, colors, Eyebrow, Layout, Title } from "./layout";
 
 type ConversationProps = {
   projectName: string;
@@ -35,18 +35,17 @@ export function ConversationEmail({ projectName, from, isNew, subject, body, url
         </>
       }
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        <strong>{from}</strong> {isNew ? "started a conversation" : "replied"} in <strong>{projectName}</strong>: {subject}
+      <Eyebrow>
+        {isNew ? "New conversation" : "New reply"} · {projectName}
+      </Eyebrow>
+      <Title>{subject}</Title>
+      <Text style={{ fontSize: 14, color: colors.text, lineHeight: "20px", margin: "18px 0 8px" }}>
+        <strong>{from}</strong> <span style={{ color: colors.muted }}>{isNew ? "started a conversation" : "replied"}</span>
       </Text>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", borderLeft: `3px solid ${colors.border}`, paddingLeft: 12 }}>
+      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", backgroundColor: "#fafaf9", borderRadius: 12, padding: "14px 16px", margin: 0 }}>
         {quoted}
       </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        Reply in the inbox
-      </Button>
+      <Buttons href={url} label="Reply in the inbox" />
     </Layout>
   );
 }
