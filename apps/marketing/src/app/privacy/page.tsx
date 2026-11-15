@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
 import { contact, LegalPage } from "../legal";
+import { pageMetadata } from "../metadata";
 
-export const metadata: Metadata = { title: "Privacy Policy · Tuti", description: "What personal data Tuti's hosted service at tuti.so collects, why, and your choices." };
+export const metadata = pageMetadata("/privacy", "Privacy Policy", "What personal data Tuti's hosted service at tuti.so collects, why, and your choices.");
 
 export default function PrivacyPage() {
   return (

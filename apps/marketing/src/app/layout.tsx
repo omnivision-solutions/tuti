@@ -1,12 +1,13 @@
 import { Analytics } from "@tuti/ui/analytics";
 import { brandFonts } from "@tuti/ui/brand-fonts";
 import { TutiLogo } from "@tuti/ui/tuti-logo";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 
 import { CONTACT_EMAIL } from "./legal";
 import { DOCS, REPO_URL } from "./links";
 import { FEATURES } from "./features";
+import { HOME_DESCRIPTION, HOME_TITLE, SITE_URL } from "./metadata";
 import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
 import { TutiWidget } from "./widget";
 
@@ -15,10 +16,17 @@ import "./globals.css";
 // Rendered per request, so analytics follows the server's POSTHOG_KEY (@tuti/ui/analytics), not the build's.
 export const dynamic = "force-dynamic";
 
+// Every page sets its own (pageMetadata); these are the defaults (a 404) and the title's template.
 export const metadata: Metadata = {
-  title: "Tuti",
-  description: "The help center that stays in sync with your code.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: HOME_TITLE, template: "%s · Tuti" },
+  description: HOME_DESCRIPTION,
+  applicationName: "Tuti",
+  openGraph: { type: "website", siteName: "Tuti", locale: "en_US" },
+  twitter: { card: "summary_large_image" },
 };
+
+export const viewport: Viewport = { themeColor: "#faf8f3" };
 
 /**
  * Tuti's marketing site (tuti.so): its pages under one header and footer. Light only (no theme: the app's dark mode is

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { FEATURES, feature } from "../../features";
 import { Ctas, Eyebrow, Final } from "../../landing";
+import { pageMetadata } from "../../metadata";
 import { CONTENT } from "./content";
 
 /**
@@ -18,7 +19,8 @@ export const generateStaticParams = () => FEATURES.map(({ slug }) => ({ slug }))
 export async function generateMetadata({ params }: PageProps<"/features/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const f = feature(slug);
-  return f ? { title: `${f.name} · Tuti`, description: CONTENT[slug].sub } : {};
+  // "Inbox: widget messages and email, one place"
+  return f ? pageMetadata(`/features/${slug}`, `${f.name}: ${f.line[0].toLowerCase()}${f.line.slice(1)}`, CONTENT[slug].sub) : {};
 }
 
 const icon = { "aria-hidden": true, size: 16 } as const;
