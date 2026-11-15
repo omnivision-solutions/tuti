@@ -120,7 +120,8 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
           )
         ) : (
           <>
-            <p className="font-semibold">The whole product</p>
+            {/* The whole product only where the plan has its AI too (Autopilot comes with AI answers). */}
+            <p className="font-semibold">{facts.features.codeChanges ? "The whole product" : "Includes"}</p>
             <p className="text-muted-foreground">
               {list(["Help center", "inbox", "feedback", ...(facts.features.codeChanges ? ["Autopilot"] : facts.aiAnswers ? ["AI answers"] : [])])}
             </p>
