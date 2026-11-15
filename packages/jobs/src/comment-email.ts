@@ -33,6 +33,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       title: true,
       status: true,
       voteCount: true,
+      sample: true,
       authorId: true,
       visibility: true,
       board: { select: { slug: true, off: true } },
@@ -48,6 +49,11 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   // What's past the look-back the cron dropped before queueing this (commentEmailsDue).
   const comments = post?.comments ?? [];
   if (!post || comments.length === 0) {
+    return { skipped: true };
+  }
+  // Sample content (Home's "Add sample content") never emails anyone: not due any more.
+  if (post.sample) {
+    await prisma.comment.updateMany({ where: { postId, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: null } });
     return { skipped: true };
   }
   const { projectId, project } = post;
@@ -97,7 +103,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
         postTitle: post.title,
         voteCount: post.voteCount,
         status: post.status,
-        comments: claimed.map((comment) => ({ authorName: comment.author.name, text: quotedText(comment) })),
+        comments: claimed.map((comment) => ({ authorId: comment.authorId, authorName: comment.author.name, text: quotedText(comment) })),
         postUrl: portalPostUrl(origin, post),
         unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
         accent: project.brandColor,
@@ -135,6 +141,8 @@ export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log
     where: { authorEmailDueAt: { lt: lookBack(), notIn: heldDueDates(now) }, ...notPaused },
     data: { authorEmailDueAt: null },
   });
+  // Nor sample content's, ever (it never has effects outside).
+  await prisma.comment.updateMany({ where: { authorEmailDueAt: { not: null }, post: { sample: true } }, data: { authorEmailDueAt: null } });
   const queuedLate = new Date(now.getTime() - LATE_MINUTES * 60_000);
   // Due, or held by the monthly limit (heldDueDates) where the project has room again (an upgrade), as
   // reply-emails-resubmit takes it: not a capped project's, which would only wait again.

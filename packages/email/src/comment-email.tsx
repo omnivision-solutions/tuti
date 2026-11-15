@@ -26,8 +26,8 @@ type CommentProps = {
   voteCount: number;
   /** The post's status (PostStatus). */
   status: string;
-  /** Oldest first, each as plain text. */
-  comments: { authorName: string; text: string }[];
+  /** Oldest first, each as plain text; `authorId` tells people apart (two can share a name). */
+  comments: { authorId: string; authorName: string; text: string }[];
   postUrl: string;
   unsubscribeUrl: string;
   /** The project's accent (Project.brandColor; null for Tuti's green): see accentColors. */
@@ -36,9 +36,9 @@ type CommentProps = {
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-/** Who commented (each name once), by first name: "Sam", "Sam and Ada", "Sam and 2 others". */
+/** Who commented (each person once), by first name: "Sam", "Sam and Ada", "Sam and 2 others". */
 function who(comments: CommentProps["comments"]) {
-  const names = [...new Set(comments.map((comment) => comment.authorName))].map(firstName);
+  const names = [...new Map(comments.map((comment) => [comment.authorId, comment.authorName])).values()].map(firstName);
   if (names.length <= 2) {
     return names.join(" and ");
   }

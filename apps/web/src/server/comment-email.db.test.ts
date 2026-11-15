@@ -250,8 +250,9 @@ test("what the monthly limit held, whose first run on the 1st fails, is still re
   mailbox.refuseNext(author.email, { code: 421 });
   await later();
   expect(commentEmails(author.email)).toEqual([]);
-  // Due from now, so retried within the look-back.
-  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  // Due from now (no longer the month's first instant), so retried within the look-back, not every run for good.
+  const due = (await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt!;
+  expect(Date.now() - due.getTime()).toBeLessThan(60_000);
   await later();
   expect(commentEmails(author.email)).toHaveLength(1);
 });
@@ -303,4 +304,21 @@ test("what the monthly limit held goes before the 1st once the project has room 
   await prisma.comment.update({ where: { id: comment.id }, data: { authorEmailDueAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)) } });
   await later();
   expect(commentEmails(author.email)).toHaveLength(1);
+});
+
+test("a sample post's comments never email anyone: dropped by the cron and by a run", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  const { postId } = await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } });
+  await prisma.post.update({ where: { id: postId }, data: { sample: true } });
+  // A run already queued (or a retry).
+  await prisma.comment.update({ where: { id: comment.id }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  expect(await handlers.commentsEmailed({ postId }, log)).toEqual({ skipped: true });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).toBeNull();
+  // The cron.
+  await prisma.comment.update({ where: { id: comment.id }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  expect(await later()).toEqual({ found: 0, queued: 0 });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).toBeNull();
+  expect(commentEmails(author.email)).toEqual([]);
 });
