@@ -162,7 +162,7 @@ export function AuthForm({
               setResent(false);
               setLinkError(undefined);
             }}
-            className="text-[0.9375rem] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+            className="text-[0.9375rem] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground aria-disabled:opacity-50"
           >
             Use a different email
           </button>

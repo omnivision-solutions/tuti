@@ -355,11 +355,34 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(wes.getByRole("status")).toHaveText("We couldn't send the email. Try again.");
   await expect(wes.getByRole("button", { name: "Send another link" })).toBeVisible();
   await wes.unroute("**/sign-in*");
+  // While another link is on its way, "Use a different email" waits: the answer is about this address.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let holding!: () => void;
+  const held = new Promise<void>((resolve) => (holding = resolve));
+  await wes.route("**/sign-in*", async (route) => {
+    if (route.request().method() === "POST") {
+      holding();
+      await released;
+    }
+    await route.continue();
+  });
+  await wes.getByRole("button", { name: "Send another link" }).click();
+  await held;
+  await expect(wes.getByRole("button", { name: "Use a different email" })).toHaveCSS("opacity", "0.5");
+  // Forced: Playwright waits out aria-disabled, and a person can click it all the same.
+  await wes.getByRole("button", { name: "Use a different email" }).click({ force: true });
+  await expect(wes.getByText("Check your email")).toBeVisible();
+  await expect(wes.getByLabel("Email")).toHaveCount(0);
+  release();
+  await expect(wes.getByRole("status")).toHaveText("Another link is on its way.");
+  await expect.poll(() => countEmailsTo(wesEmail)).toBe(2);
+  await wes.unroute("**/sign-in*");
   // Back where they came from.
   await expect(wes.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", "/");
   await checkpoint(wes, "portal-sign-in-link-sent-actions");
   // Not there: another link to the same address, as many as the address's hourly limit allows (5), then why not.
-  for (let sent = 1; sent < 5; sent++) {
+  for (let sent = 2; sent < 5; sent++) {
     await wes.getByRole("button", { name: "Send another link" }).click();
     await expect(wes.getByRole("status")).toHaveText("Another link is on its way.");
     await expect.poll(() => countEmailsTo(wesEmail)).toBe(sent + 1);
