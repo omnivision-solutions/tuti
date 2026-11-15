@@ -22,7 +22,7 @@ export function EmptyState({
         className,
       )}
     >
-      <TutiMark className="mb-1 size-8 opacity-80" />
+      <TutiMark mono className="mb-1 size-8 text-muted-foreground" />
       <p className="font-heading font-semibold">{title}</p>
       {description && <p className="max-w-sm text-sm text-muted-foreground">{description}</p>}
       {action && <div className="mt-2">{action}</div>}
