@@ -125,10 +125,12 @@ export async function shareCard(site: { project: { name: string }; brand: Brandi
 }
 
 /**
- * Text as the card can draw it: without emoji (the fonts have none; a box would show in its place).
+ * Text as the card can draw it: without emoji and their parts (flags' letters, skin tones, joiners, keycaps; the fonts
+ * have none, and a box would show in its place).
  * ponytail: scripts the fonts lack (Chinese, Japanese, Arabic…) still show as boxes; bundle Noto subsets for them when portals need it.
  */
-const drawable = (text: string) => text.replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").replace(/\s{2,}/g, " ").trim();
+export const drawable = (text: string) =>
+  text.replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
 
 /**
  * The logo as a PNG (the renderer can't read the stored WebP), at most 64px tall and 520 wide; null without one, or if
