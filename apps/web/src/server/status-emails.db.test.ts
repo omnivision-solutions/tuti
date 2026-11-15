@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { postStatusChanged } from "@tuti/jobs";
 import { beforeEach, expect, test } from "vitest";
 
 import { createPost } from "@/server/operations/create";
@@ -98,4 +99,19 @@ test("Under review, Open and Closed email nobody; nor does a move for people who
   expect(subjectsTo(voter.email)).toEqual(["In progress: CSV export"]);
   expect(subjectsTo(quiet.email)).toEqual([]);
   expect(subjectsTo(unsubscribed.email)).toEqual([]);
+});
+
+test("a change the post has already moved on from leaves the newer change's emails due", async () => {
+  const [author, voter] = [await verified("Author"), await verified("Voter")];
+  const post = await postVotedBy(author, [voter]);
+  await setStatus(post.number, "in_progress");
+  const row = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  const due = new Date();
+  await prisma.post.update({ where: { id: row.id }, data: { shippedEmailsDueAt: due } });
+
+  // An earlier move back to Open, its handler finishing late (after the webhooks were told), while the post is In progress.
+  const stale = { number: post.number, title: "CSV export", status: "open", visibility: "public" } as unknown as Parameters<typeof postStatusChanged>[2];
+  await postStatusChanged(project.id, row.id, stale, "PLANNED");
+
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: row.id }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: due });
 });

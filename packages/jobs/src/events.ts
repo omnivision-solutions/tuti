@@ -93,13 +93,18 @@ export async function postStatusChanged(
   const steps = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
   const to = steps.findIndex((status) => post.status === toApiStatus(status));
   const emailed = to === steps.length - 1 || (to >= 0 && to > steps.findIndex((status) => status === previousStatus));
+  // Only while the post still has this change's status: another change made while the webhooks were told is the
+  // post's own to settle, and this one mustn't clear (or set) its emails' due time.
+  const still = { id: postId, status: post.status.toUpperCase() as PostStatus };
   if (!emailed || post.visibility === "team") {
-    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
+    await prisma.post.updateMany({ where: { ...still, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
   } else {
     try {
       // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
-      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
-      await enqueue("postShipped", { postId });
+      const { count } = await prisma.post.updateMany({ where: still, data: { shippedEmailsDueAt: new Date() } });
+      if (count > 0) {
+        await enqueue("postShipped", { postId });
+      }
     } catch (error) {
       log.error("Enqueueing the post-shipped job failed", { postId, error });
     }
