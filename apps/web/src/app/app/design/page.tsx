@@ -275,7 +275,7 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
         <Section title="Portal footer">
           <p className="inline-flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             Powered by
-            <TutiMark className="size-4" />
+            <TutiMark mono className="size-4" />
             <span className="font-heading font-bold text-foreground">tuti</span>
           </p>
         </Section>
