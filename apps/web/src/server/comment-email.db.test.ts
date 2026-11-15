@@ -1,14 +1,16 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, resumeToken } from "@tuti/jobs";
 import { log as logger } from "@tuti/shared";
 import { billingFile } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { setBoardOff } from "@/server/boards";
+import { resumeEmailSending } from "@/server/email-pause";
 import { createComment, createPost } from "@/server/operations/create";
 import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 /** Someone else's comment on a post, emailed to its author a few minutes on (packages/jobs/src/comment-email.ts). */
@@ -22,6 +24,7 @@ beforeEach(async () => {
   project = await createProject(owner);
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
@@ -136,10 +139,12 @@ test("the team's reply emailed to voters isn't emailed to the author again; one 
 });
 
 test("past the project's monthly email limit it waits for next month", async () => {
+  // Mid-month, so the run can't straddle two months.
+  const now = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15, 12));
+  vi.useFakeTimers({ toFake: ["Date"], now });
   const { author, post } = await authorsPost();
   const reader = await verified("Reader");
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 1; }));
-  const now = new Date();
   await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), emails: 1 } });
   const comment = await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
   await minutesLater();
@@ -184,9 +189,42 @@ test("a comment past the look-back isn't sent with a newer one, and one on a pos
   expect(email!.text).not.toContain("Old news.");
   expect(await prisma.comment.count({ where: { projectId: project.id, authorEmailDueAt: { not: null } } })).toBe(0);
 
-  const other = await call(createPost, as(owner.id), { board: "feature-requests", title: "Night theme" });
-  await call(createComment, as(reader.id), { number: post.number, body: "Before the merge." });
+  // Merged into another reader's post: not emailed to that one's author either (it wasn't on their post).
+  const otherAuthor = await verified("Olga Other");
+  const other = await call(createPost, as(otherAuthor.id), { board: "feature-requests", title: "Night theme" });
+  const moved = await call(createComment, as(reader.id), { number: post.number, body: "Before the merge." });
   await call(mergePost, as(owner.id), { number: post.number, into: other.number });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: moved.id } })).authorEmailDueAt).toBeNull();
   await minutesLater();
   expect(commentEmails(author.email)).toHaveLength(1);
+  expect(commentEmails(otherAuthor.email)).toEqual([]);
+});
+
+test("turning the board off drops its comments' emails, also once it's on again", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  const board = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, slug: "feature-requests" }, select: { id: true } });
+  actAs(owner);
+  expect(await setBoardOff(project.slug, board.id, true)).toEqual({});
+  expect(await setBoardOff(project.slug, board.id, false)).toEqual({});
+  await minutesLater();
+  expect(commentEmails(author.email)).toEqual([]);
+});
+
+test("a resume drops the comments the pause held, not those the monthly limit holds for next month", async () => {
+  const now = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15, 12));
+  vi.useFakeTimers({ toFake: ["Date"], now });
+  const { post } = await authorsPost();
+  const reader = await verified("Reader");
+  const paused = await call(createComment, as(reader.id), { number: post.number, body: "Held by the pause." });
+  const held = await call(createComment, as(reader.id), { number: post.number, body: "Held for next month." });
+  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  await prisma.comment.update({ where: { id: held.id }, data: { authorEmailDueAt: nextMonth } });
+  const pausedAt = new Date(Date.now() - 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+  const due = async (id: string) => (await prisma.comment.findUniqueOrThrow({ where: { id } })).authorEmailDueAt;
+  expect(await due(paused.id)).toBeNull();
+  expect(await due(held.id)).toEqual(nextMonth);
 });

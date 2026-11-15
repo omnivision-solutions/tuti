@@ -36,4 +36,7 @@ test("several: named once each, the first five shown and the rest counted", asyn
   expect(text).toContain("2 more comments on the post.");
   const two = await render(commentEmail({ ...props, comments: comments.slice(0, 2) }).body, { plainText: true });
   expect(two).toContain("Sam and Kim commented on your idea");
+  // Two people who share a first name are two, and one person's two comments one.
+  const sams = [{ authorName: "Sam Lee", text: "a" }, { authorName: "Sam Park", text: "b" }, { authorName: "Sam Lee", text: "c" }];
+  expect(await render(commentEmail({ ...props, comments: sams }).body, { plainText: true })).toContain("Sam and Sam commented on your idea");
 });
