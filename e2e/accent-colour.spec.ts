@@ -45,7 +45,7 @@ function greens(page: Page) {
     };
     const colourIn = /(?:rgba?|oklch|oklab|lab|lch|hsla?|color)\([^()]*(?:\([^()]*\)[^()]*)*\)|#[0-9a-f]{3,8}\b/gi;
     const found = new Set<string>();
-    const allowed = (element: Element) => element.closest('a[href="https://tuti.so"]') || element.closest('[class*="status-completed"]');
+    const allowed = (element: Element) => element.closest('[class*="status-completed"]');
     for (const element of document.querySelectorAll("body *")) {
       if (allowed(element)) {
         continue;
@@ -168,8 +168,8 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
       await checkpoint(page, `${scheme} ${path}`);
     }
   }
-  // The portal's shared look (docs/design.md → Portals → Accent, Surfaces), in light and dark: "Powered by tuti" in Tuti's
-  // own green, whatever the accent; secondary buttons and vote boxes grey fills without an edge, a vote cast the accent's
+  // The portal's shared look (docs/design.md → Portals → Accent, Surfaces), in light and dark: "Powered by tuti" grey (its mark in
+  // the text's colour), whatever the accent; secondary buttons and vote boxes grey fills without an edge, a vote cast the accent's
   // tint; rows split by the light divider; cards without an outline in light, a faint ring in dark; the scrollbar's room
   // always kept, so the header never shifts.
   // A colour token as the browser computes an element's colour (custom properties keep the CSS's own spelling).
@@ -187,7 +187,8 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
     await reader.goto("/feedback/feature-requests");
     const main = reader.getByRole("main");
     await expect(reader.locator("html")).toHaveCSS("scrollbar-gutter", "stable");
-    await expect(reader.locator('a[href="https://tuti.so"] svg path').first()).toHaveCSS("fill", await token(reader, "--tuti"));
+    const badge = reader.locator('a[href="https://tuti.so"]');
+    await expect(badge.locator("svg path").first()).toHaveCSS("fill", await badge.evaluate((link) => getComputedStyle(link).color));
     const secondary = await token(reader, "--secondary");
     const getUpdates = reader.getByRole("button", { name: "Get updates" }).filter({ visible: true }).first();
     await expect(getUpdates).toHaveCSS("background-color", secondary);

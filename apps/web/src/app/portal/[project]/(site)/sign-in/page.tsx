@@ -115,7 +115,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
           className={buttonVariants({ variant: "outline", className: "w-full" })}
         >
-          <TutiMark className="size-4" />
+          <TutiMark mono className="size-4" />
           Continue with your Tuti account
         </a>
       )}

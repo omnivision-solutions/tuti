@@ -51,7 +51,6 @@
   --font-mono: var(--font-geist-mono), var(--font-symbols);
   --font-heading: var(--font-heading), var(--font-symbols);
   --color-soft: var(--soft);
-  --color-tuti: var(--tuti);
   --color-divider: var(--divider);
   --color-card-edge: var(--card-edge);
   --color-soft-foreground: var(--soft-foreground);
@@ -157,8 +156,6 @@
   --border: oklch(0.885 0.015 84.6);
   --input: oklch(0.845 0.018 86.2);
   --ring: oklch(0.529 0.125 155);
-  /* Tuti's own green, whatever a portal's accent: its mark in "Powered by tuti" (TutiMark's `brand`). */
-  --tuti: oklch(0.529 0.125 155);
   /* A hairline between rows, and a card's edge: the border colour here; the portal's are lighter (below). */
   --divider: var(--border);
   --card-edge: var(--border);
@@ -235,7 +232,6 @@
   --border: oklch(0.375 0.02 163.3);
   --input: oklch(0.43 0.022 163.3);
   --ring: oklch(0.759 0.168 154.6);
-  --tuti: oklch(0.759 0.168 154.6);
   --divider: var(--border);
   --card-edge: var(--border);
   --soft: oklch(0.294 0.045 157);
