@@ -137,7 +137,7 @@ test("a public post on a Team only board: its card doesn't name the board", asyn
   await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM", name: "Secret plans" } });
   vi.mocked(shareCard).mockClear();
   expect((await image(project.slug, ["feedback", board.slug, "dark-mode-7"])).status).toBe(200);
-  expect(vi.mocked(shareCard).mock.calls[0]?.[1]).toEqual({ eyebrow: "Feedback", title: "Dark mode", facts: ["Open", "12 votes"] });
+  expect(vi.mocked(shareCard).mock.calls[0]?.[1]).toEqual({ eyebrow: "Feedback", title: "Dark mode", facts: ["Open", "12 votes"], picture: { votes: 12 } });
 });
 
 test("the page the portal opens on has the team's own description and share image; every other page has its card", async () => {
@@ -229,4 +229,22 @@ test("a private portal without a share image of the team's names no card: a link
 
 test("a page for the reader alone (signing in) isn't for search engines", () => {
   expect(signInMetadata).toMatchObject({ title: "Sign in", robots: { index: false, follow: false } });
+});
+
+test("each kind of page has its own drawing: a page for the docs, ideas for feedback, columns for the roadmap, a timeline for the changelog, a post's votes", async () => {
+  const { owner, project, board } = await portalWithPost();
+  await prisma.changelogEntry.create({ data: { projectId: project.id, createdById: owner.id, number: 1, title: "Dark mode", body: "", publishedAt: new Date() } });
+  const picture = async (path: string[]) => {
+    vi.mocked(shareCard).mockClear();
+    expect((await image(project.slug, path)).status).toBe(200);
+    return vi.mocked(shareCard).mock.calls[0]?.[1].picture;
+  };
+  expect(await picture([])).toBe("page");
+  expect(await picture(["docs"])).toBe("page");
+  expect(await picture(["feedback"])).toBe("board");
+  expect(await picture(["feedback", board.slug])).toBe("board");
+  expect(await picture(["feedback", board.slug, "dark-mode-7"])).toEqual({ votes: 12 });
+  expect(await picture(["roadmap"])).toBe("roadmap");
+  expect(await picture(["changelog"])).toBe("changelog");
+  expect(await picture(["changelog", "1"])).toBe("changelog");
 });

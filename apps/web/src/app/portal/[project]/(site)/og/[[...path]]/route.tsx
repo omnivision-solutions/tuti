@@ -51,7 +51,7 @@ async function cardFor(slug: string, site: Site, path: string[]): Promise<ShareC
   switch (part) {
     case undefined:
       // The portal itself: its search listing's description under its title, else its title.
-      return site.brand.seo.description ? { eyebrow: site.name, title: site.brand.seo.description } : { eyebrow: "", title: site.name };
+      return site.brand.seo.description ? { eyebrow: site.name, title: site.brand.seo.description, picture: "page" } : { eyebrow: "", title: site.name, picture: "page" };
     case "docs":
       return rest.length === 0 ? docsCard(site, await docsHome(slug)) : rest.length === 1 ? docsPageCard(site, await docsPage(slug, rest[0]!)) : null;
     case "feedback":
@@ -67,7 +67,7 @@ async function cardFor(slug: string, site: Site, path: string[]): Promise<ShareC
 
 /** /docs: what it shows (the first tab's article or collection in its place, else the docs' home). */
 function docsCard(site: Site, home: Awaited<ReturnType<typeof docsHome>>): ShareCard {
-  return landingCard(home.landing) ?? { eyebrow: "Documentation", title: site.brand.docsHome.title || DOCS_HEADING.title };
+  return landingCard(home.landing) ?? { eyebrow: "Documentation", title: site.brand.docsHome.title || DOCS_HEADING.title, picture: "page" };
 }
 
 function landingCard(landing: TabLanding): ShareCard | null {
@@ -82,18 +82,19 @@ function docsPageCard(site: Site | null, page: DocsPage | TabLanding | null): Sh
         eyebrow: article.collection ? `Documentation · ${article.collection.name}` : "Documentation",
         title: article.title,
         facts: article.updatedAt ? [`Updated ${formatDate(article.updatedAt)}`] : [],
+        picture: "page",
       };
     }
     case "locked":
-      return { eyebrow: page.article.collection ? `Documentation · ${page.article.collection.name}` : "Documentation", title: page.article.title };
+      return { eyebrow: page.article.collection ? `Documentation · ${page.article.collection.name}` : "Documentation", title: page.article.title, picture: "page" };
     case "collection": {
       const count = articleCount(page.collection);
-      return { eyebrow: "Documentation", title: page.collection.name, facts: count ? [plural(count, "article")] : [] };
+      return { eyebrow: "Documentation", title: page.collection.name, facts: count ? [plural(count, "article")] : [], picture: "page" };
     }
     case "tab":
-      return (page.tab.locked ? null : landingCard(page.landing)) ?? { eyebrow: "Documentation", title: page.tab.name };
+      return (page.tab.locked ? null : landingCard(page.landing)) ?? { eyebrow: "Documentation", title: page.tab.name, picture: "page" };
     case "overview":
-      return site && { eyebrow: "Documentation", title: site.brand.docsHome.title || DOCS_HEADING.title };
+      return site && { eyebrow: "Documentation", title: site.brand.docsHome.title || DOCS_HEADING.title, picture: "page" };
     default:
       return null;
   }
@@ -102,7 +103,7 @@ function docsPageCard(site: Site | null, page: DocsPage | TabLanding | null): Sh
 async function feedbackCard(projectId: string, [board, post, ...more]: string[]): Promise<ShareCard | null> {
   const viewer = await currentPostViewer(projectId);
   if (!board) {
-    return { eyebrow: "Feedback", title: "Vote for the ideas you want most, or share your own." };
+    return { eyebrow: "Feedback", title: "Vote for the ideas you want most, or share your own.", picture: "board" };
   }
   if (more.length) {
     return null;
@@ -112,7 +113,7 @@ async function feedbackCard(projectId: string, [board, post, ...more]: string[])
       where: { projectId_slug: { projectId, slug: board } },
       select: { name: true, postVisibility: true, off: true, _count: { select: { posts: { where: { duplicateOfId: null, ...visiblePosts(viewer) } } } } },
     });
-    return found && seesBoard(viewer, found) ? { eyebrow: "Feedback", title: found.name, facts: found._count.posts ? [plural(found._count.posts, "idea")] : [] } : null;
+    return found && seesBoard(viewer, found) ? { eyebrow: "Feedback", title: found.name, facts: found._count.posts ? [plural(found._count.posts, "idea")] : [], picture: "board" } : null;
   }
   const number = postNumberFromParam(post);
   const found =
@@ -138,6 +139,7 @@ async function feedbackCard(projectId: string, [board, post, ...more]: string[])
     eyebrow: seesBoard(viewer, found.board) ? found.board.name : "Feedback",
     title: found.title,
     facts: [STATUS_LABELS[found.status], plural(found.voteCount, "vote"), ...(found._count.comments ? [plural(found._count.comments, "comment")] : [])],
+    picture: { votes: found.voteCount },
   };
 }
 
@@ -151,7 +153,7 @@ async function roadmapCard(projectId: string): Promise<ShareCard> {
   });
   const count = (status: string) => counts.find((row) => row.status === status)?._count._all ?? 0;
   const facts = [count("PLANNED") && `${count("PLANNED")} planned`, count("IN_PROGRESS") && `${count("IN_PROGRESS")} in progress`].filter((fact): fact is string => !!fact);
-  return { eyebrow: "Roadmap", title: "What's planned, what we're building and what's done.", facts };
+  return { eyebrow: "Roadmap", title: "What's planned, what we're building and what's done.", facts, picture: "roadmap" };
 }
 
 async function changelogCard(slug: string, site: Site, rest: string[]): Promise<ShareCard | null> {
@@ -168,7 +170,7 @@ async function changelogCard(slug: string, site: Site, rest: string[]): Promise<
     return changelogEntryCard(slug, rest);
   }
   const [latest] = await publishedEntries(slug, { take: 1 });
-  return { eyebrow: "Changelog", title: `What's new, improved and fixed in ${site.project.name}.`, facts: latest?.publishedAt ? [`Latest ${formatDate(latest.publishedAt)}`] : [] };
+  return { eyebrow: "Changelog", title: `What's new, improved and fixed in ${site.project.name}.`, facts: latest?.publishedAt ? [`Latest ${formatDate(latest.publishedAt)}`] : [], picture: "changelog" };
 }
 
 async function changelogEntryCard(slug: string, rest: string[]): Promise<ShareCard | null> {
@@ -176,7 +178,7 @@ async function changelogEntryCard(slug: string, rest: string[]): Promise<ShareCa
     return null;
   }
   const [entry] = await publishedEntries(slug, { number: Number(rest[0]), take: 1 });
-  return entry ? { eyebrow: "Changelog", title: entry.title, facts: entry.publishedAt ? [formatDate(entry.publishedAt)] : [] } : null;
+  return entry ? { eyebrow: "Changelog", title: entry.title, facts: entry.publishedAt ? [formatDate(entry.publishedAt)] : [], picture: "changelog" } : null;
 }
 
 const plural = (n: number, word: string) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
