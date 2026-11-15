@@ -9,7 +9,7 @@ import { log } from "./log";
  * with its default, type and range, read from its own environment variable, named from its path
  * (`decisions.movesForward.maybe` → CODE_CHANGES_DECISIONS_MOVES_FORWARD_MAYBE). So a server can
  * tune Autopilot (another model with the values that suit it) without a release. A new value is a
- * new leaf below: its variable, its check at start-up and its row in the README follow.
+ * new leaf below: its variable, its check at start-up and its row in docs/self-hosting.md follow.
  */
 
 /** A value: its check, default, range in words (and as numbers or options, for a project's Advanced tuning), and what it does. */
@@ -297,7 +297,7 @@ export function checkCodeChangesSettings(): void {
   log.info("Autopilot's settings", inUse);
 }
 
-/** The README's table of the settings (a test keeps the two in step). */
+/** docs/self-hosting.md's table of the settings (a test keeps the two in step). */
 export function codeChangesSettingsTable(): string {
   const rows: string[] = [];
   walk(CODE_CHANGES_SETTINGS, [], (leaf, name) =>

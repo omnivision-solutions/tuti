@@ -354,7 +354,7 @@ function OpenSource() {
                 ))}
               </pre>
             </div>
-            <a className="btn btn-d" href={`${REPO_URL}#self-hosting`}>
+            <a className="btn btn-d" href={`${REPO_URL}/blob/main/docs/self-hosting.md#self-hosting`}>
               <GithubMark className="size-4.5" /> Self-host free
             </a>
           </div>
