@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type { Locator } from "@playwright/test";
+
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
@@ -225,20 +227,31 @@ test("the team writes install steps as code tabs and a config file as named code
   await checkpoint(visitor, "portal-article-code-tabs");
 
   // On a phone, a line too long to fit scrolls sideways: its end fades and a bar under the code shows it goes on, both
-  // gone once it's scrolled to the end; code that fits (the tabs') has neither.
-  await visitor.setViewportSize({ width: 390, height: 844 });
-  const config = article.getByRole("figure", { name: "acme.json" }).locator("pre");
-  const shown = (pre: typeof config) =>
+  // gone once it's scrolled to the end; code that fits (the tabs') has neither. A mouse keeps the browser's scroll bar.
+  const shown = (pre: Locator) =>
     pre.evaluate((element) => {
       const code = element.querySelector("code")!;
-      return { bar: getComputedStyle(element, "::after").opacity, fade: getComputedStyle(code).getPropertyValue("--scroll-fade-end") };
+      const bar = getComputedStyle(element, "::after");
+      return {
+        bar: bar.content === "none" ? "none" : bar.opacity,
+        fade: getComputedStyle(code).getPropertyValue("--scroll-fade-end"),
+        scrollbar: getComputedStyle(code).scrollbarWidth,
+      };
     });
-  await expect.poll(() => shown(config)).toEqual({ bar: "1", fade: "48px" });
-  await checkpoint(visitor, "portal-article-code-phone");
-  await config.locator("code").evaluate((code) => code.scrollTo({ left: code.scrollWidth }));
-  await expect.poll(() => shown(config)).toEqual({ bar: "1", fade: "0px" });
-  await expect.poll(() => shown(article.locator(".rich-code-tabs > pre:visible"))).toEqual({ bar: "0", fade: "0px" });
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  const config = article.getByRole("figure", { name: "acme.json" }).locator("pre");
+  await expect.poll(() => shown(config)).toEqual({ bar: "none", fade: "48px", scrollbar: "auto" });
   await visitor.setViewportSize({ width: 1280, height: 720 });
+  const phoneContext = await browser.newContext({ baseURL: portalUrl(slug), viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const phone = await phoneContext.newPage();
+  await phone.goto("/docs/installing-acme");
+  const phoneArticle = phone.getByRole("article", { name: "Installing Acme" });
+  const phoneConfig = phoneArticle.getByRole("figure", { name: "acme.json" }).locator("pre");
+  await expect.poll(() => shown(phoneConfig)).toEqual({ bar: "1", fade: "48px", scrollbar: "none" });
+  await checkpoint(phone, "portal-article-code-phone");
+  await phoneConfig.locator("code").evaluate((code) => code.scrollTo({ left: code.scrollWidth }));
+  await expect.poll(() => shown(phoneConfig)).toEqual({ bar: "1", fade: "0px", scrollbar: "none" });
+  await expect.poll(() => shown(phoneArticle.locator(".rich-code-tabs > pre:visible"))).toEqual({ bar: "0", fade: "0px", scrollbar: "none" });
 
   // In Markdown, each tab under its label.
   const markdown = await (await visitor.request.get(`${portalUrl(slug)}/docs/installing-acme.md`)).text();

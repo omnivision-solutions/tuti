@@ -759,8 +759,9 @@
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
-/* A long line (scroll-driven, so no script; nothing shows when the code fits): a wide fade at the end with more, and a
-   thin bar under the code that's always there, unlike a phone's own scroll bar (hidden, so there aren't two). */
+/* A long line (scroll-driven, so no script; nothing shows when the code fits): a wide fade at the end with more, and on a
+   touch screen a thin bar under the code that's always there, unlike its own scroll bar (hidden, so there aren't two). A
+   mouse keeps the browser's scroll bar to drag. */
 @supports (animation-timeline: scroll()) and (timeline-scope: none) {
   :root:has([data-portal-top]) .article-text :where(pre) {
     timeline-scope: --code-scroll;
@@ -771,23 +772,27 @@
     animation: rich-scroll-fade linear both;
     animation-timeline: scroll(self inline);
     scroll-timeline: --code-scroll inline;
-    scrollbar-width: none;
   }
-  :root:has([data-portal-top]) .article-text :where(pre)::after {
-    content: "";
-    position: absolute;
-    right: 1.5rem;
-    bottom: 0.375rem;
-    left: 1.5rem;
-    height: 0.25rem;
-    border-radius: 9999px;
-    background:
-      linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground)) 0 0 / 35% 100% no-repeat,
-      var(--color-border);
-    opacity: 0;
-    pointer-events: none;
-    animation: code-scroll-bar linear both;
-    animation-timeline: --code-scroll;
+  @media (pointer: coarse) {
+    :root:has([data-portal-top]) .article-text :where(pre > code) {
+      scrollbar-width: none;
+    }
+    :root:has([data-portal-top]) .article-text :where(pre)::after {
+      content: "";
+      position: absolute;
+      right: 1.5rem;
+      bottom: 0.375rem;
+      left: 1.5rem;
+      height: 0.25rem;
+      border-radius: 9999px;
+      background:
+        linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground)) 0 0 / 35% 100% no-repeat,
+        var(--color-border);
+      opacity: 0;
+      pointer-events: none;
+      animation: code-scroll-bar linear both;
+      animation-timeline: --code-scroll;
+    }
   }
 }
 @keyframes code-scroll-bar {
