@@ -9,7 +9,7 @@ const nextConfig = (phase: string): NextConfig => ({
       .filter(Boolean) ?? [],
   env: {
     // Where links to the app go (src/app/links.ts). In production nowhere else: the domain sends /app, /api, /_tuti and
-    // /help to the app, the rest here (README, "Production routing"). In development the app is its own dev server.
+    // /help to the app, the rest here (docs/self-hosting.md, "Production routing"). In development the app is its own dev server.
     APP_LINKS: phase === PHASE_DEVELOPMENT_SERVER ? new URL(process.env.APP_URL || "http://localhost:3100").origin : "",
   },
 });

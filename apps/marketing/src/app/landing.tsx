@@ -320,7 +320,7 @@ function Bento() {
   );
 }
 
-// The README's Self-hosting steps, as it writes them: its web image, run with its variables in .env.
+// docs/self-hosting.md's Self-hosting steps, as it writes them: its web image, run with its variables in .env.
 const SELF_HOST = [`git clone ${REPO_URL}`, "cd tuti", "docker build -f apps/web/Dockerfile -t tuti-web .", "docker run -p 3000:3000 --env-file .env tuti-web"];
 
 function OpenSource() {
@@ -354,7 +354,7 @@ function OpenSource() {
                 ))}
               </pre>
             </div>
-            <a className="btn btn-d" href={`${REPO_URL}#self-hosting`}>
+            <a className="btn btn-d" href={`${REPO_URL}/blob/main/docs/self-hosting.md#self-hosting`}>
               <GithubMark className="size-4.5" /> Self-host free
             </a>
           </div>

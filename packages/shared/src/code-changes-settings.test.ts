@@ -134,9 +134,9 @@ test("the settings are read once, until reset", () => {
   expect(codeChangesSettings().decisions.gate).toBe(0.8);
 });
 
-test("the README's table of the settings matches them", () => {
-  const readme = readFileSync(new URL("../../../README.md", import.meta.url), "utf8");
-  expect(readme, `README.md's table of Autopilot's settings should be:\n${codeChangesSettingsTable()}`).toContain(codeChangesSettingsTable());
+test("docs/self-hosting.md's table of the settings matches them", () => {
+  const readme = readFileSync(new URL("../../../docs/self-hosting.md", import.meta.url), "utf8");
+  expect(readme, `docs/self-hosting.md's table of Autopilot's settings should be:\n${codeChangesSettingsTable()}`).toContain(codeChangesSettingsTable());
   // Every default is inside its own range.
   expect(() => readCodeChangesSettings(readCodeChangesSettings({}).inUse)).not.toThrow();
   expect(CODE_CHANGES_SETTINGS.decisions.model.default).toBe(decisionModel());

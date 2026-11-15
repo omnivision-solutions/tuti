@@ -30,7 +30,7 @@ export const viewport: Viewport = { themeColor: "#faf8f3" };
 
 /**
  * Tuti's marketing site (tuti.so): its pages under one header and footer. Light only (no theme: the app's dark mode is
- * a class this site never sets). The app is another app on the same domain (README, "Production routing").
+ * a class this site never sets). The app is another app on the same domain (docs/self-hosting.md, "Production routing").
  */
 export default function MarketingLayout({ children }: LayoutProps<"/">) {
   // Tuti's own project, whose widget every page carries (tuti.so: "help"); unset (a self-hosted build), no widget.
