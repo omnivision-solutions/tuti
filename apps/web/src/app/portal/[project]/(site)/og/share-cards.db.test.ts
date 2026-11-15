@@ -8,6 +8,8 @@ import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)
 import { generateMetadata as layoutMetadata } from "@/app/portal/[project]/(site)/layout";
 import { metadata as signInMetadata } from "@/app/portal/[project]/(site)/sign-in/page";
 import { portalUrl } from "@/lib/hosts";
+import { createArticle, createCollection, publishArticle } from "@/server/operations/docs";
+import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { GET as shareImage } from "./[[...path]]/route";
@@ -92,7 +94,35 @@ test("a Team only board's name is in neither its metadata nor a card", async () 
   expect((await image(project.slug, ["feedback", board.slug])).status).toBe(404);
 });
 
-test("the team's own share image is on the page the portal opens on; every other page has its card", async () => {
+test("the docs' cards follow who may read them: a collection for people signed in has none for anyone else", async () => {
+  const { owner, project } = await portalWithPost();
+  const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+  const { slug: collection } = await call(createCollection, as(), { name: "Billing" });
+  const { slug } = await call(createArticle, as(), { title: "Changing your plan", body: "From Settings.", collection });
+  await call(publishArticle, as(), { slug });
+  const article = await image(project.slug, ["docs", slug]);
+  expect(article.status).toBe(200);
+  expect(article.headers.get("cache-control")).toBe("public, max-age=3600");
+  expect((await image(project.slug, ["docs", collection])).status).toBe(200);
+  expect((await image(project.slug, ["docs"])).status).toBe(200);
+  await prisma.collection.update({ where: { projectId_slug: { projectId: project.id, slug: collection } }, data: { access: "SIGNED_IN", noAccess: "HIDE" } });
+  expect((await image(project.slug, ["docs", collection])).status).toBe(404);
+  expect((await image(project.slug, ["docs", slug])).status).toBe(404);
+});
+
+test("the portal's own card, its sections' and a title in any script: made here, with nothing fetched", async () => {
+  const { owner, project, board } = await portalWithPost();
+  await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 7 } }, data: { title: "Łódź, 東京 and Привет 🎉" } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, createdById: owner.id, number: 1, title: "Hello", body: "", publishedAt: new Date() } });
+  const fetches = vi.spyOn(globalThis, "fetch");
+  for (const path of [[], ["feedback"], ["roadmap"], ["changelog"], ["changelog", "page", "2"], ["feedback", board.slug, "dark-mode-7"]]) {
+    expect((await image(project.slug, path)).status).toBe(200);
+  }
+  expect(fetches).not.toHaveBeenCalled();
+  expect((await image(project.slug, ["nothing-here"])).status).toBe(404);
+});
+
+test("the page the portal opens on has the team's own description and share image; every other page has its card", async () => {
   const s3 = await startS3Fake();
   onTestFinished(() => s3.close());
   for (const [name, value] of Object.entries(s3.env)) {
@@ -101,10 +131,13 @@ test("the team's own share image is on the page the portal opens on; every other
   const { owner, project, board, portal } = await portalWithPost();
   const media = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 1200, height: 630 } });
   await prisma.project.update({ where: { id: project.id }, data: { seoImageId: media.id } });
+  await prisma.project.update({ where: { id: project.id }, data: { seoDescription: "Ideas for Acme." } });
   // One board: the portal opens on it.
-  const own = (await boardMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug }) } as never)).openGraph?.images;
-  expect(own).toEqual([expect.objectContaining({ url: expect.stringContaining(media.id), width: 1200, height: 630 })]);
+  const home = await boardMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug }) } as never);
+  expect(home.description).toBe("Ideas for Acme.");
+  expect(home.openGraph?.images).toEqual([expect.objectContaining({ url: expect.stringContaining(media.id), width: 1200, height: 630 })]);
   expect(await postMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-7" }) } as never)).toMatchObject({
+    description: "Easier on the eyes at night.",
     openGraph: { images: [{ url: `${portal}/og/feedback/${board.slug}/dark-mode-7` }] },
   });
 });

@@ -4,18 +4,24 @@ import { imageKey, imageWidths } from "@tuti/content/media";
 import { log } from "@tuti/shared";
 import { readableOn, SURFACES } from "@tuti/shared/colors";
 import { mediaStorage } from "@tuti/shared/storage";
-import { ImageResponse } from "next/og";
+import satori from "satori";
 import sharp from "sharp";
 
 import type { Branding } from "@/server/operations/branding";
 
-/** Static cuts of the portal's default fonts (packages/ui's, as the portal shows them without the team's own): the image renderer reads TTF only. */
+/**
+ * Static cuts of the brand fonts (packages/ui's) with every Latin script they have, and Noto Sans for Cyrillic and Greek
+ * (scripts/fetch-fonts.mjs makes them): the image renderer reads neither WOFF2 nor variable fonts.
+ */
 const fonts = Promise.all(
   (
     [
       ["Bricolage Grotesque", "bricolage-grotesque-700.ttf", 700],
       ["Figtree", "figtree-500.ttf", 500],
       ["Figtree", "figtree-700.ttf", 700],
+      // Cyrillic and Greek, which the brand fonts don't have.
+      ["Noto Sans", "noto-sans-500.ttf", 500],
+      ["Noto Sans", "noto-sans-700.ttf", 700],
     ] as const
   ).map(async ([name, file, weight]) => ({ name, weight, style: "normal" as const, data: await readFile(new URL(`../fonts/og/${file}`, import.meta.url)) })),
 );
@@ -40,15 +46,18 @@ export type ShareCard = {
  * A portal page's link card (1200×630 PNG): the portal's logo (or name) and colour, the page's title big and bold, what
  * it is above it and a few facts under it, and the portal's address. In the portal's look: dark if the team made it dark.
  */
-export async function shareCard(site: { project: { name: string }; brand: Branding }, card: ShareCard, address: string, headers: Record<string, string>) {
+export async function shareCard(site: { project: { name: string }; brand: Branding }, card: ShareCard, address: string, headers: Record<string, string>): Promise<Response> {
   const theme = THEMES[site.brand.colorScheme === "dark" ? "dark" : "light"];
   const color = site.brand.color ?? TUTI_GREEN;
   // The accent as text: the nearest shade of it that reads on the page (as the portal's own accent), else the text colour.
   const accent = readableOn(color, theme.surface, 4.5) ?? theme.text;
   const logo = await logoImage(site.brand.colorScheme === "dark" ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo);
-  const title = card.title.length > 90 ? `${card.title.slice(0, 88).trimEnd()}…` : card.title;
+  const shown = { title: drawable(card.title), eyebrow: drawable(card.eyebrow), facts: card.facts?.map(drawable) };
+  const title = shown.title.length > 90 ? `${shown.title.slice(0, 88).trimEnd()}…` : shown.title;
   const host = address.replace(/^https?:\/\//, "");
-  return new ImageResponse(
+  // Satori itself, not next/og: for a character its fonts don't have, next/og fetches a font from Google Fonts with the text
+  // in the address (a private post's title too), which a server without the internet can't do either.
+  const svg = await satori(
     (
       <div
         style={{
@@ -77,7 +86,7 @@ export async function shareCard(site: { project: { name: string }; brand: Brandi
             {logo && site.brand.logoText && <div style={{ fontSize: 36, fontWeight: 700, marginLeft: 18 }}>{site.brand.logoText}</div>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, justifyContent: "center", paddingBottom: 24 }}>
-            {card.eyebrow && <div style={{ fontSize: 30, fontWeight: 700, color: accent, marginBottom: 20, display: "flex" }}>{card.eyebrow}</div>}
+            {shown.eyebrow && <div style={{ fontSize: 30, fontWeight: 700, color: accent, marginBottom: 20, display: "flex" }}>{shown.eyebrow}</div>}
             <div
               style={{
                 fontFamily: "Bricolage Grotesque",
@@ -92,9 +101,9 @@ export async function shareCard(site: { project: { name: string }; brand: Brandi
             >
               {title}
             </div>
-            {card.facts && card.facts.length > 0 && (
+            {shown.facts && shown.facts.length > 0 && (
               <div style={{ display: "flex", gap: 14, marginTop: 34 }}>
-                {card.facts.map((fact) => (
+                {shown.facts.map((fact) => (
                   <div key={fact} style={{ display: "flex", fontSize: 26, fontWeight: 500, color: theme.muted, background: theme.chip, borderRadius: 9999, padding: "8px 22px" }}>
                     {fact}
                   </div>
@@ -109,9 +118,17 @@ export async function shareCard(site: { project: { name: string }; brand: Brandi
         <div style={{ display: "flex", height: 14, background: color }} />
       </div>
     ),
-    { width: 1200, height: 630, fonts: await fonts, headers },
+    { width: 1200, height: 630, fonts: await fonts },
   );
+  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", ...headers } });
 }
+
+/**
+ * Text as the card can draw it: without emoji (the fonts have none; a box would show in its place).
+ * ponytail: scripts the fonts lack (Chinese, Japanese, Arabic…) still show as boxes; bundle Noto subsets for them when portals need it.
+ */
+const drawable = (text: string) => text.replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").replace(/\s{2,}/g, " ").trim();
 
 /**
  * The logo as a PNG (the renderer can't read the stored WebP), at most 64px tall and 520 wide; null without one, or if

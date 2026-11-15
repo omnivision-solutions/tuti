@@ -38,7 +38,8 @@ export async function portalPageMetadata(
 ): Promise<Metadata> {
   const [address, site, home] = await Promise.all([portalAddress(slug), portalSite(slug), portalHomePath(slug)]);
   const url = `${address}${page.path === "/" ? "" : page.path}`;
-  const description = page.description || undefined;
+  // The page the portal opens on is the portal in search results: its own description (Customize → SEO) there, if the team wrote one.
+  const description = (page.path === home && site?.brand.seo.description) || page.description || undefined;
   const { publishedTime, modifiedTime } = page.article ?? {};
   return {
     title: page.title,
@@ -49,7 +50,7 @@ export async function portalPageMetadata(
       ...(description && { description }),
       url,
       ...(site && { siteName: site.name }),
-      // The team's own share image (Customize → SEO) on the page their portal opens on, as at its address; a card made for every other page.
+      // The team's own share image (Customize → SEO) on that page too, as at the portal's address; a card made for every other page.
       images: [
         site?.brand.seoImage && page.path === home
           ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }

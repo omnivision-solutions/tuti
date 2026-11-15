@@ -145,6 +145,9 @@ test("the team sets the portal's search listing, seeing it as a search result an
   const card = await visitor.request.get(`${portalUrl(slug)}/og/roadmap`);
   expect(card.status()).toBe(200);
   expect(card.headers()["content-type"]).toBe("image/png");
+  // The page the portal opens on is the portal in search results: the team's description.
+  await visitor.goto("/");
+  await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", "Answers about Acme, from the team that makes it.");
   await visitor.goto("/sign-in");
   await expect(visitor).toHaveTitle("Sign in · Acme Help Center");
   await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", "Answers about Acme, from the team that makes it.");
