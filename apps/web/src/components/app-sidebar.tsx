@@ -293,11 +293,16 @@ function initials(name: string) {
 /** "(3) Inbox": the open conversations before every page's title, kept there as pages change it. */
 function useOpenCountInTitle(count: number) {
   useEffect(() => {
+    // The page's own title, and the one this put there: only that count comes off, never a "(2) …" a post's title starts with.
+    let base = document.title;
+    let shown: string | null = null;
     const apply = () => {
-      const base = document.title.replace(/^\(\d+\) /, "");
-      const next = count > 0 ? `(${count}) ${base}` : base;
-      if (document.title !== next) {
-        document.title = next;
+      if (document.title !== shown) {
+        base = document.title;
+      }
+      shown = count > 0 ? `(${count}) ${base}` : base;
+      if (document.title !== shown) {
+        document.title = shown;
       }
     };
     apply();
@@ -305,7 +310,9 @@ function useOpenCountInTitle(count: number) {
     observer.observe(document.head, { childList: true, subtree: true, characterData: true });
     return () => {
       observer.disconnect();
-      document.title = document.title.replace(/^\(\d+\) /, "");
+      if (document.title === shown) {
+        document.title = base;
+      }
     };
   }, [count]);
 }

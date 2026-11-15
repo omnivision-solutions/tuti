@@ -8,6 +8,7 @@ import { AiPaused } from "@/components/ai-paused";
 import { type CommandItem, CommandMenu } from "@/components/command-menu";
 import { LiveRefresh } from "@/components/inbox/live-refresh";
 import { TrialNotice } from "@/components/trial-notice";
+import { pageTitle } from "@/lib/page-title";
 import { settingsGroups } from "@/lib/settings-pages";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -15,7 +16,7 @@ import { getMembership, isAdminRole } from "@/server/membership";
 /** Tabs say the page, then the project ("Inbox · Acme"); nothing for someone off its team, whose page is a 404. */
 export async function generateMetadata({ params }: LayoutProps<"/app/[project]">): Promise<Metadata> {
   const membership = await getMembership((await params).project);
-  return membership ? { title: { template: `%s · ${membership.project.name}`, default: membership.project.name } } : {};
+  return membership ? { title: { template: `%s · ${membership.project.name}`, default: pageTitle(membership.project.name) } } : {};
 }
 
 /** Project pages are for the project's team only (the shell comes from /app); out of AI credits, or on a free trial, every page says so. */

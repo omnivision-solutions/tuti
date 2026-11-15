@@ -35,29 +35,33 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   // Signed in: the page, then the project ("Inbox · Acme"); a post's tab is its title.
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(owner, "Acme", slug);
+  await createProject(owner, "Acme $$", slug);
   // Home, in the same segment as the project's template: the project, then Tuti.
-  await expect(owner).toHaveTitle("Acme · Tuti");
+  await expect(owner).toHaveTitle("Acme $$ · Tuti");
   expect(await meta(owner, 'name="robots"')).toBe("noindex, nofollow");
   const api = await apiFor(owner, slug);
-  await expect(owner).toHaveTitle("Developers · Settings · Acme");
+  await expect(owner).toHaveTitle("Developers · Settings · Acme $$");
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(owner).toHaveTitle("Inbox · Acme");
+  await expect(owner).toHaveTitle("Inbox · Acme $$");
   await owner.goto(`/app/${slug}/p/1`);
-  await expect(owner).toHaveTitle("Dark mode · Acme");
+  await expect(owner).toHaveTitle("Dark mode · Acme $$");
   await owner.goto(`/app/${slug}/docs`);
-  await expect(owner).toHaveTitle("Docs · Acme");
+  await expect(owner).toHaveTitle("Docs · Acme $$");
   // A conversation's subject, an article's title, a changelog entry's.
   await api("/conversations", { email: "e2e-asker@example.com", subject: "Charged $$ twice", body: "Two charges on my card this month." });
   await owner.goto(`/app/${slug}/inbox/1`);
-  await tabSays(owner, "Charged $$ twice · Acme");
+  await tabSays(owner, "Charged $$ twice · Acme $$");
   await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page." });
   await owner.goto(`/app/${slug}/docs/inviting-your-team`);
-  await tabSays(owner, "Inviting your team · Acme");
+  await tabSays(owner, "Inviting your team · Acme $$");
+  // After the count of open conversations, a post's own "(2)" stays.
+  await api("/posts", { board: "feature-requests", title: "(2) Export fails on Safari" });
+  await owner.goto(`/app/${slug}/p/2`);
+  await expect(owner).toHaveTitle("(1) (2) Export fails on Safari · Acme $$");
   await api("/changelog", { title: "Dark mode is here", body: "Everywhere." });
   await owner.goto(`/app/${slug}/changelog/1`);
-  await tabSays(owner, "Dark mode is here · Changelog · Acme");
+  await tabSays(owner, "Dark mode is here · Changelog · Acme $$");
 
   // An invite link: its tab says what it's for, like the page, while the card a shared link shows stays Tuti's.
   await owner.goto(`/app/${slug}/team`);
@@ -65,7 +69,7 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   await owner.getByRole("button", { name: "Send invite" }).click();
   const link = await owner.getByRole("alert").locator("code").innerText();
   await visitor.goto(link);
-  await expect(visitor).toHaveTitle("Join Acme · Tuti");
+  await expect(visitor).toHaveTitle("Join Acme $$ · Tuti");
   expect(await meta(visitor, 'property="og:title"')).toBe("Tuti");
   expect(await meta(visitor, 'name="twitter:title"')).toBe("Tuti");
   // Revoked, it names no project.
