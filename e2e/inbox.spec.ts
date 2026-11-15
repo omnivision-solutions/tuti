@@ -2020,6 +2020,9 @@ test("on a server selling plans, a new project's email is capped in its first we
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
   await setTodaysEmails(slug, { claimed: 200 });
   await owner.goto(`/app/${slug}/inbox/1`);
+  // Said over the reply box before Send.
+  const waits = owner.locator(".inbox-email-waits");
+  await expect(waits).toHaveText("Today's emails are used (a project's first week sends up to 200 a day): replies are emailed tomorrow.");
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Said as it's sent.
@@ -2028,14 +2031,92 @@ test("on a server selling plans, a new project's email is capped in its first we
   await expectMoreView(owner, /^Waiting on user 1/);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
-  await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
+  // Under the reply, in short (the whole reason as its title), on a line of its own where the author's doesn't fit.
+  // Shown short; the full reason is its tooltip and what screen readers hear.
+  await expect(owner.getByTitle("Emailed tomorrow: in its first week, a project sends up to 200 emails a day").locator("[aria-hidden]")).toHaveText("Emailed tomorrow");
+  await expect(owner.getByTitle("Emailed tomorrow: in its first week, a project sends up to 200 emails a day").locator(".sr-only")).toHaveText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day");
   await checkpoint(owner, "reply-waits-for-daily-cap");
   // Its plan's emails for the month used up too (Free: 1,000): it waits for next month, which the notice says over tomorrow.
   await setThisMonthsEmails(slug, 1000);
   await owner.reload();
-  await expect(owner.getByText("Emailed next month: your plan's emails for this month are used (Settings → Billing)")).toBeVisible();
-  await expect(owner.getByText("Emailed tomorrow: in its first week")).toHaveCount(0);
+  // Shown short; the full reason is its tooltip and what screen readers hear.
+  await expect(owner.getByTitle("Emailed next month: your plan's emails for this month are used (Settings → Billing)").locator("[aria-hidden]")).toHaveText("Emailed next month");
+  await expect(owner.getByTitle("Emailed next month: your plan's emails for this month are used (Settings → Billing)").locator(".sr-only")).toHaveText("Emailed next month: your plan's emails for this month are used (Settings → Billing)");
+  await expect(owner.getByText("Emailed tomorrow")).toHaveCount(0);
+  // Before the next Send, the reply box says so, and where to see the plan.
+  await expect(waits).toHaveText("This month's emails are used: replies are emailed next month. Billing");
+  await expect(waits.getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveAccessibleDescription(/^This month's emails are used: replies are emailed next month\./);
+  // A note isn't emailed: nothing to say on Note.
+  await owner.getByRole("tab", { name: "Note" }).click();
+  await expect(waits).toHaveCount(0);
+  await owner.getByRole("tab", { name: "Reply" }).click();
   await checkpoint(owner, "reply-waits-for-monthly-limit");
+  // On a phone, the author's line stays whole: the status wraps under it.
+  const viewport = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(waits).toBeVisible();
+  const byLine = owner.locator(".inbox-message-by").filter({ hasText: "Olive Owner" });
+  const author = await byLine.getByText(/^Olive Owner · /).boundingBox();
+  // One line (18px) for who and when, the short status beside it or under it, never squeezing it.
+  expect(author!.height).toBeLessThan(20);
+  await checkpoint(owner, "reply-waits-for-monthly-limit-phone");
+  // Narrower still, the status no longer fits beside it: it goes under it, whole, the author's line still one line.
+  await owner.setViewportSize({ width: 320, height: 700 });
+  const narrow = (await byLine.getByText(/^Olive Owner · /).boundingBox())!;
+  const held = (await byLine.getByText("Emailed next month", { exact: true }).boundingBox())!;
+  expect(narrow.height).toBeLessThan(20);
+  expect(held.height).toBeLessThan(20);
+  expect(held.y).toBeGreaterThanOrEqual(narrow.y + narrow.height);
+  // The mail icon stays on the author's line, not alone above it.
+  const icon = (await byLine.locator("svg").first().boundingBox())!;
+  expect(Math.abs(icon.y + icon.height / 2 - (narrow.y + narrow.height / 2))).toBeLessThan(4);
+  await owner.setViewportSize(viewport);
+  const db = async (sql: string, values: string[]) => {
+    const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query(sql, values);
+    } finally {
+      await client.end();
+    }
+  };
+  // A long status (a bounce's error) wraps inside the message's column on a phone, its start not cut off.
+  await db(
+    `UPDATE conversation_message m SET "emailStatus" = 'BOUNCED', "emailError" = $2 FROM conversation c, project p
+     WHERE m."conversationId" = c.id AND c."projectId" = p.id AND p.slug = $1 AND m.author = 'TEAM' AND NOT m.note AND m."emailStatus" IS NULL`,
+    [slug, "550 5.1.1 <e2e-kim@example.com>: Recipient address rejected: User unknown in virtual mailbox table"],
+  );
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  const bounced = owner.locator(".inbox-message-by").filter({ hasText: "The email bounced" }).first();
+  const line = (await bounced.boundingBox())!;
+  const text = (await bounced.getByText(/^The email bounced/).boundingBox())!;
+  expect(text.x).toBeGreaterThanOrEqual(line.x - 1);
+  expect(text.x + text.width).toBeLessThanOrEqual(line.x + line.width + 1);
+  await owner.setViewportSize(viewport);
+  // Held again, for what follows.
+  await db(
+    `UPDATE conversation_message m SET "emailStatus" = NULL, "emailError" = NULL FROM conversation c, project p
+     WHERE m."conversationId" = c.id AND c."projectId" = p.id AND p.slug = $1 AND m."emailError" = $2`,
+    [slug, "550 5.1.1 <e2e-kim@example.com>: Recipient address rejected: User unknown in virtual mailbox table"],
+  );
+  // A member gets the warning without the link: Settings is for owners and admins.
+  const member = await signUp(browser, CLOUD_URL, "Mo Member");
+  await db(
+    `INSERT INTO team_member (id, "projectId", "userId", role) SELECT gen_random_uuid()::text, p.id, u.id, 'MEMBER' FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, member.email],
+  );
+  await member.goto(`/app/${slug}/inbox/1`);
+  await expect(member.locator(".inbox-email-waits")).toHaveText("This month's emails are used: replies are emailed next month.");
+  await expect(member.locator(".inbox-email-waits").getByRole("link")).toHaveCount(0);
+  // A sample conversation's replies are never emailed: nothing to wait for.
+  const sample = (on: boolean) => db(`UPDATE conversation SET sample = ${on} WHERE number = 1 AND "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await sample(true);
+  await owner.reload();
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toBeVisible();
+  await expect(waits).toHaveCount(0);
+  await sample(false);
   await setThisMonthsEmails(slug, 0);
 
   // 2 of 100 bounced: paused, and the operator is told.
@@ -2043,7 +2124,10 @@ test("on a server selling plans, a new project's email is capped in its first we
   const told = countEmailsTo(APP_PORTAL_OWNER);
   await sesBounce(CLOUD_URL, projectId);
   await owner.reload();
-  await expect(owner.getByText("Not emailed while your project's email is paused (Settings → Inbox and email)")).toBeVisible();
+  // Shown short; the full reason is its tooltip and what screen readers hear.
+  await expect(owner.getByTitle("Not emailed while your project's email is paused (Settings → Inbox and email)").locator("[aria-hidden]")).toHaveText("Not emailed yet");
+  await expect(owner.getByTitle("Not emailed while your project's email is paused (Settings → Inbox and email)").locator(".sr-only")).toHaveText("Not emailed while your project's email is paused (Settings → Inbox and email)");
+  await expect(waits).toHaveText("Your project's email is paused: replies are emailed once it's on again. Settings");
   // The composer makes no promise that replies are emailed while they wait.
   await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
   await checkpoint(owner, "reply-waits-while-paused");

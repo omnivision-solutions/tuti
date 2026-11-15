@@ -2,6 +2,7 @@
 
 import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, MailIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { cn } from "cn";
 
@@ -65,8 +66,11 @@ export function ReplyForm({
   draftWithAi?: "on" | "paused" | "off";
   /** "Insert article": shown when the project has published articles a link can go to. */
   articles?: boolean;
-  /** Why a reply sent now isn't emailed yet (the project's email paused, or capped for today), said as it's sent. */
-  emailWaits?: string;
+  /**
+   * While a reply sent now isn't emailed yet (the project's email paused, capped for today, or its plan's emails for the month
+   * used): said over the reply box before Send (with where to see more, for owners and admins), and why as it's sent.
+   */
+  emailWaits?: { why: string; warning: string; link?: { label: string; href: string } };
 }) {
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
@@ -117,6 +121,7 @@ export function ReplyForm({
   const errorId = useId();
   const shortcutId = useId();
   const pausedId = useId();
+  const waitsId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
@@ -192,7 +197,7 @@ export function ReplyForm({
         // Said as it goes: closed, the next conversation opens in its place (with why it isn't emailed yet, which its
         // message says too).
         if (sending === "reply") {
-          toast.success("Sent", { description: emailWaits });
+          toast.success("Sent", { description: emailWaits?.why });
         }
         moved();
       }
@@ -235,6 +240,22 @@ export function ReplyForm({
           </Tabs>
           {!note && recipient && <span className="inbox-composer-to ml-auto truncate text-xs leading-normal text-muted-foreground">To {recipient}</span>}
         </div>
+        {!note && emailWaits && (
+          <p id={waitsId} className="inbox-email-waits -mx-2.5 -mt-1 mb-1 flex gap-1.5 border-b border-highlight-foreground/20 bg-highlight px-3 py-1.5 text-xs leading-normal text-highlight-foreground @max-[57rem]/app:-mx-2 [&>svg]:mt-0.75 [&>svg]:size-3.25 [&>svg]:flex-none">
+            <MailIcon aria-hidden />
+            <span>
+              {emailWaits.warning}
+              {emailWaits.link && (
+                <>
+                  {" "}
+                  <Link href={emailWaits.link.href} className="font-semibold underline underline-offset-2">
+                    {emailWaits.link.label}
+                  </Link>
+                </>
+              )}
+            </span>
+          </p>
+        )}
         <Field data-invalid={error ? true : undefined}>
           <Textarea
             ref={textarea}
@@ -258,7 +279,8 @@ export function ReplyForm({
             readOnly={pending}
             className={cn("inbox-reply-text min-h-10 border-0 bg-transparent px-1 py-0.75 text-sm shadow-none focus-visible:ring-0 aria-invalid:ring-0 dark:bg-transparent dark:aria-invalid:ring-0", note && "inbox-reply-note")}
             aria-invalid={error ? true : undefined}
-            aria-describedby={error ? errorId : undefined}
+            // The warning too: heard in the reply box, where Tab from the tabs goes (a member's has no link to stop at first).
+            aria-describedby={[error && errorId, !note && emailWaits && waitsId].filter(Boolean).join(" ") || undefined}
           />
           {error && <FieldError id={errorId}>{error}</FieldError>}
         </Field>

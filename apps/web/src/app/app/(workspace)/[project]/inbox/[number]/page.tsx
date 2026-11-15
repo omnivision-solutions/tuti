@@ -193,17 +193,35 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const blocked = person.email
     ? await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: person.email.toLowerCase() } }, select: { email: true } })
     : null;
-  const emailable = !conversation.spam && !!person.email && !blocked;
+  // A sample conversation's replies are never emailed (its person's address goes nowhere): nothing waits.
+  const emailable = !conversation.spam && !conversation.sample && !!person.email && !blocked;
   const waitsForPause = emailPaused && emailable;
   const monthFull = !emailPaused && emailable && (await monthlyLimitReached(projectId));
   const capped = !emailPaused && emailable && !monthFull && (await cappedProjects()).includes(projectId);
-  const waits = waitsForPause
-    ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
+  // Why: in the toast as a reply is sent, and as the title of its held message's short status. Warning: over the reply box, before Send,
+  // with where to see more (for owners and admins: nobody else can open Settings).
+  const admin = isAdminRole(membership.role);
+  const wait = waitsForPause
+    ? {
+        status: "Not emailed yet",
+        why: "Not emailed while your project's email is paused (Settings → Inbox and email)",
+        warning: "Your project's email is paused: replies are emailed once it's on again.",
+        link: admin ? { label: "Settings", href: `/app/${slug}/settings/support` } : undefined,
+      }
     : monthFull
-      ? "Emailed next month: your plan's emails for this month are used (Settings → Billing)"
+      ? {
+          status: "Emailed next month",
+          why: "Emailed next month: your plan's emails for this month are used (Settings → Billing)",
+          warning: "This month's emails are used: replies are emailed next month.",
+          link: admin ? { label: "Billing", href: `/app/${slug}/settings/billing` } : undefined,
+        }
       : capped
-      ? `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`
-      : undefined;
+        ? {
+            status: "Emailed tomorrow",
+            why: `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`,
+            warning: `Today's emails are used (a project's first week sends up to ${NEW_PROJECT_EMAILS_PER_DAY} a day): replies are emailed tomorrow.`,
+          }
+        : undefined;
   const online =
     conversation.userId || conversation.visitorHash
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
@@ -230,7 +248,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           ? "Imported from Featurebase"
           : message.emailStatus
             ? EMAIL_STATUS[message.emailStatus](message.emailError)
-            : waits || undefined;
+            : wait?.status;
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
@@ -344,17 +362,32 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </details>
                             )}
                           </div>
-                          <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "h-0 overflow-hidden pt-0 mb-0 in-[li:has(+li_.inbox-day)]:h-auto in-[li:has(+li_.inbox-day)]:pt-0.75 in-[li:has(+li_.inbox-day)]:mb-2")}
+                          <p className={cn("inbox-message-by m-0 mb-2 flex flex-wrap items-center gap-x-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "h-0 overflow-hidden pt-0 mb-0 in-[li:has(+li_.inbox-day)]:h-auto in-[li:has(+li_.inbox-day)]:pt-0.75 in-[li:has(+li_.inbox-day)]:mb-2")}
                             // Folded, it's said from the copy below instead (a line of no height can be skipped).
                             aria-hidden={runs || undefined}
                           >
-                            {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
-                            {!message.note && `${name} · `}
-                            {timeAgo(message.createdAt)} {status && <span>{status}</span>}
+                            {/* The icon, who and when as one, the status after it, wrapping as a whole onto a line of its own where they don't fit. */}
+                            <span className="inline-flex min-w-0 items-center gap-x-1.25">
+                              {message.note ? <LockKeyholeIcon aria-hidden className="size-3.25 flex-none" /> : <MailIcon aria-hidden className="size-3.25 flex-none" />}
+                              <span className="min-w-0">
+                                {!message.note && `${name} · `}
+                                {timeAgo(message.createdAt)}
+                              </span>
+                            </span>
+                            {/* Held: the short status shows whole, and the full reason is its tooltip and what screen readers hear. */}
+                            {status && (status === wait?.status ? (
+                              <span className="whitespace-nowrap" title={wait.why}>
+                                <span aria-hidden>{status}</span>
+                                <span className="sr-only">{wait.why}</span>
+                              </span>
+                            ) : (
+                              // Others (a bounce's error, a complaint) can be long: they wrap, inside the column.
+                              <span className="min-w-0 wrap-anywhere">{status}</span>
+                            ))}
                           </p>
                           {runs && (
                             <p className="sr-only">
-                              {name} · {timeAgo(message.createdAt)} {status}
+                              {name} · {timeAgo(message.createdAt)} {wait && status === wait.status ? wait.why : status}
                             </p>
                           )}
                         </div>
@@ -382,7 +415,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // "Insert article": once there's an article they can be sent (what its search finds).
                   articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
-                  emailWaits={waits}
+                  emailWaits={wait && { why: wait.why, warning: wait.warning, link: wait.link }}
                 />
               </div>
             </div>
