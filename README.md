@@ -69,7 +69,7 @@ All of it also lives in **one widget** inside your app: search help, send a mess
 
 ## Looks like your product, not ours
 
-Your name, colour and fonts, light or dark, on your own domain. The widget matches too, down to its greeting and icon. Customers see your brand, start to finish.
+Your name, colour and fonts, light or dark. The widget matches too, down to its greeting. Customers see your brand, start to finish.
 
 <p align="center">
   <img src=".github/assets/theming.gif" alt="One help center with its widget open, restyled as eight different brands: colours, fonts, greetings and light or dark mode">
@@ -80,7 +80,7 @@ Your name, colour and fonts, light or dark, on your own domain. The widget match
 - **Docs that stay true.** Articles are checked against your code, so what you ship and what you say match.
 - **Answers, not search results.** AI answers come from your own help center, in the widget and on the site.
 - **Bring everything with you.** Import from Intercom, Featurebase, Canny and more, and keep your old links working.
-- **Built for your agents too.** Everything Tuti does is in its REST API and MCP server.
+- **Built for your agents too.** Your help center, inbox, feedback and changelog are all in its REST API and MCP server.
 - **Open source.** Read every line, suggest changes, or run it on your own servers.
 
 ## Get started
