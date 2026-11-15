@@ -150,7 +150,12 @@ export function AuthForm({
           </p>
           <button
             type="button"
+            // Not while a link is on its way: its answer is about this address.
+            aria-disabled={pending}
             onClick={() => {
+              if (pending) {
+                return;
+              }
               setEmail(sentTo);
               setChangingEmail(true);
               setSentTo(undefined);
