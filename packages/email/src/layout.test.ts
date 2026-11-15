@@ -5,9 +5,13 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { changelogEmail } from "./changelog-email";
 import { conversationEmail } from "./conversation-email";
+import { creditsEmail } from "./credits-email";
+import { emailLimitEmail } from "./email-limit-email";
 import { inviteEmail } from "./invite-email";
 import { accentColors, colors, Eyebrow, Note, POWERED_BY_URL, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
+import { verifyAllEmail } from "./verify-all-email";
+import { verifyArticleEmail } from "./verify-article-email";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -117,4 +121,17 @@ test("the building blocks bodies share: the line over the title in the accent's 
   expect(html).toMatch(/color:#cb4c0a[^>]*>New reply</);
   expect(html).toMatch(/<h1[^>]*>Dark mode<\/h1>/);
   expect(html).toMatch(new RegExp(`background-color:#fff4ea;color:${colors.onHighlight}[^>]*>Too many bounced.<`));
+});
+
+test("Tuti's own emails name the part of Tuti they're from: Verify for Verify's, Billing for credits and the email limit", async () => {
+  const url = "https://tuti.example/x";
+  const labels = await Promise.all(
+    [
+      verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 1, outdated: 1, unclear: 0 }, reason: "Moved.", url }),
+      verifyAllEmail({ projectName: "Acme", checked: 2, total: 2, fixed: ["Export"], stopped: "", url }),
+      creditsEmail({ projectName: "Acme", out: false, left: "120", url }),
+      emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "", url }),
+    ].map(async (email) => (await render(email.body)).match(/>(Verify|Billing|Autopilot|Inbox)<\/p>/)?.[1]),
+  );
+  expect(labels).toEqual(["Verify", "Verify", "Billing", "Billing"]);
 });
