@@ -64,7 +64,7 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
     expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
     expect(email!.text).toContain("OWNER FROM");
     // The post's card: its votes, board, title and status.
-    expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} Feature requests Dark mode Open`);
+    expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} ${voteCount === 1 ? "vote" : "votes"} Feature requests Dark mode Open`);
     expect(email!.text).toContain("Dark mode ships next week.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
     // The person's token for this project (projectUnsubscribeToken), never their bare one.

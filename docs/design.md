@@ -21,7 +21,8 @@ cute at the expense of clarity.
   Emails from Tuti to a team have the parrot and the green wordmark at the top, with the part of Tuti they're from
   (Inbox, Verify, Billing, Autopilot) muted beside it, on the cream page with green buttons, and always end with the
   pill in Tuti's colours. Both: a white card with 16px corners and a soft shadow, the reason under it.
-  In the card (`packages/email`): a line over the heading in the accent (`Eyebrow`, `Title`), then the body. A post is
+  In the card (`packages/email`): a heading (`Title`), over it a line in the accent saying what the email is about
+  (`Eyebrow`; none on sign-in links and passwords, whose heading says it), then the body. A post is
   its card (`PostCard`: the votes in a box, its board over its title, its status as the portal's pill, in the portal's
   hues); someone's message is their initial in their avatar colour, their name, "<Project> team" tinted in the accent
   for the team's, and the text in a soft rounded fill (`Message`); asides are soft rounded notes (`Note`). Layout is

@@ -13,7 +13,8 @@ export function ConversationReplyEmail({ projectName, messages, subject, accent,
   return (
     <Layout preview={messages[0]?.body.slice(0, 120) ?? ""} project={{ projectName, accent, poweredBy }} footer={<>Reply to this email to answer {projectName}.</>}>
       {messages.map((message, i) => (
-        <Message key={i} name={message.name} team={`${projectName} team`} accent={accent}>
+        // A message with no teammate's name is the project's own: no "Acme Acme team".
+        <Message key={i} name={message.name} team={message.name === projectName ? undefined : `${projectName} team`} accent={accent}>
           {message.body}
         </Message>
       ))}

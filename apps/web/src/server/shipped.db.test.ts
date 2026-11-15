@@ -71,7 +71,7 @@ describe("when a post ships", () => {
       expect(more).toEqual([]);
       expect(email!.subject).toBe("Done: Dark mode");
       // The post's card: its votes, board, title and status.
-      expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} Feature requests Dark mode Completed`);
+      expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} ${voteCount === 1 ? "vote" : "votes"} Feature requests Dark mode Completed`);
       expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
       expect(email!.headers["list-unsubscribe"]).toMatch(
         new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[^.>]+\\.[\\w-]+>$`),

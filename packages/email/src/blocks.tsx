@@ -1,5 +1,7 @@
 import { Text } from "@react-email/components";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+
+import { luminance, readableOn } from "@tuti/shared/colors";
 
 import { accentColors, colors } from "./layout";
 
@@ -63,8 +65,10 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
                       <span aria-hidden="true" data-skip-in-text="true" style={{ display: "block", fontSize: 9, lineHeight: "12px", color: "#57534e" }}>
                         &#9650;
                       </span>
-                      <span style={{ display: "block", fontSize: 14, lineHeight: "18px", fontWeight: 700, color: colors.text }}>
+                      {/* The box says it's votes to the eye; the label to screen readers, the hidden word to the plain text. */}
+                      <span role="img" aria-label={`${votes} ${votes === 1 ? "vote" : "votes"}`} style={{ display: "block", fontSize: 14, lineHeight: "18px", fontWeight: 700, color: colors.text }}>
                         {votes}
+                        <span style={{ display: "none", msoHide: "all" } as CSSProperties}> {votes === 1 ? "vote" : "votes"}</span>
                       </span>
                     </td>
                   </tr>
@@ -74,7 +78,7 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
           )}
           <td style={{ padding: 14, verticalAlign: "middle" }}>
             {board && <div style={{ fontSize: 12, lineHeight: "16px", color: colors.muted }}>{board}</div>}
-            <div style={{ fontSize: 15, lineHeight: "21px", fontWeight: 600, color: colors.text }}>{title}</div>
+            <div style={{ fontSize: 15, lineHeight: "21px", fontWeight: 600, color: colors.text, wordBreak: "break-word" }}>{title}</div>
           </td>
           {pill && (
             <td align="right" style={{ padding: "14px 14px 14px 0", verticalAlign: "middle", whiteSpace: "nowrap" }}>
@@ -108,7 +112,10 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
  * the accent; then the text in a soft rounded fill.
  */
 export function Message({ name, team, accent, children }: { name: string; team?: string; accent?: string | null; children?: ReactNode }) {
+  // The tag's text judged against its own tint (4.5:1 at its size), not the page.
   const link = accentColors(accent).link;
+  const fill = tint(link, 0.1);
+  const tagText = readableOn(link, luminance(fill), 4.5) ?? colors.text;
   return (
     <>
       <table {...table} style={{ margin: "18px 0 8px", borderCollapse: "separate" }}>
@@ -129,7 +136,7 @@ export function Message({ name, team, accent, children }: { name: string; team?:
               {team && (
                 <>
                   {" "}
-                  <span style={{ display: "inline-block", marginLeft: 4, fontSize: 12, lineHeight: "16px", fontWeight: 600, padding: "1px 8px", borderRadius: 999, backgroundColor: tint(link, 0.1), color: link }}>
+                  <span style={{ display: "inline-block", marginLeft: 4, fontSize: 12, lineHeight: "16px", fontWeight: 600, padding: "1px 8px", borderRadius: 999, backgroundColor: fill, color: tagText }}>
                     {team}
                   </span>
                 </>
