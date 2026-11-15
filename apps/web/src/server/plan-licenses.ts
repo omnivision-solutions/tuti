@@ -1,0 +1,91 @@
+"use server";
+
+import { type Prisma, prisma } from "@tuti/db";
+import { applyPlanLicense, grantLicenseCredits, lockPlanLicense, lockProject, releasePlanLicense } from "@tuti/jobs";
+import { onDefaultPlan } from "@tuti/shared";
+import { refresh } from "next/cache";
+
+import { getAdminProject } from "./membership";
+import { getAccountSession } from "./session";
+
+/**
+ * Plan licenses (docs/plan.md, Plan licenses; packages/jobs/src/plan-licenses.ts): an account's licenses, each assigned to
+ * at most one project its owner owns or administers, and a project with at most one. Licenses belong to a person, not a
+ * project, so these are the app's actions only: a project's API key can't move its creator's licenses.
+ */
+
+class Refused extends Error {}
+
+/** Takes the change in a transaction holding the license's row (if `userId` holds it) and the project's. */
+async function change(userId: string, licenseId: string, run: (tx: Prisma.TransactionClient) => Promise<void>) {
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (!(await lockPlanLicense(tx, licenseId)) || !(await tx.planLicense.count({ where: { id: licenseId, userId } }))) {
+        throw new Refused("That license isn't on your account");
+      }
+      await run(tx);
+    });
+  } catch (error) {
+    if (error instanceof Refused) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  refresh();
+  return {};
+}
+
+/**
+ * "Assign" a license on the account to a project its holder owns or administers: the project's plan is the license's
+ * from now on, and it gets the plan's AI credits for the month. Refused while the license is on another project or
+ * revoked, while the project has a license, and while it pays for a plan through Stripe (cancel that first, so nobody
+ * pays twice) or has a plan set by hand.
+ */
+export async function assignPlanLicense(projectSlug: string, licenseId: string): Promise<{ error?: string }> {
+  const [session, project] = await Promise.all([getAccountSession(), getAdminProject(projectSlug)]);
+  if (!session || !project) {
+    return { error: "Only project owners and admins can change the plan" };
+  }
+  const result = await change(session.user.id, String(licenseId), async (tx) => {
+    const license = await tx.planLicense.findUniqueOrThrow({ where: { id: licenseId }, select: { projectId: true, revokedAt: true } });
+    if (license.projectId === project.id) {
+      return;
+    }
+    if (license.revokedAt) {
+      throw new Refused("This license was revoked by where it came from, so it gives no plan");
+    }
+    if (license.projectId) {
+      throw new Refused("This license is on another project. Unassign it there first.");
+    }
+    await lockProject(tx, project.id);
+    // Stripe's webhook's lock for the project too (syncSubscription): a subscription starting now waits, and then
+    // finds the license.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${project.id}))`;
+    // The plan as stored (trialEndsAt selected: see @tuti/db).
+    const current = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, trialEndsAt: true, planLicense: { select: { id: true } } } });
+    if (current.planLicense) {
+      throw new Refused("This project has a license already. Unassign it first.");
+    }
+    if (current.planStatus !== null) {
+      throw new Refused("This project pays for a plan. Cancel it from Settings → Billing → Manage plan, and assign the license once it ends.");
+    }
+    if (!onDefaultPlan(current.plan)) {
+      throw new Refused("This project has a plan already. Contact support to change it.");
+    }
+    await tx.planLicense.update({ where: { id: licenseId }, data: { projectId: project.id, assignedAt: new Date() } });
+    await applyPlanLicense(tx, licenseId);
+  });
+  if (!result.error) {
+    await grantLicenseCredits(String(licenseId));
+  }
+  return result;
+}
+
+/** "Unassign" a license on the account from its project: the project is back on its own plan (the default, or its trial's). */
+export async function unassignPlanLicense(licenseId: string): Promise<{ error?: string }> {
+  const session = await getAccountSession();
+  if (!session) {
+    return { error: "Sign in to manage your licenses" };
+  }
+  return change(session.user.id, String(licenseId), (tx) => releasePlanLicense(tx, licenseId));
+}

@@ -344,6 +344,34 @@
       ],
       "additionalProperties": false
     },
+    "licenses": {
+      "description": "Plan licenses (lifetime deals sold elsewhere) and the plans they give, by source. Their plans are usually hidden, with no prices, and sit apart from the plans sold: last in the list, and not held to have everything the plan before them has.",
+      "type": "object",
+      "properties": {
+        "appsumo": {
+          "description": "AppSumo lifetime deals (with APPSUMO_API_KEY set): its licenses' tiers.",
+          "type": "object",
+          "properties": {
+            "tiers": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              },
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "The plan each AppSumo tier gives, by tier number: { \"1\": \"appsumo-1\", … }."
+            }
+          },
+          "required": [
+            "tiers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "historyKeptDays": {
       "default": 365,
       "description": "Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history.",

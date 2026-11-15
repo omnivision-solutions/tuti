@@ -250,6 +250,12 @@ export const jobs = {
     input: z.object({}),
     cron: "13 4 * * *",
   },
+  /** Gives each project with a plan license its month of AI credits when the last month's are over (packages/jobs/src/plan-licenses.ts). */
+  grantPlanLicenseCredits: {
+    name: "license-credits",
+    input: z.object({}),
+    cron: "7 * * * *",
+  },
 } as const satisfies Record<string, JobOptions>;
 
 export type JobKey = keyof typeof jobs;

@@ -8,7 +8,7 @@ import { FAKE_STRIPE_PRICES } from "./stripe-fake";
 type Price = { perMonth: number; stripe: string[]; sold?: boolean };
 type Limits = { seats: number | null; boards: number | null; articles: number | null; historyDays: number; articleVersions: number; reportingDays: number | null; emailsPerMonth: number | null };
 type Plan = { key: string; name: string; prices: { month?: Price; year?: Price }; features: string[]; limits: Limits; monthlyCredits: number; extras?: string[]; featured?: boolean; hidden?: boolean };
-export type TestBilling = { plans: Plan[]; defaultPlan: string; badge?: { month?: Price; year?: Price }; trial?: { plan: string; days: number; credits?: number; emails?: number | null }; historyKeptDays: number };
+export type TestBilling = { plans: Plan[]; defaultPlan: string; badge?: { month?: Price; year?: Price }; trial?: { plan: string; days: number; credits?: number; emails?: number | null }; licenses?: { appsumo?: { tiers: Record<string, string> } }; historyKeptDays: number };
 
 const price = (perMonth: number, name: keyof typeof FAKE_STRIPE_PRICES): Price => ({ perMonth, stripe: [FAKE_STRIPE_PRICES[name].id] });
 
@@ -47,6 +47,34 @@ export function testBilling(): TestBilling {
     badge: { month: price(49, "STRIPE_PRICE_BADGE_MONTHLY"), year: price(49, "STRIPE_PRICE_BADGE_YEARLY") },
     historyKeptDays: 365,
   };
+}
+
+/**
+ * AppSumo's lifetime deals, as tests know them: two hidden plans with no prices, last, and the tiers giving them. Tier 1's
+ * limits are below Free's (as on Tuti's cloud, where its first tier is below the cheapest plan): license plans sit apart.
+ */
+export function withAppsumoPlans(config: TestBilling): void {
+  config.plans.push(
+    {
+      key: "appsumo-1",
+      name: "AppSumo Tier 1",
+      prices: {},
+      features: ["customDomain", "emailDomain"],
+      limits: { seats: null, boards: 1, articles: 25, historyDays: 30, articleVersions: 2, reportingDays: 31, emailsPerMonth: 4000 },
+      monthlyCredits: 400,
+      hidden: true,
+    },
+    {
+      key: "appsumo-2",
+      name: "AppSumo Tier 2",
+      prices: {},
+      features: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
+      limits: { seats: null, boards: 2, articles: 50, historyDays: 30, articleVersions: 2, reportingDays: 31, emailsPerMonth: 10000 },
+      monthlyCredits: 1000,
+      hidden: true,
+    },
+  );
+  config.licenses = { appsumo: { tiers: { "1": "appsumo-1", "2": "appsumo-2" } } };
 }
 
 /**

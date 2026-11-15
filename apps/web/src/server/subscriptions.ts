@@ -47,8 +47,10 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const subscription = await getSubscription(id);
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
+      // A project whose plan comes from a plan license keeps it (plan-licenses.ts): a subscription that held its plan
+      // before is over, and one started since is a second plan, logged below.
       if (!LIVE.has(subscription.status) || !item || !paid) {
-        await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id }, data: NO_PLAN });
+        await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id, planLicense: { is: null } }, data: NO_PLAN });
         return projectId;
       }
       const periodEnd = at(item.current_period_end);
@@ -57,6 +59,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
         // one the file no longer lists, or the default's own key. A plan the file sells set by hand (by quote) stays.
         where: {
           id: projectId,
+          planLicense: { is: null },
           OR: [
             { stripeSubscriptionId: id },
             { planStatus: null, OR: [{ plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])] },

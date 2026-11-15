@@ -89,12 +89,15 @@ export const subscribePlan = defineOperation({
       throw new OperationError(503, "plans_unavailable", "That plan isn't sold on this server");
     }
     const [project, buyer, billing] = await Promise.all([
-      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, planStatus: true, stripeCustomerId: true, name: true, slug: true, trialEndsAt: true } }),
+      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, planStatus: true, stripeCustomerId: true, name: true, slug: true, trialEndsAt: true, planLicense: { select: { id: true } } } }),
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
       billingUrl(projectId),
     ]);
     // A live subscription (Stripe's status, cleared once it ends), or a plan the file sells set without one. A trial isn't
     // one (the plan as stored: trialEndsAt selected): buying ends it.
+    if (project.planLicense) {
+      throw new OperationError(409, "has_license", "This project's plan comes from a license. Unassign it in Licenses to buy a plan.");
+    }
     if (project.planStatus !== null || !onDefaultPlan(project.plan)) {
       throw new OperationError(409, "has_plan", "This project has a plan already. Change it from Manage plan.");
     }

@@ -7,6 +7,7 @@ export { changelogReach, type ChangelogReach, reached, subscriberCount, subscrib
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { deleteOldHistory } from "./history";
+import { grantPlanLicenseCredits } from "./plan-licenses";
 export { historySince, inSomePlansHistory, pastConversations, visibleConversations, visibleConversationsSql } from "./history";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
@@ -59,6 +60,7 @@ export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews,
 export { claimDocsSlug, docsSlugsTaken, freeDocsSlug, RESERVED_ARTICLE_SLUGS } from "./docs-slugs";
 export { ARTICLE_REVISIONS_KEPT, docOf, recordRevision, versions, editName, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, revisionsPast, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
 
+export { applyPlanLicense, grantLicenseCredits, grantPlanLicenseCredits, lockPlanLicense, releasePlanLicense } from "./plan-licenses";
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS, SEARCHES_KEPT_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
@@ -92,6 +94,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   purgeArticles,
   pruneDocsSearches,
   deleteOldHistory,
+  grantPlanLicenseCredits: () => grantPlanLicenseCredits(),
   webhookDelivery,
   resubmitWebhookDeliveries,
   githubPullRequest,
