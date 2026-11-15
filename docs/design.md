@@ -760,12 +760,13 @@ widths, in light and dark (in development only).
   No card inside a card: a pane's lists and row cards sit on the pane. Two exceptions, both data to read at a glance: `StatStrip`, and Reporting's charts and tables, each its own bordered section on the report's pane.
   A pane body scrolls in place of the window, so it keeps its place on each URL for Back and Forward; one whose own
   links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
-- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
+- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `filtersBelow`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
   under it. Where the window scrolls the page rather than the pane (under 48rem of the shell, from a 48rem
   window, at least 40rem tall) it sticks to the top (`STICKY_PANE_HEADER`). The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
   of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
-  it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
+  it; with `filtersBelow` that row at every width (pills too many to share the row with the actions: Feedback's
+  statuses), the header then taller than 60px. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
   primary button. Its title is the page's `h1`; `level={2}` on a list's pane while the open item beside it has
   the page's heading (Autopilot's list, the Inbox's), so a page has one `h1`.
   An editor whose title field shows the title (a changelog entry) sets `titleInForm`: the heading is for screen
