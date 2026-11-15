@@ -188,6 +188,12 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   const [free, pro, business] = planFacts();
   expect(free).toMatchObject({ credits: null, creditsBuy: null, aiAnswers: false, boards: 2, emails: 1000, articles: 50, versions: 2, historyDays: 7, team: 3, extras: [] });
   expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 500, changes: 25 }, aiAnswers: true, boards: 5, team: null, articles: null });
+  // Fewer credits than a checked change costs (40 here): no changes estimate; under one answer's worth, no estimate at all.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { config.trial = { plan: "pro", days: 7 }; pro.monthlyCredits = 30; }));
+  expect(planFacts()[1]!.creditsBuy).toEqual({ answers: 15, changes: null });
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { config.trial = { plan: "pro", days: 7 }; pro.monthlyCredits = 1; }));
+  expect(planFacts()[1]!.creditsBuy).toBeNull();
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
   expect(business).toMatchObject({ credits: 5000, boards: null, emails: null, historyDays: 90, versions: 50, extras: ["Priority support"] });
   // Free has no credits, so Autopilot's checks don't run there either, though its plan lists it.
   expect([free, pro, business].map(({ features }) => [features.customDomain, features.sitePath, features.privatePortal, features.aiTuning, features.codeChanges])).toEqual([

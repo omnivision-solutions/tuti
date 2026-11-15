@@ -209,7 +209,8 @@ export function planFacts(): PlanFacts[] {
     return {
       credits,
       startCredits: creditsEnabled() && plan === defaultPlanKey() && start > 0 ? start : null,
-      creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: changesFor(plan, credits) } : null,
+      // Not even one answer's worth: nothing to estimate (as Billing's lines leave it out).
+      creditsBuy: credits && about(credits, ANSWER_COST) >= 1 ? { answers: about(credits, ANSWER_COST), changes: changesFor(plan, credits) } : null,
       articles: articleLimit(plan),
       versions: articleVersionsKept(plan),
       boards: boardLimit(plan),
