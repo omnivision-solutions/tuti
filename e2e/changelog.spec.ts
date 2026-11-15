@@ -26,6 +26,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.goto(`/app/${slug}/p/1`);
   await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
+  // Asked first: it emails Ada.
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
 
   // A draft: title, tag, text with a heading, and the post it completes.

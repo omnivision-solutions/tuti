@@ -19,10 +19,29 @@ test("people hear when what they asked for is started and when it ships, and can
   await ada.goto("/feedback/feature-requests");
   await postFeedback(ada, "Dark mode");
 
-  // The team starts on it: Ada hears that too.
+  // The team plans it, told first who that emails.
   await team.goto(`/app/${slug}/p/1`);
-  await team.getByLabel("Status", { exact: true }).click();
+  const status = team.getByLabel("Status", { exact: true });
+  await status.click();
+  await team.getByRole("option", { name: "Planned" }).click();
+  const plan = team.getByRole("alertdialog", { name: "Mark “Dark mode” planned?" });
+  await expect(plan).toContainText("This emails up to 1 person who asked for it that it's planned.");
+  await checkpoint(team, "team-post-plan-asks", { fullPage: false });
+  await plan.getByRole("button", { name: "Mark planned" }).click();
+  await expect(team.getByText("Status: Planned")).toBeVisible();
+  await latestEmailTo(ada.email, { subject: /^Planned:/ });
+  // Moved back, it emails nobody: no asking.
+  await status.click();
+  await team.getByRole("option", { name: "Open" }).click();
+  await expect(team.getByText("Status: Open")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+
+  // The team starts on it, told first again: Ada hears that too.
+  await status.click();
   await team.getByRole("option", { name: "In progress" }).click();
+  const start = team.getByRole("alertdialog", { name: "Mark “Dark mode” in progress?" });
+  await expect(start).toContainText("This emails up to 1 person who asked for it that it's in progress.");
+  await start.getByRole("button", { name: "Mark in progress" }).click();
   await expect(team.getByText("Status: In progress")).toBeVisible();
   const started = await latestEmailTo(ada.email, { subject: /^In progress:/ });
   expect(started.subject).toBe("In progress: Dark mode");
