@@ -762,15 +762,20 @@
 /* A long line (scroll-driven, so no script; nothing shows when the code fits): a wide fade at the end with more, and on a
    touch screen a thin bar under the code that's always there, unlike its own scroll bar (hidden, so there aren't two). A
    mouse keeps the browser's scroll bar to drag. */
-@supports (animation-timeline: scroll()) and (timeline-scope: none) {
-  :root:has([data-portal-top]) .article-text :where(pre) {
-    timeline-scope: --code-scroll;
-  }
+/* The fade needs scroll-driven animations only; the bar also needs timeline-scope (the code's scroll seen from its block). */
+@supports (animation-timeline: scroll()) {
   :root:has([data-portal-top]) .article-text :where(pre > code) {
     --scroll-fade: 3rem;
     mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
     animation: rich-scroll-fade linear both;
     animation-timeline: scroll(self inline);
+  }
+}
+@supports (animation-timeline: scroll()) and (timeline-scope: none) {
+  :root:has([data-portal-top]) .article-text :where(pre) {
+    timeline-scope: --code-scroll;
+  }
+  :root:has([data-portal-top]) .article-text :where(pre > code) {
     scroll-timeline: --code-scroll inline;
   }
   @media (pointer: coarse) {
