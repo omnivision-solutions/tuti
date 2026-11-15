@@ -249,7 +249,7 @@ function Comparison({ plans, interval }: { plans: Plan[]; interval: Interval }) 
                         {cell === true ? (
                           <CheckIcon role="img" aria-label="Included" className="size-4 text-primary" strokeWidth={2.5} />
                         ) : cell === false ? (
-                          <span aria-label="Not included" className="text-input">
+                          <span role="img" aria-label="Not included" className="text-input">
                             —
                           </span>
                         ) : (
