@@ -32,8 +32,8 @@ export async function signUp(
   email = `e2e-${randomUUID()}@example.com`,
 ): Promise<TestPage> {
   const page = await newPerson(browser, baseUrl);
-  // The app's sign-up, or the portal's, which sends on to the app's.
-  await page.goto([APP_URL, CLOUD_URL, TRIAL_URL].includes(baseUrl) ? "/app/auth/sign-up" : "/sign-up");
+  // The app's sign-up, or from a portal the same (its sign-up's "Use a password instead"), and back.
+  await page.goto([APP_URL, CLOUD_URL, TRIAL_URL].includes(baseUrl) ? "/app/auth/sign-up" : "/continue?sign-up=1");
   await fillSignUp(page, name, email);
   await page.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
   if (new URL(page.url()).pathname === "/app/auth/continue") {

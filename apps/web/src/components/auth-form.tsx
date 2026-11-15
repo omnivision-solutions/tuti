@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, MailIcon } from "lucide-react";
+import { ArrowLeftIcon, MailIcon, UserIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -21,10 +21,11 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
- * that can send email) makes signing in "Email me a sign-in link": the password is typed on the app's
- * host only (lib/auth.ts), so there "Use a password instead" goes to the app through the portal's
+ * that can send email) makes signing in or up "Email me a sign-in (sign-up) link": the password is typed on the app's
+ * host only (lib/auth.ts), so there "Use a password instead" goes to the app's sign-in (sign-up) through the portal's
  * /continue, and back. `forgotPassword` (a host that can
- * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
+ * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account";
+ * `signUpOnApp` (a portal with SSO, whose own sign-up sends people to its app's sign-in) makes it the app's sign-up, and back.
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
  * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
  * on the way back to a portal: that portal's, so the reset comes back there). `pages` is where the other sign-in pages are:
@@ -39,6 +40,7 @@ export function AuthForm({
   linkProject,
   forgotPassword,
   signUp = true,
+  signUpOnApp,
   social = [],
   socialError,
   description,
@@ -57,6 +59,7 @@ export function AuthForm({
   linkProject?: string;
   forgotPassword?: boolean;
   signUp?: boolean;
+  signUpOnApp?: boolean;
   social?: SocialProvider[];
   socialError?: SocialSignInError;
   description?: string;
@@ -79,10 +82,12 @@ export function AuthForm({
   // The sent card's: "Send another link" went out, and the address "Use a different email" brings back to the form.
   const [resent, setResent] = useState(false);
   const [email, setEmail] = useState(defaultEmail);
+  // A portal's sign-up: the name the link's account gets, sent again with "Send another link".
+  const [name, setName] = useState<string>();
   const [changingEmail, setChangingEmail] = useState(false);
   const isSignUp = mode === "sign-up";
-  // Signing in on a portal: the emailed link, the password on the app.
-  const usePassword = isSignUp || !linkProject;
+  // Signing in or up on a portal: the emailed link, the password on the app.
+  const usePassword = !linkProject;
   // A portal's way to the app's sign-in (or sign-up), coming back after (lib/portal-handoff.ts). A plain link's: /continue is a
   // route that sets a cookie and leaves for the app host.
   const onApp = (newAccount?: boolean) =>
@@ -107,11 +112,19 @@ export function AuthForm({
   }
 
   async function emailLink(form: HTMLFormElement) {
-    const field = form.elements.namedItem("email") as HTMLInputElement;
-    if (!linkProject || !field.reportValidity()) {
+    if (!linkProject || !form.reportValidity()) {
       return;
     }
-    setSentTo((await sendLink(new FormData(form))).sentTo);
+    const data = new FormData(form);
+    const nameField = form.elements.namedItem("name") as HTMLInputElement | null;
+    // `required` lets a name of spaces through; the server would refuse it under Email.
+    if (nameField && !nameField.value.trim()) {
+      nameField.setCustomValidity("Enter your name");
+      nameField.reportValidity();
+      return;
+    }
+    setName(data.has("name") ? String(data.get("name")) : undefined);
+    setSentTo((await sendLink(data)).sentTo);
   }
 
   if (sentTo) {
@@ -122,6 +135,9 @@ export function AuthForm({
       }
       const data = new FormData();
       data.set("email", sentTo);
+      if (name !== undefined) {
+        data.set("name", name);
+      }
       setResent(!!(await sendLink(data)).sentTo);
     };
     return (
@@ -237,7 +253,20 @@ export function AuthForm({
             {isSignUp && (
               <Field>
                 <FieldLabel htmlFor="name">Name</FieldLabel>
-                <Input id="name" name="name" autoComplete="name" required />
+                <div className="relative">
+                  {portal && <UserIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />}
+                  <Input
+                    id="name"
+                    name="name"
+                    autoComplete="name"
+                    defaultValue={name}
+                    required
+                    maxLength={100}
+                    placeholder={portal ? "Your name" : undefined}
+                    onInput={(event) => event.currentTarget.setCustomValidity("")}
+                    className={cn(portal && "h-11 rounded-lg pl-10 text-[0.9375rem]")}
+                  />
+                </div>
               </Field>
             )}
             <Field data-invalid={linkError ? true : undefined}>
@@ -286,13 +315,13 @@ export function AuthForm({
         </CardContent>
         <CardFooter className={cn("mt-6 flex flex-col gap-3", portal && "mt-4 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10")}>
           <Button type="submit" disabled={pending} className={cn("w-full", portal && "h-11 rounded-lg text-[0.9375rem] font-semibold")}>
-            {pending ? "…" : submitLabel ?? (isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link")}
+            {pending ? "…" : submitLabel ?? (usePassword ? (isSignUp ? "Sign up" : "Sign in") : `Email me a ${isSignUp ? "sign-up" : "sign-in"} link`)}
           </Button>
-          {/* A portal's (sign-in links): the password way and resetting it, then a line: new here, or on the team. */}
+          {/* A portal's (links): the password way and resetting it, then a line: new here (or not), or on the team. */}
           {portal && (
             <>
               <p className="flex flex-col items-center gap-1.5 pt-1 text-[0.9375rem] text-muted-foreground">
-                <a href={onApp()} className="underline decoration-border underline-offset-4 hover:text-foreground">
+                <a href={onApp(isSignUp)} className="underline decoration-border underline-offset-4 hover:text-foreground">
                   Use a password instead
                 </a>
                 {forgotPassword && (
@@ -304,14 +333,23 @@ export function AuthForm({
                   </>
                 )}
               </p>
-              {(signUp || teamHref) && (
+              {(isSignUp || signUp || teamHref) && (
                 <div className="mt-2 flex w-full flex-col items-center gap-2 border-t pt-5 text-[0.9375rem] text-muted-foreground">
-                  {signUp && (
+                  {(isSignUp || signUp) && (
                     <p>
-                      New here?{" "}
-                      <a href={onApp(true)} className="font-semibold text-soft-foreground underline-offset-4 hover:underline">
-                        Create an account
-                      </a>
+                      {isSignUp ? "Have an account? " : "New here? "}
+                      {signUpOnApp && !isSignUp ? (
+                        <a href={onApp(true)} className="font-semibold text-soft-foreground underline-offset-4 hover:underline">
+                          Create an account
+                        </a>
+                      ) : (
+                        <Link
+                          href={at(`/${isSignUp ? "sign-in" : "sign-up"}${next ? `?${new URLSearchParams({ next })}` : ""}`)}
+                          className="font-semibold text-soft-foreground underline-offset-4 hover:underline"
+                        >
+                          {isSignUp ? "Sign in" : "Create an account"}
+                        </Link>
+                      )}
                     </p>
                   )}
                   {teamHref && (

@@ -15,11 +15,16 @@ import type { SignInLinkMetadata } from "@/lib/sign-in-link";
 import { countEmailedLink } from "./email-link-limits";
 import { failedSignInLinkPath, pendingSignInLink } from "./sign-in-link-lookup";
 
-const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
+const fields = z.object({
+  email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")),
+  // A portal's sign-up: the new account's name.
+  name: z.string().trim().min(1, "Enter your name").max(100, "Keep your name under 100 characters").optional(),
+});
 
 /**
  * "Email me a sign-in link" on a portal (see lib/sign-in-link.ts). Says the same
- * whether or not the address has an account; opening the link creates one if not.
+ * whether or not the address has an account; opening the link creates one if not, named
+ * `name` from the portal's sign-up (an existing account keeps its own: Better Auth only names new ones).
  * `next` is where to go afterwards (a path on this portal).
  */
 export async function emailSignInLink(
@@ -30,11 +35,11 @@ export async function emailSignInLink(
   if (!emailConfigured()) {
     return { error: "Sign-in links aren't available here." };
   }
-  const parsed = fields.safeParse({ email: form.get("email") });
+  const parsed = fields.safeParse({ email: form.get("email"), name: form.get("name") ?? undefined });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]!.message };
   }
-  const { email } = parsed.data;
+  const { email, name } = parsed.data;
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true, name: true } });
   if (!project) {
     return { error: "Project not found." };
@@ -56,8 +61,8 @@ export async function emailSignInLink(
     next: safeRedirectPath(next, "/"),
   };
   try {
-    // New accounts are named after the address (they can change it in their account).
-    await auth.api.signInMagicLink({ body: { email, name: email.split("@")[0], metadata }, headers: requestHeaders });
+    // New accounts are named as typed on sign-up, else after the address (they can change it in their account).
+    await auth.api.signInMagicLink({ body: { email, name: name ?? email.split("@")[0], metadata }, headers: requestHeaders });
   } catch (error) {
     log.error("Sending a sign-in link failed", { error });
     return { error: "We couldn't send the email. Try again." };

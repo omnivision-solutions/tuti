@@ -114,6 +114,12 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   // sign-in link failed.
   expect(await sentTo("/sign-in?with=email")).toBeUndefined();
   expect(await sentTo("/sign-in?link=failed")).toBeUndefined();
+  // There "Create an account" is Tuti's sign-up, and back: the portal's would send them on to the team's app, unasked.
+  await visitor.goto("/sign-in?with=email&next=%2Froadmap");
+  const createAccount = visitor.getByRole("main").getByRole("link", { name: "Create an account" });
+  await expect(createAccount).toHaveAttribute("href", "/continue?redirect=%2Froadmap&sign-up=1");
+  await createAccount.click();
+  await visitor.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/sign-up");
 
   // A sign-in that failed stays to say so, with the way back to the app first, above the email.
   await visitor.goto("/sign-in?continue=failed");

@@ -200,8 +200,11 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   const ada = await newPerson(browser, portalUrl(slug));
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
-  // A team may run its portal's host (its own domain, or its site's path): the account, and its password, are made on the app.
+  // Create an account stays on the portal; a password is typed on the app (a team may run its portal's host: its own
+  // domain, or its site's path), where the account is made, and back.
   await ada.getByRole("link", { name: "Create an account" }).click();
+  await expect(ada).toHaveURL(`${portalUrl(slug)}/sign-up?next=%2Ffeedback%2Ffeature-requests`);
+  await ada.getByRole("link", { name: "Use a password instead" }).click();
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/sign-up");
   // For Acme, not the pitch to teams.
   await expect(ada.getByText("Create your Tuti account to continue to Acme.")).toBeVisible();
@@ -403,6 +406,55 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(wes).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(wes.getByRole("navigation", { name: "Portal" })).toBeVisible();
   await expect(wes.getByRole("button", { name: "Account" })).toBeVisible();
+});
+
+test("a visitor joins a portal on the portal: name and email, an emailed link, and back where they were", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  const ivy = await newPerson(browser, portalUrl(slug));
+  await ivy.goto("/sign-in?next=%2Froadmap");
+  await ivy.getByRole("link", { name: "Create an account" }).click();
+  await expect(ivy).toHaveURL(`${portalUrl(slug)}/sign-up?next=%2Froadmap`);
+  // The portal's page, in its header, like its sign-in.
+  await expect(ivy.getByText("Join Acme")).toBeVisible();
+  await expect(ivy.getByText("Vote, comment and follow ideas. We'll email you when they ship.")).toBeVisible();
+  await expect(ivy.getByRole("navigation", { name: "Portal" })).toBeVisible();
+  await expect(ivy.getByRole("link", { name: "Use a password instead" })).toHaveAttribute("href", "/continue?redirect=%2Froadmap&sign-up=1");
+  await expect(ivy.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/sign-in?next=%2Froadmap");
+  await checkpoint(ivy, "portal-sign-up");
+  const phone = ivy.viewportSize()!;
+  await ivy.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(ivy, "portal-sign-up-phone");
+  await ivy.setViewportSize(phone);
+
+  const email = `e2e-${randomUUID()}@example.com`;
+  // A name of spaces is no name: said on the Name field, and nothing is sent.
+  await ivy.getByLabel("Name").fill("   ");
+  await ivy.getByLabel("Email").fill(email);
+  await ivy.getByRole("button", { name: "Email me a sign-up link" }).click();
+  await expect(ivy.getByLabel("Name")).toHaveJSProperty("validationMessage", "Enter your name");
+  expect(countEmailsTo(email)).toBe(0);
+  await ivy.getByLabel("Name").fill("  Ivy Iris ");
+  await ivy.getByLabel("Email").fill(email);
+  await ivy.getByRole("button", { name: "Email me a sign-up link" }).click();
+  await expect(ivy.getByText(`We sent a sign-in link to ${email}.`)).toBeVisible();
+  // Changing the address keeps the name.
+  await ivy.getByRole("button", { name: "Use a different email" }).click();
+  await expect(ivy.getByLabel("Name")).toHaveValue("  Ivy Iris ");
+  await ivy.getByRole("button", { name: "Email me a sign-up link" }).click();
+  // Another link carries the name too: the newest one makes the account.
+  await ivy.getByRole("button", { name: "Send another link" }).click();
+  await expect(ivy.getByRole("status")).toHaveText("Another link is on its way.");
+  await expect.poll(() => countEmailsTo(email)).toBe(3);
+
+  await ivy.goto(linkIn(await latestEmailTo(email, { after: 2 }), `${portalUrl(slug)}/sign-in/link?`));
+  await ivy.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+  await expect(ivy).toHaveURL(`${portalUrl(slug)}/roadmap`);
+  await ivy.getByRole("button", { name: "Account" }).click();
+  await expect(ivy.getByRole("menu").getByText("Ivy Iris", { exact: true })).toBeVisible();
 });
 
 test("a team member who forgot their password resets it by email and signs in with the new one", async ({ browser }, testInfo) => {

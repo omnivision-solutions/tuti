@@ -185,6 +185,9 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);
   // The account is made on the app (a password is never typed on the team's domain), and back.
   await visitor.getByRole("link", { name: "Create an account" }).click();
+  // The portal's sign-up (its sign-in has a "Use a password instead" too), then the app's.
+  await visitor.waitForURL((url) => url.pathname === "/sign-up");
+  await visitor.getByRole("link", { name: "Use a password instead" }).click();
   await visitor.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/sign-up");
   await fillSignUp(visitor, "Ada", `e2e-${randomUUID()}@example.com`);
   await visitor.waitForURL((url) => url.pathname === "/app/auth/continue");

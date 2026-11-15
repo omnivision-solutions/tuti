@@ -104,6 +104,28 @@ test("the email has a link to a page that asks to confirm, then signs a new addr
   expect(await view(link)).toEqual({ location: FAILED });
 });
 
+test("from a portal's sign-up, a new account gets the name typed, trimmed; an existing account keeps its own", async () => {
+  const askNamed = (email: string, name: string) => {
+    const form = new FormData();
+    form.set("email", email);
+    form.set("name", name);
+    return emailSignInLink(project.slug, "/", form);
+  };
+  const email = newAddress();
+  expect(await askNamed(email, "  Ada Lovelace ")).toEqual({ sentTo: email });
+  expect((await confirm(await linkTo(email))).user).toMatchObject({ email, name: "Ada Lovelace" });
+
+  const existing = await signUp("Grace");
+  expect(await askNamed(existing.email, "Someone else")).toEqual({ sentTo: existing.email });
+  expect((await confirm(await linkTo(existing.email))).user).toMatchObject({ id: existing.id, name: "Grace" });
+
+  // A blank or overlong name sends nothing.
+  const other = newAddress();
+  expect(await askNamed(other, "   ")).toEqual({ error: "Enter your name" });
+  expect(await askNamed(other, "x".repeat(101))).toEqual({ error: "Keep your name under 100 characters" });
+  expect(sentTo(other)).toBe(0);
+});
+
 test("opening the link uses nothing up (mail scanners open links too); only confirming does", async () => {
   const email = newAddress();
   await ask(email);
