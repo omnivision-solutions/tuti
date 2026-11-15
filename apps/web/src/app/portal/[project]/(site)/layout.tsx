@@ -40,7 +40,8 @@ export async function generateMetadata({ params }: LayoutProps<"/portal/[project
   const slug = (await params).project;
   const [site, address] = await Promise.all([portalSite(slug), portalAddress(slug)]);
   const description = site?.brand.seo.description || undefined;
-  const image = site?.brand.seoImage ?? { url: `${address}/og`, ...SHARE_IMAGE };
+  // A private portal's made card is for its readers only, and a link's preview is fetched signed out: none, unless the team uploaded one.
+  const image = site?.brand.seoImage ?? (site?.project.portalAccess === "PUBLIC" ? { url: `${address}/og`, ...SHARE_IMAGE } : null);
   const seo: Metadata = {
     metadataBase: new URL(address),
     ...(site && { title: { default: site.name, template: `%s · ${site.name}` } }),
@@ -49,7 +50,7 @@ export async function generateMetadata({ params }: LayoutProps<"/portal/[project
       type: "website",
       ...(site && { siteName: site.name, title: site.name }),
       ...(description && { description }),
-      images: [{ url: image.url, width: image.width, height: image.height }],
+      ...(image && { images: [{ url: image.url, width: image.width, height: image.height }] }),
     },
     twitter: { card: "summary_large_image" },
   };

@@ -27,7 +27,7 @@ import { portalBase, portalLinks } from "@/server/portal-base";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 
-const PAGE_SIZE = 20;
+export const PAGE_SIZE = 20;
 
 /** More entries than a screen shows: the list gets a month index beside it to jump through them. */
 const MONTH_INDEX_FROM = 9;

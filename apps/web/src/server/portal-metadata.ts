@@ -11,7 +11,7 @@ import { portalHomePath } from "@/server/portal-home";
  * its layout, its pages' metadata and its share images.
  */
 export const portalSite = cache(async (slug: string) => {
-  const [brand, project] = await Promise.all([branding({ slug }), prisma.project.findUnique({ where: { slug }, select: { id: true, name: true } })]);
+  const [brand, project] = await Promise.all([branding({ slug }), prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } })]);
   return brand && project ? { brand, project, name: brand.seo.title || project.name } : null;
 });
 

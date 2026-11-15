@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 
+import { PAGE_SIZE } from "@/components/changelog-pages";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { formatDate } from "@/lib/format";
 import { DOCS_HEADING } from "@/lib/portal-look";
@@ -9,7 +10,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
 import { canReadPortal, currentPostViewer, currentReader, mayRead } from "@/server/portal-access";
 import { portalSite } from "@/server/portal-metadata";
-import { canSeePost, seesBoard, shownBoards, visiblePosts } from "@/server/post-visibility";
+import { canSeePost, seesBoard, visiblePosts } from "@/server/post-visibility";
 import { type ShareCard, shareCard } from "@/server/share-card";
 
 /**
@@ -142,9 +143,10 @@ async function feedbackCard(projectId: string, [board, post, ...more]: string[])
 
 async function roadmapCard(projectId: string): Promise<ShareCard> {
   const viewer = await currentPostViewer(projectId);
+  // As the roadmap's columns (roadmapColumns): a public idea on a Team only board is on it too.
   const counts = await prisma.post.groupBy({
     by: ["status"],
-    where: { projectId, duplicateOfId: null, status: { in: ["PLANNED", "IN_PROGRESS"] }, board: shownBoards(viewer), ...visiblePosts(viewer) },
+    where: { projectId, duplicateOfId: null, status: { in: ["PLANNED", "IN_PROGRESS"] }, ...visiblePosts(viewer) },
     _count: { _all: true },
   });
   const count = (status: string) => counts.find((row) => row.status === status)?._count._all ?? 0;
@@ -153,11 +155,23 @@ async function roadmapCard(projectId: string): Promise<ShareCard> {
 }
 
 async function changelogCard(slug: string, site: Site, rest: string[]): Promise<ShareCard | null> {
-  // /changelog and its later pages (/changelog/page/2).
-  if (rest.length === 0 || (rest.length === 2 && rest[0] === "page")) {
-    const [latest] = await publishedEntries(slug, { take: 1 });
-    return { eyebrow: "Changelog", title: `What's new, improved and fixed in ${site.project.name}.`, facts: latest?.publishedAt ? [`Latest ${formatDate(latest.publishedAt)}`] : [] };
+  // /changelog and its later pages (/changelog/page/2), as their pages: one address each, and none past the last.
+  if (rest.length === 2 && rest[0] === "page") {
+    const page = Number(rest[1]);
+    if (!Number.isInteger(page) || String(page) !== rest[1] || page < 2 || page > 10_000) {
+      return null;
+    }
+    if (!(await publishedEntries(slug, { take: 1, skip: (page - 1) * PAGE_SIZE })).length) {
+      return null;
+    }
+  } else if (rest.length !== 0) {
+    return changelogEntryCard(slug, rest);
   }
+  const [latest] = await publishedEntries(slug, { take: 1 });
+  return { eyebrow: "Changelog", title: `What's new, improved and fixed in ${site.project.name}.`, facts: latest?.publishedAt ? [`Latest ${formatDate(latest.publishedAt)}`] : [] };
+}
+
+async function changelogEntryCard(slug: string, rest: string[]): Promise<ShareCard | null> {
   if (rest.length !== 1 || !/^\d{1,9}$/.test(rest[0]!)) {
     return null;
   }

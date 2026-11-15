@@ -9,7 +9,7 @@
 // symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
 // about 32 kB. packages/ui/src/brand-fonts.ts loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,10 +91,14 @@ try {
   writeFileSync(full, await get(math, "buffer"));
   const symbols = fileURLToPath(new URL("noto-sans-math.woff2", BRAND));
   execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
+  // The same cut as TTF for share cards (apps/web/src/server/share-card.tsx), whose renderer can't read WOFF2.
+  const cardSymbols = fileURLToPath(new URL("../apps/web/src/fonts/og/noto-sans-math.ttf", import.meta.url));
+  execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", `--output-file=${cardSymbols}`]);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
 writeFileSync(new URL("noto-sans-math.OFL.txt", BRAND), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
+writeFileSync(new URL("../apps/web/src/fonts/og/noto-sans-math.OFL.txt", import.meta.url), readFileSync(new URL("noto-sans-math.OFL.txt", BRAND)));
 console.log("noto-sans-math.woff2", SYMBOLS);
 
 // Share cards (apps/web/src/server/share-card.tsx): static TTF cuts, since the image renderer reads neither WOFF2 nor

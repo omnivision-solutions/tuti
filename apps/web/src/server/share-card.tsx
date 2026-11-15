@@ -11,7 +11,7 @@ import type { Branding } from "@/server/operations/branding";
 
 /**
  * Static cuts of the brand fonts (packages/ui's) with every Latin script they have, and Noto Sans for Cyrillic and Greek
- * (scripts/fetch-fonts.mjs makes them): the image renderer reads neither WOFF2 nor variable fonts.
+ * and Noto Sans Math's symbols (scripts/fetch-fonts.mjs makes them): the image renderer reads neither WOFF2 nor variable fonts.
  */
 const fonts = Promise.all(
   (
@@ -22,6 +22,8 @@ const fonts = Promise.all(
       // Cyrillic and Greek, which the brand fonts don't have.
       ["Noto Sans", "noto-sans-500.ttf", 500],
       ["Noto Sans", "noto-sans-700.ttf", 700],
+      // Symbols none of them has (✓, →, ⋯), as the app's and portals' fallback (docs/design.md, Type).
+      ["Noto Sans Math", "noto-sans-math.ttf", 400],
     ] as const
   ).map(async ([name, file, weight]) => ({ name, weight, style: "normal" as const, data: await readFile(new URL(`../fonts/og/${file}`, import.meta.url)) })),
 );
@@ -142,9 +144,11 @@ async function logoImage(logo: Branding["logo"]) {
     return null;
   }
   try {
-    const webp = await storage.get(imageKey(logo.id, imageWidths(logo.width)[0]!));
     const scale = Math.min(64 / logo.height, 520 / logo.width);
     const [width, height] = [Math.round(logo.width * scale), Math.round(logo.height * scale)];
+    // The smallest stored width that's twice what it shows at (the original's, at most), so it's never scaled up.
+    const widths = imageWidths(logo.width);
+    const webp = await storage.get(imageKey(logo.id, widths.find((w) => w >= width * 2) ?? widths.at(-1)!));
     // Twice the size it shows at, for sharp edges.
     const png = await sharp(webp).resize(width * 2, height * 2, { fit: "inside" }).png().toBuffer();
     return { src: `data:image/png;base64,${png.toString("base64")}`, width, height };

@@ -125,7 +125,7 @@ test("the portal's own card, its sections' and a title in any script: made here,
   await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 7 } }, data: { title: "Łódź, 東京 and Привет 🎉" } });
   await prisma.changelogEntry.create({ data: { projectId: project.id, createdById: owner.id, number: 1, title: "Hello", body: "", publishedAt: new Date() } });
   const fetches = vi.spyOn(globalThis, "fetch");
-  for (const path of [[], ["feedback"], ["roadmap"], ["changelog"], ["changelog", "page", "2"], ["feedback", board.slug, "dark-mode-7"]]) {
+  for (const path of [[], ["feedback"], ["roadmap"], ["changelog"], ["feedback", board.slug, "dark-mode-7"]]) {
     expect((await image(project.slug, path)).status).toBe(200);
   }
   expect(fetches).not.toHaveBeenCalled();
@@ -181,6 +181,50 @@ test("a private portal's cards aren't made for people who may not read it", asyn
     expect(response.status).toBe(404);
     expect(response.headers.get("content-type")).not.toBe("image/png");
   }
+});
+
+test("a board's and the roadmap's counts are of the posts the reader may see, as on their pages", async () => {
+  const { owner, project, board } = await portalWithPost();
+  const someone = await signUp("Someone");
+  const team = await prisma.board.create({ data: { projectId: project.id, slug: "team", name: "Team", postVisibility: "TEAM" } });
+  await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 7 } }, data: { status: "PLANNED" } });
+  await prisma.post.createMany({
+    data: [
+      // Someone else's, only they see: in no count but theirs.
+      { projectId: project.id, boardId: board.id, authorId: someone.id, number: 8, title: "Mine alone", visibility: "PRIVATE", status: "PLANNED" },
+      // Public, on a Team only board: on the roadmap, as its columns have it.
+      { projectId: project.id, boardId: team.id, authorId: owner.id, number: 9, title: "On the roadmap", status: "IN_PROGRESS" },
+    ],
+  });
+  actAs(null);
+  const facts = async (path: string[]) => {
+    vi.mocked(shareCard).mockClear();
+    expect((await image(project.slug, path)).status).toBe(200);
+    return vi.mocked(shareCard).mock.calls[0]?.[1].facts;
+  };
+  expect(await facts(["feedback", board.slug])).toEqual(["1 idea"]);
+  expect(await facts(["roadmap"])).toEqual(["1 planned", "1 in progress"]);
+  actAs(someone);
+  expect(await facts(["feedback", board.slug])).toEqual(["2 ideas"]);
+  expect(await facts(["roadmap"])).toEqual(["2 planned", "1 in progress"]);
+});
+
+test("the changelog's later pages have cards as far as they have entries, at one address each", async () => {
+  const { owner, project } = await portalWithPost();
+  await prisma.changelogEntry.createMany({
+    data: Array.from({ length: 21 }, (_, i) => ({ projectId: project.id, createdById: owner.id, number: i + 1, title: `Entry ${i + 1}`, body: "", publishedAt: new Date(Date.UTC(2026, 0, i + 1)) })),
+  });
+  expect((await image(project.slug, ["changelog", "page", "2"])).status).toBe(200);
+  for (const page of ["3", "02", "1", "abc", "999"]) {
+    expect((await image(project.slug, ["changelog", "page", page])).status).toBe(404);
+  }
+});
+
+test("a private portal without a share image of the team's names no card: a link's preview is fetched signed out", async () => {
+  const { project } = await portalWithPost();
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  const metadata = await layoutMetadata({ params: Promise.resolve({ project: project.slug }) } as never);
+  expect(metadata.openGraph).not.toHaveProperty("images");
 });
 
 test("a page for the reader alone (signing in) isn't for search engines", () => {
