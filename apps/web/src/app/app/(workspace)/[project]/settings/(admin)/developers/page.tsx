@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
@@ -6,6 +7,8 @@ import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-
 import { Webhooks } from "@/components/webhooks";
 import { appUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Developers · Settings" };
 
 /** Settings → Developers: API keys (REST and MCP) and webhooks. */
 export default async function DevelopersSettingsPage(props: PageProps<"/app/[project]/settings/developers">) {

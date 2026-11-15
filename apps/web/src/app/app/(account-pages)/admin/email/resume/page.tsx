@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ResumeEmailButton } from "@/components/inbox/resume-email";
 import { portalAddress } from "@/server/custom-domains";
 
-export const metadata: Metadata = { title: "Resume email", robots: { index: false } };
+export const metadata: Metadata = { title: "Resume email" };
 
 /** The operator's link when a project's email is paused (server/email-events.ts). Opening it changes nothing; its button resumes. */
 export default async function ResumeEmailPage(props: PageProps<"/app/admin/email/resume">) {

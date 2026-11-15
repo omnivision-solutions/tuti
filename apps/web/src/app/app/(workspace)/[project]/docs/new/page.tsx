@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
@@ -12,6 +13,8 @@ import { collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { MAX_ARTICLE_TITLE } from "@/server/operations/docs";
 import { mediaUrls } from "@/server/media-urls";
+
+export const metadata: Metadata = { title: "New article · Docs" };
 
 /** A new article; `?title=` starts it with that title (a gap's "Write an article"), `?collection=` in that collection (a "+" in the tree). */
 export default async function NewArticlePage(

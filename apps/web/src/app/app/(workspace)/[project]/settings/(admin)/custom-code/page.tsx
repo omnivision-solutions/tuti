@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { CustomCodeSettings } from "@/components/custom-code-settings";
@@ -8,6 +9,8 @@ import { portalAddress } from "@/server/custom-domains";
 import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
+
+export const metadata: Metadata = { title: "Custom code · Settings" };
 
 /** Settings → Portal → Custom code: the team's CSS for the portal, and HTML for it on their own address. */
 export default async function CustomCodePage(props: PageProps<"/app/[project]/settings/custom-code">) {

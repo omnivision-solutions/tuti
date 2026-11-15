@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { type PostVisibility, prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
 import { historySince, seenAs, visibleConversations } from "@tuti/jobs";
@@ -38,6 +39,18 @@ import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 import { TEAM_VIEWER } from "@/server/post-visibility";
 import { howShipped, likeFirst, postNeighbours, postsLike, postVoters, votersToEmail, voterTotals } from "@/server/post-lists";
+
+/** The tab: the post's title. */
+export async function generateMetadata(props: PageProps<"/app/[project]/p/[number]">): Promise<Metadata> {
+  const { project: slug, number: param } = await props.params;
+  const number = Number(param);
+  const membership = await getMembership(slug);
+  const post =
+    membership && Number.isInteger(number) && number > 0
+      ? await prisma.post.findUnique({ where: { projectId_number: { projectId: membership.project.id, number } }, select: { title: true } })
+      : null;
+  return { title: post?.title || "Feedback" };
+}
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {

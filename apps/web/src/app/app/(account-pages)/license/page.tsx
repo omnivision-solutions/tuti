@@ -12,7 +12,7 @@ import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
 import { licensePrivateKey } from "@/server/license-server";
 
-export const metadata: Metadata = { title: 'Remove "Powered by tuti"', robots: { index: false } };
+export const metadata: Metadata = { title: 'Remove "Powered by tuti"' };
 
 /** Where licences are sold without Stripe, and where a bought one is cancelled without Stripe's customer portal. */
 const LICENSE_EMAIL = "hello@tuti.so";

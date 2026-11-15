@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
 import { ExternalLinkIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
@@ -33,6 +34,8 @@ import { getMembership } from "@/server/membership";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
+
+export const metadata: Metadata = { title: "Feedback" };
 
 /** Feedback's tabs by status, opening on the posts nobody has triaged; then All and the possible duplicates. */
 /** The statuses in the order the tabs (and All's groups) take them. */

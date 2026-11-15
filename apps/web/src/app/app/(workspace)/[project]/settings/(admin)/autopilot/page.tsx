@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
@@ -10,6 +11,8 @@ import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-
 import { autopilotRecordText } from "@/lib/autopilot-words";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
+
+export const metadata: Metadata = { title: "Autopilot · Settings" };
 
 /**
  * Settings → AI → Autopilot: whether it reads merged pull requests (and what's sent where), what it does

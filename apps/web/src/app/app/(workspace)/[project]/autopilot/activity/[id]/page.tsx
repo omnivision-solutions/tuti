@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { planIncludes, TUNING } from "@tuti/shared";
 import Link from "next/link";
@@ -13,6 +14,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { afterButton, reviewItem, targetBadge } from "@/lib/autopilot-words";
 import { getMembership } from "@/server/membership";
 import { type CodeChangeDetail, codeChangeDetail } from "@/server/operations/code-changes";
+
+export const metadata: Metadata = { title: "Autopilot" };
 
 type Update = CodeChangeDetail["actions"][number];
 

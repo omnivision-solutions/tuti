@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
 import { notFound } from "next/navigation";
@@ -13,6 +14,8 @@ import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { TEAM_VIEWER } from "@/server/post-visibility";
 import { voterTotals } from "@/server/post-lists";
+
+export const metadata: Metadata = { title: "Roadmap" };
 
 /** How far back Completed goes on the team's roadmap. */
 const COMPLETED_DAYS = 90;

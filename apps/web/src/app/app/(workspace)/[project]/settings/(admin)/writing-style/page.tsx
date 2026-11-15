@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
@@ -5,6 +6,8 @@ import { notFound } from "next/navigation";
 import { ChangelogStyleForm } from "@/components/changelog";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Writing style · Settings" };
 
 /** Settings → AI → Writing style: how Draft with AI writes changelog entries (was a dialog on the changelog). Only where the server has AI. */
 export default async function WritingStyleSettingsPage(props: PageProps<"/app/[project]/settings/writing-style">) {

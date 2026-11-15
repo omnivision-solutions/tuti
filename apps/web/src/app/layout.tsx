@@ -6,9 +6,9 @@ import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
 
+// Only what fits every page here, the teams' portals too: the app's own tags are in app/app/layout.tsx.
 export const metadata: Metadata = {
   title: "Tuti",
-  description: "Open-source feature voting & product feedback",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

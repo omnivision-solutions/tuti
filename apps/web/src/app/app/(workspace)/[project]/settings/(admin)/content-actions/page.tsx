@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
@@ -7,6 +8,8 @@ import { portalPreview } from "@/server/customize";
 import { listedArticle } from "@/server/docs-queries";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
+
+export const metadata: Metadata = { title: "Content actions · Settings" };
 
 /** Settings → Portal → Content actions: what readers can do with an article, beside one of the docs' articles. */
 export default async function ContentActionsPage(props: PageProps<"/app/[project]/settings/content-actions">) {

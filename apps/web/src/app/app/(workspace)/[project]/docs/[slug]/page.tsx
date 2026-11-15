@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cn } from "cn";
 import { docHeadings, type Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
@@ -42,6 +43,16 @@ import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 import { articleVerifications, verifyUnavailable } from "@/server/operations/verify";
 import { markedRun } from "@/lib/docs-review";
+
+/** The tab: the article's title. */
+export async function generateMetadata(props: PageProps<"/app/[project]/docs/[slug]">): Promise<Metadata> {
+  const { project: slug, slug: articleSlug } = await props.params;
+  const membership = await getMembership(slug);
+  const article = membership
+    ? await prisma.article.findFirst({ where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null }, select: { title: true } })
+    : null;
+  return { title: article?.title || "Docs" };
+}
 
 export default async function ArticlePage(
   props: PageProps<"/app/[project]/docs/[slug]">,

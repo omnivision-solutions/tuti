@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { AssistantSettings } from "@/components/assistant-settings";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
+
+export const metadata: Metadata = { title: "AI answers · Settings" };
 
 /** Settings → AI → AI answers: how the docs' AI answers (was in Customize → AI answers). */
 export default async function AiAnswersSettingsPage(props: PageProps<"/app/[project]/settings/ai-answers">) {

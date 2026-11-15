@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
@@ -6,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
+
+export const metadata: Metadata = { title: "Docs home · Settings" };
 
 /** Settings → Portal → Docs home: the heading at the top of the docs' home, and its popular articles. */
 export default async function DocsHomePage(props: PageProps<"/app/[project]/settings/docs-home">) {

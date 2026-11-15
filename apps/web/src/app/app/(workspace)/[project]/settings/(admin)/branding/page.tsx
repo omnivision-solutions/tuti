@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { badgeOffered, plansEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
@@ -10,6 +11,8 @@ import { projectLicense } from "@/server/license";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
 import { DEFAULT_WIDGET_COLOR } from "@/server/operations/widget";
+
+export const metadata: Metadata = { title: "Branding · Settings" };
 
 /** Settings → Portal → Branding: the colour scheme and accent colour, the logos and their text and link, the favicon, and "Powered by tuti". */
 export default async function BrandingPage(props: PageProps<"/app/[project]/settings/branding">) {

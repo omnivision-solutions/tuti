@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { type TeamRole, prisma } from "@tuti/db";
 import { pendingInvitation } from "@tuti/jobs";
 import { planDisplay, roomierPlan, teamLimit } from "@tuti/shared";
@@ -14,6 +15,8 @@ import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/
 import { inviteNote } from "@/lib/verify-email";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "Team & roles · Settings" };
 
 const ROLES: TeamRole[] = ["OWNER", "ADMIN", "MEMBER"];
 

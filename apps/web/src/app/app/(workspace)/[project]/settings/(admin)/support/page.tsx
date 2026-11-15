@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { pausedNotice } from "@tuti/email";
 import { notFound } from "next/navigation";
 
@@ -13,6 +14,8 @@ import { mxHosts } from "@/server/custom-domains";
 import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { supportSettings } from "@/server/operations/support";
+
+export const metadata: Metadata = { title: "Inbox and email · Settings" };
 
 /** Settings → Inbox and email: the support inbox (docs/plan.md, Support inbox), and its email address where the server receives email. */
 export default async function SupportSettingsPage(props: PageProps<"/app/[project]/settings/support">) {

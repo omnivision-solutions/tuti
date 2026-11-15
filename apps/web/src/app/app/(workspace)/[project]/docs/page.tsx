@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cn } from "cn";
 import { Fragment } from "react";
 import { prisma } from "@tuti/db";
@@ -33,6 +34,8 @@ import {
   verifyAllUnavailable,
 } from "@/server/operations/verify";
 import { teamDocs } from "@/server/team-docs";
+
+export const metadata: Metadata = { title: "Docs" };
 
 /**
  * The team's docs at a glance (the tree beside it, as on every Docs page): each tab, its collections (each a card with its articles, then the

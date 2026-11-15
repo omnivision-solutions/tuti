@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { aiPaused } from "@tuti/jobs";
 import { CREDIT_FEATURES, trialState } from "@tuti/shared";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { AiPaused } from "@/components/ai-paused";
@@ -10,6 +11,12 @@ import { TrialNotice } from "@/components/trial-notice";
 import { settingsGroups } from "@/lib/settings-pages";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership, isAdminRole } from "@/server/membership";
+
+/** Tabs say the page, then the project ("Inbox · Acme"); nothing for someone off its team, whose page is a 404. */
+export async function generateMetadata({ params }: LayoutProps<"/app/[project]">): Promise<Metadata> {
+  const membership = await getMembership((await params).project);
+  return membership ? { title: { template: `%s · ${membership.project.name}`, default: membership.project.name } } : {};
+}
 
 /** Project pages are for the project's team only (the shell comes from /app); out of AI credits, or on a free trial, every page says so. */
 export default async function ProjectLayout({ children, params }: LayoutProps<"/app/[project]">) {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { PropertyFormatsList } from "@/components/property-formats";
@@ -5,6 +6,8 @@ import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
 import { numberPropertyNames, propertyNames } from "@/server/operations/groups";
+
+export const metadata: Metadata = { title: "User properties · Settings" };
 
 /** Settings → Users → User properties: how each of the users' properties shows (was in Access). */
 export default async function PropertiesSettingsPage(props: PageProps<"/app/[project]/settings/properties">) {

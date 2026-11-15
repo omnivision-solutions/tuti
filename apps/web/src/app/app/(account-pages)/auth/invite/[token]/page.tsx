@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import Link from "next/link";
 
@@ -14,6 +15,15 @@ const UNAVAILABLE = {
   used: "This invite link was already used. Ask for a new one.",
   revoked: "This invite link was revoked.",
 } as const;
+
+/**
+ * The tab says what the page does ("Join Acme"), for whoever has the link, like the page. A shared link's card stays
+ * Tuti's (the /app layout's): unfurlers keep cards long after an invite is revoked, so the project's name stays out of them.
+ */
+export async function generateMetadata(props: PageProps<"/app/auth/invite/[token]">): Promise<Metadata> {
+  const invitation = await getInvitation((await props.params).token);
+  return { title: invitation.status === "valid" ? `Join ${invitation.projectName}` : "Invite" };
+}
 
 export default async function InvitePage(props: PageProps<"/app/auth/invite/[token]">) {
   const { token } = await props.params;

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planFor, planIncludes, withinModelCap } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
@@ -8,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { aiModels } from "@/server/operations/ai-models";
+
+export const metadata: Metadata = { title: "AI models · Settings" };
 
 /** Settings → AI models: which model writes for each AI feature and each of Autopilot's steps, and the way to Autopilot's Advanced tuning (only where the server has AI). */
 export default async function AiModelsSettingsPage(props: PageProps<"/app/[project]/settings/ai-models">) {

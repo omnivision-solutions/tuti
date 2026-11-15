@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { SsoSettings } from "@/components/sso-settings";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Single sign-on · Settings" };
 
 /** Settings → Single sign-on: the JWT secret the team's app signs its users in with. */
 export default async function SsoSettingsPage(props: PageProps<"/app/[project]/settings/sso">) {

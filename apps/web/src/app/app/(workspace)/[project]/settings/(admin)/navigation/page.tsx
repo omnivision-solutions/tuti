@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { NavigationSettings } from "@/components/branding-settings";
@@ -8,6 +9,8 @@ import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
 import { portalAccess } from "@/server/operations/portal";
+
+export const metadata: Metadata = { title: "Navigation · Settings" };
 
 /** Settings → Portal → Navigation: what the portal's address opens, links in its header, footer and docs sidebar. */
 export default async function NavigationPage(props: PageProps<"/app/[project]/settings/navigation">) {

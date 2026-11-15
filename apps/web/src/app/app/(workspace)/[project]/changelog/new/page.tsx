@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ChangelogForm, ChangelogSaveButton, ChangelogSaving } from "@/components/changelog";
@@ -5,6 +6,8 @@ import { PageActions } from "@/components/page-actions";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
+
+export const metadata: Metadata = { title: "New entry · Changelog" };
 
 export default async function NewChangelogEntryPage(props: PageProps<"/app/[project]/changelog/new">) {
   const { project: slug } = await props.params;

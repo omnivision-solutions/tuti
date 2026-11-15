@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
@@ -7,6 +8,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initial } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { userAccounts } from "@/server/operations/users";
+
+export const metadata: Metadata = { title: "User · Users" };
 
 /** One of the project's users, by their id in its app: who they are and their properties, beside all their posts, votes and conversations. */
 export default async function UserPage(props: PageProps<"/app/[project]/users/[user]">) {

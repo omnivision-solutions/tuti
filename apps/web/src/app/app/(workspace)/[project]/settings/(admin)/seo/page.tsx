@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
@@ -5,6 +6,8 @@ import { SeoPreview, SeoSettings } from "@/components/seo-settings";
 import { portalAddress } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
 import { branding, SEO_DESCRIPTION_MAX, SEO_TITLE_MAX } from "@/server/operations/branding";
+
+export const metadata: Metadata = { title: "SEO · Settings" };
 
 /** Settings → Portal → SEO: the portal's search listing and share image, beside how they show in a search result and a shared link. */
 export default async function SeoPage(props: PageProps<"/app/[project]/settings/seo">) {

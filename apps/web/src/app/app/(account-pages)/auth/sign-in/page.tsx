@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { emailConfigured } from "@tuti/email";
 import { plansEnabled } from "@tuti/shared";
 import { redirect } from "next/navigation";
@@ -10,6 +11,8 @@ import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
 import { continuingTo, WithPitch } from "../../with-pitch";
+
+export const metadata: Metadata = { title: "Sign in" };
 
 export default async function SignInPage(props: PageProps<"/app/auth/sign-in">) {
   const { next, email, reset, error, via } = await props.searchParams;

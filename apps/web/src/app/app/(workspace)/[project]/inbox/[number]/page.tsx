@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused, cappedProjects, historySince, inSomePlansHistory, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
@@ -71,6 +72,22 @@ const RUN_MS = 5 * 60_000;
 
 /** A conversation shows its latest this many messages, and this many earlier ones with each "Show earlier messages" (`?messages=`). */
 const MESSAGES_PER_PAGE = 50;
+
+/** The tab: the conversation's subject (one past the plan's history, or not this person's project: the Inbox's). */
+export async function generateMetadata(props: PageProps<"/app/[project]/inbox/[number]">): Promise<Metadata> {
+  const { project: slug, number: param } = await props.params;
+  const number = Number(param);
+  const membership = await getMembership(slug);
+  const projectId = membership?.project.id;
+  const conversation =
+    projectId && Number.isInteger(number) && number > 0
+      ? await prisma.conversation.findUnique({
+          where: { projectId_number: { projectId, number }, AND: [visibleConversations(await historySince(projectId))] },
+          select: { subject: true },
+        })
+      : null;
+  return { title: conversation?.subject || "Inbox" };
+}
 
 /**
  * One conversation: its latest messages, the reply box, status, assignee and spam; beside the inbox's list, in its view

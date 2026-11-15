@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
 import Link from "next/link";
@@ -17,6 +18,8 @@ import { getMembership, isAdminRole } from "@/server/membership";
 import { boardsNotes, latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
 import { getSession } from "@/server/session";
+
+export const metadata: Metadata = { title: "Set up" };
 
 const STEPS = ["from", "use", "widget", "team"] as const;
 

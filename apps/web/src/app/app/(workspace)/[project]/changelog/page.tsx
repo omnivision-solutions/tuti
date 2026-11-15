@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +17,8 @@ import { formatDate, timeAgo } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
 import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Changelog" };
 
 /**
  * The team's changelog, in two tabs: Drafts (latest edited first) and Published (newest first). It opens

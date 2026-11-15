@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
@@ -8,6 +9,8 @@ import { PortalReaders } from "@/components/portal-readers";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
+
+export const metadata: Metadata = { title: "Access · Settings" };
 
 /** Settings → Access: who can read the portal (the groups single sign-on puts readers in are in Users → Groups). */
 export default async function AccessSettingsPage(props: PageProps<"/app/[project]/settings/access">) {

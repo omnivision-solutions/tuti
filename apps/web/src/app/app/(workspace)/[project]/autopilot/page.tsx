@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { aiProvider, codeChangesEnabled, codeChangesFix, decisionsMissing, planIncludes } from "@tuti/shared";
 import Link from "next/link";
@@ -8,6 +9,8 @@ import { EmptyState } from "@/components/empty-state";
 import { PlanNotice } from "@/components/plan-notice";
 import { buttonVariants } from "@/components/ui/button";
 import { getMembership } from "@/server/membership";
+
+export const metadata: Metadata = { title: "Autopilot" };
 
 /**
  * Autopilot's page with nothing open (and Activity's): its notices and why there's nothing yet, beside the list (whose

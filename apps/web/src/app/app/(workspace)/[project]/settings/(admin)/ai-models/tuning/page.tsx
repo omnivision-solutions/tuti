@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { aiEnabled, TUNING, TUNING_KEYS } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -7,6 +8,8 @@ import { SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
+
+export const metadata: Metadata = { title: "Tuning · AI models · Settings" };
 
 /**
  * Settings → AI models → Advanced tuning: Autopilot's values for this project (owners change them, on Business; admins

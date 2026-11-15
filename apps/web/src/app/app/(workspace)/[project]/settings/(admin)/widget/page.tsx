@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
@@ -13,6 +14,8 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, widgetSettings } from "@/server/operations/widget";
+
+export const metadata: Metadata = { title: "Widget · Settings" };
 
 /** Settings → Portal → Widget: the launcher on the team's site and the panel's Home, beside the widget open on a stand-in for it. */
 export default async function WidgetPage(props: PageProps<"/app/[project]/settings/widget">) {
