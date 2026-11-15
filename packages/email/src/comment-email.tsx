@@ -1,6 +1,6 @@
-import { Button, Column, Link, Row, Section, Text } from "@react-email/components";
+import { Button, Column, Row, Section, Text } from "@react-email/components";
 
-import { accentColors, buttonStyle, colors, Layout } from "./layout";
+import { buttonStyle, colors, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 
 /** How much of each comment the email quotes; the rest is on the post. */
 const QUOTED = 1000;
@@ -20,8 +20,7 @@ const STATUSES: Record<string, { label: string; dot: string; tint: string }> = {
   CLOSED: { label: "Closed", dot: "#d2cdc7", tint: "#f4f2f1" },
 };
 
-type CommentProps = {
-  projectName: string;
+type CommentProps = EmailBrand & {
   postTitle: string;
   voteCount: number;
   /** The post's status (PostStatus). */
@@ -30,8 +29,6 @@ type CommentProps = {
   comments: { authorId: string; authorName: string; text: string }[];
   postUrl: string;
   unsubscribeUrl: string;
-  /** The project's accent (Project.brandColor; null for Tuti's green): see accentColors. */
-  accent?: string | null;
 };
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
@@ -48,14 +45,22 @@ function who(comments: CommentProps["comments"]) {
 const plural = (comments: CommentProps["comments"]) => (comments.length > 1 ? "New comments" : "New comment");
 
 /** Someone else's comments on a post, sent to its author (those that came close together in one email). */
-export function CommentEmail({ projectName, postTitle, voteCount, status, comments, postUrl, unsubscribeUrl, accent }: CommentProps) {
+export function CommentEmail({ projectName, accent, poweredBy, postTitle, voteCount, status, comments, postUrl, unsubscribeUrl }: CommentProps) {
   const pill = STATUSES[status] ?? STATUSES.OPEN!;
   const heading = `${who(comments)} commented on your idea`;
   const hidden = comments.length - SHOWN;
   return (
-    <Layout preview={heading} accent={accent}>
-      <Text style={{ fontSize: 14, fontWeight: 600, color: accentColors(accent).link, margin: "20px 0 0" }}>{plural(comments)} on your idea</Text>
-      <Text style={{ fontSize: 22, fontWeight: 700, color: colors.text, lineHeight: "28px", margin: "4px 0 16px" }}>{heading}</Text>
+    <Layout
+      preview={heading}
+      project={{ projectName, accent, poweredBy }}
+      footer={
+        <>
+          You get this because you posted this idea. <FooterLink href={unsubscribeUrl}>Unsubscribe from {projectName}</FooterLink>
+        </>
+      }
+    >
+      <Eyebrow accent={accent}>{plural(comments)} on your idea</Eyebrow>
+      <Title>{heading}</Title>
       <Section style={{ backgroundColor: colors.mutedBackground, borderRadius: 12, padding: "12px 14px" }}>
         <Row>
           <Column style={{ width: 48, verticalAlign: "middle" }}>
@@ -98,12 +103,6 @@ export function CommentEmail({ projectName, postTitle, voteCount, status, commen
           Reply
         </Button>
       </Section>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You get this because you posted this idea.{" "}
-        <Link href={unsubscribeUrl} style={{ color: colors.muted, textDecoration: "underline" }}>
-          Unsubscribe from {projectName}
-        </Link>
-      </Text>
     </Layout>
   );
 }

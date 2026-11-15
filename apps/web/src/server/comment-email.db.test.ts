@@ -69,14 +69,16 @@ test("another reader's comment is emailed to the post's author a few minutes on,
   expect(more).toEqual([]);
   expect(email!.subject).toBe("New comment on “Dark mode”");
   expect(email!.text).toContain("New comment on your idea");
-  expect(email!.text).toContain("Sam commented on your idea");
+  expect(email!.text).toMatch(/Sam commented on your idea/i);
   expect(email!.text).toContain("Sam Lee");
   expect(email!.text).toContain("Same here! A separate channel for bugs, please.");
   expect(email!.text).toContain("Open");
   expect(email!.text).toContain("Reply");
   expect(email!.text).toContain("You get this because you posted this idea.");
   expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
-  expect(email!.html).toContain("border-top:4px solid #7c3aed");
+  // The project's brand: its accent on the frame's square, and Powered by tuti.
+  expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
+  expect(email!.text).toMatch(/Powered by/);
   expect(email!.headers["list-unsubscribe"]).toMatch(/\?token=[^.>]+\.[\w-]+>$/);
   // Not to the one who commented, and done: never again.
   expect(commentEmails(reader.email)).toEqual([]);
@@ -94,7 +96,7 @@ test("comments close together become one email", async () => {
   const [email, ...more] = commentEmails(author.email);
   expect(more).toEqual([]);
   expect(email!.subject).toBe("New comments on “Dark mode”");
-  expect(email!.text).toContain("Sam and Kim commented on your idea");
+  expect(email!.text).toMatch(/Sam and Kim commented on your idea/i);
   expect(email!.text).toContain("First thought.");
   expect(email!.text).toContain("Second thought.");
 });

@@ -17,7 +17,8 @@ test("one comment: who wrote it, the post with its votes and status, Reply and w
   const { subject, body } = commentEmail(props);
   expect(subject).toBe("New comment on “Slack notifications per board”");
   const text = await render(body, { plainText: true });
-  for (const line of ["New comment on your idea", "Sam commented on your idea", "23", "Under review", "Sam Lee", "Same here!", "Reply", "You get this because you posted this idea.", "Unsubscribe from Acme"]) {
+  expect(text).toMatch(/Sam commented on your idea/i);
+  for (const line of ["New comment on your idea", "23", "Under review", "Sam Lee", "Same here!", "Reply", "You get this because you posted this idea.", "Unsubscribe from Acme"]) {
     expect(text).toContain(line);
   }
   const html = await render(body);
@@ -30,12 +31,12 @@ test("several: named once each, the first five shown and the rest counted", asyn
   const { subject, body } = commentEmail({ ...props, comments });
   expect(subject).toBe("New comments on “Slack notifications per board”");
   const text = await render(body, { plainText: true });
-  expect(text).toContain("Sam and 5 others commented on your idea");
+  expect(text).toMatch(/Sam and 5 others commented on your idea/i);
   expect(text).toContain("Comment 5");
   expect(text).not.toContain("Comment 6");
   expect(text).toContain("2 more comments on the post.");
   const two = await render(commentEmail({ ...props, comments: comments.slice(0, 2) }).body, { plainText: true });
-  expect(two).toContain("Sam and Kim commented on your idea");
+  expect(two).toMatch(/Sam and Kim commented on your idea/i);
   // People are told apart by who they are, not their names: two who share a whole name are two, and one person's two
   // comments one.
   const sams = [
@@ -43,6 +44,8 @@ test("several: named once each, the first five shown and the rest counted", asyn
     { authorId: "u-2", authorName: "Sam Lee", text: "b" },
     { authorId: "u-1", authorName: "Sam Lee", text: "c" },
   ];
-  expect(await render(commentEmail({ ...props, comments: sams }).body, { plainText: true })).toContain("Sam and Sam commented on your idea");
-  expect(await render(commentEmail({ ...props, comments: [sams[0]!, sams[2]!] }).body, { plainText: true })).toContain("Sam commented on your idea");
+  expect(await render(commentEmail({ ...props, comments: sams }).body, { plainText: true })).toMatch(/Sam and Sam commented on your idea/i);
+  const one = await render(commentEmail({ ...props, comments: [sams[0]!, sams[2]!] }).body, { plainText: true });
+  expect(one).toMatch(/Sam commented on your idea/i);
+  expect(one).not.toMatch(/Sam and/i);
 });

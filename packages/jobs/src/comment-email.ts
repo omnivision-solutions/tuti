@@ -3,6 +3,7 @@ import { commentEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, releaseProjectEmail } from "./email-limits";
+import { emailBrand } from "./email-brand";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
@@ -38,7 +39,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       visibility: true,
       board: { select: { slug: true, off: true } },
       projectId: true,
-      project: { select: { name: true, slug: true, portalAccess: true, plan: true, brandColor: true } },
+      project: { select: { slug: true, portalAccess: true, plan: true } },
       comments: {
         where: { authorEmailDueAt: { not: null } },
         orderBy: { createdAt: "asc" },
@@ -93,20 +94,19 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     return { emailed: 0, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   const origin = await portalAddress(project.slug);
-  const sender = await projectSender(projectId);
+  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   const token = encodeURIComponent(author.unsubscribeToken);
   const error = await whileClaimed(claimedIds, author.id, claimedAt, () =>
     sendEmail({
       to: author.address,
       ...commentEmail({
-        projectName: project.name,
+        ...brand,
         postTitle: post.title,
         voteCount: post.voteCount,
         status: post.status,
         comments: claimed.map((comment) => ({ authorId: comment.authorId, authorName: comment.author.name, text: quotedText(comment) })),
         postUrl: portalPostUrl(origin, post),
         unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
-        accent: project.brandColor,
       }),
       ...sender,
       // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
