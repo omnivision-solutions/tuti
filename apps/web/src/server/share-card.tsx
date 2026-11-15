@@ -13,7 +13,7 @@ import type { Branding } from "@/server/operations/branding";
  * Static cuts of the brand fonts (packages/ui's) with every Latin script they have, and Noto Sans for Cyrillic and Greek
  * and Noto Sans Math's symbols (scripts/fetch-fonts.mjs makes them): the image renderer reads neither WOFF2 nor variable fonts.
  */
-const fonts = Promise.all(
+export const fonts = Promise.all(
   (
     [
       ["Bricolage Grotesque", "bricolage-grotesque-700.ttf", 700],
@@ -128,11 +128,12 @@ export async function shareCard(site: { project: { name: string }; brand: Brandi
 
 /**
  * Text as the card can draw it: without emoji and their parts (flags' letters, skin tones, joiners, keycaps; the fonts
- * have none, and a box would show in its place).
+ * have none, and a box would show in its place), but with © ® ™, which they
+ * have (the renderer takes ↔ to ↪ for emoji, so those go).
  * ponytail: scripts the fonts lack (Chinese, Japanese, Arabic…) still show as boxes; bundle Noto subsets for them when portals need it.
  */
 export const drawable = (text: string) =>
-  text.replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
+  text.replace(/(?![©®™])[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
 
 /**
  * The logo's size on the card (at most 64px tall and 520 wide), and the stored width to read: the smallest that's twice

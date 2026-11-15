@@ -1,6 +1,7 @@
-import { expect, test } from "vitest";
+import satori from "satori";
+import { expect, test, vi } from "vitest";
 
-import { drawable, logoSize } from "./share-card";
+import { drawable, fonts, logoSize } from "./share-card";
 
 test("a card's text loses emoji and their parts, which its fonts can't draw", () => {
   expect(drawable("Launch 🇫🇷 day")).toBe("Launch day");
@@ -8,6 +9,8 @@ test("a card's text loses emoji and their parts, which its fonts can't draw", ()
   expect(drawable("Family 👨‍👩‍👧 plan")).toBe("Family plan");
   expect(drawable("Step 1️⃣ done ✅")).toBe("Step 1 done");
   expect(drawable("Café déjà vu")).toBe("Café déjà vu");
+  // © ® ™ stay: the fonts have them.
+  expect(drawable("Acme™ © ®")).toBe("Acme™ © ®");
 });
 
 test("a logo is read at the smallest stored width twice what the card shows it at, never scaled up", () => {
@@ -17,4 +20,13 @@ test("a logo is read at the smallest stored width twice what the card shows it a
   expect(logoSize({ width: 512, height: 512 })).toEqual({ width: 64, height: 64, stored: 480 });
   // Smaller than twice its size on the card: the original.
   expect(logoSize({ width: 300, height: 100 })).toEqual({ width: 192, height: 64, stored: 300 });
+});
+
+test("the card's fonts draw every character a card keeps: symbols (✓ ⋯ →) from Noto Sans Math, Cyrillic and Greek, ©®™", async () => {
+  // Satori asks for another font for any character none of them has (and would draw a box without one).
+  const missing = vi.fn(async () => []);
+  const text = drawable("✓ Done: export ⋯ → CSV ↔ Привет Γειά Acme™ © Łódź 🎉 🇫🇷");
+  const element = { type: "div", key: null, props: { style: { display: "flex", fontFamily: "Figtree" }, children: text } };
+  await satori(element, { width: 1200, height: 100, fonts: await fonts, loadAdditionalAsset: missing });
+  expect(missing.mock.calls).toEqual([]);
 });
