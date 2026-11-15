@@ -3,6 +3,12 @@ import type { Doc } from "@tuti/content";
 import { createElement, Fragment } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { changelogConfirmEmail } from "./changelog-confirm-email";
+import { conversationReplyEmail } from "./conversation-reply-email";
+import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
+import { portalReaderEmail } from "./portal-reader-email";
+import { replyEmail } from "./reply-email";
+import { signInLinkEmail } from "./sign-in-link-email";
 import { changelogEmail } from "./changelog-email";
 import { conversationEmail } from "./conversation-email";
 import { creditsEmail } from "./credits-email";
@@ -134,4 +140,32 @@ test("Tuti's own emails name the part of Tuti they're from: Verify for Verify's,
     ].map(async (email) => (await render(email.body)).match(/>(Verify|Billing|Autopilot|Inbox)<\/p>/)?.[1]),
   );
   expect(labels).toEqual(["Verify", "Verify", "Billing", "Billing"]);
+});
+
+test("every email to a project's customers drops Powered by tuti when the project hides it, and keeps it otherwise", async () => {
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  const u = "https://acme.example/x";
+  const doc: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hi" }] }] };
+  const emails = (poweredBy: boolean) => {
+    const brand = { projectName: "Acme", accent: null, poweredBy };
+    return {
+      shipped: shippedEmail({ ...brand, postTitle: "Dark mode", postUrl: u, unsubscribeUrl: u }),
+      reply: replyEmail({ ...brand, authorName: "Ada", postTitle: "Dark mode", text: "Hi", doc, postUrl: u, unsubscribeUrl: u }),
+      changelog: changelogEmail({ ...brand, entryTitle: "New", entryUrl: u, doc, unsubscribeUrl: u }),
+      changelogConfirm: changelogConfirmEmail({ ...brand, url: u }),
+      supportReply: conversationReplyEmail({ ...brand, subject: "Re: Hi", messages: [{ name: "Ada", body: "Hi" }] }),
+      signInLink: signInLinkEmail({ ...brand, url: u, minutes: 15 }),
+      passwordReset: passwordResetEmail({ project: brand, url: u, minutes: 60 }),
+      passwordChanged: passwordChangedEmail(brand),
+      portalReader: portalReaderEmail({ ...brand, inviterName: "Ada", email: "e2e-reader@example.com", url: u }),
+    };
+  };
+  for (const [name, email] of Object.entries(emails(false))) {
+    const html = await render(email.body);
+    expect({ name, badge: html.includes("Powered by") || html.includes("tuti.so") }).toEqual({ name, badge: false });
+  }
+  for (const [name, email] of Object.entries(emails(true))) {
+    const html = await render(email.body);
+    expect({ name, badge: html.includes(`href="${POWERED_BY_URL.replaceAll("&", "&amp;")}"`) }).toEqual({ name, badge: true });
+  }
 });
