@@ -683,7 +683,7 @@
   }
 }
 
-/* The fades of a code tab row (see .rich-code-tab-row) and a portal article's code: none until it scrolls. */
+/* The fades of a code tab row (see .rich-code-tab-row) and a portal article's code (`--scroll-fade` wide): none until it scrolls. */
 @property --scroll-fade-start {
   syntax: "<length>";
   inherits: false;
@@ -697,16 +697,16 @@
 @keyframes rich-scroll-fade {
   0% {
     --scroll-fade-start: 0px;
-    --scroll-fade-end: 1.5rem;
+    --scroll-fade-end: var(--scroll-fade, 1.5rem);
   }
   10% {
-    --scroll-fade-start: 1.5rem;
+    --scroll-fade-start: var(--scroll-fade, 1.5rem);
   }
   90% {
-    --scroll-fade-end: 1.5rem;
+    --scroll-fade-end: var(--scroll-fade, 1.5rem);
   }
   100% {
-    --scroll-fade-start: 1.5rem;
+    --scroll-fade-start: var(--scroll-fade, 1.5rem);
     --scroll-fade-end: 0px;
   }
 }
@@ -759,11 +759,55 @@
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
+/* A long line (scroll-driven, so no script; nothing shows when the code fits): a wide fade at the end with more, and on a
+   touch screen a thin bar under the code that's always there, unlike its own scroll bar (hidden, so there aren't two). A
+   mouse keeps the browser's scroll bar to drag. */
+/* The fade needs scroll-driven animations only; the bar also needs timeline-scope (the code's scroll seen from its block). */
 @supports (animation-timeline: scroll()) {
   :root:has([data-portal-top]) .article-text :where(pre > code) {
+    --scroll-fade: 3rem;
     mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
     animation: rich-scroll-fade linear both;
     animation-timeline: scroll(self inline);
+  }
+}
+@supports (animation-timeline: scroll()) and (timeline-scope: none) {
+  :root:has([data-portal-top]) .article-text :where(pre) {
+    timeline-scope: --code-scroll;
+  }
+  :root:has([data-portal-top]) .article-text :where(pre > code) {
+    scroll-timeline: --code-scroll inline;
+  }
+  @media (pointer: coarse) {
+    :root:has([data-portal-top]) .article-text :where(pre > code) {
+      scrollbar-width: none;
+    }
+    :root:has([data-portal-top]) .article-text :where(pre)::after {
+      content: "";
+      position: absolute;
+      right: 1.5rem;
+      bottom: 0.375rem;
+      left: 1.5rem;
+      height: 0.25rem;
+      border-radius: 9999px;
+      background:
+        linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground)) 0 0 / 35% 100% no-repeat,
+        var(--color-border);
+      opacity: 0;
+      pointer-events: none;
+      animation: code-scroll-bar linear both;
+      animation-timeline: --code-scroll;
+    }
+  }
+}
+@keyframes code-scroll-bar {
+  from {
+    opacity: 1;
+    background-position-x: 0%, 0%;
+  }
+  to {
+    opacity: 1;
+    background-position-x: 100%, 0%;
   }
 }
 :root:has([data-portal-top]) .article-text :where(.rich-code pre, .rich-code-tabs pre) {
