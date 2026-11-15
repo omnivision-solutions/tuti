@@ -431,6 +431,12 @@ test("a visitor joins a portal on the portal: name and email, an emailed link, a
   await ivy.setViewportSize(phone);
 
   const email = `e2e-${randomUUID()}@example.com`;
+  // A name of spaces is no name: said on the Name field, and nothing is sent.
+  await ivy.getByLabel("Name").fill("   ");
+  await ivy.getByLabel("Email").fill(email);
+  await ivy.getByRole("button", { name: "Email me a sign-up link" }).click();
+  await expect(ivy.getByLabel("Name")).toHaveJSProperty("validationMessage", "Enter your name");
+  expect(countEmailsTo(email)).toBe(0);
   await ivy.getByLabel("Name").fill("  Ivy Iris ");
   await ivy.getByLabel("Email").fill(email);
   await ivy.getByRole("button", { name: "Email me a sign-up link" }).click();

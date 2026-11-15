@@ -333,6 +333,20 @@ test("Customize's preview of a private portal works for a team member who's also
   expect((await currentPostViewer(project.id)).team).toBe(true);
 });
 
+test("a public portal's sign-up is its own page; without email, the app's; an unknown portal's, sign-in", async () => {
+  const signUpPage = (slug: string, next?: string) =>
+    SignUpPage({ params: Promise.resolve({ project: slug }), searchParams: Promise.resolve(next ? { next } : {}) } as PageProps<"/portal/[project]/sign-up">);
+  await expect(signUpPage(project.slug, "/roadmap")).resolves.toBeTruthy();
+  expect(await redirectTarget(signUpPage("no-such-project"))).toBe("/sign-in");
+  const smtpHost = process.env.SMTP_HOST;
+  delete process.env.SMTP_HOST;
+  try {
+    expect(await redirectTarget(signUpPage(project.slug, "/roadmap"))).toBe(`/continue?${new URLSearchParams({ redirect: "/roadmap", "sign-up": "1" })}`);
+  } finally {
+    process.env.SMTP_HOST = smtpHost;
+  }
+});
+
 test("sign-up is off on a private portal, and an account made by a sign-in link can't read it", async () => {
   await setAccess(project.id, "PRIVATE");
   const signUpPage = (next?: string) =>

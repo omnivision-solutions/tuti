@@ -113,6 +113,13 @@ export function AuthForm({
       return;
     }
     const data = new FormData(form);
+    const nameField = form.elements.namedItem("name") as HTMLInputElement | null;
+    // `required` lets a name of spaces through; the server would refuse it under Email.
+    if (nameField && !nameField.value.trim()) {
+      nameField.setCustomValidity("Enter your name");
+      nameField.reportValidity();
+      return;
+    }
     setName(data.has("name") ? String(data.get("name")) : undefined);
     setSentTo((await sendLink(data)).sentTo);
   }
@@ -253,6 +260,7 @@ export function AuthForm({
                     required
                     maxLength={100}
                     placeholder={portal ? "Your name" : undefined}
+                    onInput={(event) => event.currentTarget.setCustomValidity("")}
                     className={cn(portal && "h-11 rounded-lg pl-10 text-[0.9375rem]")}
                   />
                 </div>
