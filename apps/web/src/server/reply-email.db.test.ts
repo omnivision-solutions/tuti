@@ -60,7 +60,7 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
     const [email, ...more] = emailsTo(address);
     expect(more).toEqual([]);
     expect(email!.subject).toBe("Re: Dark mode");
-    expect(email!.html).toContain("border-top:4px solid #7c3aed");
+    expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
     expect(email!.text).toContain("Owner from");
     expect(email!.text).toContain("Dark mode ships next week.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);

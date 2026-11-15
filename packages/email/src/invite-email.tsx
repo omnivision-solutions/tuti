@@ -8,7 +8,14 @@ const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 export function InviteEmail({ inviterName, projectName, roleLabel, url }: InviteProps) {
   return (
-    <Layout preview={`Join ${projectName} on Tuti.`}>
+    <Layout
+      preview={`Join ${projectName} on Tuti.`}
+      footer={
+        <>
+          The invite works once and expires in 7 days. If you weren&apos;t expecting it, you can ignore this email.
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {inviterName} invited you to join <strong>{projectName}</strong> on Tuti as {article(roleLabel)}{" "}
         {roleLabel.toLowerCase()}.
@@ -19,9 +26,6 @@ export function InviteEmail({ inviterName, projectName, roleLabel, url }: Invite
       >
         Accept invite
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        The invite works once and expires in 7 days. If you weren&apos;t expecting it, you can ignore this email.
-      </Text>
     </Layout>
   );
 }

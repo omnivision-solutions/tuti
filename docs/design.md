@@ -12,8 +12,15 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
-  Emails sent on a project's behalf (to its customers and readers) take its accent for the card's top edge, buttons
-  and links, as its portal does (too faint: the same darker shade of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint for text, 4.5:1); the small "tuti" wordmark above stays green.
+  Emails sent on a project's behalf (to its customers and readers) are the team's: its name at the top, beside a square
+  in its accent with the name's first letter, as its portal's header (not its uploaded logo: stored as WebP, which many
+  email clients don't show), and its accent for buttons and links, as its portal does (too faint: the same darker shade
+  of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint
+  for text, 4.5:1), on a neutral page in a system sans (Inter where it's installed). Tuti's credit is in the footer: the
+  portal's "Powered by tuti" pill, its mark grey, under the reason for the email, hidden under the portal's rule.
+  Emails from Tuti to a team have the parrot and the green wordmark at the top, with the part of Tuti they're from
+  (Inbox, Verify, Billing, Autopilot) muted beside it, on the cream page with green buttons, and always end with the
+  pill in Tuti's colours. Both: a white card with 16px corners and a soft shadow, the reason under it.
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
   its own (Settings → Branding; see Layout → Portals). Every font is a file: these and the symbols font in

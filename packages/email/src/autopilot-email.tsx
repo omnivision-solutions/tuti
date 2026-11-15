@@ -2,7 +2,7 @@ import { Button, Column, Link, Row, Section, Text } from "@react-email/component
 import type { DiffLine } from "@tuti/content";
 import { Fragment } from "react";
 
-import { colors, Layout } from "./layout";
+import { colors, FooterLink, Layout } from "./layout";
 
 /** One update, as the email previews it. `goesOut`: when it goes out by itself ("in 24 hours", "now"). */
 export type AutopilotEmailUpdate = {
@@ -216,7 +216,16 @@ function overview(totals: AutopilotProps["totals"], digest = false): { list: Lis
  */
 export function AutopilotEmail({ projectName, changes, totals, digest, more, autopilotUrl, accountUrl }: AutopilotProps) {
   return (
-    <Layout preview={previewOf(changes)} label="Autopilot">
+    <Layout
+      preview={previewOf(changes)}
+      label="Autopilot"
+      footer={
+        <>
+          You&apos;re told about {projectName}&apos;s Autopilot. <FooterLink href={accountUrl}>Choose when you hear from it</FooterLink> (owners
+          always hear what goes out by itself).
+        </>
+      }
+    >
       <Text style={{ fontSize: 13, color: colors.muted, margin: "14px 0 8px" }}>
         {projectName} · {plural(totals.pullRequests ?? changes.length, "merged pull request", "merged pull requests")}
       </Text>
@@ -258,13 +267,6 @@ export function AutopilotEmail({ projectName, changes, totals, digest, more, aut
           </Link>
         </Text>
       )}
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You&apos;re told about {projectName}&apos;s Autopilot.{" "}
-        <Link href={accountUrl} style={{ color: colors.muted, textDecoration: "underline" }}>
-          Choose when you hear from it
-        </Link>
-        {" "}(owners always hear what goes out by itself).
-      </Text>
     </Layout>
   );
 }

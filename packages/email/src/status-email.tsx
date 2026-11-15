@@ -1,6 +1,6 @@
-import { Button, Column, Link, Row, Section, Text } from "@react-email/components";
+import { Button, Column, Row, Section, Text } from "@react-email/components";
 
-import { accentColors, buttonStyle, colors, Layout } from "./layout";
+import { accentColors, buttonStyle, colors, type EmailBrand, FooterLink, Layout } from "./layout";
 
 /**
  * The statuses a post's people hear about before it ships (Completed's is the shipped email), each as it reads, its pill
@@ -15,8 +15,7 @@ const STATUSES = {
 export type ProgressStatus = keyof typeof STATUSES;
 
 /** `note`: the team's comment posted with the change, quoted under the news. */
-type StatusProps = {
-  projectName: string;
+type StatusProps = EmailBrand & {
   status: ProgressStatus;
   postTitle: string;
   boardName: string;
@@ -24,13 +23,21 @@ type StatusProps = {
   postUrl: string;
   unsubscribeUrl: string;
   note?: { from: string; text: string };
-  accent?: string | null;
 };
 
-export function StatusEmail({ projectName, status, postTitle, boardName, votes, postUrl, unsubscribeUrl, note, accent }: StatusProps) {
+export function StatusEmail({ projectName, accent, poweredBy, status, postTitle, boardName, votes, postUrl, unsubscribeUrl, note }: StatusProps) {
   const { label, is, next, pill } = STATUSES[status];
   return (
-    <Layout preview={`An idea you're following moved to ${label}`} accent={accent}>
+    <Layout
+      preview={`An idea you're following moved to ${label}`}
+      project={{ projectName, accent, poweredBy }}
+      footer={
+        <>
+          You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
+          <FooterLink href={unsubscribeUrl}>Unsubscribe from {projectName}</FooterLink>
+        </>
+      }
+    >
       <Text style={{ fontSize: 14, fontWeight: 600, color: accentColors(accent).link, margin: "16px 0 4px" }}>Update on an idea you asked for</Text>
       <Text style={{ fontSize: 22, fontWeight: 700, color: colors.text, lineHeight: "28px", margin: "0 0 16px" }}>
         {postTitle} {is}
@@ -65,12 +72,6 @@ export function StatusEmail({ projectName, status, postTitle, boardName, votes, 
       <Button href={postUrl} style={buttonStyle(accent)}>
         See the idea
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
-        <Link href={unsubscribeUrl} style={{ color: colors.muted, textDecoration: "underline" }}>
-          Unsubscribe from {projectName}
-        </Link>
-      </Text>
     </Layout>
   );
 }

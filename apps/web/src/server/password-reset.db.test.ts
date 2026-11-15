@@ -18,13 +18,17 @@ import {
   SIGN_IN_LINKS_PER_PORTAL_PER_HOUR,
 } from "@/lib/sign-in-link";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { issueLicense } from "@/test/license";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { forgetCustomDomain } from "./custom-domains";
+import { installationId } from "./license";
 import { emailPasswordReset, setNewPassword } from "./password-reset";
 import { emailSignInLink } from "./sign-in-link";
 import { widgetStartConversation } from "./widget-inbox";
+
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 const OLD_PASSWORD = "correct horse battery staple"; // what signUp() sets
 const NEW_PASSWORD = "a brand new password";
@@ -192,7 +196,7 @@ test("asked on a portal, its own domain or its team's site: from the portal, a l
   ] as const) {
     expect(await ask(user.email, host)).toEqual({ sentTo: user.email });
     expect((await mailbox.latestTo(user.email)).text).toContain(`your account on ${portal.name}`);
-    expect((await mailbox.latestTo(user.email)).html).toContain("border-top:4px solid #7c3aed");
+    expect((await mailbox.latestTo(user.email)).html).toContain("border-radius:9px;background-color:#7c3aed");
     const link = await linkTo(user.email);
     // Never the portal's address: its team may run it, and the password is the account's everywhere.
     expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/app/auth/reset-password`);
@@ -286,6 +290,26 @@ test("setting it signs the account out everywhere, marks the email verified and 
   const notice = await mailbox.latestTo(user.email);
   expect(notice.subject).toBe("Your password was changed");
   expect(notice.text).toContain("you were signed out everywhere else");
+});
+
+test("the notice for a reset asked on a portal is the portal's: its name, and Powered by tuti only where the portal shows it", async () => {
+  const changed = async () => {
+    await ask(user.email, portalHost());
+    await setPassword(await linkTo(user.email));
+    const notice = await mailbox.latestTo(user.email);
+    expect(notice.subject).toBe("Your password was changed");
+    return notice;
+  };
+  const shown = await changed();
+  expect(shown.html).toContain(`>${project.name}</p>`);
+  expect(shown.html).not.toContain("email-tuti.png");
+  expect(shown.text).toContain("Powered by");
+
+  // Licensed, and hidden on the portal: hidden here too.
+  const licenseKey = issueLicense({ installation: await installationId(), project: project.id });
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey, poweredBy: false } });
+  await prisma.signInLink.deleteMany();
+  expect((await changed()).text).not.toContain("Powered by");
 });
 
 test("an account whose password was removed (opening a sign-in link before verifying) gets one back", async () => {

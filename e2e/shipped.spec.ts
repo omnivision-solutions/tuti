@@ -41,6 +41,12 @@ test("people hear when what they asked for is started and when it ships, and can
   const email = await latestEmailTo(ada.email, { subject: /^Done:/ });
   expect(email.subject).toBe("Done: Dark mode");
   expect(email.text).toContain(`${portalUrl(slug)}/feedback/feature-requests/dark-mode-1`);
+  // Acme's email: its name at the top, Tuti's credit at the end, linking to Tuti's site.
+  const mail = await (await browser.newContext()).newPage();
+  await mail.setContent(email.html);
+  await expect(mail.getByText("Acme", { exact: true })).toBeVisible();
+  await expect(mail.getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge");
+  await checkpoint(mail, "shipped-email");
 
   // The email's unsubscribe link asks first (link scanners open links), then stops Acme's emails.
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));
