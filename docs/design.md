@@ -676,8 +676,8 @@ Use these instead of hand-rolling layout:
     strongly when it's also the open one; on any highlighted row the meta line
     is `text-foreground/70`, as the grey falls under 4.5:1 there); a
     bar in the filters' place says how many and offers it (Feedback: Set
-    status, Move to board, Merge…, Clear). On Feedback it covers the pane header's row (its title, pills, search
-    and Filters `invisible` under it; on phones the pills' own row under it stays), so the list doesn't move. In a
+    status, Move to board, Merge…, Clear). On Feedback it covers the pane header's first row (its title, search
+    and Filters `invisible` under it; the pills' own row under it stays), so the list doesn't move. In a
     narrow list column (a phone, or a post open beside it; a container query on
     the column, not the window) it stays one row with shorter words (Status,
     Board, an × for Clear; the full names for screen readers); narrower still,
@@ -697,9 +697,10 @@ Use these instead of hand-rolling layout:
     name and count) in the tabs' order. Where no tab or group heading names the status (Possible duplicates, a tab
     only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu, each
     status's group an `ItemGroup`. The list's pane header is its one toolbar (the job is triage: nothing else between
-    the statuses and the rows): the status pills (`FilterPills`, scrolling sideways when short of room), a round search
-    field, one round "Filters" button (a popover with Board, Voters and the sort; how many are set on it) and New post;
-    on phones the view's name as its title and the pills a row under it. The same with a post open or not, so the list
+    the statuses and the rows): the view's name as its title, a round search field, one round "Filters" button (a
+    popover with Board, Voters and the sort; how many are set on it) and New post; the status pills (`FilterPills`,
+    scrolling sideways when short of room) a row of their own under it at every width (`PaneHeader filtersBelow`:
+    six or seven don't fit beside the search, as Autopilot's and Docs' views). The same with a post open or not, so the list
     never moves as one opens. Feedback's menu (`FeedbackMenu`, a `SectionPane`) beside it has the views (All posts,
     Needs triage, Roadmap), the boards (a + to add one, Manage boards), the statuses and Possible duplicates, with
     counts; with a post open it shows only where there's room for three panes (80rem of the shell).
@@ -762,12 +763,13 @@ widths, in light and dark (in development only).
   No card inside a card: a pane's lists and row cards sit on the pane. Two exceptions, both data to read at a glance: `StatStrip`, and Reporting's charts and tables, each its own bordered section on the report's pane.
   A pane body scrolls in place of the window, so it keeps its place on each URL for Back and Forward; one whose own
   links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
-- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
+- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `filtersBelow`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
   under it. Where the window scrolls the page rather than the pane (under 48rem of the shell, from a 48rem
   window, at least 40rem tall) it sticks to the top (`STICKY_PANE_HEADER`). The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
   of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
-  it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
+  it; with `filtersBelow` that row at every width (pills too many to share the row with the actions: Feedback's
+  statuses), the header then taller than 60px. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
   primary button. Its title is the page's `h1`; `level={2}` on a list's pane while the open item beside it has
   the page's heading (Autopilot's list, the Inbox's), so a page has one `h1`.
   An editor whose title field shows the title (a changelog entry) sets `titleInForm`: the heading is for screen

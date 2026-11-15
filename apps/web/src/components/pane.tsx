@@ -103,7 +103,7 @@ export function PaneBody({ children, className, resetOnNavigate = false }: { chi
  * A pane's header, one row (60px): on phones the button that opens the area's menu (with a `SectionPane` on the
  * page), then the way back (`back`: "‹ All posts" on phones, "All posts ›" before the title from tablet width up), the
  * title (20px heading font; `level` 2 where the page's own heading is in another pane), a short description from tablet width up, `filters` (pills; on phones a row of their
- * own under the title), and `actions` at the right end: round icon buttons and at most one primary button.
+ * own under the title, at every width with `filtersBelow`: pills too many to share the row), and `actions` at the right end: round icon buttons and at most one primary button.
  * `titleInForm`: an editor whose title field shows the title: the heading is for screen readers at every width (and the
  * way back reads "‹ All entries" at every width), and the top bar doesn't name the page (AppHeader).
  */
@@ -112,6 +112,7 @@ export function PaneHeader({
   back,
   description,
   filters,
+  filtersBelow = false,
   actions,
   level = 1,
   titleInForm = false,
@@ -124,6 +125,7 @@ export function PaneHeader({
   back?: { href: string; label: ReactNode; className?: string };
   description?: ReactNode;
   filters?: ReactNode;
+  filtersBelow?: boolean;
   actions?: ReactNode;
   className?: string;
 }) {
@@ -154,10 +156,10 @@ export function PaneHeader({
           <Heading className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", titleInForm ? "sr-only" : back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</Heading>
         )}
         {description && <p className="hidden min-w-0 truncate text-sm text-muted-foreground @min-[56rem]/app:block">· {description}</p>}
-        {filters && <div className="hidden min-w-0 @min-[48rem]/app:flex">{filters}</div>}
+        {filters && !filtersBelow && <div className="hidden min-w-0 @min-[48rem]/app:flex">{filters}</div>}
         {actions && <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>}
       </div>
-      {filters && <div className="flex min-w-0 px-3 pb-2.5 @min-[48rem]/app:hidden">{filters}</div>}
+      {filters && <div className={cn("flex min-w-0 px-3 pb-2.5", filtersBelow ? "@min-[48rem]/app:px-4 @min-[48rem]/app:pl-5" : "@min-[48rem]/app:hidden")}>{filters}</div>}
     </header>
   );
 }
