@@ -1,5 +1,6 @@
 import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 import {
   type ArticlePlace,
   articlesViews,
@@ -88,10 +89,15 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
 /**
  * How many people completing each post emails (its author, voters, commenters and subscribers, past the team,
  * those who turned the project's emails off and those it emailed already; none for sample posts), by post id, as
- * postShipped does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
- * a few it won't email.
+ * postShipped does. With `status` Planned or In progress: how many moving it there emails (those emailed about that
+ * status already left out); whether the move emails at all is statusMoveEmails's to say. ponytail: before its other
+ * rules (verified addresses, a private portal's readers): it can count a few it won't email.
  */
-export async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
+export async function emailedOnCompletion(
+  projectId: string,
+  postIds: string[],
+  status: "COMPLETED" | "PLANNED" | "IN_PROGRESS" = "COMPLETED",
+): Promise<Map<string, number>> {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
   // A private portal on a plan without them is the team's only: postShipped emails nobody.
   // Nor while the project's email is paused: the resume lets what it held go.
@@ -117,10 +123,26 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
       AND NOT EXISTS (SELECT 1 FROM email_preference ep JOIN post p ON p.id = x."postId"
         WHERE ep."projectId" = ${projectId} AND ep."userId" = x."userId"
           AND NOT (CASE WHEN p."authorId" = x."userId" THEN ep."ownPosts" ELSE ep."followedPosts" END))
-      AND NOT EXISTS (SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL)
+      AND NOT EXISTS (${
+        status === "COMPLETED"
+          ? Prisma.sql`SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
+          : Prisma.sql`SELECT 1 FROM status_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s.status = ${status}::"PostStatus" AND s."sentAt" IS NOT NULL`
+      })
     GROUP BY x."postId"`;
   return new Map(rows.map((row) => [row.postId, Number(row.people)]));
 }
+
+/**
+ * How many people moving each post to Planned, In progress or Completed emails now (a bulk move's question), by post id
+ * and status: none for a move statusMoveEmails says emails nobody (to Planned once it's in progress, say).
+ */
+export async function emailedOnMove(projectId: string, posts: { id: string; status: PostStatus }[]): Promise<Map<string, Partial<Record<PostStatus, number>>>> {
+  const ids = posts.map((post) => post.id);
+  const counts = await Promise.all(EMAILED_MOVES.map(async (to) => [to, await emailedOnCompletion(projectId, ids, to)] as const));
+  return new Map(posts.map((post) => [post.id, Object.fromEntries(counts.map(([to, map]) => [to, statusMoveEmails(post.status, to) ? (map.get(post.id) ?? 0) : 0]))]));
+}
+
+const EMAILED_MOVES = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
