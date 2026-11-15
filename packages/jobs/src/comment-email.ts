@@ -41,22 +41,13 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       comments: {
         where: { authorEmailDueAt: { not: null } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, authorId: true, body: true, content: true, createdAt: true, authorEmailDueAt: true, author: { select: { name: true } } },
+        select: { id: true, authorId: true, body: true, content: true, author: { select: { name: true } } },
       },
     },
   });
-  if (!post) {
-    return { skipped: true };
-  }
-  // Past the look-back (unless what the monthly limit held is due now), not news any more: dropped, never sent with a
-  // newer comment's email.
-  const held = heldDueDates().map((date) => date.getTime());
-  const old = post.comments.filter((comment) => comment.createdAt < lookBack() && !held.includes(comment.authorEmailDueAt!.getTime()));
-  if (old.length > 0) {
-    await prisma.comment.updateMany({ where: { id: { in: old.map((comment) => comment.id) } }, data: { authorEmailDueAt: null } });
-  }
-  const comments = post.comments.filter((comment) => !old.includes(comment));
-  if (comments.length === 0) {
+  // What's past the look-back the cron dropped before queueing this (commentEmailsDue).
+  const comments = post?.comments ?? [];
+  if (!post || comments.length === 0) {
     return { skipped: true };
   }
   const { projectId, project } = post;
@@ -133,14 +124,21 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
  */
 export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log: JobLogger): Promise<JobResult> {
   const now = new Date();
+  // Due and past the look-back, unless the monthly limit held it till now (heldDueDates): not news any more, so dropped
+  // here, before anything below pushes its due time on, never sent with a newer comment's email. Not a paused project's.
+  // ponytail: what the daily cap held past the look-back, or a month-held one whose runs all fail, is dropped too;
+  // reply-emails-resubmit's rescheduling is the upgrade if that matters.
+  await prisma.comment.updateMany({
+    where: {
+      authorEmailDueAt: { lte: now, notIn: heldDueDates(now) },
+      createdAt: { lte: lookBack() },
+      ...(plansEnabled() && { project: { emailPausedAt: null } }),
+    },
+    data: { authorEmailDueAt: null },
+  });
   const due = await prisma.comment.findMany({
     where: {
-      // ponytail: what the daily cap held past the look-back isn't sent (the job drops it), only the monthly limit's
-      // (heldDueDates); reply-emails-resubmit's rescheduling is the upgrade if that matters.
-      OR: [
-        { authorEmailDueAt: { lte: now }, createdAt: { gt: lookBack() } },
-        { authorEmailDueAt: { in: heldDueDates(now), lte: now } },
-      ],
+      authorEmailDueAt: { lte: now },
       ...(plansEnabled() && { project: { emailPausedAt: null } }),
     },
     distinct: ["postId"],

@@ -146,6 +146,15 @@ test("past the project's monthly email limit it waits for next month", async () 
   expect(commentEmails(author.email)).toEqual([]);
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).toEqual(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)));
   expect(await prisma.replyEmail.count({ where: { commentId: comment.id } })).toBe(0);
+
+  // Next month (as if: due at this month's start, written days before), it goes, though it's past the look-back.
+  await prisma.projectEmailMonth.deleteMany({ where: { projectId: project.id } });
+  await prisma.comment.update({
+    where: { id: comment.id },
+    data: { authorEmailDueAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), createdAt: new Date(Date.now() - 3 * 24 * 3_600_000) },
+  });
+  await handlers.commentEmailsDue({}, log);
+  expect(commentEmails(author.email)).toHaveLength(1);
 });
 
 test("a send that fails is tried again, emailing the author once", async () => {
