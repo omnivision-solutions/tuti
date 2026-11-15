@@ -196,7 +196,7 @@ export function planFacts(): PlanFacts[] {
     // A plan sold by quote has its credits agreed with it, so AI comes with it.
     const byQuote = !priced && plan !== defaultPlanKey();
     // AI answers and Autopilot's checks both spend credits, so they come together.
-    const ai = !creditsEnabled() || start > 0 || byQuote;
+    const ai = !creditsEnabled() || start > 0 || (credits ?? 0) > 0 || byQuote;
     return {
       credits,
       startCredits: creditsEnabled() && plan === defaultPlanKey() && start > 0 ? start : null,

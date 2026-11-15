@@ -42,7 +42,7 @@ export function PricingTable({ plans, yearlyNote }: { plans: Plan[]; yearlyNote:
       <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote ?? undefined} />
       <ul className="grid w-full max-w-[520px] gap-5 lg:max-w-none lg:grid-cols-3">
         {plans.map((plan, index) => (
-          <Card key={plan.name} plan={plan} previous={plans[index - 1]} interval={interval} credits={plans.some(({ facts }) => facts.credits !== null)} />
+          <Card key={plan.name} plan={plan} previous={plans[index - 1]} interval={interval} credits={plans.some(({ facts }) => facts.credits !== null || facts.startCredits !== null)} />
         ))}
       </ul>
       <p className="text-center text-[15px] text-balance text-muted-foreground">
@@ -207,7 +207,7 @@ function groups(plans: Plan[]): { title: string; icon: ReactNode; rows: Row[] }[
       title: "AI",
       icon: <SparklesIcon aria-hidden className={icon} />,
       rows: [
-        ...(plans.some(({ facts }) => facts.credits !== null)
+        ...(plans.some(({ facts }) => facts.credits !== null || facts.startCredits !== null)
           ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} />, (_, plan) => creditsCell(plan))]
           : []),
         row("AI answers", (facts) => facts.aiAnswers),

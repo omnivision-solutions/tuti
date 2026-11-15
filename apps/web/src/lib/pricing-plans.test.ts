@@ -196,6 +196,11 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   expect(pricingTerms()).toEqual({ badgePerMonth: null, badgeYearPerMonth: 49, trialDays: 7 });
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
 
+  // A priced default plan's monthly credits bring AI, with no starter credits.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.defaultPlan = "pro"; }));
+  expect(planFacts()[1]).toMatchObject({ credits: 1000, aiAnswers: true, features: { codeChanges: true } });
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
+
   // Free's starter credits bring its AI answers, and Autopilot with them; it buys no monthly credits.
   vi.stubEnv("AI_CREDITS_FREE", "100");
   expect(planFacts()[0]).toMatchObject({ credits: null, startCredits: 100, aiAnswers: true, features: { codeChanges: true } });
