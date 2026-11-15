@@ -43,9 +43,14 @@ async function authorsPost() {
   return { author, post };
 }
 
-/** The batch's wait is over: the cron runs a few minutes on. */
+/** The batch's wait is over, and a run queued before is late: the cron runs a few (well, eleven) minutes on. */
 async function minutesLater() {
   await prisma.comment.updateMany({ where: { projectId: project.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  return later();
+}
+/** The cron, as if a run queued before is late now (its due times as they are). */
+async function later() {
+  await prisma.comment.updateMany({ where: { projectId: project.id, authorEmailQueuedAt: { not: null } }, data: { authorEmailQueuedAt: new Date(Date.now() - 11 * 60_000) } });
   return handlers.commentEmailsDue({}, log);
 }
 
@@ -158,7 +163,7 @@ test("past the project's monthly email limit it waits for next month", async () 
     where: { id: comment.id },
     data: { authorEmailDueAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), createdAt: new Date(Date.now() - 3 * 24 * 3_600_000) },
   });
-  await handlers.commentEmailsDue({}, log);
+  await later();
   expect(commentEmails(author.email)).toHaveLength(1);
 });
 
@@ -180,10 +185,12 @@ test("a send that fails is tried again, emailing the author once", async () => {
 test("a comment past the look-back isn't sent with a newer one, and one on a post merged away isn't sent", async () => {
   const { author, post } = await authorsPost();
   const reader = await verified("Reader");
+  // Due a day ago and never sent (its runs kept failing).
   const old = await call(createComment, as(reader.id), { number: post.number, body: "Old news." });
-  await prisma.comment.update({ where: { id: old.id }, data: { createdAt: new Date(Date.now() - 25 * 3_600_000) } });
   await call(createComment, as(reader.id), { number: post.number, body: "Fresh." });
-  await minutesLater();
+  await prisma.comment.updateMany({ where: { postId: (await prisma.comment.findUniqueOrThrow({ where: { id: old.id } })).postId }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await prisma.comment.update({ where: { id: old.id }, data: { authorEmailDueAt: new Date(Date.now() - 25 * 3_600_000) } });
+  await later();
   const [email] = commentEmails(author.email);
   expect(email!.text).toContain("Fresh.");
   expect(email!.text).not.toContain("Old news.");
@@ -227,4 +234,50 @@ test("a resume drops the comments the pause held, not those the monthly limit ho
   const due = async (id: string) => (await prisma.comment.findUniqueOrThrow({ where: { id } })).authorEmailDueAt;
   expect(await due(paused.id)).toBeNull();
   expect(await due(held.id)).toEqual(nextMonth);
+});
+
+test("what the monthly limit held, whose first run on the 1st fails, is still retried and sent", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  vi.spyOn(logger, "warn").mockImplementation(() => {});
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Held for a month." });
+  // Held till this month's start (heldDueDates), written days before.
+  const now = new Date();
+  await prisma.comment.update({
+    where: { id: comment.id },
+    data: { authorEmailDueAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), createdAt: new Date(Date.now() - 3 * 24 * 3_600_000) },
+  });
+  mailbox.refuseNext(author.email, { code: 421 });
+  await later();
+  expect(commentEmails(author.email)).toEqual([]);
+  // Due from now, so retried within the look-back.
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  await later();
+  expect(commentEmails(author.email)).toHaveLength(1);
+});
+
+test("while the project's email is paused nothing goes and its comments stay due; a resume drops them, as every post email the pause held, and what's written after goes", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "support.example.com");
+  vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  // Past its first week, so no daily cap.
+  const pausedAt = new Date(Date.now() - 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 3_600_000), emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  const held = await call(createComment, as(reader.id), { number: post.number, body: "During the pause." });
+  await minutesLater();
+  await minutesLater();
+  // A run queued anyway (before the pause, say) waits too.
+  expect(await handlers.commentsEmailed({ postId: (await prisma.comment.findUniqueOrThrow({ where: { id: held.id } })).postId }, log)).toEqual({ waiting: "the project's email is paused" });
+  expect(commentEmails(author.email)).toEqual([]);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: held.id } })).authorEmailDueAt).not.toBeNull();
+
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+  await call(createComment, as(reader.id), { number: post.number, body: "After the resume." });
+  await minutesLater();
+  const [email, ...more] = commentEmails(author.email);
+  expect(more).toEqual([]);
+  expect(email!.text).toContain("After the resume.");
+  expect(email!.text).not.toContain("During the pause.");
 });

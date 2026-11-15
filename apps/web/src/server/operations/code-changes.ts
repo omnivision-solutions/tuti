@@ -1434,8 +1434,10 @@ export const applyCodeChangeAction = defineOperation({
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
         posting = false;
-        // The email completing it sends quotes this comment and no other (postShipped reads `note`).
+        // The email completing it sends quotes this comment and no other (postShipped reads `note`), so it isn't also
+        // emailed to the post's author as a comment (comment-email).
         const note = shared.commentId;
+        await prisma.comment.update({ where: { id: note }, data: { authorEmailDueAt: null } });
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note } } })));
       }
       if (whole?.completes) {

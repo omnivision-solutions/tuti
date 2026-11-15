@@ -15,7 +15,7 @@ import { claim, LATE_MINUTES, quotedText, whileClaimed } from "./reply-email";
  * comments on a post within this of its first go in one email, so a quick back-and-forth is one email, not five.
  */
 export const COMMENT_BATCH_MINUTES = 5;
-/** After a day, a comment isn't news: one still due then (its runs kept failing, a limit held it) is dropped. */
+/** After a day, a comment isn't news: one due a day ago and still not sent (its runs kept failing) is dropped. */
 const LOOK_BACK_HOURS = 24;
 const lookBack = () => new Date(Date.now() - LOOK_BACK_HOURS * 3_600_000);
 
@@ -107,8 +107,10 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     }),
   );
   if (error) {
-    // Still due, the claims released: Hatchet's retry (or the cron, once late) takes them over.
+    // Still due, the claims released: Hatchet's retry (or the cron, once late) takes them over. What the monthly limit
+    // held is due from now instead, so it's retried within the look-back like any other failure, not every run for good.
     await releaseProjectEmail(projectId, now);
+    await prisma.comment.updateMany({ where: { id: { in: ids }, authorEmailDueAt: { in: heldDueDates() } }, data: { authorEmailDueAt: new Date() } });
     throw new Error(`couldn't email post ${postId}'s new comments to its author: ${error.message}`);
   }
   await done();
@@ -118,29 +120,24 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
 
 /**
  * Every minute: queues comments-emailed for each post with a comment to its author that's due (its batch's wait is
- * over, a run died, or what a limit held is due again), within the look-back. Not a paused project's: the resume lets
- * them go or drops them. Each is pushed a while on as it's queued, so a run still going isn't queued again every
- * minute; one that dies is taken again then (claims keep anyone from being emailed twice).
+ * over, a run failed or died, or what a limit held is due again). Not a paused project's: the resume drops them. Queued,
+ * it isn't queued again for as long as a claim may be (authorEmailQueuedAt), so a run still going or waiting to start
+ * isn't queued every minute; one that dies is taken again then (claims keep anyone from being emailed twice).
  */
 export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log: JobLogger): Promise<JobResult> {
   const now = new Date();
-  // Due and past the look-back, unless the monthly limit held it till now (heldDueDates): not news any more, so dropped
-  // here, before anything below pushes its due time on, never sent with a newer comment's email. Not a paused project's.
-  // ponytail: what the daily cap held past the look-back, or a month-held one whose runs all fail, is dropped too;
-  // reply-emails-resubmit's rescheduling is the upgrade if that matters.
+  const notPaused = plansEnabled() && { project: { emailPausedAt: null } };
+  // Due for a day and still not sent (its runs kept failing): not news any more, so dropped, never sent with a newer
+  // comment's email. Not what the monthly limit holds (heldDueDates: due at a month's first instant), whenever that's
+  // due, as reply-emails-resubmit takes it; a run that fails makes that due from then (commentsEmailed).
   await prisma.comment.updateMany({
-    where: {
-      authorEmailDueAt: { lte: now, notIn: heldDueDates(now) },
-      createdAt: { lte: lookBack() },
-      ...(plansEnabled() && { project: { emailPausedAt: null } }),
-    },
+    where: { authorEmailDueAt: { lt: lookBack(), notIn: heldDueDates(now) }, ...notPaused },
     data: { authorEmailDueAt: null },
   });
+  const queuedLate = new Date(now.getTime() - LATE_MINUTES * 60_000);
+  const waiting = { authorEmailDueAt: { lte: now }, OR: [{ authorEmailQueuedAt: null }, { authorEmailQueuedAt: { lt: queuedLate } }] };
   const due = await prisma.comment.findMany({
-    where: {
-      authorEmailDueAt: { lte: now },
-      ...(plansEnabled() && { project: { emailPausedAt: null } }),
-    },
+    where: { ...waiting, ...notPaused },
     distinct: ["postId"],
     orderBy: { authorEmailDueAt: "asc" },
     select: { postId: true },
@@ -148,8 +145,7 @@ export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log
   });
   let queued = 0;
   for (const { postId } of due) {
-    // Pushed on by how late a claim may be, so the cron doesn't queue it again while it runs.
-    await prisma.comment.updateMany({ where: { postId, authorEmailDueAt: { lte: now } }, data: { authorEmailDueAt: new Date(now.getTime() + LATE_MINUTES * 60_000) } });
+    await prisma.comment.updateMany({ where: { postId, ...waiting }, data: { authorEmailQueuedAt: now } });
     try {
       await enqueue("commentsEmailed", { postId });
       queued++;

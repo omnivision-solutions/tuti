@@ -1461,6 +1461,9 @@ model Comment {
   /// Someone else's comment, to be emailed to the post's author: due a few minutes on, so comments close together go in
   /// one email (comment-email), until it's sent or dropped. The claim is a reply_email row, as the reply's to voters.
   authorEmailDueAt DateTime?
+  /// When comment-emails-due last queued its email to the post's author: not queued again for a while after, so a run
+  /// still going (or waiting to start) isn't queued every minute.
+  authorEmailQueuedAt DateTime?
   /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's comment even if its author is on
   /// the team, so it isn't shown as the team's.
   asReader         Boolean   @default(false)

@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
+import { handlers, POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
 import { startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -121,6 +121,29 @@ test("completing replaces a waiting progress update, its comment folded in; dism
   await call(applyCodeChangeAction, team(), { id: progress.id, revision: postVersion([progress.id, again.id]) });
   expect(await postNow()).toMatchObject({ status: "COMPLETED", comments: [{ body: "Weekly repeats are out." }] });
   expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && !email.subject.startsWith("Verify"))).toHaveLength(1);
+});
+
+test("the comment a completion posts reaches the post's author once, in the shipped email, not again as a comment email; a progress comment does", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  // The comment emails' minute, once their wait is over.
+  const minutesLater = async () => {
+    await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+    await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  };
+  const progress = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  await call(applyCodeChangeAction, team(), { id: progress.id, revision: postVersion([progress.id]) });
+  await minutesLater();
+  // In progress emails nobody: the comment is how the author hears.
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["New comment on “Recurring events”"]);
+
+  // Completed with the team's comment: posted first, so the shipped email quotes it.
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
+  await minutesLater();
+  const [, shipped, ...more] = author(voter.email);
+  expect(shipped!.subject).toBe("Done: Recurring events");
+  expect(shipped!.text).toContain("Monthly ones too: it's all out.");
+  expect(more).toEqual([]);
 });
 
 test("dismissing one pull request's part takes only its part out of the comment while it waits", async () => {
