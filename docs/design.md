@@ -673,8 +673,8 @@ Use these instead of hand-rolling layout:
     strongly when it's also the open one; on any highlighted row the meta line
     is `text-foreground/70`, as the grey falls under 4.5:1 there); a
     bar in the filters' place says how many and offers it (Feedback: Set
-    status, Move to board, Merge…, Clear). On Feedback it covers the pane header's row (its title, pills, search
-    and Filters `invisible` under it; on phones the pills' own row under it stays), so the list doesn't move. In a
+    status, Move to board, Merge…, Clear). On Feedback it covers the pane header's first row (its title, search
+    and Filters `invisible` under it; the pills' own row under it stays), so the list doesn't move. In a
     narrow list column (a phone, or a post open beside it; a container query on
     the column, not the window) it stays one row with shorter words (Status,
     Board, an × for Clear; the full names for screen readers); narrower still,
@@ -694,9 +694,10 @@ Use these instead of hand-rolling layout:
     name and count) in the tabs' order. Where no tab or group heading names the status (Possible duplicates, a tab
     only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu, each
     status's group an `ItemGroup`. The list's pane header is its one toolbar (the job is triage: nothing else between
-    the statuses and the rows): the status pills (`FilterPills`, scrolling sideways when short of room), a round search
-    field, one round "Filters" button (a popover with Board, Voters and the sort; how many are set on it) and New post;
-    on phones the view's name as its title and the pills a row under it. The same with a post open or not, so the list
+    the statuses and the rows): the view's name as its title, a round search field, one round "Filters" button (a
+    popover with Board, Voters and the sort; how many are set on it) and New post; the status pills (`FilterPills`,
+    scrolling sideways when short of room) a row of their own under it at every width (`PaneHeader filtersBelow`:
+    six or seven don't fit beside the search, as Autopilot's and Docs' views). The same with a post open or not, so the list
     never moves as one opens. Feedback's menu (`FeedbackMenu`, a `SectionPane`) beside it has the views (All posts,
     Needs triage, Roadmap), the boards (a + to add one, Manage boards), the statuses and Possible duplicates, with
     counts; with a post open it shows only where there's room for three panes (80rem of the shell).
