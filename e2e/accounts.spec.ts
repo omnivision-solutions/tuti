@@ -289,6 +289,8 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await vera.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(vera.getByText("Check your email")).toBeVisible();
   await expect(vera.getByText(`We sent a sign-in link to ${email}.`)).toBeVisible();
+  // Back to the board they were on, with the idea they started.
+  await expect(vera.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", `/feedback/feature-requests?${new URLSearchParams({ title })}`);
   await checkpoint(vera, "portal-sign-in-link-sent");
 
   const message = await latestEmailTo(email);
