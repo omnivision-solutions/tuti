@@ -7,7 +7,8 @@ export const contentType = "image/png";
 // One image per feature page (its slug from the page's generateStaticParams), with its own alt text.
 export function generateImageMetadata({ params }: { params: { slug: string } }) {
   const f = feature(params.slug);
-  return [{ id: "card", alt: f ? `Tuti ${f.name}: ${CONTENT[f.slug].headline}` : "Tuti", size: { width: 1200, height: 630 }, contentType }];
+  // An unknown slug has no image: its address answers 404, like its page.
+  return f ? [{ id: "card", alt: `Tuti ${f.name}: ${CONTENT[f.slug].headline}`, size: { width: 1200, height: 630 }, contentType }] : [];
 }
 
 // Each feature's picture: a window onto it, in the home page's story (Lumen, pull request #230).
