@@ -69,7 +69,7 @@ All of it also lives in **one widget** inside your app: search help, send a mess
 
 ## Looks like your product, not ours
 
-Your name, colour and fonts, light or dark. The widget matches too, down to its greeting. Customers see your brand, start to finish.
+Your name, colour and fonts, light or dark. The widget matches too, down to its greeting.
 
 <p align="center">
   <img src=".github/assets/theming.gif" alt="One help center with its widget open, restyled as eight different brands: colours, fonts, greetings and light or dark mode">
