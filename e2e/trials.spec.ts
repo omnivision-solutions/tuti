@@ -20,6 +20,32 @@ async function endTrial(slug: string) {
 }
 
 // On Tuti's cloud with a free trial: 7 days of Pro.
+test("sign-up pitches the free trial, its days and plan from the billing file, and what Tuti does (on phones, the form near the top); not on the way to an invite", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const page = await browser.newPage({ baseURL: TRIAL_URL, viewport: { width: 1280, height: 800 } });
+  await page.goto("/app/auth/sign-up");
+  await expect(page.getByText("7-day free trial · No card needed")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ship code. Your help center keeps up." })).toBeVisible();
+  await expect(page.getByRole("listitem")).toHaveText([
+    "Help center and AI answers from your docs",
+    "Autopilot keeps them current from your pull requests",
+    "One inbox for chat and email",
+    "Feedback board, roadmap and changelog",
+  ]);
+  await expect(page.getByText("Start your free trial", { exact: true })).toBeVisible();
+  await expect(page.getByText("7 days of Pro. No card needed.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start free trial" })).toBeVisible();
+  await checkpoint(page, "sign-up-trial");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("listitem").first()).toBeHidden();
+  await checkpoint(page, "sign-up-trial-phone", { fullPage: false });
+  // An invite joins a team's project, starting no trial.
+  await page.goto(`/app/auth/sign-up?${new URLSearchParams({ next: "/app/auth/invite/some-token" })}`);
+  await expect(page.getByText("Create an account", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign up" })).toBeVisible();
+  await expect(page.getByText(/free trial/)).toHaveCount(0);
+});
+
 test("a new account's first project starts a free trial: every page says what's left, Billing offers the plans, and it ends on the default plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

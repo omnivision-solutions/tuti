@@ -70,7 +70,8 @@ export async function fillSignUp(page: Page, name: string, email?: string) {
     await page.getByLabel("Email").fill(email);
   }
   await page.getByLabel("Password").fill("correct horse battery staple");
-  await page.getByRole("button", { name: "Sign up" }).click();
+  // "Start free trial" on a cloud with trials (TRIAL_URL).
+  await page.getByRole("button", { name: /^(Sign up|Start free trial)$/ }).click();
 }
 
 /** Creates a project from /app/new, skips the first run's setup and waits for its Home (`portal`: the portal's address on the page's server). */

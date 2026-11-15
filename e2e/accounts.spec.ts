@@ -205,8 +205,7 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/sign-up");
   // For Acme, not the pitch to teams.
   await expect(ada.getByText("Create your Tuti account to continue to Acme.")).toBeVisible();
-  await expect(ada.getByText("Feedback, roadmap, changelog and docs, kept up to date as you ship.")).toHaveCount(0);
-  await expect(ada.getByText("Start collecting feedback in minutes.")).toHaveCount(0);
+  await expect(ada.getByText("Ship code. Your help center keeps up.")).toHaveCount(0);
   await checkpoint(ada, "portal-sign-up-on-app");
   const email = `e2e-${randomUUID()}@example.com`;
   await ada.getByLabel("Name").fill("Ada");
