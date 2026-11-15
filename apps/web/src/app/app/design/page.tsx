@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow, VoteCount } from "@/components/item-list";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { PostStatusBadge, STATUS_LABELS } from "@/components/post-status-badge";
-import { TutiLogo, TutiMark } from "@tuti/ui/tuti-logo";
+import { TutiLogo, TutiMark, TutiWordmark } from "@tuti/ui/tuti-logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -276,7 +276,7 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
           <p className="inline-flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             Powered by
             <TutiMark mono className="size-4" />
-            <span className="font-heading font-bold text-foreground">tuti</span>
+            <TutiWordmark className="text-foreground" />
           </p>
         </Section>
       </div>

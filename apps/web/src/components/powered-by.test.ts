@@ -29,6 +29,13 @@ describe("TutiMark", () => {
     expect(badge).toContain("Powered by");
     expect(badge).not.toContain("#f26b1d");
   });
+
+  it("draws tuti in Tuti's own font, not in the team's heading font", () => {
+    const badge = renderToStaticMarkup(createElement(PoweredByTuti));
+    expect(badge).toMatch(/<svg[^>]*aria-label="tuti"/);
+    expect(badge).not.toContain("font-heading");
+    expect(badge).not.toMatch(/>tuti</);
+  });
 });
 
 test("an empty state's mark is grey too: portals show them, beside the team's colours", () => {
