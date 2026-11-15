@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { commentEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { claimProjectEmail, dueAgain, heldDueDates, releaseProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, releaseProjectEmail } from "./email-limits";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
@@ -52,16 +52,17 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   }
   const { projectId, project } = post;
   const ids = comments.map((comment) => comment.id);
-  // Done once nobody's email about them is left in flight (another run's, or the reply's to voters): the cron takes
-  // one that is again later, and its claim says whether it went.
-  const done = () => prisma.comment.updateMany({ where: { id: { in: ids }, replyEmails: { none: { sentAt: null } } }, data: { authorEmailDueAt: null } });
+  // Done once no email about them to the author is left in flight (another run's, or the reply's to voters): the cron
+  // takes one that is again later, and its claim says whether it went. Other people's claims (a voter's) aren't this one's.
+  const done = (authorId: string | null) =>
+    prisma.comment.updateMany({ where: { id: { in: ids }, ...(authorId && { replyEmails: { none: { userId: authorId, sentAt: null } } }) }, data: { authorEmailDueAt: null } });
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
   const [author] = post.authorId ? await postAudience(projectId, project, post, [post.authorId]) : [];
   if (!author) {
-    await done();
+    await done(null);
     return { emailed: 0 };
   }
   // Each comment claimed before sending (one time for all, as whileClaimed renews them), so a retry, a second run or the
@@ -74,7 +75,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     }
   }
   if (claimed.length === 0) {
-    await done();
+    await done(author.id);
     return { emailed: 0 };
   }
   const claimedIds = claimed.map((comment) => comment.id);
@@ -113,7 +114,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     await prisma.comment.updateMany({ where: { id: { in: ids }, authorEmailDueAt: { in: heldDueDates() } }, data: { authorEmailDueAt: new Date() } });
     throw new Error(`couldn't email post ${postId}'s new comments to its author: ${error.message}`);
   }
-  await done();
+  await done(author.id);
   log.info(`post ${postId}: emailed ${claimed.length} comment(s) to its author`);
   return { emailed: 1, comments: claimed.length };
 }
@@ -135,7 +136,13 @@ export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log
     data: { authorEmailDueAt: null },
   });
   const queuedLate = new Date(now.getTime() - LATE_MINUTES * 60_000);
-  const waiting = { authorEmailDueAt: { lte: now }, OR: [{ authorEmailQueuedAt: null }, { authorEmailQueuedAt: { lt: queuedLate } }] };
+  // Due, or held by the monthly limit (heldDueDates) where the project has room again (an upgrade), as
+  // reply-emails-resubmit takes it: not a capped project's, which would only wait again.
+  const capped = await cappedProjects(now);
+  const waiting = {
+    OR: [{ authorEmailDueAt: { lte: now } }, { authorEmailDueAt: { in: heldDueDates(now) }, ...(capped.length > 0 && { projectId: { notIn: capped } }) }],
+    AND: [{ OR: [{ authorEmailQueuedAt: null }, { authorEmailQueuedAt: { lt: queuedLate } }] }],
+  };
   const due = await prisma.comment.findMany({
     where: { ...waiting, ...notPaused },
     distinct: ["postId"],

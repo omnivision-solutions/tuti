@@ -281,3 +281,26 @@ test("while the project's email is paused nothing goes and its comments stay due
   expect(email!.text).toContain("After the resume.");
   expect(email!.text).not.toContain("During the pause.");
 });
+
+test("a voter's failed reply email doesn't keep the comment due to the author, who got the reply", async () => {
+  const { author, post } = await authorsPost();
+  const voter = await verified("Voter");
+  await call(setVote, as(voter.id), { number: post.number, voted: true });
+  vi.spyOn(logger, "warn").mockImplementation(() => {});
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping next week.", emailVoters: true });
+  await minutesLater();
+  expect(commentEmails(author.email)).toEqual([]);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: reply.id } })).authorEmailDueAt).toBeNull();
+});
+
+test("what the monthly limit held goes before the 1st once the project has room again (an upgrade)", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Held for next month." });
+  const now = new Date();
+  await prisma.comment.update({ where: { id: comment.id }, data: { authorEmailDueAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)) } });
+  await later();
+  expect(commentEmails(author.email)).toHaveLength(1);
+});
