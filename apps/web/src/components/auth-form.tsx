@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { MailIcon } from "lucide-react";
+import { ArrowLeftIcon, MailIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
  * on the way back to a portal: that portal's, so the reset comes back there). `pages` is where the other sign-in pages are:
  * the app's under /app/auth, a portal's at its root. `submitLabel` replaces the button's text (sign-up's "Start free trial").
+ * `backTo` (a portal's name) adds "Back to <name>" to the sent link's card, to `next`.
  */
 export function AuthForm({
   mode,
@@ -47,6 +48,7 @@ export function AuthForm({
   teamHref,
   pages = "",
   submitLabel,
+  backTo,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -65,6 +67,7 @@ export function AuthForm({
   teamHref?: string;
   pages?: string;
   submitLabel?: string;
+  backTo?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -73,6 +76,9 @@ export function AuthForm({
   const [linkError, setLinkError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
   const [pending, setPending] = useState(false);
+  // The sent card's: "Send another link" went out, and the address "Use a different email" brings back to the form.
+  const [resent, setResent] = useState(false);
+  const [email, setEmail] = useState(defaultEmail);
   const isSignUp = mode === "sign-up";
   // Signing in on a portal: the emailed link, the password on the app.
   const usePassword = isSignUp || !linkProject;
@@ -81,29 +87,73 @@ export function AuthForm({
   const onApp = (newAccount?: boolean) =>
     at(`/continue?${new URLSearchParams({ ...(next && { redirect: next }), ...(newAccount && { "sign-up": "1" }) })}`);
 
-  async function emailLink(form: HTMLFormElement) {
-    const email = form.elements.namedItem("email") as HTMLInputElement;
-    if (!linkProject || !email.reportValidity()) {
-      return;
-    }
+  async function sendLink(data: FormData) {
     setPending(true);
     setError(undefined);
     setLinkError(undefined);
-    const result = await emailSignInLink(linkProject, next ?? redirectTo, new FormData(form));
+    setResent(false);
+    const result = await emailSignInLink(linkProject!, next ?? redirectTo, data);
     setPending(false);
     setLinkError(result.error);
-    setSentTo(result.sentTo);
+    return result;
+  }
+
+  async function emailLink(form: HTMLFormElement) {
+    const field = form.elements.namedItem("email") as HTMLInputElement;
+    if (!linkProject || !field.reportValidity()) {
+      return;
+    }
+    setSentTo((await sendLink(new FormData(form))).sentTo);
   }
 
   if (sentTo) {
+    // Again to the same address, under the same limits (server/email-link-limits.ts).
+    const resend = async () => {
+      const data = new FormData();
+      data.set("email", sentTo);
+      setResent(!!(await sendLink(data)).sentTo);
+    };
     return (
-      <Card className="mx-auto w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="font-heading text-xl font-bold">Check your email</CardTitle>
-          <CardDescription className="break-words">
-            We sent a sign-in link to {sentTo}. It works once, for the next {SIGN_IN_LINK_MINUTES} minutes.
+      <Card className="mx-auto w-full max-w-sm gap-6 pt-8 shadow-card sm:pt-10">
+        <CardHeader className="justify-items-center gap-2 px-6 text-center sm:px-10">
+          <span aria-hidden className="mb-2 flex size-12 items-center justify-center rounded-full bg-soft text-soft-foreground">
+            <MailIcon className="size-5" />
+          </span>
+          <CardTitle className="font-heading text-2xl font-[650] tracking-[-0.022em] sm:text-[1.625rem]">Check your email</CardTitle>
+          <CardDescription className="text-[0.9375rem] break-words">
+            We sent a sign-in link to <strong className="font-semibold text-foreground">{sentTo}</strong>. It works once, for the next{" "}
+            {SIGN_IN_LINK_MINUTES} minutes.
           </CardDescription>
+          <p className="mt-2 text-[0.9375rem] text-muted-foreground">Not there? Check your spam folder.</p>
         </CardHeader>
+        <CardFooter className="flex flex-col gap-3 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10">
+          <Button type="button" variant="outline" disabled={pending} onClick={resend} className="h-11 w-full rounded-lg text-[0.9375rem] font-semibold">
+            {pending ? "…" : "Send another link"}
+          </Button>
+          <p role="status" className="text-center text-sm text-balance text-muted-foreground empty:hidden">
+            {linkError ?? (resent ? "Another link is on its way." : null)}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setEmail(sentTo);
+              setSentTo(undefined);
+              setResent(false);
+              setLinkError(undefined);
+            }}
+            className="text-[0.9375rem] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+          >
+            Use a different email
+          </button>
+          {backTo && (
+            <div className="mt-2 flex w-full justify-center border-t pt-5 text-[0.9375rem] text-muted-foreground">
+              <Link href={at(next ?? redirectTo)} className="inline-flex items-center gap-2 break-words hover:text-foreground">
+                <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
+                Back to {backTo}
+              </Link>
+            </div>
+          )}
+        </CardFooter>
       </Card>
     );
   }
@@ -178,7 +228,7 @@ export function AuthForm({
                   name="email"
                   type="email"
                   autoComplete="email"
-                  defaultValue={defaultEmail}
+                  defaultValue={email}
                   required
                   placeholder={portal ? "you@example.com" : undefined}
                   aria-invalid={linkError ? true : undefined}
