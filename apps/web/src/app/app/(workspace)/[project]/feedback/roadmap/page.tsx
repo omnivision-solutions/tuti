@@ -33,7 +33,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   const board = boards.find((b) => b.slug === searchParams.board)?.slug;
   const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
   const ids = columns.flat().map((post) => post.id);
-  // Who's asking, how many completing each one emails (asked before a card goes to Completed), and the team's plan for it.
+  // Who's asking, how many each one's status emails reach (asked before a move that emails: Completed, or Planned and In progress moving forward), and the team's plan for it.
   const [totals, emails, plans, menu] = await Promise.all([
     voterTotals(project.id, project.askingProperty, ids),
     emailedOnCompletion(project.id, ids),

@@ -661,7 +661,9 @@ Use these instead of hand-rolling layout:
 - **The team's roadmap**: no column fill (the cards make the lanes), each column's header an icon in its status's
   colour, its name, count and a one-line note; cards: board, the vote pill and "⋯" (status menu) on top, a 16px
   title, two lines of the post, then the owner and ETA when there are. On phones one column at a time, picked from a
-  segmented row with counts.
+  segmented row with counts. A card dropped (or moved from its menu) where its people are emailed asks first: "Mark
+  “<title>” in progress?", "This emails up to N people who asked for it that it's in progress."; one that emails
+  nobody goes at once. Completed always asks, saying "Nobody is emailed." when it doesn't.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):
   every list of things (posts, boards, team, invites, suggestions), usually in
   a `Card`. Titles wrap, never get cut off.
