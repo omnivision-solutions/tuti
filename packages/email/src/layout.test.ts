@@ -13,6 +13,9 @@ import { changelogEmail } from "./changelog-email";
 import { conversationEmail } from "./conversation-email";
 import { creditsEmail } from "./credits-email";
 import { emailLimitEmail } from "./email-limit-email";
+import { emailPausedTeamEmail } from "./email-paused-email";
+import { verifyEmail } from "./verify-email";
+import { autopilotEmail } from "./autopilot-email";
 import { inviteEmail } from "./invite-email";
 import { accentColors, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
@@ -201,4 +204,36 @@ test("a diff: removed lines struck through on soft red, added on soft green, eac
     { plainText: true },
   );
   expect(text).toMatch(/− Open the board and choose Export.\s+\+ Go to Settings → Data and choose Export CSV.\s+4 more lines in Tuti/);
+});
+
+test("Tuti's emails to teams open with a line in green saying what it's about, then a title that says what happened", async () => {
+  const url = "https://tuti.example/x";
+  const heads = async (email: { body: Parameters<typeof render>[0] }) => {
+    const text = await render(email.body, { plainText: true });
+    const html = await render(email.body);
+    return { eyebrow: html.match(new RegExp(`font-weight:600;color:${colors.green}[^>]*>([^<]*(?:<!-- -->[^<]*)*)</p>`))?.[1]?.replaceAll("<!-- -->", ""), title: html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1]?.replaceAll("<!-- -->", ""), text };
+  };
+  expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: true, subject: "Can't export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New conversation · Acme" });
+  expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: false, subject: "Export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New reply · Acme", title: "Export" });
+  expect(await heads(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url }))).toMatchObject({ eyebrow: "You&#x27;re invited", title: "Join Acme on Tuti" });
+  expect(await heads(verifyEmail({ name: "Ada", url }))).toMatchObject({ title: "Welcome to Tuti, Ada" });
+  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "120", url }))).toMatchObject({ eyebrow: "Acme · Billing", title: "120 AI credits left" });
+  expect(await heads(creditsEmail({ projectName: "Acme", out: true, left: "0", url }))).toMatchObject({ title: "Out of AI credits" });
+  const limit = await heads(emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "Upgrade to Pro for more.", url }));
+  expect(limit).toMatchObject({ eyebrow: "Acme · Billing", title: "You&#x27;ve sent all 1,000 emails this month" });
+  expect(limit.text).toContain("has sent the 1,000 emails its Starter plan includes this month");
+  const paused = await heads(emailPausedTeamEmail({ projectName: "Acme", reason: "bounces", url }));
+  expect(paused).toMatchObject({ eyebrow: "Acme · Email", title: "We paused Acme&#x27;s emails" });
+  // The warnings in the highlight note.
+  for (const email of [emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "", url }), emailPausedTeamEmail({ projectName: "Acme", reason: "bounces", url })]) {
+    expect(await render(email.body)).toContain(`background-color:#fff4ea;color:${colors.onHighlight}`);
+  }
+  expect(await heads(verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 1, outdated: 1, unclear: 0 }, reason: "", url }))).toMatchObject({ eyebrow: "Help center · Verify", title: "“Export” is out of date" });
+  // Autopilot: one pull request is its title; several, what they need.
+  const change = { title: "Add CSV export", pullRequest: "acme/app#1", summary: "", reviewUrl: url, goesOut: [], wentOut: [], done: [], needsYou: [{ kind: "Out of date", title: "Export", fact: "Publishes this edit" }] };
+  const autopilot = (changes: (typeof change)[], digest = false) =>
+    heads(autopilotEmail({ projectName: "Acme", changes, digest, totals: { needsYou: changes.length, goesOut: 0, wentOut: 0, first: "" }, more: 0, autopilotUrl: url, accountUrl: url }));
+  expect(await autopilot([change])).toMatchObject({ eyebrow: "Acme · acme/app#1", title: "Add CSV export" });
+  expect(await autopilot([change, { ...change, pullRequest: "acme/app#2" }])).toMatchObject({ eyebrow: "Acme · 2 merged pull requests", title: "2 need you" });
+  expect(await autopilot([change, { ...change, pullRequest: "acme/app#2" }], true)).toMatchObject({ title: "2 still need you" });
 });

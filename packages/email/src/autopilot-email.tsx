@@ -98,9 +98,10 @@ function Update({ update, pullRequest, shown = true }: { update: AutopilotEmailU
                   <Kind kind={update.kind} /> <strong>{update.title}</strong>
                 </Text>
               </Column>
-              <Column style={{ verticalAlign: "top", textAlign: "right", width: 150, paddingLeft: 8 }}>
+              {/* No fixed width: on a phone it wraps under its own words rather than push the card wider than the screen. */}
+              <Column style={{ verticalAlign: "top", textAlign: "right", paddingLeft: 8 }}>
                 {/* Apart from the title in plain text too. */}{" "}
-                <Text style={{ fontSize: 13, lineHeight: "22px", color: colors.muted, margin: 0, whiteSpace: "nowrap" }}>
+                <Text style={{ fontSize: 13, lineHeight: "22px", color: colors.muted, margin: 0 }}>
                   {[update.goesOut, update.sure !== undefined && `${update.sure}% sure`].filter(Boolean).join(" · ")}
                 </Text>
               </Column>
