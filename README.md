@@ -79,7 +79,7 @@ Your name, colour and fonts, light or dark. The widget matches too, down to its 
 
 - **Docs that stay true.** Articles are checked against your code, so what you ship and what you say match.
 - **Answers, not search results.** AI answers come from your own help center, in the widget and on the site.
-- **Bring everything with you.** Import from Intercom, Featurebase, Canny and more, and keep your old links working.
+- **Bring everything with you.** Import from Intercom, Featurebase, Canny and more, or bring any public help center by its address.
 - **Built for your agents too.** Your help center, inbox, feedback and changelog are all in its REST API and MCP server.
 - **Open source.** Read every line, suggest changes, or run it on your own servers.
 
