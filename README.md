@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>The AI-native help desk that updates itself.</b><br>
-  Help center, inbox, feedback board and changelog. Tuti reads every pull request you merge and keeps them all in step with what you ship.
+  Help center, inbox, feedback board and changelog. Tuti reads every pull request you merge and keeps your help center, feedback board and changelog in step with what you ship.
 </p>
 
 <p align="center">
