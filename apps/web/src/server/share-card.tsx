@@ -135,6 +135,17 @@ export const drawable = (text: string) =>
   text.replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
 
 /**
+ * The logo's size on the card (at most 64px tall and 520 wide), and the stored width to read: the smallest that's twice
+ * that (the original's, at most), so it's never scaled up.
+ */
+export function logoSize(logo: { width: number; height: number }) {
+  const scale = Math.min(64 / logo.height, 520 / logo.width);
+  const [width, height] = [Math.round(logo.width * scale), Math.round(logo.height * scale)];
+  const widths = imageWidths(logo.width);
+  return { width, height, stored: widths.find((w) => w >= width * 2) ?? widths.at(-1)! };
+}
+
+/**
  * The logo as a PNG (the renderer can't read the stored WebP), at most 64px tall and 520 wide; null without one, or if
  * it can't be read (the card shows the portal's name instead).
  */
@@ -144,11 +155,8 @@ async function logoImage(logo: Branding["logo"]) {
     return null;
   }
   try {
-    const scale = Math.min(64 / logo.height, 520 / logo.width);
-    const [width, height] = [Math.round(logo.width * scale), Math.round(logo.height * scale)];
-    // The smallest stored width that's twice what it shows at (the original's, at most), so it's never scaled up.
-    const widths = imageWidths(logo.width);
-    const webp = await storage.get(imageKey(logo.id, widths.find((w) => w >= width * 2) ?? widths.at(-1)!));
+    const { width, height, stored } = logoSize(logo);
+    const webp = await storage.get(imageKey(logo.id, stored));
     // Twice the size it shows at, for sharp edges.
     const png = await sharp(webp).resize(width * 2, height * 2, { fit: "inside" }).png().toBuffer();
     return { src: `data:image/png;base64,${png.toString("base64")}`, width, height };
