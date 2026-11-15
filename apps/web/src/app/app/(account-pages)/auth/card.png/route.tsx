@@ -4,13 +4,15 @@ import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 /**
- * The card a shared sign-in, sign-up or invite link shows (any /app link: unfurlers aren't signed in, so they land on
- * sign-in). Drawn at build time, the same for everyone: nothing in it is a project's. Its fonts are the brand's
- * (packages/ui/src/fonts) at one weight each, as TTF: ImageResponse can't read woff2.
+ * The card a shared /app link shows (the /app layout names it: unfurlers aren't signed in, so they see sign-in, or a
+ * page open to everyone like /app/license). A route, not an opengraph-image file: in a route group, that one's address
+ * gets a hash, which the layout couldn't name. Drawn at build time, the same for everyone: nothing in it is a project's.
+ * Its fonts are the brand's (packages/ui/src/fonts) at one weight each, as TTF: ImageResponse can't read woff2.
  */
-export const alt = "Tuti: the help center that stays in sync with your code";
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
+const size = { width: 1200, height: 630 };
+
+// Drawn once, at build time.
+export const dynamic = "force-static";
 
 const GREEN = "#12804a";
 const ORANGE = "#f26b1d";
@@ -32,7 +34,7 @@ function Mark({ size }: { size: number }) {
 
 const PARTS = ["Docs", "AI answers", "Inbox", "Feedback", "Changelog"];
 
-export default async function OpenGraphImage() {
+export async function GET() {
   const [heading, text] = await Promise.all([font("bricolage-grotesque-700.ttf"), font("figtree-500.ttf")]);
   return new ImageResponse(
     (

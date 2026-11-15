@@ -22,14 +22,15 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   // On a phone's home screen, the parrot.
   expect(await visitor.locator('head link[rel="apple-touch-icon"]').getAttribute("href")).toMatch(/^\/app\/apple-icon\.png/);
   const image = (await meta(visitor, 'property="og:image"'))!;
-  expect(image.startsWith(`${APP_URL}/app/auth/opengraph-image`)).toBe(true);
+  expect(image).toBe(`${APP_URL}/app/auth/card.png`);
+  expect(await meta(visitor, 'name="twitter:image"')).toBe(image);
   const response = await visitor.request.get(image);
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toBe("image/png");
 
   // The licence page, served signed out (self-hosted servers send buyers there): the same card.
   await visitor.goto("/app/license");
-  expect((await meta(visitor, 'property="og:image"'))!.startsWith(`${APP_URL}/app/auth/opengraph-image`)).toBe(true);
+  expect(await meta(visitor, 'property="og:image"')).toBe(image);
 
   // The API's reference: its own title, kept out of search too.
   await visitor.goto("/api/docs");
