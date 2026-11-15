@@ -52,3 +52,20 @@ test("people emailed about a status already aren't counted again when a post mov
   // Told it's in progress already: nobody again. Planned hasn't emailed them yet.
   expect((await emailedOnMove(project.id, [reopened])).get(reopened.id)).toEqual({ PLANNED: 2, IN_PROGRESS: 0, COMPLETED: 2 });
 });
+
+test("reopened after it shipped: Planned and In progress don't count those told it shipped, as their emails skip them", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+  const [author, voter, later] = [await signUp("Author"), await signUp("Voter"), await signUp("Later")];
+  await prisma.user.updateMany({ where: { id: { in: [author.id, voter.id, later.id] } }, data: { emailVerified: true } });
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, as(voter.id), { number: post.number, voted: true });
+  await call(updatePost, as(owner.id), { number: post.number, status: "completed" });
+  await call(updatePost, as(owner.id), { number: post.number, status: "open" });
+  // Came after it shipped: not told yet.
+  await call(setVote, as(later.id), { number: post.number, voted: true });
+  const reopened = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } }, select: { id: true, status: true } });
+
+  expect((await emailedOnMove(project.id, [reopened])).get(reopened.id)).toEqual({ PLANNED: 1, IN_PROGRESS: 1, COMPLETED: 1 });
+});

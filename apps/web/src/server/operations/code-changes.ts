@@ -126,7 +126,9 @@ export async function emailedOnCompletion(
       AND NOT EXISTS (${
         status === "COMPLETED"
           ? Prisma.sql`SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
-          : Prisma.sql`SELECT 1 FROM status_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s.status = ${status}::"PostStatus" AND s."sentAt" IS NOT NULL`
+          : // Nor, for Planned and In progress, those told it shipped already (reopened since): postShipped skips them.
+            Prisma.sql`SELECT 1 FROM status_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s.status = ${status}::"PostStatus" AND s."sentAt" IS NOT NULL
+              UNION ALL SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
       })
     GROUP BY x."postId"`;
   return new Map(rows.map((row) => [row.postId, Number(row.people)]));

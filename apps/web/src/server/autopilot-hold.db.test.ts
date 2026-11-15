@@ -1115,7 +1115,9 @@ test("a teammate's Stop landing after the runner checked a post's update and too
   vi.restoreAllMocks();
   const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
   // Restored whatever happens: left in place, the next tests' reads would look for this test's actions.
-  onTestFinished(() => vi.restoreAllMocks());
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
   const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
     const read = await findMany(...args);
     // The apply's read: once the runner holds the first (taken off the schedule, as the owner's).
