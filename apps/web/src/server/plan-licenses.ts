@@ -57,10 +57,10 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
     if (license.projectId) {
       throw new Refused("This license is on another project. Unassign it there first.");
     }
-    await lockProject(tx, project.id);
-    // Stripe's webhook's lock for the project too (syncSubscription): a subscription starting now waits, and then
-    // finds the license.
+    // Stripe's webhook's lock for the project (syncSubscription), then its row, in the webhook's order: a subscription
+    // starting now waits, and then finds the license.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${project.id}))`;
+    await lockProject(tx, project.id);
     // The plan as stored (trialEndsAt selected: see @tuti/db).
     const current = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, trialEndsAt: true, planLicense: { select: { id: true } } } });
     if (current.planLicense) {
