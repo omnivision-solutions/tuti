@@ -2,7 +2,7 @@
 
 import { buttonVariants } from "@tuti/ui/button";
 import { BilledToggle } from "@tuti/ui/plan-line";
-import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@tuti/ui/popover";
+import { Popover, PopoverArrow, PopoverContent, PopoverTitle, PopoverTrigger } from "@tuti/ui/popover";
 import { cn } from "cn";
 import { BookOpenIcon, CheckIcon, ChevronDownIcon, InboxIcon, LightbulbIcon, SparklesIcon, UsersIcon } from "lucide-react";
 import { type CSSProperties, type ReactNode, useState } from "react";
@@ -170,7 +170,7 @@ function Tip({ label, title, children }: { label: string; title: string; childre
       <PopoverContent side="top" sideOffset={10} className="w-[280px] rounded-[14px] border bg-card px-4 py-3.5 text-left shadow-lg ring-0">
         {/* A square turned 45° with the card's fill and two edges, half hidden under the card. */}
         <PopoverArrow className="size-3 rotate-45 border bg-card data-[side=bottom]:-top-[7px] data-[side=bottom]:border-r-0 data-[side=bottom]:border-b-0 data-[side=top]:-bottom-[7px] data-[side=top]:border-t-0 data-[side=top]:border-l-0" />
-        <p className="mb-2.5 font-heading text-[15px] font-bold">{title}</p>
+        <PopoverTitle className="mb-2.5 font-heading text-[15px] font-bold">{title}</PopoverTitle>
         {children}
       </PopoverContent>
     </Popover>
@@ -183,18 +183,20 @@ function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: n
   return (
     <Tip label="AI credits a month" title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
       {rows.length > 0 ? (
-        <dl className="grid gap-2 text-sm">
-          {rows.map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-bold tabular-nums">{number(value)}</dd>
-            </div>
-          ))}
-        </dl>
+        <>
+          <dl className="grid gap-2 text-sm">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className="font-bold tabular-nums">{number(value)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Estimates. They vary by question and model. Credits also pay for summaries.</p>
+        </>
       ) : (
-        <p className="text-sm text-muted-foreground">AI answers, summaries and Autopilot&apos;s checks of the changes you ship.</p>
+        <p className="text-sm text-muted-foreground">Credits pay for AI answers, summaries and Autopilot&apos;s checks of the changes you ship.</p>
       )}
-      <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Estimates. They vary by question and model. Credits also pay for summaries.</p>
     </Tip>
   );
 }

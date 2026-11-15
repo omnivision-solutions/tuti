@@ -43,4 +43,9 @@ function PopoverArrow({ ...props }: PopoverPrimitive.Arrow.Props) {
   return <PopoverPrimitive.Arrow data-slot="popover-arrow" {...props} />
 }
 
-export { Popover, PopoverArrow, PopoverContent, PopoverTrigger }
+/** A popover's heading, which names it for screen readers. */
+function PopoverTitle({ ...props }: PopoverPrimitive.Title.Props) {
+  return <PopoverPrimitive.Title data-slot="popover-title" {...props} />
+}
+
+export { Popover, PopoverArrow, PopoverContent, PopoverTitle, PopoverTrigger }
