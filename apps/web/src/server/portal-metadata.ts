@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { branding } from "@/server/operations/branding";
 import { portalAddress } from "@/server/custom-domains";
+import { portalHomePath } from "@/server/portal-home";
 
 /**
  * A portal's branding and name (its search listing's title, Customize → SEO, else the project's), read once per request by
@@ -35,7 +36,7 @@ export async function portalPageMetadata(
     noindex?: boolean;
   },
 ): Promise<Metadata> {
-  const [address, site] = await Promise.all([portalAddress(slug), portalSite(slug)]);
+  const [address, site, home] = await Promise.all([portalAddress(slug), portalSite(slug), portalHomePath(slug)]);
   const url = `${address}${page.path === "/" ? "" : page.path}`;
   const description = page.description || undefined;
   const { publishedTime, modifiedTime } = page.article ?? {};
@@ -48,7 +49,12 @@ export async function portalPageMetadata(
       ...(description && { description }),
       url,
       ...(site && { siteName: site.name }),
-      images: [{ url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title }],
+      // The team's own share image (Customize → SEO) on the page their portal opens on, as at its address; a card made for every other page.
+      images: [
+        site?.brand.seoImage && page.path === home
+          ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
+          : { url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
+      ],
       ...(page.article
         ? { type: "article", ...(publishedTime && { publishedTime: publishedTime.toISOString() }), ...(modifiedTime && { modifiedTime: modifiedTime.toISOString() }) }
         : { type: "website" }),

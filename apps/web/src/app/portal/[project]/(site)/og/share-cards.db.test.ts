@@ -1,8 +1,10 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { startS3Fake } from "@tuti/testkit";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { generateMetadata as changelogEntryMetadata } from "@/app/portal/[project]/(site)/changelog/[number]/page";
 import { generateMetadata as postMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
+import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import { generateMetadata as layoutMetadata } from "@/app/portal/[project]/(site)/layout";
 import { metadata as signInMetadata } from "@/app/portal/[project]/(site)/sign-in/page";
 import { portalUrl } from "@/lib/hosts";
@@ -73,6 +75,38 @@ test("a post only its author may see has no title in its metadata and no card fo
   const { project, board } = await portalWithPost("PRIVATE");
   expect(await postMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-7" }) } as never)).toEqual({});
   expect((await image(project.slug, ["feedback", board.slug, "dark-mode-7"])).status).toBe(404);
+});
+
+test("a post only its author may see: their card isn't kept by shared caches", async () => {
+  const { owner, project, board } = await portalWithPost("PRIVATE");
+  actAs(owner);
+  const response = await image(project.slug, ["feedback", board.slug, "dark-mode-7"]);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+});
+
+test("a Team only board's name is in neither its metadata nor a card", async () => {
+  const { project, board } = await portalWithPost();
+  await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM" } });
+  expect(await boardMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug }) } as never)).toEqual({});
+  expect((await image(project.slug, ["feedback", board.slug])).status).toBe(404);
+});
+
+test("the team's own share image is on the page the portal opens on; every other page has its card", async () => {
+  const s3 = await startS3Fake();
+  onTestFinished(() => s3.close());
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  const { owner, project, board, portal } = await portalWithPost();
+  const media = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 1200, height: 630 } });
+  await prisma.project.update({ where: { id: project.id }, data: { seoImageId: media.id } });
+  // One board: the portal opens on it.
+  const own = (await boardMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug }) } as never)).openGraph?.images;
+  expect(own).toEqual([expect.objectContaining({ url: expect.stringContaining(media.id), width: 1200, height: 630 })]);
+  expect(await postMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-7" }) } as never)).toMatchObject({
+    openGraph: { images: [{ url: `${portal}/og/feedback/${board.slug}/dark-mode-7` }] },
+  });
 });
 
 test("a private portal's cards aren't made for people who may not read it", async () => {
