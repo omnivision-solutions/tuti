@@ -8,8 +8,8 @@ import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
  * The hero's product window: a tab per part of Tuti, one picture showing at a time (the first before any script runs).
  * Until a tab is chosen, the tabs take turns: the open tab's progress line is a CSS animation, and its end opens the
  * next one, so hovering the window (which pauses it) pauses the turns, and reduced motion (no animation) stops them.
- * Focus anywhere in it stops them for good, and a screen reader meets a button that does, before the tabs (WCAG
- * 2.2.2; out of the tab order, where focus on a tab does it).
+ * Focus or a touch anywhere in it (a swipe along the tabs, say) stops them for good, and a screen reader meets a button
+ * that does, before the tabs (WCAG 2.2.2; out of the tab order, where focus on a tab does it).
  */
 export function HeroTabs({ panels }: { panels: { label: string; icon: ReactNode; url: string; picture: ReactNode }[] }) {
   const [open, setOpen] = useState(0);
@@ -17,7 +17,7 @@ export function HeroTabs({ panels }: { panels: { label: string; icon: ReactNode;
   // Too narrow (a phone), the tabs scroll sideways, faded at the end with more, the open one in view (docs/design.md, Layout).
   const row = useScrollingRow(open, panels.length) as RefObject<HTMLDivElement | null>;
   return (
-    <div className="show" onFocus={() => setAuto(false)}>
+    <div className="show" onFocus={() => setAuto(false)} onPointerDown={() => setAuto(false)}>
       <button type="button" className="sr-only" tabIndex={-1} aria-pressed={!auto} onClick={() => setAuto(false)}>
         Stop the tabs changing
       </button>

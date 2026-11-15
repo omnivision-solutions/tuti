@@ -310,7 +310,7 @@ export function HeroInbox() {
 export function HeroFeedback() {
   return (
     <Pic className="hero-sc sc-fb" label="A feedback board: feature requests ranked by votes, Google Calendar sync on top with 42">
-      <Portal page="Feedback" side={[["All requests", 34], ["In progress", 1], ["Planned", 4], ["Open", 29]]}>
+      <Portal page="Feedback" side={[["All posts", 34], ["In progress", 1], ["Planned", 4], ["Open", 29]]}>
         <div className="sc-boardhead">
           <b>Feature requests</b>
           <span className="sc-btn">Share an idea</span>
