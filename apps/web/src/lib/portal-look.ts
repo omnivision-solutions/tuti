@@ -26,6 +26,9 @@ export type DocsHome = { title: string; subtitle: string; popular: boolean };
 export const COLOR_SCHEMES = ["system", "light", "dark"] as const;
 export type ColorScheme = (typeof COLOR_SCHEMES)[number];
 
+/** The docs' home's heading without the team's own (Customize → Docs home). */
+export const DOCS_HEADING = { title: "How can we help?", subtitle: "Guides and answers to common questions." };
+
 export const DOCS_TITLE_MAX = 80;
 /** The most the team's CSS and HTML can be (Customize → Custom code). */
 export const CUSTOM_CODE_MAX = 50_000;

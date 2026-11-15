@@ -1,8 +1,9 @@
-import type { Metadata, ResolvingMetadata } from "next";
+import type { Metadata } from "next";
 
-import { DocsLayout, docsPageMetadata, DocsSearchResults, DocsTabPage, withPortalOpenGraph } from "@/components/portal-docs";
-import { portalAddress } from "@/server/custom-domains";
+import { DocsLayout, docsPageListing, DocsSearchResults, DocsTabPage } from "@/components/portal-docs";
+import { DOCS_HEADING } from "@/lib/portal-look";
 import { docsHome, docsTree } from "@/server/docs-queries";
+import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 
 const searchQuery = (q: string | string[] | undefined) => (typeof q === "string" ? q.trim().slice(0, 200) : "");
 
@@ -10,18 +11,21 @@ const searchQuery = (q: string | string[] | undefined) => (typeof q === "string"
  * One address for search engines: /docs (showing an article or collection, that one's title and
  * description); its search results aren't for them.
  */
-export async function generateMetadata(props: PageProps<"/portal/[project]/docs">, parent?: ResolvingMetadata): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<"/portal/[project]/docs">): Promise<Metadata> {
   const [{ project }, { q }] = await Promise.all([props.params, props.searchParams]);
-  const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs` } };
   const query = searchQuery(q);
   if (query) {
-    return { title: `Results for “${query}” · Documentation`, ...canonical, robots: { index: false } };
+    return portalPageMetadata(project, { title: `Results for “${query}” · Documentation`, path: "/docs", noindex: true });
   }
   const { tab, landing } = await docsHome(project);
   if (tab?.locked) {
-    return { title: "Documentation", ...canonical, robots: { index: false } };
+    return portalPageMetadata(project, { title: "Documentation", path: "/docs", noindex: true });
   }
-  return withPortalOpenGraph({ ...(landing.kind === "overview" ? { title: "Documentation" } : docsPageMetadata(landing)), ...canonical }, parent);
+  if (landing.kind !== "overview") {
+    return portalPageMetadata(project, { ...docsPageListing(landing), path: "/docs" });
+  }
+  const home = (await portalSite(project))?.brand.docsHome;
+  return portalPageMetadata(project, { title: "Documentation", description: home?.subtitle || DOCS_HEADING.subtitle, path: "/docs" });
 }
 
 /**

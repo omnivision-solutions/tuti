@@ -7,8 +7,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { DOCS_HEADING } from "@/components/docs-home";
-import { type ContentActions, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
+import { type ContentActions, DOCS_HEADING, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
 
 /** A setting that's on or off: its name, what it does, and a switch, in a row. */
 export function SwitchRow({ name, label, description, defaultChecked }: { name: string; label: string; description?: string; defaultChecked: boolean }) {

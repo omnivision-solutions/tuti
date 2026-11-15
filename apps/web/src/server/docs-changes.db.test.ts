@@ -122,7 +122,7 @@ describe("saving a published article", () => {
     const published = await readers();
     expect(published).toMatchObject({
       page: { ...OLD, collection: "Basics", updated: false },
-      metadata: `${OLD.title} · ${project.name}`,
+      metadata: OLD.title,
       md: `# ${OLD.title}\n\n${OLD.body}\n`,
       docsContents: [["Basics", [OLD.title]]],
       llms: true,

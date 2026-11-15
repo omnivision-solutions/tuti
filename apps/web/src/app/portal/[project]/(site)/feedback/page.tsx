@@ -17,10 +17,10 @@ import { VoteButton, VoteCount } from "@/components/vote-button";
 import { formatDay } from "@/lib/format";
 import { ACTIVE_STATUSES, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
-import { portalAddress } from "@/server/custom-domains";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
+import { portalPageMetadata } from "@/server/portal-metadata";
 import { boardPosts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 
@@ -33,8 +33,10 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 /** Searched (`?q=`), it's still the overview: one address for search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback">): Promise<Metadata> {
   const { project } = await props.params;
-  return { alternates: { canonical: `${await portalAddress(project)}/feedback` } };
+  return portalPageMetadata(project, { title: "Feedback", description: OVERVIEW_DESCRIPTION, path: "/feedback" });
 }
+
+const OVERVIEW_DESCRIPTION = "Vote for the ideas you want most, or share your own.";
 
 /**
  * Feedback: every board the reader sees, each a card with its top open ideas (Trending's order) and how many more, then
@@ -89,7 +91,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
     <div className="flex flex-col gap-8">
       <PortalPageHeader
         title="Feedback"
-        description="Vote for the ideas you want most, or share your own."
+        description={OVERVIEW_DESCRIPTION}
         pills={
           <FilterPills
             label="Boards"

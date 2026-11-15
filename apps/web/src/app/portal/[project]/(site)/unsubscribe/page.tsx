@@ -1,8 +1,13 @@
+import type { Metadata } from "next";
 import { Button } from "@/components/ui/button";
 import { findOptOut } from "@/server/unsubscribe";
 import { portalLinks } from "@/server/portal-base";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { BellOffIcon } from "lucide-react";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
+
+/** For the reader alone: not for search engines. */
+export const metadata: Metadata = { title: "Unsubscribe", ...PRIVATE_PAGE };
 
 export default async function UnsubscribePage(props: PageProps<"/portal/[project]/unsubscribe">) {
   const [{ project: slug }, { token }] = await Promise.all([props.params, props.searchParams]);

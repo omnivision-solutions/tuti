@@ -4,9 +4,7 @@ import { ChevronRightIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 
 import { usePortalLook } from "@/components/portal-look";
-
-/** The docs' default heading and the line under it, where the team hasn't set its own (Customize → Docs home). */
-export const DOCS_HEADING = { title: "How can we help?", subtitle: "Guides and answers to common questions." };
+import { DOCS_HEADING } from "@/lib/portal-look";
 
 /** The docs' home's heading, centred over its search: the team's title and subtitle (Customize → Docs home), or the defaults. */
 export function DocsHomeHeader() {

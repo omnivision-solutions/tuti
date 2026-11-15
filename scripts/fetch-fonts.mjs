@@ -9,7 +9,7 @@
 // symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
 // about 32 kB. packages/ui/src/brand-fonts.ts loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,8 +91,43 @@ try {
   writeFileSync(full, await get(math, "buffer"));
   const symbols = fileURLToPath(new URL("noto-sans-math.woff2", BRAND));
   execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
+  // The same cut as TTF for share cards (apps/web/src/server/share-card.tsx), whose renderer can't read WOFF2.
+  const cardSymbols = fileURLToPath(new URL("../apps/web/src/fonts/og/noto-sans-math.ttf", import.meta.url));
+  execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", `--output-file=${cardSymbols}`]);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
 writeFileSync(new URL("noto-sans-math.OFL.txt", BRAND), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
+writeFileSync(new URL("../apps/web/src/fonts/og/noto-sans-math.OFL.txt", import.meta.url), readFileSync(new URL("noto-sans-math.OFL.txt", BRAND)));
 console.log("noto-sans-math.woff2", SYMBOLS);
+
+// Share cards (apps/web/src/server/share-card.tsx): static TTF cuts, since the image renderer reads neither WOFF2 nor
+// variable fonts. The whole families from the google/fonts repository (every Latin script, not only the latin subset),
+// and Noto Sans cut down to Cyrillic and Greek, which they lack. fontTools' instancer comes with pyftsubset.
+const CARDS = new URL("../apps/web/src/fonts/og/", import.meta.url);
+const CARD_FONTS = [
+  ["figtree/Figtree[wght].ttf", "figtree", [["figtree-500.ttf", "wght=500"], ["figtree-700.ttf", "wght=700"]]],
+  ["bricolagegrotesque/BricolageGrotesque[opsz,wdth,wght].ttf", "bricolage-grotesque", [["bricolage-grotesque-700.ttf", "wght=700 opsz=96 wdth=100"]]],
+  ["notosans/NotoSans[wdth,wght].ttf", "noto-sans", [["noto-sans-500.ttf", "wght=500 wdth=100"], ["noto-sans-700.ttf", "wght=700 wdth=100"]]],
+];
+const CYRILLIC_GREEK = "U+0370-03FF,U+0400-052F,U+1C80-1C8F,U+2DE0-2DFF,U+A640-A69F,U+1F00-1FFF";
+mkdirSync(CARDS, { recursive: true });
+const cards = mkdtempSync(join(tmpdir(), "card-fonts-"));
+try {
+  for (const [source, name, cuts] of CARD_FONTS) {
+    const full = join(cards, `${name}.ttf`);
+    writeFileSync(full, await get(`https://raw.githubusercontent.com/google/fonts/main/ofl/${encodeURI(source)}`, "buffer"));
+    for (const [file, axes] of cuts) {
+      const out = fileURLToPath(new URL(file, CARDS));
+      const cut = name === "noto-sans" ? join(cards, file) : out;
+      execFileSync("fonttools", ["varLib.instancer", full, ...axes.split(" "), "--output", cut, "-q"]);
+      if (name === "noto-sans") {
+        execFileSync("pyftsubset", [cut, `--unicodes=${CYRILLIC_GREEK}`, "--layout-features=*", `--output-file=${out}`]);
+      }
+      console.log(file, axes);
+    }
+    writeFileSync(new URL(`${name}.OFL.txt`, CARDS), await get(`https://raw.githubusercontent.com/google/fonts/main/ofl/${source.split("/")[0]}/OFL.txt`));
+  }
+} finally {
+  rmSync(cards, { recursive: true, force: true });
+}

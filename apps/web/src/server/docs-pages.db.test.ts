@@ -259,8 +259,8 @@ describe("for search engines", () => {
     expect(await meta("api")).toEqual({ title: "API · Documentation", canonical: `${portal}/docs/api` });
     expect(await meta("basics")).toEqual({ title: "Basics · Documentation", description: "Start here.", canonical: `${portal}/docs/basics` });
     const docs = (q?: string) => docsMetadata({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ q }) } as never);
-    expect(await docs()).toEqual({ title: "Documentation", alternates: { canonical: `${portal}/docs` } });
-    expect(await docs("invoices")).toEqual({ title: "Results for “invoices” · Documentation", alternates: { canonical: `${portal}/docs` }, robots: { index: false } });
+    expect(await docs()).toMatchObject({ title: "Documentation", description: "Guides and answers to common questions.", alternates: { canonical: `${portal}/docs` } });
+    expect(await docs("invoices")).toMatchObject({ title: "Results for “invoices” · Documentation", alternates: { canonical: `${portal}/docs` }, robots: { index: false } });
   });
 
   test("a tab showing an article or collection has its title and description, with the tab's address as canonical; the article keeps its own", async () => {
@@ -269,10 +269,11 @@ describe("for search engines", () => {
     await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "start-here" });
     await call(updateTab, as(), { slug: "api", landing: "page", landingPage: "endpoints" });
     await call(updateCollection, as(), { slug: "endpoints", description: "Every endpoint." });
-    const article = { title: `Start here · ${project.name}`, description: "Start here." };
-    expect(await docs()).toEqual({
+    // The layout adds the portal's name to the title.
+    const article = { title: "Start here", description: "Start here." };
+    expect(await docs()).toMatchObject({
       ...article,
-      openGraph: { title: "Start here", description: "Start here." },
+      openGraph: { title: "Start here", description: "Start here.", type: "article", url: `${portal}/docs` },
       alternates: { canonical: `${portal}/docs` },
     });
     expect(await meta("start-here")).toEqual({ ...article, canonical: `${portal}/docs/start-here` });
@@ -280,7 +281,7 @@ describe("for search engines", () => {
     expect(await meta("endpoints")).toEqual({ title: "Endpoints · Documentation", description: "Every endpoint.", canonical: `${portal}/docs/endpoints` });
     // Unlisted stays out of search engines, wherever it's shown.
     await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "secret-handshake" });
-    expect(await docs()).toMatchObject({ title: `Secret handshake · ${project.name}`, robots: { index: false }, alternates: { canonical: `${portal}/docs` } });
+    expect(await docs()).toMatchObject({ title: "Secret handshake", robots: { index: false }, alternates: { canonical: `${portal}/docs` } });
   });
 
   test("the sitemap lists the tabs' and collections' pages for everyone (the first tab is /docs)", async () => {

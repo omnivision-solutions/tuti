@@ -25,12 +25,12 @@ import { formatDay, timeAgo } from "@/lib/format";
 import { ACTIVE_STATUSES, boardStatuses, nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
-import { portalAddress } from "@/server/custom-domains";
 import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
 import { seesBoard } from "@/server/post-visibility";
 import { portalLinks } from "@/server/portal-base";
+import { portalPageMetadata } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
@@ -46,9 +46,19 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 
 /** Sorted, searched or filtered (`?sort=`, `?q=`, `?status=`), it's still the board: one address for search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]">): Promise<Metadata> {
-  const { project, board } = await props.params;
-  return { alternates: { canonical: `${await portalAddress(project)}${boardPath({ slug: board })}` } };
+  const { project, board: slug } = await props.params;
+  const board = await prisma.board.findFirst({
+    where: { slug, project: { slug: project } },
+    select: { projectId: true, name: true, description: true, postVisibility: true, off: true },
+  });
+  // Only a board this reader sees (the page is "not found" otherwise): its name stays the team's.
+  if (!board || !seesBoard(await currentPostViewer(board.projectId), board)) {
+    return {};
+  }
+  return portalPageMetadata(project, { title: board.name, description: board.description || BOARD_DESCRIPTION, path: boardPath({ slug }) });
 }
+
+const BOARD_DESCRIPTION = "Vote for the ideas you want most, or share your own.";
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const at = await portalLinks();
@@ -172,7 +182,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     >
       <PortalPageHeader
         title={board.name}
-        description={board.description || "Vote for the ideas you want most, or share your own."}
+        description={board.description || BOARD_DESCRIPTION}
         // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
         // Below `lg` two rows (the rail's boards are on wide screens only): the board switcher and the status menu, then the
         // sorts; the status menu is in the page twice (one shown), so Tab and screen readers follow the rows. With one board,

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { ChevronUpIcon, LightbulbIcon } from "lucide-react";
@@ -24,6 +25,10 @@ import { currentPostViewer } from "@/server/portal-access";
 import { firstBoardPath } from "@/server/portal-home";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
+
+/** For the reader alone: not for search engines. */
+export const metadata: Metadata = { title: "Account", ...PRIVATE_PAGE };
 
 /** The signed-in person on this portal: who they're signed in as, their name (and Sign out), which emails the project sends them, and their posts and votes here. */
 export default async function PortalAccountPage(props: PageProps<"/portal/[project]/account">) {

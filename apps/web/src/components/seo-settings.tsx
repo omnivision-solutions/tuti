@@ -64,7 +64,7 @@ export function SeoSettings({
           </Field>
         </FieldGroup>
       </CustomizeSection>
-      <CustomizeSection title="Share image" description="Shown with links to your portal. 1200×630 pixels works best.">
+      <CustomizeSection title="Share image" description="Shown with links to your portal and the page it opens on; links to its other pages get a card of their own, with your logo and colour. 1200×630 pixels works best.">
         <ImageField
           projectSlug={projectSlug}
           name="seoImage"

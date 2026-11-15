@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { planIncludes } from "@tuti/shared";
@@ -14,6 +15,10 @@ import { safeRedirectPath } from "@/lib/redirects";
 import { canReadPortal, invitedReader } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
+
+/** For the reader alone: not for search engines. */
+export const metadata: Metadata = { title: "Sign in", ...PRIVATE_PAGE };
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
   const at = await portalLinks();

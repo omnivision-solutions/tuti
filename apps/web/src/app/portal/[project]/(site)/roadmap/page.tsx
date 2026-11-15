@@ -1,5 +1,6 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import { ArrowRightIcon, CalendarIcon, CheckIcon, LayoutListIcon, MessageSquareIcon } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PortalAvatar } from "@/components/portal-avatar";
@@ -18,6 +19,7 @@ import { canActIn } from "@/server/membership";
 import { visiblePosts } from "@/server/post-visibility";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks } from "@/server/portal-base";
+import { portalPageMetadata } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
 import { VisibilityBadge } from "@/components/visibility-badge";
@@ -30,6 +32,13 @@ const MEANINGS: Partial<Record<PostStatus, string>> = {
   IN_PROGRESS: "We're building these now.",
   COMPLETED: "Shipped and ready to use.",
 };
+
+/** One address for search engines, whichever board it shows (`?board=`). */
+export async function generateMetadata(props: PageProps<"/portal/[project]/roadmap">): Promise<Metadata> {
+  return portalPageMetadata((await props.params).project, { title: "Roadmap", description: ROADMAP_DESCRIPTION, path: "/roadmap" });
+}
+
+const ROADMAP_DESCRIPTION = "What's planned, what we're building and what's done.";
 
 /** What's planned, being built and done, from the posts' statuses; a board at a time (`?board=`), voted on from the cards. */
 export default async function RoadmapPage(props: PageProps<"/portal/[project]/roadmap">) {
@@ -98,7 +107,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
         title="Roadmap"
         description={
           <>
-            What&apos;s planned, what we&apos;re building and what&apos;s done.
+            {ROADMAP_DESCRIPTION}
             {/* Said on the cards' vote buttons too. */}
             {!voter && (
               <>

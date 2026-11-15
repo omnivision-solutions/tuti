@@ -4,7 +4,8 @@ import { changelogMetadata, changelogPage, changelogPath, changelogTag } from "@
 import { portalLinks } from "@/server/portal-base";
 
 export async function generateMetadata(props: PageProps<"/portal/[project]/changelog/page/[page]">) {
-  return changelogMetadata((await props.params).project);
+  const { project, page } = await props.params;
+  return changelogMetadata(project, Number(page) || 1);
 }
 
 /** Older changelog entries: /changelog/page/2 and on, `?tag=` kept (the first page is /changelog; past the last, a 404). */

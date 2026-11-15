@@ -185,11 +185,12 @@ describe("an article shown with a lock", () => {
     for (const text of [SECRET, "widget", "Keys", "On this page"]) {
       expect(page).not.toContain(text);
     }
-    expect(await generateMetadata(params("endpoints") as never)).toEqual({
+    expect(await generateMetadata(params("endpoints") as never)).toMatchObject({
       title: "Endpoints · Documentation",
       robots: { index: false },
       alternates: { canonical: expect.stringMatching(/\/docs\/endpoints$/) },
     });
+    expect((await generateMetadata(params("endpoints") as never)).description).toBeUndefined();
     // Its .md and AI answers stay closed.
     expect((await markdown(new Request("http://x"), params("endpoints") as never)).status).toBe(404);
     expect((await answerSections(project.id, QUESTION, 10, SIGNED_OUT, 2000))!.map((s) => s.slug)).not.toContain("endpoints");

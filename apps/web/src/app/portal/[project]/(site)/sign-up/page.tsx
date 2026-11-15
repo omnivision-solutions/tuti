@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { redirect } from "next/navigation";
@@ -6,6 +7,10 @@ import { AuthForm } from "@/components/auth-form";
 import { PortalMark } from "@/components/portal-look";
 import { safeRedirectPath } from "@/lib/redirects";
 import { portalLinks } from "@/server/portal-base";
+import { PRIVATE_PAGE } from "@/server/portal-metadata";
+
+/** For the reader alone: not for search engines. */
+export const metadata: Metadata = { title: "Sign up", ...PRIVATE_PAGE };
 
 /**
  * "Create an account" on a portal: as its sign-in, an emailed link (it makes the account, named as typed here), and

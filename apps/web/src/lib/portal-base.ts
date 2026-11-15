@@ -48,7 +48,7 @@ export function withBase(base: string, path: string): string {
  */
 export const PORTAL_PAGES = new Set([
   "docs", "feedback", "roadmap", "changelog", "account", "sign-in", "sign-up", "forgot-password", "reset-password",
-  "continue", "sso", "unsubscribe", "widget", "api", "llms.txt", "robots.txt", "sitemap.xml", "_next",
+  "continue", "sso", "unsubscribe", "widget", "api", "llms.txt", "robots.txt", "sitemap.xml", "og", "_next",
 ]);
 
 /** The path a request came under (BASE_HEADER, set by proxy.ts), for code that only has its headers. */

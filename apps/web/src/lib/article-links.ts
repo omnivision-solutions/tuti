@@ -45,6 +45,11 @@ export function docLinks(doc: JSONContent): string[] {
 
 /** What an article is about, in a line: the team's meta description, else its text's first lines. */
 export function articleDescription(article: { description: string; body: string }): string {
-  const text = article.body.replace(/\s+/g, " ").trim();
-  return article.description || (text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text);
+  return article.description || summary(article.body);
+}
+
+/** A plain-text body's first 160 characters, for a description (posts and changelog entries too). */
+export function summary(body: string): string {
+  const text = body.replace(/\s+/g, " ").trim();
+  return text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text;
 }
