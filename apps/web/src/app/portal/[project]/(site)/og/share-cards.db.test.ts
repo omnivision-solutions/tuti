@@ -8,11 +8,21 @@ import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)
 import { generateMetadata as layoutMetadata } from "@/app/portal/[project]/(site)/layout";
 import { metadata as signInMetadata } from "@/app/portal/[project]/(site)/sign-in/page";
 import { portalUrl } from "@/lib/hosts";
+import { PREVIEW } from "@/lib/portal-base";
+import { request } from "@/test/next-headers";
 import { createArticle, createCollection, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
+import { shareCard } from "@/server/share-card";
+
 import { GET as shareImage } from "./[[...path]]/route";
+
+// Drawn as usual, with what each card says kept to check.
+vi.mock("@/server/share-card", async (original) => {
+  const actual = await original<typeof import("@/server/share-card")>();
+  return { ...actual, shareCard: vi.fn(actual.shareCard) };
+});
 
 const image = (slug: string, path: string[]) => shareImage(new Request("http://x"), { params: Promise.resolve({ project: slug, path }) });
 
@@ -122,6 +132,14 @@ test("the portal's own card, its sections' and a title in any script: made here,
   expect((await image(project.slug, ["nothing-here"])).status).toBe(404);
 });
 
+test("a public post on a Team only board: its card doesn't name the board", async () => {
+  const { project, board } = await portalWithPost();
+  await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM", name: "Secret plans" } });
+  vi.mocked(shareCard).mockClear();
+  expect((await image(project.slug, ["feedback", board.slug, "dark-mode-7"])).status).toBe(200);
+  expect(vi.mocked(shareCard).mock.calls[0]?.[1]).toEqual({ eyebrow: "Feedback", title: "Dark mode", facts: ["Open", "12 votes"] });
+});
+
 test("the page the portal opens on has the team's own description and share image; every other page has its card", async () => {
   const s3 = await startS3Fake();
   onTestFinished(() => s3.close());
@@ -140,6 +158,19 @@ test("the page the portal opens on has the team's own description and share imag
     description: "Easier on the eyes at night.",
     openGraph: { images: [{ url: `${portal}/og/feedback/${board.slug}/dark-mode-7` }] },
   });
+});
+
+test("a private portal's card, previewed as people signed out see it, isn't kept by shared caches", async () => {
+  const { owner, project, board } = await portalWithPost();
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  actAs(owner);
+  request.headers = { [PREVIEW.header]: PREVIEW.value };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  const response = await image(project.slug, ["feedback", board.slug, "dark-mode-7"]);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
 });
 
 test("a private portal's cards aren't made for people who may not read it", async () => {

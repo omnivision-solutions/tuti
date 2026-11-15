@@ -7,7 +7,7 @@ import { postNumberFromParam } from "@/lib/post-urls";
 import { publishedEntries } from "@/server/changelog-queries";
 import { portalAddress } from "@/server/custom-domains";
 import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
-import { currentPostViewer, currentReader, mayRead } from "@/server/portal-access";
+import { canReadPortal, currentPostViewer, currentReader, mayRead } from "@/server/portal-access";
 import { portalSite } from "@/server/portal-metadata";
 import { canSeePost, seesBoard, shownBoards, visiblePosts } from "@/server/post-visibility";
 import { type ShareCard, shareCard } from "@/server/share-card";
@@ -28,9 +28,14 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   if (!card) {
     return notFound();
   }
-  const [address, reader, viewer] = await Promise.all([portalAddress(slug), currentReader(site.project.id), currentPostViewer(site.project.id)]);
-  // What anyone signed out sees (no session, preview or widget reader here).
-  const signedOut = reader !== null && !reader.signedIn && !viewer.userId;
+  const [address, reader, viewer, open] = await Promise.all([
+    portalAddress(slug),
+    currentReader(site.project.id),
+    currentPostViewer(site.project.id),
+    canReadPortal({ id: site.project.id }, null),
+  ]);
+  // What anyone signed out sees: a public portal, read with no session, preview or widget reader.
+  const signedOut = open && reader !== null && !reader.signedIn && !viewer.userId;
   // ponytail: an hour's public copy at most; a page made private since shows its old card that long, as the sitemap does its links.
   const cacheControl = signedOut ? "public, max-age=3600" : "private, no-store";
   return shareCard(site, card, address, { "cache-control": cacheControl });
@@ -120,7 +125,7 @@ async function feedbackCard(projectId: string, [board, post, ...more]: string[])
             voteCount: true,
             visibility: true,
             authorId: true,
-            board: { select: { name: true, off: true } },
+            board: { select: { name: true, off: true, postVisibility: true } },
             _count: { select: { comments: true } },
           },
         });
@@ -128,7 +133,8 @@ async function feedbackCard(projectId: string, [board, post, ...more]: string[])
     return null;
   }
   return {
-    eyebrow: found.board.name,
+    // A Team only board's name is the team's, as on the post's page.
+    eyebrow: seesBoard(viewer, found.board) ? found.board.name : "Feedback",
     title: found.title,
     facts: [STATUS_LABELS[found.status], plural(found.voteCount, "vote"), ...(found._count.comments ? [plural(found._count.comments, "comment")] : [])],
   };
