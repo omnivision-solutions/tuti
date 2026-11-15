@@ -50,7 +50,7 @@ export function PricingTable({ plans, yearlyNote }: { plans: Plan[]; yearlyNote:
       </p>
       {/* Native: the summary is a button that reads as expanded or collapsed, and opens with Enter or Space. */}
       <details className="group w-full">
-        <summary className="mx-auto flex h-11 w-fit cursor-pointer list-none items-center gap-2 rounded-full border border-input bg-card px-[22px] font-semibold group-open:mb-2 [&::-webkit-details-marker]:hidden">
+        <summary className="mx-auto flex h-11 w-fit cursor-pointer list-none items-center gap-2 rounded-xl border border-input bg-card px-[22px] font-semibold group-open:mb-2 [&::-webkit-details-marker]:hidden">
           Compare all features
           <ChevronDownIcon aria-hidden className="size-[18px] transition-transform group-open:rotate-180" />
         </summary>
