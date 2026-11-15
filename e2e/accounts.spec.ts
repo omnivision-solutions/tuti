@@ -345,6 +345,16 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await wes.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(wes.getByText("Check your email")).toBeVisible();
   await expect(wes.getByText("Not there? Check your spam folder.")).toBeVisible();
+  // Focus moves to the card's title, which is read out; the next stop is "Send another link".
+  await expect(wes.getByText("Check your email")).toBeFocused();
+  await wes.keyboard.press("Tab");
+  await expect(wes.getByRole("button", { name: "Send another link" })).toBeFocused();
+  // Offline: it says so, and can be tried again.
+  await wes.route("**/sign-in*", (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await wes.getByRole("button", { name: "Send another link" }).click();
+  await expect(wes.getByRole("status")).toHaveText("We couldn't send the email. Try again.");
+  await expect(wes.getByRole("button", { name: "Send another link" })).toBeVisible();
+  await wes.unroute("**/sign-in*");
   // Back where they came from.
   await expect(wes.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", "/");
   await checkpoint(wes, "portal-sign-in-link-sent-actions");

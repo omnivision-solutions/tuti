@@ -93,10 +93,17 @@ export function AuthForm({
     setError(undefined);
     setLinkError(undefined);
     setResent(false);
-    const result = await emailSignInLink(linkProject!, next ?? redirectTo, data);
-    setPending(false);
-    setLinkError(result.error);
-    return result;
+    try {
+      const result = await emailSignInLink(linkProject!, next ?? redirectTo, data);
+      setLinkError(result.error);
+      return result;
+    } catch {
+      // Offline, or the server didn't answer: say so, and let them try again.
+      setLinkError("We couldn't send the email. Try again.");
+      return {};
+    } finally {
+      setPending(false);
+    }
   }
 
   async function emailLink(form: HTMLFormElement) {
@@ -123,7 +130,10 @@ export function AuthForm({
           <span aria-hidden className="mb-2 flex size-12 items-center justify-center rounded-full bg-soft text-soft-foreground">
             <MailIcon className="size-5" />
           </span>
-          <CardTitle className="font-heading text-2xl font-[650] tracking-[-0.022em] sm:text-[1.625rem]">Check your email</CardTitle>
+          {/* Focused as it appears (the button that was focused is gone): read out, and the next Tab is "Send another link". */}
+          <CardTitle ref={focusOnMount} tabIndex={-1} className="font-heading text-2xl font-[650] tracking-[-0.022em] outline-none sm:text-[1.625rem]">
+            Check your email
+          </CardTitle>
           <CardDescription className="text-[0.9375rem] break-words">
             We sent a sign-in link to <strong className="font-semibold text-foreground">{sentTo}</strong>. It works once, for the next{" "}
             {SIGN_IN_LINK_MINUTES} minutes.
@@ -332,3 +342,6 @@ export function AuthForm({
     </Card>
   );
 }
+
+// Stable, so it runs once, as the element appears.
+const focusOnMount = (element: HTMLElement | null) => element?.focus();
