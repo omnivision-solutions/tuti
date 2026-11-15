@@ -420,7 +420,7 @@ test("a visitor joins a portal on the portal: name and email, an emailed link, a
   await expect(ivy).toHaveURL(`${portalUrl(slug)}/sign-up?next=%2Froadmap`);
   // The portal's page, in its header, like its sign-in.
   await expect(ivy.getByText("Join Acme")).toBeVisible();
-  await expect(ivy.getByText("Vote, comment and follow ideas. We'll email you when they ship.")).toBeVisible();
+  await expect(ivy.getByText("Vote, comment and follow ideas. We'll email you when they're planned, started and shipped.")).toBeVisible();
   await expect(ivy.getByRole("navigation", { name: "Portal" })).toBeVisible();
   await expect(ivy.getByRole("link", { name: "Use a password instead" })).toHaveAttribute("href", "/continue?redirect=%2Froadmap&sign-up=1");
   await expect(ivy.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/sign-in?next=%2Froadmap");

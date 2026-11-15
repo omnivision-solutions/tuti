@@ -18,7 +18,8 @@
     "./portal-redirects": "./src/portal-redirects.ts",
     "./log": "./src/log.ts",
     "./plans": "./src/plans.ts",
-    "./colors": "./src/colors.ts"
+    "./colors": "./src/colors.ts",
+    "./status-emails": "./src/status-emails.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 import { postPath } from "@tuti/shared/post-urls";
 
 import { enqueue } from "./index";
@@ -79,23 +80,23 @@ export async function postStatusChanged(
   postId: string,
   post: ReturnType<typeof postSummary>,
   previousStatus: PostStatus,
+  /** False: a move nobody on the team approved (Autopilot's progress update going out by itself), which emails nobody. */
+  { email = true }: { email?: boolean } = {},
 ) {
   // Sample content (Home's "Add sample content") reaches no webhooks, and its voters aren't emailed.
   if ((await prisma.post.count({ where: { id: postId, sample: true } })) > 0) {
     return;
   }
   await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
-  // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
-  // on later mustn't find its emails still due, an earlier completion's either.
-  // Completed however it's reached; Planned and In progress only moving forward (from Open, Under review, Closed or an
-  // earlier step), so an Undo or a reopened post moving back tells nobody. A move that emails nobody leaves nothing due
-  // (an earlier move's held emails would go out about this status).
-  const steps = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
-  const to = steps.findIndex((status) => post.status === toApiStatus(status));
-  const emailed = to === steps.length - 1 || (to >= 0 && to > steps.findIndex((status) => status === previousStatus));
+  // Which email the move sends (statusMoveEmails: Completed however it's reached; Planned and In progress only moving
+  // forward, so an Undo or a reopened post moving back tells nobody). A move that emails nobody leaves nothing due (an
+  // earlier move's held emails would go out about this status).
+  const emailed = email && statusMoveEmails(previousStatus, post.status.toUpperCase() as PostStatus) !== null;
   // Only while the post still has this change's status: another change made while the webhooks were told is the
   // post's own to settle, and this one mustn't clear (or set) its emails' due time.
   const still = { id: postId, status: post.status.toUpperCase() as PostStatus };
+  // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
+  // on later mustn't find its emails still due, an earlier completion's either.
   if (!emailed || post.visibility === "team") {
     await prisma.post.updateMany({ where: { ...still, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
   } else {

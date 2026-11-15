@@ -47,10 +47,10 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
     await prisma.user.update({ where: { id: user.id }, data: { emailVerified } });
     return user;
   };
-  const promise = "Vote for an idea to get an email when it ships.";
+  const promise = "Vote for an idea to get an email when it's planned, started and shipped.";
 
   actAs(null);
-  expect(await getUpdates()).toContain("Vote for an idea to hear when it ships.");
+  expect(await getUpdates()).toContain("Vote for an idea to hear when it's planned, started and shipped.");
 
   const confirmed = await person("Confirmed", true);
   actAs(confirmed);
@@ -59,7 +59,7 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
   const unconfirmed = await person("Unconfirmed", false);
   actAs(unconfirmed);
   const asking = await getUpdates();
-  expect(asking).toContain("Confirm your email to hear when ideas you vote on ship.");
+  expect(asking).toContain("Confirm your email to hear when ideas you vote on are planned, started and shipped.");
   expect(asking).toContain("Resend email");
   expect(asking).not.toContain(promise);
 

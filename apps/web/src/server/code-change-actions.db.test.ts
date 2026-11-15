@@ -113,11 +113,33 @@ describe("applying", () => {
     expect(email!.subject).toBe(`In progress: Dark mode MOVES_FORWARD`);
     expect(email!.text).toContain("Olive Owner from the team:");
     expect(email!.text).toContain("Weekly repeats are out.");
+    // Undo says first who was emailed that it's in progress (they can't be unemailed).
+    const detail = await call(getCodeChange, team(), { id: action.codeChangeId! });
+    expect(detail.actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", emailed: 1 });
     // Undone (back to Planned: nobody's told), then moved on again by hand: In progress was told already.
     await call(undoCodeChangeAction, team(), { id: action.id });
     expect((await postOf(post.id)).status).toBe("PLANNED");
     await call(updatePost, team(), { number: post.number, status: "in_progress" });
     expect(shippedTo(voter.email).map((e) => e.subject)).toEqual([email!.subject]);
+  });
+
+  test("a teammate completing the post while a progress update's comment is posted: Completed stays, and the update waits again", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // Right after the comment is saved (its author's team lookup), the teammate completes it.
+    const findMember = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+    let completed = false;
+    vi.spyOn(prisma.teamMember, "findUnique").mockImplementation((async (args: { where?: { projectId_userId?: unknown } }) => {
+      if (!completed && args?.where?.projectId_userId !== undefined && (await prisma.comment.count({ where: { postId: post.id } })) > 0) {
+        completed = true;
+        await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
+      }
+      return findMember(args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The post's status changed since");
+    expect(completed).toBe(true);
+    expect(await postOf(post.id)).toMatchObject({ status: "COMPLETED", comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect(shippedTo(voter.email).filter((email) => email.subject.startsWith("In progress:"))).toEqual([]);
   });
 
   test("completing with the team's comment: posted just before the post completes, and quoted in the email it sends", async () => {
@@ -180,6 +202,42 @@ describe("applying", () => {
       status: "PENDING",
       waitReason: "Couldn't tell whether its comment was posted: check the post before approving",
     });
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
+  test("a progress update's comment: if moving it to In progress fails after the comment, the comment goes and it waits again", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // Once the comment is saved, the next transaction (moving the post) fails.
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    let failed = false;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: unknown[]) => {
+      if (!failed && (await prisma.comment.count({ where: { postId: post.id } })) > 0) {
+        failed = true;
+        throw new Error("database blip");
+      }
+      return transaction(...args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    vi.restoreAllMocks();
+    expect(failed).toBe(true);
+    expect(await postOf(post.id)).toMatchObject({ status: "PLANNED", comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
+  test("a progress update's comment: if it can't be told whether it was saved, it waits again and says to check first", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // The comment is saved; the lookup right after it fails, and so does the check for it.
+    failTeamLookupAfterComment(post.id);
+    vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toMatchObject({ message: "database blip", saved: "unknown" });
+    vi.restoreAllMocks();
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true, waitReason: true } })).toEqual({
+      status: "PENDING",
+      waitReason: "Couldn't tell whether its comment was posted: check the post before approving",
+    });
+    // Not moved, nobody emailed; the comment (found or not) is the team's to check, as the reason says.
     expect((await postOf(post.id)).status).toBe("PLANNED");
     expect(shippedTo(voter.email)).toEqual([]);
   });

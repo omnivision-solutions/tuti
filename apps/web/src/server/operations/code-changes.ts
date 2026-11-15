@@ -422,12 +422,17 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId,
     )
     .map((action) => action.post!.id);
-  // For Undo to say first: those already emailed that it shipped, since it was approved (they can't be unemailed).
+  // For Undo to say first: those already emailed that it shipped, or (a progress update) that it's in progress, since it
+  // was approved (they can't be unemailed).
   const sent = new Map(
     await Promise.all(
       actions
-        .filter((action) => action.kind === "RESOLVES" && action.status === "APPLIED" && action.post && action.decidedAt)
-        .map(async (action) => [action.id, await prisma.shippedEmail.count({ where: { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } } })] as const),
+        .filter((action) => (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD") && action.status === "APPLIED" && action.post && action.decidedAt)
+        .map(async (action) => {
+          const since = { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } };
+          const count = action.kind === "RESOLVES" ? await prisma.shippedEmail.count({ where: since }) : await prisma.statusEmail.count({ where: { ...since, status: "IN_PROGRESS" } });
+          return [action.id, count] as const;
+        }),
     ),
   );
   const [portal, emails, made, places] = await Promise.all([
@@ -465,7 +470,7 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
       /** Ticked as the review page opens (see likelyToApply). */
       applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
-      /** For a post it completed: how many it emailed that it shipped (Undo can't take those back). */
+      /** For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back). */
       ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
       /** For a post it completes: how many people completing it emails. */
       ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
@@ -1442,11 +1447,15 @@ export const applyCodeChangeAction = defineOperation({
       if (whole?.completes) {
         if (post.status !== "COMPLETED") {
           shared.status = post.status;
-          await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });
+          // Completing emails its people however it went out (by itself only once an owner turned that on): never `quietly`.
+          await call(updatePost, { actor: context.actor, projectId }, { number: post.number, status: toApiStatus("COMPLETED"), from: toApiStatus(post.status) });
         }
       } else if (progress && NOT_STARTED.has(post.status)) {
         shared.status = post.status;
-        await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
+        // Only from the status read: one the team set while the comment was posted (Completed, say) is kept, and the
+        // update waits again. Applied by the runner after the hold (`quietly`: nobody on the team approved it), it emails
+        // nobody: only completing does, and that waits for someone unless an owner turns it on.
+        await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS"), from: toApiStatus(post.status) });
       }
       if (commenting && comment.trim() && !first && !reuse) {
         posting = true;
@@ -2345,7 +2354,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       continue;
     }
     try {
-      await call(applyCodeChangeAction, byItself({ actor: { kind: "user", userId: owner.userId }, projectId }), { id: action.id, ...(revision && { revision }) });
+      // `quietly`: its progress move emails nobody (posts.update), as nobody on the team approved it.
+      await call(applyCodeChangeAction, { ...byItself({ actor: { kind: "user", userId: owner.userId }, projectId }), quietly: true } as Parameters<typeof byItself>[0], { id: action.id, ...(revision && { revision }) });
     } catch (error) {
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
       const saved = (error as { saved?: boolean | "unknown" }).saved;

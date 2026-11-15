@@ -361,7 +361,9 @@ function undoesOne(update: Update): string {
         update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
       }`;
     case "moves_forward":
-      return "Its progress update is deleted, and the post goes back to the status it had.";
+      return `Its progress update is deleted, and the post goes back to the status it had.${
+        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it's in progress; that can't be taken back.` : ""
+      }`;
     case "links":
       return "The post's link to the pull request is removed.";
     case "article_edit":

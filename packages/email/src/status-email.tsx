@@ -2,10 +2,14 @@ import { Button, Column, Link, Row, Section, Text } from "@react-email/component
 
 import { accentColors, buttonStyle, colors, Layout } from "./layout";
 
-/** The statuses a post's people hear about before it ships (Completed's is the shipped email), each as it reads. */
+/**
+ * The statuses a post's people hear about before it ships (Completed's is the shipped email), each as it reads, its pill
+ * in the portal's hue (light mode's `status-*` in packages/ui/src/globals.css, as hex): the name in it, on 8% of it with a
+ * 25% border, as the portal's StatusPill.
+ */
 const STATUSES = {
-  PLANNED: { label: "Planned", is: "is planned", next: "The team plans to build it.", pill: { background: "#f1ebfe", color: "#6d28d9", dot: "#8b5cf6" } },
-  IN_PROGRESS: { label: "In progress", is: "is in progress", next: "The team has started building it.", pill: { background: "#e6f0fd", color: "#1d4ed8", dot: "#3b82f6" } },
+  PLANNED: { label: "Planned", is: "is planned", next: "The team plans to build it.", pill: { color: "#1467c2", background: "#ecf3fa", border: "#c4d9f0" } },
+  IN_PROGRESS: { label: "In progress", is: "is in progress", next: "The team has started building it.", pill: { color: "#b14600", background: "#f9f0eb", border: "#ebd1bf" } },
 } as const;
 
 export type ProgressStatus = keyof typeof STATUSES;
@@ -26,8 +30,8 @@ type StatusProps = {
 export function StatusEmail({ projectName, status, postTitle, boardName, votes, postUrl, unsubscribeUrl, note, accent }: StatusProps) {
   const { label, is, next, pill } = STATUSES[status];
   return (
-    <Layout preview={`An idea you voted for moved to ${label}`} accent={accent}>
-      <Text style={{ fontSize: 14, fontWeight: 600, color: accentColors(accent).link, margin: "16px 0 4px" }}>Update on an idea you voted for</Text>
+    <Layout preview={`An idea you're following moved to ${label}`} accent={accent}>
+      <Text style={{ fontSize: 14, fontWeight: 600, color: accentColors(accent).link, margin: "16px 0 4px" }}>Update on an idea you asked for</Text>
       <Text style={{ fontSize: 22, fontWeight: 700, color: colors.text, lineHeight: "28px", margin: "0 0 16px" }}>
         {postTitle} {is}
       </Text>
@@ -44,8 +48,8 @@ export function StatusEmail({ projectName, status, postTitle, boardName, votes, 
             <Text style={{ margin: 0, fontSize: 15, fontWeight: 600, color: colors.text, lineHeight: "20px" }}>{postTitle}</Text>
           </Column>
           <Column style={{ width: 1, verticalAlign: "middle", whiteSpace: "nowrap" }}>
-            <Text style={{ margin: 0, fontSize: 12, fontWeight: 600, color: pill.color, backgroundColor: pill.background, borderRadius: 999, padding: "3px 10px" }}>
-              <span style={{ color: pill.dot }}>●</span> {label}
+            <Text style={{ margin: 0, fontSize: 12, fontWeight: 600, color: pill.color, backgroundColor: pill.background, border: `1px solid ${pill.border}`, borderRadius: 999, padding: "2px 10px" }}>
+              ● {label}
             </Text>
           </Column>
         </Row>

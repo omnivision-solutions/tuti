@@ -167,7 +167,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.goto("/feedback/feature-requests");
   await bo.getByRole("main").getByRole("button", { name: "Get updates" }).click();
   const updates = bo.getByRole("dialog", { name: "Get updates" });
-  await expect(updates).not.toContainText("Vote for an idea to get an email when it ships.");
+  await expect(updates).not.toContainText("Vote for an idea to get an email when it's planned, started and shipped.");
   await checkpoint(bo, "board-get-updates-unsubscribed");
   await updates.getByRole("link", { name: "You've unsubscribed from these emails." }).click();
   await bo.waitForURL("**/account");

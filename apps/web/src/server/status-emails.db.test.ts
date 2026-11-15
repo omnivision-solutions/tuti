@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { postStatusChanged } from "@tuti/jobs";
-import { beforeEach, expect, test } from "vitest";
+import { handlers } from "@tuti/jobs";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
@@ -114,4 +115,31 @@ test("a change the post has already moved on from leaves the newer change's emai
   await postStatusChanged(project.id, row.id, stale, "PLANNED");
 
   expect(await prisma.post.findUniqueOrThrow({ where: { id: row.id }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: due });
+});
+
+test("a Planned run that finishes after the post moved to In progress leaves the In progress emails due, and they go", async () => {
+  const voter = await verified("Voter");
+  const post = await postVotedBy(await verified("Author"), [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  // Planned and due, its run not started yet (set here, so no job runs).
+  await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED", shippedEmailsDueAt: new Date() } });
+  // The team moves it on just as that run takes its first person (the move's own job not run yet).
+  const transaction = prisma.$transaction.bind(prisma);
+  let claims = 0;
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
+    if (++claims === 1) {
+      await prisma.post.update({ where: { id: postId }, data: { status: "IN_PROGRESS", shippedEmailsDueAt: new Date() } });
+    }
+    return transaction(...args);
+  }) as never);
+  try {
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(subjectsTo(voter.email)).toEqual([]);
+  // The late Planned run didn't take the In progress emails' due time: the next run sends them.
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).not.toBeNull();
+  await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  expect(subjectsTo(voter.email)).toEqual([`In progress: ${post.title}`]);
 });

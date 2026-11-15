@@ -1124,8 +1124,8 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   const updates = ada.getByRole("dialog", { name: "Get updates" });
   await expect(sidebar.getByRole("button", { name: "Get updates" })).toHaveCount(0);
   await main.getByRole("button", { name: "Get updates" }).click();
-  await expect(updates).toContainText("Confirm your email to hear when ideas you vote on ship.");
-  await expect(updates).not.toContainText("get an email when it ships");
+  await expect(updates).toContainText("Confirm your email to hear when ideas you vote on are planned, started and shipped.");
+  await expect(updates).not.toContainText("get an email when it's planned");
   const emailsBefore = countEmailsTo(ada.email);
   await updates.getByRole("button", { name: "Resend email" }).click();
   await expect(updates.getByRole("button", { name: "Sent" })).toBeDisabled();
@@ -1133,7 +1133,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
   await ada.waitForURL(/\/feedback\/feature-requests$/);
   await main.getByRole("button", { name: "Get updates" }).click();
-  await expect(updates).toContainText("Vote for an idea to get an email when it ships.");
+  await expect(updates).toContainText("Vote for an idea to get an email when it's planned, started and shipped.");
   await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);
   await expect(updates.getByRole("link", { name: "Read the changelog" })).toHaveAttribute("href", "/changelog");
   await expect(updates.getByRole("link", { name: "RSS" })).toHaveAttribute("href", "/changelog/rss.xml");
@@ -1169,7 +1169,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await expect(visitorTabs.getByRole("link")).toHaveText(["Trending", "Top", "New"]);
   await visitor.getByRole("main").getByRole("button", { name: "Get updates" }).click();
   const visitorUpdates = visitor.getByRole("dialog", { name: "Get updates" });
-  await expect(visitorUpdates).toContainText("Vote for an idea to hear when it ships.");
+  await expect(visitorUpdates).toContainText("Vote for an idea to hear when it's planned, started and shipped.");
   // And the changelog by email, beside its page and feed.
   await expect(visitorUpdates.getByRole("textbox", { name: "Email" })).toBeVisible();
   await expect(visitorUpdates.getByRole("button", { name: "Subscribe" })).toBeVisible();

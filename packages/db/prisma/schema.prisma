@@ -1434,7 +1434,7 @@ model Vote {
   @@map("vote")
 }
 
-/// Someone following a post without voting for it (Subscribe on the portal): told when it ships, as its voters are.
+/// Someone following a post without voting for it (Subscribe on the portal): told when it's planned, started and shipped, as its voters are.
 model PostSubscription {
   postId    String
   userId    String

@@ -124,6 +124,21 @@ test("a move to In progress past the limit: its emails are due again next month,
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).toBeNull();
 });
 
+test("a move held by the limit, then moved back: neither the run nor the safety net emails about the status it went back to", async () => {
+  const { project, team } = await setup();
+  const { voters, post } = await votedPost(project);
+  await call(updatePost, team, { number: post.number, status: "in_progress" });
+  // One emailed, the other held for next month; then the team moves it back to Planned (which emails nobody).
+  await call(updatePost, team, { number: post.number, status: "planned" });
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+
+  await prisma.projectEmailMonth.updateMany({ where: { projectId: project.id, month: month() }, data: { month: new Date(Date.UTC(2020, 0, 1)) } });
+  await handlers.postShipped({ postId }, log);
+  await handlers.resubmitShippedEmails({}, log);
+  expect(voters.flatMap((voter) => emailsTo(voter.email)).filter((email) => email.subject.startsWith("Planned:"))).toEqual([]);
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).toBeNull();
+});
+
 test("shipped emails past the limit are due again next month, and go then", async () => {
   const { project, team } = await setup();
   const { voters, post } = await votedPost(project);

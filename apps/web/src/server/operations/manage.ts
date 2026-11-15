@@ -12,7 +12,7 @@ import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, 
 export const updatePost = defineOperation({
   name: "posts.update",
   summary:
-    "Change a post's status, move it to another board, say who sees it (`visibility`: public, private for its author and the team, team for the team only; its votes and comments go with it), or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said)",
+    "Change a post's status, move it to another board, say who sees it (`visibility`: public, private for its author and the team, team for the team only; its votes and comments go with it), or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said). `from` changes the status only while the post still has that one: changed since, nothing is written (409 `changed`)",
   method: "PATCH",
   path: "/posts/{number}",
   scope: "write",
@@ -21,6 +21,7 @@ export const updatePost = defineOperation({
     .object({
       number: postNumber,
       status: z.enum(STATUSES).optional(),
+      from: z.enum(STATUSES).optional(),
       board: z.string().optional(),
       owner: z.email().nullable().optional(),
       eta: z
@@ -38,7 +39,8 @@ export const updatePost = defineOperation({
     // The same rule, for the OpenAPI spec (a refine doesn't show up in JSON Schema).
     .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }, { required: ["owner"] }, { required: ["eta"] }, { required: ["visibility"] }] }),
   example: { status: "planned" },
-  run: async ({ actor, projectId }, input) => {
+  run: async (context, input) => {
+    const { actor, projectId } = context;
     const post = await findPost(projectId, input.number);
     let boardId: string | undefined;
     if (input.board !== undefined) {
@@ -74,6 +76,10 @@ export const updatePost = defineOperation({
       }
       const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
       const previous = current?.status ?? post.status;
+      // Read under the lock above, so a status set meanwhile is kept, never written over.
+      if (input.from && previous !== fromApiStatus(input.from)) {
+        throw new OperationError(409, "changed", "The post's status changed since: look at it again");
+      }
       const saved = await tx.post.update({
         where: { id: post.id },
         data: {
@@ -92,7 +98,8 @@ export const updatePost = defineOperation({
     });
     const result = summary(updated, portal);
     if (updated.status !== previous) {
-      await postStatusChanged(projectId, post.id, result, previous);
+      // A change nobody on the team approved (Autopilot's progress update going out by itself: `quietly`) emails nobody.
+      await postStatusChanged(projectId, post.id, result, previous, { email: !("quietly" in context) });
     }
     return result;
   },

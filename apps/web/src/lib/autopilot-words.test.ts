@@ -161,6 +161,11 @@ test("Undo on any part of a post's update that completed it warns about the comp
   // A progress update alone says what it does.
   const alone = { ...progress, together: undefined } as U;
   expect(undoWarning(alone, [alone])).toBe("Its progress update is deleted, and the post goes back to the status it had.");
+  // Once it emailed people that it's in progress: said, as a completion's are.
+  const told = { ...alone, emailed: 2 } as U;
+  expect(undoWarning(told, [told])).toBe(
+    "Its progress update is deleted, and the post goes back to the status it had. 2 people were already emailed that it's in progress; that can't be taken back.",
+  );
 });
 
 test("a post's part that landed after its update was read has no card of its own (it can't be approved without the update's version)", () => {

@@ -169,7 +169,7 @@ test("Subscribe is there while a post may still ship, signed out and for people 
   }
 });
 
-test("Subscribe and \"You'll hear when it ships.\" follow the Account's switches: its author by Posts I wrote, everyone else by Posts I voted on or follow", async () => {
+test("Subscribe and \"You'll hear when it's planned, started and shipped.\" follow the Account's switches: its author by Posts I wrote, everyone else by Posts I voted on or follow", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const verified = async (name: string) => {

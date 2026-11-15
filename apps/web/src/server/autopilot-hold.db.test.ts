@@ -9,11 +9,13 @@ import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
 import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
+import { setVote } from "@/server/operations/more";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 let owner: TestUser;
@@ -381,6 +383,30 @@ test("Publish now applies a scheduled update at once, by whoever asks; Stop make
   // The runner has nothing to do with either.
   await prisma.codeChangeAction.updateMany({ where: { id: stop.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+});
+
+test("a progress update going out by itself emails nobody that it's in progress; one a teammate publishes does", async () => {
+  const voter = await signUp("Vera Voter");
+  await prisma.user.update({ where: { id: voter.id }, data: { emailVerified: true } });
+  const quiet = await update("MOVES_FORWARD");
+  const published = await update("MOVES_FORWARD");
+  for (const { codeChangeId, postId } of [quiet, published]) {
+    const { number: post } = await prisma.post.findUniqueOrThrow({ where: { id: postId! } });
+    await call(setVote, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { number: post, voted: true });
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  const told = () => mailbox.emails.filter((email) => email.to.includes(voter.email) && email.subject.startsWith("In progress:")).map((email) => email.subject);
+
+  // The runner, after the hold: nobody on the team approved it.
+  await prisma.codeChangeAction.updateMany({ where: { id: quiet.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: quiet.postId! }, select: { status: true, shippedEmailsDueAt: true } })).toEqual({ status: "IN_PROGRESS", shippedEmailsDueAt: null });
+  expect(told()).toEqual([]);
+
+  // Published now by a teammate: theirs, so it emails.
+  expect(await publishCodeChangesNow(project.slug, [published.action.id])).toEqual({});
+  const { title } = await prisma.post.findUniqueOrThrow({ where: { id: published.postId! } });
+  expect(told()).toEqual([`In progress: ${title}`]);
 });
 
 test("the worker's minute reaches the runner only with the server's token", async () => {

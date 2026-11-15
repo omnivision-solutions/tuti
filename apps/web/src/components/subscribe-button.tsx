@@ -10,14 +10,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { setPostSubscription } from "@/server/posts";
 
 /**
- * Subscribe on a portal post, for people who don't vote: they're emailed when it ships, as voters are.
+ * Subscribe on a portal post, for people who don't vote: they're emailed when it's planned, started and shipped, as voters are.
  * Signed out it goes to sign in and back; `following`: they already hear (they posted, voted or commented), so a line
  * instead, whether or not they subscribed too (unsubscribing would change nothing). Subscribing never changes `following`,
  * so the button isn't swapped for the line under someone using it. The page leaves it out for a post that won't ship
  * again and for people its emails can't reach.
  */
 // What Subscribe does, under it in the post's card; only while it offers Subscribe.
-const hint = <p className="-mt-2 text-[0.8125rem] text-muted-foreground max-lg:hidden">Get an email when it ships.</p>;
+const hint = <p className="-mt-2 text-[0.8125rem] text-muted-foreground max-lg:hidden">{"Get an email when it's planned, started and shipped."}</p>;
 
 // In the phone's row of actions beside Upvote and Copy link: the words alone, so the row fits a phone.
 const PHONE = "font-semibold max-lg:px-3 max-lg:[&>svg]:hidden";
@@ -40,7 +40,7 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
   }
   if (following) {
     // On phones a line of its own under the post's row of actions.
-    return <p className="text-sm text-muted-foreground max-lg:order-last max-lg:basis-full">{"You'll hear when it ships."}</p>;
+    return <p className="text-sm text-muted-foreground max-lg:order-last max-lg:basis-full">{"You'll hear when it's planned, started and shipped."}</p>;
   }
   return (
     <>
