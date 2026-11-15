@@ -94,6 +94,8 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           forgotPassword
           // Accounts made here can't read a private portal.
           signUp={!isPrivate}
+          // With SSO the portal's sign-up sends people to sign in on the team's app: the app's sign-up, and back.
+          signUpOnApp={!!ssoUrl}
           title={portal ? `Sign in to ${portal.name}` : undefined}
           description="Vote, comment and follow ideas. We'll email you when they ship."
           mark={<PortalMark name={portal?.name ?? project} />}

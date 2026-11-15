@@ -24,7 +24,8 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * that can send email) makes signing in or up "Email me a sign-in (sign-up) link": the password is typed on the app's
  * host only (lib/auth.ts), so there "Use a password instead" goes to the app's sign-in (sign-up) through the portal's
  * /continue, and back. `forgotPassword` (a host that can
- * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
+ * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account";
+ * `signUpOnApp` (a portal with SSO, whose own sign-up sends people to its app's sign-in) makes it the app's sign-up, and back.
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
  * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
  * on the way back to a portal: that portal's, so the reset comes back there). `pages` is where the other sign-in pages are:
@@ -39,6 +40,7 @@ export function AuthForm({
   linkProject,
   forgotPassword,
   signUp = true,
+  signUpOnApp,
   social = [],
   socialError,
   description,
@@ -57,6 +59,7 @@ export function AuthForm({
   linkProject?: string;
   forgotPassword?: boolean;
   signUp?: boolean;
+  signUpOnApp?: boolean;
   social?: SocialProvider[];
   socialError?: SocialSignInError;
   description?: string;
@@ -335,12 +338,18 @@ export function AuthForm({
                   {(isSignUp || signUp) && (
                     <p>
                       {isSignUp ? "Have an account? " : "New here? "}
-                      <Link
-                        href={at(`/${isSignUp ? "sign-in" : "sign-up"}${next ? `?${new URLSearchParams({ next })}` : ""}`)}
-                        className="font-semibold text-soft-foreground underline-offset-4 hover:underline"
-                      >
-                        {isSignUp ? "Sign in" : "Create an account"}
-                      </Link>
+                      {signUpOnApp && !isSignUp ? (
+                        <a href={onApp(true)} className="font-semibold text-soft-foreground underline-offset-4 hover:underline">
+                          Create an account
+                        </a>
+                      ) : (
+                        <Link
+                          href={at(`/${isSignUp ? "sign-in" : "sign-up"}${next ? `?${new URLSearchParams({ next })}` : ""}`)}
+                          className="font-semibold text-soft-foreground underline-offset-4 hover:underline"
+                        >
+                          {isSignUp ? "Sign in" : "Create an account"}
+                        </Link>
+                      )}
                     </p>
                   )}
                   {teamHref && (
