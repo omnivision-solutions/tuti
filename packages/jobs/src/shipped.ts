@@ -6,6 +6,7 @@ import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
+import { emailBrand } from "./email-brand";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -177,7 +178,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const note = comment?.body.trim() ? { from: comment.author.name, text: comment.body.trim() } : undefined;
 
   const origin = await portalAddress(project.slug);
-  const sender = await projectSender(projectId);
+  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   const postUrl = portalPostUrl(origin, post);
   let emailed = 0;
   let failed = 0;
@@ -201,7 +202,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     const error = await whileClaimed({ postId, userId: id, claimedAt }, () =>
       sendEmail({
         to: address,
-        ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl, note, accent: project.brandColor }),
+        ...shippedEmail({ ...brand, postTitle: post.title, postUrl, unsubscribeUrl, note }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {

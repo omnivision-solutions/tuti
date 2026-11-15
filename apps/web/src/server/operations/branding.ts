@@ -5,7 +5,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
-import { badgeLicensed, installation as thisInstallation } from "../license";
+import { badgeLicensed, installation as thisInstallation, poweredByShown } from "../license";
 import { type LastingImage, lastingImage, lastingMediaUrl } from "../media-urls";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import {
@@ -143,7 +143,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     headerLinks: links(project.headerLinks),
     footerLinks: links(project.footerLinks),
     // Checked here, where the portal reads it, so turning poweredBy off in the database isn't enough.
-    poweredBy: project.poweredBy || !badgeLicensed(project, installation),
+    poweredBy: poweredByShown(project, installation),
     contentActions: {
       menu: project.articleActions,
       copyMarkdown: project.articleCopyMarkdown,

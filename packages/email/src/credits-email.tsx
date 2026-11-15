@@ -16,7 +16,15 @@ type CreditsProps = {
 /** To a project's owners and admins: its AI credits are running low, or out (docs/plan.md, AI usage per project). */
 export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
   return (
-    <Layout preview={out ? `${projectName}'s AI is paused until it has more credits.` : `${projectName} has ${left} AI credits left.`}>
+    <Layout
+      label="Billing"
+      preview={out ? `${projectName}'s AI is paused until it has more credits.` : `${projectName} has ${left} AI credits left.`}
+      footer={
+        <>
+          You get this as an owner or admin of {projectName}, once until the project gets more credits.
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {out ? (
           <>
@@ -36,9 +44,6 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
       >
         See Billing
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You get this as an owner or admin of {projectName}, once until the project gets more credits.
-      </Text>
     </Layout>
   );
 }

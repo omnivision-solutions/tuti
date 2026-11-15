@@ -24,7 +24,17 @@ const MAX_QUOTED = 2000;
 export function ConversationEmail({ projectName, from, isNew, subject, body, url, assigned }: ConversationProps) {
   const quoted = body.length > MAX_QUOTED ? `${body.slice(0, MAX_QUOTED - 1)}…` : body;
   return (
-    <Layout preview={`${from}: ${quoted.slice(0, 120)}`} label="Inbox">
+    <Layout
+      preview={`${from}: ${quoted.slice(0, 120)}`}
+      label="Inbox"
+      footer={
+        <>
+          {assigned
+            ? `You get this because the conversation is assigned to you in ${projectName}.`
+            : `You get this because "Email me new conversations" is on for you in ${projectName}'s inbox.`}
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         <strong>{from}</strong> {isNew ? "started a conversation" : "replied"} in <strong>{projectName}</strong>: {subject}
       </Text>
@@ -37,11 +47,6 @@ export function ConversationEmail({ projectName, from, isNew, subject, body, url
       >
         Reply in the inbox
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        {assigned
-          ? `You get this because the conversation is assigned to you in ${projectName}.`
-          : `You get this because "Email me new conversations" is on for you in ${projectName}'s inbox.`}
-      </Text>
     </Layout>
   );
 }

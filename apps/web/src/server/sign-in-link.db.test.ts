@@ -85,7 +85,7 @@ test("the email has a link to a page that asks to confirm, then signs a new addr
   expect(await ask(email)).toEqual({ sentTo: email });
 
   const message = await mailbox.latestTo(email);
-  expect(message.html).toContain("border-top:4px solid #7c3aed");
+  expect(message.html).toContain("border-radius:9px;background-color:#7c3aed");
   expect(message.text).toContain(project.name);
   expect(message.text).toContain(`expires in ${SIGN_IN_LINK_MINUTES} minutes`);
   expect(message.text).toContain("If you didn't ask for this, ignore it.");

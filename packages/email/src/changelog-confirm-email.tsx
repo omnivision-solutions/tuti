@@ -1,17 +1,21 @@
 import { Button, Text } from "@react-email/components";
 
-import { buttonStyle, colors, Layout } from "./layout";
+import { buttonStyle, colors, type EmailBrand, Layout } from "./layout";
 
 /** `optedOut`: the address has turned all of the project's emails off, which wins until they turn them back on. */
-type ChangelogConfirmProps = { projectName: string; url: string; optedOut?: boolean; accent?: string | null };
+type ChangelogConfirmProps = EmailBrand & { url: string; optedOut?: boolean };
 
 /**
  * "Get updates by email" on a portal's changelog: nothing is sent until they confirm. To an address that's turned all
  * of the project's emails off, it promises nothing: it says so, and the link turns them back on.
  */
-export function ChangelogConfirmEmail({ projectName, url, optedOut = false, accent }: ChangelogConfirmProps) {
+export function ChangelogConfirmEmail({ projectName, url, optedOut = false, accent, poweredBy }: ChangelogConfirmProps) {
   return (
-    <Layout preview={optedOut ? `You've turned off ${projectName}'s emails.` : `Confirm to get ${projectName}'s updates by email.`} accent={accent}>
+    <Layout
+      preview={optedOut ? `You've turned off ${projectName}'s emails.` : `Confirm to get ${projectName}'s updates by email.`}
+      project={{ projectName, accent, poweredBy }}
+      footer={<>If you didn&apos;t ask for this, ignore it: you won&apos;t get anything.</>}
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {optedOut ? (
           <>
@@ -31,9 +35,6 @@ export function ChangelogConfirmEmail({ projectName, url, optedOut = false, acce
       >
         {optedOut ? `Turn ${projectName}'s emails back on` : "Get updates by email"}
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        If you didn&apos;t ask for this, ignore it: you won&apos;t get anything.
-      </Text>
     </Layout>
   );
 }

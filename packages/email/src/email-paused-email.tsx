@@ -13,7 +13,14 @@ type PausedProps = {
 /** To the server's operator: a project's email was paused, with the link that resumes it. */
 export function EmailPausedEmail({ projectName, reason, portalUrl, url }: PausedProps & { portalUrl: string; url: string }) {
   return (
-    <Layout preview={`${projectName}'s email to its users is paused.`}>
+    <Layout
+      preview={`${projectName}'s email to its users is paused.`}
+      footer={
+        <>
+          You get this as this server&apos;s operator (APP_PORTAL_OWNER). The link works for as long as this pause lasts.
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         <strong>{projectName}</strong> ({portalUrl}) can&apos;t email its users for now: {reason}. Only sign-in links go till you
         resume it; then its held replies go, and its held changelog and post emails don&apos;t. Its team was told.
@@ -21,9 +28,6 @@ export function EmailPausedEmail({ projectName, reason, portalUrl, url }: Paused
       <Button href={url} style={buttonStyle}>
         Review
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You get this as this server&apos;s operator (APP_PORTAL_OWNER). The link works for as long as this pause lasts.
-      </Text>
     </Layout>
   );
 }

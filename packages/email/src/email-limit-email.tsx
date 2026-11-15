@@ -20,7 +20,15 @@ type EmailLimitProps = {
 /** To a project's owners and admins, once a month: it reached its plan's monthly email limit (packages/jobs/src/email-limits.ts). */
 export function EmailLimitEmail({ projectName, planName, trial = false, limit, resets, upgrade, url }: EmailLimitProps) {
   return (
-    <Layout preview={`${projectName}'s email to its users is waiting until ${resets}.`}>
+    <Layout
+      label="Billing"
+      preview={`${projectName}'s email to its users is waiting until ${resets}.`}
+      footer={
+        <>
+          You get this as an owner or admin of {projectName}, once a month at most.
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} its {planName} {trial ? "trial" : "plan"} includes this month, so its email to
         your users (support replies, &quot;it shipped&quot; and changelog emails) is waiting until the month resets on {resets}. Nothing is lost:
@@ -32,9 +40,6 @@ export function EmailLimitEmail({ projectName, planName, trial = false, limit, r
       >
         See Billing
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You get this as an owner or admin of {projectName}, once a month at most.
-      </Text>
     </Layout>
   );
 }

@@ -1,13 +1,17 @@
 import { Button, Text } from "@react-email/components";
 
-import { buttonStyle, colors, Layout } from "./layout";
+import { buttonStyle, colors, type EmailBrand, Layout } from "./layout";
 
-type PortalReaderProps = { inviterName: string; projectName: string; email: string; url: string; accent?: string | null };
+type PortalReaderProps = EmailBrand & { inviterName: string; email: string; url: string };
 
 /** To someone the team added as a reader of its private portal: where to sign in, and with which address. */
-export function PortalReaderEmail({ inviterName, projectName, email, url, accent }: PortalReaderProps) {
+export function PortalReaderEmail({ inviterName, projectName, email, url, accent, poweredBy }: PortalReaderProps) {
   return (
-    <Layout preview={`You can now read ${projectName}'s portal.`} accent={accent}>
+    <Layout
+      preview={`You can now read ${projectName}'s portal.`}
+      project={{ projectName, accent, poweredBy }}
+      footer={<>If you weren&apos;t expecting this, you can ignore this email.</>}
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {inviterName} gave you access to <strong>{projectName}</strong>&apos;s portal: its docs, changelog and feedback.
       </Text>
@@ -18,8 +22,7 @@ export function PortalReaderEmail({ inviterName, projectName, email, url, accent
         Open the portal
       </Button>
       <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        Sign in as {email}: &ldquo;Email me a sign-in link&rdquo; works even if you don&apos;t have an account yet. If you
-        weren&apos;t expecting this, you can ignore this email.
+        Sign in as {email}: &ldquo;Email me a sign-in link&rdquo; works even if you don&apos;t have an account yet.
       </Text>
     </Layout>
   );

@@ -41,6 +41,7 @@ export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
 export { audienceReach, postAudience, projectUnsubscribeToken, provenAddress, type Reach, SEEN_AS_SQL, seenAs } from "./post-audience";
 export { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
+export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";

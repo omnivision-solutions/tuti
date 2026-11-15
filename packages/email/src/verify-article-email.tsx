@@ -18,7 +18,15 @@ const statements = (count: number) => (count === 1 ? "1 statement" : `${count} s
 /** To a project's owners: Verify found an article out of date and wrote its fix, which waits for them (docs/plan.md, V5). */
 export function VerifyArticleEmail({ projectName, articleTitle, counts, reason, url }: VerifyArticleProps) {
   return (
-    <Layout preview={`${statements(counts.outdated)} in “${articleTitle}” ${counts.outdated === 1 ? "is" : "are"} out of date. The fix waits for you.`} label="Autopilot">
+    <Layout
+      preview={`${statements(counts.outdated)} in “${articleTitle}” ${counts.outdated === 1 ? "is" : "are"} out of date. The fix waits for you.`}
+      label="Verify"
+      footer={
+        <>
+          Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Verify checked <strong>{articleTitle}</strong> against your repository: {statements(counts.current)} still true,{" "}
         {counts.outdated} out of date{counts.unclear > 0 ? `, ${counts.unclear} it couldn't tell` : ""}.
@@ -27,9 +35,6 @@ export function VerifyArticleEmail({ projectName, articleTitle, counts, reason, 
       <Button href={url} style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>
         Review the fix
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
-      </Text>
     </Layout>
   );
 }

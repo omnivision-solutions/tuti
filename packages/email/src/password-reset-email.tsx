@@ -1,25 +1,29 @@
 import { Button, Text } from "@react-email/components";
 
-import { buttonStyle, colors, Layout } from "./layout";
+import { buttonStyle, colors, type EmailBrand, Layout } from "./layout";
 
-/** `siteName` is where it was asked for: a portal's project name, or Tuti for the app; `accent` the portal's colour. */
-type PasswordResetProps = { siteName: string; url: string; minutes: number; accent?: string | null };
+/** `project`: the portal it was asked on (sent on its behalf); none for the app (from Tuti). */
+type PasswordResetProps = { project?: EmailBrand | null; url: string; minutes: number };
 
-export function PasswordResetEmail({ siteName, url, minutes, accent }: PasswordResetProps) {
+export function PasswordResetEmail({ project, url, minutes }: PasswordResetProps) {
+  const siteName = project?.projectName ?? "Tuti";
   return (
-    <Layout preview={`Set a new password for ${siteName}.`} accent={accent}>
+    <Layout
+      preview={`Set a new password for ${siteName}.`}
+      project={project ?? undefined}
+      footer={<>If you didn&apos;t ask for this, ignore it: your password stays the same.</>}
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Someone asked to reset the password for your account on <strong>{siteName}</strong>.
       </Text>
       <Button
         href={url}
-        style={buttonStyle(accent)}
+        style={buttonStyle(project?.accent)}
       >
         Set a new password
       </Button>
       <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        The link works once and expires in {minutes} minutes. If you didn&apos;t ask for this, ignore it: your password
-        stays the same.
+        The link works once and expires in {minutes} minutes.
       </Text>
     </Layout>
   );
@@ -30,9 +34,10 @@ export const passwordResetEmail = (props: PasswordResetProps) => ({
   body: <PasswordResetEmail {...props} />,
 });
 
-export function PasswordChangedEmail() {
+/** `project`: the portal the reset was asked on (sent on its behalf); none for the app. */
+export function PasswordChangedEmail({ project }: { project?: EmailBrand | null }) {
   return (
-    <Layout preview="Your password was just changed.">
+    <Layout preview="Your password was just changed." project={project ?? undefined}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         The password for your account was just changed with a reset link, and you were signed out everywhere else.
       </Text>
@@ -43,7 +48,7 @@ export function PasswordChangedEmail() {
   );
 }
 
-export const passwordChangedEmail = () => ({
+export const passwordChangedEmail = (project?: EmailBrand | null) => ({
   subject: "Your password was changed",
-  body: <PasswordChangedEmail />,
+  body: <PasswordChangedEmail project={project} />,
 });

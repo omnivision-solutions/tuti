@@ -9,6 +9,7 @@ export { emailPausedEmail, emailPausedTeamEmail, pausedNotice } from "./email-pa
 export { inviteEmail } from "./invite-email";
 export { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
 export { portalReaderEmail } from "./portal-reader-email";
+export { type EmailBrand } from "./layout";
 export { deliveredMessageId, emailConfigured, sendEmail } from "./send";
 export { replyEmail } from "./reply-email";
 export { shippedEmail } from "./shipped-email";

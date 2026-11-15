@@ -1,12 +1,16 @@
 import { Button, Text } from "@react-email/components";
 
-import { buttonStyle, colors, Layout } from "./layout";
+import { buttonStyle, colors, type EmailBrand, Layout } from "./layout";
 
-type SignInLinkProps = { projectName: string; url: string; minutes: number; accent?: string | null };
+type SignInLinkProps = EmailBrand & { url: string; minutes: number };
 
-export function SignInLinkEmail({ projectName, url, minutes, accent }: SignInLinkProps) {
+export function SignInLinkEmail({ projectName, url, minutes, accent, poweredBy }: SignInLinkProps) {
   return (
-    <Layout preview={`Your sign-in link for ${projectName}.`} accent={accent}>
+    <Layout
+      preview={`Your sign-in link for ${projectName}.`}
+      project={{ projectName, accent, poweredBy }}
+      footer={<>If you didn&apos;t ask for this, ignore it.</>}
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Here&apos;s your link to sign in to <strong>{projectName}</strong>.
       </Text>
@@ -17,7 +21,7 @@ export function SignInLinkEmail({ projectName, url, minutes, accent }: SignInLin
         Sign in
       </Button>
       <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        The link works once and expires in {minutes} minutes. If you didn&apos;t ask for this, ignore it.
+        The link works once and expires in {minutes} minutes.
       </Text>
     </Layout>
   );

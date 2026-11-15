@@ -9,6 +9,7 @@ import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
+import { emailBrand } from "./email-brand";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due reply) this old belongs to a run that died or never started. */
@@ -139,7 +140,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   await prisma.replyEmail.deleteMany({ where: { commentId, sentAt: null, claimedAt: { lt: late() }, userId: { notIn: people.map((person) => person.id) } } });
 
   const origin = await portalAddress(project.slug);
-  const sender = await projectSender(projectId);
+  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   const postUrl = portalPostUrl(origin, post);
   const doc = (comment.content as Doc | null) ?? undefined;
   const mediaUrls = lastingMediaUrls(doc);
@@ -166,7 +167,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
       sendEmail({
         to: address,
         ...replyEmail({
-          projectName: project.name,
+          ...brand,
           authorName: comment.author.name,
           postTitle: post.title,
           text,
@@ -174,7 +175,6 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           mediaUrls,
           postUrl,
           unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
-          accent: project.brandColor,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

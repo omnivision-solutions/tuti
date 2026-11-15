@@ -1,53 +1,94 @@
 import { render } from "@react-email/render";
 import type { Doc } from "@tuti/content";
+import { createElement, Fragment } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { changelogConfirmEmail } from "./changelog-confirm-email";
+import { conversationReplyEmail } from "./conversation-reply-email";
+import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
+import { portalReaderEmail } from "./portal-reader-email";
+import { replyEmail } from "./reply-email";
+import { signInLinkEmail } from "./sign-in-link-email";
 import { changelogEmail } from "./changelog-email";
 import { conversationEmail } from "./conversation-email";
-import { accentColors, colors } from "./layout";
+import { creditsEmail } from "./credits-email";
+import { emailLimitEmail } from "./email-limit-email";
+import { inviteEmail } from "./invite-email";
+import { accentColors, colors, Eyebrow, Note, POWERED_BY_URL, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
+import { verifyAllEmail } from "./verify-all-email";
+import { verifyArticleEmail } from "./verify-article-email";
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-test("Tuti's logo and footer go only on emails about Tuti; those a team's customers get keep the plain wordmark", async () => {
+const shipped = { projectName: "Acme", postTitle: "Dark mode", postUrl: "https://acme.example/p/1", unsubscribeUrl: "https://acme.example/u" };
+
+test("emails on a project's behalf show its name and initial at the top, not Tuti's mark; Tuti's own show the mark and the part of Tuti", async () => {
   vi.stubEnv("APP_URL", "https://tuti.example");
+  const html = await render(shippedEmail(shipped).body);
+  const text = await render(shippedEmail(shipped).body, { plainText: true });
+  expect(text).toMatch(/^Acme\n/);
+  expect(html).not.toContain("email-tuti.png");
+  expect(html).not.toContain("email-logo.png");
+  // Why they get it and how to stop, under the card.
+  expect(text).toContain("You're getting this because you posted, voted, commented on or subscribed to it.");
+  expect(html).toContain('href="https://acme.example/u"');
+
   const inbox = await render(
     conversationEmail({ projectName: "Acme", from: "Ann", isNew: true, subject: "Hi", body: "Hello", url: "https://tuti.example/c", assigned: true }).body,
-    { plainText: true },
   );
-  expect(inbox).toMatch(/^tuti Inbox/);
-  expect(inbox).toContain("feedback, roadmap and changelog");
-  const shipped = shippedEmail({ projectName: "Acme", postTitle: "Dark mode", postUrl: "https://acme.example/p/1", unsubscribeUrl: "https://acme.example/u" });
-  const [html, text] = await Promise.all([render(shipped.body), render(shipped.body, { plainText: true })]);
-  expect(html).not.toContain("email-logo.png");
-  expect(text).not.toContain("feedback, roadmap and changelog");
-  expect(text).toMatch(/^tuti\n/);
+  expect(inbox).toContain('src="https://tuti.example/api/email-tuti.png"');
+  expect(inbox).toContain(">Inbox</p>");
+  expect(inbox).not.toContain("feedback, roadmap and changelog");
 });
 
-test("emails a project's customers get take its accent; Tuti's own wordmark stays green", async () => {
-  const props = { projectName: "Acme", postTitle: "Dark mode", postUrl: "https://acme.example/p/1", unsubscribeUrl: "https://acme.example/u" };
-  const html = (accent?: string | null) => render(shippedEmail({ ...props, accent }).body);
+test("every email ends with Powered by tuti, linking to Tuti's site with no project in it, unless the project hides it", async () => {
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  const link = 'href="https://tuti.so/?utm_source=email&amp;utm_medium=powered_by&amp;utm_campaign=badge"';
+  expect(POWERED_BY_URL).toBe("https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge");
+
+  const shown = await render(shippedEmail({ ...shipped, poweredBy: true }).body);
+  expect(shown).toContain(link);
+  // Grey beside the team's colours.
+  expect(shown).toContain('src="https://tuti.example/api/email-powered-by.png"');
+  expect(await render(shippedEmail(shipped).body, { plainText: true })).toContain("Powered by");
+
+  const hidden = await render(shippedEmail({ ...shipped, poweredBy: false }).body);
+  expect(hidden).not.toContain("Powered by");
+  expect(hidden).not.toContain("tuti.so");
+
+  // Tuti's own emails always have it, in Tuti's colours.
+  const invite = await render(inviteEmail({ inviterName: "Ann", projectName: "Acme", roleLabel: "Member", url: "https://tuti.example/i" }).body);
+  expect(invite).toContain(link);
+  expect(invite).toContain('src="https://tuti.example/api/email-powered-by-tuti.png"');
+
+  // Without the app's address (or with one that isn't a URL), the words instead of the picture.
+  for (const address of [undefined, "not a url"]) {
+    vi.stubEnv("APP_URL", address);
+    expect(await render(shippedEmail(shipped).body, { plainText: true })).toMatch(/Powered by\s+tuti/);
+  }
+});
+
+test("emails a project's customers get take its accent", async () => {
+  const html = (accent?: string | null) => render(shippedEmail({ ...shipped, accent }).body);
 
   const purple = await html("#7c3aed");
-  expect(purple).toContain("border-top:4px solid #7c3aed");
+  // Its initial's square and its button.
   expect(purple).toContain("background-color:#7c3aed;color:#ffffff");
-  expect(purple).toMatch(/color:#12804a[^>]*>tuti</);
+  expect(purple).toContain("background-color:#7c3aed;color:#ffffff;border-radius:10px");
 
   // A mid-tone that reads on white gets black text on its button.
   expect(await html("#ea580c")).toContain("background-color:#ea580c;color:#000000");
   // Too faint on the white card (a pale yellow): the darker shade of it the portal uses.
   const yellow = await html("#fde047");
   expect(yellow).not.toContain("#fde047");
-  expect(yellow).toContain("border-top:4px solid #857525");
   expect(yellow).toContain("background-color:#857525;color:#ffffff");
 
   // Without one (or with something that isn't a colour), Tuti's green as before.
   for (const accent of [null, "red;x:y"]) {
-    const green = await html(accent);
-    expect(green).toContain(`border-top:4px solid ${colors.green}`);
-    expect(green).toContain(`background-color:${colors.green};color:${colors.onGreen}`);
+    expect(await html(accent)).toContain(`background-color:${colors.green};color:${colors.onGreen}`);
   }
 });
 
@@ -62,7 +103,7 @@ test("a changelog entry's links take the project's accent", async () => {
     changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", doc, unsubscribeUrl: "https://acme.example/u", accent: "#808080" }).body,
   );
   expect(grey).toMatch(new RegExp(`<a href="https://acme.example/docs" style="color:${colors.text}`));
-  expect(grey).toContain("border-top:4px solid #808080");
+  expect(grey).toContain("background-color:#808080");
 });
 
 test("an accent too faint on the white card takes the portal's shade of it, buttons and links alike; a grey or a pale tint, the text colour", () => {
@@ -77,4 +118,54 @@ test("an accent too faint on the white card takes the portal's shade of it, butt
   expect(accentColors("#1e3a8a")).toEqual({ accent: "#1e3a8a", onAccent: "#ffffff", link: "#1e3a8a" });
   // Enough for a button (3:1) but not for text this size: the button as it is, links in its shade.
   expect(accentColors("#ea580c")).toEqual({ accent: "#ea580c", onAccent: "#000000", link: "#cb4c0a" });
+});
+
+test("the building blocks bodies share: the line over the title in the accent's text shade, a warning in the highlight", async () => {
+  const html = await render(
+    createElement(Fragment, null, Eyebrow({ accent: "#ea580c", children: "New reply" }), Title({ children: "Dark mode" }), Note({ kind: "warn", children: "Too many bounced." })),
+  );
+  expect(html).toMatch(/color:#cb4c0a[^>]*>New reply</);
+  expect(html).toMatch(/<h1[^>]*>Dark mode<\/h1>/);
+  expect(html).toMatch(new RegExp(`background-color:#fff4ea;color:${colors.onHighlight}[^>]*>Too many bounced.<`));
+});
+
+test("Tuti's own emails name the part of Tuti they're from: Verify for Verify's, Billing for credits and the email limit", async () => {
+  const url = "https://tuti.example/x";
+  const labels = await Promise.all(
+    [
+      verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 1, outdated: 1, unclear: 0 }, reason: "Moved.", url }),
+      verifyAllEmail({ projectName: "Acme", checked: 2, total: 2, fixed: ["Export"], stopped: "", url }),
+      creditsEmail({ projectName: "Acme", out: false, left: "120", url }),
+      emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "", url }),
+    ].map(async (email) => (await render(email.body)).match(/>(Verify|Billing|Autopilot|Inbox)<\/p>/)?.[1]),
+  );
+  expect(labels).toEqual(["Verify", "Verify", "Billing", "Billing"]);
+});
+
+test("every email to a project's customers drops Powered by tuti when the project hides it, and keeps it otherwise", async () => {
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  const u = "https://acme.example/x";
+  const doc: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hi" }] }] };
+  const emails = (poweredBy: boolean) => {
+    const brand = { projectName: "Acme", accent: null, poweredBy };
+    return {
+      shipped: shippedEmail({ ...brand, postTitle: "Dark mode", postUrl: u, unsubscribeUrl: u }),
+      reply: replyEmail({ ...brand, authorName: "Ada", postTitle: "Dark mode", text: "Hi", doc, postUrl: u, unsubscribeUrl: u }),
+      changelog: changelogEmail({ ...brand, entryTitle: "New", entryUrl: u, doc, unsubscribeUrl: u }),
+      changelogConfirm: changelogConfirmEmail({ ...brand, url: u }),
+      supportReply: conversationReplyEmail({ ...brand, subject: "Re: Hi", messages: [{ name: "Ada", body: "Hi" }] }),
+      signInLink: signInLinkEmail({ ...brand, url: u, minutes: 15 }),
+      passwordReset: passwordResetEmail({ project: brand, url: u, minutes: 60 }),
+      passwordChanged: passwordChangedEmail(brand),
+      portalReader: portalReaderEmail({ ...brand, inviterName: "Ada", email: "e2e-reader@example.com", url: u }),
+    };
+  };
+  for (const [name, email] of Object.entries(emails(false))) {
+    const html = await render(email.body);
+    expect({ name, badge: html.includes("Powered by") || html.includes("tuti.so") }).toEqual({ name, badge: false });
+  }
+  for (const [name, email] of Object.entries(emails(true))) {
+    const html = await render(email.body);
+    expect({ name, badge: html.includes(`href="${POWERED_BY_URL.replaceAll("&", "&amp;")}"`) }).toEqual({ name, badge: true });
+  }
 });
