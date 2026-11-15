@@ -372,15 +372,20 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               {!message.note && `${name} · `}
                               {timeAgo(message.createdAt)}
                             </span>
-                            {status && (
-                              <span className="whitespace-nowrap" title={status === wait?.status ? wait.why : undefined}>
-                                {status}
+                            {/* Held: the short status shows whole, and the full reason is its tooltip and what screen readers hear. */}
+                            {status && (status === wait?.status ? (
+                              <span className="whitespace-nowrap" title={wait.why}>
+                                <span aria-hidden>{status}</span>
+                                <span className="sr-only">{wait.why}</span>
                               </span>
-                            )}
+                            ) : (
+                              // Others (a bounce's error, a complaint) can be long: they wrap, inside the column.
+                              <span className="min-w-0 wrap-anywhere">{status}</span>
+                            ))}
                           </p>
                           {runs && (
                             <p className="sr-only">
-                              {name} · {timeAgo(message.createdAt)} {status}
+                              {name} · {timeAgo(message.createdAt)} {wait && status === wait.status ? wait.why : status}
                             </p>
                           )}
                         </div>
