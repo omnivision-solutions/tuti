@@ -5,7 +5,7 @@ open an issue first so we can agree on the shape before you build it.
 
 ## Setup
 
-Follow [Getting started](README.md#getting-started). The test suites also need Docker
+Follow [Getting started](docs/self-hosting.md#getting-started). The test suites also need Docker
 (they start their own Postgres) and, for browser tests, `pnpm exec playwright install chromium`.
 
 ## Checks

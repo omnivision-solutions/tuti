@@ -201,7 +201,7 @@ export const auth = betterAuth({
     // Who a request is from, for Better Auth's own limits (password sign-in, sign-up, verification emails): the address
     // in TRUSTED_IP_HEADER, read as the app's own limits read it (trustedClientIp), which the auth route and hooks.before
     // put in CLIENT_IP_HEADER. Better Auth's default, X-Forwarded-For, is whatever the visitor sends, or, when a proxy
-    // appends to it, one bucket everyone shares. Without TRUSTED_IP_HEADER (README) that default stays.
+    // appends to it, one bucket everyone shares. Without TRUSTED_IP_HEADER (docs/self-hosting.md) that default stays.
     ...(process.env.TRUSTED_IP_HEADER?.trim() ? { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } } : {}),
   },
   emailAndPassword: {
