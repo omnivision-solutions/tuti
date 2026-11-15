@@ -5,7 +5,7 @@ import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { backToPortal, createProject, newPerson, signInWithPassword, signUp } from "./helpers";
-import { latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
 
@@ -289,6 +289,8 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await vera.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(vera.getByText("Check your email")).toBeVisible();
   await expect(vera.getByText(`We sent a sign-in link to ${email}.`)).toBeVisible();
+  // Back to the board they were on, with the idea they started.
+  await expect(vera.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", `/feedback/feature-requests?${new URLSearchParams({ title })}`);
   await checkpoint(vera, "portal-sign-in-link-sent");
 
   const message = await latestEmailTo(email);
@@ -326,6 +328,16 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await someoneElse.getByLabel("Email").fill(anotherEmail);
   await someoneElse.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(someoneElse.getByText(`We sent a sign-in link to ${anotherEmail}.`)).toBeVisible();
+  // A mistyped address: back to the form with it filled in, to fix it.
+  await someoneElse.getByRole("button", { name: "Use a different email" }).click();
+  await expect(someoneElse.getByLabel("Email")).toHaveValue(anotherEmail);
+  await expect(someoneElse.getByLabel("Email")).toBeFocused();
+  await expect(someoneElse.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
+  // Sent from Account's sign-in, "Back" goes to the portal's home: Account would only bring them back here.
+  await someoneElse.goto("/sign-in?next=%2Faccount");
+  await someoneElse.getByLabel("Email").fill(anotherEmail);
+  await someoneElse.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(someoneElse.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", "/");
 
   // From the portal's home page it comes back to the portal's home page (the app has a "/" too).
   const wes = await newPerson(browser, portalUrl(slug));
@@ -334,6 +346,57 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await wes.getByLabel("Email").fill(wesEmail);
   await wes.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(wes.getByText("Check your email")).toBeVisible();
+  await expect(wes.getByText("Not there? Check your spam folder.")).toBeVisible();
+  // Focus moves to the card's title, which is read out; the next stop is "Send another link".
+  await expect(wes.getByText("Check your email")).toBeFocused();
+  await wes.keyboard.press("Tab");
+  await expect(wes.getByRole("button", { name: "Send another link" })).toBeFocused();
+  // Offline: it says so, and can be tried again.
+  await wes.route("**/sign-in*", (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await wes.getByRole("button", { name: "Send another link" }).click();
+  await expect(wes.getByRole("status")).toHaveText("We couldn't send the email. Try again.");
+  await expect(wes.getByRole("button", { name: "Send another link" })).toBeVisible();
+  await wes.unroute("**/sign-in*");
+  // While another link is on its way, "Use a different email" waits: the answer is about this address.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let holding!: () => void;
+  const held = new Promise<void>((resolve) => (holding = resolve));
+  await wes.route("**/sign-in*", async (route) => {
+    if (route.request().method() === "POST") {
+      holding();
+      await released;
+    }
+    await route.continue();
+  });
+  await wes.getByRole("button", { name: "Send another link" }).click();
+  await held;
+  await expect(wes.getByRole("button", { name: "Use a different email" })).toHaveCSS("opacity", "0.5");
+  // Forced: Playwright waits out aria-disabled, and a person can click it all the same.
+  await wes.getByRole("button", { name: "Use a different email" }).click({ force: true });
+  await expect(wes.getByText("Check your email")).toBeVisible();
+  await expect(wes.getByLabel("Email")).toHaveCount(0);
+  release();
+  await expect(wes.getByRole("status")).toHaveText("Another link is on its way.");
+  await expect.poll(() => countEmailsTo(wesEmail)).toBe(2);
+  await wes.unroute("**/sign-in*");
+  // Back where they came from.
+  await expect(wes.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", "/");
+  await checkpoint(wes, "portal-sign-in-link-sent-actions");
+  // Not there: another link to the same address, as many as the address's hourly limit allows (5), then why not.
+  for (let sent = 2; sent < 5; sent++) {
+    await wes.getByRole("button", { name: "Send another link" }).click();
+    await expect(wes.getByRole("status")).toHaveText("Another link is on its way.");
+    await expect.poll(() => countEmailsTo(wesEmail)).toBe(sent + 1);
+  }
+  await wes.getByRole("button", { name: "Send another link" }).click();
+  await expect(wes.getByRole("status")).toHaveText("We've sent a lot of emails to this address in the last hour. Try again later.");
+  // On a phone too.
+  const laptopSize = wes.viewportSize()!;
+  await wes.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(wes, "portal-sign-in-link-resend-limited-phone");
+  await wes.setViewportSize(laptopSize);
+  expect(countEmailsTo(wesEmail)).toBe(5);
   await wes.goto(linkIn(await latestEmailTo(wesEmail), `${portalUrl(slug)}/sign-in/link?`));
   await wes.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   // The portal's home page sends people on to its first board.
