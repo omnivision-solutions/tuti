@@ -315,10 +315,15 @@ test("a new article's draft says where it goes: its collection and the article i
 test("a progress update waiting for the team says approving it emails the people who asked; one going out by itself, that Publish now does", async () => {
   const one = await change("Add a dark theme");
   await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: await newPost(), probability: 0.8, payload: { comment: "Coming soon" } } });
+  // One on a post closed since: approving it posts the comment and moves (and emails) nothing.
+  const closed = await newPost();
+  await prisma.post.update({ where: { id: closed }, data: { status: "CLOSED" } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: closed, probability: 0.8, payload: { comment: "Closed meanwhile" } } });
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  expect(email!.text).toContain("Marks it in progress with this comment, emailing the people who asked");
+  expect(email!.text.match(/Marks it in progress with this comment, emailing the people who asked/g)).toHaveLength(1);
+  expect(email!.text).toContain("Marks it in progress, with this comment");
   // The scheduled one (going out in 24 hours): quietly, unless a teammate publishes it.
   expect(email!.text).toContain("Marks it in progress with this comment; Publish now emails the people who asked");
 });

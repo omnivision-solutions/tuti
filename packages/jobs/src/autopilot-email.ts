@@ -123,7 +123,7 @@ type ActionRow = {
   payload: unknown;
   postId: string | null;
   articleId: string | null;
-  post: { title: string; status: PostStatus } | null;
+  post: { title: string; status: PostStatus; duplicateOfId: string | null } | null;
   article: { title: string; publishedAt: Date | null } | null;
 };
 
@@ -151,6 +151,10 @@ function paired(lines: DiffLine[]): DiffLine[] {
   }
   return out;
 }
+
+/** Whether applying a progress update moves its post on to In progress (as codeChangeActions.apply: from a status before it, not merged), emailing its people. */
+const movesForward = (post: ActionRow["post"]) =>
+  !!post && !post.duplicateOfId && ["OPEN", "UNDER_REVIEW", "PLANNED"].includes(post.status) && statusMoveEmails(post.status, "IN_PROGRESS") === "progress";
 
 /** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
 const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
@@ -183,7 +187,7 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
       ? "In progress, with this comment"
       : uncommented(action)
         ? "Marks it in progress: write its comment first"
-        : statusMoveEmails(action.post?.status ?? "OPEN", "IN_PROGRESS") !== "progress"
+        : !movesForward(action.post)
           ? "Marks it in progress, with this comment"
           : action.status === "SCHEDULED"
             ? "Marks it in progress with this comment; Publish now emails the people who asked"
@@ -431,7 +435,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
                   payload: true,
                   postId: true,
                   articleId: true,
-                  post: { select: { title: true, status: true } },
+                  post: { select: { title: true, status: true, duplicateOfId: true } },
                   article: { select: { title: true, publishedAt: true } },
                 },
               },
@@ -699,7 +703,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
                 payload: true,
                 postId: true,
                 articleId: true,
-                post: { select: { title: true, status: true } },
+                post: { select: { title: true, status: true, duplicateOfId: true } },
                 article: { select: { title: true, publishedAt: true } },
               },
             },
