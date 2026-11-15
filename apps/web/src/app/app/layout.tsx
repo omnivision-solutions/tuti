@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 
 import { appUrl } from "@/lib/hosts";
 
@@ -21,14 +21,6 @@ export function generateMetadata(): Metadata {
     twitter: { card: "summary_large_image", title: "Tuti", description },
   };
 }
-
-// The browser's bar, the page's own background (globals.css: --background, light and dark).
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fbf9f3" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f1411" },
-  ],
-};
 
 export default function AppPagesLayout({ children }: LayoutProps<"/app">) {
   return children;

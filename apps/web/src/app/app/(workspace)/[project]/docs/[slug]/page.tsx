@@ -49,9 +49,13 @@ export async function generateMetadata(props: PageProps<"/app/[project]/docs/[sl
   const { project: slug, slug: articleSlug } = await props.params;
   const membership = await getMembership(slug);
   const article = membership
-    ? await prisma.article.findFirst({ where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null }, select: { title: true } })
+    ? await prisma.article.findFirst({
+        where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null },
+        select: { title: true, changes: { select: { title: true } } },
+      })
     : null;
-  return { title: article?.title || "Docs" };
+  // As its heading: the title being edited, before it's published.
+  return { title: (article?.changes ?? article)?.title || "Docs" };
 }
 
 export default async function ArticlePage(
