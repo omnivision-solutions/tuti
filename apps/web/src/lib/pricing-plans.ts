@@ -6,10 +6,11 @@ const SALES_EMAIL = "hello@tuti.so";
 
 export type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
-// What an AI answer and a shipped change checked by Autopilot cost in model use, roughly, as measured on
-// tuti.so (2026-11). Credits are worth what AI_CREDITS_PER_USAGE_DOLLAR says, so the estimates follow it.
-const ANSWER_COST = 0.001;
-const CHANGE_COST = 0.005;
+// What an AI answer and a shipped change checked by Autopilot cost in model use, in dollars: a cautious estimate, from
+// Tuti's own projects (2026-11, with Haiku deciding and Sonnet writing help-center edits). An answer is allowed for
+// generously, as it has little use yet. Credits are worth what AI_CREDITS_PER_USAGE_DOLLAR says, so the estimates follow it.
+const ANSWER_COST = 0.004;
+const CHANGE_COST = 0.08;
 
 /** How many times `cost` fits in `credits`, rounded down to two significant figures: 2,000, 410, 40. */
 export function about(credits: number, cost: number): number {
@@ -20,26 +21,26 @@ export function about(credits: number, cost: number): number {
 
 const number = (value: number) => value.toLocaleString("en");
 
+/** About how many checked changes `count` credits pay for on `plan`: null without Autopilot, or when it's not even one. */
+function changesFor(plan: PlanKey, count: number): number | null {
+  const changes = about(count, CHANGE_COST);
+  return planIncludes(plan, "codeChanges") && changes >= 1 ? changes : null;
+}
+
 /** "1,000 AI credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
 function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
   if (!creditsEnabled() || count <= 0) {
     return [];
   }
-  return [
-    {
-      text: `${number(count)} AI credits ${per}`,
-      more: {
-        title: "What credits buy",
-        points: [
-          `About ${number(about(count, ANSWER_COST))} AI answers for your customers`,
-          ...(planIncludes(plan, "codeChanges")
-            ? [`Or about ${number(about(count, CHANGE_COST))} changes you ship, checked by Autopilot against your help center and feedback`]
-            : []),
-          ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
-        ],
-      },
-    },
+  const answers = about(count, ANSWER_COST);
+  const changes = changesFor(plan, count);
+  const points = [
+    ...(answers >= 1 ? [`About ${number(answers)} AI ${answers === 1 ? "answer" : "answers"} for your customers`] : []),
+    ...(changes === null ? [] : [`Or about ${number(changes)} ${changes === 1 ? "change" : "changes"} you ship, checked by Autopilot against your help center and feedback`]),
+    ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
   ];
+  // Nothing to say they buy: the line alone, not an empty card.
+  return [{ text: `${number(count)} AI credits ${per}`, ...(points.length > 0 && { more: { title: "What credits buy", points } }) }];
 }
 
 const AUTOPILOT: PlanLine = {
@@ -200,7 +201,8 @@ export function planFacts(): PlanFacts[] {
     return {
       credits,
       startCredits: creditsEnabled() && plan === defaultPlanKey() && start > 0 ? start : null,
-      creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: planIncludes(plan, "codeChanges") ? about(credits, CHANGE_COST) : null } : null,
+      // Not even one answer's worth: nothing to estimate (as Billing's lines leave it out).
+      creditsBuy: credits && about(credits, ANSWER_COST) >= 1 ? { answers: about(credits, ANSWER_COST), changes: changesFor(plan, credits) } : null,
       articles: articleLimit(plan),
       versions: articleVersionsKept(plan),
       boards: boardLimit(plan),

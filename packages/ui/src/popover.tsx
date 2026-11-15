@@ -38,4 +38,14 @@ function PopoverContent({
   )
 }
 
-export { Popover, PopoverContent, PopoverTrigger }
+/** The small point from a popover to its trigger, placed by the popover on whichever side it opens. */
+function PopoverArrow({ ...props }: PopoverPrimitive.Arrow.Props) {
+  return <PopoverPrimitive.Arrow data-slot="popover-arrow" {...props} />
+}
+
+/** A popover's heading, which names it for screen readers. */
+function PopoverTitle({ ...props }: PopoverPrimitive.Title.Props) {
+  return <PopoverPrimitive.Title data-slot="popover-title" {...props} />
+}
+
+export { Popover, PopoverArrow, PopoverContent, PopoverTitle, PopoverTrigger }

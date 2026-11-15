@@ -18,14 +18,26 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   // Without Stripe, no top-ups: the cards list only what credits buy.
   vi.stubEnv("STRIPE_SECRET_KEY", "");
   expect(line("Free", "100 AI credits")?.more?.points).toEqual([
-    "About 200 AI answers for your customers",
-    "Or about 40 changes you ship, checked by Autopilot against your help center and feedback",
+    "About 50 AI answers for your customers",
+    "Or about 2 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
   expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
-    "About 2,000 AI answers for your customers",
-    "Or about 400 changes you ship, checked by Autopilot against your help center and feedback",
+    "About 500 AI answers for your customers",
+    "Or about 25 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
-  expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 2,000 changes/);
+  expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 120 changes/);
+
+  // Too few credits for one checked change (40 credits each here): no "about 0 changes" line, and "1 change" singular.
+  vi.stubEnv("AI_CREDITS_FREE", "30");
+  expect(line("Free", "30 AI credits")?.more?.points).toEqual(["About 15 AI answers for your customers"]);
+  vi.stubEnv("AI_CREDITS_FREE", "50");
+  expect(line("Free", "50 AI credits")?.more?.points[1]).toBe("Or about 1 change you ship, checked by Autopilot against your help center and feedback");
+  // One answer's worth: "answer" singular; less: the line alone, with no empty card.
+  vi.stubEnv("AI_CREDITS_FREE", "2");
+  expect(line("Free", "2 AI credits")?.more?.points).toEqual(["About 1 AI answer for your customers"]);
+  vi.stubEnv("AI_CREDITS_FREE", "1");
+  expect(line("Free", "1 AI credits")).toEqual({ text: "1 AI credits to start" });
+  vi.stubEnv("AI_CREDITS_FREE", "100");
 
   // With Stripe, credits can be topped up, and the card says so.
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
@@ -180,7 +192,13 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
   const [free, pro, business] = planFacts();
   expect(free).toMatchObject({ credits: null, creditsBuy: null, aiAnswers: false, boards: 2, emails: 1000, articles: 50, versions: 2, historyDays: 7, team: 3, extras: [] });
-  expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 2000, changes: 400 }, aiAnswers: true, boards: 5, team: null, articles: null });
+  expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 500, changes: 25 }, aiAnswers: true, boards: 5, team: null, articles: null });
+  // Fewer credits than a checked change costs (40 here): no changes estimate; under one answer's worth, no estimate at all.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { config.trial = { plan: "pro", days: 7 }; pro.monthlyCredits = 30; }));
+  expect(planFacts()[1]!.creditsBuy).toEqual({ answers: 15, changes: null });
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { config.trial = { plan: "pro", days: 7 }; pro.monthlyCredits = 1; }));
+  expect(planFacts()[1]!.creditsBuy).toBeNull();
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
   expect(business).toMatchObject({ credits: 5000, boards: null, emails: null, historyDays: 90, versions: 50, extras: ["Priority support"] });
   // Free has no credits, so Autopilot's checks don't run there either, though its plan lists it.
   expect([free, pro, business].map(({ features }) => [features.customDomain, features.sitePath, features.privatePortal, features.aiTuning, features.codeChanges])).toEqual([
