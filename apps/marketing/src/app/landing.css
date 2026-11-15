@@ -115,7 +115,7 @@
     position: absolute; left: 14px; right: 14px; bottom: 5px; height: 2px; border-radius: 2px; background: var(--g);
     transform-origin: left; animation: lp-prog 6s linear both;
   }
-  .show:hover .prog, .show:focus-within .prog { animation-play-state: paused; }
+  .show:hover .prog { animation-play-state: paused; }
   /* White between the tab and its green ring, so the ring stands out from the glow too. */
   .tab:focus-visible { box-shadow: 0 0 0 2px #fff; }
   .show { padding: 0 10px; }
@@ -656,6 +656,8 @@
     .sc-ph b { font-size: 16px; }
     .sc-ph nav { font-size: 13px; gap: 0; }
     .sc-ph nav span { padding: 4px 7px; }
+    /* Roadmap is never the open page here; without it the nav fits a 360px phone. */
+    .sc-ph nav span:nth-child(3):not(.on) { display: none; }
     .sc-ap, .sc-ib, .sc-hw { grid-template-columns: minmax(0, 1fr); gap: 14px; }
     .fp-rel .land { grid-template-columns: 1fr; }
     .sc-list { display: none; }
