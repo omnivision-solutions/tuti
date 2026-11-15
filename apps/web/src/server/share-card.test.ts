@@ -43,3 +43,15 @@ test('a card says "Powered by tuti" as the portal does: not once the team has hi
   expect(shown).toContain(">42<");
   expect(renderToStaticMarkup(cardElement(site(false), card, "https://acme.example", null))).not.toContain("Powered by");
 });
+
+test("on a pale colour the panel's shapes are dark, as white ones would vanish; the votes' number takes a shade of the colour that reads on white", () => {
+  const card = (color: string, picture: ShareCard["picture"]) =>
+    renderToStaticMarkup(
+      cardElement({ project: { name: "Acme" }, brand: { color, colorScheme: "light", logoText: null, poweredBy: false } as unknown as Branding }, { eyebrow: "", title: "Roadmap", picture }, "https://acme.example", null),
+    );
+  expect(card("#f5d90a", "roadmap")).toContain("rgba(28,25,23,");
+  expect(card("#f5d90a", "roadmap")).not.toContain("rgba(255,255,255,");
+  expect(card("#6d4aff", "roadmap")).toContain("rgba(255,255,255,");
+  // Yellow on white doesn't read: the number is a darker yellow.
+  expect(card("#f5d90a", { votes: 3 })).not.toMatch(/[;"]color:#f5d90a/);
+});
