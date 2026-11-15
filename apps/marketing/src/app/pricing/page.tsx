@@ -7,7 +7,7 @@ import { appPlans, REPO_URL, SIGN_UP } from "../links";
 import { pageMetadata } from "../metadata";
 import { PricingTable } from "./pricing-table";
 
-export const metadata = pageMetadata("/pricing", "Pricing", "Plans per project, never per seat or per end user. Start with a free trial, no card needed.");
+export const metadata = pageMetadata("/pricing", "Pricing", "Plans per project, never per seat or per end user. Self-host Tuti for free.");
 
 // Plans and prices are the app's settings (links.ts), asked when the page is, not when it's built.
 export const dynamic = "force-dynamic";

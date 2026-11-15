@@ -17,7 +17,7 @@ export default function Image() {
           { text: "Per project", pill: ["Yes", "done"] },
           { text: "Per seat", pill: ["Never", "open"] },
           { text: "Per end user", pill: ["Never", "open"] },
-          { text: "Free trial", pill: ["No card", "done"] },
+          { text: "Self-hosted", pill: ["Free", "done"] },
         ]}
       />
     ),
