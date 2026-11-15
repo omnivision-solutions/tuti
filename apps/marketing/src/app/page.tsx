@@ -1,14 +1,10 @@
 import { log } from "@tuti/shared/log";
-import type { Metadata } from "next";
 
 import { Landing } from "./landing";
 import { appPlans } from "./links";
+import { HOME_DESCRIPTION, HOME_TITLE, pageMetadata } from "./metadata";
 
-export const metadata: Metadata = {
-  title: "Tuti: the help center that stays in sync with your code",
-  description:
-    "Tuti is a knowledge base with AI answers, an inbox, a feedback board, a roadmap and a changelog, kept in sync with the code you ship.",
-};
+export const metadata = pageMetadata("/", HOME_TITLE, HOME_DESCRIPTION);
 
 // The pricing card follows the app's plans (links.ts), asked when the page is, not when it's built.
 export const dynamic = "force-dynamic";

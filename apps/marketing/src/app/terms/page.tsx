@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
 import { contact, LegalPage } from "../legal";
+import { pageMetadata } from "../metadata";
 
-export const metadata: Metadata = { title: "Terms of Service · Tuti", description: "The terms for using Tuti's hosted service at tuti.so." };
+export const metadata = pageMetadata("/terms", "Terms of Service", "The terms for using Tuti's hosted service at tuti.so.");
 
 export default function TermsPage() {
   return (
