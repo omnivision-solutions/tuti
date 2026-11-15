@@ -25,17 +25,23 @@ describe("TutiMark", () => {
   });
 
   it("is mono in a portal's Powered by tuti badge", () => {
-    const badge = renderToStaticMarkup(createElement(PoweredByTuti));
+    const badge = renderToStaticMarkup(createElement(PoweredByTuti, { source: "portal" }));
     expect(badge).toContain("Powered by");
     expect(badge).not.toContain("#f26b1d");
   });
 
   it("draws tuti in Tuti's own font, not in the team's heading font", () => {
-    const badge = renderToStaticMarkup(createElement(PoweredByTuti));
+    const badge = renderToStaticMarkup(createElement(PoweredByTuti, { source: "portal" }));
     expect(badge).toMatch(/<svg[^>]*aria-label="tuti"/);
     expect(badge).not.toContain("font-heading");
     expect(badge).not.toMatch(/>tuti</);
   });
+});
+
+test("the badge's link says where it was, never which project: it sends no referrer, and self-hosted projects stay private", () => {
+  const badge = (source: "portal" | "widget") => renderToStaticMarkup(createElement(PoweredByTuti, { source }));
+  expect(badge("portal")).toContain('href="https://tuti.so/?utm_source=portal&amp;utm_medium=powered_by&amp;utm_campaign=badge"');
+  expect(badge("widget")).toContain('href="https://tuti.so/?utm_source=widget&amp;utm_medium=powered_by&amp;utm_campaign=badge"');
 });
 
 test("an empty state's mark is grey too: portals show them, beside the team's colours", () => {

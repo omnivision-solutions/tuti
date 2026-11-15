@@ -191,7 +191,7 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
           ))}
         </nav>
       )}
-      {poweredBy && <PoweredByTuti />}
+      {poweredBy && <PoweredByTuti source="portal" />}
       {themeSwitch && <ThemeSwitch />}
     </footer>
   );
@@ -250,12 +250,17 @@ function ThemeSwitch() {
   );
 }
 
-/** "Powered by tuti", linking to tuti.so: under the portal's pages and the widget's tabs (see PortalFooter). */
-export function PoweredByTuti({ className }: { className?: string }) {
+/**
+ * "Powered by tuti", linking to tuti.so: under the portal's pages and the widget's tabs (see PortalFooter). The link says
+ * where it was (utm_*): the badge sends no referrer, so otherwise every click would read as a direct visit. Never which
+ * project: on a self-hosted installation that would tell tuti.so what it runs (docs/self-hosting.md lists what it sends).
+ */
+export function PoweredByTuti({ source, className }: { source: "portal" | "widget"; className?: string }) {
+  const href = `https://tuti.so/?utm_source=${source}&utm_medium=powered_by&utm_campaign=badge`;
   return (
     <a
       // Tuti's own site on every installation, self-hosted too: it's the badge's whole point.
-      href="https://tuti.so"
+      href={href}
       target="_blank"
       rel="noreferrer"
       className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground", className)}

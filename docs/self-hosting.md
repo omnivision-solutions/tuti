@@ -241,3 +241,6 @@ all they send is your installation's random id, the project's id, a one-time ref
 the second request on; until then a random secret of your installation's, whose hash the "Get a licence" link carries, so only
 your installation can claim the licence it bought), a random request id and the app version. If tuti.so can't be reached, the current key keeps working until it expires (35 days);
 then the badge is back. A portal never stops working over a licence.
+
+The badge links to `https://tuti.so/?utm_source=portal&utm_medium=powered_by&utm_campaign=badge` (`utm_source=widget`
+in the widget), so tuti.so can tell where a visit came from. The link names no project or installation, and the badge sends no referrer.

@@ -187,7 +187,7 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
     await reader.goto("/feedback/feature-requests");
     const main = reader.getByRole("main");
     await expect(reader.locator("html")).toHaveCSS("scrollbar-gutter", "stable");
-    const badge = reader.locator('a[href="https://tuti.so"]');
+    const badge = reader.locator('a[href^="https://tuti.so/?"]');
     await expect(badge.locator("svg path").first()).toHaveCSS("fill", await badge.evaluate((link) => getComputedStyle(link).color));
     const secondary = await token(reader, "--secondary");
     const getUpdates = reader.getByRole("button", { name: "Get updates" }).filter({ visible: true }).first();

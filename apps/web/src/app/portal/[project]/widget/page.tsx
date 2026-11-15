@@ -239,7 +239,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             );
           })}
         </nav>
-        {brand.poweredBy && <PoweredByTuti className="self-center" />}
+        {brand.poweredBy && <PoweredByTuti source="widget" className="self-center" />}
       </footer>
     </main>
       </WidgetLookProvider>
