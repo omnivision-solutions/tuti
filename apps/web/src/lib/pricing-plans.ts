@@ -167,6 +167,8 @@ export function pricingPlans(): PricingPlan[] {
 export type PlanFacts = {
   /** AI credits each paid month gives; null where AI isn't paid with credits or the plan gets none a month (free, by quote). */
   credits: number | null;
+  /** The credits a free default plan starts with (AI_CREDITS_FREE), once; null elsewhere or where there are none. */
+  startCredits: number | null;
   /** About how many AI answers, and changes checked by Autopilot (where the plan has it), those credits pay for. */
   creditsBuy: { answers: number; changes: number | null } | null;
   articles: number | null;
@@ -197,6 +199,7 @@ export function planFacts(): PlanFacts[] {
     const ai = !creditsEnabled() || start > 0 || byQuote;
     return {
       credits,
+      startCredits: creditsEnabled() && plan === defaultPlanKey() && start > 0 ? start : null,
       creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: planIncludes(plan, "codeChanges") ? about(credits, CHANGE_COST) : null } : null,
       articles: articleLimit(plan),
       versions: articleVersionsKept(plan),

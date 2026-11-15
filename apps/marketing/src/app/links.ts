@@ -13,6 +13,7 @@ export const REPO_URL = "https://github.com/omnivision-solutions/tuti";
 /** A plan's numbers (null: no limit) and yes/no features, as the app's pricing-plans.ts (planFacts) has them. */
 export type PlanFacts = {
   credits: number | null;
+  startCredits: number | null;
   creditsBuy: { answers: number; changes: number | null } | null;
   articles: number | null;
   versions: number;

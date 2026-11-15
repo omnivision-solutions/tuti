@@ -91,7 +91,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
       {/* The plan's three numbers, value above label. */}
       <dl className={cn("grid rounded-xl bg-muted px-1.5 py-3 text-center", credits ? "grid-cols-3" : "grid-cols-2")}>
         {[
-          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} />, plan.byQuote ? "By quote" : facts.credits === null ? <NotIncluded /> : number(facts.credits)] as const] : []),
+          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} />, creditsCell(plan) || <NotIncluded />] as const] : []),
           ["feedback boards", compact(facts.boards)] as const,
           ["emails a month", compact(facts.emails)] as const,
         ].map(([label, value], index) => (
@@ -208,7 +208,7 @@ function groups(plans: Plan[]): { title: string; icon: ReactNode; rows: Row[] }[
       icon: <SparklesIcon aria-hidden className={icon} />,
       rows: [
         ...(plans.some(({ facts }) => facts.credits !== null)
-          ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} />, (facts, plan) => (plan.byQuote ? "By quote" : facts.credits === null ? false : number(facts.credits)))]
+          ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} />, (_, plan) => creditsCell(plan))]
           : []),
         row("AI answers", (facts) => facts.aiAnswers),
         row("Autopilot", (facts) => facts.features.codeChanges),
@@ -292,4 +292,11 @@ function NotIncluded() {
       —
     </span>
   );
+}
+
+/** A plan's AI credits as the card and table show them: a month's, "By quote", the free plan's to start with, or false for none. */
+function creditsCell({ byQuote, facts }: Plan): string | false {
+  if (byQuote) return "By quote";
+  if (facts.credits !== null) return number(facts.credits);
+  return facts.startCredits !== null && `${number(facts.startCredits)} to start`;
 }
