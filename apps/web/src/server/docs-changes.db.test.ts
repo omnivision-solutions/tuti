@@ -6,6 +6,7 @@ import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { generateMetadata as teamArticleMetadata } from "@/app/app/(workspace)/[project]/docs/[slug]/page";
 import { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
@@ -137,6 +138,12 @@ describe("saving a published article", () => {
     // The team sees both: the published version, and the changes.
     expect(saved).toMatchObject({ ...OLD, status: "published", collection: { slug: "basics" }, changes: { ...NEW, collection: null } });
     expect(await readers()).toEqual(published);
+  });
+
+  test("the team's tab says the unpublished title, as the editor's heading does", async () => {
+    await edit();
+    actAs(owner);
+    expect((await teamArticleMetadata(params({ slug: SLUG }) as never)).title).toBe(NEW.title);
   });
 
   test("the team sees the changes in articles.get and articles.list; nobody else does", async () => {

@@ -17,7 +17,8 @@ export function generateMetadata(): Metadata {
     description,
     applicationName: "Tuti",
     robots: { index: false, follow: false },
-    openGraph: { siteName: "Tuti", title: "Tuti", description, type: "website" },
+    // The card for the pages signed-out visitors see without a sign-in (/app/license); auth/'s own pages name it themselves.
+    openGraph: { siteName: "Tuti", title: "Tuti", description, type: "website", images: [{ url: "/app/auth/opengraph-image", width: 1200, height: 630, alt: "Tuti: the help center that stays in sync with your code" }] },
     twitter: { card: "summary_large_image", title: "Tuti", description },
   };
 }

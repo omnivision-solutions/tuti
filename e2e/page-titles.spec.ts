@@ -27,6 +27,10 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toBe("image/png");
 
+  // The licence page, served signed out (self-hosted servers send buyers there): the same card.
+  await visitor.goto("/app/license");
+  expect((await meta(visitor, 'property="og:image"'))!.startsWith(`${APP_URL}/app/auth/opengraph-image`)).toBe(true);
+
   // The API's reference: its own title, kept out of search too.
   await visitor.goto("/api/docs");
   await expect(visitor).toHaveTitle("API · Tuti");
