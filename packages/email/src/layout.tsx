@@ -51,8 +51,14 @@ export const secondaryButtonStyle = { backgroundColor: "#f5f5f4", color: colors.
  */
 export type EmailBrand = { projectName: string; accent?: string | null; poweredBy?: boolean };
 
-/** Tuti's own images, from the app's public files (an email can't show an SVG): none without APP_URL. */
-const appImage = (file: string) => (process.env.APP_URL ? new URL(`/api/${file}`, process.env.APP_URL).href : null);
+/**
+ * Tuti's own images, from the app's public files (an email can't show an SVG): none without APP_URL, or with one that
+ * isn't a URL (the words instead: an email never fails over its picture).
+ */
+const appImage = (file: string) => {
+  const base = process.env.APP_URL;
+  return base && URL.canParse(base) ? new URL(`/api/${file}`, base).href : null;
+};
 
 /** Where "Powered by tuti" goes, on every installation, self-hosted too: no project or installation in it. */
 export const POWERED_BY_URL = "https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge";
@@ -177,6 +183,8 @@ export function Layout({
           <Section
             style={{
               backgroundColor: colors.card,
+              // The shadow for where it's drawn; the edge for where it isn't (Outlook), so the card never fades into the page.
+              border: `1px solid ${colors.border}`,
               borderRadius: 16,
               padding: "8px 28px 28px",
               boxShadow: "0 1px 2px rgba(28,25,23,.06), 0 8px 28px rgba(28,25,23,.06)",

@@ -54,9 +54,11 @@ test("every email ends with Powered by tuti, linking to Tuti's site with no proj
   expect(invite).toContain(link);
   expect(invite).toContain('src="https://tuti.example/api/email-powered-by-tuti.png"');
 
-  // Without the app's address, the words instead of the picture.
-  vi.stubEnv("APP_URL", undefined);
-  expect(await render(shippedEmail(shipped).body, { plainText: true })).toMatch(/Powered by\s+tuti/);
+  // Without the app's address (or with one that isn't a URL), the words instead of the picture.
+  for (const address of [undefined, "not a url"]) {
+    vi.stubEnv("APP_URL", address);
+    expect(await render(shippedEmail(shipped).body, { plainText: true })).toMatch(/Powered by\s+tuti/);
+  }
 });
 
 test("emails a project's customers get take its accent", async () => {

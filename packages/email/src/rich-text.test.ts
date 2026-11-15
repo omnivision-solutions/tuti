@@ -77,8 +77,8 @@ describe("EmailRichText", () => {
   test("images use the email JPEG, sized to the column and their share of it", async () => {
     const out = await html(doc(image(), image({ width: "50", align: "right", alt: 'Say "hi"' })), MEDIA);
     expect(out).toContain(`src="${SRC}"`);
-    expect(out).toMatch(/alt="A chart" width="384" height="192"/);
-    expect(out).toMatch(/text-align:right"><img [^>]*alt="Say &quot;hi&quot;" width="192" height="96"/);
+    expect(out).toMatch(/alt="A chart" width="480" height="240"/);
+    expect(out).toMatch(/text-align:right"><img [^>]*alt="Say &quot;hi&quot;" width="240" height="120"/);
     expect(out).toContain("max-width:100%");
     // A small image isn't stretched.
     expect(await html(doc(image({ w: 200, h: 100 })), MEDIA)).toMatch(/width="200" height="100"/);

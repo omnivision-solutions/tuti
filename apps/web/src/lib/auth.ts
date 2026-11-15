@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
-import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
+import { passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -217,13 +217,8 @@ export const auth = betterAuth({
         prisma.verification.deleteMany({ where: { value: user.id } }),
       ]);
       // Verified now: an import's placeholders for this address hand over (they're on the team).
+      // The notice is setNewPassword's (server/password-reset.ts), which knows the portal it was asked on.
       await handOverPlaceholdersLogged(user.id);
-      try {
-        await sendEmail({ to: user.email, ...passwordChangedEmail() });
-      } catch (error) {
-        // The password is already changed; a missing notice mustn't make it look like it wasn't.
-        log.error("Sending the password changed email failed", { error });
-      }
     },
   },
   // A session is bound to where it was started: a portal's (signing in there, "Continue as", SSO) to its project, as a
