@@ -184,7 +184,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(tabs.getByRole("link")).toHaveText(["Home", "Feedback"]);
   await expect(widget.getByRole("link", { name: /Powered by/ })).toHaveAttribute(
     "href",
-    `https://tuti.so/?utm_source=widget&utm_medium=powered_by&utm_campaign=badge&utm_content=${slug}`,
+    "https://tuti.so/?utm_source=widget&utm_medium=powered_by&utm_campaign=badge",
   );
   // What's new isn't a tab: Home's card, with the latest update and how many are new to this browser
   // (the announcement; quiet ones aren't news), opens it.

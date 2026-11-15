@@ -24,7 +24,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await before.goto("/feedback/feature-requests");
   await expect(before.getByRole("contentinfo").getByRole("link", { name: /Powered by/ })).toHaveAttribute(
     "href",
-    `https://tuti.so/?utm_source=portal&utm_medium=powered_by&utm_campaign=badge&utm_content=${slug}`,
+    "https://tuti.so/?utm_source=portal&utm_medium=powered_by&utm_campaign=badge",
   );
   await before.context().close();
 

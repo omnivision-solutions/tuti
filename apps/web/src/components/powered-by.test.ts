@@ -8,7 +8,6 @@ import { describe, expect, it, test } from "vitest";
 import { TutiMark } from "@tuti/ui/tuti-logo";
 
 import { EmptyState } from "@/components/empty-state";
-import { PortalBaseProvider } from "@/components/portal-base";
 import { PoweredByTuti } from "@/components/portal-look";
 
 describe("TutiMark", () => {
@@ -39,11 +38,10 @@ describe("TutiMark", () => {
   });
 });
 
-test("the badge's link says where it was: the badge sends no referrer, so tuti.so would read its clicks as direct visits", () => {
-  const badge = (source: "portal" | "widget") =>
-    renderToStaticMarkup(createElement(PortalBaseProvider, { base: "", slug: "acme", children: createElement(PoweredByTuti, { source }) }));
-  expect(badge("portal")).toContain('href="https://tuti.so/?utm_source=portal&amp;utm_medium=powered_by&amp;utm_campaign=badge&amp;utm_content=acme"');
-  expect(badge("widget")).toContain('href="https://tuti.so/?utm_source=widget&amp;utm_medium=powered_by&amp;utm_campaign=badge&amp;utm_content=acme"');
+test("the badge's link says where it was, never which project: it sends no referrer, and self-hosted projects stay private", () => {
+  const badge = (source: "portal" | "widget") => renderToStaticMarkup(createElement(PoweredByTuti, { source }));
+  expect(badge("portal")).toContain('href="https://tuti.so/?utm_source=portal&amp;utm_medium=powered_by&amp;utm_campaign=badge"');
+  expect(badge("widget")).toContain('href="https://tuti.so/?utm_source=widget&amp;utm_medium=powered_by&amp;utm_campaign=badge"');
 });
 
 test("an empty state's mark is grey too: portals show them, beside the team's colours", () => {

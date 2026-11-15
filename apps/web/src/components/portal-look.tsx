@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { createContext, useContext, useId, useSyncExternalStore } from "react";
 
-import { usePortalPath, usePortalSlug } from "@/components/portal-base";
+import { usePortalPath } from "@/components/portal-base";
 import { TutiMark, TutiWordmark } from "@tuti/ui/tuti-logo";
 import { type ColorScheme, DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME, THEME_DEFAULT_KEY } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
@@ -252,15 +252,15 @@ function ThemeSwitch() {
 
 /**
  * "Powered by tuti", linking to tuti.so: under the portal's pages and the widget's tabs (see PortalFooter). The link says
- * where it was (utm_*): the badge sends no referrer, so otherwise every click would read as a direct visit.
+ * where it was (utm_*): the badge sends no referrer, so otherwise every click would read as a direct visit. Never which
+ * project: on a self-hosted installation that would tell tuti.so what it runs (docs/self-hosting.md lists what it sends).
  */
 export function PoweredByTuti({ source, className }: { source: "portal" | "widget"; className?: string }) {
-  const href = new URL("https://tuti.so");
-  href.search = new URLSearchParams({ utm_source: source, utm_medium: "powered_by", utm_campaign: "badge", utm_content: usePortalSlug() }).toString();
+  const href = `https://tuti.so/?utm_source=${source}&utm_medium=powered_by&utm_campaign=badge`;
   return (
     <a
       // Tuti's own site on every installation, self-hosted too: it's the badge's whole point.
-      href={href.toString()}
+      href={href}
       target="_blank"
       rel="noreferrer"
       className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground", className)}
