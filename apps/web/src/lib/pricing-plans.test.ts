@@ -19,13 +19,13 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("STRIPE_SECRET_KEY", "");
   expect(line("Free", "100 AI credits")?.more?.points).toEqual([
     "About 200 AI answers for your customers",
-    "Or about 40 changes you ship, checked by Autopilot against your help center and feedback",
+    "Or about 2 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
   expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
     "About 2,000 AI answers for your customers",
-    "Or about 400 changes you ship, checked by Autopilot against your help center and feedback",
+    "Or about 25 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
-  expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 2,000 changes/);
+  expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 120 changes/);
 
   // With Stripe, credits can be topped up, and the card says so.
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
@@ -180,7 +180,7 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
   const [free, pro, business] = planFacts();
   expect(free).toMatchObject({ credits: null, creditsBuy: null, aiAnswers: false, boards: 2, emails: 1000, articles: 50, versions: 2, historyDays: 7, team: 3, extras: [] });
-  expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 2000, changes: 400 }, aiAnswers: true, boards: 5, team: null, articles: null });
+  expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 2000, changes: 25 }, aiAnswers: true, boards: 5, team: null, articles: null });
   expect(business).toMatchObject({ credits: 5000, boards: null, emails: null, historyDays: 90, versions: 50, extras: ["Priority support"] });
   // Free has no credits, so Autopilot's checks don't run there either, though its plan lists it.
   expect([free, pro, business].map(({ features }) => [features.customDomain, features.sitePath, features.privatePortal, features.aiTuning, features.codeChanges])).toEqual([

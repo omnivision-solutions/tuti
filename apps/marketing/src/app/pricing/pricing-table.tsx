@@ -2,7 +2,7 @@
 
 import { buttonVariants } from "@tuti/ui/button";
 import { BilledToggle } from "@tuti/ui/plan-line";
-import { Popover, PopoverContent, PopoverTrigger } from "@tuti/ui/popover";
+import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@tuti/ui/popover";
 import { cn } from "cn";
 import { BookOpenIcon, CheckIcon, ChevronDownIcon, InboxIcon, LightbulbIcon, SparklesIcon, UsersIcon } from "lucide-react";
 import { type CSSProperties, type ReactNode, useState } from "react";
@@ -112,7 +112,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
               <ul className="flex flex-col gap-2">
                 {more.map(([text]) => (
                   <li key={text} className="flex gap-2.5">
-                    <Check /> {text}
+                    <Check /> {text === "Private help center" ? <PrivateTip /> : text}
                   </li>
                 ))}
               </ul>
@@ -137,7 +137,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
 /** A plan's yes/no lines, as its card lists what it adds: [text, whether the plan has it]. */
 const yesNo = (facts: PlanFacts): [string, boolean][] => [
   ["Your own domain", facts.features.customDomain],
-  ["Help center at yoursite.com/help", facts.features.sitePath],
+  ["Subpath on your domain", facts.features.sitePath],
   ["Private help center", facts.features.privatePortal],
   ["AI answers", facts.aiAnswers],
   ["Autopilot", facts.features.codeChanges],
@@ -160,26 +160,58 @@ function Cta({ plan, className }: { plan: Plan; className: string }) {
 
 const Check = () => <CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" strokeWidth={2.5} />;
 
-/** "AI credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. */
-function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: number | null }) {
+/** A dotted-underlined label that opens a light card above it on hover, tap or focus. */
+function Tip({ label, title, children }: { label: string; title: string; children: ReactNode }) {
   return (
     <Popover>
       <PopoverTrigger openOnHover delay={100} className="cursor-help underline decoration-foreground/45 decoration-dotted underline-offset-4">
-        AI credits a month
+        {label}
       </PopoverTrigger>
-      <PopoverContent side="top" className="w-72 bg-foreground p-3 text-left text-[13px] leading-snug text-background ring-0">
-        Credits pay for AI answers, summaries and Autopilot&apos;s checks of the changes you ship.
-        {buy && credits !== null && (
-          <>
-            {" "}
-            {number(credits)} credits buy about {number(buy.answers)} AI answers{buy.changes !== null && <>, or about {number(buy.changes)} checked changes</>}.
-          </>
-        )}{" "}
-        An estimate: it depends on the question and the model.
+      <PopoverContent side="top" sideOffset={10} className="w-[280px] rounded-[14px] border bg-card px-4 py-3.5 text-left shadow-lg ring-0">
+        {/* A square turned 45° with the card's fill and two edges, half hidden under the card. */}
+        <PopoverArrow className="size-3 rotate-45 border bg-card data-[side=bottom]:-top-[7px] data-[side=bottom]:border-r-0 data-[side=bottom]:border-b-0 data-[side=top]:-bottom-[7px] data-[side=top]:border-t-0 data-[side=top]:border-l-0" />
+        <p className="mb-2.5 font-heading text-[15px] font-bold">{title}</p>
+        {children}
       </PopoverContent>
     </Popover>
   );
 }
+
+/** "AI credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. */
+function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: number | null }) {
+  const rows: [string, number][] = buy ? [["AI answers", buy.answers], ...(buy.changes !== null ? [["Or checked changes", buy.changes] as [string, number]] : [])] : [];
+  return (
+    <Tip label="AI credits a month" title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
+      {rows.length > 0 ? (
+        <dl className="grid gap-2 text-sm">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-bold tabular-nums">{number(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-sm text-muted-foreground">AI answers, summaries and Autopilot&apos;s checks of the changes you ship.</p>
+      )}
+      <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Estimates. They vary by question and model. Credits also pay for summaries.</p>
+    </Tip>
+  );
+}
+
+const PrivateTip = () => (
+  <Tip label="Private help center" title="Private help center">
+    <p className="text-sm leading-snug text-muted-foreground">Show articles only to groups you choose, like paying customers.</p>
+  </Tip>
+);
+
+/** A help center row's label with its example address under it, smaller. */
+const WithExample = ({ label, example }: { label: string; example: string }) => (
+  <span className="flex flex-col">
+    {label}
+    <small className="text-[13px] text-muted-foreground">{example}</small>
+  </span>
+);
 
 /** A row's value on one plan: a number or text, or whether the plan has it. */
 type Cell = string | boolean;
@@ -198,9 +230,9 @@ function groups(plans: Plan[]): { title: string; icon: ReactNode; rows: Row[] }[
       rows: [
         row("Published articles", (facts) => number(facts.articles)),
         row("Versions kept per article", (facts) => number(facts.versions)),
-        row("Your own domain", (facts) => facts.features.customDomain),
-        row("At yoursite.com/help", (facts) => facts.features.sitePath),
-        row("Private help center", (facts) => facts.features.privatePortal),
+        row(<WithExample label="Your own domain" example="help.yoursite.com" />, (facts) => facts.features.customDomain),
+        row(<WithExample label="Subpath on your domain" example="yoursite.com/help" />, (facts) => facts.features.sitePath),
+        row(<PrivateTip />, (facts) => facts.features.privatePortal),
       ],
     },
     {

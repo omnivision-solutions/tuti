@@ -6,10 +6,11 @@ const SALES_EMAIL = "hello@tuti.so";
 
 export type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
-// What an AI answer and a shipped change checked by Autopilot cost in model use, roughly, as measured on
-// tuti.so (2026-11). Credits are worth what AI_CREDITS_PER_USAGE_DOLLAR says, so the estimates follow it.
+// What an AI answer and a shipped change checked by Autopilot cost in model use on average, in dollars, measured on
+// Tuti's own projects (2026-11, with Haiku deciding and Sonnet writing help-center edits). Credits are worth what
+// AI_CREDITS_PER_USAGE_DOLLAR says, so the estimates follow it.
 const ANSWER_COST = 0.001;
-const CHANGE_COST = 0.005;
+const CHANGE_COST = 0.08;
 
 /** How many times `cost` fits in `credits`, rounded down to two significant figures: 2,000, 410, 40. */
 export function about(credits: number, cost: number): number {
