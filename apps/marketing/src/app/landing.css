@@ -46,6 +46,7 @@
   .btn-d { background: rgba(255, 255, 255, 0.08); color: #fff; border: 1px solid rgba(255, 255, 255, 0.22); }
   .btn-d:hover { background: rgba(255, 255, 255, 0.14); }
   /* Above the hero glow (.frame::before), which reaches up under them. */
+  .tlink.head { height: auto; padding: 0; margin-top: 14px; }
   .ctas { position: relative; z-index: 1; display: flex; gap: 12px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
   .ctas.left { justify-content: flex-start; }
   /* A section's text link beside its button */
@@ -54,8 +55,8 @@
   .tlink.ask { height: auto; padding: 0; margin-top: 24px; }
 
   /* Sections */
-  section { padding: 120px 0; scroll-margin-top: 64px; }
-  section.flush { padding-top: 0; }
+  /* One gap between sections: each pads its top only (the last, .final, its bottom too). */
+  section { padding: 144px 0 0; scroll-margin-top: 64px; }
   .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--g7); }
   h2 { font-size: clamp(38px, 4.8vw, 58px); letter-spacing: -0.04em; margin-top: 16px; }
   .sub { font-size: 20px; color: var(--muted); margin-top: 18px; max-width: 30em; line-height: 1.45; }
@@ -108,13 +109,21 @@
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--g) 14%, transparent), 0 8px 20px -10px rgba(16, 60, 32, 0.45);
   }
   .tab[aria-pressed="true"] svg { color: var(--g); }
+  /* While the tabs take turns (hero-tabs.tsx): the open tab's time, drawn along its foot. Hovering the window pauses it. */
+  .tab { position: relative; }
+  .tab .prog {
+    position: absolute; left: 14px; right: 14px; bottom: 5px; height: 2px; border-radius: 2px; background: var(--g);
+    transform-origin: left; animation: lp-prog 6s linear both;
+  }
+  .show:hover .prog { animation-play-state: paused; }
   /* White between the tab and its green ring, so the ring stands out from the glow too. */
   .tab:focus-visible { box-shadow: 0 0 0 2px #fff; }
   .show { padding: 0 10px; }
-  /* The window fades into the page at the bottom rather than ending on a hard edge. */
+  /* The window fades into the page at the bottom rather than ending on a hard edge. One height for every tab, so
+     switching doesn't move the page. */
   .win {
-    background: var(--card); border-radius: 18px 18px 0 0; overflow: hidden; max-height: 600px; text-align: left;
-    mask: linear-gradient(#000 calc(100% - 160px), transparent);
+    background: var(--card); border-radius: 18px 18px 0 0; overflow: hidden; height: 510px; text-align: left;
+    mask: linear-gradient(#000 calc(100% - 60px), transparent);
   }
   .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line2); background: #fcfbf8; }
   .dots { display: flex; gap: 6px; }
@@ -123,7 +132,7 @@
   .panel-wrap { animation: lp-fade 0.35s ease; }
 
   /* Autopilot: four steps on a dashed line */
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 60px; position: relative; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 60px; position: relative; align-items: start; }
   .steps::before { content: ""; position: absolute; left: 4%; right: 4%; top: 23px; height: 2px; background: repeating-linear-gradient(90deg, var(--g) 0 8px, transparent 8px 14px); }
   .st { min-width: 0; }
   .st .n {
@@ -133,7 +142,7 @@
   .st .n.gh { background: var(--ink); }
   .st h3 { margin: 22px 0 6px; font-size: 21px; letter-spacing: -0.02em; }
   .st p { margin: 0 0 18px; color: var(--muted); font-size: 15.5px; }
-  .st .pic { height: 300px; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--card); box-shadow: 0 30px 50px -36px rgba(16, 60, 32, 0.45); }
+  .st .pic { border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--card); box-shadow: 0 30px 50px -36px rgba(16, 60, 32, 0.45); }
   .prc { padding: 20px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; height: 100%; }
   .prc .r { display: flex; gap: 8px; align-items: center; color: var(--muted); }
   .prc .t { font: 700 18px/1.3 var(--font-heading); letter-spacing: -0.02em; }
@@ -144,10 +153,30 @@
   .prc .f em { color: #cf222e; font-style: normal; }
 
   /* The rest of Tuti: a bento grid of pictures */
-  .bento-s { padding-top: 30px; }
+  .fp { padding-top: 30px; }
   .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 56px; }
   .cell { position: relative; overflow: hidden; display: flex; flex-direction: column; border-radius: 24px; background: var(--card); border: 1px solid var(--line); padding: 26px 28px; scroll-margin-top: 80px; }
   .cell .eyebrow { font-size: 13px; margin-bottom: 12px; }
+  /* These two pictures sit under their words, not at the cell's foot. */
+  .c-rep .cell-sc, .c-fb .cell-sc { margin-top: 0; }
+  /* On the landing page a picture is a white card on a band of its feature's colour across the cell's foot, so it reads as
+     the product, not the page's own controls. The dark ones (Verify, the terminal) stand apart already; the widget is its
+     own card. Feature pages draw theirs as cards already. */
+  .bento-s:not(.fp) .cell { isolation: isolate; }
+  .bento-s:not(.fp) .cell > p, .bento-s:not(.fp) .cell > h3:has(+ .cell-sc) { margin-bottom: 26px; }
+  .bento-s:not(.fp) .cell > .cell-sc:not(.sc-ver, .sc-mcp) {
+    position: relative; max-width: none; padding: 18px; background: #fff; border: 1px solid rgba(20, 40, 28, 0.08); border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 24px 48px -18px rgba(16, 60, 32, 0.35);
+  }
+  .bento-s:not(.fp) .cell > .cell-sc.sc-wdg { padding: 0; background: none; border: 0; box-shadow: none; }
+  .bento-s:not(.fp) .cell > .cell-sc:not(.sc-ver, .sc-mcp)::before {
+    content: ""; position: absolute; z-index: -1; inset: -22px -29px -400px; background: var(--st, linear-gradient(160deg, #dff0e6, #bfe2cc)); border-top: 1px solid rgba(20, 40, 28, 0.08);
+  }
+  .c-help { --st: linear-gradient(160deg, #fbefd9, #f3dcb3); }
+  .c-inbox { --st: linear-gradient(160deg, #e3ecfb, #c8d8f5); }
+  .c-fb { --st: linear-gradient(160deg, #fde6dc, #f6c9b5); }
+  .c-rm { --st: linear-gradient(160deg, #ece4fa, #d6c8f3); }
+  .c-rep { --st: linear-gradient(160deg, #fdeedd, #f7d6b2); }
   .cell h3 { font-size: 24px; letter-spacing: -0.03em; }
   .cell p { margin-top: 6px; color: var(--muted); font-size: 15.5px; max-width: 22em; }
   .c-help { grid-column: span 4; background: linear-gradient(180deg, #fff, #f4f1e9); }
@@ -166,7 +195,8 @@
   .tools span { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px 5px 8px; font-weight: 600; font-size: 14px; background: var(--card); }
 
   /* Switch: the switchboard */
-  .sw { background: linear-gradient(180deg, var(--bg), #f1eee5); }
+  .sw { padding-bottom: 72px; background: linear-gradient(180deg, var(--bg), #f1eee5 30%, #f1eee5 70%, var(--bg)); }
+  .sw + section { padding-top: 72px; }
   .tiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; margin-top: 56px; }
   .tile {
     position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 26px 8px 20px; border-radius: 20px; cursor: pointer;
@@ -198,7 +228,6 @@
   .chip.hl .pi { background: #fff1e6; color: #b4480f; }
 
   /* Open source: self-host or Tuti cloud */
-  .oss { padding-bottom: 60px; }
   .two { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; margin-top: 50px; }
   .card { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; border-radius: 26px; padding: 36px; border: 1px solid var(--line); background: var(--card); }
   .card.self { background: var(--forest); color: #dcebe1; border-color: var(--forest); }
@@ -209,7 +238,8 @@
   .card ul { display: grid; gap: 12px; margin-bottom: 28px; font-weight: 600; }
   .card li { display: flex; gap: 10px; align-items: center; }
   .card li svg { color: var(--g); }
-  .card .btn { margin-top: auto; }
+  /* The self-host button meets the cloud card's foot; the cloud card's follows its list. */
+  .card.self .btn { margin-top: auto; }
   .tag { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; font-weight: 700; border-radius: 99px; padding: 4px 10px; background: var(--g50); color: var(--g7); margin-bottom: 16px; }
   .card.self .tag { background: #183323; color: #7fdca0; }
   .term { align-self: stretch; margin-bottom: 24px; background: #07100b; border: 1px solid #23392b; border-radius: 16px; overflow: hidden; font: 14px var(--font-mono); color: #cfe8d6; }
@@ -221,8 +251,9 @@
   .term .p { color: #4cc27c; user-select: none; }
 
   /* Pricing: a green band */
-  .pricing { padding: 60px 28px; }
-  .strip { max-width: 1384px; margin: 0 auto; border-radius: 30px; background: var(--g8); color: #fff; padding: 56px 60px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
+  .pricing { padding: 144px 28px 0; }
+  /* As wide as the page's content (.wrap's 1200px, less its padding). */
+  .strip { max-width: 1144px; margin: 0 auto; border-radius: 30px; background: var(--g8); color: #fff; padding: 56px 60px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
   .strip > * { min-width: 0; }
   .strip .eyebrow { color: #a7e3bb; }
   .strip h2 { color: #fff; font-size: clamp(38px, 4vw, 52px); }
@@ -253,22 +284,24 @@
   details p { padding: 0 40px 22px 0; color: var(--muted); font-size: 17px; }
 
   /* Final call to action */
-  .final { padding: 130px 0; text-align: center; background: radial-gradient(700px 360px at 50% 100%, color-mix(in oklch, var(--g) 14%, transparent), transparent 70%); }
+  .final { padding: 144px 0 120px; text-align: center; background: radial-gradient(700px 360px at 50% 100%, color-mix(in oklch, var(--g) 14%, transparent), transparent 70%); }
   .final h2 { font-size: clamp(42px, 6.4vw, 76px); max-width: 15ch; margin: 22px auto 0; letter-spacing: -0.045em; }
-  .final .mark { width: 64px; height: 64px; margin: 0 auto; }
+  .final .mark { width: 48px; height: 48px; margin: 0 auto; }
   .ticks { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; margin-top: 28px; color: var(--muted); font-size: 15px; }
   .ticks li { display: flex; gap: 6px; align-items: center; }
   .ticks svg { color: var(--g); }
 
   /* Sound familiar: what changed, and what the help center still says */
-  .fam { padding-bottom: 20px; }
-  .changes { display: grid; gap: 10px; max-width: 580px; margin: 44px auto 0; text-align: left; }
+  .fam-g { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
+  .fam + section { padding-top: 64px; }
+  .changes { display: grid; gap: 10px; text-align: left; }
   .changes li { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px; }
   .changes li b { font-weight: 600; }
   .changes li span { margin-left: auto; font-size: 13px; font-weight: 600; color: #a0461e; background: #fbe9de; border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before { animation: none !important; transition: none !important; }
+    .tab .prog { display: none; }
   }
 
   @media (max-width: 1080px) {
@@ -283,7 +316,12 @@
     .land { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   }
   @media (max-width: 860px) {
-    section { padding: 84px 0; }
+    section { padding: 96px 0 0; }
+    .sw { padding-bottom: 48px; }
+    .sw + section { padding-top: 48px; }
+    .fam + section { padding-top: 48px; }
+    .fam-g { grid-template-columns: 1fr; gap: 28px; }
+    .pricing { padding: 96px 28px 0; }
     .two, .strip, .faq { grid-template-columns: 1fr; }
     .faq { gap: 20px; }
     .strip { padding: 44px 36px; gap: 28px; }
@@ -322,12 +360,13 @@
     /* 13px, the smallest size (docs/design.md, Type scale): the long commands scroll sideways. */
     .term { font-size: 13px; }
     .term pre { padding: 16px; }
-    .pricing { padding: 40px 12px; }
+    .pricing { padding: 96px 12px 0; }
     .strip { padding: 36px 24px; border-radius: 24px; }
     .big { font-size: 76px; }
     summary { font-size: 18px; }
     details p { padding-right: 0; }
     .final { padding: 96px 0; }
+    .tab .prog { left: 12px; right: 12px; bottom: 4px; }
     .changes li { flex-wrap: wrap; gap: 6px; }
     .changes li span { margin-left: 0; }
   }
@@ -335,6 +374,7 @@
 
 @keyframes lp-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes lp-pop { from { opacity: 0; transform: translateY(8px); } }
+@keyframes lp-prog { from { transform: scaleX(0); } }
 
 /* Scenes (scenes.tsx): the page's pictures, one moment each in the product's style. */
 .lp {
@@ -402,11 +442,36 @@
 
   /* In the hero's window */
   .hero-sc { padding: 28px 40px 36px; min-height: 470px; background: #fbfaf6; }
-  .sc-ap { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 28px; align-items: start; }
-  .sc-from { display: grid; gap: 10px; }
-  .sc-hc { display: flex; flex-direction: column; align-items: center; }
-  .sc-hc .brand { font: 700 26px var(--font-heading); letter-spacing: -0.03em; margin-bottom: 18px; }
-  .sc-hc .sc-answer, .sc-hc .sc-tiles { width: min(620px, 100%); }
+  .sc-ap { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 28px; align-items: center; }
+  .sc-from { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  /* A dashed line from the merge to each thing it changed. */
+  .sc-ap .sc-from { position: relative; padding-left: 26px; }
+  .sc-ap .sc-from > .sc-card { position: relative; }
+  .sc-ap .sc-from > .sc-card::before { content: ""; position: absolute; left: -27px; top: 22px; width: 26px; border-top: 2px dashed var(--dash); }
+  .sc-ap .sc-from::before { content: ""; position: absolute; left: 0; top: 52px; bottom: 50px; border-left: 2px dashed var(--dash); }
+  .sc-ap .sc-from::after { content: ""; position: absolute; left: -28px; top: 50%; width: 28px; border-top: 2px dashed var(--dash); }
+  .sc-ap { --dash: color-mix(in oklch, var(--g) 50%, transparent); }
+  .sc-ap .sc-pr { align-self: center; }
+  /* One line a title: what happened, then what it happened to. */
+  .sc-ap .sc-card .h { flex-wrap: nowrap; }
+  .sc-ap .sc-card .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Lumen's portal (Portal, scenes.tsx): its header, a sidebar and the page. */
+  .sc-ph { display: flex; align-items: center; gap: 16px; padding-bottom: 14px; margin-bottom: 20px; border-bottom: 1px solid var(--line2); }
+  .sc-ph b { display: flex; align-items: center; gap: 8px; margin-right: auto; font: 700 18px var(--font-heading); letter-spacing: -0.02em; }
+  .sc-ph b i { width: 20px; height: 20px; border-radius: 6px; background: #3f78d1; }
+  .sc-ph nav { display: flex; gap: 2px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .sc-ph nav span { padding: 5px 11px; border-radius: 9px; }
+  .sc-ph nav .on { background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+  .sc-pb { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 36px; align-items: start; }
+  .sc-side { display: grid; gap: 2px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .sc-side span { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: 9px; }
+  .sc-side small { font-size: 13px; font-weight: 500; }
+  .sc-side .on { background: var(--g50); color: var(--g7); }
+  .sc-main { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .sc-pop { display: grid; margin-top: 6px; }
+  .sc-pop small { margin-bottom: 6px; color: var(--muted); font-size: 13px; font-weight: 600; }
+  .sc-pop span { display: flex; align-items: center; gap: 8px; padding: 9px 2px; border-top: 1px solid var(--line2); font-weight: 600; font-size: 14px; }
+  .sc-pop svg { color: var(--muted); }
   .sc-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
   .sc-tiles span { border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-weight: 600; font-size: 14px; background: var(--card); }
   /* Inbox: the conversations, the open one, and who it's with. */
@@ -428,10 +493,8 @@
   .sc-who .p span { grid-row: span 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--g50); color: var(--g7); font-size: 13px; font-weight: 700; }
   .sc-who .p small { font-weight: 400; overflow-wrap: anywhere; }
   .sc-who .sc-card { gap: 4px; justify-items: start; padding: 10px 12px; }
-  .sc-fb > *, .sc-cl > * { max-width: 640px; margin-inline: auto; }
   .sc-boardhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .sc-boardhead b { font: 700 22px var(--font-heading); letter-spacing: -0.02em; }
-  .sc-cl { display: grid; gap: 12px; align-content: start; }
   .sc-cl .sc-entry, .c-cl .sc-entry { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
   .sc-cl .sc-entry { gap: 4px; padding: 14px 20px; }
   .sc-cl .sc-boardhead { width: 100%; margin-bottom: 0; }
@@ -456,7 +519,7 @@
 
   /* The hero's picture builds in, piece by piece, each time its tab opens (a shown panel restarts its animations):
      the merge, then what it changed; the question, then the answer; the conversation, message by message. */
-  .hero-sc :is(.sc-pr, .sc-from > *, .sc-diff > *, .sc-answer > *, .sc-tiles, .sc-list > *, .sc-thread > *, .sc-reply, .sc-who, .sc-boardhead, .sc-votes > *, .sc-entry, .sc-rmh .col) { animation: lp-pop 0.45s var(--d, 0s) both; }
+  .hero-sc :is(.sc-pr, .sc-from > *, .sc-diff > *, .sc-answer > *, .sc-tiles, .sc-list > *, .sc-thread > *, .sc-reply, .sc-who, .sc-boardhead, .sc-pop, .sc-votes > *, .sc-entry, .sc-rmh .col) { animation: lp-pop 0.45s var(--d, 0s) both; }
   .sc-from > :nth-child(1) { --d: 0.25s; }
   .sc-from > :nth-child(2) { --d: 0.4s; }
   .sc-from .sc-diff > :nth-child(1) { --d: 0.6s; }
@@ -465,7 +528,7 @@
   .sc-from > :nth-child(3) { --d: 1.2s; }
   .sc-from > :nth-child(4) { --d: 1.35s; }
   .sc-hc .sc-ai { --d: 0.3s; }
-  .sc-hc .sc-tiles { --d: 0.5s; }
+  .sc-hc .sc-pop { --d: 0.5s; }
   .sc-list > :nth-child(2), .sc-votes > :nth-child(1) { --d: 0.1s; }
   .sc-list > :nth-child(3), .sc-votes > :nth-child(2), .sc-cl .sc-entry + .sc-entry { --d: 0.2s; }
   .sc-cl .sc-entry + .sc-entry + .sc-entry { --d: 0.4s; }
@@ -575,9 +638,19 @@
 
   @media (max-width: 640px) {
     /* The window grows with its scene, which stacks into one column. */
-    .win { max-height: none; mask: linear-gradient(#000 calc(100% - 40px), transparent); }
+    /* The scenes stack into one column: a taller window, the fade taking what's longer. */
+    .win { height: 520px; mask: linear-gradient(#000 calc(100% - 48px), transparent); }
     .hero-sc { padding: 18px 14px; min-height: 0; }
-    .sc-ap, .sc-ib, .sc-hw { grid-template-columns: 1fr; gap: 14px; }
+    .sc-pr .f, .sc-ap .sc-diff > :nth-child(3), .sc-from > small { display: none; }
+    .sc-ap .sc-from { padding-left: 0; }
+    .sc-ap .sc-from::before, .sc-ap .sc-from::after, .sc-ap .sc-from > .sc-card::before { display: none; }
+    .sc-pb { grid-template-columns: 1fr; }
+    .sc-side { display: none; }
+    .sc-ph { gap: 8px; margin-bottom: 14px; }
+    .sc-ph b { font-size: 16px; }
+    .sc-ph nav { font-size: 13px; gap: 0; }
+    .sc-ph nav span { padding: 4px 7px; }
+    .sc-ap, .sc-ib, .sc-hw { grid-template-columns: minmax(0, 1fr); gap: 14px; }
     .fp-rel .land { grid-template-columns: 1fr; }
     .sc-list { display: none; }
     .sc-tiles { grid-template-columns: 1fr 1fr; }

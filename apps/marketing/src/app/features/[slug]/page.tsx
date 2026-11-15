@@ -74,7 +74,7 @@ export default async function FeaturePage({ params }: PageProps<"/features/[slug
           </div>
         </div>
       </section>
-      <section className="flush fp-rel">
+      <section className="fp-rel">
         <div className="wrap center">
           <h2>Works with the rest of Tuti.</h2>
           <ul className="land">
