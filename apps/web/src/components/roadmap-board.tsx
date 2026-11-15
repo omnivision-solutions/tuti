@@ -37,7 +37,7 @@ type Card = {
   /** Who sees it besides the team (a badge when it isn't everyone). */
   visibility: PostVisibility;
   asking: string | null;
-  /** How many people moving it to each of the roadmap's statuses emails. */
+  /** How many people moving it to In progress or Completed emails (none moves forward to Planned from here). */
   emails: Partial<Record<PostStatus, number>>;
   eta: string | null;
   owner: { name: string; image: string | null } | null;

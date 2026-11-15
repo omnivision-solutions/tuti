@@ -33,11 +33,10 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   const board = boards.find((b) => b.slug === searchParams.board)?.slug;
   const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
   const ids = columns.flat().map((post) => post.id);
-  // Who's asking, how many moving each one to each status emails (asked before such a move: Completed, or Planned and
-  // In progress moving forward), and the team's plan for it.
-  const [totals, planned, started, completing, plans, menu] = await Promise.all([
+  // Who's asking, how many moving each one to In progress or Completed emails (asked before such a move; no card here
+  // moves forward to Planned), and the team's plan for it.
+  const [totals, started, completing, plans, menu] = await Promise.all([
     voterTotals(project.id, project.askingProperty, ids),
-    emailedOnCompletion(project.id, ids, "PLANNED"),
     emailedOnCompletion(project.id, ids, "IN_PROGRESS"),
     emailedOnCompletion(project.id, ids),
     prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, body: true, owner: { select: { name: true, image: true } } } }),
@@ -83,7 +82,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
             // Who sees it: Team only on a board turned off (seenAs).
             visibility: seenAs(post),
             asking: totals.has(post.id) ? asking(totals.get(post.id)!, project.askingProperty!, storedPropertyFormats(project.propertyFormats)) : null,
-            emails: { PLANNED: planned.get(post.id) ?? 0, IN_PROGRESS: started.get(post.id) ?? 0, COMPLETED: completing.get(post.id) ?? 0 },
+            emails: { IN_PROGRESS: started.get(post.id) ?? 0, COMPLETED: completing.get(post.id) ?? 0 },
             // "Dec 2026", in UTC as months are kept.
             eta: plan.get(post.id)?.eta?.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) ?? null,
             owner: plan.get(post.id)?.owner ?? null,
