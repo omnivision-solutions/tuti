@@ -1,13 +1,22 @@
-import { Button, Link, Text } from "@react-email/components";
+import { Button, Text } from "@react-email/components";
 
-import { buttonStyle, colors, Layout } from "./layout";
+import { buttonStyle, colors, type EmailBrand, FooterLink, Layout } from "./layout";
 
 /** `note`: the team's comment posted with the completion, quoted under the news. */
-type ShippedProps = { projectName: string; postTitle: string; postUrl: string; unsubscribeUrl: string; note?: { from: string; text: string }; accent?: string | null };
+type ShippedProps = EmailBrand & { postTitle: string; postUrl: string; unsubscribeUrl: string; note?: { from: string; text: string } };
 
-export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, note, accent }: ShippedProps) {
+export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, note, accent, poweredBy }: ShippedProps) {
   return (
-    <Layout preview={`${postTitle} is done.`} accent={accent}>
+    <Layout
+      preview={`${postTitle} is done.`}
+      project={{ projectName, accent, poweredBy }}
+      footer={
+        <>
+          You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
+          <FooterLink href={unsubscribeUrl}>Unsubscribe from {projectName}</FooterLink>
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Good news from {projectName}: <strong>{postTitle}</strong> is done. Thanks for asking for it.
       </Text>
@@ -24,12 +33,6 @@ export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, 
       >
         See the post
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
-        <Link href={unsubscribeUrl} style={{ color: colors.muted, textDecoration: "underline" }}>
-          Unsubscribe from {projectName}
-        </Link>
-      </Text>
     </Layout>
   );
 }

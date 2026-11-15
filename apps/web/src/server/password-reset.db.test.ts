@@ -192,7 +192,7 @@ test("asked on a portal, its own domain or its team's site: from the portal, a l
   ] as const) {
     expect(await ask(user.email, host)).toEqual({ sentTo: user.email });
     expect((await mailbox.latestTo(user.email)).text).toContain(`your account on ${portal.name}`);
-    expect((await mailbox.latestTo(user.email)).html).toContain("border-top:4px solid #7c3aed");
+    expect((await mailbox.latestTo(user.email)).html).toContain("border-radius:9px;background-color:#7c3aed");
     const link = await linkTo(user.email);
     // Never the portal's address: its team may run it, and the password is the account's everywhere.
     expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/app/auth/reset-password`);

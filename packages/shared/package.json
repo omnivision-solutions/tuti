@@ -18,7 +18,9 @@
     "./portal-redirects": "./src/portal-redirects.ts",
     "./log": "./src/log.ts",
     "./plans": "./src/plans.ts",
-    "./colors": "./src/colors.ts"
+    "./colors": "./src/colors.ts",
+    "./license": "./src/license.ts",
+    "./license-key": "./src/license-key.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

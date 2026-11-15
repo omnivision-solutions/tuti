@@ -21,7 +21,15 @@ const SHOWN = 10;
 /** To a project's owners, once a Verify all ends with fixes: one email for the run, not one per article (docs/plan.md, V7). */
 export function VerifyAllEmail({ projectName, checked, total, fixed, stopped, url }: VerifyAllProps) {
   return (
-    <Layout preview={`${articles(fixed.length)} out of date, with fixes waiting for you.`} label="Autopilot">
+    <Layout
+      preview={`${articles(fixed.length)} out of date, with fixes waiting for you.`}
+      label="Verify"
+      footer={
+        <>
+          Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
+        </>
+      }
+    >
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Verify all checked {checked === total ? articles(total) : `${checked} of ${articles(total)}`} in {projectName}&apos;s help center against your repository.{" "}
         {fixed.length === 1 ? "1 was out of date: its fix waits for you." : `${fixed.length} were out of date: their fixes wait for you.`}
@@ -39,9 +47,6 @@ export function VerifyAllEmail({ projectName, checked, total, fixed, stopped, ur
       <Button href={url} style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>
         Review the fixes
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
-      </Text>
     </Layout>
   );
 }
