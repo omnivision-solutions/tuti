@@ -567,7 +567,7 @@ the list picks none to approve at once.
     the row's end, a 36px title (28px on phones), "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in grey circles, inline code,
     details blocks and callouts as grey fills (a callout: quotes, with an info-blue rule and icon), code blocks as cards with
     a grey strip above the code, no line under it, holding Copy (`CodeCopyButtons`, never over the code) and the block's label
-    or code tabs; the code scrolls sideways under it, a long line faded at the edge while there's more). At its end: "Was this
+    or code tabs; the code scrolls sideways under it, a long line faded at the edge while there's more, and on a touch screen a thin bar under it). At its end: "Was this
     helpful?" (Yes and No with thumbs, no rule above), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI
     and Contact us as quiet buttons) on a soft grey fill. With two or more
     sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
