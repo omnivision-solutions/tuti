@@ -7,7 +7,8 @@ import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 /**
  * The hero's product window: a tab per part of Tuti, one picture showing at a time (the first before any script runs).
  * Until a tab is chosen, the tabs take turns: the open tab's progress line is a CSS animation, and its end opens the
- * next one, so hovering the window (which pauses it) pauses the turns, and reduced motion (no animation) stops them.
+ * next one, so hovering or focusing the window (which pauses it) pauses the turns, and reduced motion (no animation)
+ * stops them.
  */
 export function HeroTabs({ panels }: { panels: { label: string; icon: ReactNode; url: string; picture: ReactNode }[] }) {
   const [open, setOpen] = useState(0);

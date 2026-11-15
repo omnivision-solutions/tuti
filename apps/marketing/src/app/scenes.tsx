@@ -575,7 +575,7 @@ export function CellAiTools() {
 
 export function HeroAsk() {
   return (
-    <Pic className="hero-sc sc-hc" label="A help center answering “How do I cancel my plan?” with AI, citing the article it came from, with Ask a person under it">
+    <Pic className="hero-sc sc-hc solo" label="A help center answering “How do I cancel my plan?” with AI, citing the article it came from, with Ask a person under it">
       <div className="brand">Lumen Help</div>
       <Answer wide />
       <div className="sc-ask">

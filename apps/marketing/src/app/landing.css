@@ -115,16 +115,18 @@
     position: absolute; left: 14px; right: 14px; bottom: 5px; height: 2px; border-radius: 2px; background: var(--g);
     transform-origin: left; animation: lp-prog 6s linear both;
   }
-  .show:hover .prog { animation-play-state: paused; }
+  .show:hover .prog, .show:focus-within .prog { animation-play-state: paused; }
   /* White between the tab and its green ring, so the ring stands out from the glow too. */
   .tab:focus-visible { box-shadow: 0 0 0 2px #fff; }
   .show { padding: 0 10px; }
   /* The window fades into the page at the bottom rather than ending on a hard edge. One height for every tab, so
      switching doesn't move the page. */
   .win {
-    background: var(--card); border-radius: 18px 18px 0 0; overflow: hidden; height: 510px; text-align: left;
-    mask: linear-gradient(#000 calc(100% - 60px), transparent);
+    background: var(--card); border-radius: 18px 18px 0 0; overflow: hidden; max-height: 600px; text-align: left;
+    mask: linear-gradient(#000 calc(100% - 160px), transparent);
   }
+  /* The landing hero's tabs share one height, so the page doesn't move as they take turns; their scenes fill it. */
+  .show .win { height: 510px; max-height: none; mask: linear-gradient(#000 calc(100% - 60px), transparent); }
   .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--line2); background: #fcfbf8; }
   .dots { display: flex; gap: 6px; }
   .dots i { width: 10px; height: 10px; border-radius: 50%; background: #e4e1d9; }
@@ -528,6 +530,10 @@
   .sc-from > :nth-child(3) { --d: 1.2s; }
   .sc-from > :nth-child(4) { --d: 1.35s; }
   .sc-hc .sc-ai { --d: 0.3s; }
+  /* The AI answers page's hero: the answer alone, centred under the help center's name (no portal frame). */
+  .sc-hc.solo { display: flex; flex-direction: column; align-items: center; }
+  .sc-hc.solo .brand { font: 700 26px var(--font-heading); letter-spacing: -0.03em; margin-bottom: 18px; }
+  .sc-hc.solo .sc-answer { width: min(620px, 100%); }
   .sc-hc .sc-pop { --d: 0.5s; }
   .sc-list > :nth-child(2), .sc-votes > :nth-child(1) { --d: 0.1s; }
   .sc-list > :nth-child(3), .sc-votes > :nth-child(2), .sc-cl .sc-entry + .sc-entry { --d: 0.2s; }
@@ -637,9 +643,9 @@
   }
 
   @media (max-width: 640px) {
-    /* The window grows with its scene, which stacks into one column. */
-    /* The scenes stack into one column: a taller window, the fade taking what's longer. */
-    .win { height: 520px; mask: linear-gradient(#000 calc(100% - 48px), transparent); }
+    /* The window grows with its scene, which stacks into one column; the hero's tabs keep one, taller, height. */
+    .win { max-height: none; mask: linear-gradient(#000 calc(100% - 40px), transparent); }
+    .show .win { height: 520px; mask: linear-gradient(#000 calc(100% - 48px), transparent); }
     .hero-sc { padding: 18px 14px; min-height: 0; }
     .sc-pr .f, .sc-ap .sc-diff > :nth-child(3), .sc-from > small { display: none; }
     .sc-ap .sc-from { padding-left: 0; }
