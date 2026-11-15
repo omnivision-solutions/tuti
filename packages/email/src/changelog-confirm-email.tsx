@@ -1,6 +1,7 @@
-import { Button, Text } from "@react-email/components";
+import { Button } from "@react-email/components";
 
-import { buttonStyle, colors, type EmailBrand, Layout } from "./layout";
+import { Paragraph } from "./blocks";
+import { buttonStyle, type EmailBrand, Eyebrow, Layout, Title } from "./layout";
 
 /** `optedOut`: the address has turned all of the project's emails off, which wins until they turn them back on. */
 type ChangelogConfirmProps = EmailBrand & { url: string; optedOut?: boolean };
@@ -16,7 +17,9 @@ export function ChangelogConfirmEmail({ projectName, url, optedOut = false, acce
       project={{ projectName, accent, poweredBy }}
       footer={<>If you didn&apos;t ask for this, ignore it: you won&apos;t get anything.</>}
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
+      <Eyebrow accent={accent}>One more step</Eyebrow>
+      <Title>{optedOut ? `Turn ${projectName}'s emails back on` : "Confirm your subscription"}</Title>
+      <Paragraph>
         {optedOut ? (
           <>
             You asked for <strong>{projectName}</strong>&apos;s changelog by email, but you&apos;ve turned off all of{" "}
@@ -28,12 +31,12 @@ export function ChangelogConfirmEmail({ projectName, url, optedOut = false, acce
             improved and fixed.
           </>
         )}
-      </Text>
+      </Paragraph>
       <Button
         href={url}
         style={buttonStyle(accent)}
       >
-        {optedOut ? `Turn ${projectName}'s emails back on` : "Get updates by email"}
+        {optedOut ? `Turn ${projectName}'s emails back on` : "Confirm subscription"}
       </Button>
     </Layout>
   );

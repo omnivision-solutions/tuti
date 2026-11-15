@@ -117,6 +117,7 @@ describe("changelogEmail", () => {
       projectName: "Acme",
       entryTitle: "Dark mode",
       entryUrl: ENTRY,
+      publishedAt: new Date("2026-11-15T23:30:00Z"),
       doc: doc(p(text("Easier on the eyes.")), image()),
       coverUrl: "https://app.example.com/media/cover/email.jpg?s=x",
       mediaUrls: MEDIA,
@@ -125,7 +126,9 @@ describe("changelogEmail", () => {
     expect(email.subject).toBe("Acme: Dark mode");
     const out = await render(email.body);
     expect(out).toContain("Dark mode</h1>");
-    expect(out).toMatch(/<img alt="Dark mode"[^>]*src="https:\/\/app.example.com\/media\/cover\/email.jpg\?s=x"/);
+    // The cover over the date and the title; the date in UTC.
+    expect(out).toMatch(/<img alt="Dark mode"[^>]*src="https:\/\/app.example.com\/media\/cover\/email.jpg\?s=x"[\s\S]*New · November 15[\s\S]*Dark mode<\/h1>/);
+    expect(out).toContain("Read the update");
     expect(out).toContain("Easier on the eyes.");
     expect(out).toContain(SRC);
     expect(out).toContain(`href="${ENTRY}"`);

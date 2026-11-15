@@ -248,7 +248,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (!entry.publishedAt) {
     return { waiting: "the entry isn't published" };
   }
-  const { projectId, project } = entry;
+  const { projectId, project, publishedAt } = entry;
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
@@ -300,6 +300,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
           ...brand,
           entryTitle: entry.title,
           entryUrl,
+          publishedAt,
           doc,
           ...images,
           unsubscribeUrl: `${origin}/changelog/subscription?${query}`,

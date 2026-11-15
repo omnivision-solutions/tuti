@@ -56,12 +56,15 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
   // In the project's accent colour.
   await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
   await call(createComment, as(owner.id), { number: post.number, body: "Dark mode ships next week.", emailVoters: true });
+  const { voteCount } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { voteCount: true } });
   for (const address of [voter.email, other.email, author.email]) {
     const [email, ...more] = emailsTo(address);
     expect(more).toEqual([]);
     expect(email!.subject).toBe("Re: Dark mode");
     expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
-    expect(email!.text).toContain("Owner from");
+    expect(email!.text).toContain("OWNER FROM");
+    // The post's card: its votes, board, title and status.
+    expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} Feature requests Dark mode Open`);
     expect(email!.text).toContain("Dark mode ships next week.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
     // The person's token for this project (projectUnsubscribeToken), never their bare one.
@@ -98,12 +101,12 @@ test("the reply's images are in the email to voters, at lasting links", async ()
     expect(email!.html.match(/The night theme/g)).toEqual(["The night theme"]);
     expect(email!.html).toContain(`/media/${image.id}/`);
     expect(email!.html).toContain('alt="The night theme"');
-    // The reply quoted beside a left border; one that's only an image has no empty quote above it.
-    expect(email!.html).toContain("border-left");
+    // The reply in its soft fill; one that's only an image has no empty fill above it.
+    expect(email!.html).toContain("white-space:pre-wrap;background-color:#fafaf9");
     await call(createComment, as(owner.id), { number: post.number, content: { type: "doc", content: [content.content[1]!] }, emailVoters: true });
     const [, only] = emailsTo(voter.email);
     expect(only!.html).toContain(`/media/${image.id}/`);
-    expect(only!.html).not.toContain("border-left");
+    expect(only!.html).not.toContain("white-space:pre-wrap;background-color:#fafaf9");
   } finally {
     vi.unstubAllEnvs();
     await s3.close();

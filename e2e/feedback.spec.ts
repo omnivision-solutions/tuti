@@ -106,6 +106,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("button", { name: "Comment and email" }).click();
   const reply = await latestEmailTo(ada.email, { subject: /^Re: Dark mode$/ });
   expect(reply.text).toContain("Thanks! We're on it.");
+  // The post's card (its votes, board and status) and the team's tag on the reply.
+  expect(reply.text.replace(/\s+/g, " ")).toMatch(/\d+ Feature requests Dark mode \w[\w ]* Tess Team Acme team Thanks! We're on it\./);
   // And a note only the team sees.
   await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
   // Picked once the page is ready for it (before then, a click isn't heard).

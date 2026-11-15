@@ -122,7 +122,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     select: {
       number: true,
       title: true,
-      board: { select: { slug: true, off: true } },
+      voteCount: true,
+      board: { select: { slug: true, name: true, off: true } },
       projectId: true,
       authorId: true,
       visibility: true,
@@ -202,7 +203,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     const error = await whileClaimed({ postId, userId: id, claimedAt }, () =>
       sendEmail({
         to: address,
-        ...shippedEmail({ ...brand, postTitle: post.title, postUrl, unsubscribeUrl, note }),
+        ...shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: post.board.name, status: "COMPLETED", postUrl, unsubscribeUrl, note }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {
