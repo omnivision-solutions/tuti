@@ -2,11 +2,12 @@ import type { PostStatus } from "@tuti/db";
 import { statusMoveEmails } from "@tuti/shared/status-emails";
 
 /**
- * What a status move asks first, naming how many it emails (`emails`: emailedOnCompletion's count for the post), or null
+ * What a status move asks first, naming how many it emails (`emails`: emailedOnMoves' counts for the post), or null
  * when it goes without asking. Completed always asks ("Nobody is emailed." when it emails nobody); Planned and In
  * progress moving forward (statusMoveEmails) ask only when they email someone; any other move never does.
  */
-export function statusPrompt(from: PostStatus, to: PostStatus, emails: number): string | null {
+export function statusPrompt(from: PostStatus, to: PostStatus, counts: Partial<Record<PostStatus, number>>): string | null {
+  const emails = counts[to] ?? 0;
   const email = statusMoveEmails(from, to);
   if (!email || (email === "progress" && !emails)) {
     return null;

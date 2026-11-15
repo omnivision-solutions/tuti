@@ -343,7 +343,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                               projectSlug={slug}
                               postId={post.id}
                               status={post.status}
-                              completing={{ title: post.title, emails: emailing(post).COMPLETED ?? 0 }}
+                              completing={{ title: post.title, emails: emailing(post) }}
                               badge={mixedUngrouped}
                             />
                           }

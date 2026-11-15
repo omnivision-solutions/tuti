@@ -25,8 +25,8 @@ import { changePostStatus } from "@/server/manage-posts";
 
 const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 
-/** A post being moved: its title, and how many people who asked for it a move that emails reaches (emailedOnCompletion). */
-export type Completing = { title: string; emails: number };
+/** A post being moved: its title, and how many people who asked for it each move that emails reaches (emailedOnMoves). */
+export type Completing = { title: string; emails: Partial<Record<PostStatus, number>> };
 
 /**
  * A post's status change, a move that emails its people asked about first when `completing` says how many (statusPrompt;
