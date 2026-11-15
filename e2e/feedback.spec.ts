@@ -239,15 +239,16 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await search.fill("light");
   await search.press("Enter");
   await expect(team.getByText("No posts match")).toBeVisible();
-  // The status pills, the search and Filters are the list's pane header, one row; beside it Feedback's menu: its views,
-  // boards and statuses with their counts, the one open marked.
+  // The list's pane header: the view's title, the search and Filters in a row, the status pills in a row of their own
+  // under it; beside it Feedback's menu: its views, boards and statuses with their counts, the one open marked.
   await team.setViewportSize({ width: 1920, height: 1080 });
   await team.goto(`/app/${slug}/feedback?status=all`);
   const filtersButton = team.getByRole("button", { name: /^Filters/ });
   const tabsBox = (await tabs.boundingBox())!;
   const searchBox = (await search.boundingBox())!;
-  expect(Math.abs(tabsBox.y + tabsBox.height / 2 - (searchBox.y + searchBox.height / 2))).toBeLessThan(4);
-  expect((await filtersButton.boundingBox())!.y).toBeLessThan(tabsBox.y + tabsBox.height);
+  await expect(team.getByRole("heading", { name: "All posts", level: 1 })).toBeVisible();
+  expect(tabsBox.y).toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
+  expect((await filtersButton.boundingBox())!.y).toBeLessThan(tabsBox.y);
   const menu = team.getByRole("navigation", { name: "Feedback" });
   await expect(menu.getByRole("link", { name: "All posts 1" })).toHaveAttribute("aria-current", "page");
   await expect(menu.getByRole("link", { name: "Planned 1" })).toHaveAttribute("href", `/app/${slug}/feedback?status=planned`);
@@ -296,6 +297,20 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
     await api("/posts", { board: "feature-requests", title: `Idea number ${i}` });
   }
   const tabs = team.getByRole("navigation", { name: "Statuses" });
+  // At laptop width the pills have a row of their own under the view's title, the search, Filters and New post: every
+  // one is whole and in the window, Possible duplicates too, none scrolled out of sight.
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.goto(`/app/${slug}/feedback?show=duplicates`);
+  await expect(team.getByRole("heading", { name: "Possible duplicates", level: 1 })).toBeVisible();
+  await expect(tabs.getByRole("link")).toHaveCount(7);
+  await expect.poll(() => tabs.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(0);
+  const viewport = team.viewportSize()!;
+  for (const pill of await tabs.getByRole("link").all()) {
+    const box = (await pill.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  }
+  await checkpoint(team, "feedback-1280-duplicates", { fullPage: false });
   for (const [width, height] of [
     [1440, 900],
     [390, 844],
@@ -381,7 +396,7 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   expect(paged).toBeGreaterThan(100);
   // The fade follows the counts: in a window where the row is 3px too wide, a post out of Needs triage (10 to 9)
   // makes it fit, though the row itself is the same size.
-  // (Wider than a phone the search and Filters share the row: widened until the row is 3px short, as it settles.)
+  // (Widened until the row is 3px short, as it settles.)
   let width = 390;
   for (let over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth); over !== 3; ) {
     width += over - 3;
@@ -2193,9 +2208,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const metaColor = (title: string) => row(title).locator("time").locator("..").evaluate((meta) => getComputedStyle(meta).color);
   expect(await metaColor("Calendar sync")).not.toBe(await metaColor("Dark mode"));
   await checkpoint(team, "team-feedback-bulk");
-  // At a page width of 64rem and up, the bar still replaces the whole single toolbar row.
+  // At a page width of 64rem and up, the bar replaces the header's first row; the status pills' row under it stays.
   await team.setViewportSize({ width: 1920, height: 1080 });
-  await expect(team.getByRole("navigation", { name: "Statuses" })).toHaveCount(0);
+  await expect(team.getByRole("heading", { name: "All posts", level: 1 })).toBeHidden();
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toBeVisible();
   await expect(bar).toContainText("2 selected");
   await checkpoint(team, "team-feedback-bulk-wide");
   // On a phone too, the bar is one row the filters' height: the list stays where it was.
@@ -2341,10 +2357,10 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
   await team.keyboard.press("Escape");
 
-  // At 1280px with the labelled sidebar, the bar covers the pane header's row (its status pills too); Feedback's menu
-  // beside the list still works while rows are picked, and changing the view clears the picks.
+  // At 1280px with the labelled sidebar, the bar covers the pane header's first row (the status pills' row under it
+  // stays); Feedback's menu beside the list still works while rows are picked, and changing the view clears the picks.
   await expect(bar).toContainText("1 selected");
-  await expect(team.getByRole("navigation", { name: "Statuses" })).toHaveCount(0);
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toBeVisible();
   await checkpoint(team, "team-feedback-bulk-statuses-laptop");
   await team.getByRole("navigation", { name: "Feedback" }).getByRole("link", { name: /^Planned/ }).focus();
   await team.keyboard.press("Enter");

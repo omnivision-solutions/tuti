@@ -169,9 +169,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         <Pane aria-label="Feedback" className={cn(open !== null && "@max-[48rem]/app:hidden")}>
           <FeedbackBulk projectSlug={slug} boards={project.boards}>
             <PaneHeader
-              // On phones; beside the menu, which marks it, the pills have the room.
-              title={<span className="@min-[48rem]/app:sr-only">{title}</span>}
-              // The statuses as pills, keeping the board, the search and the sort; scrolling sideways when short of room.
+              title={title}
+              // The statuses as pills, keeping the board, the search and the sort, in a row of their own under the title (six
+              // or seven don't fit beside the search and Filters); scrolling sideways when short of room.
+              filtersBelow
               filters={<FilterPills label="Statuses" current={href(tab)} items={tabs.map((t) => ({ href: href(t.key), title: t.title, count: t.count }))} />}
               actions={
                 <>

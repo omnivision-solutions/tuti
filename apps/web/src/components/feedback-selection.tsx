@@ -242,7 +242,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     };
   }, [picked.length]);
   // The bar over the header's first row (its title, views and actions hidden, out of reach), so the list doesn't move;
-  // on phones the views' own row under it stays usable.
+  // the views' own row under it (the statuses' pills) stays usable.
   const toolbar = (bar?: ReactNode) => (
     // Its header stays at the top where the window scrolls: this, which holds it, does (STICKY_PANE_HEADER).
     <div ref={filtersRef} className={cn("grid min-w-0 grid-cols-1", STICKY_PANE_HEADER, bar && "[&>div>header>div:first-child]:invisible")}>
