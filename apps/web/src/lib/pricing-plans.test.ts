@@ -27,6 +27,13 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   ]);
   expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 120 changes/);
 
+  // Too few credits for one checked change (40 credits each here): no "about 0 changes" line, and "1 change" singular.
+  vi.stubEnv("AI_CREDITS_FREE", "30");
+  expect(line("Free", "30 AI credits")?.more?.points).toEqual(["About 15 AI answers for your customers"]);
+  vi.stubEnv("AI_CREDITS_FREE", "50");
+  expect(line("Free", "50 AI credits")?.more?.points[1]).toBe("Or about 1 change you ship, checked by Autopilot against your help center and feedback");
+  vi.stubEnv("AI_CREDITS_FREE", "100");
+
   // With Stripe, credits can be topped up, and the card says so.
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");

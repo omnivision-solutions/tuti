@@ -21,21 +21,29 @@ export function about(credits: number, cost: number): number {
 
 const number = (value: number) => value.toLocaleString("en");
 
+/** About how many checked changes `count` credits pay for on `plan`: null without Autopilot, or when it's not even one. */
+function changesFor(plan: PlanKey, count: number): number | null {
+  const changes = about(count, CHANGE_COST);
+  return planIncludes(plan, "codeChanges") && changes >= 1 ? changes : null;
+}
+
 /** "1,000 AI credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
 function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
   if (!creditsEnabled() || count <= 0) {
     return [];
   }
+  const answers = about(count, ANSWER_COST);
+  const changes = changesFor(plan, count);
   return [
     {
       text: `${number(count)} AI credits ${per}`,
       more: {
         title: "What credits buy",
         points: [
-          `About ${number(about(count, ANSWER_COST))} AI answers for your customers`,
-          ...(planIncludes(plan, "codeChanges")
-            ? [`Or about ${number(about(count, CHANGE_COST))} changes you ship, checked by Autopilot against your help center and feedback`]
-            : []),
+          ...(answers >= 1 ? [`About ${number(answers)} AI ${answers === 1 ? "answer" : "answers"} for your customers`] : []),
+          ...(changes === null
+            ? []
+            : [`Or about ${number(changes)} ${changes === 1 ? "change" : "changes"} you ship, checked by Autopilot against your help center and feedback`]),
           ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
         ],
       },
@@ -201,7 +209,7 @@ export function planFacts(): PlanFacts[] {
     return {
       credits,
       startCredits: creditsEnabled() && plan === defaultPlanKey() && start > 0 ? start : null,
-      creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: planIncludes(plan, "codeChanges") ? about(credits, CHANGE_COST) : null } : null,
+      creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: changesFor(plan, credits) } : null,
       articles: articleLimit(plan),
       versions: articleVersionsKept(plan),
       boards: boardLimit(plan),
