@@ -168,7 +168,7 @@ test("the team writes install steps as code tabs and a config file as named code
   await bar.getByRole("button", { name: "Remove tab" }).click();
   await expect(editor.locator("[data-code-tabs]")).toHaveCount(1);
   await expect(editor.locator('pre[data-filename="Tab 2"]')).toHaveCount(1);
-  await team.keyboard.type('{ "project": "acme" }');
+  await team.keyboard.type('{ "project": "acme", "endpoint": "https://api.acme.example/v1/projects/acme" }');
   await bar.getByRole("button", { name: "File name" }).click();
   await naming.getByRole("textbox").fill("acme\t.json");
   await naming.getByRole("button", { name: "Save" }).click();
@@ -215,19 +215,35 @@ test("the team writes install steps as code tabs and a config file as named code
   await expect(tab("yarn")).toBeChecked();
   await expect(article.getByText("yarn add acme")).toBeVisible();
   // The config file under its name.
-  await expect(article.getByRole("figure", { name: "acme.json" })).toContainText('{ "project": "acme" }');
+  await expect(article.getByRole("figure", { name: "acme.json" })).toContainText('{ "project": "acme", "endpoint": "https://api.acme.example/v1/projects/acme" }');
   // Each block's Copy copies its code alone: the named one's in its strip, the tabs' beside them (the tab shown).
   await visitor.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await article.getByRole("figure", { name: "acme.json" }).getByRole("button", { name: "Copy code" }).click();
-  await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe('{ "project": "acme" }');
+  await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe('{ "project": "acme", "endpoint": "https://api.acme.example/v1/projects/acme" }');
   await article.getByRole("button", { name: "Copy code" }).first().click();
   await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe("yarn add acme");
   await checkpoint(visitor, "portal-article-code-tabs");
 
+  // On a phone, a line too long to fit scrolls sideways: its end fades and a bar under the code shows it goes on, both
+  // gone once it's scrolled to the end; code that fits (the tabs') has neither.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  const config = article.getByRole("figure", { name: "acme.json" }).locator("pre");
+  const shown = (pre: typeof config) =>
+    pre.evaluate((element) => {
+      const code = element.querySelector("code")!;
+      return { bar: getComputedStyle(element, "::after").opacity, fade: getComputedStyle(code).getPropertyValue("--scroll-fade-end") };
+    });
+  await expect.poll(() => shown(config)).toEqual({ bar: "1", fade: "48px" });
+  await checkpoint(visitor, "portal-article-code-phone");
+  await config.locator("code").evaluate((code) => code.scrollTo({ left: code.scrollWidth }));
+  await expect.poll(() => shown(config)).toEqual({ bar: "1", fade: "0px" });
+  await expect.poll(() => shown(article.locator(".rich-code-tabs > pre:visible"))).toEqual({ bar: "0", fade: "0px" });
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+
   // In Markdown, each tab under its label.
   const markdown = await (await visitor.request.get(`${portalUrl(slug)}/docs/installing-acme.md`)).text();
   expect(markdown).toContain("`npm`\n\n```\nnpm install acme\n```\n\n`pnpm`\n\n```\npnpm add acme\n```\n\n`yarn`\n\n```\nyarn add acme\n```");
-  expect(markdown).toContain('`acme.json`\n\n```\n{ "project": "acme" }\n```');
+  expect(markdown).toContain('`acme.json`\n\n```\n{ "project": "acme", "endpoint": "https://api.acme.example/v1/projects/acme" }\n```');
 
   // The widget's help pane shows them the same way.
   await visitor.goto("/widget?tab=docs&article=installing-acme");
