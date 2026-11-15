@@ -471,6 +471,28 @@ describe("undo", () => {
     expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
   });
 
+  test("Undo keeps a status a teammate set between its check and its write, and is still undone", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).status).toBe("IN_PROGRESS");
+    // Right after Undo reads the post's status (still In progress), a teammate moves it to Under review.
+    const read = prisma.post.findUniqueOrThrow.bind(prisma.post) as (...args: unknown[]) => Promise<unknown>;
+    let moved = false;
+    vi.spyOn(prisma.post, "findUniqueOrThrow").mockImplementation((async (args: { where?: { id?: string }; select?: Record<string, unknown> }) => {
+      const result = await read(args);
+      if (!moved && args?.where?.id === post.id && args.select && Object.keys(args.select).join() === "status") {
+        moved = true;
+        await prisma.post.update({ where: { id: post.id }, data: { status: "UNDER_REVIEW" } });
+      }
+      return result;
+    }) as never);
+    expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
+    vi.restoreAllMocks();
+    expect(moved).toBe(true);
+    // Theirs, not put back to Planned over it; the update's comment gone.
+    expect(await postOf(post.id)).toMatchObject({ status: "UNDER_REVIEW", comments: [] });
+  });
+
   test("a progress update on a post merged since: Undo is refused, saying so, and nothing changes", async () => {
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
     await call(applyCodeChangeAction, team(), { id: action.id });

@@ -1,5 +1,7 @@
 import { prisma } from "@tuti/db";
 import { postStatusChanged } from "@tuti/jobs";
+import { readFileSync } from "node:fs";
+
 import { handlers } from "@tuti/jobs";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -142,4 +144,20 @@ test("a Planned run that finishes after the post moved to In progress leaves the
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).not.toBeNull();
   await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
   expect(subjectsTo(voter.email)).toEqual([`In progress: ${post.title}`]);
+});
+
+test("the migration clears due times the previous release left on posts that aren't Completed, and keeps a Completed one's", async () => {
+  const author = await verified("Author");
+  const [reopened, shipped] = [await postVotedBy(author, []), await call(createPost, as(author.id), { board: "feature-requests", title: "Dark mode" })];
+  const due = new Date(Date.now() - 60_000);
+  const idOf = async (number: number) => (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number }, select: { id: true } })).id;
+  const [reopenedId, shippedId] = [await idOf(reopened.number), await idOf(shipped.number)];
+  // Completed with its emails held, then reopened by the previous release (which never cleared the due time).
+  await prisma.post.update({ where: { id: reopenedId }, data: { status: "IN_PROGRESS", shippedEmailsDueAt: due } });
+  await prisma.post.update({ where: { id: shippedId }, data: { status: "COMPLETED", shippedEmailsDueAt: due } });
+
+  await prisma.$executeRawUnsafe(readFileSync(`${__dirname}/../../../../packages/db/prisma/migrations/20261116090000_status_emails_stale_due/migration.sql`, "utf8"));
+
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: reopenedId }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: null });
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: shippedId }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: due });
 });
