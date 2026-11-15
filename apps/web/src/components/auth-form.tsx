@@ -29,7 +29,7 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
  * on the way back to a portal: that portal's, so the reset comes back there). `pages` is where the other sign-in pages are:
  * the app's under /app/auth, a portal's at its root. `submitLabel` replaces the button's text (sign-up's "Start free trial").
- * `backTo` (a portal's name) adds "Back to <name>" to the sent link's card, to `next`.
+ * `back` (a portal's name and a path on it) adds "Back to <name>" to the sent link's card.
  */
 export function AuthForm({
   mode,
@@ -48,7 +48,7 @@ export function AuthForm({
   teamHref,
   pages = "",
   submitLabel,
-  backTo,
+  back,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -67,7 +67,7 @@ export function AuthForm({
   teamHref?: string;
   pages?: string;
   submitLabel?: string;
-  backTo?: string;
+  back?: { name: string; href: string };
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -79,6 +79,7 @@ export function AuthForm({
   // The sent card's: "Send another link" went out, and the address "Use a different email" brings back to the form.
   const [resent, setResent] = useState(false);
   const [email, setEmail] = useState(defaultEmail);
+  const [changingEmail, setChangingEmail] = useState(false);
   const isSignUp = mode === "sign-up";
   // Signing in on a portal: the emailed link, the password on the app.
   const usePassword = isSignUp || !linkProject;
@@ -109,6 +110,9 @@ export function AuthForm({
   if (sentTo) {
     // Again to the same address, under the same limits (server/email-link-limits.ts).
     const resend = async () => {
+      if (pending) {
+        return;
+      }
       const data = new FormData();
       data.set("email", sentTo);
       setResent(!!(await sendLink(data)).sentTo);
@@ -127,16 +131,18 @@ export function AuthForm({
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">Not there? Check your spam folder.</p>
         </CardHeader>
         <CardFooter className="flex flex-col gap-3 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10">
-          <Button type="button" variant="outline" disabled={pending} onClick={resend} className="h-11 w-full rounded-lg text-[0.9375rem] font-semibold">
+          <Button type="button" variant="outline" aria-disabled={pending} onClick={resend} className="h-11 w-full rounded-lg text-[0.9375rem] font-semibold">
             {pending ? "…" : "Send another link"}
           </Button>
-          <p role="status" className="text-center text-sm text-balance text-muted-foreground empty:hidden">
+          {/* Always there (empty, out of sight), so screen readers announce what appears in it. */}
+          <p role="status" className="text-center text-sm text-balance text-muted-foreground empty:sr-only">
             {linkError ?? (resent ? "Another link is on its way." : null)}
           </p>
           <button
             type="button"
             onClick={() => {
               setEmail(sentTo);
+              setChangingEmail(true);
               setSentTo(undefined);
               setResent(false);
               setLinkError(undefined);
@@ -145,11 +151,11 @@ export function AuthForm({
           >
             Use a different email
           </button>
-          {backTo && (
+          {back && (
             <div className="mt-2 flex w-full justify-center border-t pt-5 text-[0.9375rem] text-muted-foreground">
-              <Link href={at(next ?? redirectTo)} className="inline-flex items-center gap-2 break-words hover:text-foreground">
+              <Link href={at(back.href)} className="inline-flex items-center gap-2 break-words hover:text-foreground">
                 <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
-                Back to {backTo}
+                Back to {back.name}
               </Link>
             </div>
           )}
@@ -229,6 +235,8 @@ export function AuthForm({
                   type="email"
                   autoComplete="email"
                   defaultValue={email}
+                  // Back from "Use a different email": straight to the address to fix.
+                  autoFocus={changingEmail}
                   required
                   placeholder={portal ? "you@example.com" : undefined}
                   aria-invalid={linkError ? true : undefined}

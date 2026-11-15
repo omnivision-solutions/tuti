@@ -97,8 +97,10 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           title={portal ? `Sign in to ${portal.name}` : undefined}
           description="Vote, comment and follow ideas. We'll email you when they ship."
           mark={<PortalMark name={portal?.name ?? project} />}
-          // A private portal's pages would bring them back here.
-          backTo={isPrivate ? undefined : (portal?.name ?? project)}
+          // Where they were; not a page that would bring them back here (a private portal's, or Account).
+          back={
+            isPrivate ? undefined : { name: portal?.name ?? project, href: /^\/account(?:[/?#]|$)/.test(nextPath) ? "/" : nextPath || "/" }
+          }
           teamHref={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
         />
       ) : (

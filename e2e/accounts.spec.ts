@@ -329,7 +329,13 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   // A mistyped address: back to the form with it filled in, to fix it.
   await someoneElse.getByRole("button", { name: "Use a different email" }).click();
   await expect(someoneElse.getByLabel("Email")).toHaveValue(anotherEmail);
+  await expect(someoneElse.getByLabel("Email")).toBeFocused();
   await expect(someoneElse.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
+  // Sent from Account's sign-in, "Back" goes to the portal's home: Account would only bring them back here.
+  await someoneElse.goto("/sign-in?next=%2Faccount");
+  await someoneElse.getByLabel("Email").fill(anotherEmail);
+  await someoneElse.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(someoneElse.getByRole("link", { name: "Back to Acme" })).toHaveAttribute("href", "/");
 
   // From the portal's home page it comes back to the portal's home page (the app has a "/" too).
   const wes = await newPerson(browser, portalUrl(slug));

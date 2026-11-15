@@ -122,6 +122,8 @@ test("the team lets someone outside it read the private portal by email: they're
   await reader.getByLabel("Email").fill(email);
   await reader.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(reader.getByText("Check your email")).toBeVisible();
+  // No "Back to Acme": its pages would only bring them back to sign in.
+  await expect(reader.getByRole("link", { name: /^Back to/ })).toHaveCount(0);
   await reader.goto(linkIn(await latestEmailTo(email, { after: 1 }), `${portalUrl(slug)}/sign-in/link?`));
   await reader.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await expect(reader.getByRole("button", { name: "Account" })).toBeVisible();
