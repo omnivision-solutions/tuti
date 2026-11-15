@@ -32,7 +32,7 @@ export default async function PricingPage() {
       <section className="flex flex-col items-center gap-4 pt-4 text-center">
         <h1 className="font-heading text-[44px] leading-none font-extrabold tracking-tight text-balance sm:text-6xl">Simple pricing, per project</h1>
         <p className="max-w-2xl text-[17px] text-muted-foreground text-pretty sm:text-lg">
-          {plans ? (
+          {plans && (unlimitedTeams || plans.trialDays) ? (
             <>
               {unlimitedTeams && <b className="font-semibold text-foreground">Unlimited team members on every plan.</b>}
               {unlimitedTeams && plans.trialDays && " "}
@@ -49,7 +49,9 @@ export default async function PricingPage() {
           <PricingTable plans={plans.plans} yearlyNote={plans.yearlyNote} />
           <section className="grid gap-4 sm:grid-cols-3">
             {plans.badgePerMonth !== null && (
-              <Extra title="Remove the Tuti badge">${plans.badgePerMonth} a month, on any paid plan.</Extra>
+              <Extra title="Remove the Tuti badge">
+                ${plans.badgePerMonth} a month{plans.badgeYearPerMonth !== null && plans.badgeYearPerMonth < plans.badgePerMonth && `, or $${plans.badgeYearPerMonth} billed yearly`}, on any paid plan.
+              </Extra>
             )}
             <Extra title="Self-hosted" link={{ label: "Self-host Tuti", href: REPO_URL }}>
               Free and open source, on your server.

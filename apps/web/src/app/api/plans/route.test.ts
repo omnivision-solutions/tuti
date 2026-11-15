@@ -17,6 +17,10 @@ test("the plans are served where they're sold, for the marketing site, and not f
   expect(body.enterprise.features.length).toBeGreaterThan(0);
   expect(body.yearlyNote).toMatch(/^Save up to \d+%$/);
   expect(body.aiInEveryPlan).toBe(false);
+  // The pricing page's comparison: each plan's facts, in order, and the badge and trial terms.
+  expect(body.plans.map((plan: { facts: { boards: number | null } }) => plan.facts.boards)).toEqual([2, 5, null]);
+  expect(body.plans[1].facts.credits).toBe(1000);
+  expect([body.badgePerMonth, body.badgeYearPerMonth, body.trialDays]).toEqual([49, 49, null]);
 
   vi.stubEnv("AI_CREDITS_FREE", "100");
   expect((await GET().json()).aiInEveryPlan).toBe(true);

@@ -182,14 +182,15 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   expect(free).toMatchObject({ credits: null, creditsBuy: null, aiAnswers: false, boards: 2, emails: 1000, articles: 50, versions: 2, historyDays: 7, team: 3, extras: [] });
   expect(pro).toMatchObject({ credits: 1000, creditsBuy: { answers: 2000, changes: 400 }, aiAnswers: true, boards: 5, team: null, articles: null });
   expect(business).toMatchObject({ credits: 5000, boards: null, emails: null, historyDays: 90, versions: 50, extras: ["Priority support"] });
+  // Free has no credits, so Autopilot's checks don't run there either, though its plan lists it.
   expect([free, pro, business].map(({ features }) => [features.customDomain, features.sitePath, features.privatePortal, features.aiTuning, features.codeChanges])).toEqual([
-    [false, false, false, false, true],
+    [false, false, false, false, false],
     [true, false, false, false, true],
     [true, true, true, true, true],
   ]);
   // Email from your domain only where the server offers it, as on the cards.
   expect(business!.features.emailDomain).toBe(false);
-  expect(pricingTerms()).toEqual({ badgePerMonth: 49, trialDays: 7 });
+  expect(pricingTerms()).toEqual({ badgePerMonth: 49, badgeYearPerMonth: 49, trialDays: 7 });
 
   vi.stubEnv("AI_CREDITS", "");
   vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { delete config.badge; pro.extras = ["Onboarding call"]; }));
@@ -198,5 +199,5 @@ test("the pricing page's comparison gets each plan's numbers and features from t
     [null, true, ["Onboarding call"]],
     [null, true, ["Onboarding call", "Priority support"]],
   ]);
-  expect(pricingTerms()).toEqual({ badgePerMonth: null, trialDays: null });
+  expect(pricingTerms()).toEqual({ badgePerMonth: null, badgeYearPerMonth: null, trialDays: null });
 });

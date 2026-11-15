@@ -28,6 +28,7 @@ export type PlanFacts = {
 export type Plans = {
   plans: (PricingPlan & { facts: PlanFacts })[];
   badgePerMonth: number | null;
+  badgeYearPerMonth: number | null;
   trialDays: number | null;
   enterprise: { features: string[]; cta: { label: string; href: string } };
   yearlyNote: string | null;

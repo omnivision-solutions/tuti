@@ -193,6 +193,8 @@ export function planFacts(): PlanFacts[] {
     const start = plan === defaultPlanKey() ? freeCredits() : (credits ?? 0);
     // A plan sold by quote has its credits agreed with it, so AI comes with it.
     const byQuote = !priced && plan !== defaultPlanKey();
+    // AI answers and Autopilot's checks both spend credits, so they come together.
+    const ai = !creditsEnabled() || start > 0 || byQuote;
     return {
       credits,
       creditsBuy: credits ? { answers: about(credits, ANSWER_COST), changes: planIncludes(plan, "codeChanges") ? about(credits, CHANGE_COST) : null } : null,
@@ -202,12 +204,12 @@ export function planFacts(): PlanFacts[] {
       emails: emailsPerMonth(plan),
       historyDays: historyDays(plan),
       team: teamLimit(plan),
-      aiAnswers: !creditsEnabled() || start > 0 || byQuote,
+      aiAnswers: ai,
       features: {
         customDomain: has(plan, "customDomain"),
         sitePath: has(plan, "sitePath"),
         privatePortal: has(plan, "privatePortal"),
-        codeChanges: has(plan, "codeChanges"),
+        codeChanges: ai && has(plan, "codeChanges"),
         aiTuning: has(plan, "aiTuning"),
         emailDomain: has(plan, "emailDomain"),
       },
@@ -216,8 +218,8 @@ export function planFacts(): PlanFacts[] {
   });
 }
 
-/** The "Powered by tuti" add-on's price a month, and the free trial's length: null where neither is offered. */
-export const pricingTerms = () => ({ badgePerMonth: badgePerMonth(), trialDays: trialTerms()?.days ?? null });
+/** The "Powered by tuti" add-on's price a month (and a month billed yearly), and the free trial's length: null where not offered. */
+export const pricingTerms = () => ({ badgePerMonth: badgePerMonth(), badgeYearPerMonth: badgePerMonth("year"), trialDays: trialTerms()?.days ?? null });
 
 /** Enterprise, beside the plans: by quote. */
 export const ENTERPRISE = {
