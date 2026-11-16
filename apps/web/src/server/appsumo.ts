@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { type Prisma, prisma } from "@tuti/db";
-import { applyPlanLicense } from "@tuti/jobs";
+import { applyPlanLicense, grantLicenseCredits } from "@tuti/jobs";
 import { appsumoTierPlan, log } from "@tuti/shared";
 
 import { signValue } from "@/lib/signed";
@@ -147,6 +147,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         return;
       }
       const keys = [key, ...(event.prev_license_key ? [event.prev_license_key] : [])];
+      let updatedId: string | null = null;
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, keys);
         const rows = await rowsFor(tx, keys);
@@ -186,6 +187,8 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           return;
         }
         if (early) {
+          // Credits it gave (assigned for a while, then unassigned) go with the license it merges into, so its refund finds them.
+          await tx.aiCreditGrant.updateMany({ where: { planLicenseId: early.id }, data: { planLicenseId: previous!.id } });
           await tx.planLicense.delete({ where: { id: early.id } });
         }
         const row = early ? previous : (own ?? previous);
@@ -195,9 +198,13 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           // The previous key's deactivation doesn't count against the license under its new key, but the new key's own
           // (a refund of the upgrade, before this upgrade or its retry) does.
           const revokedAt = row === previous ? (early ? early.revokedAt : null) : row.revokedAt;
+          // Back from the previous key's deactivation, which took its month's credits back: a new month starts, given below.
+          const revived = row.revokedAt && !revokedAt ? { creditsThrough: null } : {};
+          // Its month is given after the commit; a retry gives it too, if the last attempt stopped before that.
+          updatedId = row.id;
           await tx.planLicense.update({
             where: { id: row.id },
-            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
+            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, ...revived, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
           });
         }
         // The previous key, renamed or never seen, is marked replaced, so its late events change nothing.
@@ -209,6 +216,10 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         }
         await applyPlanLicense(tx, row.id);
       });
+      if (updatedId) {
+        // Only when its month is over (a revived license's is): otherwise nothing.
+        await grantLicenseCredits(updatedId);
+      }
       return;
     }
     case "deactivate": {
