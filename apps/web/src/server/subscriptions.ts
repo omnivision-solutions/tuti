@@ -20,6 +20,9 @@ const PAYABLE = new Set(["incomplete", "unpaid", "paused"]);
 /** No paid plan: the billing file's default. The subscription stays recorded as the one that last held the plan. */
 const NO_PLAN = { plan: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
 
+/** A project on the default plan: none stored, one the file no longer lists, or the default's own key (not one set by hand). */
+const onDefaultPlan = (): Prisma.ProjectWhereInput[] => [{ plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])];
+
 const at = (seconds: number) => new Date(seconds * 1000);
 
 /**
@@ -57,7 +60,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
         // One that can still be paid (a bank debit processing, a failed payment) is recorded on a project with no live plan,
         // so a plan license isn't assigned while it may yet charge (assignPlanLicense asks Stripe about it).
         if (PAYABLE.has(subscription.status)) {
-          await tx.project.updateMany({ where: { id: projectId, planStatus: null, planLicense: { is: null } }, data: { stripeSubscriptionId: id } });
+          await tx.project.updateMany({ where: { id: projectId, planStatus: null, planLicense: { is: null }, OR: onDefaultPlan() }, data: { stripeSubscriptionId: id } });
         }
         return projectId;
       }
@@ -70,7 +73,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
           planLicense: { is: null },
           OR: [
             { stripeSubscriptionId: id },
-            { planStatus: null, OR: [{ plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])] },
+            { planStatus: null, OR: onDefaultPlan() },
           ],
         },
         data: {
