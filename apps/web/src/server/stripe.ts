@@ -179,6 +179,10 @@ export type StripeInvoice = {
 /** The subscription as Stripe has it now (not as an event said it was). */
 export const getSubscription = (id: string) => stripe<StripeSubscription>("GET", `/v1/subscriptions/${encodeURIComponent(id)}`);
 
+/** The subscriptions Tuti started for project `projectId` (their metadata), any status: Stripe's search, up to 100. */
+export const projectSubscriptions = (projectId: string) =>
+  stripe<{ data: StripeSubscription[] }>("GET", `/v1/subscriptions/search?${new URLSearchParams({ query: `metadata['projectId']:'${projectId}'`, limit: "100" })}`).then(({ data }) => data);
+
 /** The invoice as Stripe has it now. */
 export const getInvoice = (id: string) => stripe<StripeInvoice>("GET", `/v1/invoices/${encodeURIComponent(id)}`);
 
