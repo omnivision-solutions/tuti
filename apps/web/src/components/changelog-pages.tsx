@@ -158,8 +158,8 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   // any other page (older, or a tag's) that shows that very entry. Seen is a time, so only ever that entry's own.
   const seen =
     announced && ((page === 1 && !tag) || entries.some((entry) => entry.id === announced.id)) ? announced.publishedAt! : null;
-  // The list shows the newest entry's cover alone (the others, and every entry's text, as excerpts).
-  const media = page === 1 ? await mediaUrls(entries[0]?.cover ?? null) : null;
+  // The list shows every entry's cover (and its text as an excerpt).
+  const media = await mediaUrls(...entries.map((entry) => entry.cover));
   // A chip for each tag some entry has, in the editor's order.
   const tags = (Object.keys(TAG_LABELS) as ChangelogTag[]).filter((t) => dates.some((entry) => entry.tags.includes(t)));
   // The month index: each month the (picked) entries span, how many, and the page its newest one is on.
@@ -319,7 +319,8 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
                       mediaUrls={media}
                       base={base}
                       dateMargin
-                      excerpt={page === 1 && i === 0 ? "medium" : "short"}
+                      excerpt
+                      eager={i === 0}
                       react={{ projectSlug: slug, signedIn: !!session }}
                     />
                   </div>

@@ -20,8 +20,8 @@ import { cn } from "@/lib/utils";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 
-/** The list's excerpts: the newest entry's medium one, the others' short; at most these characters and lines (its clamp). */
-const EXCERPT = { medium: { chars: 600, lines: 8 }, short: { chars: 300, lines: 3 } };
+/** The list's excerpts, every entry's the same: at most these characters and lines (its clamp is three lines too). */
+const EXCERPT = { chars: 300, lines: 3 };
 
 export type PublishedEntry = {
   id: string;
@@ -50,7 +50,8 @@ export function ChangelogEntryView({
   base = "",
   dateMargin = false,
   back,
-  excerpt,
+  excerpt = false,
+  eager = false,
 }: {
   entry: PublishedEntry;
   mediaUrls: MediaUrls | null;
@@ -65,8 +66,10 @@ export function ChangelogEntryView({
   dateMargin?: boolean;
   /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
   back?: ReactNode;
-  /** The changelog's list: its text as an excerpt linking to its page, "medium" (with its cover; the newest) or "short". */
-  excerpt?: "medium" | "short";
+  /** The changelog's list: its text as an excerpt linking to its page, under its cover. */
+  excerpt?: boolean;
+  /** Its cover loads at once (the list's first, likely in view), not once scrolled near. */
+  eager?: boolean;
 }) {
   const Title = heading;
   // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and bigger (still grey)
@@ -125,15 +128,16 @@ export function ChangelogEntryView({
             </Title>
           </>
         )}
-        {entry.cover && excerpt !== "short" && (
+        {entry.cover && (
           <RichText
             doc={entry.cover}
             mediaUrls={mediaUrls}
+            eager={eager}
             className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-card-edge")}
           />
         )}
         {excerpt ? (
-          <Excerpt doc={entry.doc} size={excerpt} />
+          <Excerpt doc={entry.doc} />
         ) : (
           <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         )}
@@ -189,7 +193,7 @@ export function ChangelogEntryView({
 }
 
 /** An entry's text in the list: plain (no images, embeds or code), cut at its clamp's characters and lines. */
-function Excerpt({ doc, size }: { doc: Doc; size: "medium" | "short" }) {
-  const { text, cut } = excerptOf(doc, EXCERPT[size].chars, EXCERPT[size].lines);
-  return text ? <ChangelogExcerpt text={text} size={size} cut={cut} /> : null;
+function Excerpt({ doc }: { doc: Doc }) {
+  const { text, cut } = excerptOf(doc, EXCERPT.chars, EXCERPT.lines);
+  return text ? <ChangelogExcerpt text={text} cut={cut} /> : null;
 }
