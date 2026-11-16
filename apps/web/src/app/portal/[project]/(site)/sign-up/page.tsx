@@ -42,7 +42,7 @@ export default async function PortalSignUpPage(props: PageProps<"/portal/[projec
         next={nextPath || undefined}
         linkProject={project}
         title={`Join ${portal.name}`}
-        description="Vote, comment and follow ideas. We'll email you when they ship."
+        description="Vote, comment and follow ideas. We'll email you as they move forward and when they ship."
         mark={<PortalMark name={portal.name} />}
         back={{ name: portal.name, href: /^\/account(?:[/?#]|$)/.test(nextPath) ? "/" : nextPath || "/" }}
       />

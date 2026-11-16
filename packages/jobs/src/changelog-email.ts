@@ -7,6 +7,7 @@ import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedP
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
+import { emailBrand } from "./email-brand";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due entry) this old belongs to a run that died or never started. */
@@ -247,7 +248,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (!entry.publishedAt) {
     return { waiting: "the entry isn't published" };
   }
-  const { projectId, project } = entry;
+  const { projectId, project, publishedAt } = entry;
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
@@ -266,7 +267,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
 
   const origin = await portalAddress(project.slug);
-  const sender = await projectSender(projectId);
+  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   const entryUrl = `${origin}/changelog/${entry.number}`;
   const doc = (entry.content as Doc | null) ?? fromPlainText(entry.body);
   const images = entryImages(doc, entry.cover?.status === "READY" ? entry.coverId : null, log);
@@ -296,13 +297,13 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       sendEmail({
         to: email,
         ...changelogEmail({
-          projectName: project.name,
+          ...brand,
           entryTitle: entry.title,
           entryUrl,
+          publishedAt,
           doc,
           ...images,
           unsubscribeUrl: `${origin}/changelog/subscription?${query}`,
-          accent: project.brandColor,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

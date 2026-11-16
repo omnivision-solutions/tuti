@@ -74,7 +74,7 @@ test("signing up sends a verification email; its link verifies the address and s
   const email = await signUp("/app");
   const { message, link } = await verificationLink(email);
   expect(message.subject).toBe("Verify your email for Tuti");
-  expect(message.text).toContain("Hi Ada,");
+  expect(message.html).toMatch(/<h1[^>]*>Confirm your email, (<!-- -->)?Ada<\/h1>/);
   expect(await isVerified(email)).toBe(false);
 
   const response = await auth.handler(new Request(link));
@@ -152,7 +152,11 @@ test("signed up from a portal, the verification link comes back through a new ha
   // Sent from the portal to the app's sign-up: its way back is this handoff's /continue, with its state.
   const state = randomSecret();
   const email = await signUp(`/app/auth/continue?${new URLSearchParams({ portal: project.slug, state, redirect: "/feedback/ideas" })}`);
-  const { link } = await verificationLink(email);
+  const { message, link } = await verificationLink(email);
+  // A portal's reader isn't signing up for Tuti itself: no welcome to it, just the confirmation.
+  expect(message.text).not.toMatch(/welcome to tuti/i);
+  expect(message.html).toMatch(/<h1[^>]*>Confirm your email, (<!-- -->)?Ada<\/h1>/);
+  expect(message.text).toContain("Confirm this is your email to finish signing up.");
   const back = new URL(link.searchParams.get("callbackURL")!, link);
   expect(back.pathname).toBe("/app/auth/continue");
   // In the state's place, when it was made and the app's MAC for this account: only that starts a new handoff.

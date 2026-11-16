@@ -19,11 +19,13 @@ import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { failStaleImports, importStep } from "./imports";
 import { postCreated } from "./post-created";
+import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
 import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { UNUSED_UPLOAD_HOURS } from "./cleanup";
+export { COMMENT_BATCH_MINUTES } from "./comment-email";
 export { DAILY_INVITE_LIMIT, generateInvitationToken, hashInvitationToken, INVITATION_TTL_DAYS, invitationExpiry, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "./invitations";
 export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featurebase";
 export { contentBudget, FEATUREBASE_ICONS } from "./import-docs";
@@ -42,6 +44,7 @@ export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
 export { audienceReach, postAudience, projectUnsubscribeToken, provenAddress, type Reach, SEEN_AS_SQL, seenAs } from "./post-audience";
 export { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
+export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
@@ -67,7 +70,7 @@ export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
 export { liveDomain, portalAddress, type PortalAddress, projectWith } from "./portal-address";
 export { fetchSiteCheck } from "./site-check";
-export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
+export { emitEvent, portalPostUrl, postGeneration, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };
 
@@ -108,6 +111,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   resubmitShippedEmails,
   replyEmailed,
   resubmitReplyEmails,
+  commentsEmailed,
+  commentEmailsDue,
   changelogEmailed,
   resubmitChangelogEmails,
   autopilotDue: () => autopilotDue(),

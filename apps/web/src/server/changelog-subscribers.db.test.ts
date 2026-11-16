@@ -182,7 +182,7 @@ describe("subscribing", () => {
     const link = await confirmationTo(kim);
     // It promises only the entries the team emails (publishing asks each time).
     expect((await mailbox.latestTo(kim)).text).toContain(`Confirm to get the changelog entries ${project.name} emails to subscribers`);
-    expect((await mailbox.latestTo(kim)).html).toContain("border-top:4px solid #7c3aed");
+    expect((await mailbox.latestTo(kim)).html).toContain("border-radius:9px;background-color:#7c3aed");
     expect(await page({ confirm: link })).toContain(
       `Get ${project.name}'s updates by email? Once you confirm, the changelog entries ${project.name} emails to subscribers will go to ${kim}.`,
     );
@@ -204,7 +204,7 @@ describe("subscribing", () => {
     expect(entryEmailsTo(lee)).toEqual([]);
     const [email] = entryEmailsTo(kim);
     expect(email!.subject).toBe(`${project.name}: Dark mode`);
-    expect(email!.html).toContain("border-top:4px solid #7c3aed");
+    expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
     expect(email!.text).toContain("Dark mode, for everyone.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/changelog/1`);
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/changelog/subscription?token=${token}`);

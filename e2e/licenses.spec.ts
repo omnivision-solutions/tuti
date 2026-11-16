@@ -118,7 +118,6 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
     const { body, headers } = appsumoWebhook(payload);
     return fetch(`${CLOUD_URL}/api/appsumo/webhook`, { method: "POST", body, headers });
   };
-  await webhook({ event: "activate", license_key: key, tier: 1 });
   const owner = await newPerson(browser, CLOUD_URL);
   await owner.goto("/app/auth/sign-up");
   await fillSignUp(owner, "Otto Owner", `e2e-${randomUUID()}@example.com`);
@@ -126,7 +125,14 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/api/appsumo/redirect?code=${await appsumoCode(key)}`);
-  await owner.getByRole("button", { name: "Add to my account" }).click();
+  // Before AppSumo's activation arrives: refused, and the keyboard stays on the button to try again.
+  const add = owner.getByRole("button", { name: "Add to my account" });
+  await add.focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("alert").filter({ hasText: "We haven't heard from AppSumo about this license yet. Try again in a minute." })).toBeVisible();
+  await expect(add).toBeFocused();
+  await webhook({ event: "activate", license_key: key, tier: 1 });
+  await add.click();
   await owner.waitForURL("**/app/licenses");
   await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
   await expect(owner.getByText("License assigned")).toBeVisible();

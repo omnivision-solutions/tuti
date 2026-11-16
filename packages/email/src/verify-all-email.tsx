@@ -1,6 +1,6 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, colors, Eyebrow, Layout, Note, Stats, textStyle, Title } from "./layout";
 
 type VerifyAllProps = {
   projectName: string;
@@ -21,27 +21,55 @@ const SHOWN = 10;
 /** To a project's owners, once a Verify all ends with fixes: one email for the run, not one per article (docs/plan.md, V7). */
 export function VerifyAllEmail({ projectName, checked, total, fixed, stopped, url }: VerifyAllProps) {
   return (
-    <Layout preview={`${articles(fixed.length)} out of date, with fixes waiting for you.`} label="Autopilot">
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        Verify all checked {checked === total ? articles(total) : `${checked} of ${articles(total)}`} in {projectName}&apos;s help center against your repository.{" "}
-        {fixed.length === 1 ? "1 was out of date: its fix waits for you." : `${fixed.length} were out of date: their fixes wait for you.`}
+    <Layout
+      preview={`${articles(fixed.length)} out of date, with fixes waiting for you.`}
+      label="Verify"
+      footer={
+        <>
+          Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
+        </>
+      }
+    >
+      <Eyebrow>Help center · Verify</Eyebrow>
+      <Title>
+        {checked === total ? articles(total) : `${checked} of ${articles(total)}`} checked, {fixed.length === 1 ? "1 needs a fix" : `${fixed.length} need a fix`}
+      </Title>
+      <Text style={textStyle}>
+        Verify all checked {projectName}&apos;s help center against your repository.{" "}
+        {fixed.length === 1 ? "Its fix waits for you." : "Their fixes wait for you."}
       </Text>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        {fixed.slice(0, SHOWN).map((title, i) => (
-          <span key={i}>
-            {title}
-            <br />
-          </span>
-        ))}
-        {fixed.length > SHOWN && `and ${fixed.length - SHOWN} more`}
-      </Text>
-      {stopped && <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>{stopped}</Text>}
-      <Button href={url} style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>
-        Review the fixes
-      </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
-      </Text>
+      <Stats
+        items={[
+          { n: checked, label: "checked" },
+          ...(checked < total ? [{ n: total - checked, label: "not checked" }] : []),
+          { n: fixed.length, label: fixed.length === 1 ? "fix waiting" : "fixes waiting" },
+        ]}
+      />
+      {stopped && <Note kind="warn">{stopped}</Note>}
+      <table role="presentation" width="100%" cellPadding={0} cellSpacing={0} style={{ margin: "0 0 4px" }}>
+        <tbody>
+          {fixed.slice(0, SHOWN).map((title, i) => (
+            <tr key={i}>
+              <td style={{ borderBottom: "1px solid #f5f5f4", padding: "10px 0" }}>
+                <Text style={{ fontSize: 15, lineHeight: "22px", color: colors.text, margin: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: colors.onHighlight, backgroundColor: colors.highlight, borderRadius: 999, padding: "2px 9px", marginRight: 10, whiteSpace: "nowrap" }}>
+                  Fix waiting
+                </span>{" "}
+                {title}
+                </Text>
+              </td>
+            </tr>
+          ))}
+          {fixed.length > SHOWN && (
+            <tr>
+              <td style={{ padding: "10px 0" }}>
+                <Text style={{ fontSize: 14, color: colors.muted, margin: 0 }}>and {fixed.length - SHOWN} more</Text>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <Buttons href={url} label="Review the fixes" />
     </Layout>
   );
 }

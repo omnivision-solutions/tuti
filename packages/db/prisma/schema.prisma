@@ -68,6 +68,7 @@ model User {
   emailOptOuts          EmailOptOut[]
   emailPreferences      EmailPreference[]
   shippedEmails         ShippedEmail[]
+  statusEmails          StatusEmail[]
   replyEmails           ReplyEmail[]
   articleRevisions      ArticleRevision[]
   codeChangeActions     CodeChangeAction[]
@@ -992,7 +993,8 @@ model Post {
   commentCount       Int        @default(0)
   /// Set when this post is merged into another one; votes move to the original.
   duplicateOfId      String?
-  /// Set when the post is completed, cleared once everyone is emailed; the shipped-emails-resubmit cron re-runs late ones.
+  /// Set when the post moves to a status its people hear about (Planned, In progress, Completed), cleared once everyone
+  /// is emailed about the one it has; the shipped-emails-resubmit cron re-runs late ones.
   shippedEmailsDueAt DateTime?
   /// Who on the team looks after it (the team's only); null: nobody yet.
   ownerId            String?
@@ -1012,6 +1014,7 @@ model Post {
   duplicateOf            Post?                 @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates             Post[]                @relation("PostDuplicates")
   shippedEmails          ShippedEmail[]
+  statusEmails           StatusEmail[]
   changelogEntries       ChangelogEntryPost[]
   votes                  Vote[]
   subscriptions          PostSubscription[]
@@ -1041,7 +1044,7 @@ model Post {
 
 /// A change of a post's status, for its activity (the team's post page; the portal's status history):
 /// who made it (null: Tuti itself, or someone since deleted), from what to what, when, and for one to
-/// Completed, how many people the shipped email reached.
+/// Planned, In progress or Completed, how many people its email reached.
 model PostEvent {
   id               String     @id @default(cuid())
   postId           String
@@ -1057,6 +1060,7 @@ model PostEvent {
   actor          User?           @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
   changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
   shippedEmails  ShippedEmail[]
+  statusEmails   StatusEmail[]
 
   @@index([postId, createdAt])
   @@index([actorId])
@@ -1432,7 +1436,7 @@ model Vote {
   @@map("vote")
 }
 
-/// Someone following a post without voting for it (Subscribe on the portal): told when it ships, as its voters are.
+/// Someone following a post without voting for it (Subscribe on the portal): told as it moves forward and when it ships, as its voters are.
 model PostSubscription {
   postId    String
   userId    String
@@ -1460,6 +1464,12 @@ model Comment {
   /// The team's reply, sent to the post's voters too (Email voters): due from then until each of them was
   /// emailed (reply_email), so the cron brings back one whose job never ran or died.
   votersEmailDueAt DateTime?
+  /// Someone else's comment, to be emailed to the post's author: due a few minutes on, so comments close together go in
+  /// one email (comment-email), until it's sent or dropped. The claim is a reply_email row, as the reply's to voters.
+  authorEmailDueAt DateTime?
+  /// When comment-emails-due last queued its email to the post's author: not queued again for a while after, so a run
+  /// still going (or waiting to start) isn't queued every minute.
+  authorEmailQueuedAt DateTime?
   /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's comment even if its author is on
   /// the team, so it isn't shown as the team's.
   asReader         Boolean   @default(false)
@@ -1479,6 +1489,7 @@ model Comment {
   @@index([parentId])
   @@index([authorId])
   @@index([votersEmailDueAt])
+  @@index([authorEmailDueAt])
   @@map("comment")
 }
 
@@ -1496,8 +1507,9 @@ model CommentLike {
   @@map("comment_like")
 }
 
-/// The team's reply emailed to one of the post's voters (Email voters): claimed before sending, so a retry or
-/// a second run emails each of them once.
+/// A comment emailed to one person: the team's reply to one of the post's voters (Email voters), or someone's comment
+/// to the post's author (Comment.authorEmailDueAt). Claimed before sending, so a retry, a second run or the other
+/// email emails each of them once about a comment.
 model ReplyEmail {
   commentId String
   userId    String
@@ -1630,6 +1642,27 @@ model ShippedEmail {
   @@index([userId])
   @@index([eventId])
   @@map("shipped_email")
+}
+
+/// Emailing someone that a post moved to Planned or In progress: claimed, then sent (once per post, person and status),
+/// as ShippedEmail is for Completed.
+model StatusEmail {
+  postId    String
+  userId    String
+  status    PostStatus
+  claimedAt DateTime   @default(now())
+  sentAt    DateTime?
+  /// The status change it's for: sent, it's counted there.
+  eventId   String?
+
+  post  Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event PostEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@id([postId, userId, status])
+  @@index([userId])
+  @@index([eventId])
+  @@map("status_email")
 }
 
 // ─── Changelog (Phase 8) ─────────────────────────────────────────────────────

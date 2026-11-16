@@ -1,6 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { autopilotDue, autopilotDueToken, lockProject, scheduleByItself } from "@tuti/jobs";
+import { autopilotDue, autopilotDueToken, handlers, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { billingFile, startModelFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
@@ -9,11 +9,13 @@ import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
 import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
+import { setVote } from "@/server/operations/more";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 let owner: TestUser;
@@ -383,6 +385,61 @@ test("Publish now applies a scheduled update at once, by whoever asks; Stop make
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
 });
 
+test("a progress update going out by itself emails nobody that it's in progress; one a teammate publishes does", async () => {
+  const voter = await signUp("Vera Voter");
+  await prisma.user.update({ where: { id: voter.id }, data: { emailVerified: true } });
+  const quiet = await update("MOVES_FORWARD");
+  const published = await update("MOVES_FORWARD");
+  for (const { codeChangeId, postId } of [quiet, published]) {
+    const { number: post } = await prisma.post.findUniqueOrThrow({ where: { id: postId! } });
+    await call(setVote, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { number: post, voted: true });
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  const told = () => mailbox.emails.filter((email) => email.to.includes(voter.email) && email.subject.startsWith("In progress:")).map((email) => email.subject);
+
+  // The runner, after the hold: nobody on the team approved it.
+  await prisma.codeChangeAction.updateMany({ where: { id: quiet.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: quiet.postId! }, select: { status: true, shippedEmailsDueAt: true } })).toEqual({ status: "IN_PROGRESS", shippedEmailsDueAt: null });
+  expect(told()).toEqual([]);
+
+  // Published now by a teammate: theirs, so it emails.
+  expect(await publishCodeChangesNow(project.slug, [published.action.id])).toEqual({});
+  const { title } = await prisma.post.findUniqueOrThrow({ where: { id: published.postId! } });
+  expect(told()).toEqual([`In progress: ${title}`]);
+});
+
+test("a progress update going out by itself leaves nothing due with its status: an earlier move's run right after it sends nothing", async () => {
+  const voter = await signUp("Vera Voter");
+  await prisma.user.update({ where: { id: voter.id }, data: { emailVerified: true } });
+  const quiet = await update("MOVES_FORWARD");
+  const postId = quiet.postId!;
+  const { number: post } = await prisma.post.findUniqueOrThrow({ where: { id: postId } });
+  await call(setVote, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { number: post, voted: true });
+  // Planned by the team earlier, its emails still due (held), its run not gone yet.
+  await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+  await scheduleByItself(project.id, quiet.codeChangeId);
+  await prisma.codeChangeAction.updateMany({ where: { id: quiet.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Right after the runner's move is saved, before anything else follows it, the earlier move's run goes.
+  const count = prisma.post.count.bind(prisma.post) as (...args: unknown[]) => Promise<number>;
+  let ran = false;
+  vi.spyOn(prisma.post, "count").mockImplementation((async (args: { where?: { id?: string; sample?: boolean } }) => {
+    if (!ran && args?.where?.id === postId && args.where.sample === true) {
+      ran = true;
+      await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    }
+    return count(args);
+  }) as never);
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(ran).toBe(true);
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { status: true, shippedEmailsDueAt: true } })).toEqual({ status: "IN_PROGRESS", shippedEmailsDueAt: null });
+  expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && /^(In progress|Planned):/.test(email.subject))).toEqual([]);
+});
+
 test("the worker's minute reaches the runner only with the server's token", async () => {
   const request = (token?: string) => new Request("http://tuti.localhost/api/autopilot/due", { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {} });
   expect((await due(request())).status).toBe(401);
@@ -441,6 +498,35 @@ test("a request that goes out by itself says how many people completing it email
   const reader = await signUp("Rae Reader");
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "scheduled", emails: 1 });
+});
+
+test("a progress update says how many people approving or publishing it emails: those not told it's in progress (or that it shipped) yet, none on a post past In progress or merged into another", async () => {
+  const reader = await signUp("Rae Reader");
+  const waiting = await update("MOVES_FORWARD");
+  const scheduled = await update("MOVES_FORWARD");
+  const later = await update("MOVES_FORWARD");
+  const reopened = await update("MOVES_FORWARD");
+  const toldBefore = await update("MOVES_FORWARD");
+  const merged = await update("MOVES_FORWARD");
+  // Each post's author (not the team) asked for it: one person.
+  for (const { postId } of [waiting, scheduled, later, reopened, toldBefore, merged]) {
+    await prisma.post.update({ where: { id: postId! }, data: { authorId: reader.id } });
+  }
+  await prisma.codeChangeAction.update({ where: { id: scheduled.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+  await prisma.post.update({ where: { id: later.postId! }, data: { status: "IN_PROGRESS" } });
+  // Completed and reopened: told it shipped already, which the In progress email skips.
+  await prisma.shippedEmail.create({ data: { postId: reopened.postId!, userId: reader.id, sentAt: new Date() } });
+  // Told it's in progress before (moved back since): not again.
+  await prisma.statusEmail.create({ data: { postId: toldBefore.postId!, userId: reader.id, status: "IN_PROGRESS", sentAt: new Date() } });
+  // Merged into another post since: apply moves (and emails) nothing.
+  await prisma.post.update({ where: { id: merged.postId! }, data: { duplicateOfId: waiting.postId! } });
+  const view = async ({ codeChangeId, action }: { codeChangeId: string; action: { id: string } }) => (await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id);
+  expect(await view(waiting)).toMatchObject({ status: "pending", emails: 1 });
+  expect(await view(scheduled)).toMatchObject({ status: "scheduled", emails: 1 });
+  expect(await view(later)).not.toHaveProperty("emails");
+  expect(await view(reopened)).toMatchObject({ emails: 0 });
+  expect(await view(toldBefore)).toMatchObject({ emails: 0 });
+  expect(await view(merged)).not.toHaveProperty("emails");
 });
 
 test("held back at its time, it's told about (code_change.ready); one a teammate stopped meanwhile keeps who stopped it", async () => {
@@ -580,6 +666,26 @@ test("Home's Publish now says how many people a request it completes emails", as
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   const home = await homeOverview(project.id, project.slug);
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1, posts: 1 });
+});
+
+test("Home's Publish now on a progress update says how many people moving the post emails; none on a post past In progress", async () => {
+  const reader = await signUp("Rae Reader");
+  const moving = await update("MOVES_FORWARD");
+  const later = await update("MOVES_FORWARD");
+  for (const { action, postId } of [moving, later]) {
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+    await prisma.post.update({ where: { id: postId! }, data: { authorId: reader.id } });
+  }
+  await prisma.post.update({ where: { id: later.postId! }, data: { status: "IN_PROGRESS" } });
+  const home = await homeOverview(project.id, project.slug);
+  const rows = home.attention.find((group) => group.key === "autopilot")!.items;
+  expect(rows.find((item) => item.scheduled?.ids.includes(moving.action.id))?.scheduled).toMatchObject({
+    emails: 1,
+    warning: "Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.",
+  });
+  const past = rows.find((item) => item.scheduled?.ids.includes(later.action.id))?.scheduled;
+  expect(past).toMatchObject({ emails: 0 });
+  expect(past).not.toHaveProperty("warning");
 });
 
 test("Home's Publish now, on a row per post as To review lists them: each counts its own post once, and its people", async () => {
@@ -1080,11 +1186,18 @@ test("a teammate's Stop landing after the runner checked a post's update and too
   for (const { codeChangeId } of [first, second]) {
     await scheduleByItself(project.id, codeChangeId);
   }
-  await prisma.codeChangeAction.updateMany({ where: { id: { in: [first.action.id, second.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // The first due first, so the runner takes it (due at the same moment, which it takes is the database's choice: taking
+  // the second, the teammate's Stop below never comes, and all of it rightly goes out).
+  await prisma.codeChangeAction.updateMany({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 2000) } });
+  await prisma.codeChangeAction.updateMany({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   // The runner reads the post's update (both going out) and takes the first off the schedule; as the apply reads it
   // (its second read of the parts), a teammate stops the second.
   vi.restoreAllMocks();
   const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  // Restored whatever happens: left in place, the next tests' reads would look for this test's actions.
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
   const spy = vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementation((async (...args: unknown[]) => {
     const read = await findMany(...args);
     // The apply's read: once the runner holds the first (taken off the schedule, as the owner's).

@@ -1,6 +1,7 @@
 export { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate } from "./autopilot-email";
 export { changelogEmail } from "./changelog-email";
 export { changelogConfirmEmail } from "./changelog-confirm-email";
+export { commentEmail } from "./comment-email";
 export { conversationEmail } from "./conversation-email";
 export { conversationReplyEmail } from "./conversation-reply-email";
 export { creditsEmail } from "./credits-email";
@@ -9,9 +10,11 @@ export { emailPausedEmail, emailPausedTeamEmail, pausedNotice } from "./email-pa
 export { inviteEmail } from "./invite-email";
 export { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
 export { portalReaderEmail } from "./portal-reader-email";
+export { type EmailBrand } from "./layout";
 export { deliveredMessageId, emailConfigured, sendEmail } from "./send";
 export { replyEmail } from "./reply-email";
 export { shippedEmail } from "./shipped-email";
+export { type ProgressStatus, statusEmail } from "./status-email";
 export { signInLinkEmail } from "./sign-in-link-email";
 export { emailDomainTestEmail } from "./support-email";
 export { verifyArticleEmail } from "./verify-article-email";

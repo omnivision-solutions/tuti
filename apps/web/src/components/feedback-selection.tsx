@@ -27,8 +27,11 @@ import { cn } from "@/lib/utils";
 import { mergeExposure } from "@/lib/visibility-labels";
 import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 
-/** A post as the selection keeps it: enough to name it and pick which one stays in a merge (`sample`: sample content). */
-type Picked = { id: string; number: number; title: string; voteCount: number; emails: number; sample: boolean; visibility?: PostVisibility; authorId?: string };
+/**
+ * A post as the selection keeps it: enough to name it and pick which one stays in a merge (`sample`: sample content),
+ * and how many moving it to each status emails (none for a status left out).
+ */
+type Picked = { id: string; number: number; title: string; voteCount: number; emails: Partial<Record<PostStatus, number>>; sample: boolean; visibility?: PostVisibility; authorId?: string };
 
 const Selection = createContext<{
   picked: Picked[];
@@ -185,19 +188,21 @@ const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 
 /**
  * What can be done to the picked posts, once some are: Set status (Completed asks first: it emails their
- * voters), Move to board, Merge (into the one kept, the most voted for by default), Clear. Each post is done
+ * voters; Planned and In progress too, when moving any of them there emails someone), Move to board, Merge (into the one kept, the most voted for by default), Clear. Each post is done
  * as on its own; what fails is said and the rest still go. Over the first row of `children` (the list's pane
  * header: its title, views, search and Filters), so the list doesn't move; on phones the views' row under it stays.
  */
 export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: string; boards: { slug: string; name: string }[]; /** The list's pane header. */ children: ReactNode }) {
   const { picked, clear, pending, startTransition } = useSelection();
   const router = useRouter();
-  const [completing, setCompleting] = useState(false);
+  // Set status asking first (it emails people), and about which status (kept while the question closes).
+  const [askOpen, setAskOpen] = useState(false);
+  const [asking, setAsking] = useState<PostStatus>("COMPLETED");
   const [merging, setMerging] = useState(false);
   const [keep, setKeep] = useState<string | null>(null);
   // A view change can clear the picks while a question is open. Discard it before another selection can show it again.
-  if (picked.length === 0 && (completing || merging)) {
-    setCompleting(false);
+  if (picked.length === 0 && (askOpen || merging)) {
+    setAskOpen(false);
     setMerging(false);
   }
   // The bar gone (an action done, Clear) while it held the focus: to the first filter, in its place, the page left
@@ -254,8 +259,10 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     return toolbar();
   }
   const count = `${picked.length} ${picked.length === 1 ? "post" : "posts"}`;
-  // Who completing them emails, at most (one person asking for two is counted twice).
-  const emailing = picked.reduce((sum, post) => sum + post.emails, 0);
+  // Who moving them to a status emails, at most (one person asking for two is counted twice).
+  const emailing = (status: PostStatus) => picked.reduce((sum, post) => sum + (post.emails[status] ?? 0), 0);
+  const asked = emailing(asking);
+  const people = asked === 1 ? "1 person" : `${asked} people`;
 
   // Each in turn: what went, what didn't (and why), then the list again with none picked.
   const each = (posts: Picked[], run: (post: Picked) => Promise<{ error?: string }>, done: string) =>
@@ -299,7 +306,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-auto min-w-40">
             {STATUSES.map((status) => (
-              <DropdownMenuItem key={status} onClick={() => (status === "COMPLETED" ? setCompleting(true) : setStatus(status))}>
+              <DropdownMenuItem key={status} onClick={() => (status === "COMPLETED" || emailing(status) ? (setAsking(status), setAskOpen(true)) : setStatus(status))}>
                 <StatusDot status={status} />
                 {STATUS_LABELS[status]}
               </DropdownMenuItem>
@@ -342,14 +349,16 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         </Button>
       </div>
 
-      <AlertDialog open={completing} onOpenChange={setCompleting}>
+      <AlertDialog open={askOpen} onOpenChange={setAskOpen}>
         <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Mark {count} as Completed?</AlertDialogTitle>
+            <AlertDialogTitle>Mark {count} as {STATUS_LABELS[asking]}?</AlertDialogTitle>
             <AlertDialogDescription>
-              {emailing
-                ? `This emails up to ${emailing} ${emailing === 1 ? "person" : "people"} who asked for them that it shipped, as when one post is completed.`
-                : "Nobody is emailed."}
+              {!asked
+                ? "Nobody is emailed."
+                : asking === "COMPLETED"
+                  ? `This emails up to ${people} who asked for them that it shipped, as when one post is completed.`
+                  : `This emails up to ${people} who asked for them that they're ${asking === "PLANNED" ? "planned" : "in progress"}.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -357,11 +366,11 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
             <AlertDialogAction
               disabled={pending}
               onClick={() => {
-                setCompleting(false);
-                setStatus("COMPLETED");
+                setAskOpen(false);
+                setStatus(asking);
               }}
             >
-              Mark completed
+              Mark {STATUS_LABELS[asking].toLowerCase()}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

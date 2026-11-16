@@ -1,33 +1,33 @@
-import { Text } from "@react-email/components";
+import { Message } from "./blocks";
+import { type EmailBrand, Layout, Note } from "./layout";
 
-import { colors, Layout } from "./layout";
-
-type ReplyProps = {
-  projectName: string;
+type ReplyProps = EmailBrand & {
   /** The team's messages they haven't seen, oldest first. */
   messages: { name: string; body: string }[];
-  /** The project's accent (Project.brandColor; null for Tuti's green): see accentColors. */
-  accent?: string | null;
+  /** The conversation's subject, named under the messages. */
+  subject?: string;
 };
 
 /** To a user: the team's replies in the support inbox that they haven't seen (docs/plan.md, Support inbox, "Reaching the user"). */
-export function ConversationReplyEmail({ projectName, messages, accent }: ReplyProps) {
+export function ConversationReplyEmail({ projectName, messages, subject, accent, poweredBy, logo, logoText }: ReplyProps) {
   return (
-    <Layout preview={messages[0]?.body.slice(0, 120) ?? ""} accent={accent}>
+    <Layout preview={messages[0]?.body.slice(0, 120) ?? ""} project={{ projectName, accent, poweredBy, logo, logoText }} footer={<>Reply to this email to answer {projectName}.</>}>
       {messages.map((message, i) => (
-        <div key={i}>
-          <Text style={{ fontSize: 13, color: colors.muted, margin: "16px 0 4px" }}>{message.name}</Text>
-          <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", margin: 0 }}>{message.body}</Text>
-        </div>
+        // A message with no teammate's name is the project's own: no "Acme Acme team".
+        <Message key={i} name={message.name} team={message.name === projectName ? undefined : `${projectName} team`} accent={accent}>
+          {message.body}
+        </Message>
       ))}
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        Reply to this email to answer {projectName}.
-      </Text>
+      {subject && (
+        <Note>
+          Your conversation: <strong>{subject.replace(/^re:\s*/i, "")}</strong>
+        </Note>
+      )}
     </Layout>
   );
 }
 
 export const conversationReplyEmail = (props: ReplyProps & { subject: string }) => ({
   subject: /^re:/i.test(props.subject) ? props.subject : `Re: ${props.subject}`,
-  body: <ConversationReplyEmail projectName={props.projectName} messages={props.messages} accent={props.accent} />,
+  body: <ConversationReplyEmail {...props} />,
 });

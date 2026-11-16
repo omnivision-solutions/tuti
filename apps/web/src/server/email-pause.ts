@@ -23,7 +23,7 @@ export async function resumeEmailSending(token: string): Promise<FormState> {
       data: { emailPausedAt: null, emailPausedReason: null, emailPauseToldAt: null, emailResumedAt: now },
     });
     if (count === 1) {
-      // What the pause held to many people (changelog entries, posts' shipped emails, replies' emails to voters) isn't sent:
+      // What the pause held to many people (changelog entries, posts' shipped emails, replies' emails to voters, comments' to authors) isn't sent:
       // they went to the list that bounced or complained. Replies to a conversation still go: someone's waiting on them.
       // Published ones only: an unpublished entry keeps what's left of its emails for when it's published again. Not
       // what the monthly limit holds for next month (due at its first instant): the pause didn't hold it. What the daily cap
@@ -34,6 +34,7 @@ export async function resumeEmailSending(token: string): Promise<FormState> {
       });
       await tx.post.updateMany({ where: { projectId: pause.projectId, shippedEmailsDueAt: { not: nextMonth(now) } }, data: { shippedEmailsDueAt: null } });
       await tx.comment.updateMany({ where: { projectId: pause.projectId, votersEmailDueAt: { not: nextMonth(now) } }, data: { votersEmailDueAt: null } });
+      await tx.comment.updateMany({ where: { projectId: pause.projectId, authorEmailDueAt: { not: nextMonth(now) } }, data: { authorEmailDueAt: null } });
       // The cap's count (claimed) stays: it's today's either way.
       await tx.projectEmailDay.updateMany({
         where: { projectId: pause.projectId, day: new Date(now.toISOString().slice(0, 10)) },
