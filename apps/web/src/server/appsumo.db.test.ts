@@ -340,3 +340,15 @@ test("two upgrades arriving in reverse order: the holder's license ends on the n
   ]);
   expect(await planOf(project.id)).toBe("appsumo-1");
 });
+
+test("a refund landing between a claim's check and its claim: the license isn't claimed", async () => {
+  const key = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: key, tier: 1 });
+  const before = await find(key);
+  await deliver({ event: "deactivate", license_key: key });
+  // The claim read the license before the refund came.
+  vi.spyOn(prisma.planLicense, "findUnique").mockResolvedValueOnce(before);
+  actAs(await signUp("Buyer"));
+  expect(await claimPlanLicense(claimToken("appsumo", key))).toEqual({ error: "This license changed on AppSumo just now. Redeem it from AppSumo again." });
+  expect(await find(key)).toMatchObject({ userId: null, revokedAt: expect.any(Date) });
+});

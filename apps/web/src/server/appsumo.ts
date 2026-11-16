@@ -160,6 +160,10 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           target = own.replacedBy;
           [own] = await rowsFor(tx, [target]);
         }
+        if (own?.replacedBy) {
+          log.error("An AppSumo upgrade's key was replaced too many times to follow: changed nothing", { licenseKey: key });
+          return;
+        }
         // The previous key's license takes the new key: its holder and project carry over. The new key's own row is a retry
         // (the previous one renamed already), or one the new key's activation (or a later upgrade) made before this arrived:
         // that one goes, its holder kept, unless it's on a project or another account holds the previous (support sorts that out).
