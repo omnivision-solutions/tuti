@@ -80,7 +80,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       ...(isEmptyDoc(body) ? [] : (body.content ?? [])),
       heading(2, `${comments.length} ${comments.length === 1 ? "comment" : "comments"}`),
       ...thread.flatMap(({ comment, reply }) => [
-        heading(reply ? 4 : 3, `${reply ? "Reply from " : ""}${comment.author.name}${team.has(comment.authorId) && !comment.asReader ? " (Team)" : ""} · ${formatDate(comment.createdAt)}`),
+        // Who's speaking before their name, where a name (the reader's own choice) can't fake it: the page's Team badge.
+        heading(reply ? 4 : 3, `${reply ? "Reply · " : ""}${team.has(comment.authorId) && !comment.asReader ? "Team" : "Reader"}: ${comment.author.name} · ${formatDate(comment.createdAt)}`),
         ...(comment.doc.content ?? []),
       ]),
     ],

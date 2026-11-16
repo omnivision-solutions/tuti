@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { isArticleSlug } from "@/server/docs-queries";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -83,6 +83,10 @@ test("an article's page links its Markdown for AI tools; a collection's or tab's
 });
 
 test("a public post is served as Markdown at its .md URL: what its page shows a signed-out visitor, comments in order", async () => {
+  // Mid-June 2026: an ETA shows from its month on (etaOnPortal), so June is shown and May isn't.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+  onTestFinished(() => void vi.useRealTimers());
   const owner = await signUp("Owner");
   const reader = await signUp("Sam *Reader*");
   const project = await createProject(owner);
@@ -90,7 +94,7 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   const board = project.boards[0]!;
   const post = (number: number, title: string, extra: object = {}) =>
     prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: reader.id, number, title, createdAt: new Date("2026-03-01T10:00:00Z"), ...extra } });
-  const dark = await post(1, "Dark mode", { body: "Easier on the eyes.", status: "PLANNED", voteCount: 3, eta: new Date(Date.UTC(2099, 2)) });
+  const dark = await post(1, "Dark mode", { body: "Easier on the eyes.", status: "PLANNED", voteCount: 3, eta: new Date(Date.UTC(2026, 5)) });
   // The changelog entry it shipped in, once published.
   const shipped = (number: number, title: string, publishedAt: Date | null) =>
     prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, posts: { create: { postId: dark.id } } } });
@@ -116,21 +120,24 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   expect(await response.text()).toBe(
     [
       "# Dark mode",
-      "Status: Planned · Expected March 2099 · 3 votes · Board: Feature requests",
+      "Status: Planned · Expected June 2026 · 3 votes · Board: Feature requests",
       "Shipped in Night owls rejoice",
       "Posted by Sam \\*Reader\\* on 1 March 2026",
       "Easier on the eyes.",
       "## 4 comments",
-      "### Sam \\*Reader\\* · 2 March 2026",
+      "### Reader: Sam \\*Reader\\* · 2 March 2026",
       "Me too!",
-      "#### Reply from Owner (Team) · 5 March 2026",
+      "#### Reply · Team: Owner · 5 March 2026",
       "Thanks!",
-      "### Owner (Team) · 3 March 2026",
+      "### Team: Owner · 3 March 2026",
       "On our list.",
-      "### Owner · 4 March 2026",
+      "### Reader: Owner · 4 March 2026",
       "From my reader account.",
     ].join("\n\n") + "\n",
   );
+  // A reader can't pass for the team by their name.
+  await comment((await signUp("Acme (Team)")).id, "This ships next week.", "2026-03-06T10:00:00Z");
+  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("### Reader: Acme (Team) · 6 March 2026");
 
   // Not a post a signed-out visitor can't see: private, team only, on a board that's off, or another project's.
   await post(2, "Private one", { visibility: "PRIVATE" });
@@ -163,13 +170,13 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   // When it's expected, only while that's still to come (as on the page).
   await prisma.post.update({ where: { id: dark.id }, data: { status: "COMPLETED" } });
   expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Completed · 3 votes · Board");
-  await prisma.post.update({ where: { id: dark.id }, data: { status: "PLANNED", eta: new Date(Date.UTC(2020, 2)) } });
+  await prisma.post.update({ where: { id: dark.id }, data: { status: "PLANNED", eta: new Date(Date.UTC(2026, 4)) } });
   expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · 3 votes · Board");
-  await prisma.post.update({ where: { id: dark.id }, data: { eta: new Date(Date.UTC(2099, 2)) } });
+  await prisma.post.update({ where: { id: dark.id }, data: { eta: new Date(Date.UTC(2026, 5)) } });
 
   // A Team only board isn't named; a board that's off hides its posts.
   await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM" } });
-  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · Expected March 2099 · 3 votes\n");
+  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · Expected June 2026 · 3 votes\n");
   await prisma.board.update({ where: { id: board.id }, data: { off: true } });
   expect((await get(project.slug, "dark-mode-1")).status).toBe(404);
 });
