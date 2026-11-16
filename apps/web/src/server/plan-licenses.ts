@@ -93,12 +93,23 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
  * or the project's owners and admins (a license whose holder left the team, or that was revoked, mustn't keep the
  * project from buying a plan).
  */
-export async function unassignPlanLicense(licenseId: string): Promise<{ error?: string }> {
+export async function unassignPlanLicense(licenseId: string, projectSlug?: string): Promise<{ error?: string }> {
   const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in to manage your licenses" };
   }
-  return change(session.user.id, String(licenseId), (tx) => releasePlanLicense(tx, licenseId), true);
+  return change(
+    session.user.id,
+    String(licenseId),
+    async (tx) => {
+      // From a project's Billing (`projectSlug`): that project's license only, should it have moved since the page loaded.
+      if (projectSlug !== undefined && !(await tx.planLicense.count({ where: { id: licenseId, project: { slug: String(projectSlug) } } }))) {
+        throw new Refused("This license isn't on this project any more. Reload the page.");
+      }
+      await releasePlanLicense(tx, licenseId);
+    },
+    true,
+  );
 }
 
 /**

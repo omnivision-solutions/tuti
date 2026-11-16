@@ -167,6 +167,19 @@ test("a subscription live again after the project was given a license doesn't ta
   expect(await planOf()).toBe("appsumo-2");
 });
 
+test("unassigning from a project's Billing takes the license off that project only", async () => {
+  const held = await license();
+  const other = await createProject(owner);
+  expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
+  // Moved since (another tab), then Billing's old page says unassign: refused, still on the other project.
+  expect(await unassignPlanLicense(held.id)).toEqual({});
+  expect(await assignPlanLicense(other.slug, held.id)).toEqual({});
+  expect(await unassignPlanLicense(held.id, project.slug)).toEqual({ error: "This license isn't on this project any more. Reload the page." });
+  expect(await planOf(other.id)).toBe("appsumo-2");
+  expect(await unassignPlanLicense(held.id, other.slug)).toEqual({});
+  expect(await planOf(other.id)).toBe("free");
+});
+
 test("a project with a plan set by hand isn't given one", async () => {
   await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   expect(await assignPlanLicense(project.slug, (await license()).id)).toEqual({ error: "This project has a plan already. Contact support to change it." });

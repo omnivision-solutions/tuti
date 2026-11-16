@@ -137,5 +137,6 @@ test("Billing says a project's plan comes from its license, and an admin unassig
   await owner.getByRole("button", { name: "Unassign license" }).click();
   await expect(owner.getByText("License unassigned")).toBeVisible();
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  // The plans take its place, and the keyboard's place moves to the first.
+  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
 });

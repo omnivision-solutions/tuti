@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -112,14 +112,25 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
 }
 
 /** A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and admins. */
-export function UnassignLicense({ licenseId }: { licenseId: string }) {
+export function UnassignLicense({ projectSlug, licenseId }: { projectSlug: string; licenseId: string }) {
   const [pending, startTransition] = useTransition();
+  const done = useRef(false);
+  // Done, the plans take this button's place: the keyboard's place moves to the first of them.
+  useEffect(
+    () => () => {
+      if (done.current) {
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('#plans [data-slot="button"]')?.focus());
+      }
+    },
+    [],
+  );
   const unassign = () =>
     startTransition(async () => {
-      const result = await unassignPlanLicense(licenseId);
+      const result = await unassignPlanLicense(licenseId, projectSlug);
       if (result.error) {
         toast.error(result.error);
       } else {
+        done.current = true;
         toast.success("License unassigned");
       }
     });
