@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -41,6 +42,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
   // Each row's controls say which license they're for.
   const named = `${license.plan} license ${license.key}`;
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const statusRef = useRef<HTMLSpanElement>(null);
   const assigned = license.project?.slug ?? null;
   // Done, the pressed button is gone (Assign swaps for Unassign and back): once the row shows the change, the keyboard's
@@ -60,6 +62,8 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
       if (error) {
         from.current = undefined;
         toast.error(error);
+        // Refused because the license changed elsewhere (another tab, a refund): the row shows how it is now.
+        router.refresh();
       } else {
         toast.success(done);
       }
