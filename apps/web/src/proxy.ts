@@ -6,6 +6,7 @@ import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, CUSTOMIZE, PREVIEW } from "@/lib
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
+import { isArticleSlug } from "@/server/docs-queries";
 import { redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor } from "@/server/portal-access";
@@ -199,12 +200,15 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     return framedByApp(response);
   }
   const url = request.nextUrl.clone();
-  // An article's page asked for as Markdown (an AI agent's Accept header): its .md, the same route.
-  const articlePage = /^\/docs\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
-  const path =
-    articlePage && (request.method === "GET" || request.method === "HEAD") && prefersMarkdown(request.headers.get("accept"))
-      ? `${pathname}/md`
-      : pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
+  // An article's page asked for as Markdown (an AI agent's Accept header): its .md, the same route. A tab's or
+  // collection's page (the same kind of path) has no Markdown: the page.
+  const docsPage = /^\/docs\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
+  const markdown =
+    docsPage &&
+    (request.method === "GET" || request.method === "HEAD") &&
+    prefersMarkdown(request.headers.get("accept")) &&
+    (await isArticleSlug(slug, decodeURIComponent(pathname.slice("/docs/".length))));
+  const path = markdown ? `${pathname}/md` : pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
   url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
   // Always set, so a request can't say a path of its own.
   const forwarded = mount ? fromSite(request, mount) : new Headers(request.headers);
@@ -222,7 +226,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     // (Set here, it wins over the routes' own public cache-control.)
     response.headers.set("cache-control", "private, no-store");
   }
-  if (articlePage) {
+  if (docsPage) {
     // HTML or Markdown by the Accept header: caches keep them apart.
     response.headers.set("vary", "Accept");
   }

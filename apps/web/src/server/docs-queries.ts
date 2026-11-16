@@ -527,6 +527,19 @@ async function movedPage(projectSlug: string, slug: string): Promise<{ path: str
   return page ? { path: page.kind === "redirect" ? page.path : `/docs/${to.slug}`, article: null } : null;
 }
 
+/**
+ * Whether /docs/<slug> is an article's page, or an old address of one, whoever's reading: so the proxy sends it to its
+ * Markdown when that's what's asked for (a tab's or collection's page has none). Reader-blind; the Markdown route decides.
+ */
+export async function isArticleSlug(projectSlug: string, slug: string): Promise<boolean> {
+  const project = { slug: projectSlug };
+  const [article, moved] = await Promise.all([
+    prisma.article.findFirst({ where: { project, slug, ...servedArticle }, select: { id: true } }),
+    prisma.docsRedirect.findFirst({ where: { project, slug, article: { deletedAt: null } }, select: { id: true } }),
+  ]);
+  return Boolean(article ?? moved);
+}
+
 /** Where an article that had `slug` is now (its current slug), for its .md and the widget: as movedPage. */
 export async function movedArticle(projectSlug: string, slug: string): Promise<string | null> {
   return (await movedPage(projectSlug, slug))?.article ?? null;

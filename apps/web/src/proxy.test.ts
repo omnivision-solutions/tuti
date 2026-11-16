@@ -6,6 +6,8 @@ import { proxy } from "./proxy";
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-redirects", () => ({ redirectFor: async () => null }));
 vi.mock("@/server/portal-access", () => ({ portalVisitor: async () => "public", previewTokenFor: async () => false, PREVIEW_READER_COOKIE: "tuti_preview_reader" }));
+// /docs/billing is an article's page; any other /docs/<slug>, a tab's or collection's (see findable.db.test.ts).
+vi.mock("@/server/docs-queries", () => ({ isArticleSlug: async (_project: string, slug: string) => slug === "billing" }));
 // Nobody's signed in either (loading sessions loads the auth config, which needs a server's settings).
 vi.mock("@/server/session", () => ({}));
 // No portal is under a path of a site, or has an address of its own, here (see site-mount.db.test.ts).
@@ -67,7 +69,8 @@ test("an article's page asked for as Markdown (an AI agent's Accept header) is s
   for (const accept of [browser, "*/*", null, "text/html, text/markdown;q=0.9", "text/markdown;q=0", "text/*, text/markdown;q=0.5"]) {
     expect(await served(accept)).toEqual(["/docs/billing", "Accept"]);
   }
-  // Only an article's page: not /docs, the .md (already Markdown), nor a form posted to the page.
+  // Only an article's page: not a tab's or collection's, /docs, the .md (already Markdown), nor a form posted to the page.
+  expect(await served("text/markdown", "/docs/getting-started")).toEqual(["/docs/getting-started", "Accept"]);
   expect(await served("text/markdown", "/docs")).toEqual(["/docs", null]);
   expect(await served("text/markdown", "/docs/billing.md")).toEqual(["/docs/billing/md", null]);
   expect(await served("text/markdown", "/docs/billing", "POST")).toEqual(["/docs/billing", "Accept"]);
