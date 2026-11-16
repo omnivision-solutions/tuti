@@ -318,3 +318,30 @@ test("a status handler that resumes after another move committed neither clears 
   // The newer move's due time is still there, for its run once the email resumes.
   expect(due.shippedEmailsDueAt).not.toBeNull();
 });
+
+test("someone told it shipped while an In progress run was paused (completed, reopened, started again) gets no progress email from it", async () => {
+  const voter = await verified("Voter");
+  const author = await verified("Author");
+  const post = await postVotedBy(author, [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "IN_PROGRESS", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "IN_PROGRESS" } });
+  // As the run takes its first person: completed (both told it shipped), reopened and started again.
+  const transaction = prisma.$transaction.bind(prisma);
+  let claims = 0;
+  vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
+    if (++claims === 1) {
+      await prisma.postEvent.create({ data: { postId, from: "IN_PROGRESS", to: "COMPLETED" } });
+      await prisma.shippedEmail.createMany({ data: [voter, author].map(({ id }) => ({ postId, userId: id, sentAt: new Date() })) });
+      await prisma.postEvent.create({ data: { postId, from: "COMPLETED", to: "OPEN" } });
+      await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "IN_PROGRESS" } });
+    }
+    return transaction(...args);
+  }) as never);
+  await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  vi.restoreAllMocks();
+  expect(claims).toBeGreaterThan(0);
+  for (const person of [voter, author]) {
+    expect(subjectsTo(person.email)).toEqual([]);
+  }
+});

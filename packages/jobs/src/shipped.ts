@@ -66,6 +66,11 @@ async function claim(postId: string, userId: string, status: PostStatus, visibil
     if (status !== "COMPLETED" && (!change || statusMoveEmails(change.from, status) !== "progress")) {
       return null;
     }
+    // Nor anyone told it shipped since the run read who was (completed, then reopened meanwhile): their email promises
+    // a shipped one that won't come.
+    if (status !== "COMPLETED" && (await tx.shippedEmail.count({ where: { postId, userId, sentAt: { not: null } } })) > 0) {
+      return null;
+    }
     const eventId = change?.id ?? null;
     const claimedAt = new Date();
     const { table, key } = claims(tx, status);
