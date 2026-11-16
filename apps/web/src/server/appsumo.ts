@@ -169,7 +169,11 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         // that one goes, its holder kept, unless it's on a project or another account holds the previous (support sorts that out).
         const early = own && previous && !own.projectId && (!own.userId || !previous.userId || own.userId === previous.userId) ? own : undefined;
         if (own && previous && !early) {
-          log.error("An AppSumo upgrade's new key is on another account or project than the license it replaces: both kept, for support to merge", { licenseId: own.id, previousLicenseId: previous.id });
+          // One purchase gives one plan: the replaced license is revoked now (as the old key's deactivation would), and
+          // support moves its holder or project to the new one.
+          log.error("An AppSumo upgrade's new key is on another account or project than the license it replaces: the old one revoked, for support to merge", { licenseId: own.id, previousLicenseId: previous.id });
+          await tx.planLicense.update({ where: { id: previous.id }, data: { revokedAt: new Date() } });
+          await applyPlanLicense(tx, previous.id);
         }
         if (stale && !early) {
           return;
