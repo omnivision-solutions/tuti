@@ -175,6 +175,53 @@ test("a completion's comment waits for its shipped email, however late that runs
   expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
 });
 
+test("a completion's comment waits while the author's shipped email failed and waits for its retry, then goes once, in it", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const log = { info: () => {}, warn: () => {} };
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const minutesLater = async () => {
+    await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000), authorEmailQueuedAt: null } });
+    await handlers.commentEmailsDue({}, log);
+  };
+  // The shipped email to the author fails (its claim stays, unsent, for the retry).
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
+  expect(await prisma.shippedEmail.count({ where: { postId: post.id, userId: voter.id, sentAt: null } })).toBe(1);
+  // The comment emails' minute before the retry: nothing.
+  await minutesLater();
+  expect(author(voter.email)).toEqual([]);
+  // The retry, then the comment emails again.
+  await prisma.shippedEmail.updateMany({ where: { postId: post.id }, data: { claimedAt: new Date(0) } });
+  await handlers.postShipped({ postId: post.id }, log);
+  await minutesLater();
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
+  expect(author(voter.email)[0]!.text).toContain("Monthly ones too: it's all out.");
+});
+
+test("a completion's comment held over a day for a late shipped email still reaches the author if the post is reopened before it goes", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const log = { info: () => {}, warn: () => {} };
+  const late = vi.spyOn(handlers, "postShipped").mockResolvedValue({ queued: true });
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
+  late.mockRestore();
+  const note = await prisma.comment.findFirstOrThrow({ where: { postId: post.id }, select: { id: true } });
+  // Waiting a day on the shipped email: each pass (every ten minutes) finds it waiting; here the last one, 23 hours in.
+  await prisma.comment.update({ where: { id: note.id }, data: { authorEmailDueAt: new Date(Date.now() - 23 * 3_600_000), authorEmailQueuedAt: null } });
+  await handlers.commentEmailsDue({}, log);
+  expect(author(voter.email)).toEqual([]);
+  // Two hours on (past a day since it was first due), the team reopens it, and the late shipped email emails nobody.
+  await prisma.comment.update({ where: { id: note.id }, data: { authorEmailDueAt: new Date((await prisma.comment.findUniqueOrThrow({ where: { id: note.id } })).authorEmailDueAt!.getTime() - 2 * 3_600_000), authorEmailQueuedAt: null } });
+  await call(updatePost, team(), { number: post.number, status: "planned" });
+  await handlers.postShipped({ postId: post.id }, log);
+  await handlers.commentEmailsDue({}, log);
+  const [email, ...more] = author(voter.email);
+  expect(more).toEqual([]);
+  expect(email!.subject).toBe("New comment on “Recurring events”");
+  expect(email!.text).toContain("Monthly ones too: it's all out.");
+});
+
 test("completed again after a reopen, the completion's comment reaches the author as a comment, since its shipped email doesn't go again", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   await call(updatePost, team(), { number: post.number, status: "completed" });

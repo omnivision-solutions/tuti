@@ -396,3 +396,17 @@ test("a post still queued isn't queued again by the next minute's cron, only onc
     queuedOnly.mockRestore();
   }
 });
+
+test("a run started before the batch's wait is over (by hand, a retry ahead of it) sends nothing and leaves the comment due", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  const { postId } = await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } });
+  expect(await handlers.commentsEmailed({ postId }, log)).toEqual({ waiting: "no comment due yet" });
+  expect(commentEmails(author.email)).toEqual([]);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  // Nor one only past its look-back (not news any more).
+  await prisma.comment.update({ where: { id: comment.id }, data: { authorEmailDueAt: new Date(Date.now() - 25 * 3_600_000) } });
+  expect(await handlers.commentsEmailed({ postId }, log)).toEqual({ skipped: true });
+  expect(commentEmails(author.email)).toEqual([]);
+});

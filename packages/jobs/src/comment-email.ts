@@ -20,6 +20,24 @@ export const COMMENT_BATCH_MINUTES = 5;
 const LOOK_BACK_HOURS = 24;
 const lookBack = () => new Date(Date.now() - LOOK_BACK_HOURS * 3_600_000);
 
+/** Not news any more: due over a day ago and still not sent. Not what the monthly limit holds (heldDueDates), however long. */
+const expired = (now: Date) => ({ authorEmailDueAt: { lt: lookBack(), notIn: heldDueDates(now) } });
+
+/**
+ * A comment to its post's author that may go now, as the cron queues them and a run (late, or a retry) checks again:
+ * due within the look-back, or held by the monthly limit (heldDueDates) where the project has room again (an upgrade),
+ * as reply-emails-resubmit takes it; not a capped project's, which would only wait again.
+ */
+async function sendableNow(now: Date) {
+  const capped = await cappedProjects(now);
+  return {
+    OR: [
+      { authorEmailDueAt: { lte: now, gte: lookBack() } },
+      { authorEmailDueAt: { in: heldDueDates(now) }, ...(capped.length > 0 && { projectId: { notIn: capped } }) },
+    ],
+  };
+}
+
 /**
  * Emails a post's author the comments others wrote on it that are due, in one email (comment-email): only as
  * postAudience has who may be told (their "Posts I wrote" switch, the project's unsubscribe), with the project's
@@ -27,6 +45,7 @@ const lookBack = () => new Date(Date.now() - LOOK_BACK_HOURS * 3_600_000);
  * its claim (reply_email) is per comment and person, whichever email took it.
  */
 export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, log: JobLogger): Promise<JobResult> {
+  const started = new Date();
   const post = await prisma.post.findUnique({
     where: { id: postId },
     select: {
@@ -42,13 +61,13 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       projectId: true,
       project: { select: { slug: true, portalAccess: true, plan: true } },
       comments: {
-        where: { authorEmailDueAt: { not: null } },
+        // Every one still due goes in the email, those within the batch's wait too; not what's no longer news.
+        where: { authorEmailDueAt: { not: null }, NOT: expired(started) },
         orderBy: { createdAt: "asc" },
         select: { id: true, authorId: true, body: true, content: true, author: { select: { name: true } } },
       },
     },
   });
-  // What's past the look-back the cron dropped before queueing this (commentEmailsDue).
   const comments = post?.comments ?? [];
   if (!post || comments.length === 0) {
     return { skipped: true };
@@ -57,6 +76,11 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   if (post.sample) {
     await prisma.comment.updateMany({ where: { postId, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: null } });
     return { skipped: true };
+  }
+  // Only once one of them may go now, by the cron's own rule (sendableNow): a run started early (by hand, a retry ahead
+  // of the batch's wait) sends nothing and leaves them due.
+  if ((await prisma.comment.count({ where: { postId, ...(await sendableNow(started)) } })) === 0) {
+    return { waiting: "no comment due yet" };
   }
   const { projectId, project } = post;
   const ids = comments.map((comment) => comment.id);
@@ -82,13 +106,19 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   // author is still to be decided, however late it runs (a cap, a backlog): the post's shipped emails due, and no claim
   // of theirs yet. Once postShipped has taken them on (quoting it, it claims the note for them too: reply_email) or is
   // done with the post, the usual rules: emailed here only if the shipped email didn't quote it.
-  if (post.shippedEmailsDueAt && (await prisma.shippedEmail.count({ where: { postId, userId: author.id } })) === 0) {
+  // Sent, not just claimed: a send that failed waits for its retry, which quotes it.
+  if (post.shippedEmailsDueAt && (await prisma.shippedEmail.count({ where: { postId, userId: author.id, sentAt: { not: null } } })) === 0) {
     const notes = await prisma.codeChangeAction.findMany({
       where: { postId, kind: "RESOLVES", OR: ids.map((id) => ({ payload: { path: ["note"], equals: id } })) },
       select: { payload: true },
     });
     for (const { payload } of notes) {
       waitingOnShipped.add((payload as { note: string }).note);
+    }
+    // Due from now on each pass while it waits, so its look-back starts once that email is decided: if it doesn't email
+    // the author after all (the post reopened first), the comment email still can.
+    if (waitingOnShipped.size > 0) {
+      await prisma.comment.updateMany({ where: { id: { in: [...waitingOnShipped] }, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date() } });
     }
   }
   // Read before anything is claimed or counted: one failing here leaves no claim to go stale and takes none of the
@@ -158,18 +188,12 @@ export async function commentEmailsDue(_input: JobInput<"commentEmailsDue">, log
   // Due for a day and still not sent (its runs kept failing): not news any more, so dropped, never sent with a newer
   // comment's email. Not what the monthly limit holds (heldDueDates: due at a month's first instant), whenever that's
   // due, as reply-emails-resubmit takes it; a run that fails makes that due from then (commentsEmailed).
-  await prisma.comment.updateMany({
-    where: { authorEmailDueAt: { lt: lookBack(), notIn: heldDueDates(now) }, ...notPaused },
-    data: { authorEmailDueAt: null },
-  });
+  await prisma.comment.updateMany({ where: { ...expired(now), ...notPaused }, data: { authorEmailDueAt: null } });
   // Nor sample content's, ever (it never has effects outside).
   await prisma.comment.updateMany({ where: { authorEmailDueAt: { not: null }, post: { sample: true } }, data: { authorEmailDueAt: null } });
   const queuedLate = new Date(now.getTime() - LATE_MINUTES * 60_000);
-  // Due, or held by the monthly limit (heldDueDates) where the project has room again (an upgrade), as
-  // reply-emails-resubmit takes it: not a capped project's, which would only wait again.
-  const capped = await cappedProjects(now);
   const waiting = {
-    OR: [{ authorEmailDueAt: { lte: now } }, { authorEmailDueAt: { in: heldDueDates(now) }, ...(capped.length > 0 && { projectId: { notIn: capped } }) }],
+    ...(await sendableNow(now)),
     AND: [{ OR: [{ authorEmailQueuedAt: null }, { authorEmailQueuedAt: { lt: queuedLate } }] }],
   };
   const due = await prisma.comment.findMany({
