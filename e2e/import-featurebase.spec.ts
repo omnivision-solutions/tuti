@@ -398,7 +398,11 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   await expect(visitor.getByText("Single sign-on")).toHaveCount(0);
   await expect(visitor.getByText("For our beta group")).toHaveCount(0);
   await checkpoint(visitor, "portal-changelog-imported");
-  // On its page (the list shows the newest's cover alone): its cover, and the image in it.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "portal-changelog-imported-phone");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  // On the list, the older entry's cover too, above its excerpt; on its page, its cover and the image in it.
+  await expect(visitor.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here", exact: true })).toBeVisible();
   await visitor.getByRole("link", { name: "Dark mode is here" }).click();
   await expect(visitor).toHaveURL(/\/changelog\/\d+$/);
   await expect(visitor.getByRole("img", { name: "Dark mode is here", exact: true })).toBeVisible();

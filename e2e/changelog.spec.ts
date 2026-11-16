@@ -686,13 +686,13 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   // One more than a page holds (20): the odd ones new, the even ones fixes.
-  // The newest two run long: the list shows excerpts, the rest on their pages.
-  // (Release 20 shorter: one paragraph of ~380 characters, five lines on a laptop, past eight on a phone.)
+  // The newest runs long: the list shows an excerpt, the rest on its page.
+  // (Release 20 shorter: one paragraph of ~190 characters, three lines at most on a laptop, past them on a phone.)
   const idea = (title: string) => api("/posts", { board: "feature-requests", title, body: "Details of the idea." }) as unknown as Promise<{ number: number }>;
   const ideas = [(await idea("Export every board, its posts, votes and comments, to a spreadsheet in one go")).number, (await idea("Dark mode")).number];
   const long = (repeats: number) => `${"Faster boards and fewer clicks. ".repeat(repeats)}\n\nAnd last, exports in CSV.`;
   for (let n = 1; n <= 21; n++) {
-    const body = n === 21 ? long(24) : n === 20 ? long(12) : "Faster boards and fewer clicks.";
+    const body = n === 21 ? long(24) : n === 20 ? "Faster boards and fewer clicks. ".repeat(6).trim() : "Faster boards and fewer clicks.";
     // Release 19 shipped two ideas, one with a long title: a pill each, on the list too.
     const posts = n === 19 ? ideas : undefined;
     await api("/changelog", { title: `Release ${n}`, body, tags: [n % 2 ? "new" : "fixed"], posts });
@@ -723,13 +723,13 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   const date = (await latest.locator("time:visible").boundingBox())!;
   const title = (await latest.getByRole("heading").boundingBox())!;
   expect(date.x + date.width).toBeLessThan(title.x);
-  // Excerpts: the newest a medium one (eight lines at most, fading out), the others two or three lines; neither
-  // reaches the long entries' last paragraph, which their pages have.
+  // Excerpts, every entry's the same: three lines at most, fading out where cut; the long one's doesn't reach its last
+  // paragraph, which its page has.
   const lines = async (excerpt: Locator) => (await excerpt.evaluate((p) => p.getBoundingClientRect().height)) / 28;
   const excerptOf = (title: string) => main.getByRole("article", { name: title }).locator("p", { hasText: "Faster boards" });
-  expect(await lines(excerptOf("Release 21"))).toBeGreaterThan(3);
-  expect(await lines(excerptOf("Release 21"))).toBeLessThanOrEqual(8);
+  expect(await lines(excerptOf("Release 21"))).toBe(3);
   expect(await style(excerptOf("Release 21"), "mask-image")).toContain("gradient");
+  expect(await lines(excerptOf("Release 20"))).toBeGreaterThan(1);
   expect(await lines(excerptOf("Release 20"))).toBeLessThanOrEqual(3);
   await expect(main.getByText("exports in CSV")).toHaveCount(0);
   // One link per entry (its title), stretched over the entry: the excerpt opens the entry's page too.
@@ -748,10 +748,10 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   // (forced: the title's link over the text is what takes the click, which Playwright otherwise reads as blocked)
   await excerptOf("Release 21").click({ force: true });
   await expect(reader).toHaveURL(/\/changelog\/21$/);
+  await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
   await reader.goBack();
   await excerptOf("Release 20").click({ force: true });
   await expect(reader).toHaveURL(/\/changelog\/20$/);
-  await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
   await reader.goBack();
   // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
   const dot = latest.locator("p:has(> time) > span[aria-hidden]");
@@ -837,7 +837,7 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await checkpoint(reader, "portal-changelog-page-2");
   await main.getByRole("link", { name: "Newer entries" }).click();
   await expect(reader).toHaveURL(/\/changelog$/);
-  // Fixed's newest, Release 20, fits its eight lines on a laptop (no fade); on a phone it wraps past them, and fades
+  // Fixed's newest, Release 20, fits its three lines on a laptop (no fade); on a phone it wraps past them, and fades
   // where the clamp cuts it.
   await reader.goto("/changelog?tag=fixed");
   // (once it has measured itself: the server's page has no fade either way)
@@ -1144,14 +1144,20 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const widgetCover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
   await expect(widgetCover).toBeVisible();
   await expect.poll(() => widgetCover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
-  // Once a newer entry is out, the list shows only the newest's cover: this one's is on its page.
+  // Once a newer entry is out (without a cover: its title and text alone), the list still shows this one's cover,
+  // under its title and over the idea it shipped, loading once scrolled near.
   const { number: newer } = (await api("/changelog", { title: "Faster exports", body: "Exports finish sooner." })) as unknown as { number: number };
   await api(`/changelog/${newer}/publish`, {});
   await ada.goto("/changelog");
   await expect(ada.getByRole("heading", { name: "Faster exports" })).toBeVisible();
-  await expect(cover).toHaveCount(0);
-  await ada.goto("/changelog/1");
-  await expect(cover).toBeVisible();
+  await expect(ada.getByRole("article", { name: "Faster exports" }).getByRole("img")).toHaveCount(0);
+  await expect(cover).toHaveAttribute("loading", "lazy");
+  await cover.scrollIntoViewIfNeeded();
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  const older = ada.getByRole("article", { name: "Dark mode is here" });
+  const listCover = (await cover.boundingBox())!;
+  expect(listCover.y).toBeGreaterThan((await older.getByRole("heading").boundingBox())!.y);
+  expect(listCover.y + listCover.height).toBeLessThanOrEqual((await older.getByRole("link", { name: /Built from an idea/ }).boundingBox())!.y);
   // The team's list shows each entry's featured image small, beside its title (decorative: the title names it), loaded;
   // an entry without one gets a placeholder tile the same size, so titles line up.
   await team.goto(`/app/${slug}/changelog?tab=published`);
