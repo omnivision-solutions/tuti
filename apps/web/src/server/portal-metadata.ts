@@ -34,7 +34,7 @@ export async function portalPageMetadata(
     /** For articles, posts and changelog entries. */
     article?: { publishedTime?: Date | null; modifiedTime?: Date | null };
     noindex?: boolean;
-    /** An article's or changelog entry's page: its Markdown copy, at <path>.md, listed for AI tools. */
+    /** An article's, changelog entry's or post's page: its Markdown copy, at <path>.md, listed for AI tools. */
     markdown?: boolean;
     /** The page's own link card (a changelog entry's featured image), in place of the one made for it. */
     image?: { url: string; width: number; height: number } | null;

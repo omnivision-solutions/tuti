@@ -57,6 +57,19 @@ test("an article's .md URL is served by its Markdown route", async () => {
   expect(await rewrite("/llms.txt")).toBe("http://acme.tuti.example/portal/acme/llms.txt");
 });
 
+test("a post's .md URL, or its page asked for as Markdown, is served by its Markdown route; browsers get the page", async () => {
+  const served = async (accept: string | null, path: string) => {
+    const response = await proxy(new NextRequest(`http://acme.tuti.example${path}`, { headers: { host: "acme.tuti.example", ...(accept && { accept }) } }));
+    return [response.headers.get("x-middleware-rewrite")?.replace("http://acme.tuti.example/portal/acme", ""), response.headers.get("vary")];
+  };
+  expect(await served(null, "/feedback/ideas/dark-mode-1.md")).toEqual(["/feedback/ideas/dark-mode-1/md", null]);
+  expect(await served("text/markdown", "/feedback/ideas/dark-mode-1")).toEqual(["/feedback/ideas/dark-mode-1/md", "Accept"]);
+  const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+  expect(await served(browser, "/feedback/ideas/dark-mode-1")).toEqual(["/feedback/ideas/dark-mode-1", "Accept"]);
+  // A board's page has no Markdown.
+  expect(await served("text/markdown", "/feedback/ideas")).toEqual(["/feedback/ideas", null]);
+});
+
 test("an article's page asked for as Markdown (an AI agent's Accept header) is served by its Markdown route; browsers get the page", async () => {
   const served = async (accept: string | null, path = "/docs/billing", method = "GET") => {
     const response = await proxy(new NextRequest(`http://acme.tuti.example${path}`, { method, headers: { host: "acme.tuti.example", ...(accept && { accept }) } }));
