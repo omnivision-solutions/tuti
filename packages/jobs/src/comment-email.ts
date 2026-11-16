@@ -72,6 +72,10 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     await done(null);
     return { emailed: 0 };
   }
+  // Read before anything is claimed or counted: one failing here leaves no claim to go stale and takes none of the
+  // project's emails.
+  const origin = await portalAddress(project.slug);
+  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   // Each comment claimed before sending (one time for all, as whileClaimed renews them), so a retry, a second run or the
   // reply's email to voters doesn't email it twice. Their own comments never become due; left out all the same.
   const claimedAt = new Date();
@@ -93,8 +97,6 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     await prisma.comment.updateMany({ where: { id: { in: ids }, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: await dueAgain(projectId) } });
     return { emailed: 0, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
-  const origin = await portalAddress(project.slug);
-  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   const token = encodeURIComponent(author.unsubscribeToken);
   const error = await whileClaimed(claimedIds, author.id, claimedAt, () =>
     sendEmail({

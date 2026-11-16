@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { handlers, resumeToken } from "@tuti/jobs";
 import { log as logger } from "@tuti/shared";
 import { billingFile } from "@tuti/testkit";
+import { startSmtpFake } from "@tuti/testkit/smtp";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { setBoardOff } from "@/server/boards";
@@ -323,4 +324,54 @@ test("a sample post's comments never email anyone: dropped by the cron and by a 
   expect(await later()).toEqual({ found: 0, queued: 0 });
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).toBeNull();
   expect(commentEmails(author.email)).toEqual([]);
+});
+
+test("an email about several comments keeps all their claims fresh while it sends, however long, and marks them all sent", async () => {
+  const { author, post } = await authorsPost();
+  const [sam, kim] = [await verified("Sam Lee"), await verified("Kim Park")];
+  const ids = [
+    (await call(createComment, as(sam.id), { number: post.number, body: "First." })).id,
+    (await call(createComment, as(kim.id), { number: post.number, body: "Second." })).id,
+  ];
+  const claims = () => prisma.replyEmail.findMany({ where: { commentId: { in: ids }, userId: author.id }, select: { claimedAt: true, sentAt: true } });
+  const fake = await startSmtpFake({
+    onEmail: async () => {
+      const before = (await claims()).map((claim) => claim.claimedAt.getTime());
+      vi.advanceTimersByTime(60_000); // a minute into the send
+      await vi.waitUntil(async () => (await claims()).every((claim, i) => claim.claimedAt.getTime() > before[i]!), { timeout: 5000 });
+    },
+  });
+  const port = process.env.SMTP_PORT;
+  process.env.SMTP_PORT = String(fake.port);
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    await minutesLater();
+  } finally {
+    vi.useRealTimers();
+    process.env.SMTP_PORT = port;
+    await fake.close();
+  }
+  expect(fake.emails).toHaveLength(1);
+  const sent = await claims();
+  expect(sent).toHaveLength(2);
+  expect(sent.every((claim) => claim.sentAt !== null)).toBe(true);
+  expect(await prisma.comment.count({ where: { id: { in: ids }, authorEmailDueAt: { not: null } } })).toBe(0);
+});
+
+test("a run that fails before sending (the project's brand can't be read) takes none of the project's emails and leaves no claim", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const { post } = await authorsPost();
+  const reader = await verified("Reader");
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  const installation = await prisma.installation.findUniqueOrThrow({ where: { singleton: 1 } });
+  await prisma.installation.delete({ where: { singleton: 1 } });
+  vi.spyOn(logger, "warn").mockImplementation(() => {});
+  try {
+    await minutesLater();
+  } finally {
+    await prisma.installation.create({ data: installation });
+  }
+  expect(await prisma.projectEmailMonth.findMany({ where: { projectId: project.id, emails: { gt: 0 } } })).toEqual([]);
+  expect(await prisma.replyEmail.count({ where: { commentId: comment.id } })).toBe(0);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
 });
