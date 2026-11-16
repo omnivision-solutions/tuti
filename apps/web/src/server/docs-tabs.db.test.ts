@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { collectionOptions, docsContents, publishedArticle } from "./docs-queries";
@@ -377,6 +378,14 @@ describe("readers", () => {
     const again = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
     expect(again).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
     expect(again).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
+  });
+
+  test("llms-full.txt has the articles in llms.txt's order: tab by tab, each tab's articles in no collection last", async () => {
+    await withTabs();
+    const params = Promise.resolve({ project: project.slug });
+    const text = await (await llmsFull(new Request("http://x"), { params })).text();
+    const sources = [...text.matchAll(/^Source: .*\/docs\/(.+)$/gm)].map((match) => match[1]);
+    expect(sources).toEqual(["start-here", "downloading-invoices", "contact-us", "listing-posts"]);
   });
 });
 

@@ -149,6 +149,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     "/docs/getting-started",
     "/docs/getting-started.md",
     "/llms.txt",
+    "/llms-full.txt",
     "/sitemap.xml",
     "/account",
   ].map((path) => ({ name: `page ${path}`, served: async (slug: string) => (await visit(slug, path)) === "served" })),

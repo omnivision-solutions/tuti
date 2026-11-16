@@ -298,6 +298,11 @@ describe("images", () => {
     expect(out).toContain('width="1200" height="800" alt="A chart" loading="lazy"');
   });
 
+  test("eager images load at once (one in view as the page opens), not lazily", () => {
+    const out = renderToStaticMarkup(createElement(RichText, { doc: doc(image()), mediaUrls: signed(doc(image())), eager: true }));
+    expect(out).toContain('alt="A chart" loading="eager"');
+  });
+
   test("without signed URLs, or without a real size, images are left out", () => {
     expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image()) }))).toBe("<div></div>");
     expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image()), mediaUrls: signed(doc(image({ mediaId: "c".repeat(25) }))) }))).toBe(

@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { filesIn, imageKeysIn } from "@tuti/content";
-import { imageKey, imageWidths, type MediaUrls } from "@tuti/content/media";
+import { EMAIL_IMAGE_WIDTH, emailImageKey, imageKey, imageWidths, type MediaUrls } from "@tuti/content/media";
 import { lastingMediaUrl } from "@tuti/jobs";
 import { mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 
@@ -48,4 +48,14 @@ export function lastingImage(media: { id: string; status: string; width: number 
   return mediaStorage() && media?.status === "READY" && media.width && media.height
     ? { id: media.id, url: lastingMediaUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
     : null;
+}
+
+/** A lasting link to an image for link cards (og:image), once it's processed; null without uploads. They want a JPEG about 1200 pixels wide: every image has one (made for emails). */
+export function shareImage(media: Parameters<typeof lastingImage>[0]): LastingImage | null {
+  const image = lastingImage(media);
+  if (!image) {
+    return null;
+  }
+  const width = Math.min(image.width, EMAIL_IMAGE_WIDTH);
+  return { ...image, url: lastingMediaUrl(emailImageKey(image.id)), width, height: Math.round((image.height * width) / image.width) };
 }

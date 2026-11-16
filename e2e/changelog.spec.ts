@@ -686,13 +686,13 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   // One more than a page holds (20): the odd ones new, the even ones fixes.
-  // The newest two run long: the list shows excerpts, the rest on their pages.
-  // (Release 20 shorter: one paragraph of ~380 characters, five lines on a laptop, past eight on a phone.)
+  // The newest runs long: the list shows an excerpt, the rest on its page.
+  // (Release 20 shorter: one paragraph of ~190 characters, three lines at most on a laptop, past them on a phone.)
   const idea = (title: string) => api("/posts", { board: "feature-requests", title, body: "Details of the idea." }) as unknown as Promise<{ number: number }>;
   const ideas = [(await idea("Export every board, its posts, votes and comments, to a spreadsheet in one go")).number, (await idea("Dark mode")).number];
   const long = (repeats: number) => `${"Faster boards and fewer clicks. ".repeat(repeats)}\n\nAnd last, exports in CSV.`;
   for (let n = 1; n <= 21; n++) {
-    const body = n === 21 ? long(24) : n === 20 ? long(12) : "Faster boards and fewer clicks.";
+    const body = n === 21 ? long(24) : n === 20 ? "Faster boards and fewer clicks. ".repeat(6).trim() : "Faster boards and fewer clicks.";
     // Release 19 shipped two ideas, one with a long title: a pill each, on the list too.
     const posts = n === 19 ? ideas : undefined;
     await api("/changelog", { title: `Release ${n}`, body, tags: [n % 2 ? "new" : "fixed"], posts });
@@ -723,13 +723,13 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   const date = (await latest.locator("time:visible").boundingBox())!;
   const title = (await latest.getByRole("heading").boundingBox())!;
   expect(date.x + date.width).toBeLessThan(title.x);
-  // Excerpts: the newest a medium one (eight lines at most, fading out), the others two or three lines; neither
-  // reaches the long entries' last paragraph, which their pages have.
+  // Excerpts, every entry's the same: three lines at most, fading out where cut; the long one's doesn't reach its last
+  // paragraph, which its page has.
   const lines = async (excerpt: Locator) => (await excerpt.evaluate((p) => p.getBoundingClientRect().height)) / 28;
   const excerptOf = (title: string) => main.getByRole("article", { name: title }).locator("p", { hasText: "Faster boards" });
-  expect(await lines(excerptOf("Release 21"))).toBeGreaterThan(3);
-  expect(await lines(excerptOf("Release 21"))).toBeLessThanOrEqual(8);
+  expect(await lines(excerptOf("Release 21"))).toBe(3);
   expect(await style(excerptOf("Release 21"), "mask-image")).toContain("gradient");
+  expect(await lines(excerptOf("Release 20"))).toBeGreaterThan(1);
   expect(await lines(excerptOf("Release 20"))).toBeLessThanOrEqual(3);
   await expect(main.getByText("exports in CSV")).toHaveCount(0);
   // One link per entry (its title), stretched over the entry: the excerpt opens the entry's page too.
@@ -748,10 +748,10 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   // (forced: the title's link over the text is what takes the click, which Playwright otherwise reads as blocked)
   await excerptOf("Release 21").click({ force: true });
   await expect(reader).toHaveURL(/\/changelog\/21$/);
+  await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
   await reader.goBack();
   await excerptOf("Release 20").click({ force: true });
   await expect(reader).toHaveURL(/\/changelog\/20$/);
-  await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
   await reader.goBack();
   // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
   const dot = latest.locator("p:has(> time) > span[aria-hidden]");
@@ -837,7 +837,7 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await checkpoint(reader, "portal-changelog-page-2");
   await main.getByRole("link", { name: "Newer entries" }).click();
   await expect(reader).toHaveURL(/\/changelog$/);
-  // Fixed's newest, Release 20, fits its eight lines on a laptop (no fade); on a phone it wraps past them, and fades
+  // Fixed's newest, Release 20, fits its three lines on a laptop (no fade); on a phone it wraps past them, and fades
   // where the clamp cuts it.
   await reader.goto("/changelog?tag=fixed");
   // (once it has measured itself: the server's page has no fade either way)
@@ -846,6 +846,8 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await reader.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
   await reader.goto("/changelog");
+  // Not only the first entry's: on the whole list, Release 20 (the second) fades too.
+  await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
   // A long idea's pill stays in its entry (its title shortened), and the page doesn't scroll sideways.
   const shipped = main.getByRole("article", { name: "Release 19" });
   const pill = (await shipped.getByRole("link", { name: /^Export every board/ }).boundingBox())!;
@@ -882,7 +884,7 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await expect(months.getByRole("link", { name: "February 2025, 1 entry" })).toBeVisible();
 });
 
-test("the next release waits to be written; its entry gets a cover readers see, and says how many people it told", async ({ browser }, testInfo) => {
+test("the next release waits to be written; its entry gets a featured image readers see, and says how many people it told", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -937,7 +939,7 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await ready.getByRole("link", { name: "Write it" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
 
-  // A cover, uploaded in the sidebar (two pictures drawn here: one replaces the other), with the post it completes.
+  // A featured image, under the title (two pictures drawn here: one replaces the other), with the post it completes.
   const scratch = await team.context().newPage();
   const picture = async (color: string) => {
     await scratch.setContent(`<div id="cover" style="width:1200px;height:600px;background:${color}"></div>`);
@@ -946,22 +948,46 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const [first, second] = [await picture("#1d4ed8"), await picture("#0f766e")];
   await scratch.close();
   const sidebar = team.getByRole("complementary", { name: "Entry settings" });
-  const preview = sidebar.getByRole("img", { name: "Cover image preview" });
-  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  const featured = team.getByRole("group", { name: "Featured image" });
+  // The file input, named (out of sight and of the tab order: Add and Replace open it).
+  const file = featured.getByLabel("Featured image", { exact: true });
+  const preview = featured.getByRole("img");
+  const addButton = featured.getByRole("button", { name: "Add featured image" });
+  // Not in the sidebar any more: it leads the text, between the title and the text.
+  await expect(sidebar.getByText(/featured image|cover image/i)).toHaveCount(0);
+  await expect(addButton).toBeVisible();
+  await expect(featured).toContainText("or drop one here · 1200×630 works best");
+  const band = (await featured.boundingBox())!;
+  expect(band.y).toBeGreaterThan((await team.getByLabel("Title").boundingBox())!.y);
+  expect(band.y + band.height).toBeLessThanOrEqual((await team.getByRole("textbox", { name: "What changed" }).boundingBox())!.y);
+  await checkpoint(team, "team-changelog-featured-empty");
   // An upload whose server calls fail (the network drops) ends with an error, and Save still works.
   await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
-  await expect(sidebar.getByText("The upload failed. Try again.")).toBeVisible();
+  await file.setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(featured.getByText("The upload failed. Try again.")).toBeVisible();
   await team.unroute("**/*");
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   // Reloaded, so this save's toast is gone before the next save's is waited for.
   await team.reload();
-  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
+  await expect(addButton).toBeVisible();
+  // Dropped on the band, it uploads.
+  const droppedFile = (bytes: Buffer) =>
+    team.evaluateHandle((bytes) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(bytes)], "cover.png", { type: "image/png" }));
+      return transfer;
+    }, [...bytes]);
+  // (Focus stays on the page, where a reload or a click on blank space leaves it: only an upload started from Add
+  // moves it to Replace.)
+  const replaceButton = featured.getByRole("button", { name: "Replace featured image" });
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await addButton.locator("..").dispatchEvent("drop", { dataTransfer: await droppedFile(first) });
   await expect(preview).toBeVisible();
+  await expect(replaceButton).not.toBeFocused();
+  expect(await team.evaluate(() => document.activeElement === document.body)).toBe(true);
   const firstSrc = await preview.getAttribute("src");
-  // Replaced by another: while it uploads (its server calls held here), Save and Publish wait, the field saying why;
+  // Replaced by another: while it uploads (its server calls held here), Save and Publish wait, the image saying why;
   // Remove waits too (the new image would come back after it), and no second upload starts meanwhile (each starts with
   // the same server call, counted here).
   let releaseUpload!: () => void;
@@ -976,33 +1002,29 @@ test("the next release waits to be written; its entry gets a cover readers see, 
     await uploadHeld;
     await route.fallback();
   });
-  // Picked from Upload with the keyboard: focus stays on it through the upload (it's off, but not taken out of reach).
-  const uploadButton = sidebar.getByRole("button", { name: "Upload cover image" });
-  const removeButton = sidebar.getByRole("button", { name: "Remove", exact: true });
-  await uploadButton.focus();
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
-  await expect(sidebar.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
-  await expect(uploadButton).toBeFocused();
+  // Picked from Replace with the keyboard: focus stays on it through the upload (it's off, but not taken out of reach).
+  const removeButton = featured.getByRole("button", { name: "Remove featured image" });
+  await replaceButton.focus();
+  // Shown on keyboard focus.
+  await expect(replaceButton).toHaveCSS("opacity", "1");
+  await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  await expect(replaceButton).toBeFocused();
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeDisabled();
-  await expect(uploadButton).toBeDisabled();
+  await expect(replaceButton).toBeDisabled();
   await expect(removeButton).toBeDisabled();
   await removeButton.focus();
   await team.keyboard.press("Enter");
   await expect(preview).toHaveAttribute("src", firstSrc!);
-  const dropped = await team.evaluateHandle((bytes) => {
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([new Uint8Array(bytes)], "cover.png", { type: "image/png" }));
-    return transfer;
-  }, [...first]);
-  await sidebar.getByLabel("Cover image", { exact: true }).locator("..").dispatchEvent("drop", { dataTransfer: dropped });
-  await uploadButton.focus();
+  await preview.locator("..").dispatchEvent("drop", { dataTransfer: await droppedFile(first) });
+  await replaceButton.focus();
   releaseUpload();
   await expect(preview).not.toHaveAttribute("src", firstSrc!);
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   await expect(team.getByRole("button", { name: "Publish" })).toBeEnabled();
-  await expect(uploadButton).toBeEnabled();
-  await expect(uploadButton).toBeFocused();
+  await expect(replaceButton).toBeEnabled();
+  await expect(replaceButton).toBeFocused();
   await team.unroute("**/*");
   // One upload: its first call (createUpload) made once.
   expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
@@ -1016,37 +1038,105 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
-  await expect(preview).toBeVisible();
-  // In the text's column too, under the title as readers see it (named for the entry, as on the portal).
-  // Saved, it's the stored size for that width (this one 1200px wide), not the 480px thumbnail's.
-  const canvasCover = team.getByRole("img", { name: "Dark mode is here", exact: true });
+  // Under the title as readers see it (named for the entry, as on the portal), across the text's column: saved, it's
+  // the stored size for that width (this one 1200px wide), not the 480px thumbnail's.
+  const canvasCover = featured.getByRole("img", { name: "Dark mode is here", exact: true });
   await expect(canvasCover).toHaveAttribute("src", /\/1200\.webp\?/);
-  // The sidebar's small preview stays the thumbnail's size.
-  await expect(preview).toHaveAttribute("src", /\/480\.webp\?/);
   const coverBox = (await canvasCover.boundingBox())!;
   expect(coverBox.y).toBeGreaterThan((await team.getByLabel("Title").boundingBox())!.y);
   expect(coverBox.y + coverBox.height).toBeLessThanOrEqual((await team.getByRole("textbox", { name: "What changed" }).boundingBox())!.y);
   expect(coverBox.width).toBeGreaterThan(400);
-  // Removed (from the keyboard: focus moves to Upload, as Remove goes), it's gone once saved; uploaded again, it's back.
-  await sidebar.getByRole("button", { name: "Remove", exact: true }).focus();
+  // Removed (from the keyboard: focus moves to Add, as Remove goes), it's gone once saved; uploaded again, it's back.
+  await removeButton.focus();
   await team.keyboard.press("Enter");
-  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
   await expect(canvasCover).toHaveCount(0);
-  await expect(uploadButton).toBeFocused();
+  await expect(addButton).toBeFocused();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
-  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
-  await expect(preview).toBeVisible();
-  // Shown in the text's column as soon as it's uploaded, before it's saved.
-  await expect(canvasCover).toHaveAttribute("src", (await preview.getAttribute("src"))!);
+  // Uploaded from Add, but moved on to the text while it uploads (its server calls held): focus stays in the text.
+  let releaseMovedOn!: () => void;
+  const movedOnHeld = new Promise<void>((resolve) => (releaseMovedOn = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await movedOnHeld;
+    }
+    await route.fallback();
+  });
+  await addButton.focus();
+  await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  const text = team.getByRole("textbox", { name: "What changed" });
+  await text.focus();
+  releaseMovedOn();
+  await expect(canvasCover).toBeVisible();
+  await expect(text).toBeFocused();
+  await removeButton.click();
+  await expect(addButton).toBeFocused();
+  // Or moved on by a click beside Add (focus left on the page itself): it stays there too.
+  let releaseClicked!: () => void;
+  const clickedHeld = new Promise<void>((resolve) => (releaseClicked = resolve));
+  await team.unroute("**/*");
+  await team.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await clickedHeld;
+    }
+    await route.fallback();
+  });
+  await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  const around = (await featured.boundingBox())!;
+  await team.mouse.click(around.x + 10, around.y + 10);
+  await expect(addButton).not.toBeFocused();
+  releaseClicked();
+  await expect(canvasCover).toBeVisible();
+  await expect(replaceButton).not.toBeFocused();
+  await team.unroute("**/*");
+  await removeButton.click();
+  await expect(addButton).toBeVisible();
+  // Uploaded from Add with the keyboard: Add goes with the upload, and focus moves to Replace, even after a press
+  // meanwhile that left focus on Add (a touch starting a scroll; its server calls held for it).
+  let releasePressed!: () => void;
+  const pressedHeld = new Promise<void>((resolve) => (releasePressed = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await pressedHeld;
+    }
+    await route.fallback();
+  });
+  await addButton.focus();
+  await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  await team.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  await expect(addButton).toBeFocused();
+  // Focus moves without scrolling: whoever scrolled away while it uploaded stays where they are.
+  await team.evaluate(() => {
+    const focus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (options?: FocusOptions) {
+      if (this.getAttribute("aria-label") === "Replace featured image") {
+        (window as unknown as { replaceFocus: FocusOptions | undefined }).replaceFocus = options;
+      }
+      focus.call(this, options);
+    };
+  });
+  releasePressed();
+  // Shown as soon as it's uploaded, before it's saved.
+  await expect(canvasCover).toBeAttached();
+  await expect(replaceButton).toBeFocused();
+  expect(await team.evaluate(() => (window as unknown as { replaceFocus?: FocusOptions }).replaceFocus)).toEqual({ preventScroll: true });
+  await expect(canvasCover).toBeVisible();
+  await team.unroute("**/*");
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await canvasCover.hover();
+  await expect(replaceButton).toHaveCSS("opacity", "1");
   await checkpoint(team, "team-changelog-cover");
   await team.setViewportSize({ width: 390, height: 844 });
-  await expect(preview).toBeVisible();
   await expect(canvasCover).toBeInViewport();
+  // On a phone (no hover), Replace and Remove always show.
+  await team.mouse.move(0, 0);
+  await expect(replaceButton).toHaveCSS("opacity", "1");
+  await expect(removeButton).toHaveCSS("opacity", "1");
   await checkpoint(team, "team-changelog-cover-phone", { fullPage: false });
   await team.setViewportSize({ width: 1280, height: 720 });
 
@@ -1131,6 +1221,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const cover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
   await expect(cover).toBeVisible();
   await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  // The list's first cover, likely in view, loads at once.
+  await expect(cover).toHaveAttribute("loading", "eager");
   await checkpoint(ada, "portal-changelog-cover");
   await ada.goto("/changelog/1");
   await expect(cover).toBeVisible();
@@ -1144,27 +1236,50 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const widgetCover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
   await expect(widgetCover).toBeVisible();
   await expect.poll(() => widgetCover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
-  // Once a newer entry is out, the list shows only the newest's cover: this one's is on its page.
+  // Once a newer entry is out (without a cover: its title and text alone), the list still shows this one's cover,
+  // under its title and over the idea it shipped, loading once scrolled near.
   const { number: newer } = (await api("/changelog", { title: "Faster exports", body: "Exports finish sooner." })) as unknown as { number: number };
   await api(`/changelog/${newer}/publish`, {});
   await ada.goto("/changelog");
   await expect(ada.getByRole("heading", { name: "Faster exports" })).toBeVisible();
-  await expect(cover).toHaveCount(0);
-  await ada.goto("/changelog/1");
-  await expect(cover).toBeVisible();
+  await expect(ada.getByRole("article", { name: "Faster exports" }).getByRole("img")).toHaveCount(0);
+  await expect(cover).toHaveAttribute("loading", "lazy");
+  await cover.scrollIntoViewIfNeeded();
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  const older = ada.getByRole("article", { name: "Dark mode is here" });
+  const listCover = (await cover.boundingBox())!;
+  expect(listCover.y).toBeGreaterThan((await older.getByRole("heading").boundingBox())!.y);
+  expect(listCover.y + listCover.height).toBeLessThanOrEqual((await older.getByRole("link", { name: /Built from an idea/ }).boundingBox())!.y);
+  // The team's list shows each entry's featured image small, beside its title (decorative: the title names it), loaded;
+  // an entry without one gets a placeholder tile the same size, so titles line up.
+  await team.goto(`/app/${slug}/changelog?tab=published`);
+  const thumbnail = team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).locator("img");
+  await expect(thumbnail).toHaveAttribute("alt", "");
+  await expect(thumbnail).toHaveAttribute("src", /\/480\.webp/);
+  await expect.poll(() => thumbnail.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  const noCover = team.getByRole("listitem").filter({ hasText: "Faster exports" });
+  await expect(noCover.locator("img")).toHaveCount(0);
+  const placeholder = noCover.locator("[aria-hidden]").filter({ has: team.locator("svg.lucide-image") });
+  expect((await placeholder.boundingBox())!.width).toBe((await thumbnail.boundingBox())!.width);
+  await checkpoint(team, "team-changelog-thumbnails");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(70);
+  await checkpoint(team, "team-changelog-thumbnails-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
 
-  // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
+  // A featured image changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
   await team.goto(`/app/${slug}/changelog/1`);
   await expect(preview).toBeVisible();
   const elsewhere = await team.context().newPage();
   await elsewhere.goto(`/app/${slug}/changelog/1`);
-  await elsewhere.getByRole("complementary", { name: "Entry settings" }).getByRole("button", { name: "Remove", exact: true }).click();
+  await elsewhere.getByRole("group", { name: "Featured image" }).getByRole("button", { name: "Remove featured image" }).click();
   await elsewhere.getByRole("button", { name: "Save", exact: true }).click();
   await expect(elsewhere.getByText("Saved", { exact: true })).toBeVisible();
   await elsewhere.close();
   await team.getByRole("button", { name: "Unpublish" }).click();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
-  await expect(sidebar.getByText("None", { exact: true })).toBeVisible();
+  await expect(addButton).toBeVisible();
+  await expect(preview).toHaveCount(0);
 });
 
 test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {

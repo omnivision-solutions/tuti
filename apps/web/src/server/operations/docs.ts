@@ -95,7 +95,7 @@ const articleFields = {
     .max(MAX_KEYWORDS, `Up to ${MAX_KEYWORDS} keywords`)
     .transform((keywords) => keywords.filter((k, i) => keywords.findIndex((other) => other.toLowerCase() === k.toLowerCase()) === i))
     .optional(),
-  /** "Block search indexing": search engines are asked not to list it, and it's left out of the sitemap and llms.txt (readers still find it in the docs and their search). Changes at once. */
+  /** "Block search indexing": search engines are asked not to list it, and it's left out of the sitemap, llms.txt and llms-full.txt (readers still find it in the docs and their search). Changes at once. */
   noindex: z.boolean().optional(),
 };
 

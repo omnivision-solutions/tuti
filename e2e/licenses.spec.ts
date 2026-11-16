@@ -1,8 +1,10 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
 
 import { appsumoWebhook } from "../packages/testkit/src/appsumo-fake";
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, cloudPortalUrl } from "./env";
+import { CLOUD_URL, cloudEnv, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
 import { createProject, fillSignUp, newPerson } from "./helpers";
 
@@ -280,4 +282,27 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(dialog).toHaveAccessibleDescription(`Its "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
   await dialog.getByRole("button", { name: "Unassign license" }).click();
   await expect(owner.getByText("License unassigned")).toBeVisible();
+});
+
+// A license Tuti hands out itself (scripts/plan-license.mjs), straight onto a project: no lifetime deal.
+test("a license Tuti issues to a project gives its plan, named as Tuti's", async ({ browser }) => {
+  const owner = await newPerson(browser, CLOUD_URL);
+  const email = `e2e-${randomUUID()}@example.com`;
+  await owner.goto("/app/auth/sign-up");
+  await fillSignUp(owner, "Tia Team", email);
+  await owner.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  const { stdout } = await promisify(execFile)("node", ["scripts/plan-license.mjs", "issue", email, "appsumo-2", slug, "e2e"], {
+    env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL, BILLING_CONFIG: cloudEnv.BILLING_CONFIG },
+  });
+  const key = /tuti-[0-9a-f-]+/.exec(stdout)![0];
+
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.getByText("AppSumo Tier 2 plan")).toBeVisible();
+  await expect(owner.getByText("Given by a license from Tuti: it doesn't renew or bill.")).toBeVisible();
+  await owner.goto("/app/licenses");
+  await expect(owner.getByText("Plan licenses on your account, such as AppSumo lifetime deals.", { exact: false })).toBeVisible();
+  await expect(owner.getByText(`Tuti · ${key}`)).toBeVisible();
+  await expect(owner.getByText("On Acme")).toBeVisible();
 });

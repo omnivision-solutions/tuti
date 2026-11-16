@@ -276,44 +276,35 @@ export function PoweredBySettings({
   );
 }
 
-/** An uploaded image: its preview on the background it's for, and its upload id in a hidden field (empty when removed). */
-export function ImageField({
+/**
+ * An uploaded image's state, for a field that shows it (ImageField, the changelog's featured image): `inputs` are its
+ * upload id in a hidden field (`name`, empty when removed; a change event when it changes) and the file input `id`
+ * that `pick` opens; `drop` goes on where an image may be dropped (not in a disabled fieldset: a setting the plan
+ * doesn't include, its file input and buttons off there too).
+ */
+export function useImageUpload({
   projectSlug,
   name,
+  id,
   label,
-  description,
   image: initial,
-  look,
   onBusy,
-  onRemove,
-  onChange,
 }: {
-  /** Where uploads go; without one, the image can only be removed (Account's photo for someone without a project). */
+  /** Where uploads go; without one, the image can only be removed. */
   projectSlug?: string;
   name: string;
-  label: string;
-  description: string;
+  id: string;
+  /** The file input's name, for a field with no label pointing at `id`. */
+  label?: string;
   image: Image;
-  /** The background it's for; the page's own without one. */
-  look?: "light" | "dark";
   onBusy: (delta: number) => void;
-  /** After "Remove", for a form whose other fields depend on there being an image. */
-  onRemove?: () => void;
-  /** The image now, after an upload or Remove (the changelog editor shows it as readers will). */
-  onChange?: (image: Image) => void;
 }) {
-  const id = useId();
   const [image, setImage] = useState(initial);
   const [status, setStatus] = useState<{ uploading: true } | { error: string } | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
-  const uploadButton = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
-  const change = (next: Image) => {
-    setImage(next);
-    onChange?.(next);
-  };
 
   // One at a time: Upload and dropping wait while one is on its way, so every upload's onBusy(1) has its onBusy(-1)
   // and none is left behind by a newer one (a form waiting on onBusy, like the changelog's Save, would wait for good).
@@ -332,40 +323,90 @@ export function ImageField({
       setStatus(result);
       return;
     }
-    change({ id: result.mediaId, url: result.src });
+    setImage({ id: result.mediaId, url: result.src });
     setStatus(null);
   };
 
-  return (
-    <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+  const drop = {
+    onDragOver: (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setDragging(!uploading && !event.currentTarget.closest("fieldset:disabled"));
+    },
+    onDragLeave: () => setDragging(false),
+    onDrop: (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setDragging(false);
+      if (event.currentTarget.closest("fieldset:disabled")) {
+        return;
+      }
+      const file = event.dataTransfer.files[0];
+      if (file) {
+        void upload(file);
+      }
+    },
+  };
+
+  const inputs = (
+    <>
       <input ref={field} type="hidden" name={name} value={image?.id ?? ""} />
       {/* For the preview only (saveBranding reads the id). */}
       <input type="hidden" name={`${name}Url`} value={image?.url ?? ""} />
-      {/* Dropped here, or picked with "Upload" (the file input itself stays out of sight and out of the tab order). */}
-      <div
-        // Not in a disabled fieldset (a setting the plan doesn't include): the file input and buttons are off there too.
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(!uploading && !event.currentTarget.closest("fieldset:disabled"));
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          if (event.currentTarget.closest("fieldset:disabled")) {
-            return;
-          }
-          const file = event.dataTransfer.files[0];
+      {/* Opened by pick (the file input itself stays out of sight and out of the tab order). */}
+      <input
+        ref={picker}
+        id={id}
+        aria-label={label}
+        type="file"
+        tabIndex={-1}
+        disabled={uploading || !projectSlug}
+        accept={UPLOAD_IMAGE_TYPES.join(",")}
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
           if (file) {
             void upload(file);
           }
         }}
-        className={cn(
-          "flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3 transition-colors",
-          dragging && "border-primary bg-soft",
-        )}
-      >
+      />
+    </>
+  );
+
+  return { image, setImage, uploading, error: status && "error" in status ? status.error : null, dragging, drop, inputs, pick: () => picker.current?.click() };
+}
+
+/** An uploaded image: its preview on the background it's for, and its upload id in a hidden field (empty when removed). */
+export function ImageField({
+  projectSlug,
+  name,
+  label,
+  description,
+  image: initial,
+  look,
+  onBusy,
+  onRemove,
+}: {
+  /** Where uploads go; without one, the image can only be removed (Account's photo for someone without a project). */
+  projectSlug?: string;
+  name: string;
+  label: string;
+  description: string;
+  image: Image;
+  /** The background it's for; the page's own without one. */
+  look?: "light" | "dark";
+  onBusy: (delta: number) => void;
+  /** After "Remove", for a form whose other fields depend on there being an image. */
+  onRemove?: () => void;
+}) {
+  const id = useId();
+  const uploadButton = useRef<HTMLButtonElement>(null);
+  const { image, setImage, uploading, error, dragging, drop, inputs, pick } = useImageUpload({ projectSlug, name, id, image: initial, onBusy });
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      {/* Dropped here, or picked with "Upload". */}
+      <div {...drop} className={cn("flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3 transition-colors", dragging && "border-primary bg-soft")}>
         {/* `light` / `dark` give the preview that mode's background (globals.css). */}
         <div className={cn(look, "flex h-14 w-32 items-center justify-center rounded-lg border bg-background p-2")}>
           {image ? (
@@ -388,7 +429,7 @@ export function ImageField({
               // The description says why it's off, when it is (Account's photo without a project).
               aria-describedby={`${id}-description`}
               ref={uploadButton}
-              onClick={() => picker.current?.click()}
+              onClick={pick}
             >
               <UploadIcon />
               Upload
@@ -404,7 +445,7 @@ export function ImageField({
                 onClick={() => {
                   // Remove goes with the image: focus moves to Upload, not out of the field.
                   uploadButton.current?.focus();
-                  change(null);
+                  setImage(null);
                   onRemove?.();
                 }}
               >
@@ -414,30 +455,15 @@ export function ImageField({
           </div>
           {projectSlug && <span className="text-xs text-muted-foreground">or drop an image here</span>}
         </div>
-        <input
-          ref={picker}
-          id={id}
-          type="file"
-          tabIndex={-1}
-          disabled={uploading || !projectSlug}
-          accept={UPLOAD_IMAGE_TYPES.join(",")}
-          className="sr-only"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) {
-              void upload(file);
-            }
-          }}
-        />
+        {inputs}
       </div>
       <FieldDescription id={`${id}-description`}>{description}</FieldDescription>
-      {status && "uploading" in status && (
+      {uploading && (
         <p role="status" className="text-sm text-muted-foreground">
           Uploading…
         </p>
       )}
-      {status && "error" in status && <FieldError>{status.error}</FieldError>}
+      {error && <FieldError>{error}</FieldError>}
     </Field>
   );
 }

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
-import { cache } from "react";
+import { cache, createElement } from "react";
 
 import { branding } from "@/server/operations/branding";
 import { portalAddress } from "@/server/custom-domains";
@@ -34,6 +34,10 @@ export async function portalPageMetadata(
     /** For articles, posts and changelog entries. */
     article?: { publishedTime?: Date | null; modifiedTime?: Date | null };
     noindex?: boolean;
+    /** An article's page: its Markdown copy, at <path>.md, listed for AI tools. */
+    markdown?: boolean;
+    /** The page's own link card (a changelog entry's featured image), in place of the one made for it. */
+    image?: { url: string; width: number; height: number } | null;
   },
 ): Promise<Metadata> {
   const [address, site, home] = await Promise.all([portalAddress(slug), portalSite(slug), portalHomePath(slug)]);
@@ -44,17 +48,20 @@ export async function portalPageMetadata(
   return {
     title: page.title,
     ...(description && { description }),
-    alternates: { canonical: url },
+    alternates: { canonical: url, ...(page.markdown && { types: { "text/markdown": `${url}.md` } }) },
     openGraph: {
       title: page.title,
       ...(description && { description }),
       url,
       ...(site && { siteName: site.name }),
-      // The team's own share image (Customize → SEO) on that page too, as at the portal's address; a card made for every other page.
+      // The page's own image; the team's share image (Customize → SEO) on the page the portal opens on, as at the
+      // portal's address; a card made for every other page. (Twitter's card reads these too: the layout's twitter has no image.)
       images: [
-        site?.brand.seoImage && page.path === home
-          ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
-          : { url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
+        page.image
+          ? { url: page.image.url, width: page.image.width, height: page.image.height, alt: page.title }
+          : site?.brand.seoImage && page.path === home
+            ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
+            : { url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
       ],
       ...(page.article
         ? { type: "article", ...(publishedTime && { publishedTime: publishedTime.toISOString() }), ...(modifiedTime && { modifiedTime: modifiedTime.toISOString() }) }
@@ -66,3 +73,54 @@ export async function portalPageMetadata(
 
 /** A page that's for the reader alone (signing in, their account, a link from an email): not for search engines. */
 export const PRIVATE_PAGE = { robots: { index: false, follow: false } } satisfies Metadata;
+
+/**
+ * An article's or changelog entry's schema.org data for search and answer engines (rich results): a `<script
+ * type="application/ld+json">` with its headline, description, canonical address (`path` on the portal's real
+ * address, as portalPageMetadata), dates and the portal as publisher, and a `BreadcrumbList` of `breadcrumb` (portal
+ * paths, the page last; with steps before it). None on a private portal: callers leave out pages that aren't for search engines or signed-out readers.
+ */
+export async function portalArticleJsonLd(
+  slug: string,
+  page: {
+    type: "TechArticle" | "BlogPosting";
+    title: string;
+    description?: string | null;
+    path: string;
+    published?: Date | null;
+    modified?: Date | null;
+    breadcrumb?: { name: string; path: string }[];
+  },
+) {
+  const [address, site] = await Promise.all([portalAddress(slug), portalSite(slug)]);
+  if (!site || site.project.portalAccess !== "PUBLIC") {
+    return null;
+  }
+  const url = `${address}${page.path}`;
+  const data: object[] = [
+    {
+      "@context": "https://schema.org",
+      "@type": page.type,
+      headline: page.title,
+      ...(page.description && { description: page.description }),
+      url,
+      mainEntityOfPage: url,
+      ...(page.published && { datePublished: page.published.toISOString() }),
+      ...((page.modified ?? page.published) && { dateModified: (page.modified ?? page.published)!.toISOString() }),
+      publisher: { "@type": "Organization", name: site.name, url: address },
+    },
+  ];
+  // A trail with steps before the page (one with the page alone says nothing).
+  if (page.breadcrumb && page.breadcrumb.length > 1) {
+    data.push({
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: page.breadcrumb.map((crumb, i) => ({ "@type": "ListItem", position: i + 1, name: crumb.name, item: `${address}${crumb.path}` })),
+    });
+  }
+  // `<` as \u003c (still the same JSON): no title can close the script tag.
+  return createElement("script", {
+    type: "application/ld+json",
+    dangerouslySetInnerHTML: { __html: JSON.stringify(data.length === 1 ? data[0] : data).replace(/</g, "\\u003c") },
+  });
+}

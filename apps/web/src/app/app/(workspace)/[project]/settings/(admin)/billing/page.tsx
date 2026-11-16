@@ -18,7 +18,7 @@ import { TOPUP_DOLLARS } from "@/server/operations/credits";
 
 export const metadata: Metadata = { title: "Billing · Settings" };
 
-const LICENSE_SOURCES: Record<string, string> = { appsumo: "AppSumo" };
+const LICENSE_SOURCES: Record<string, string> = { appsumo: "AppSumo", tuti: "Tuti" };
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
@@ -88,7 +88,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           title={license && !license.revokedAt ? `${shown.name} plan` : trial ? (trial.ended ? "Your trial has ended" : `${shown.name} trial`) : `${shown.name} plan`}
           description={
             license && !license.revokedAt
-              ? `Given by a license from ${license.from}, a lifetime deal: it doesn't renew or bill.`
+              ? `Given by a license from ${license.from}${license.source === "appsumo" ? ", a lifetime deal" : ""}: it doesn't renew or bill.`
               : trial
               ? trial.ended
                 ? "Choose a plan to keep going. Plans are per project: readers are always unlimited."

@@ -81,7 +81,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     tags: entry.tags.map((tag) => tag.toLowerCase()),
     body: entry.body,
     content: displayDoc(entry),
-    /** The cover image: a lasting link to its smallest stored size, and its size; null for none. */
+    /** The featured image (cover): a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
     // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
     posts: entry.posts.filter(({ post }) => post.sample === entry.sample).map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
@@ -273,7 +273,7 @@ export const reactToChangelogEntry = defineOperation({
 
 export const createChangelogEntry = defineOperation({
   name: "changelog.create",
-  summary: "Write a changelog entry (a draft until it's published), pick the posts it completes and its cover image (an upload's id)",
+  summary: "Write a changelog entry (a draft until it's published), pick the posts it completes and its featured image (cover: an upload's id; also its link-preview image)",
   method: "POST",
   path: "/changelog",
   scope: "write",
@@ -318,7 +318,7 @@ export const createChangelogEntry = defineOperation({
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
   summary:
-    "Change a changelog entry: its title, text, tags, cover image (an upload's id, null to remove) or the posts it completes (posts replace the list; only while it's a draft)",
+    "Change a changelog entry: its title, text, tags, featured image (cover: an upload's id, null to remove; also its link-preview image) or the posts it completes (posts replace the list; only while it's a draft)",
   method: "PATCH",
   path: "/changelog/{number}",
   scope: "write",

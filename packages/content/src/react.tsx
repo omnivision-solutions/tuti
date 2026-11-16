@@ -20,6 +20,7 @@ export function RichText({
   mediaUrls,
   headingIds = false,
   link,
+  eager = false,
 }: {
   doc: JSONContent;
   className?: string;
@@ -29,8 +30,10 @@ export function RichText({
   headingIds?: boolean;
   /** A safe link's own rendering (an article's link to another of the portal's articles); null for the usual new-tab link. */
   link?: LinkRenderer;
+  /** Its images load at once (one likely in view as the page opens), not lazily. */
+  eager?: boolean;
 }) {
-  const options: Options = { media: mediaUrls ?? undefined, link };
+  const options: Options = { media: mediaUrls ?? undefined, link, eager };
   const headings = docHeadings(doc);
   let next = 0;
   const content = (doc.content ?? []).map((child, i) =>
@@ -68,7 +71,7 @@ export function TableOfContents({ headings, links = true }: { headings: Heading[
 }
 
 export type LinkRenderer = (href: string, text: ReactNode) => ReactNode | null;
-type Options = { media?: MediaUrls; link?: LinkRenderer };
+type Options = { media?: MediaUrls; link?: LinkRenderer; eager?: boolean };
 
 function children(node: JSONContent, options: Options): ReactNode[] {
   return (node.content ?? []).map((child, i) => renderNode(child, i, options));
@@ -236,7 +239,7 @@ function renderNode(node: JSONContent, key: number, options: Options, id?: strin
             width={w}
             height={h}
             alt={typeof alt === "string" ? alt : ""}
-            loading="lazy"
+            loading={options.eager ? "eager" : "lazy"}
             decoding="async"
           />
         </figure>

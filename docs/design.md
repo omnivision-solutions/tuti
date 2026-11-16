@@ -12,7 +12,7 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
-  Emails sent on a project's behalf (to its customers and readers) are the team's: its portal's header at the top: its
+  Emails sent on a project's behalf (to its customers and readers) are the team's: its portal's header at the top, centred over the card (Tuti's own emails keep their mark on the left): its
   uploaded logo (32px tall, at most 160px wide) with the logo's text beside it, or without a logo a square in its accent
   with the name's first letter beside the text or name (Outlook for Windows, which can't show the logo's WebP, gets the
   square and the text or name too), and its accent for buttons and links, as its portal does (too faint: the same darker shade
@@ -254,11 +254,12 @@ the list picks none to approve at once.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
-  ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
+  ("Link post…"), how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
   "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
-  and on phones the title shows once, the one to edit. The cover shows under the title in the
-  text's column, as readers see it. One way into AI: while the text is still the pull requests'
+  and on phones the title shows once, the one to edit. The featured image (its cover, and its link
+  preview) shows under the title across the text's column, as readers see it, with Replace and Remove over it on
+  hover, focus and touch screens; without one, a dashed band there adds one (picked or dropped). One way into AI: while the text is still the pull requests'
   titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
   toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.
@@ -528,8 +529,8 @@ the list picks none to approve at once.
     with the email form) at its end; on phones a round RSS and a round filled bell beside the title. On wide screens a
     timeline: each entry's short date and a neutral dot (a ring in the muted text colour) on a `divider` line in a
     110px margin; beside it the grey tag (Breaking destructive) above a 28px title, then an excerpt of the text, plain
-    (no images, embeds or code) and linking to the entry's page: the first page's newest entry its cover framed as a
-    card and up to eight lines, fading out where it's cut; the others three lines, no cover. Then "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
+    (no images, embeds or code) and linking to the entry's page: every entry its cover (if it has one) framed as a
+    card, the first loading at once and the rest lazily, then up to three lines, fading out where they're cut. Then "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
     the title is read out after the pill's words) it shipped, and its reactions as grey pills, the emoji grey until
     picked (your own the accent's tint and ring); a line between entries. A "Jump to month" index beside the list past
     eight entries, plain rows (the page's month in the neutral fill): the latest six months, older ones under "Earlier
