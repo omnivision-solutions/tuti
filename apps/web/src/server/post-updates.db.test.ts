@@ -183,6 +183,36 @@ test("a held try's comment approved again as the completion's note (COMMENT_UNSU
   expect(more).toEqual([]);
 });
 
+test("a held try's comment whose completion then fails, and is dismissed, is still emailed to the author as a comment", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const completes = await part("RESOLVES");
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt: new Date(Date.now() - 60_000), waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  const comment = await call(createComment, team(), { number: post.number, body: "It's all out." });
+  // Approved again with the box as it was (reusing that comment), and the completion fails after it's taken as the note.
+  const updateMany = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementation((async (...args: unknown[]) => {
+    if ((args[0] as { data?: { payload?: { note?: unknown } } }).data?.payload?.note) {
+      throw new Error("connection reset");
+    }
+    return updateMany(...args);
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." })).rejects.toThrow();
+  vi.mocked(prisma.codeChangeAction.updateMany).mockRestore();
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  // Dismissed: it stays only a comment, so its email to the author goes.
+  await call(dismissCodeChangeAction, team(), { id: completes.id });
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [email, ...more] = author(voter.email);
+  expect(more).toEqual([]);
+  expect(email!.subject).toBe("New comment on “Recurring events”");
+  expect(email!.text).toContain("It's all out.");
+});
+
 test("a completion's comment comments.create refuses (its limits drifting from the review's) says why, posts nothing and leaves the update waiting", async () => {
   // No input reaches this today: the review's own limits are tighter. Simulated, so the check stays in front of posting.
   const refused = createComment.input.safeParse({ number: 1, body: "x".repeat(MAX_TEXT_LENGTH * 2 + 1) });

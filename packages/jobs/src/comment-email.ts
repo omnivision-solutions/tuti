@@ -56,7 +56,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       sample: true,
       authorId: true,
       visibility: true,
-      board: { select: { slug: true, off: true } },
+      board: { select: { slug: true, off: true, name: true } },
       projectId: true,
       project: { select: { slug: true, portalAccess: true, plan: true } },
       comments: {
@@ -133,6 +133,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
         postTitle: post.title,
         voteCount: post.voteCount,
         status: post.status,
+        board: post.board.name,
         comments: claimed.map((comment) => ({ authorId: comment.authorId, authorName: comment.author.name, text: quotedText(comment) })),
         postUrl: portalPostUrl(origin, post),
         unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,

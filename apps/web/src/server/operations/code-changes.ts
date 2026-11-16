@@ -1392,11 +1392,15 @@ export const applyCodeChangeAction = defineOperation({
     // The comment posted before the completion (see below), and whether it can't be told it was saved.
     let first = false;
     let unsureComment = false;
+    // A reused comment's due time to its post's author (comment-email), cleared as it becomes the note: put back if the
+    // completion fails, so a comment that stays only a comment (dismissed, approved with another) is still emailed.
+    let reusedDue: Date | null = null;
     try {
       if (reuse) {
         // Before completing it: the email it sends quotes that comment (postShipped reads `note`). The completion's note
         // now, so never a comment email to the post's author, however the held try saved it.
         shared.commentId = reuse;
+        reusedDue = (await prisma.comment.findUnique({ where: { id: reuse }, select: { authorEmailDueAt: true } }))?.authorEmailDueAt ?? null;
         await prisma.comment.updateMany({ where: { id: reuse }, data: { authorEmailDueAt: null } });
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
       }
@@ -1462,6 +1466,9 @@ export const applyCodeChangeAction = defineOperation({
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
     } catch (error) {
+      if (reuse && reusedDue) {
+        await prisma.comment.updateMany({ where: { id: reuse, authorEmailDueAt: null }, data: { authorEmailDueAt: reusedDue } }).catch(() => {});
+      }
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {

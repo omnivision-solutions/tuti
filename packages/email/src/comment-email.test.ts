@@ -7,7 +7,8 @@ const props = {
   projectName: "Acme",
   postTitle: "Slack notifications per board",
   voteCount: 23,
-  status: "UNDER_REVIEW",
+  status: "UNDER_REVIEW" as const,
+  board: "Feature requests",
   comments: [{ authorId: "u-sam", authorName: "Sam Lee", text: "Same here! We'd want a separate channel for the Bugs board." }],
   postUrl: "https://acme.example.com/feedback/ideas/slack-notifications-per-board-12",
   unsubscribeUrl: "https://acme.example.com/unsubscribe?token=t",
@@ -18,7 +19,7 @@ test("one comment: who wrote it, the post with its votes and status, Reply and w
   expect(subject).toBe("New comment on “Slack notifications per board”");
   const text = await render(body, { plainText: true });
   expect(text).toMatch(/Sam commented on your idea/i);
-  for (const line of ["New comment on your idea", "23", "Under review", "Sam Lee", "Same here!", "Reply", "You get this because you posted this idea.", "Unsubscribe from Acme"]) {
+  for (const line of ["New comment on your idea", "Feature requests", "23", "Under review", "Sam Lee", "Same here!", "Reply", "You get this because you posted this idea.", "Unsubscribe from Acme"]) {
     expect(text).toContain(line);
   }
   // The arrow and the dot are decoration: hidden from screen readers and the plain text; the count says it's votes.
