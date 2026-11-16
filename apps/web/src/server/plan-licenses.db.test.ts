@@ -180,6 +180,13 @@ test("unassigning from a project's Billing takes the license off that project on
   expect(await planOf(other.id)).toBe("free");
 });
 
+test("when Stripe can't say whether the project's subscription has ended, the license isn't assigned", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { stripeSubscriptionId: "sub_unknown" } });
+  const held = await license();
+  expect(await assignPlanLicense(project.slug, held.id)).toEqual({ error: "We couldn't check this project's plan with Stripe. Try again in a minute." });
+  expect(await planOf()).toBe("free");
+});
+
 test("a project with a plan set by hand isn't given one", async () => {
   await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   expect(await assignPlanLicense(project.slug, (await license()).id)).toEqual({ error: "This project has a plan already. Contact support to change it." });

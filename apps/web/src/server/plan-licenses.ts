@@ -23,6 +23,15 @@ class Refused extends Error {}
 /** Stripe's statuses for a subscription that will never charge again. */
 const ENDED = new Set(["canceled", "incomplete_expired"]);
 
+/** The subscription's status at Stripe; refused when Stripe can't say, so a license never lands on one still charging. */
+async function subscriptionStatus(id: string): Promise<string> {
+  try {
+    return (await getSubscription(id)).status;
+  } catch {
+    throw new Refused("We couldn't check this project's plan with Stripe. Try again in a minute.");
+  }
+}
+
 /**
  * Takes the change in a transaction holding the license's row, if `userId` holds it, or (`orProjectAdmin`) owns or
  * administers the project it's on.
@@ -35,7 +44,8 @@ async function change(userId: string, licenseId: string, run: (tx: Prisma.Transa
         throw new Refused("That license isn't on your account");
       }
       await run(tx);
-    });
+      // Assigning asks Stripe (up to 15s) while it holds the locks.
+    }, { timeout: 35_000 });
   } catch (error) {
     if (error instanceof Refused) {
       return { error: error.message };
@@ -79,7 +89,7 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
     }
     // A subscription that holds no plan now (unpaid, incomplete) can still be paid and charge again: only one Stripe
     // has ended frees the project.
-    if (current.planStatus !== null || (current.stripeSubscriptionId && !ENDED.has((await getSubscription(current.stripeSubscriptionId)).status))) {
+    if (current.planStatus !== null || (current.stripeSubscriptionId && !ENDED.has(await subscriptionStatus(current.stripeSubscriptionId)))) {
       throw new Refused("This project pays for a plan. Cancel it from Settings → Billing → Manage plan, and assign the license once it ends.");
     }
     if (!onDefaultPlan(current.plan)) {
