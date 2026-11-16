@@ -50,12 +50,15 @@ function entryTitle(title: string | null | undefined): string {
 
 /**
  * An entry with no featured image (Ferndesk's never have one) whose text opens with an image: that image as its cover,
- * taken out of the text so it isn't shown twice, as the team would set it up by hand. Any other: as it is, no cover.
+ * taken out of the text so it isn't shown twice, as the team would set it up by hand. Only one whose description says
+ * nothing past the entry's title (a cover is described by the title): one that says more stays in the text, so the
+ * words aren't lost. Any other: as it is, no cover.
  */
-function openingImageAsCover(content: HtmlContent): { content: HtmlContent; cover: { mediaId: string } | null } {
+function openingImageAsCover(content: HtmlContent, title: string): { content: HtmlContent; cover: { mediaId: string } | null } {
   const [first, ...rest] = content.doc.content ?? [];
   const mediaId = first?.type === "image" ? first.attrs?.mediaId : undefined;
-  if (typeof mediaId !== "string") {
+  const alt = String(first?.attrs?.alt ?? "").trim().toLowerCase();
+  if (typeof mediaId !== "string" || (alt !== "" && alt !== title.trim().toLowerCase())) {
     return { content, cover: null };
   }
   const doc = { ...content.doc, content: rest };
@@ -135,7 +138,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
       // Keyed as the text's images are (signatures aside), so a cover that's also in the text is one copy.
       const url = !tooLong && entry.featuredImage;
       const cover = url ? await (media?.({ kind: "image", url, key: sameFile(url) }) ?? { leftOut: "unsupported" as const }) : null;
-      copied.set(entry.id, cover || "error" in content ? { content, cover } : openingImageAsCover(content));
+      copied.set(entry.id, cover || "error" in content ? { content, cover } : openingImageAsCover(content, entryTitle(entry.title)));
     }
     done++;
   }

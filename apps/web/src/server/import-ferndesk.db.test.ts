@@ -280,7 +280,7 @@ test("the changelog comes across: entries oldest first, a page at a time, publis
 
 test("an entry whose text opens with an image has it as its cover, out of the text: Ferndesk has no featured image; one with an image further down has no cover", async () => {
   const search = fake.fixtures.entries.find((entry) => entry.id === "art_search")!;
-  search.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Search"></p><p>Search results load twice as fast.</p>`;
+  search.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Faster search"></p><p>Search results load twice as fast.</p>`;
   const done = await importParts(["changelog"], { publishArticles: true });
   expect(done.counts).toMatchObject({ changelogImages: { imported: 1, leftOut: {} } });
   const rows = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, content: true, coverId: true } });
@@ -292,6 +292,16 @@ test("an entry whose text opens with an image has it as its cover, out of the te
   ]);
   expect(JSON.stringify(rows[1]!.content)).not.toContain('"image"');
   expect(cover.attachedAt).not.toBeNull();
+});
+
+test("an opening image whose description says more than the entry's title stays in the text, so its words aren't lost: no cover", async () => {
+  const search = fake.fixtures.entries.find((entry) => entry.id === "art_search")!;
+  search.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Median search time fell by half"></p><p>Search results load twice as fast.</p>`;
+  await importParts(["changelog"], { publishArticles: true });
+  expect(await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, title: "Faster search" }, select: { body: true, coverId: true } })).toEqual({
+    body: "Median search time fell by half\nSearch results load twice as fast.",
+    coverId: null,
+  });
 });
 
 test("by default, changelog entries published in Ferndesk come as drafts for the team to check and publish, with their dates: Ferndesk doesn't say who could read them", async () => {
