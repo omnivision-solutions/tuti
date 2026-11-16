@@ -139,9 +139,12 @@ export async function claimPlanLicense(claim: string): Promise<{ error?: string 
     return { error: "This license was deactivated on AppSumo." };
   }
   if (license.userId !== session.user.id) {
-    const { count } = await prisma.planLicense.updateMany({ where: { id: license.id, userId: null }, data: { userId: session.user.id, claimedAt: new Date() } });
+    // In one statement with the checks above (a refund or an upgrade's new key may have come since): still unclaimed,
+    // not revoked, and still this key.
+    const { count } = await prisma.planLicense.updateMany({ where: { id: license.id, source, externalKey: key, userId: null, revokedAt: null }, data: { userId: session.user.id, claimedAt: new Date() } });
     if (count === 0) {
-      return { error: "This license is on another Tuti account. Sign in to that one, or contact support." };
+      const now = await prisma.planLicense.findUnique({ where: { id: license.id }, select: { userId: true } });
+      return { error: now?.userId && now.userId !== session.user.id ? "This license is on another Tuti account. Sign in to that one, or contact support." : "This license changed on AppSumo just now. Redeem it from AppSumo again." };
     }
   }
   redirect("/app/licenses");
