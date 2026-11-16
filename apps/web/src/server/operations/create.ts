@@ -1,6 +1,6 @@
 import { isEmptyDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
-import { enqueue, seenAs } from "@tuti/jobs";
+import { COMMENT_BATCH_MINUTES, enqueue, seenAs } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -265,10 +265,22 @@ export const createComment = defineOperation({
         }
         const parentId = parent ? (parent.parentId ?? parent.id) : null;
         target = parentId ?? target;
+        const told = !post.sample && seenAs(post) !== "TEAM";
         const created = await tx.comment.create({
-          // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
-          // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, parentId, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
+          // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't). Someone else's
+          // comment is emailed to the post's author a few minutes on, with any others by then (comment-emails-due).
+          // Not for sample content (Home's "Add sample content"): no webhook, and nobody's emailed.
+          data: {
+            projectId,
+            postId: post.id,
+            authorId: userId,
+            body: text.text,
+            content: text.doc,
+            asReader,
+            parentId,
+            ...(input.emailVoters && told && { votersEmailDueAt: new Date() }),
+            ...(told && post.authorId && post.authorId !== userId && { authorEmailDueAt: new Date(Date.now() + COMMENT_BATCH_MINUTES * 60_000) }),
+          },
           select: { id: true, body: true, content: true, createdAt: true, parentId: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });

@@ -1392,6 +1392,9 @@ export const applyCodeChangeAction = defineOperation({
     // The comment posted before the completion (see below), and whether it can't be told it was saved.
     let first = false;
     let unsureComment = false;
+    // The note's due time to the post's author (comment-email), cleared just before the completion: put back if it fails,
+    // so a comment that stays only a comment (held, then dismissed or approved with another) is still emailed.
+    let noteDue: Date | null = null;
     try {
       if (reuse) {
         // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
@@ -1431,8 +1434,15 @@ export const applyCodeChangeAction = defineOperation({
       // come after it was saved.
       first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim() && !reuse;
       if (first) {
+        // Checked as comments.create checks it (call), before it's being posted: refused, it's an OperationError, so the
+        // update waits again with nothing posted (never "maybe saved").
+        const commentInput = createComment.input.safeParse({ number: post.number, body: comment });
+        if (!commentInput.success) {
+          throw new OperationError(400, "invalid_input", commentInput.error.issues[0]?.message ?? "Invalid input");
+        }
         posting = true;
-        shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
+        // Saved as any comment (due to the post's author, comment-email): until the completion goes, it's only a comment.
+        shared.commentId = (await createComment.run(context, commentInput.data)).id;
         posting = false;
         // The email completing it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;
@@ -1440,6 +1450,12 @@ export const applyCodeChangeAction = defineOperation({
       }
       if (whole?.completes) {
         if (post.status !== "COMPLETED") {
+          // The completion's note: people hear of it through the shipped email, which quotes it, never as a comment email
+          // to the post's author. Cleared before the completion, which queues that email (so it can't go first).
+          if (shared.commentId && (first || reuse)) {
+            noteDue = (await prisma.comment.findUnique({ where: { id: shared.commentId }, select: { authorEmailDueAt: true } }))?.authorEmailDueAt ?? null;
+            await prisma.comment.updateMany({ where: { id: shared.commentId }, data: { authorEmailDueAt: null } });
+          }
           shared.status = post.status;
           await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });
         }
@@ -1452,6 +1468,9 @@ export const applyCodeChangeAction = defineOperation({
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
     } catch (error) {
+      if (shared.commentId && noteDue) {
+        await prisma.comment.updateMany({ where: { id: shared.commentId, authorEmailDueAt: null }, data: { authorEmailDueAt: noteDue } }).catch(() => {});
+      }
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {

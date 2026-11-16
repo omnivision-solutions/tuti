@@ -177,7 +177,8 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
       ON CONFLICT ("postId", "userId") DO NOTHING`;
     await tx.postSubscription.deleteMany({ where: { postId: from } });
     // A reply still to be emailed to its post's voters (Email voters) isn't, once moved: the target's voters never saw it asked.
-    await tx.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null } });
+    // Nor a comment to its post's author: it wasn't on the target's.
+    await tx.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null, authorEmailDueAt: null } });
     await tx.postNote.updateMany({ where: { postId: from }, data: { postId: to } });
     // Conversations about it are about the post it's merged into.
     await tx.$executeRaw`
