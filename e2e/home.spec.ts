@@ -7,6 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
+import { latestEmailTo } from "./mail";
 
 /** The kinds "Needs your attention" lists, in order. */
 const groups = (page: Page) => page.getByRole("region", { name: "Needs your attention" }).locator("section[aria-label]").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label")));
@@ -135,6 +136,49 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   await owner.getByRole("link", { name: "New posts this week: 8" }).click();
   await owner.waitForURL(`**/app/${slug}/feedback?status=all&sort=new`);
   await expect(owner.getByRole("main").getByRole("listitem").getByRole("link", { name: /^(Dark mode|Exports)$/ })).toHaveText(["Exports", "Dark mode"]);
+});
+
+test("Home's Publish now on a progress update going out by itself asks first, naming whom moving the post emails; published, they're emailed", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const title = `Recurring events ${id}`;
+  await api("/posts", { board: "feature-requests", title });
+  // A customer asked for it: by itself the update emails nobody, but a teammate's Publish now emails them.
+  const ada = `e2e-ada-${id}@example.com`;
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-ada", name: "Ada", email: ada } });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(
+      `WITH change AS (
+         INSERT INTO code_change (id, "projectId", "repoId", repo, number, url, title, author, "mergedAt", state, "updatedAt")
+         SELECT gen_random_uuid()::text, id, 1, 'acme/app', 7, 'https://github.com/acme/app/pull/7', 'Weekly repeats', 'octo', now(), 'READY', now()
+         FROM project WHERE slug = $1 RETURNING id
+       )
+       INSERT INTO code_change_action (id, "codeChangeId", kind, probability, status, "dueAt", "postId", payload)
+       SELECT gen_random_uuid()::text, change.id, 'MOVES_FORWARD', 0.97, 'SCHEDULED', now() + interval '1 hour', p.id, '{"comment": "Weekly repeats are out."}'::jsonb
+       FROM change, post p JOIN project pr ON pr.id = p."projectId" WHERE pr.slug = $1 AND p.number = 1`,
+      [slug],
+    );
+  } finally {
+    await db.end();
+  }
+
+  await owner.goto(`/app/${slug}`);
+  const row = owner.getByRole("region", { name: "To review in Autopilot" }).getByRole("listitem").filter({ hasText: title });
+  await row.getByRole("button", { name: "Publish now" }).click();
+  const ask = owner.getByRole("alertdialog", { name: "Publish it now?" });
+  await expect(ask).toContainText("Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
+  await checkpoint(owner, "home-publish-progress", { fullPage: false });
+  await ask.getByRole("button", { name: "Publish now" }).click();
+  await expect(owner.getByText("Published", { exact: true })).toBeVisible();
+  expect((await latestEmailTo(ada, { subject: /^In progress:/ })).subject).toBe(`In progress: ${title}`);
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("In progress");
 });
 
 test("Get set up's cards wrap a long project name inside the card, on a phone and two to a row", async ({ browser }) => {
