@@ -192,7 +192,8 @@ export function Diff({ lines, more }: { lines: DiffLine[]; more?: number }) {
 /**
  * The portal's "Powered by tuti" badge, as a pill under the card: the mark and the drawn wordmark are a picture, grey
  * beside a team's colours (`mono`), in Tuti's own on its emails. A table with rounded corners: where corners aren't
- * supported, a plain bordered box.
+ * supported, a plain bordered box. On emails to a project's customers it's required by Tuti's additional licence terms
+ * (AGPL section 7(b)), as on the portal: see ADDITIONAL-TERMS.md at the root of the repository.
  */
 function PoweredBy({ mono }: { mono: boolean }) {
   const image = appImage(mono ? "email-powered-by.png" : "email-powered-by-tuti.png");
