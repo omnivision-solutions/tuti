@@ -131,13 +131,23 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
   await expect(owner.getByText("License assigned")).toBeVisible();
 
-  // Billing: the license's plan, nothing to manage in Stripe, no add-on to buy.
+  // Billing: the license's plan, nothing to manage in Stripe; the add-on is bought on its own.
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
   await expect(owner.getByText("Given by a license from AppSumo, a lifetime deal: it doesn't renew or bill.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
-  await expect(owner.getByText('Hide "Powered by tuti"')).toBeHidden();
+  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed on its own.")).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license");
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
+  await expect(confirm).toContainText("$49 a month, billed on its own until you show the badge again or the license is unassigned.");
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  // Stripe's page (the fake), then back to Billing with the badge hidden; the license still gives the plan.
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
+  await checkpoint(owner, "team-settings-billing-license-badge");
   // Unassigning it here asks first: only its holder can assign it again.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
@@ -162,6 +172,8 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.unroute("**/settings/billing");
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+  // The add-on ended with it.
+  await expect(owner.getByRole("link", { name: "Choose a plan" })).toBeVisible();
   // Its holder assigns it again.
   await owner.goto("/app/licenses");
   await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();

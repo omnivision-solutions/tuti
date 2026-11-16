@@ -15,21 +15,22 @@ const HOUR_MS = 3_600_000;
 
 /**
  * Puts the project license `id` is assigned to on the plan it gives, or back on its own plan once it's revoked: none
- * stored, which is the default plan (or its trial's while that runs). In `tx`, holding the license's row. A project
+ * stored, which is the default plan (or its trial's while that runs), and without the "Powered by tuti" add-on it bought
+ * (its subscription is cancelled once this commits: endBadgeWithLicense). In `tx`, holding the license's row. A project
  * paying through Stripe is never given a license (assignment refuses it), so its plan is never touched here.
  */
 export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const license = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { plan: true, projectId: true, revokedAt: true } });
   if (license.projectId) {
-    await tx.project.updateMany({ where: { id: license.projectId, planStatus: null }, data: { plan: license.revokedAt ? null : license.plan } });
+    await tx.project.updateMany({ where: { id: license.projectId, planStatus: null }, data: license.revokedAt ? { plan: null, badgeAddOn: false } : { plan: license.plan } });
   }
 }
 
-/** Takes the project's plan from license `id` away (it's being unassigned): back on its own. In `tx`, holding the license's row. */
+/** Takes the project's plan from license `id` away (it's being unassigned): back on its own, its add-on with it. In `tx`, holding the license's row. */
 export async function releasePlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const { projectId } = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { projectId: true } });
   if (projectId) {
-    await tx.project.updateMany({ where: { id: projectId, planStatus: null }, data: { plan: null } });
+    await tx.project.updateMany({ where: { id: projectId, planStatus: null }, data: { plan: null, badgeAddOn: false } });
     await tx.planLicense.update({ where: { id }, data: { projectId: null, assignedAt: null } });
   }
 }

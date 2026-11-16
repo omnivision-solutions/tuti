@@ -6,7 +6,7 @@ import type { Actor } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
 
 /** Settings → Billing's buttons: each gives the Stripe page to go to, or why not. */
-async function stripePage(projectSlug: string, denied: string, open: (context: { actor: Actor; projectId: string }) => Promise<string>) {
+async function stripePage(projectSlug: string, denied: string, open: (context: { actor: Actor; projectId: string }) => Promise<string | undefined>) {
   let url: string | undefined;
   const result = await asAdmin(projectSlug, denied, async (context) => {
     url = await open(context);
@@ -29,9 +29,7 @@ export async function manageSubscription(projectSlug: string): Promise<{ error?:
   return stripePage(projectSlug, "Only project owners and admins can change the plan", async (context) => (await call(managePlan, context, {})).url);
 }
 
-/** "Hide the badge" and "Show the badge again": the "Powered by tuti" add-on on the plan (see plan.badge). */
-export async function setBadge(projectSlug: string, on: boolean): Promise<{ error?: string }> {
-  return asAdmin(projectSlug, "Only project owners and admins can change the plan", async (context) => {
-    await call(setBadgeAddOn, context, { on: Boolean(on) });
-  });
+/** "Hide the badge" and "Show the badge again": the "Powered by tuti" add-on (see plan.badge); a licensed project pays on Stripe's page (`url`). */
+export async function setBadge(projectSlug: string, on: boolean): Promise<{ error?: string; url?: string }> {
+  return stripePage(projectSlug, "Only project owners and admins can change the plan", async (context) => (await call(setBadgeAddOn, context, { on: Boolean(on) })).url);
 }

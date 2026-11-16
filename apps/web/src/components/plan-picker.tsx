@@ -169,13 +169,16 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
 }
 
 /** The "Powered by tuti" add-on on a paid plan: "Hide the badge" (after saying what it costs), or "Show the badge again". */
-export function BadgeAddOn({ projectSlug, on, perMonth }: { projectSlug: string; on: boolean; perMonth: number }) {
+export function BadgeAddOn({ projectSlug, on, perMonth, licensed = false }: { projectSlug: string; on: boolean; perMonth: number; licensed?: boolean }) {
   const [pending, startTransition] = useTransition();
   const change = (hide: boolean) =>
     startTransition(async () => {
       const result = await setBadge(projectSlug, hide);
       if (result.error) {
         toast.error(result.error);
+      } else if (result.url) {
+        // A licensed project's add-on is paid on Stripe's page.
+        window.location.assign(result.url);
       } else {
         toast.success(hide ? '"Powered by tuti" is hidden' : '"Powered by tuti" is back on your portal');
       }
@@ -196,7 +199,9 @@ export function BadgeAddOn({ projectSlug, on, perMonth }: { projectSlug: string;
         <AlertDialogHeader>
           <AlertDialogTitle>Hide &quot;Powered by tuti&quot;?</AlertDialogTitle>
           <AlertDialogDescription>
-            ${perMonth} a month is added to this project&apos;s plan. You pay for the rest of this billing period now, with the card on the plan.
+            {licensed
+              ? `$${perMonth} a month, billed on its own until you show the badge again or the license is unassigned. You pay on Stripe's page next.`
+              : `$${perMonth} a month is added to this project's plan. You pay for the rest of this billing period now, with the card on the plan.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

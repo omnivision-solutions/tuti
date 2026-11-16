@@ -7,6 +7,8 @@ import { appsumoTierPlan, log } from "@tuti/shared";
 import { signValue } from "@/lib/signed";
 import { appUrl } from "@/lib/hosts";
 
+import { endBadgeWithLicense } from "./subscriptions";
+
 /**
  * AppSumo's lifetime deals (docs/plan.md, Plan licenses), on with APPSUMO_API_KEY: its webhook makes and changes plan
  * licenses (source "appsumo", keyed by AppSumo's license key), and its sign-in (OAuth, with APPSUMO_CLIENT_ID and
@@ -212,7 +214,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
       return;
     }
     case "deactivate": {
-      await prisma.$transaction(async (tx) => {
+      const revoked = await prisma.$transaction(async (tx) => {
         await lockKeys(tx, [key]);
         const [row] = await rowsFor(tx, [key]);
         if (row?.replacedBy) {
@@ -227,7 +229,11 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         }
         await tx.planLicense.update({ where: { id: row.id }, data: { revokedAt: new Date(), metadata } });
         await applyPlanLicense(tx, row.id);
+        return row.projectId;
       });
+      if (revoked) {
+        await endBadgeWithLicense(revoked);
+      }
       return;
     }
   }

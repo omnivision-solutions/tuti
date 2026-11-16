@@ -54,6 +54,10 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const subscription = await getSubscription(id);
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
+      if (!item && subscription.items.data.some(({ price }) => isBadgePrice(price.id))) {
+        await syncLicensedBadge(tx, projectId, subscription);
+        return projectId;
+      }
       // A project whose plan comes from a plan license keeps it (plan-licenses.ts): a subscription that held its plan
       // before is over, and one started since is a second plan, logged below.
       if (!LIVE.has(subscription.status) || !item || !paid) {
@@ -103,6 +107,62 @@ export async function syncSubscription(id: string): Promise<string | null> {
     // Stripe's two answers come within their 15-second timeouts.
     { timeout: 35_000 },
   );
+}
+
+/**
+ * A subscription holding only the "Powered by tuti" add-on: a project given its plan by a plan license buys it on its own
+ * (plan.badge). Live, it hides the badge while the license is active; one paid for a project without an active license
+ * (unassigned or revoked since its Checkout opened), or a second one, is cancelled for the operator to refund. The
+ * project's plan is never touched: the license gives it.
+ */
+async function syncLicensedBadge(tx: Prisma.TransactionClient, projectId: string, subscription: StripeSubscription) {
+  const project = await tx.project.findUnique({
+    where: { id: projectId },
+    select: { planStatus: true, badgeAddOn: true, stripeSubscriptionId: true, planLicense: { select: { revokedAt: true } } },
+  });
+  if (!LIVE.has(subscription.status)) {
+    if (project?.stripeSubscriptionId === subscription.id && project.planStatus === null) {
+      await tx.project.update({ where: { id: projectId }, data: { badgeAddOn: false } });
+    }
+    return;
+  }
+  if (!project) {
+    return;
+  }
+  const own = project.stripeSubscriptionId === subscription.id;
+  if (project.planStatus !== null || !project.planLicense || project.planLicense.revokedAt || (project.badgeAddOn && !own)) {
+    await cancelSubscription(subscription.id);
+    log.error('A Stripe subscription for the "Powered by tuti" add-on paid for a project without an active plan license, or a second one: cancelled; refund its payment', { projectId, subscription: subscription.id });
+    return;
+  }
+  await tx.project.update({
+    where: { id: projectId },
+    data: { badgeAddOn: true, stripeSubscriptionId: subscription.id, stripeCustomerId: subscription.customer, ...(project.badgeAddOn ? {} : { poweredBy: false }) },
+  });
+}
+
+/**
+ * Ends the project's subscription holding only the "Powered by tuti" add-on (a licensed project's, syncLicensedBadge), if
+ * it has one that can still charge: cancelled in Stripe and synced at once, so the badge is back. Its license removed it, or its team did.
+ */
+export async function endLicensedBadge(projectId: string): Promise<void> {
+  const { stripeSubscriptionId: id, planStatus } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { stripeSubscriptionId: true, planStatus: true } });
+  if (!id || planStatus !== null) {
+    return;
+  }
+  const subscription = await getSubscription(id);
+  if (["canceled", "incomplete_expired"].includes(subscription.status) || subscription.items.data.some(({ price }) => planOfPrice(price.id))) {
+    return;
+  }
+  await cancelSubscription(id);
+  await syncSubscription(id);
+}
+
+/** The "Powered by tuti" add-on a licensed project bought ends with its license (unassigned or revoked): cancelled in Stripe. */
+export async function endBadgeWithLicense(projectId: string): Promise<void> {
+  await endLicensedBadge(projectId).catch((error: unknown) => {
+    log.error('Cancelling a licensed project\'s "Powered by tuti" add-on after its license ended failed: cancel it in Stripe', { projectId, error });
+  });
 }
 
 /**

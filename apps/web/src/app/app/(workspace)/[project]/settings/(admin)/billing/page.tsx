@@ -54,6 +54,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const searchParams = await props.searchParams;
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
+  const badgeBought = searchParams.badge === "1";
   // The plan as stored (trialEndsAt selected: see @tuti/db), and a free trial of another while it runs.
   const trial = trialState(plan);
   const shown = planDisplay(effectivePlan(plan.plan, plan.trialEndsAt));
@@ -62,9 +63,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
   // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
   const badge = badgeOffered(plan);
-  // A plan license on the project (docs/plan.md, Plan licenses): its plan, not bought here, so nothing to manage in
-  // Stripe nor an add-on to add to it; or, revoked, the reason the project can't buy a plan until it's unassigned.
+  // A plan license on the project (docs/plan.md, Plan licenses): its plan, not bought here, so no plan to manage in
+  // Stripe (the add-on is bought on its own); or, revoked, the reason the project can't buy a plan until it's unassigned.
   const license = plan.planLicense && { ...plan.planLicense, from: LICENSE_SOURCES[plan.planLicense.source] ?? plan.planLicense.source };
+  const licensed = Boolean(license && !license.revokedAt);
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -72,6 +74,11 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           <AlertDescription>
             Thanks for your payment. Your {paid ? "credits show" : "plan starts"} here as soon as Stripe confirms it, usually within a few seconds.
           </AlertDescription>
+        </Alert>
+      )}
+      {badgeBought && (
+        <Alert>
+          <AlertDescription>Thanks for your payment. &quot;Powered by tuti&quot; is hidden as soon as Stripe confirms it, usually within a few seconds.</AlertDescription>
         </Alert>
       )}
       {plansEnabled() && (
@@ -127,12 +134,16 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && !license && (badge !== null || plan.badgeAddOn) && (
+      {plansEnabled() && (!license || licensed) && (badge !== null || plan.badgeAddOn) && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'
             description={
-              plan.badgeAddOn
+              licensed
+                ? plan.badgeAddOn
+                  ? "Hidden on this project, billed on its own. It ends with the license."
+                  : `The badge at the foot of the portal: hide it for $${badge} a month, billed on its own.`
+                : plan.badgeAddOn
                 ? // What it's billed at may be an older price than the file's: no amount.
                   "Hidden on this project's plan. It ends with the plan."
                 : !onPaidPlan
@@ -141,13 +152,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             }
           >
             {(plan.badgeAddOn || (planSalesEnabled() && badge !== null)) &&
-              (!onPaidPlan ? (
+              (!onPaidPlan && !licensed ? (
                 // To the plans above, monthly or yearly as picked there.
                 <a href="#plans" className={buttonVariants({ variant: "outline" })}>
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} />
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} licensed={licensed} />
               ))}
           </SettingRow>
         </SettingsCard>

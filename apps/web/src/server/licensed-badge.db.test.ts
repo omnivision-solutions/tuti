@@ -1,0 +1,133 @@
+import { prisma } from "@tuti/db";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+
+import { POST as webhook } from "@/app/api/stripe/webhook/route";
+import { branding } from "@/server/operations/branding";
+import { getPlan, managePlan, setBadgeAddOn } from "@/server/operations/plan";
+import { call } from "@/server/operations/run";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+
+import { applyAppsumoEvent } from "./appsumo";
+import { assignPlanLicense, unassignPlanLicense } from "./plan-licenses";
+
+/** A project given its plan by a plan license buys the "Powered by tuti" add-on on its own: a subscription holding only it. */
+
+let stripe: StripeFake;
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+let licenseId: string;
+let licenseKey: string;
+
+beforeAll(async () => {
+  stripe = await startStripeFake();
+});
+afterAll(() => stripe.close());
+beforeEach(async () => {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(withAppsumoPlans), APP_URL: "https://app.tuti.example" })) {
+    vi.stubEnv(name, value);
+  }
+  owner = await signUp("Owner");
+  actAs(owner);
+  project = await createProject(owner);
+  licenseKey = crypto.randomUUID();
+  licenseId = (await prisma.planLicense.create({ data: { source: "appsumo", externalKey: licenseKey, plan: "appsumo-2", userId: owner.id } })).id;
+  expect(await assignPlanLicense(project.slug, licenseId)).toEqual({});
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+const deliver = async (...events: FakeStripeEvent[]) => {
+  for (const { body, headers } of events) {
+    expect((await webhook(new Request("https://app.tuti.example/api/stripe/webhook", { method: "POST", body, headers }))).status).toBe(200);
+  }
+};
+const badge = (on: boolean) => call(setBadgeAddOn, as(), { on });
+const shown = async () => (await branding({ id: project.id }))!.poweredBy;
+const stored = () => prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, badgeAddOn: true, stripeSubscriptionId: true, stripeCustomerId: true } });
+
+/** Hides the badge: Checkout, paid. Its subscription. */
+async function buy() {
+  const { url } = await badge(true);
+  const session = stripe.sessions.at(-1)!;
+  expect(url).toBe(session.url);
+  await deliver(...stripe.pay(session.id));
+  return session.subscription!;
+}
+
+test("a licensed project's add-on is a Checkout for the badge alone; paid, it hides the badge and the license keeps the plan", async () => {
+  const subscription = await buy();
+  const session = stripe.sessions.at(-1)!;
+  expect([session.price, session.subscription_metadata]).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_MONTHLY.id, { projectId: project.id }]);
+  expect(await stored()).toMatchObject({ plan: "appsumo-2", planStatus: null, badgeAddOn: true, stripeSubscriptionId: subscription, stripeCustomerId: expect.any(String) });
+  expect(await shown()).toBe(false);
+  expect(await call(getPlan, as(), {})).toMatchObject({ plan: "appsumo-2", badge: true });
+  // On already: no second Checkout.
+  expect(await badge(true)).toEqual({ on: true });
+  // Its card and invoices are in Stripe's portal.
+  expect((await call(managePlan, as(), {})).url).toEqual(expect.any(String));
+});
+
+test("monthly where it's sold so, else yearly", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { withAppsumoPlans(config); delete config.badge!.month; }));
+  await badge(true);
+  expect(stripe.sessions.at(-1)!.price).toBe(FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_YEARLY.id);
+});
+
+test("removed, its subscription is cancelled and the badge is back; cancelled in Stripe, the same", async () => {
+  const subscription = await buy();
+  expect(await badge(false)).toEqual({ on: false });
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("canceled");
+  expect(await shown()).toBe(true);
+  expect(await stored()).toMatchObject({ plan: "appsumo-2", badgeAddOn: false });
+
+  const again = await buy();
+  await deliver(stripe.update(again, { status: "canceled" }));
+  expect(await stored()).toMatchObject({ plan: "appsumo-2", badgeAddOn: false });
+  expect(await shown()).toBe(true);
+});
+
+test("paid for a project whose license was unassigned meanwhile: cancelled for a refund, and nothing changes", async () => {
+  await badge(true);
+  const session = stripe.sessions.at(-1)!;
+  expect(await unassignPlanLicense(licenseId)).toEqual({});
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  await deliver(...stripe.pay(session.id));
+  expect(stripe.subscriptions.get(session.subscription!)!.status).toBe("canceled");
+  expect(errors.mock.calls.flat().join(" ")).toContain("refund its payment");
+  expect(await stored()).toMatchObject({ plan: null, badgeAddOn: false });
+});
+
+test("it ends with the license: unassigned, or revoked by AppSumo; the license goes back on with no subscription left charging", async () => {
+  const subscription = await buy();
+  expect(await unassignPlanLicense(licenseId)).toEqual({});
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("canceled");
+  expect(await stored()).toMatchObject({ plan: null, badgeAddOn: false });
+  expect(await shown()).toBe(true);
+
+  expect(await assignPlanLicense(project.slug, licenseId)).toEqual({});
+  const next = await buy();
+  await applyAppsumoEvent({ event: "deactivate", license_key: licenseKey });
+  expect(stripe.subscriptions.get(next)!.status).toBe("canceled");
+  expect(await stored()).toMatchObject({ plan: null, badgeAddOn: false });
+  expect(await shown()).toBe(true);
+});
+
+test("a live add-on doesn't keep a license off the project, and its webhook after the license moves back on hides the badge again", async () => {
+  const subscription = await buy();
+  // Stripe couldn't cancel it when the license was unassigned.
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const realFetch = globalThis.fetch;
+  const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) =>
+    init?.method === "DELETE" ? Response.json({ error: { message: "Stripe is down" } }, { status: 500 }) : realFetch(input, init),
+  );
+  expect(await unassignPlanLicense(licenseId)).toEqual({});
+  spy.mockRestore();
+  expect(await stored()).toMatchObject({ badgeAddOn: false });
+  expect(await assignPlanLicense(project.slug, licenseId)).toEqual({});
+  await deliver(stripe.update(subscription, {}));
+  expect(await stored()).toMatchObject({ plan: "appsumo-2", badgeAddOn: true });
+});
