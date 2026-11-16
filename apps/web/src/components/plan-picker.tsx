@@ -148,7 +148,7 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
   }
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button type="button" variant="outline" className="self-start" disabled={pending} />}>
+      <AlertDialogTrigger render={<Button type="button" variant="outline" className="self-start" disabled={pending} focusableWhenDisabled />}>
         {pending ? "Unassigning…" : "Unassign license"}
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -158,7 +158,9 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={unassign}>Unassign license</AlertDialogAction>
+          <AlertDialogAction disabled={pending} onClick={unassign}>
+            {pending ? "Unassigning…" : "Unassign license"}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

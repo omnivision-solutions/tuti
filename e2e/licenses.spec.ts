@@ -137,7 +137,19 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(dialog).toBeHidden();
   await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
   await owner.getByRole("button", { name: "Unassign license" }).click();
+  // While it runs (its request held here), the dialog's button is off: a second press can't send it again.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/settings/billing", async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.fallback();
+  });
   await dialog.getByRole("button", { name: "Unassign license" }).click();
+  await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeDisabled();
+  release();
+  await owner.unroute("**/settings/billing");
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
   // Its holder assigns it again.
