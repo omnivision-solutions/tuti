@@ -7,7 +7,7 @@ import { creditBalance, grantPlanLicenseCredits } from "@tuti/jobs";
 import { billingFile } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** The operator's script for licenses Tuti hands out itself (scripts/plan-license.mjs). */
 
@@ -43,7 +43,8 @@ test("issue on a project replaces its hand-set plan and gives the plan's credits
   const issued = await run("issue", owner.email.toUpperCase(), "pro", project.slug, "our", "own");
   expect(issued.ok).toBe(true);
   const license = await prisma.planLicense.findFirstOrThrow({ where: { source: "tuti", projectId: project.id } });
-  expect(license).toMatchObject({ plan: "pro", userId: owner.id, metadata: { note: "our own" } });
+  expect(license).toMatchObject({ plan: "pro", userId: owner.id, metadata: { note: "our own", replacedPlan: "business" } });
+  expect(issued.out).toContain("it replaced the plan business");
   expect(license.claimedAt).not.toBeNull();
   expect(license.assignedAt).not.toBeNull();
   expect(issued.out).toContain(license.externalKey);
@@ -72,9 +73,16 @@ test("issue without a project leaves it on the account; unknown plans, accounts 
   expect(await run("issue", "e2e-nobody@example.com", "pro")).toEqual({ ok: false, out: "issue: no account e2e-nobody@example.com" });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "pro", planStatus: "active" } });
   expect(await run("issue", owner.email, "pro", project.slug)).toMatchObject({ ok: false, out: expect.stringContaining("pays for a plan") });
-  // Only onto a project the account owns or administers.
+  // Only onto a project the account owns or administers: not another team's, nor one it's a plain member of.
   const other = await createProject(await signUp("Other"));
   expect(await run("issue", owner.email, "pro", other.slug)).toEqual({ ok: false, out: `issue: ${owner.email} isn't an owner or admin of ${other.slug}` });
+  const member = await addMember(other.id, "MEMBER");
+  expect(await run("issue", member.email, "pro", other.slug)).toEqual({ ok: false, out: `issue: ${member.email} isn't an owner or admin of ${other.slug}` });
+  const admin = await addMember(other.id, "ADMIN");
+  expect((await run("issue", admin.email, "pro", other.slug)).ok).toBe(true);
+  // Never without the billing file to check the plan against.
+  vi.stubEnv("BILLING_CONFIG", "");
+  expect(await run("issue", owner.email, "pro")).toMatchObject({ ok: false, out: expect.stringContaining("set BILLING_CONFIG") });
   expect(await prisma.planLicense.count({ where: { source: "tuti", userId: owner.id } })).toBe(1);
 });
 

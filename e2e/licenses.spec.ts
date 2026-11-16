@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 import { appsumoWebhook } from "../packages/testkit/src/appsumo-fake";
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, cloudPortalUrl } from "./env";
+import { CLOUD_URL, cloudEnv, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
 import { createProject, fillSignUp, newPerson } from "./helpers";
 
@@ -294,7 +294,7 @@ test("a license Tuti issues to a project gives its plan, named as Tuti's", async
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   const { stdout } = await promisify(execFile)("node", ["scripts/plan-license.mjs", "issue", email, "appsumo-2", slug, "e2e"], {
-    env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL, BILLING_CONFIG: "" },
+    env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL, BILLING_CONFIG: cloudEnv.BILLING_CONFIG },
   });
   const key = /tuti-[0-9a-f-]+/.exec(stdout)![0];
 
