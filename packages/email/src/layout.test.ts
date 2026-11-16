@@ -59,6 +59,11 @@ test("a project's logo and name sit centred over the card; Tuti's own mark stays
     expect(row).toContain('align="center"');
     expect(row).not.toContain("width=");
   }
+  // A logo alone keeps no gap on its right, which would push it off centre; with its text beside it, the gap stays.
+  const logo = { url: "https://tuti.example/logo.webp", width: 64, height: 64 };
+  const logoCell = (html: string) => html.match(/<td[^>]*style="([^"]*)"[^>]*><!--\[if !mso\]>/)?.[1] ?? "";
+  expect(logoCell(await render(shippedEmail({ ...shipped, logo }).body))).not.toContain("padding-right:10px");
+  expect(logoCell(await render(shippedEmail({ ...shipped, logo, logoText: "Acme" }).body))).toContain("padding-right:10px");
   const team = header(await render(inviteEmail({ inviterName: "Ann", projectName: "Acme", roleLabel: "Admin", url: "https://tuti.example/i" }).body));
   expect(team).toContain('width="100%"');
 });
