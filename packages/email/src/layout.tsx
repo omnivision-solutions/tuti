@@ -68,18 +68,21 @@ const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, 
 
 /** The small line over a title (what the email is about), in the accent. */
 export function Eyebrow({ accent, children }: { accent?: string | null; children: ReactNode }) {
-  return <Text style={{ fontSize: 13, fontWeight: 600, color: accentColors(accent).link, margin: "16px 0 8px" }}>{children}</Text>;
+  return <Text style={{ fontSize: 13, fontWeight: 600, color: accentColors(accent).link, margin: "16px 0 8px", ...wraps }}>{children}</Text>;
 }
+
+/** Long words in user content (a title, a URL, a repository's name) wrap, so a phone's card never scrolls sideways. */
+export const wraps = { overflowWrap: "anywhere", wordBreak: "break-word" } as const;
 
 /** The email's title in the card. */
 export function Title({ children }: { children: ReactNode }) {
-  return <Heading as="h1" style={{ fontSize: 24, lineHeight: "30px", letterSpacing: -0.5, fontWeight: 700, color: colors.text, margin: "16px 0 10px" }}>{children}</Heading>;
+  return <Heading as="h1" style={{ fontSize: 24, lineHeight: "30px", letterSpacing: -0.5, fontWeight: 700, color: colors.text, margin: "16px 0 10px", ...wraps }}>{children}</Heading>;
 }
 
 /** A tinted box for an aside (`muted`) or a warning (`warn`). */
 export function Note({ kind = "muted", children }: { kind?: "muted" | "warn"; children: ReactNode }) {
   const [backgroundColor, color] = kind === "warn" ? ["#fff4ea", colors.onHighlight] : ["#fafaf9", "#57534e"];
-  return <Text style={{ fontSize: 14, lineHeight: "22px", padding: "12px 14px", borderRadius: 10, backgroundColor, color, margin: "16px 0" }}>{children}</Text>;
+  return <Text style={{ fontSize: 14, lineHeight: "22px", padding: "12px 14px", borderRadius: 10, backgroundColor, color, margin: "16px 0", ...wraps }}>{children}</Text>;
 }
 
 /** A paragraph in the card. */
@@ -91,7 +94,7 @@ const SOFT_FILL = "#fafaf9";
 /** The main button, and a second one (a grey fill) beside it: a table, so they sit side by side in every client. */
 export function Buttons({ href, label, second, small = false }: { href: string; label: string; second?: { href: string; label: string }; small?: boolean }) {
   // A long label ("Publish org/repo#848 now") may break anywhere, so two buttons side by side still fit a phone's card.
-  const size = { ...(small ? { padding: "8px 14px", fontSize: 14, borderRadius: 8 } : {}), overflowWrap: "anywhere" as const, wordBreak: "break-word" as const };
+  const size = { ...(small ? { padding: "8px 14px", fontSize: 14, borderRadius: 8 } : {}), ...wraps };
   return (
     <table role="presentation" cellPadding={0} cellSpacing={0} style={{ margin: small ? "12px 0 0" : "22px 0 4px", borderCollapse: "separate" }}>
       <tbody>
@@ -171,7 +174,7 @@ export function Diff({ lines, more }: { lines: DiffLine[]; more?: number }) {
                 <td style={{ backgroundColor: look.backgroundColor, padding: "6px 12px" }}>
                   {/* A paragraph: a line of its own in plain text. */}
                   {/* A long word (a URL, a path) wraps, so the line never makes a phone scroll sideways. */}
-                  <Text style={{ fontSize: 14, lineHeight: "21px", color: look.color, margin: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                  <Text style={{ fontSize: 14, lineHeight: "21px", color: look.color, margin: 0, ...wraps }}>
                     <span style={{ fontWeight: 700, opacity: 0.6 }}>{sign} </span>
                     <span style={{ textDecoration: look.textDecoration }}>{line.text}</span>
                   </Text>

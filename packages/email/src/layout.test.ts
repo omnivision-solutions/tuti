@@ -264,3 +264,9 @@ test("a diff line wraps a long word (a URL, a path), so a phone's card never scr
   const html = await render(createElement(Diff, { lines: [{ kind: "added", text: "See https://docs.example.com/a/very/long/path/that/has/no/spaces/at/all" }] }));
   expect(html).toContain("overflow-wrap:anywhere");
 });
+
+test("a title, an eyebrow and a note wrap a long word, so a phone's card never scrolls sideways", async () => {
+  for (const element of [createElement(Title, null, "omnivision-solutions/a-very-long-repository-name#848"), createElement(Eyebrow, null, "x"), createElement(Note, null, "x")]) {
+    expect(await render(element)).toContain("overflow-wrap:anywhere");
+  }
+});
