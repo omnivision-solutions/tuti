@@ -672,4 +672,7 @@ test("sends at once on a license each take a credit while any is left, across it
   const claims = await Promise.all(Array.from({ length: 6 }, () => claimProjectEmail(project.id)));
   expect(claims.filter(Boolean)).toHaveLength(4);
   expect(await emailsThisMonth(project.id)).toMatchObject({ emails: 4, left: 0 });
+  // Four not sent after all, at once: each credit back, one per grant.
+  await Promise.all(Array.from({ length: 4 }, () => releaseProjectEmail(project.id)));
+  expect(await emailsThisMonth(project.id)).toMatchObject({ emails: 0, left: 4 });
 });

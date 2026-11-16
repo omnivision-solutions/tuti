@@ -176,8 +176,9 @@ export async function releaseProjectEmail(projectId: string, now = new Date()) {
   const license = monthlyEmailLimit(project, now) === null ? null : licenseOf(project);
   if (license?.creditsThrough) {
     // To the license's month's grant first, else its last month's (in the hour both count, the email may have taken one
-    // of that's); never what a refund took back. A give-back at once may fill the grant picked: then the next is tried.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // of that's); never what a refund took back. A give-back at once may fill the grant picked: then the next is tried, while any has
+    // room (each miss is a grant another filled, so it ends).
+    for (;;) {
       const given = await prisma.$executeRaw`
         UPDATE "credit_grant" SET "remaining" = "remaining" + 1
         WHERE "remaining" + 1 <= "credits" - "takenBack" AND "id" = (
@@ -185,6 +186,11 @@ export async function releaseProjectEmail(projectId: string, now = new Date()) {
           WHERE ${licenseGrants(license.id, now)} AND "remaining" + 1 <= "credits" - "takenBack"
           ORDER BY CASE WHEN "expiresAt" = ${license.creditsThrough} THEN 0 ELSE 1 END, "expiresAt" ASC NULLS LAST, "id" ASC LIMIT 1 FOR UPDATE)`;
       if (given > 0) {
+        break;
+      }
+      const room = await prisma.$queryRaw<unknown[]>`
+        SELECT 1 FROM "credit_grant" WHERE ${licenseGrants(license.id, now)} AND "remaining" + 1 <= "credits" - "takenBack" LIMIT 1`;
+      if (room.length === 0) {
         break;
       }
     }
