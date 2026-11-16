@@ -1,6 +1,7 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { grantCredits, handlers, VERIFY_WAITS } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -13,6 +14,20 @@ import { mailbox } from "@/test/mailbox";
 import { homeOverview } from "@/server/home";
 
 // aiFor, as it is, unless a test makes its next call (counting articles.verify's own check) fail unexpectedly.
+// Emailing a fix's diff can fail (a throw in emailDiff): only the email fails, never the run whose fix is saved.
+const diffFailure = vi.hoisted(() => ({ on: false }));
+vi.mock("../../../../packages/jobs/src/autopilot-email", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../../packages/jobs/src/autopilot-email")>();
+  return {
+    ...actual,
+    emailDiff: (...args: Parameters<typeof actual.emailDiff>) => {
+      if (diffFailure.on) {
+        throw new Error("The diff failed");
+      }
+      return actual.emailDiff(...args);
+    },
+  };
+});
 const aiFailure = vi.hoisted(() => ({ onCall: 0, calls: 0 }));
 vi.mock("../../../../packages/jobs/src/ai-usage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../../packages/jobs/src/ai-usage")>();
@@ -57,6 +72,7 @@ beforeEach(async () => {
   github.repository(repo, { commit: "c0ffee1234567", files: FILES });
 });
 afterEach(() => {
+  diffFailure.on = false;
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   // Every reply scripted was asked for, and nothing else was.
@@ -98,6 +114,24 @@ const NOTHING = JSON.stringify({ statements: [{ statement: "Each plan has 5 seat
 
 const changes = async (articleId: string) => (await prisma.articleChanges.findUnique({ where: { articleId }, select: { body: true } }))?.body ?? null;
 const owned = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && email.subject.startsWith("Verify:"));
+
+test("an email that fails to build its diff fails only the email: the run stays done and its fix stays saved", async () => {
+  const article = await published();
+  model.reply(PICK);
+  model.reply(CHECK);
+  diffFailure.on = true;
+  const info = vi.spyOn(log, "info");
+  const warn = vi.spyOn(log, "warn");
+  const run = await call(verifyArticle, team(), { slug: article.slug });
+  expect(run).toMatchObject({ state: "done", counts: { current: 1, outdated: 1, unclear: 2 } });
+  // The job ends as fixed, not failed: only the email is said to have failed.
+  expect(info.mock.calls.flat().join("\n")).not.toMatch(/: failed \(/);
+  expect(warn.mock.calls.flat().join("\n")).toContain("emailing its owners failed (Error: The diff failed)");
+  const fix = await prisma.codeChangeAction.findFirstOrThrow({ where: { verificationId: run.id } });
+  expect(fix).toMatchObject({ kind: "ARTICLE_EDIT", status: "PENDING" });
+  expect(await changes(article.id)).toContain("Each plan has 10 seats.");
+  expect(owned(owner.email)).toHaveLength(0);
+});
 
 test("Verify reads the default branch's latest commit, finds what's true, out of date and unclear, and fixes it in a tagged revision that waits", async () => {
   const article = await published();
