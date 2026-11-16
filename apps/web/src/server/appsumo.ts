@@ -163,7 +163,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         // The previous key's license takes the new key: its holder and project carry over. The new key's own row is a retry
         // (the previous one renamed already), or one the new key's activation (or a later upgrade) made before this arrived:
         // that one goes, its holder kept, unless it's on a project or another account holds the previous (support sorts that out).
-        const early = own && previous && !own.projectId && (!own.userId || !previous.userId || own.userId === previous.userId);
+        const early = own && previous && !own.projectId && (!own.userId || !previous.userId || own.userId === previous.userId) ? own : undefined;
         if (own && previous && !early) {
           log.error("An AppSumo upgrade's new key is on another account or project than the license it replaces: both kept, for support to merge", { licenseId: own.id, previousLicenseId: previous.id });
         }
@@ -171,7 +171,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           return;
         }
         if (early) {
-          await tx.planLicense.delete({ where: { id: own.id } });
+          await tx.planLicense.delete({ where: { id: early.id } });
         }
         const row = early ? previous : (own ?? previous);
         if (!row) {
@@ -179,10 +179,10 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         } else {
           // The previous key's deactivation doesn't count against the license under its new key, but the new key's own
           // (a refund of the upgrade, before this upgrade or its retry) does.
-          const revokedAt = row === previous ? (early ? own.revokedAt : null) : row.revokedAt;
+          const revokedAt = row === previous ? (early ? early.revokedAt : null) : row.revokedAt;
           await tx.planLicense.update({
             where: { id: row.id },
-            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, userId: row.userId ?? (early ? own.userId : null), metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
+            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
           });
         }
         // The previous key, renamed or never seen, is marked replaced, so its late events change nothing.
