@@ -4,7 +4,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
 import { defaultPlanKey, isBadgePrice, listedPlans, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
 
-import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
+import { cancelSubscription, getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 
 /**
  * Plans through Stripe (docs/plan.md, Plans): Stripe's webhook brings each project's plan in step with
@@ -90,7 +90,12 @@ export async function syncSubscription(id: string): Promise<string | null> {
           trialEndsAt: null,
         },
       });
-      if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
+      if (count === 0 && (await tx.project.count({ where: { id: projectId, planLicense: { isNot: null } } }))) {
+        // Paid for a project a plan license gives its plan (a Checkout opened before the license was assigned): it's
+        // cancelled now, so it never charges again; its one payment is for the operator to refund.
+        await cancelSubscription(id);
+        log.error("A Stripe subscription paid for a project on a plan license: cancelled; refund its payment", { projectId, subscription: id });
+      } else if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
         log.error("A second live Stripe subscription for a project: cancel and refund it", { projectId, subscription: id });
       }
       return projectId;
