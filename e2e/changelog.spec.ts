@@ -1107,10 +1107,22 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
   await team.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
   await expect(addButton).toBeFocused();
+  // Focus moves without scrolling: whoever scrolled away while it uploaded stays where they are.
+  await team.evaluate(() => {
+    const focus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (options?: FocusOptions) {
+      if (this.getAttribute("aria-label") === "Replace featured image") {
+        (window as unknown as { replaceFocus: FocusOptions | undefined }).replaceFocus = options;
+      }
+      focus.call(this, options);
+    };
+  });
   releasePressed();
   // Shown as soon as it's uploaded, before it's saved.
-  await expect(canvasCover).toBeVisible();
+  await expect(canvasCover).toBeAttached();
   await expect(replaceButton).toBeFocused();
+  expect(await team.evaluate(() => (window as unknown as { replaceFocus?: FocusOptions }).replaceFocus)).toEqual({ preventScroll: true });
+  await expect(canvasCover).toBeVisible();
   await team.unroute("**/*");
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();

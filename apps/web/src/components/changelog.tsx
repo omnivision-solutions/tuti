@@ -181,7 +181,8 @@ function FeaturedImage({
   const fromAdd = useRef(false);
   useEffect(() => {
     if (image && fromAdd.current && (!document.activeElement || document.activeElement === document.body)) {
-      replace.current?.focus();
+      // Where they are on the page stays (scrolled away while it uploaded).
+      replace.current?.focus({ preventScroll: true });
     }
   }, [image]);
   // After the effect above, which reads it (an upload's image and its end land together); a failed one's is forgotten.
