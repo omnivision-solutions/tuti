@@ -97,8 +97,10 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
   if (event.test || !key || event.parent_license_key) {
     return;
   }
-  const plan = event.tier === undefined ? null : appsumoTierPlan(event.tier);
-  if (event.tier !== undefined && !plan) {
+  // Only events that give a plan need the tier's: a deactivation (a refund) works whatever the file says now.
+  const givesPlan = ["purchase", "activate", "upgrade", "downgrade"].includes(event.event);
+  const plan = !givesPlan || event.tier === undefined ? null : appsumoTierPlan(event.tier);
+  if (givesPlan && event.tier !== undefined && !plan) {
     throw new UnknownTier(`AppSumo's tier ${event.tier} isn't in the billing file's licenses.appsumo.tiers`);
   }
   const metadata = { tier: event.tier ?? null, event: event.event, reason: event.extra?.reason ?? null };

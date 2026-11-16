@@ -136,6 +136,14 @@ test("a deactivation (a refund) revokes the license: its project is back on its 
   await deliver({ event: "deactivate", license_key: key });
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ projectId: project.id, revokedAt: expect.any(Date) });
   expect(await planOf(project.id)).toBeNull();
+  // A tier the billing file no longer maps doesn't stop a refund.
+  const other = await assigned();
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    withAppsumoPlans(config);
+    delete config.licenses!.appsumo!.tiers["1"];
+  }));
+  expect((await deliver({ event: "deactivate", license_key: other.key, tier: 1 })).status).toBe(200);
+  expect(await planOf(other.project.id)).toBeNull();
   // A key nobody has: acknowledged.
   expect((await deliver({ event: "deactivate", license_key: crypto.randomUUID() })).status).toBe(200);
 });
@@ -172,8 +180,18 @@ test("a claim adds the license to the signed-in account, once: another account c
   actAs(await signUp("Someone else"));
   expect(await claimPlanLicense(claim)).toEqual({ error: "This license is on another Tuti account. Sign in to that one, or contact support." });
   expect(await find(key)).toMatchObject({ userId: buyer.id });
-  // A forged or expired claim isn't one.
+  // A forged claim isn't one, nor one over an hour old.
   expect(await claimPlanLicense(`${claim}x`)).toEqual({ error: "This link has expired. Redeem the license from AppSumo again." });
+  const later = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: later, tier: 1 });
+  const old = claimToken("appsumo", later);
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61 * 60_000 });
+  try {
+    expect(await claimPlanLicense(old)).toEqual({ error: "This link has expired. Redeem the license from AppSumo again." });
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(await find(later)).toMatchObject({ userId: null });
   actAs(null);
   expect(await claimPlanLicense(claim)).toEqual({ error: "Sign in to add the license to your account" });
 });
