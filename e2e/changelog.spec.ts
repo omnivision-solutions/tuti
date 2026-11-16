@@ -1066,6 +1066,26 @@ test("the next release waits to be written; its entry gets a featured image read
   releaseMovedOn();
   await expect(canvasCover).toBeVisible();
   await expect(text).toBeFocused();
+  await removeButton.click();
+  await expect(addButton).toBeFocused();
+  // Or moved on by a click beside Add (focus left on the page itself): it stays there too.
+  let releaseClicked!: () => void;
+  const clickedHeld = new Promise<void>((resolve) => (releaseClicked = resolve));
+  await team.unroute("**/*");
+  await team.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await clickedHeld;
+    }
+    await route.fallback();
+  });
+  await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  const around = (await featured.boundingBox())!;
+  await team.mouse.click(around.x + 10, around.y + 10);
+  await expect(addButton).not.toBeFocused();
+  releaseClicked();
+  await expect(canvasCover).toBeVisible();
+  await expect(replaceButton).not.toBeFocused();
   await team.unroute("**/*");
   await removeButton.click();
   await expect(addButton).toBeVisible();
