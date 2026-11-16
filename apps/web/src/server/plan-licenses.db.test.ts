@@ -256,6 +256,8 @@ test("a subscription paid after its project was given a license doesn't take the
     planStatus: null,
     stripeSubscriptionId: null,
   });
+  // It's cancelled at once, so it never charges again.
+  expect(stripe.subscriptions.get(stripe.sessions.at(-1)!.subscription!)!.status).toBe("canceled");
 });
 
 test("a project with a plan set by hand isn't given one", async () => {

@@ -89,19 +89,22 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
       throw new Refused("This license is on another project. Unassign it there first.");
     }
     // Stripe's webhook's lock for the project (syncSubscription), then its row, in the webhook's order: a subscription
-    // starting now waits, and then finds the license.
+    // starting now waits, and then finds the license. Stripe is asked before the row is locked (its calls take seconds,
+    // and the row's lock would hold up every post, vote and message written for the project); the webhook's lock keeps
+    // what it read from changing meanwhile.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${project.id}))`;
+    const paying = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { planStatus: true, stripeSubscriptionId: true } });
+    if (paying.planStatus === null && (await stillCharging(project.id, paying.stripeSubscriptionId))) {
+      throw new Refused("This project has a Stripe subscription that can still be paid (a payment that failed or is processing). Contact support to cancel it, then assign the license.");
+    }
     await lockProject(tx, project.id);
     // The plan as stored (trialEndsAt selected: see @tuti/db).
-    const current = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, trialEndsAt: true, stripeSubscriptionId: true, planLicense: { select: { id: true } } } });
+    const current = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, trialEndsAt: true, planLicense: { select: { id: true } } } });
     if (current.planLicense) {
       throw new Refused("This project has a license already. Unassign it first.");
     }
     if (current.planStatus !== null) {
       throw new Refused("This project pays for a plan. Cancel it from Settings → Billing → Manage plan, and assign the license once it ends.");
-    }
-    if (await stillCharging(project.id, current.stripeSubscriptionId)) {
-      throw new Refused("This project has a Stripe subscription that can still be paid (a payment that failed or is processing). Contact support to cancel it, then assign the license.");
     }
     if (!onDefaultPlan(current.plan)) {
       throw new Refused("This project has a plan already. Contact support to change it.");
