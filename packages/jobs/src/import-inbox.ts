@@ -371,13 +371,15 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
   const spoken = messages.filter((m) => !m.note);
   const { conversationCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { conversationCount: { increment: 1 } }, select: { conversationCount: true } });
   // From what the user can see (the subject shows in the widget and their emails): never a note.
-  // A support bot's greeting is no subject: the person's first message is, and a title that is only the greeting (whole
-  // or cut, as Featurebase titles a conversation by its first message) gives way to it.
+  // A support bot's greeting is no subject: the first message by someone else is, and a title that is only a greeting
+  // the bot opened with (whole, its first line, or cut with an ellipsis, as Featurebase titles a conversation by its first
+  // message) gives way to it.
   const spokenText = spoken.filter((m) => m.body);
-  const title = c.title?.trim();
-  const greeting = title && spokenText.some((m) => m.author === "AI" && squash(m.body).startsWith(squash(title).replace(/(…|\.\.\.)$/, "")));
-  const firstText = spokenText.find((m) => m.author === "USER") ?? spokenText[0];
-  const subject = (!greeting && title) || c.source?.subject?.trim() || subjectFrom(firstText?.body ?? "") || "Conversation";
+  const opened = spokenText.findIndex((m) => m.author !== "AI");
+  const title = squash(c.title ?? "");
+  const cut = /(…|\.\.\.)$/.test(title) && squash(title.replace(/(…|\.\.\.)$/, ""));
+  const greeting = spokenText.slice(0, opened < 0 ? undefined : opened).some((m) => [squash(m.body), squash(subjectFrom(m.body))].includes(title) || (cut && squash(m.body).startsWith(cut)));
+  const subject = (!greeting && title) || c.source?.subject?.trim() || subjectFrom(spokenText[opened]?.body ?? spokenText[0]?.body ?? "") || "Conversation";
   const { id } = await tx.conversation.create({
     data: {
       projectId: job.projectId,

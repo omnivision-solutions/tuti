@@ -350,10 +350,21 @@ test("a title that is only the bot's greeting, whole or cut, gives way to the pe
   expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("How do I reset my password?");
 });
 
-test("a title someone wrote stays the subject of a conversation the bot opened", async () => {
-  greetedByBot().closed.title = "Password reset link expired";
+test("a title someone wrote stays the subject of a conversation the bot opened, even one a later bot message starts with", async () => {
+  const { closed } = greetedByBot();
+  closed.title = "Password reset";
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts.push({ id: "p3099", partType: "bot_msg", createdAt: new Date(Date.parse(String(parts.at(-1)!.createdAt)) + 60_000).toISOString(), bodyHtml: "<p>Password reset links last an hour.</p>", author: { id: null, type: "bot" } });
   await importInbox();
-  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("Password reset link expired");
+  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("Password reset");
+});
+
+test("a conversation the team opened, untitled, takes its subject from the team's first message, not the person's reply", async () => {
+  const closed = fake.fixtures.conversations[2]!;
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts.unshift({ id: "p3000", partType: "admin_msg", createdAt: new Date(Date.parse(String(parts[0]!.createdAt)) - 60_000).toISOString(), bodyHtml: "<p>Your March invoice is ready</p>", channel: "desktop", author: { id: "65f0000000000000000000a1", type: "admin" } });
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages[0]!.author === "TEAM")!.subject).toBe("Your March invoice is ready");
 });
 
 test("the team is never told of imported history: the cron that resends the team's missed notices finds none", async () => {
