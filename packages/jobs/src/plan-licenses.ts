@@ -57,7 +57,8 @@ export async function grantLicenseCredits(id: string, now = new Date()): Promise
       return 0;
     }
     const start = through && through.getTime() > now.getTime() - 24 * HOUR_MS ? through : now;
-    // A month on, on the same day, or the month's last when it's shorter (January 31 → February 28).
+    // A month on, or the month's last day when it's shorter (January 31 → February 28, then the 28th each month): one
+    // month of credits a month, never two in one or one skipped.
     const end = new Date(start);
     end.setUTCDate(1);
     end.setUTCMonth(end.getUTCMonth() + 1);
