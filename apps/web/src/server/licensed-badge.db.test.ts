@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -236,9 +237,12 @@ test("removed again after Stripe cancelled it but the sync failed: synced, so th
 });
 
 test("its license ending after Stripe's key was removed: the badge shows all the same, and the add-on is logged to cancel", async () => {
-  await buy();
+  const subscription = await buy();
   vi.stubEnv("STRIPE_SECRET_KEY", "");
+  const errors = vi.spyOn(log, "error");
   expect(await unassignPlanLicense(licenseId)).toEqual({});
   expect(await stored()).toMatchObject({ badgeAddOn: false });
   expect(await shown()).toBe(true);
+  expect(errors).toHaveBeenCalledWith(expect.stringContaining("cancel it in Stripe"), expect.objectContaining({ projectId: project.id }));
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("active");
 });
