@@ -5,9 +5,13 @@ import { expect, test } from "vitest";
 import { luminance } from "@tuti/shared/colors";
 
 import { avatarColor, Message, PostCard, type PostStatus } from "./blocks";
+import { changelogConfirmEmail } from "./changelog-confirm-email";
 import { conversationReplyEmail } from "./conversation-reply-email";
+import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
+import { portalReaderEmail } from "./portal-reader-email";
 import { replyEmail } from "./reply-email";
 import { shippedEmail } from "./shipped-email";
+import { signInLinkEmail } from "./sign-in-link-email";
 
 test("the post card's status pill takes the portal's hue for each status, never the app's", async () => {
   // packages/ui's globals.css, the portal's light mode (`status-*` under `[data-portal-top]`), as hex.
@@ -87,4 +91,45 @@ test("a support reply shows each message with the team's tag, and names the conv
   const text = (await render(email.body, { plainText: true })).replace(/\s+/g, " ");
   expect(text).toContain("Ada Park Acme team Fixed now. Acme Anything else? Your conversation: Can't export CSV");
   expect(text).not.toContain("Acme Acme team");
+});
+
+test("the account and subscription emails: an eyebrow where it says what they're about, the heading, the body, the button and a soft note", async () => {
+  const brand = { projectName: "Acme", accent: "#7c3aed" };
+  const u = "https://acme.example/x";
+  const read = async (body: Parameters<typeof render>[0]) => {
+    const html = await render(body);
+    const text = (await render(body, { plainText: true })).replace(/\s+/g, " ");
+    return { html, text };
+  };
+  const eyebrow = (html: string) => html.match(/color:#7c3aed;margin:16px 0 8px[^>]*>([^<]+)</)?.[1] ?? null;
+  const note = (html: string) => html.match(/border-radius:10px;background-color:(#[0-9a-f]{6})/)?.[1] ?? null;
+
+  const confirm = await read(changelogConfirmEmail({ ...brand, url: u }).body);
+  expect(eyebrow(confirm.html)).toBe("One more step");
+  expect(confirm.text).toContain("CONFIRM YOUR SUBSCRIPTION Confirm to get the changelog entries Acme emails to subscribers");
+  expect(confirm.text).toContain(`Confirm subscription ${u}`);
+  const optedOut = await read(changelogConfirmEmail({ ...brand, url: u, optedOut: true }).body);
+  expect(optedOut.text).toContain("TURN ACME'S EMAILS BACK ON");
+  expect(optedOut.text).toContain(`Turn Acme's emails back on ${u}`);
+
+  // Sign-in links and passwords: the heading says it, no eyebrow.
+  const signIn = await read(signInLinkEmail({ ...brand, url: u, minutes: 15 }).body);
+  expect(eyebrow(signIn.html)).toBeNull();
+  expect(signIn.text).toContain(`SIGN IN TO ACME Here's your link to sign in to Acme. Sign in to Acme ${u} The link works once and expires in 15 minutes.`);
+  expect(note(signIn.html)).toBe("#fafaf9");
+
+  const reset = await read(passwordResetEmail({ project: brand, url: u, minutes: 60 }).body);
+  expect(eyebrow(reset.html)).toBeNull();
+  expect(reset.text).toContain(`RESET YOUR PASSWORD Someone asked to reset the password for your account on Acme. Set a new password ${u} The link works once and expires in 60 minutes.`);
+
+  const changed = await read(passwordChangedEmail(brand).body);
+  expect(changed.text).toContain("YOUR PASSWORD WAS CHANGED The password for your account was just changed");
+  // If it wasn't them: a warning, not an aside.
+  expect(note(changed.html)).toBe("#fff4ea");
+
+  const invite = await read(portalReaderEmail({ ...brand, inviterName: "Ada", email: "e2e-reader@example.com", url: u }).body);
+  expect(eyebrow(invite.html)).toBe("You&#x27;re invited");
+  expect(invite.text).toContain(`ADA GAVE YOU ACCESS TO ACME'S PORTAL Read the docs, follow the changelog and share feedback with the Acme team. Open the portal ${u}`);
+  expect(invite.text).toContain("Sign in as e2e-reader@example.com.");
+  expect(note(invite.html)).toBe("#fafaf9");
 });

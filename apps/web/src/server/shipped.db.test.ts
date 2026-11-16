@@ -88,6 +88,17 @@ describe("when a post ships", () => {
     expect(emailsTo(author.email)).toHaveLength(1);
   });
 
+  test("a public post on a Team only board: the email's card leaves the board's name out, as its page does", async () => {
+    const voter = await verified("Voter");
+    const post = await call(createPost, as(voter.id), { board: "feature-requests", title: "Dark mode" });
+    // Made Team only since: the post stays public, the board is off the portal.
+    await prisma.board.updateMany({ where: { projectId: project.id, slug: "feature-requests" }, data: { postVisibility: "TEAM" } });
+    await setStatus(post.number, "completed");
+    const [email] = emailsTo(voter.email);
+    expect(email!.text.replace(/\s+/g, " ")).toMatch(/\d+ votes? Dark mode Completed/);
+    expect(email!.text).not.toContain("Feature requests");
+  });
+
   test("the email is the project's: its name and accent colour at the top, not Tuti's wordmark", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
     const voter = await verified("Voter");

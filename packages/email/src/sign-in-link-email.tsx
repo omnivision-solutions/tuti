@@ -13,7 +13,7 @@ export function SignInLinkEmail({ projectName, url, minutes, accent, poweredBy }
       footer={<>If you didn&apos;t ask for this, ignore it.</>}
     >
       <Title>Sign in to {projectName}</Title>
-      <Paragraph>Here&apos;s your link to sign in to {projectName} and vote, comment and follow ideas.</Paragraph>
+      <Paragraph>Here&apos;s your link to sign in to {projectName}.</Paragraph>
       <Button
         href={url}
         style={buttonStyle(accent)}
