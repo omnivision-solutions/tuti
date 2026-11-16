@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handOverOnVerified, projectSender } from "@tuti/jobs";
-import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
+import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
+import { passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -31,10 +31,10 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
     url.searchParams.set("next", next);
   }
   // From the project (see projectSender); it never waits for approval: people need to sign in.
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, brandColor: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
   await sendEmail({
     to: email,
-    ...signInLinkEmail({ projectName, url: url.toString(), minutes: SIGN_IN_LINK_MINUTES, accent: project?.brandColor }),
+    ...signInLinkEmail({ projectName, ...(project && (await emailBrand(project.id))), url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }),
     ...(project && (await projectSender(project.id))),
   });
 }
@@ -50,13 +50,13 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
   const { project } = await prisma.signInLink.update({
     where: { id: linkId },
     data: { tokenHash: hashSecret(token) },
-    select: { project: { select: { id: true, name: true, brandColor: true } } },
+    select: { project: { select: { id: true } } },
   });
   const link = new URL("/app/auth/reset-password", appUrl());
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
-    ...passwordResetEmail({ siteName: project?.name ?? "Tuti", url: link.toString(), minutes: PASSWORD_RESET_MINUTES, accent: project?.brandColor }),
+    ...passwordResetEmail({ project: project && (await emailBrand(project.id)), url: link.toString(), minutes: PASSWORD_RESET_MINUTES }),
     // A portal's reset comes from its project; the app's from Tuti.
     ...(project && (await projectSender(project.id))),
   });
@@ -217,13 +217,8 @@ export const auth = betterAuth({
         prisma.verification.deleteMany({ where: { value: user.id } }),
       ]);
       // Verified now: an import's placeholders for this address hand over (they're on the team).
+      // The notice is setNewPassword's (server/password-reset.ts), which knows the portal it was asked on.
       await handOverPlaceholdersLogged(user.id);
-      try {
-        await sendEmail({ to: user.email, ...passwordChangedEmail() });
-      } catch (error) {
-        // The password is already changed; a missing notice mustn't make it look like it wasn't.
-        log.error("Sending the password changed email failed", { error });
-      }
     },
   },
   // A session is bound to where it was started: a portal's (signing in there, "Continue as", SSO) to its project, as a

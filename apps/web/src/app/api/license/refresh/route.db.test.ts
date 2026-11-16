@@ -8,7 +8,7 @@ import { testLicensePrivateKey } from "@/test/license";
 
 import { POST } from "./route";
 
-vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 const DAY = 24 * 60 * 60 * 1000;
 /** The installation and project of each test's licence (the database is shared by the file's tests). */

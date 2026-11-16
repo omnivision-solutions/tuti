@@ -60,7 +60,7 @@ Four tools that usually live in four tabs, built to work together. A question in
     <td width="50%" valign="top">
       <h3>📣 Changelog</h3>
       Show off what you ship. Subscribers hear about it, and voters hear when their idea lands.
-      <br><br><img src=".github/assets/changelog.png" alt="A public changelog with recent entries">
+      <br><br><img src=".github/assets/changelog.png" alt="A public changelog with an entry that shows a product image">
     </td>
   </tr>
 </table>

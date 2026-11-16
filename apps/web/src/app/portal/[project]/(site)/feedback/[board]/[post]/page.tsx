@@ -164,7 +164,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // A public post on a Team only board, read by someone not on the team: the board stays unnamed.
   const onTeamBoard = post.board.postVisibility === "TEAM" && !viewer.team;
   const subscribe = subscribable && (!voter || hears.length > 0) && (
-    <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
+    <SubscribeButton postId={post.id} status={post.status} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
   );
   const shippedIn = post.changelogEntries[0] && (
     <Link href={at(`/changelog/${post.changelogEntries[0].entry.number}`)} className="font-medium text-foreground hover:underline">

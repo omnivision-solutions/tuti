@@ -15,7 +15,7 @@ import { getBranding, updateBranding } from "./operations/branding";
 import { checkLicense } from "./operations/license";
 import { call } from "./operations/run";
 
-vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;

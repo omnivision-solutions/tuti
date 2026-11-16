@@ -95,7 +95,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
       }
     >
       {license.project ? (
-        <Button variant="outline" data-license-control={license.id} aria-label={`Unassign ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
+        <Button variant="outline" data-license-control={license.id} aria-label={`${pending ? "Unassigning…" : "Unassign"} ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
           {pending ? "Unassigning…" : "Unassign"}
         </Button>
       ) : license.revoked ? null : projects.length === 0 ? (
@@ -116,7 +116,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
               ))}
             </SelectContent>
           </Select>
-          <Button aria-label={`Assign ${named}`} disabled={pending || !project} focusableWhenDisabled onClick={() => act(() => assignPlanLicense(project, license.id), "License assigned")}>
+          <Button aria-label={`${pending ? "Assigning…" : "Assign"} ${named}`} disabled={pending || !project} focusableWhenDisabled onClick={() => act(() => assignPlanLicense(project, license.id), "License assigned")}>
             {pending ? "Assigning…" : "Assign"}
           </Button>
         </div>

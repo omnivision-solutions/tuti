@@ -10,7 +10,7 @@ import { RoadmapBoard } from "@/components/roadmap-board";
 import { asking } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { getMembership } from "@/server/membership";
-import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { emailedOnMove } from "@/server/operations/code-changes";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { TEAM_VIEWER } from "@/server/post-visibility";
 import { voterTotals } from "@/server/post-lists";
@@ -33,10 +33,10 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   const board = boards.find((b) => b.slug === searchParams.board)?.slug;
   const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
   const ids = columns.flat().map((post) => post.id);
-  // Who's asking, how many completing each one emails (asked before a card goes to Completed), and the team's plan for it.
-  const [totals, emails, plans, menu] = await Promise.all([
+  // Who's asking, how many moving each one to each status emails (asked before such a move), and the team's plan for it.
+  const [totals, moves, plans, menu] = await Promise.all([
     voterTotals(project.id, project.askingProperty, ids),
-    emailedOnCompletion(project.id, ids),
+    emailedOnMove(project.id, columns.flat()),
     prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, body: true, owner: { select: { name: true, image: true } } } }),
     // Feedback's menu, its queries alongside the roadmap's.
     feedbackMenu({ project, role: membership.role }),
@@ -80,7 +80,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
             // Who sees it: Team only on a board turned off (seenAs).
             visibility: seenAs(post),
             asking: totals.has(post.id) ? asking(totals.get(post.id)!, project.askingProperty!, storedPropertyFormats(project.propertyFormats)) : null,
-            emails: emails.get(post.id) ?? 0,
+            emails: moves.get(post.id) ?? {},
             // "Dec 2026", in UTC as months are kept.
             eta: plan.get(post.id)?.eta?.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) ?? null,
             owner: plan.get(post.id)?.owner ?? null,

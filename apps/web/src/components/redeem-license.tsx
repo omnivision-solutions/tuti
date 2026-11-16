@@ -11,7 +11,7 @@ export function RedeemLicense({ claim }: { claim: string }) {
   const [pending, startTransition] = useTransition();
   return (
     <div className="flex flex-col gap-3">
-      <Button className="self-start" disabled={pending} onClick={() => startTransition(async () => setError((await claimPlanLicense(claim)).error))}>
+      <Button className="self-start" disabled={pending} focusableWhenDisabled onClick={() => startTransition(async () => setError((await claimPlanLicense(claim)).error))}>
         {pending ? "Adding…" : "Add to my account"}
       </Button>
       {error && (

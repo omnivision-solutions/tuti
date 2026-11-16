@@ -45,7 +45,7 @@ export async function pendingPasswordReset(token: string) {
     return null;
   }
   const [link, verification] = await Promise.all([
-    prisma.signInLink.findUnique({ where: { tokenHash: hashSecret(token) }, select: { project: { select: { slug: true } } } }),
+    prisma.signInLink.findUnique({ where: { tokenHash: hashSecret(token) }, select: { project: { select: { id: true, slug: true } } } }),
     // How Better Auth stores it with verification.storeIdentifier "hashed" (lib/auth.ts).
     prisma.verification.findFirst({
       where: { identifier: createHash("sha256").update(`reset-password:${token}`).digest("base64url"), expiresAt: { gt: new Date() } },
@@ -56,7 +56,7 @@ export async function pendingPasswordReset(token: string) {
     return null;
   }
   const user = await prisma.user.findUnique({ where: { id: verification.value }, select: { id: true, email: true } });
-  return user && { userId: user.id, email: user.email, askedOn: link.project?.slug ?? null };
+  return user && { userId: user.id, email: user.email, askedOn: link.project?.slug ?? null, projectId: link.project?.id ?? null };
 }
 
 /** Where a reset link that didn't work sends people: "Forgot your password?", to ask for a new one. */
