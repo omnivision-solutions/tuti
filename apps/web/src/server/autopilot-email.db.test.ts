@@ -319,11 +319,15 @@ test("a progress update waiting for the team says approving it emails the people
   const closed = await newPost();
   await prisma.post.update({ where: { id: closed }, data: { status: "CLOSED" } });
   await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: closed, probability: 0.8, payload: { comment: "Closed meanwhile" } } });
+  // And one on a post merged into another since (still Open): nothing moves either.
+  const merged = await newPost();
+  await prisma.post.update({ where: { id: merged }, data: { duplicateOfId: closed } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: merged, probability: 0.8, payload: { comment: "Merged meanwhile" } } });
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
   expect(email!.text.match(/Marks it in progress with this comment, emailing the people who asked/g)).toHaveLength(1);
-  expect(email!.text).toContain("Marks it in progress, with this comment");
+  expect(email!.text.match(/Marks it in progress, with this comment/g)).toHaveLength(2);
   // The scheduled one (going out in 24 hours): quietly, unless a teammate publishes it.
   expect(email!.text).toContain("Marks it in progress with this comment; Publish now emails the people who asked");
 });
