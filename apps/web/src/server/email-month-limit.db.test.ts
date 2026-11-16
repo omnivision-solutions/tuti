@@ -605,3 +605,17 @@ test("a license upgraded mid-month gives the difference at once; a second licens
   expect([await claimProjectEmail(project.id), await claimProjectEmail(project.id)]).toEqual([true, false]);
   expect(limitEmails(owner.email)).toHaveLength(2);
 });
+
+test("a license whose month hasn't started (issued straight onto a project, before license-credits runs) starts it when its email is first needed", async () => {
+  const { owner, project } = await setup();
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "pro", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  expect(await cappedProjects()).not.toContain(project.id);
+  expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 10000, left: 10000 });
+  expect(await claimProjectEmail(project.id)).toBe(true);
+  expect(limitEmails(owner.email)).toHaveLength(0);
+  expect((await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).creditsThrough).not.toBeNull();
+  expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 10000, left: 9999 });
+});

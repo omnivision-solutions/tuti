@@ -3,6 +3,7 @@ import { emailConfigured, emailLimitEmail, sendEmail } from "@tuti/email";
 import { effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, type PlanKey, plansEnabled, trialEmailAllowance, trialTerms, upgradeFor } from "@tuti/shared";
 
 import { grantCredits } from "./credits";
+import { grantLicenseCredits } from "./plan-licenses";
 
 /** In its first week on a server selling plans, a project sends this many emails a day at most. */
 export const NEW_PROJECT_EMAILS_PER_DAY = 200;
@@ -65,10 +66,11 @@ async function takeEmailCredit(licenseId: string, now: Date): Promise<boolean> {
 async function licenseEmails(licenseId: string, through: Date | null, limit: number, now: Date, db: Prisma.TransactionClient = prisma): Promise<{ left: number; due: number }> {
   const grants = await db.creditGrant.findMany({ where: { planLicenseId: licenseId, kind: "EMAIL", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, select: { credits: true, remaining: true, expiresAt: true } });
   const left = Math.floor(grants.reduce((sum, grant) => sum + grant.remaining.toNumber(), 0));
-  // Its month starts with the license-credits job (hourly), which moves creditsThrough on: none before. Then its plan's
-  // allowance, less what the month gave already (a license upgraded mid-month gives the difference).
+  // Its plan's allowance, less what the month gave already (a license upgraded mid-month gives the difference); a month
+  // not started yet (the license-credits job hasn't run since it was assigned, or since its last month ended) starts
+  // when its emails are first needed, with the whole allowance.
   const given = grants.filter((grant) => grant.expiresAt?.getTime() === through?.getTime()).reduce((sum, grant) => sum + grant.credits.toNumber(), 0);
-  const due = through && through > now ? Math.max(0, limit - given) : 0;
+  const due = through && through > now ? Math.max(0, limit - given) : limit;
   return { left, due };
 }
 
@@ -116,7 +118,11 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
   const month = monthOf(now);
   if (license) {
     if (!(await takeEmailCredit(license.id, now))) {
-      // None left: the license's month's credits come now if they're due (given once, whichever claim at once gets there first).
+      // None left: the license's month's credits come now if they're due (given once, whichever claim at once gets there
+      // first), its month started first where it hasn't (as license-credits would, within the hour).
+      if (!license.creditsThrough || license.creditsThrough <= now) {
+        await grantLicenseCredits(license.id, now);
+      }
       await grantLicenseEmails(projectId, license.id, now);
       if (!(await takeEmailCredit(license.id, now))) {
         await tellEmailLimit(projectId, now);
@@ -255,7 +261,7 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
         })
       : [],
     // Licenses with no email credits left: capped unless their month gives more (it hasn't given its plan's whole
-    // allowance, as after an upgrade), which needs it to have started.
+    // allowance, as after an upgrade, or hasn't started).
     prisma.$queryRaw<{ projectId: string; plan: string; started: boolean; given: number }[]>`
       SELECT l."projectId", l."plan", (l."creditsThrough" IS NOT NULL AND l."creditsThrough" > ${now}) AS "started",
         COALESCE((SELECT SUM(g."credits") FROM "credit_grant" g WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."expiresAt" = l."creditsThrough"), 0)::float8 AS "given"
@@ -274,7 +280,8 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
   // A licensed project's plan is its license's.
   const held = licensed.filter(({ plan, started, given }) => {
     const limit = emailsPerMonth(plan);
-    return limit !== null && (!started || given >= limit);
+    // A month not started yet starts when its emails are first needed.
+    return limit !== null && started && given >= limit;
   });
   return [...capped, ...held.map(({ projectId }) => projectId)];
 }
