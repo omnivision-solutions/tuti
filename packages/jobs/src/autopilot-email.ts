@@ -123,7 +123,8 @@ type ActionRow = {
   payload: unknown;
   postId: string | null;
   articleId: string | null;
-  post: { title: string; status: PostStatus; duplicateOfId: string | null } | null;
+  /** `sample`: Home's sample content, whose moves email nobody. */
+  post: { title: string; status: PostStatus; duplicateOfId: string | null; sample: boolean } | null;
   article: { title: string; publishedAt: Date | null } | null;
 };
 
@@ -152,9 +153,12 @@ function paired(lines: DiffLine[]): DiffLine[] {
   return out;
 }
 
-/** Whether applying a progress update moves its post on to In progress (as codeChangeActions.apply: from a status before it, not merged), emailing its people. */
+/**
+ * Whether applying a progress update moves its post on to In progress (as codeChangeActions.apply: from a status before
+ * it, not merged), emailing its people (never a sample post's).
+ */
 const movesForward = (post: ActionRow["post"]) =>
-  !!post && !post.duplicateOfId && ["OPEN", "UNDER_REVIEW", "PLANNED"].includes(post.status) && statusMoveEmails(post.status, "IN_PROGRESS") === "progress";
+  !!post && !post.duplicateOfId && !post.sample && ["OPEN", "UNDER_REVIEW", "PLANNED"].includes(post.status) && statusMoveEmails(post.status, "IN_PROGRESS") === "progress";
 
 /** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
 const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
@@ -181,7 +185,8 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
   // Gone already (by itself, before this email): what it did, not what it will do.
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
-    RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
+    // A sample post's completion emails nobody.
+    RESOLVES: `${done ? "Completed" : `${statusName(action.post?.status ?? "OPEN")} → Completed`}${action.post?.sample ? "" : ", emailing the people who asked"}`,
     // Approved (or published now) it emails the post's people, as completing does; going out by itself, nobody.
     MOVES_FORWARD: done
       ? "In progress, with this comment"
@@ -435,7 +440,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
                   payload: true,
                   postId: true,
                   articleId: true,
-                  post: { select: { title: true, status: true, duplicateOfId: true } },
+                  post: { select: { title: true, status: true, duplicateOfId: true, sample: true } },
                   article: { select: { title: true, publishedAt: true } },
                 },
               },
@@ -703,7 +708,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
                 payload: true,
                 postId: true,
                 articleId: true,
-                post: { select: { title: true, status: true, duplicateOfId: true } },
+                post: { select: { title: true, status: true, duplicateOfId: true, sample: true } },
                 article: { select: { title: true, publishedAt: true } },
               },
             },

@@ -332,6 +332,20 @@ test("a progress update waiting for the team says approving it emails the people
   expect(email!.text).toContain("Marks it in progress with this comment; Publish now emails the people who asked");
 });
 
+test("a sample post's progress update and completion email nobody, and the email doesn't say they do", async () => {
+  const one = await change("Add a dark theme");
+  const [progress, completes] = [await newPost(), await newPost()];
+  await prisma.post.updateMany({ where: { id: { in: [progress, completes] } }, data: { sample: true } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: progress, probability: 0.8, payload: { comment: "Coming soon" } } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "RESOLVES", postId: completes, probability: 0.8, payload: {} } });
+  await queueAutopilotNotices(one.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  // Their own lines (the change's other updates, on real posts, still say they email).
+  expect(email!.text).toMatch(/^Progress update · Marks it in progress, with this comment$/m);
+  expect(email!.text).toMatch(/^Completes the post · Open → Completed$/m);
+});
+
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const paragraphs = (word: string) => ["Intro.", ...Array.from({ length: 12 }, (_, i) => `${word} paragraph ${i + 1}.`)].join("\n");
