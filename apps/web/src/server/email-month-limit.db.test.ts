@@ -676,3 +676,37 @@ test("sends at once on a license each take a credit while any is left, across it
   await Promise.all(Array.from({ length: 4 }, () => releaseProjectEmail(project.id)));
   expect(await emailsThisMonth(project.id)).toMatchObject({ emails: 0, left: 4 });
 });
+
+test("a take or give-back that keeps losing races still goes through while credits (or room) are left", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => {
+    free.limits.emailsPerMonth = 1;
+    pro.limits.emailsPerMonth = 4;
+  }));
+  const { owner, project } = await setup();
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "pro", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await grantLicenseCredits(license.id);
+  expect(await claimProjectEmail(project.id)).toBe(true);
+  // The next N updates of a credit grant change nothing, as when another claim got to the grant first.
+  await prisma.$executeRawUnsafe(`CREATE TABLE "test_lost_races" ("left" int NOT NULL)`);
+  await prisma.$executeRawUnsafe(`CREATE FUNCTION "test_lose_race"() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF (SELECT "left" FROM "test_lost_races") > 0 THEN UPDATE "test_lost_races" SET "left" = "left" - 1; RETURN NULL; END IF;
+      RETURN NEW;
+    END $$`);
+  await prisma.$executeRawUnsafe(`CREATE TRIGGER "test_lose_race" BEFORE UPDATE ON "credit_grant" FOR EACH ROW EXECUTE FUNCTION "test_lose_race"()`);
+  try {
+    await prisma.$executeRawUnsafe(`INSERT INTO "test_lost_races" VALUES (7)`);
+    expect(await claimProjectEmail(project.id)).toBe(true);
+    expect(await emailsThisMonth(project.id)).toMatchObject({ emails: 2, left: 2 });
+    await prisma.$executeRawUnsafe(`UPDATE "test_lost_races" SET "left" = 4`);
+    await releaseProjectEmail(project.id);
+    expect(await emailsThisMonth(project.id)).toMatchObject({ emails: 1, left: 3 });
+  } finally {
+    await prisma.$executeRawUnsafe(`DROP TRIGGER "test_lose_race" ON "credit_grant"`);
+    await prisma.$executeRawUnsafe(`DROP FUNCTION "test_lose_race"()`);
+    await prisma.$executeRawUnsafe(`DROP TABLE "test_lost_races"`);
+  }
+});
