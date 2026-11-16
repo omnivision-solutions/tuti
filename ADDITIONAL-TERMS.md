@@ -13,7 +13,7 @@ pages) shows in its footer the author attribution "Powered by tuti", with Tuti's
 https://tuti.so. So does the end of each email Tuti sends on a project's behalf to the people who
 use its portals (such as replies, status changes, changelog entries and sign-in links). The
 attribution is part of the Appropriate Legal Notices that Tuti displays. The widget, the panel Tuti
-opens inside other websites, has no footer and isn't one of these pages.
+opens inside other websites, isn't one of these pages, even where it shows the attribution.
 
 If you convey Tuti or a work based on it, or run it, modified or not, so that people use its
 portals over a network, you must keep this attribution on each such page and email: visible,
