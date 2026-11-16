@@ -20,6 +20,7 @@ export const APP_ROUTES = [
   "design",
   "design/panes",
   "license",
+  "licenses/redeem",
   "new",
   "[project]",
   "[project]/autopilot",

@@ -268,6 +268,9 @@ export function articleVersionsNote(plan: PlanKey): string {
 /** Saved versions stored per docs article: the largest plan's articleVersionsKept, whatever the project's plan; older ones are deleted. */
 export const articleVersionsStored = () => Math.max(...(billingConfig()?.plans.map(({ limits }) => limits.articleVersions) ?? [ARTICLE_REVISIONS_KEPT]));
 
+/** The plan AppSumo's tier `tier` gives (the billing file's `licenses.appsumo.tiers`), or null where the file names none. */
+export const appsumoTierPlan = (tier: number): string | null => billingConfig()?.licenses?.appsumo?.tiers[String(tier)] ?? null;
+
 /** The billing file's free trial (plan, days, AI credits, emails), or null where it has none or billing is off. */
 export const trialTerms = () => billingConfig()?.trial ?? null;
 

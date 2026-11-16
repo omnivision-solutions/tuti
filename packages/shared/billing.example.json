@@ -32,8 +32,42 @@
       "limits": { "seats": null, "boards": null, "articles": null, "historyDays": 90, "articleVersions": 50, "reportingDays": null, "emailsPerMonth": null },
       "monthlyCredits": 5000,
       "extras": ["Priority support"]
+    },
+    {
+      "key": "appsumo-1",
+      "name": "AppSumo Tier 1",
+      "hidden": true,
+      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting"],
+      "limits": { "seats": null, "boards": 1, "articles": 25, "historyDays": 30, "articleVersions": 2, "reportingDays": 31, "emailsPerMonth": 4000 },
+      "monthlyCredits": 400
+    },
+    {
+      "key": "appsumo-2",
+      "name": "AppSumo Tier 2",
+      "hidden": true,
+      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting"],
+      "limits": { "seats": null, "boards": 2, "articles": 50, "historyDays": 30, "articleVersions": 2, "reportingDays": 31, "emailsPerMonth": 10000 },
+      "monthlyCredits": 1000
+    },
+    {
+      "key": "appsumo-3",
+      "name": "AppSumo Tier 3",
+      "hidden": true,
+      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting", "sitePath"],
+      "limits": { "seats": null, "boards": 5, "articles": 100, "historyDays": 90, "articleVersions": 5, "reportingDays": 90, "emailsPerMonth": 30000 },
+      "monthlyCredits": 3000
+    },
+    {
+      "key": "appsumo-4",
+      "name": "AppSumo Tier 4",
+      "hidden": true,
+      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting", "sitePath", "privatePortal", "aiTuning"],
+      "limits": { "seats": null, "boards": 15, "articles": null, "historyDays": 365, "articleVersions": 20, "reportingDays": null, "emailsPerMonth": 100000 },
+      "monthlyCredits": 8000,
+      "extras": ["Priority support"]
     }
   ],
+  "licenses": { "appsumo": { "tiers": { "1": "appsumo-1", "2": "appsumo-2", "3": "appsumo-3", "4": "appsumo-4" } } },
   "badge": {
     "month": { "perMonth": 49, "stripe": ["price_badge_monthly"] },
     "year": { "perMonth": 49, "stripe": ["price_badge_yearly"] }
