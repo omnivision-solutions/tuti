@@ -242,3 +242,15 @@ test("Tuti's emails to teams open with a line in green saying what it's about, t
   expect(await autopilot([change, { ...change, pullRequest: "acme/app#2" }])).toMatchObject({ eyebrow: "Acme · 2 merged pull requests", title: "2 need you" });
   expect(await autopilot([change, { ...change, pullRequest: "acme/app#2" }], true)).toMatchObject({ title: "2 still need you" });
 });
+
+test("four tiles lay out two by two, so a phone's card fits them; three stay in one row", async () => {
+  const tiles = (n: number) => render(Stats({ items: Array.from({ length: n }, (_, i) => ({ n: i + 1, label: `tile ${i + 1}` })) }));
+  const rows = (html: string) => html.match(/<tr>[\s\S]*?<\/tr>/g)!.filter((row) => row.includes("tile "));
+  const four = rows(await tiles(4));
+  expect(four).toHaveLength(2);
+  expect(four.map((row) => row.match(/tile \d/g))).toEqual([["tile 1", "tile 2"], ["tile 3", "tile 4"]]);
+  expect(four[0]).toContain('width="48%"');
+  const three = rows(await tiles(3));
+  expect(three).toHaveLength(1);
+  expect(three[0]!.match(/tile \d/g)).toHaveLength(3);
+});

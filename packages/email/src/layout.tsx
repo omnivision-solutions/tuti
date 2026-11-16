@@ -116,22 +116,34 @@ export function Buttons({ href, label, second, small = false }: { href: string; 
 
 /** Numbers side by side, each on a soft tile over what it counts ("8", "still true"). */
 export function Stats({ items }: { items: { n: number | string; label: string }[] }) {
+  // Up to three in a row; four or more two a row (2×2), so a phone's card still fits them (no media queries in email).
+  const perRow = items.length > 3 ? 2 : items.length;
+  const rows = Array.from({ length: Math.ceil(items.length / perRow) }, (_, r) => items.slice(r * perRow, (r + 1) * perRow));
   return (
     <table role="presentation" width="100%" cellPadding={0} cellSpacing={0} style={{ margin: "18px 0", borderCollapse: "separate" }}>
       <tbody>
-        <tr>
-          {items.map((item, i) => (
-            <Fragment key={i}>
-              {/* 10px apart: a spacer cell, as cells take no margin in email. */}
-              {i > 0 && <td width={10} style={{ width: 10 }} />}
-              <td width={`${Math.floor(96 / items.length)}%`} style={{ backgroundColor: SOFT_FILL, borderRadius: 12, padding: "12px 14px", verticalAlign: "top" }}>
-                <Text style={{ fontSize: 13, lineHeight: "18px", color: colors.muted, margin: 0 }}>
-                  <span style={{ display: "block", fontSize: 22, lineHeight: "28px", fontWeight: 700, letterSpacing: -0.4, color: colors.text }}>{item.n}</span> {item.label}
-                </Text>
-              </td>
-            </Fragment>
-          ))}
-        </tr>
+        {rows.map((row, r) => (
+          <Fragment key={r}>
+            {/* 10px apart, across and down: spacer cells and rows, as cells take no margin in email. */}
+            {r > 0 && (
+              <tr>
+                <td colSpan={perRow * 2 - 1} height={10} style={{ height: 10, fontSize: 0, lineHeight: "10px" }} />
+              </tr>
+            )}
+            <tr>
+              {row.map((item, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <td width={10} style={{ width: 10 }} />}
+                  <td width={`${Math.floor(96 / perRow)}%`} style={{ backgroundColor: SOFT_FILL, borderRadius: 12, padding: "12px 14px", verticalAlign: "top" }}>
+                    <Text style={{ fontSize: 13, lineHeight: "18px", color: colors.muted, margin: 0 }}>
+                      <span style={{ display: "block", fontSize: 22, lineHeight: "28px", fontWeight: 700, letterSpacing: -0.4, color: colors.text }}>{item.n}</span> {item.label}
+                    </Text>
+                  </td>
+                </Fragment>
+              ))}
+            </tr>
+          </Fragment>
+        ))}
       </tbody>
     </table>
   );
