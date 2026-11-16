@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 
 import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
-import { billingFile } from "../packages/testkit/src/billing";
+import { billingFile, withAppsumoPlans } from "../packages/testkit/src/billing";
 
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
 const PORT = Number(process.env.E2E_PORT || 3200);
@@ -102,7 +102,8 @@ export const cloudEnv = {
   PORT: String(CLOUD_PORT),
   APP_URL: CLOUD_URL,
   PORTAL_URL_TEMPLATE: `http://{project}.localhost:${CLOUD_PORT}`,
-  BILLING_CONFIG: billingFile(),
+  // With AppSumo's tiers (hidden plans, for its licenses).
+  BILLING_CONFIG: billingFile(withAppsumoPlans),
   // Tuti's own widget in its team app: the project app-widget.spec.ts makes.
   APP_WIDGET_PROJECT: APP_WIDGET_SLUG,
 };

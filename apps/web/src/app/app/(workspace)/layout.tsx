@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { Analytics } from "@tuti/ui/analytics";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -25,7 +26,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
     redirect("/app/auth/sign-in");
   }
 
-  const invitations = await pendingInvitationsFor(session.user);
+  const [invitations, licenses] = await Promise.all([pendingInvitationsFor(session.user), prisma.planLicense.count({ where: { userId: session.user.id } })]);
   const projects = await Promise.all(
     (await listMyProjects(session.user.id)).map(async (project) => ({ ...project, portalUrl: await portalAddress(project.slug) })),
   );
@@ -46,7 +47,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
           <AppSidebar
             projects={projects}
             fallbackSlug={fallbackSlug}
-            user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
+            user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null, licenses: licenses > 0 }}
           />
         </>
       }
