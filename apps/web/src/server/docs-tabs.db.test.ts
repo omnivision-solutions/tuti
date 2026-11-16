@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { collectionOptions, docsContents, publishedArticle } from "./docs-queries";
@@ -353,6 +354,23 @@ describe("readers", () => {
       ].join("\n\n"),
     );
     expect(text).not.toContain("Empty");
+  });
+
+  test("the sitemap dates a tab by the newest of itself and the listed articles in it, never a hidden one's", async () => {
+    await withTabs();
+    const old = new Date("2026-01-01T10:00:00Z");
+    await prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.collection.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id, slug: "listing-posts" }, data: { updatedAt: new Date("2026-03-01T10:00:00Z") } });
+    const { slug } = await call(createArticle, as(), { title: "Deleting posts", body: "Deleting posts.", collection: "endpoints" });
+    await call(publishArticle, as(), { slug });
+    await prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { noindex: true, updatedAt: new Date("2026-06-01T10:00:00Z") } });
+
+    const portal = `http://${project.slug}.localhost:3100`;
+    const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(xml).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-03-01T10:00:00.000Z</lastmod></url>`);
+    expect(xml).not.toContain(`${portal}/docs/empty<`);
   });
 });
 

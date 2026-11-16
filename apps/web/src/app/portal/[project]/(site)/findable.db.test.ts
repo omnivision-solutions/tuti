@@ -92,6 +92,16 @@ test("the sitemap lists the portal's public pages with when they changed, and no
   await entry(project.id, 1, "Dark mode is here", new Date("2026-05-01T10:00:00Z"));
   await entry(project.id, 2, "Unpublished", null);
   await prisma.article.create({ data: { projectId: other.id, slug: "elsewhere", title: "Elsewhere", publishedAt: new Date() } });
+  // A collection's date: the newest of itself and the listed articles in it, the ones in collections in it too, never a hidden one's.
+  const gettingStarted = await prisma.collection.update({ where: { projectId_slug: { projectId: project.id, slug: "getting-started" } }, data: { updatedAt: new Date("2026-01-01T10:00:00Z") } });
+  const roles = await prisma.collection.create({
+    data: { projectId: project.id, parentId: gettingStarted.id, slug: "roles", name: "Roles", updatedAt: new Date("2026-01-01T10:00:00Z") },
+  });
+  const inRoles = (slug: string, extra: object) =>
+    prisma.article.create({ data: { projectId: project.id, collectionId: roles.id, slug, title: slug, publishedAt: new Date("2026-03-01T10:00:00Z"), ...extra } });
+  await inRoles("admins", { updatedAt: new Date("2026-03-05T10:00:00Z") });
+  await inRoles("hidden-from-search", { noindex: true, updatedAt: new Date("2026-06-01T10:00:00Z") });
+  await inRoles("roles-draft", { publishedAt: null, updatedAt: new Date("2026-06-01T10:00:00Z") });
 
   const response = await sitemap(request, { params: Promise.resolve({ project: project.slug }) });
   expect(response.headers.get("content-type")).toBe("application/xml; charset=utf-8");
@@ -105,8 +115,10 @@ test("the sitemap lists the portal's public pages with when they changed, and no
     [`${portal}/changelog`]: "2026-05-01T10:00:00.000Z",
     [`${portal}/changelog/1`]: "2026-05-01T10:00:00.000Z",
     [`${portal}/docs`]: expect.any(String),
-    // A collection's page.
-    [`${portal}/docs/getting-started`]: undefined,
+    // Collections' pages: Roles' article bubbles up to Getting started.
+    [`${portal}/docs/getting-started`]: "2026-03-05T10:00:00.000Z",
+    [`${portal}/docs/roles`]: "2026-03-05T10:00:00.000Z",
+    [`${portal}/docs/admins`]: "2026-03-05T10:00:00.000Z",
     [`${portal}/docs/billing`]: expect.any(String),
     [`${portal}/docs/inviting-your-team`]: "2026-03-02T10:00:00.000Z",
   });
