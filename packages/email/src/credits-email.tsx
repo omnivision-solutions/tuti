@@ -13,12 +13,15 @@ type CreditsProps = {
   url: string;
 };
 
+/** "120 AI credits left", "1 AI credit left" (`left` as the app shows it: "0.5" stays plural). */
+const creditsLeft = (left: string) => `${left} AI ${left === "1" ? "credit" : "credits"} left`;
+
 /** To a project's owners and admins: its AI credits are running low, or out (docs/plan.md, AI usage per project). */
 export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
   return (
     <Layout
       label="Billing"
-      preview={out ? `${projectName}'s AI is paused until it has more credits.` : `${projectName} has ${left} AI credits left.`}
+      preview={out ? `${projectName}'s AI is paused until it has more credits.` : `${projectName} has ${creditsLeft(left)}.`}
       footer={
         <>
           You get this as an owner or admin of {projectName}, once until the project gets more credits.
@@ -26,7 +29,7 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
       }
     >
       <Eyebrow>{projectName} · Billing</Eyebrow>
-      <Title>{out ? "Out of AI credits" : `${left} AI credits left`}</Title>
+      <Title>{out ? "Out of AI credits" : creditsLeft(left)}</Title>
       <Text style={textStyle}>
         {out ? (
           <>
@@ -35,7 +38,7 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
           </>
         ) : (
           <>
-            <strong>{projectName}</strong> has {left} AI credits left. When they run out, {CREDIT_FEATURES} pause until it
+            <strong>{projectName}</strong> has {creditsLeft(left)}. When they run out, {CREDIT_FEATURES} pause until it
             has more.
           </>
         )}
