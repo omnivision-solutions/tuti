@@ -49,6 +49,20 @@ test("emails on a project's behalf show its name and initial at the top, not Tut
   expect(inbox).not.toContain("feedback, roadmap and changelog");
 });
 
+test("a project's logo and name sit centred over the card; Tuti's own mark stays on the left", async () => {
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  // The header row's table: its attributes before its style.
+  const header = (html: string) => html.match(/<table([^>]*)style="margin:0 auto 16px"/)?.[1] ?? "";
+  for (const brand of [{}, { logo: { url: "https://tuti.example/logo.webp", width: 64, height: 64 } }]) {
+    const row = header(await render(shippedEmail({ ...shipped, ...brand }).body));
+    // Centred, and only as wide as the logo and name.
+    expect(row).toContain('align="center"');
+    expect(row).not.toContain("width=");
+  }
+  const team = header(await render(inviteEmail({ inviterName: "Ann", projectName: "Acme", roleLabel: "Admin", url: "https://tuti.example/i" }).body));
+  expect(team).toContain('width="100%"');
+});
+
 test("every email ends with Powered by tuti, linking to Tuti's site with no project in it, unless the project hides it", async () => {
   vi.stubEnv("APP_URL", "https://tuti.example");
   const link = 'href="https://tuti.so/?utm_source=email&amp;utm_medium=powered_by&amp;utm_campaign=badge"';

@@ -267,12 +267,13 @@ export function Layout({
       <Preview>{preview}</Preview>
       <Body style={{ backgroundColor: team ? colors.page : "#f5f5f4", fontFamily: team ? `Figtree, ${SANS}` : `Inter, ${SANS}`, margin: 0 }}>
         <Container style={{ maxWidth: 560, margin: "0 auto", padding: "28px 12px 32px" }}>
-          <Row style={{ margin: "0 0 16px" }}>
+          {/* A project's logo and name centred over the card, as its footer and "Powered by tuti" are: the row only as wide as them. */}
+          <Row style={{ margin: "0 auto 16px" }} width={project ? undefined : "100%"}>
             {project ? (
               <>
                 {project.logo ? (
                   <Column
-                    style={{ width: "1%", paddingRight: 10, verticalAlign: "middle" }}
+                    style={{ paddingRight: name ? 10 : 0, verticalAlign: "middle" }}
                     // Outlook for Windows can't show WebP: it gets the letter's square, and the name where no text names it (conditional
                     // comments, which React can't write).
                     dangerouslySetInnerHTML={{
