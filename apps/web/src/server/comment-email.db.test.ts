@@ -423,3 +423,25 @@ test("a post on a Team only board: the email doesn't name the board (it isn't on
   expect(email!.html).not.toContain("Churn risks Q1");
   expect(email!.text).not.toContain("Churn risks Q1");
 });
+
+test("overlapping runs: one finds the comment claimed by another, which then fails and lets it go; the comment stays due, and a later run sends it", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  await prisma.comment.update({ where: { id: comment.id }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  const { postId } = await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } });
+  // Another run is sending it (its claim fresh, unsent)...
+  await prisma.replyEmail.create({ data: { commentId: comment.id, userId: author.id, claimedAt: new Date() } });
+  // ...and right after this run's claim finds it taken, that run's send fails and it lets the claim go.
+  const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: unknown[]) => {
+    const result = await transaction(...args);
+    await prisma.replyEmail.deleteMany({ where: { commentId: comment.id, userId: author.id } });
+    return result;
+  }) as never);
+  expect(await handlers.commentsEmailed({ postId }, log)).toEqual({ emailed: 0 });
+  expect(commentEmails(author.email)).toEqual([]);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  await later();
+  expect(commentEmails(author.email)).toHaveLength(1);
+});

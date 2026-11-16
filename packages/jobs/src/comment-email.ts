@@ -83,11 +83,14 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   }
   const { projectId, project } = post;
   const ids = comments.map((comment) => comment.id);
-  // Done once no email about them to the author is left in flight (another run's, or the reply's to voters): the cron
-  // takes one that is again later, and its claim says whether it went. Other people's claims (a voter's) aren't this one's.
+  // Done with those emailed to the author (their claim sent: this run's, another's, or the reply's to voters) or theirs;
+  // no author to tell (unsubscribed, "Posts I wrote" off, a post only the team sees): all of them. Any other stays due,
+  // whatever claim it has or had: one another run holds may yet fail and be let go (overlapping runs, without Hatchet's
+  // per-post key), and the cron takes it again; claims keep anyone from being emailed twice. Other people's claims (a
+  // voter's) aren't this one's.
   const done = (authorId: string | null) =>
     prisma.comment.updateMany({
-      where: { id: { in: ids }, ...(authorId && { replyEmails: { none: { userId: authorId, sentAt: null } } }) },
+      where: { id: { in: ids }, ...(authorId && { OR: [{ authorId }, { replyEmails: { some: { userId: authorId, sentAt: { not: null } } } }] }) },
       data: { authorEmailDueAt: null },
     });
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
