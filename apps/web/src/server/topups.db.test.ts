@@ -33,7 +33,7 @@ const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectI
 const deliver = ({ body, headers }: { body: string; headers: Headers }) =>
   webhook(new Request("https://app.tuti.example/api/stripe/webhook", { method: "POST", body, headers }));
 const topUps = () =>
-  prisma.aiCreditGrant.findMany({ where: { projectId: project.id, source: "TOPUP" }, select: { credits: true, remaining: true, expiresAt: true, paidCents: true, stripeSessionId: true } });
+  prisma.creditGrant.findMany({ where: { projectId: project.id, source: "TOPUP" }, select: { credits: true, remaining: true, expiresAt: true, paidCents: true, stripeSessionId: true } });
 
 test("a top-up opens Stripe Checkout for the amount, at the top-up rate of the time", async () => {
   vi.stubEnv("AI_CREDITS_PER_TOPUP_DOLLAR", "50");
@@ -125,5 +125,5 @@ test("a paid top-up for a project deleted meanwhile is answered, and gives nothi
   const { id } = stripe.sessions.at(-1)!;
   await prisma.project.delete({ where: { id: project.id } });
   expect((await deliver(stripe.event(id))).status).toBe(200);
-  expect(await prisma.aiCreditGrant.count({ where: { stripeSessionId: id } })).toBe(0);
+  expect(await prisma.creditGrant.count({ where: { stripeSessionId: id } })).toBe(0);
 });

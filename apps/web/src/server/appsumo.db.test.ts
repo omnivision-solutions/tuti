@@ -139,7 +139,7 @@ test("the old key's deactivation arriving before the upgrade: the upgrade brings
 
 /** The project's AI credits left from its license (PLAN) and from top-ups, and what was taken back. */
 const creditsLeft = async (projectId: string) => {
-  const grants = await prisma.aiCreditGrant.findMany({ where: { projectId }, select: { source: true, remaining: true, takenBack: true } });
+  const grants = await prisma.creditGrant.findMany({ where: { projectId }, select: { source: true, remaining: true, takenBack: true } });
   const sum = (source: string, field: "remaining" | "takenBack") => grants.filter((one) => one.source === source).reduce((total, one) => total + one[field].toNumber(), 0);
   return { license: sum("PLAN", "remaining"), takenBack: sum("PLAN", "takenBack"), topups: sum("TOPUP", "remaining") };
 };
@@ -147,8 +147,8 @@ const creditsLeft = async (projectId: string) => {
 test("a refund takes back the AI credits its license gave that are left, and leaves the project's top-ups", async () => {
   const { project, key } = await assigned();
   await grantCredits(project.id, "TOPUP", 500, { days: 365 });
-  const spent = await prisma.aiCreditGrant.findFirstOrThrow({ where: { projectId: project.id, source: "PLAN" } });
-  await prisma.aiCreditGrant.update({ where: { id: spent.id }, data: { remaining: 300 } });
+  const spent = await prisma.creditGrant.findFirstOrThrow({ where: { projectId: project.id, source: "PLAN" } });
+  await prisma.creditGrant.update({ where: { id: spent.id }, data: { remaining: 300 } });
   expect(await creditsLeft(project.id)).toEqual({ license: 300, takenBack: 0, topups: 500 });
   await deliver({ event: "deactivate", license_key: key, tier: 1, extra: { reason: "Refunded" } });
   expect(await creditsLeft(project.id)).toEqual({ license: 0, takenBack: 300, topups: 500 });
@@ -166,7 +166,7 @@ test("the old key's deactivation before an upgrade takes the month's credits bac
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: null, creditsThrough: expect.any(Date) });
   expect(await creditsLeft(project.id)).toMatchObject({ license: 1000 });
   // The upgrade committed but stopped before giving its month: AppSumo's retry gives it, once.
-  await prisma.aiCreditGrant.deleteMany({ where: { planLicenseId: license.id, credits: 1000 } });
+  await prisma.creditGrant.deleteMany({ where: { planLicenseId: license.id, credits: 1000 } });
   await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough: null } });
   await deliver(upgrade);
   await deliver(upgrade);

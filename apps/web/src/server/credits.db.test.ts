@@ -31,7 +31,7 @@ const answered = async (cost: number | null, projectId = project.id) => (await a
 const balance = async () => (await creditBalance(project.id)).balance;
 // Longest-lasting first: with Date faked, grants made one after another share a createdAt.
 const left = async () =>
-  (await prisma.aiCreditGrant.findMany({ where: { projectId: project.id }, orderBy: { expiresAt: { sort: "desc", nulls: "first" } }, select: { note: true, remaining: true } })).map(
+  (await prisma.creditGrant.findMany({ where: { projectId: project.id }, orderBy: { expiresAt: { sort: "desc", nulls: "first" } }, select: { note: true, remaining: true } })).map(
     (grant) => `${grant.note} ${grant.remaining.toNumber()}`,
   );
 
@@ -41,7 +41,7 @@ test("off unless AI_CREDITS=on: requests are recorded without credits, and usage
   await answered(0.01);
   expect(await prisma.aiUsage.findMany({ where: { projectId: project.id }, select: { credits: true } })).toEqual([{ credits: null }]);
   expect(await call(getCredits, as(), {})).toEqual({ enabled: false, balance: 0, grants: [] });
-  expect(await prisma.aiCreditGrant.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.creditGrant.count({ where: { projectId: project.id } })).toBe(0);
   const [month] = (await call(getUsage, as(), { months: 1 })).months;
   expect(month).toMatchObject({ cost: 0.01 });
   expect(month).not.toHaveProperty("credits");
@@ -125,6 +125,17 @@ const emailed = (subject: string) =>
     .filter((email) => email.subject === `${project.name} ${subject}`)
     .flatMap((email) => email.to)
     .sort();
+
+test("credits of another kind (email) aren't AI credits: not in the balance, not spent by AI, and no new low-credits email", async () => {
+  await grantCredits(project.id, "MANUAL", 1, { days: null, note: "ai" });
+  await prisma.project.update({ where: { id: project.id }, data: { aiCreditsOutEmailedAt: new Date() } });
+  await prisma.creditGrant.create({ data: { projectId: project.id, kind: "EMAIL", source: "MANUAL", credits: 50, remaining: 50, note: "email" } });
+  expect(await balance()).toBe(1);
+  await answered(0.03);
+  expect(await balance()).toBe(-2);
+  expect((await left()).sort()).toEqual(["ai 0", "email 50"]);
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiCreditsOutEmailedAt: true } })).aiCreditsOutEmailedAt).not.toBeNull();
+});
 
 test("owners and admins with verified addresses are emailed once when credits run low, once when they're out, and again after a grant", async () => {
   vi.stubEnv("AI_CREDITS_LOW", "50");
@@ -238,7 +249,7 @@ test("every project gets AI_CREDITS_FREE once, lasting like a top-up, however ma
   vi.stubEnv("AI_CREDITS_TOPUP_EXPIRY_DAYS", "30");
   const results = await Promise.all([creditBalance(project.id), creditBalance(project.id), call(getCredits, as(), {})]);
   expect(results.map((result) => result.balance)).toEqual([50, 50, 50]);
-  const grants = await prisma.aiCreditGrant.findMany({ where: { projectId: project.id } });
+  const grants = await prisma.creditGrant.findMany({ where: { projectId: project.id } });
   expect(grants).toHaveLength(1);
   expect(grants[0]).toMatchObject({ source: "FREE" });
   expect(grants[0]!.expiresAt!.getTime() - Date.now()).toBeGreaterThan(29 * 86_400_000);
@@ -253,5 +264,5 @@ test("every project gets AI_CREDITS_FREE once, lasting like a top-up, however ma
 test("a project's credits go with it", async () => {
   await grantCredits(project.id, "MANUAL", 10, { days: null });
   await prisma.project.delete({ where: { id: project.id } });
-  expect(await prisma.aiCreditGrant.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.creditGrant.count({ where: { projectId: project.id } })).toBe(0);
 });

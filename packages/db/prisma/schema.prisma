@@ -352,11 +352,11 @@ model Project {
   tuningUpdatedBy       String?
   tuningEditor          User?        @relation("TuningEditor", fields: [tuningUpdatedBy], references: [id], onDelete: SetNull)
   /// AI credits charged beyond what the project's grants had left (a request already running when they ran
-  /// out): taken from the next grant first. Only with AI credits on (see AiCreditGrant).
+  /// out): taken from the next grant first. Only with AI credits on (see CreditGrant).
   aiCreditDebt          Decimal      @default(0) @db.Decimal(20, 6)
   /// When the project was given AI_CREDITS_FREE (once, the first time its credits were looked at).
   freeCreditsGrantedAt  DateTime?
-  /// When owners and admins were emailed that AI credits ran low (AI_CREDITS_LOW) or out: once each until the next grant, which clears both (a trigger on ai_credit_grant).
+  /// When owners and admins were emailed that AI credits ran low (AI_CREDITS_LOW) or out: once each until the next grant, which clears both (a trigger on credit_grant).
   aiCreditsLowEmailedAt DateTime?
   aiCreditsOutEmailedAt DateTime?
   /// The project's plan where plans are sold (docs/plan.md, Plans): its key in the billing file (BILLING_CONFIG), kept in
@@ -445,7 +445,7 @@ model Project {
   dataImports             DataImport[]
   importedRecords         ImportedRecord[]
   aiUsage                 AiUsage[]
-  aiCreditGrants          AiCreditGrant[]
+  creditGrants          CreditGrant[]
   planLicense             PlanLicense?
 
   autopilotDigests AutopilotDigest[]
@@ -2729,7 +2729,13 @@ model AiUsage {
   @@map("ai_usage")
 }
 
-enum AiCreditSource {
+/// What a credit pays for: AI requests, or (later) email to the project's users.
+enum CreditKind {
+  AI
+  EMAIL
+}
+
+enum CreditSource {
   /// AI_CREDITS_FREE, once per project.
   FREE
   /// Bought (Stripe).
@@ -2740,12 +2746,13 @@ enum AiCreditSource {
   MANUAL
 }
 
-/// AI credits a project was given (docs/plan.md, AI usage per project): spent soonest-expiring first,
-/// and gone once they expire. The balance is what's left of unexpired grants, less the project's debt.
-model AiCreditGrant {
+/// Credits a project was given, of one kind (docs/plan.md, AI usage per project): spent soonest-expiring first,
+/// and gone once they expire. A kind's balance is what's left of its unexpired grants (AI's less the project's debt).
+model CreditGrant {
   id              String         @id @default(cuid())
   projectId       String
-  source          AiCreditSource
+  kind            CreditKind     @default(AI)
+  source          CreditSource
   credits         Decimal        @db.Decimal(20, 6)
   remaining       Decimal        @db.Decimal(20, 6)
   /// Null: for good.
@@ -2769,7 +2776,7 @@ model AiCreditGrant {
 
   @@index([projectId, expiresAt])
   @@index([planLicenseId])
-  @@map("ai_credit_grant")
+  @@map("credit_grant")
 }
 
 /// A plan license (docs/plan.md, Plan licenses): a plan an account holds without paying through Stripe, such as an

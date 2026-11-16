@@ -39,7 +39,7 @@ const deliver = async (...events: FakeStripeEvent[]) => {
 };
 const plan = () => call(getPlan, as(), {});
 const planGrants = () =>
-  prisma.aiCreditGrant.findMany({ where: { projectId: project.id, source: "PLAN" }, orderBy: { createdAt: "asc" }, select: { credits: true, expiresAt: true, stripeInvoiceId: true } });
+  prisma.creditGrant.findMany({ where: { projectId: project.id, source: "PLAN" }, orderBy: { createdAt: "asc" }, select: { credits: true, expiresAt: true, stripeInvoiceId: true } });
 
 /** Starts `which` for the project and pays for it; returns its subscription's id and the events Stripe sends. */
 async function subscribe(which = "pro", interval: "month" | "year" = "month") {
@@ -263,7 +263,7 @@ test("a project deleted meanwhile: Stripe's events are answered, and nothing is 
   const { events } = await subscribe("pro");
   await prisma.project.delete({ where: { id: project.id } });
   await deliver(...events);
-  expect(await prisma.aiCreditGrant.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.creditGrant.count({ where: { projectId: project.id } })).toBe(0);
 });
 
 test("any plan the file sells is bought by its key, and Stripe's webhook stores that key", async () => {
