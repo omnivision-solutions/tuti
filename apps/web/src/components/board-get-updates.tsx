@@ -53,17 +53,17 @@ export async function boardGetUpdates({
         </h2>
         {/* Only what holds for them: the team, someone the project's sign-on gave no address, or not a reader of a private portal hears nothing. */}
         {!session ? (
-          <p className="text-muted-foreground">{"Vote for an idea to hear when it's planned, started and shipped."}</p>
+          <p className="text-muted-foreground">{"Vote for an idea to hear as it moves forward and when it ships."}</p>
         ) : !voter ? (
           // Signed in through another project's single sign-on: as the vote buttons say.
           <p className="text-muted-foreground">
             <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
           </p>
         ) : reach?.status === "emailed" ? (
-          <p className="text-muted-foreground">{"Vote for an idea to get an email when it's planned, started and shipped."}</p>
+          <p className="text-muted-foreground">{"Vote for an idea to get an email as it moves forward and when it ships."}</p>
         ) : reach?.status === "unconfirmed" ? (
           <div className="flex flex-col items-start gap-1">
-            <p className="text-muted-foreground">Confirm your email to hear when ideas you vote on are planned, started and shipped.</p>
+            <p className="text-muted-foreground">Confirm your email to hear as ideas you vote on move forward and when they ship.</p>
             <ResendVerificationButton email={session.user.email} callbackURL={at(back)} />
           </div>
         ) : reach?.status === "optedOut" || reach?.status === "turnedOff" ? (

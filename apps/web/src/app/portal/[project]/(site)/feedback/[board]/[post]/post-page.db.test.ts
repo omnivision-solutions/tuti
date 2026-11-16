@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { CommentList } from "@/components/comments";
-import { SubscribeButton } from "@/components/subscribe-button";
+import { stillToCome, SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -237,4 +237,31 @@ test("a public post on a Team only board doesn't name the board to readers: not 
   // The team sees where it is.
   actAs(owner);
   expect(await shown()).toContain("Enterprise escalations");
+});
+
+test("Subscribe's line promises only what's still to come for the post: started and shipped once it's planned, shipped once it's in progress", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const lines: Record<string, string> = {};
+  for (const [number, status] of [
+    [1, "OPEN"],
+    [2, "PLANNED"],
+    [3, "IN_PROGRESS"],
+  ] as const) {
+    await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number, title: "Dark mode", body: "", status } });
+    // Signed out: Subscribe, with its line under it.
+    actAs(null);
+    const props = propsOf(
+      await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: `dark-mode-${number}` }), searchParams: Promise.resolve({}) } as never),
+      SubscribeButton,
+    );
+    lines[status] = `Get an email ${stillToCome(props!.status)}.`;
+  }
+  expect(lines).toEqual({
+    OPEN: "Get an email when it's planned, started and shipped.",
+    PLANNED: "Get an email when it's started and shipped.",
+    IN_PROGRESS: "Get an email when it ships.",
+  });
+  // The line for someone who hears anyway follows it too.
+  expect(`You'll hear ${stillToCome("IN_PROGRESS")}.`).toBe("You'll hear when it ships.");
 });

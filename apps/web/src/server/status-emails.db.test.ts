@@ -50,7 +50,8 @@ test("moving a post to In progress emails its voters once, with its votes and st
     expect(subjectsTo(person.email)).toEqual(["In progress: CSV export"]);
   }
   const email = mailbox.emails.find((e) => e.to.includes(voter.email) && e.subject.startsWith("In progress"))!;
-  expect(email.text).toContain("CSV export is in progress");
+  // The heading (an h1, upper-cased in plain text).
+  expect(email.text).toContain("CSV EXPORT IS IN PROGRESS");
   expect(email.text).toContain("The team has started building it. We'll email you again when it ships.");
   expect(email.text).toContain(`/feedback/feature-requests/csv-export-${post.number}`);
   expect(email.headers["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");

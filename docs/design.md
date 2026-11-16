@@ -490,11 +490,11 @@ the list picks none to approve at once.
     status pill and "Expected <month>" with a calendar, the body at 17px. The rail is a plain column, no card:
     **Upvote** with the count after a rule (`shape="upvote"`; the page's one filled primary before voting; voted,
     "Upvoted" in the accent's soft tint with a thin inset ring in it), Subscribe a secondary grey fill with "Get an
-    email when it's planned, started and shipped." under it (Unsubscribe quiet, without the line), the voters' faces under a "Voters" label, then
+    email when it's planned, started and shipped." under it (Planned: "when it's started and shipped"; In progress: "when it ships") (Unsubscribe quiet, without the line), the voters' faces under a "Voters" label, then
     under one line Board, Status, Expected and Posted as rows without lines between them, Copy link and Share (the
     device's share sheet, where it has one) as round icon buttons, "Have another idea? Post it". On phones and tablets
     the same actions in one row under the body (Upvote widest, Subscribe without its bell; the row wraps rather
-    squeezing Upvote), "You'll hear when it's planned, started and shipped." and the voters under them. The thread: "N comments" and its
+    squeezing Upvote), "You'll hear when it's planned, started and shipped." (by its status, as the hint) and the voters under them. The thread: "N comments" and its
     sort, the comment box under them (the face, the box, a grey Comment button: Upvote stays the one primary); signed
     out, one "Join the conversation" bar (a fill, Sign in a secondary) instead. The team's replies on the accent's soft
     tint with a 2px accent rule and the Team badge, status changes inline with the status's icon and pill. Similar ideas
@@ -535,7 +535,7 @@ the list picks none to approve at once.
     title, its tags and date under it), the reactions, then "Get updates by email" as a plain section under a line
     (no card), its Subscribe the page's one filled button.
   - **Sign-in**: one card (max-w-sm, the width and offset of every sign-in page) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
-    "Vote, comment and follow ideas. We'll email you when they're planned, started and shipped.", the email with a mail icon, **Email me a sign-in
+    "Vote, comment and follow ideas. We'll email you as they move forward and when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and
     "Team member? Sign in with Tuti".
   - **Account** (`/account`): the page header ("Account", "Signed in as <address>"), then a section list beside the

@@ -102,7 +102,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           // With SSO the portal's sign-up sends people to sign in on the team's app: the app's sign-up, and back.
           signUpOnApp={!!ssoUrl}
           title={portal ? `Sign in to ${portal.name}` : undefined}
-          description="Vote, comment and follow ideas. We'll email you when they're planned, started and shipped."
+          description="Vote, comment and follow ideas. We'll email you as they move forward and when they ship."
           mark={<PortalMark name={portal?.name ?? project} />}
           // Where they were; not a page that would bring them back here (a private portal's, or Account).
           back={
