@@ -197,3 +197,29 @@ test("a due time a move back left (the previous release's, during a deploy) emai
   expect(subjectsTo(voter.email)).toEqual([]);
   expect(await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: null });
 });
+
+test("moved on and back to the same status while its run goes, nobody else is claimed: the move back emails nobody", async () => {
+  const voter = await verified("Voter");
+  const post = await postVotedBy(await verified("Author"), [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  // In progress and due, its run not started yet (set here, so no job runs).
+  await prisma.post.update({ where: { id: postId }, data: { status: "IN_PROGRESS", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "IN_PROGRESS" } });
+  // As the run takes its first person, the team completes it and reopens it to In progress (its due time left as it was).
+  const transaction = prisma.$transaction.bind(prisma);
+  let claims = 0;
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
+    if (++claims === 1) {
+      await prisma.postEvent.create({ data: { postId, from: "IN_PROGRESS", to: "COMPLETED" } });
+      await prisma.postEvent.create({ data: { postId, from: "COMPLETED", to: "IN_PROGRESS" } });
+    }
+    return transaction(...args);
+  }) as never);
+  try {
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(subjectsTo(voter.email)).toEqual([]);
+  expect(await prisma.statusEmail.count({ where: { postId } })).toBe(0);
+});

@@ -60,7 +60,12 @@ async function claim(postId: string, userId: string, status: PostStatus, visibil
       throw visibilityChanged(postId);
     }
     // For this change (its activity counts who it reached), read under the same lock.
-    const change = await tx.postEvent.findFirst({ where: { postId, to: status }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
+    const change = await tx.postEvent.findFirst({ where: { postId, to: status }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true, from: true } });
+    // Planned and In progress: only while the latest move there was one forward (statusMoveEmails), as the run checked at
+    // its start; moved on and back to it since (a move that emails nobody), nobody else is claimed.
+    if (status !== "COMPLETED" && (!change || statusMoveEmails(change.from, status) !== "progress")) {
+      return null;
+    }
     const eventId = change?.id ?? null;
     const claimedAt = new Date();
     const { table, key } = claims(tx, status);

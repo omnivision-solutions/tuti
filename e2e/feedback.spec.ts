@@ -283,8 +283,21 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("menuitemradio", { name: "In progress" }).click();
   // Picked, the menu closes.
   await expect(team.getByRole("menu")).toHaveCount(0);
-  // Asked first: it emails Ada.
-  await team.getByRole("alertdialog").getByRole("button", { name: "Mark in progress" }).click();
+  // Asked first: it emails Ada. While the change is on its way, the button keeps focus (disabled, still focusable).
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await held;
+    }
+    await route.fallback();
+  });
+  const confirm = team.getByRole("alertdialog").getByRole("button", { name: "Mark in progress" });
+  await confirm.click();
+  await expect(confirm).toHaveAttribute("aria-disabled", "true");
+  await expect(confirm).toBeFocused();
+  release();
+  await team.unrouteAll({ behavior: "wait" });
   await expect(team.getByText("Status: In progress")).toBeVisible();
   await expect(row.getByRole("button", { name: "Status: In progress" })).toBeVisible();
   await checkpoint(team, "team-feedback-list");

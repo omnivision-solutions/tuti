@@ -67,7 +67,7 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={pending} onClick={() => shown && change(shown.status)}>
+          <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => shown && change(shown.status)}>
             Mark {label}
           </AlertDialogAction>
         </AlertDialogFooter>
