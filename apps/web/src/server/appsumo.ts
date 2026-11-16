@@ -176,6 +176,10 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           await applyPlanLicense(tx, previous.id);
         }
         if (stale && !early) {
+          // Nothing to move (the previous key's license isn't here yet, or can't merge): still, its key is marked replaced.
+          if (event.prev_license_key && own) {
+            await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: event.prev_license_key, plan: "", revokedAt: new Date(), metadata: { replacedBy: target } }], skipDuplicates: true });
+          }
           return;
         }
         if (early) {
