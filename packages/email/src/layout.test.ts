@@ -20,6 +20,7 @@ import { autopilotEmail } from "./autopilot-email";
 import { inviteEmail } from "./invite-email";
 import { accentColors, Buttons, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
+import { statusEmail } from "./status-email";
 import { verifyAllEmail } from "./verify-all-email";
 import { verifyArticleEmail } from "./verify-article-email";
 
@@ -154,6 +155,7 @@ test("every email to a project's customers drops Powered by tuti when the projec
     const brand = { projectName: "Acme", accent: null, poweredBy };
     return {
       shipped: shippedEmail({ ...brand, postTitle: "Dark mode", postUrl: u, unsubscribeUrl: u }),
+      status: statusEmail({ ...brand, status: "IN_PROGRESS", postTitle: "Dark mode", board: "Feature requests", votes: 3, postUrl: u, unsubscribeUrl: u }),
       reply: replyEmail({ ...brand, authorName: "Ada", postTitle: "Dark mode", text: "Hi", doc, postUrl: u, unsubscribeUrl: u }),
       comment: commentEmail({ ...brand, postTitle: "Dark mode", voteCount: 3, status: "OPEN", comments: [{ authorId: "u-1", authorName: "Sam Lee", text: "Hi" }], postUrl: u, unsubscribeUrl: u }),
       changelog: changelogEmail({ ...brand, entryTitle: "New", entryUrl: u, publishedAt: new Date(), doc, unsubscribeUrl: u }),

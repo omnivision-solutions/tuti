@@ -68,7 +68,7 @@ export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
 export { liveDomain, portalAddress, type PortalAddress, projectWith } from "./portal-address";
 export { fetchSiteCheck } from "./site-check";
-export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
+export { emitEvent, portalPostUrl, postGeneration, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };
 

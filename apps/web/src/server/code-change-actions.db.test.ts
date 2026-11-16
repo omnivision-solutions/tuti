@@ -104,6 +104,58 @@ describe("applying", () => {
     expect((await postOf(later.post.id)).status).toBe("COMPLETED");
   });
 
+  test("moving it to In progress emails its people when the update goes out, quoting the update's comment", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    expect(shippedTo(voter.email)).toEqual([]);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    const [email, ...more] = shippedTo(voter.email);
+    expect(more).toEqual([]);
+    expect(email!.subject).toBe(`In progress: Dark mode MOVES_FORWARD`);
+    expect(email!.text).toContain(`Olive Owner ${project.name} team`);
+    expect(email!.text).toContain("Weekly repeats are out.");
+    // Undo says first who was emailed that it's in progress (they can't be unemailed).
+    const detail = await call(getCodeChange, team(), { id: action.codeChangeId! });
+    expect(detail.actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", emailed: 1 });
+    // Undone (back to Planned: nobody's told), then moved on again by hand: In progress was told already.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+    await call(updatePost, team(), { number: post.number, status: "in_progress" });
+    expect(shippedTo(voter.email).map((e) => e.subject)).toEqual([email!.subject]);
+  });
+
+  /** A teammate sets the post's status right after the update's comment is saved (its author's team lookup). */
+  function teammateSetsDuringComment(postId: string, status: PostStatus) {
+    const findMember = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+    let set = false;
+    vi.spyOn(prisma.teamMember, "findUnique").mockImplementation((async (args: { where?: { projectId_userId?: unknown } }) => {
+      if (!set && args?.where?.projectId_userId !== undefined && (await prisma.comment.count({ where: { postId } })) > 0) {
+        set = true;
+        await prisma.post.update({ where: { id: postId }, data: { status } });
+      }
+      return findMember(args);
+    }) as never);
+    return () => set;
+  }
+
+  test("a teammate setting a status while an update's comment is posted keeps theirs (even the one it moves to), and the update waits again", async () => {
+    for (const [kind, status] of [
+      ["MOVES_FORWARD", "COMPLETED"],
+      ["MOVES_FORWARD", "IN_PROGRESS"],
+      ["RESOLVES", "COMPLETED"],
+    ] as const) {
+      const { post, action } = await proposal(kind, { comment: "Getting there." });
+      const set = teammateSetsDuringComment(post.id, status);
+      // A completion's comment is the team's (Autopilot proposes none): given here, so it's posted first.
+      await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Getting there." })).rejects.toThrow("The post's status changed since");
+      vi.restoreAllMocks();
+      expect(set()).toBe(true);
+      // Theirs, never put back to Planned; the update's comment taken out again.
+      expect(await postOf(post.id)).toMatchObject({ status, comments: [] });
+      expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    }
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
   test("completing with the team's comment: posted just before the post completes, and quoted in the email it sends", async () => {
     const { post, action } = await proposal("RESOLVES");
     await call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here: pick Dark in Settings → Appearance." });
@@ -121,8 +173,9 @@ describe("applying", () => {
     // Reopened, then completed by hand at once: that completion's email quotes nothing, not the review's earlier comment.
     await call(updatePost, team(), { number: post.number, status: "in_progress" });
     await call(updatePost, team(), { number: post.number, status: "completed" });
-    expect(shippedTo(voter.email).at(-1)!.subject).toBe(email!.subject);
-    expect(shippedTo(voter.email).at(-1)!.text).not.toContain(`${project.name} team`);
+    const done = shippedTo(voter.email).filter((sent) => sent.subject.startsWith("Done:"));
+    expect(done.at(-1)!.subject).toBe(email!.subject);
+    expect(done.at(-1)!.text).not.toContain(`${project.name} team`);
     // Completed by hand after a teammate's comment: nothing quoted either.
     const byHand = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { board: "feature-requests", title: "Week numbers" });
     await call(createComment, team(), { number: byHand.number, body: "Thanks, we're tracking this." });
@@ -167,6 +220,42 @@ describe("applying", () => {
     expect(shippedTo(voter.email)).toEqual([]);
   });
 
+  test("a progress update's comment: if moving it to In progress fails after the comment, the comment goes and it waits again", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // Once the comment is saved, the next transaction (moving the post) fails.
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    let failed = false;
+    vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: unknown[]) => {
+      if (!failed && (await prisma.comment.count({ where: { postId: post.id } })) > 0) {
+        failed = true;
+        throw new Error("database blip");
+      }
+      return transaction(...args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    vi.restoreAllMocks();
+    expect(failed).toBe(true);
+    expect(await postOf(post.id)).toMatchObject({ status: "PLANNED", comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
+  test("a progress update's comment: if it can't be told whether it was saved, it waits again and says to check first", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // The comment is saved; the lookup right after it fails, and so does the check for it.
+    failTeamLookupAfterComment(post.id);
+    vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toMatchObject({ message: "database blip", saved: "unknown" });
+    vi.restoreAllMocks();
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true, waitReason: true } })).toEqual({
+      status: "PENDING",
+      waitReason: "Couldn't tell whether its comment was posted: check the post before approving",
+    });
+    // Not moved, nobody emailed; the comment (found or not) is the team's to check, as the reason says.
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+    expect(shippedTo(voter.email)).toEqual([]);
+  });
+
   test("links: only the link, no status, no email, no comment", async () => {
     const { post, change, action } = await proposal("LINKS");
     await call(applyCodeChangeAction, team(), { id: action.id });
@@ -189,7 +278,8 @@ describe("applying", () => {
   });
 
   test("once the comment may be saved, a failure after it leaves the action applied, so it isn't posted twice", async () => {
-    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // Already In progress, so the comment is all it posts (a move's goes first, and is taken out again on a failure).
+    const { post, action } = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Getting there." });
     // The comment is saved; the lookup right after it fails.
     failTeamLookupAfterComment(post.id);
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
@@ -379,6 +469,28 @@ describe("undo", () => {
     await call(applyCodeChangeAction, team(), { id: action.id });
     await call(undoCodeChangeAction, team(), { id: action.id });
     expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+  });
+
+  test("Undo keeps a status a teammate set between its check and its write, and is still undone", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).status).toBe("IN_PROGRESS");
+    // Right after Undo reads the post's status (still In progress), a teammate moves it to Under review.
+    const read = prisma.post.findUniqueOrThrow.bind(prisma.post) as (...args: unknown[]) => Promise<unknown>;
+    let moved = false;
+    vi.spyOn(prisma.post, "findUniqueOrThrow").mockImplementation((async (args: { where?: { id?: string }; select?: Record<string, unknown> }) => {
+      const result = await read(args);
+      if (!moved && args?.where?.id === post.id && args.select && Object.keys(args.select).join() === "status") {
+        moved = true;
+        await prisma.post.update({ where: { id: post.id }, data: { status: "UNDER_REVIEW" } });
+      }
+      return result;
+    }) as never);
+    expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
+    vi.restoreAllMocks();
+    expect(moved).toBe(true);
+    // Theirs, not put back to Planned over it; the update's comment gone.
+    expect(await postOf(post.id)).toMatchObject({ status: "UNDER_REVIEW", comments: [] });
   });
 
   test("a progress update on a post merged since: Undo is refused, saying so, and nothing changes", async () => {

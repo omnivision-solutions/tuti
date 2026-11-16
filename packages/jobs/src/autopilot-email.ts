@@ -1,7 +1,8 @@
 import { type DiffLine, diffLines, nearChanges } from "@tuti/content";
-import { type CodeChangeActionKind, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 
 import { hasTeammateEdit, newestRevision } from "./article-layers";
 import { type AutopilotButton, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postUpdate, reviewPath, signAutopilotButton } from "./autopilot";
@@ -122,7 +123,8 @@ type ActionRow = {
   payload: unknown;
   postId: string | null;
   articleId: string | null;
-  post: { title: string; status: string } | null;
+  /** `sample`: Home's sample content, whose moves email nobody. */
+  post: { title: string; status: PostStatus; duplicateOfId: string | null; sample: boolean } | null;
   article: { title: string; publishedAt: Date | null } | null;
 };
 
@@ -150,6 +152,13 @@ function paired(lines: DiffLine[]): DiffLine[] {
   }
   return out;
 }
+
+/**
+ * Whether applying a progress update moves its post on to In progress (as codeChangeActions.apply: from a status before
+ * it, not merged), emailing its people (never a sample post's).
+ */
+const movesForward = (post: ActionRow["post"]) =>
+  !!post && !post.duplicateOfId && !post.sample && ["OPEN", "UNDER_REVIEW", "PLANNED"].includes(post.status) && statusMoveEmails(post.status, "IN_PROGRESS") === "progress";
 
 /** An edit's lines an email shows (paired, cut after DIFF_LINES, unchanged ones clipped), and how many it leaves out. */
 export function emailDiff(before: string, after: string): { diff: DiffLine[]; diffMore?: number } {
@@ -187,8 +196,18 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
   // Gone already (by itself, before this email): what it did, not what it will do.
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
-    RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    MOVES_FORWARD: done ? "In progress, with this comment" : uncommented(action) ? "Marks it in progress: write its comment first" : "Marks it in progress, with this comment",
+    // A sample post's completion emails nobody.
+    RESOLVES: `${done ? "Completed" : `${statusName(action.post?.status ?? "OPEN")} → Completed`}${action.post?.sample ? "" : ", emailing the people who asked"}`,
+    // Approved (or published now) it emails the post's people, as completing does; going out by itself, nobody.
+    MOVES_FORWARD: done
+      ? "In progress, with this comment"
+      : uncommented(action)
+        ? "Marks it in progress: write its comment first"
+        : !movesForward(action.post)
+          ? "Marks it in progress, with this comment"
+          : action.status === "SCHEDULED"
+            ? "Marks it in progress with this comment; Publish now emails the people who asked"
+            : "Marks it in progress with this comment, emailing the people who asked",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
     // On a draft it stays in the draft, for the team to publish.
     ARTICLE_EDIT: action.article && !action.article.publishedAt ? (done ? "Kept this edit in the draft" : "Keeps this edit in the draft only your team sees") : done ? "Published this edit" : "Publishes this edit",
@@ -430,7 +449,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
                   payload: true,
                   postId: true,
                   articleId: true,
-                  post: { select: { title: true, status: true } },
+                  post: { select: { title: true, status: true, duplicateOfId: true, sample: true } },
                   article: { select: { title: true, publishedAt: true } },
                 },
               },
@@ -698,7 +717,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
                 payload: true,
                 postId: true,
                 articleId: true,
-                post: { select: { title: true, status: true } },
+                post: { select: { title: true, status: true, duplicateOfId: true, sample: true } },
                 article: { select: { title: true, publishedAt: true } },
               },
             },

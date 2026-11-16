@@ -939,6 +939,8 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
     await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: `${title} is out.`, comment: `${title} are out.` } } }), next);
     await mergePullRequest(installationId, { number: number + 1 + i, title: next });
   }
+  // A customer asked for the second: going out by itself it emails nobody, but a teammate's Publish now emails them.
+  await api("/posts/2/vote", { voted: true, author: { id: "e2e-ada", name: "Ada", email: `e2e-ada-${id}@example.com` } });
   await runAutopilot(slug);
   const list = owner.getByRole("complementary", { name: "Changes" });
   // (Its own row, not its board's, which holds it.)
@@ -1022,6 +1024,15 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await list.getByRole("link", { name: posts[1]! }).click();
   await expect(owner.getByRole("heading", { name: posts[1]!, level: 1 })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  // Its status change says no emails (by itself it sends none); Publish now asks first, naming whom it emails.
+  await expect(happens).toContainText("Open → In progress");
+  await expect(happens).not.toContainText("emails up to");
+  await owner.getByRole("button", { name: "Publish now" }).click();
+  const publishing = owner.getByRole("alertdialog", { name: "Publish it now?" });
+  await expect(publishing).toContainText("Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
+  await checkpoint(owner, "autopilot-scheduled-progress-publish", { fullPage: false });
+  await publishing.getByRole("button", { name: "Cancel" }).click();
+  await expect(publishing).toBeHidden();
   const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
   // On a phone, its popover keeps its own width beside the bar's small Dismiss (once it has zoomed in).
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -1440,6 +1451,8 @@ test("pull requests' progress updates on one post are one update: its status cha
   const api = await apiFor(owner, slug);
   const title = `Recurring events ${id}`;
   await api("/posts", { board: "feature-requests", title });
+  // A customer asked for it too: approving the move to In progress emails them.
+  await api("/posts/1/vote", { voted: true, author: { id: "e2e-ada", name: "Ada", email: `e2e-ada-${id}@example.com` } });
   const installationId = await connectGithub(owner, slug);
 
   // Each pull request moves the post forward, under the bar (95%): they wait for the team, as one update.
@@ -1470,7 +1483,7 @@ test("pull requests' progress updates on one post are one update: its status cha
   const chips = owner.getByRole("list", { name: "Pull requests" });
   await expect(chips.getByRole("button", { name: /^PR #/ })).toHaveCount(2);
   const happens = owner.getByRole("region", { name: "What happens to the post" });
-  await expect(happens).toContainText("Open → In progress");
+  await expect(happens).toContainText("Open → In progress · emails up to 1 person");
   const box = happens.getByRole("textbox", { name: "Progress update on #1" });
   await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}`);
   await expect(owner.getByRole("checkbox")).toHaveCount(0);
@@ -1522,8 +1535,27 @@ test("pull requests' progress updates on one post are one update: its status cha
   await expect(box).toHaveValue(`${parts[0]!.comment}\n\n${parts[1]!.comment}`);
 
   // Approved once: one comment, both pull requests linked, both parts done (each chip says so; the third's, Dismissed).
+  // It asks first, saying whom moving it emails.
   await owner.getByRole("button", { name: "Approve", exact: true }).click();
-  await owner.getByRole("alertdialog", { name: "Approve the update?" }).getByRole("button", { name: "Approve" }).click();
+  const approving = owner.getByRole("alertdialog", { name: "Approve the update?" });
+  await expect(approving).toContainText("1 progress update posted. Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
+  await checkpoint(owner, "post-update-approve-emails", { fullPage: false });
+  // While it's on its way, the button keeps focus (disabled, still focusable).
+  let releaseApproval!: () => void;
+  const approvalHeld = new Promise<void>((resolve) => (releaseApproval = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await approvalHeld;
+    }
+    await route.fallback();
+  });
+  const approve = approving.getByRole("button", { name: "Approve" });
+  await approve.click();
+  const approvingNow = approving.getByRole("button", { name: "Approving…" });
+  await expect(approvingNow).toHaveAttribute("aria-disabled", "true");
+  await expect(approvingNow).toBeFocused();
+  releaseApproval();
+  await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByText("Approved", { exact: true })).toBeVisible();
   const happened = owner.getByRole("region", { name: "What happened" });
   await expect(happened).toContainText("In progress · approved by Olive Owner");

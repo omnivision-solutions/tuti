@@ -87,7 +87,8 @@ test("a second pull request's progress update joins the waiting one: one update 
     comment: "Weekly repeats are out.\n\nMonthly ones are out too.",
     status: "pending",
     applyLikely: true,
-    emails: 0,
+    // Approving moves the Planned post on to In progress, which emails its author, Vera (not on the team): one person.
+    emails: 1,
     waitReason: null,
   });
   // The list shows the post once, as its one update.
@@ -124,7 +125,7 @@ test("completing replaces a waiting progress update, its comment folded in; dism
   expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && !email.subject.startsWith("Verify"))).toHaveLength(1);
 });
 
-test("the comment a completion posts reaches the post's author once, in the shipped email, not again as a comment email; a progress comment does", async () => {
+test("the comment a completion or an approved progress update posts reaches the post's author once, in the email the move sends, not again as a comment email", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   // The comment emails' minute, once their wait is over.
   const minutesLater = async () => {
@@ -134,8 +135,11 @@ test("the comment a completion posts reaches the post's author once, in the ship
   const progress = await part("MOVES_FORWARD", "Weekly repeats are out.");
   await call(applyCodeChangeAction, team(), { id: progress.id, revision: postVersion([progress.id]) });
   await minutesLater();
-  // In progress emails nobody: the comment is how the author hears.
-  expect(author(voter.email).map((email) => email.subject)).toEqual(["New comment on “Recurring events”"]);
+  // Approved, the move emails its people quoting the comment: that's how the author hears, not a comment email too.
+  const [started, ...others] = author(voter.email);
+  expect(started!.subject).toBe("In progress: Recurring events");
+  expect(started!.text).toContain("Weekly repeats are out.");
+  expect(others).toEqual([]);
 
   // Completed with the team's comment: posted first, so the shipped email quotes it.
   const completes = await part("RESOLVES");
@@ -145,6 +149,18 @@ test("the comment a completion posts reaches the post's author once, in the ship
   expect(shipped!.subject).toBe("Done: Recurring events");
   expect(shipped!.text).toContain("Monthly ones too: it's all out.");
   expect(more).toEqual([]);
+});
+
+test("a progress update going out by itself emails nobody of its move, so its comment reaches the post's author as a comment email", async () => {
+  const progress = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  // As the runner applies it (`quietly`: nobody on the team approved it).
+  await call(applyCodeChangeAction, { ...team(), quietly: true } as ReturnType<typeof team>, { id: progress.id, revision: postVersion([progress.id]) });
+  expect((await postNow()).status).toBe("IN_PROGRESS");
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && !email.subject.startsWith("Verify")).map((email) => email.subject)).toEqual([
+    "New comment on “Recurring events”",
+  ]);
 });
 
 test("a completion's note never becomes a comment email to the author, however it's completed: completed again after a reopen too (the shipped email, as for everyone, doesn't go again)", async () => {

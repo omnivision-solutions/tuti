@@ -121,6 +121,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("tab", { name: "Reply" })).toHaveAttribute("aria-selected", "true");
   await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
+  // Asked first: it emails its people.
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its properties, beside it: who looks after it, and when it's expected.
@@ -283,6 +285,21 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("menuitemradio", { name: "In progress" }).click();
   // Picked, the menu closes.
   await expect(team.getByRole("menu")).toHaveCount(0);
+  // Asked first: it emails Ada. While the change is on its way, the button keeps focus (disabled, still focusable).
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await held;
+    }
+    await route.fallback();
+  });
+  const confirm = team.getByRole("alertdialog").getByRole("button", { name: "Mark in progress" });
+  await confirm.click();
+  await expect(confirm).toHaveAttribute("aria-disabled", "true");
+  await expect(confirm).toBeFocused();
+  release();
+  await team.unrouteAll({ behavior: "wait" });
   await expect(team.getByText("Status: In progress")).toBeVisible();
   await expect(row.getByRole("button", { name: "Status: In progress" })).toBeVisible();
   await checkpoint(team, "team-feedback-list");
@@ -1126,8 +1143,8 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   const updates = ada.getByRole("dialog", { name: "Get updates" });
   await expect(sidebar.getByRole("button", { name: "Get updates" })).toHaveCount(0);
   await main.getByRole("button", { name: "Get updates" }).click();
-  await expect(updates).toContainText("Confirm your email to hear when ideas you vote on ship.");
-  await expect(updates).not.toContainText("get an email when it ships");
+  await expect(updates).toContainText("Confirm your email to hear as ideas you vote on move forward and when they ship.");
+  await expect(updates).not.toContainText("get an email when it's planned");
   const emailsBefore = countEmailsTo(ada.email);
   await updates.getByRole("button", { name: "Resend email" }).click();
   await expect(updates.getByRole("button", { name: "Sent" })).toBeDisabled();
@@ -1135,7 +1152,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
   await ada.waitForURL(/\/feedback\/feature-requests$/);
   await main.getByRole("button", { name: "Get updates" }).click();
-  await expect(updates).toContainText("Vote for an idea to get an email when it ships.");
+  await expect(updates).toContainText("Vote for an idea to get an email as it moves forward and when it ships.");
   await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);
   await expect(updates.getByRole("link", { name: "Read the changelog" })).toHaveAttribute("href", "/changelog");
   await expect(updates.getByRole("link", { name: "RSS" })).toHaveAttribute("href", "/changelog/rss.xml");
@@ -1171,7 +1188,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await expect(visitorTabs.getByRole("link")).toHaveText(["Trending", "Top", "New"]);
   await visitor.getByRole("main").getByRole("button", { name: "Get updates" }).click();
   const visitorUpdates = visitor.getByRole("dialog", { name: "Get updates" });
-  await expect(visitorUpdates).toContainText("Vote for an idea to hear when it ships.");
+  await expect(visitorUpdates).toContainText("Vote for an idea to hear as it moves forward and when it ships.");
   // And the changelog by email, beside its page and feed.
   await expect(visitorUpdates.getByRole("textbox", { name: "Email" })).toBeVisible();
   await expect(visitorUpdates.getByRole("button", { name: "Subscribe" })).toBeVisible();
@@ -1278,18 +1295,19 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await expect(visitor.getByRole("button", { name: "Board: More ideas 4" })).toBeVisible();
 });
 
-test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {
+test("the team's roadmap: a card dragged to another column changes its status; a move that emails asks first, saying who's emailed", async ({ browser }, testInfo) => {
   // A long journey: drags, and saves held while the keyboard moves on.
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   // Two planned ideas; Ada, from the app, voted for one.
+  const ada = `e2e-ada-${slug}@example.com`;
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts", { board: "feature-requests", title: "Calendar sync" });
-  await api("/posts/1/vote", { voted: true, author: { id: "user-ada", name: "Ada", email: "e2e-ada@example.com" } });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-ada", name: "Ada", email: ada } });
   for (const number of [1, 2]) {
     await api(`/posts/${number}`, { status: "planned" }, "PATCH");
   }
@@ -1342,8 +1360,35 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   // Moved with the mouse, the focus stays where it was (only the keyboard's moves take it along, below).
   await expect(card("Calendar sync").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
 
+  // Dragged forward to In progress with Ada's vote: asked first, saying who is emailed. Cancelled: back in Planned.
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("In progress"));
+  const progress = team.getByRole("alertdialog", { name: "Mark “Dark mode” in progress?" });
+  await expect(progress).toContainText("This emails up to 1 person who asked for it that it's in progress.");
+  await checkpoint(team, "team-roadmap-in-progress", { fullPage: false });
+  await progress.getByRole("button", { name: "Cancel" }).click();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  // From its status menu too.
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "In progress" }).click();
+  await team.getByRole("alertdialog", { name: "Mark “Dark mode” in progress?" }).getByRole("button", { name: "Mark in progress" }).click();
+  await expect(team.getByText("Dark mode: In progress")).toBeVisible();
+  await latestEmailTo(ada, { subject: /^In progress: Dark mode/ });
+  // Dragged back to Planned: that emails nobody, so it moves at once.
+  await column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Planned"));
+  await expect(team.getByText("Dark mode: Planned")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  // Forward again: Ada heard it's in progress already, so In progress's own count is nobody and it doesn't ask (while
+  // Completed's, below, still counts her).
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("In progress"));
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Planned"));
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+
   // Dragged to Completed: asked first, saying who is emailed (Ada; the team never is).
-  await card("Dark mode").dragTo(column("Completed"));
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Completed"));
   const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
   await expect(ask).toContainText("This emails up to 1 person who asked for it that it shipped.");
   await checkpoint(team, "team-roadmap-complete", { fullPage: false });
@@ -1351,8 +1396,22 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await expect(column("Planned").getByRole("listitem")).toHaveCount(1);
-  await card("Dark mode").dragTo(column("Completed"));
-  await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Completed"));
+  // While the move is on its way, the button keeps focus (disabled, still focusable).
+  let releaseCompleting!: () => void;
+  const completingHeld = new Promise<void>((resolve) => (releaseCompleting = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await completingHeld;
+    }
+    await route.fallback();
+  });
+  const markCompleted = team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" });
+  await markCompleted.click();
+  await expect(markCompleted).toHaveAttribute("aria-disabled", "true");
+  await expect(markCompleted).toBeFocused();
+  releaseCompleting();
+  await team.unrouteAll({ behavior: "wait" });
   await expect(team.getByText("Dark mode: Completed")).toBeVisible();
   await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
   // Dragged and confirmed with the mouse: the focus isn't brought to the card.
@@ -1428,6 +1487,10 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await release();
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
   await expect(boardFilter).toBeFocused();
+  // Ada's vote taken back: Dark mode's moves below email nobody, so they don't ask.
+  await api("/posts/1/vote", { voted: false, author: { id: "user-ada", name: "Ada", email: ada } });
+  await team.reload();
+  await team.getByRole("combobox", { name: "Board" }).waitFor();
   // Dragged, then a key pressed while it saves: still the mouse's move, the focus left alone.
   await team.getByRole("heading", { name: "In progress" }).click();
   release = await holdSaves();
@@ -2621,7 +2684,8 @@ test("Completed's question fits a phone, whatever the post's title (a long link)
   await expect(team.getByRole("tab", { name: /^Planned/ })).toHaveAttribute("aria-selected", "true");
 });
 
-test("Completed for picked rows counts only who it emails: one completed already emails nobody again", async ({ browser }) => {
+test("Completed, Planned and In progress for picked rows count only who they email: one past the status emails nobody", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(team, "Acme", slug);
@@ -2639,6 +2703,26 @@ test("Completed for picked rows counts only who it emails: one completed already
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
   await expect(team.getByRole("alertdialog").getByText("This emails up to 1 person who asked for them that it shipped, as when one post is completed.", { exact: true })).toBeVisible();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+
+  // Planned emails too, asked first: only the open one's people (the completed one moving back emails nobody).
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Planned" }).click();
+  const ask = team.getByRole("alertdialog", { name: "Mark 2 posts as Planned?" });
+  await expect(ask.getByText("This emails up to 1 person who asked for them that they're planned.", { exact: true })).toBeVisible();
+  await checkpoint(team, "bulk planned asks first", { fullPage: false });
+  await ask.getByRole("button", { name: "Mark planned" }).click();
+  await expect(team.getByText("2 posts: Planned")).toBeVisible();
+
+  // In progress, from Planned, asks too.
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "In progress" }).click();
+  const started = team.getByRole("alertdialog", { name: "Mark 1 post as In progress?" });
+  await expect(started.getByText("This emails up to 1 person who asked for them that they're in progress.", { exact: true })).toBeVisible();
+  await started.getByRole("button", { name: "Mark in progress" }).click();
+  await expect(team.getByText("1 post: In progress")).toBeVisible();
 });
 
 test("Feedback's pane asks before Completed too, saying how many it emails", async ({ browser }) => {

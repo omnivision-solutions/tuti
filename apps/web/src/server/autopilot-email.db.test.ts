@@ -312,6 +312,43 @@ test("a new article's draft says where it goes: its collection and the article i
   expect(email!.text).not.toContain("Secret plans");
 });
 
+test("a progress update waiting for the team says approving it emails the people who asked; one going out by itself, that Publish now does", async () => {
+  const one = await change("Add a dark theme");
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: await newPost(), probability: 0.8, payload: { comment: "Coming soon" } } });
+  // One on a post closed since: approving it posts the comment and moves (and emails) nothing.
+  const closed = await newPost();
+  await prisma.post.update({ where: { id: closed }, data: { status: "CLOSED" } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: closed, probability: 0.8, payload: { comment: "Closed meanwhile" } } });
+  // And one on a post merged into another since (still Open): nothing moves either.
+  const merged = await newPost();
+  await prisma.post.update({ where: { id: merged }, data: { duplicateOfId: closed } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: merged, probability: 0.8, payload: { comment: "Merged meanwhile" } } });
+  await queueAutopilotNotices(one.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.text.match(/Marks it in progress with this comment, emailing the people who asked/g)).toHaveLength(1);
+  expect(email!.text.match(/Marks it in progress, with this comment/g)).toHaveLength(2);
+  // The scheduled one (going out in 24 hours): quietly, unless a teammate publishes it.
+  expect(email!.text).toContain("Marks it in progress with this comment; Publish now emails the people who asked");
+});
+
+test("a sample post's progress update and completion email nobody, and the email doesn't say they do", async () => {
+  const one = await change("Add a dark theme");
+  const [progress, completes] = [await newPost(), await newPost()];
+  await prisma.post.updateMany({ where: { id: { in: [progress, completes] } }, data: { sample: true } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: progress, probability: 0.8, payload: { comment: "Coming soon" } } });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: one.id, kind: "RESOLVES", postId: completes, probability: 0.8, payload: {} } });
+  await queueAutopilotNotices(one.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  // Each update's card: its kind and post, how sure, then what it does. The sample posts' say nothing of emailing; the
+  // change's own update on a real post still does.
+  const card = (kind: string, title: string, outcome: string) => new RegExp(`^${kind} ${title}\n\n\\d+% sure\n\n${outcome}$`, "m");
+  expect(email!.text).toMatch(card("Progress update", "Themes", "Marks it in progress, with this comment"));
+  expect(email!.text).toMatch(card("Completes the post", "Themes", "Open → Completed"));
+  expect(email!.text).toMatch(card("Completes the post", "Dark mode \\d+", "Open → Completed, emailing the people who asked"));
+});
+
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const paragraphs = (word: string) => ["Intro.", ...Array.from({ length: 12 }, (_, i) => `${word} paragraph ${i + 1}.`)].join("\n");

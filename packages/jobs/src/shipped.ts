@@ -1,8 +1,9 @@
-import { type PostVisibility, prisma } from "@tuti/db";
-import { sendEmail, shippedEmail } from "@tuti/email";
+import { type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
+import { type ProgressStatus, sendEmail, shippedEmail, statusEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 
-import { portalPostUrl } from "./events";
+import { portalPostUrl, postGeneration, whileUnmoved } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
@@ -20,15 +21,30 @@ const RENEW_MS = 60_000;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
+/** The statuses a post's people hear about: Planned and In progress (statusEmail), and Completed (shippedEmail). */
+const EMAILED: PostStatus[] = ["PLANNED", "IN_PROGRESS", "COMPLETED"];
+
+/**
+ * Where one status's claims live: Completed's in shipped_email (once per post and person), Planned's and In progress's
+ * in status_email (once per post, person and status). Both have the same columns but `status`, so one delegate's type
+ * serves both, and `key` (spread into every where and create) picks the status on status_email.
+ */
+function claims(db: Prisma.TransactionClient, status: PostStatus) {
+  // ponytail: shipped_email cast to status_email's delegate; `key` is empty for it, so no `status` ever reaches it.
+  const table = (status === "COMPLETED" ? db.shippedEmail : db.statusEmail) as unknown as Prisma.TransactionClient["statusEmail"];
+  const key = (status === "COMPLETED" ? {} : { status }) as { status: PostStatus };
+  return { table, key };
+}
+
 /**
  * Takes on emailing one person: a new claim, or one a crashed run left unsent.
  * Returns the claim's time, which the run then uses to mark it sent or release
  * it (so it never touches a claim another run took over); null when someone else
  * has it or it's sent.
  */
-async function claim(postId: string, userId: string, visibility: PostVisibility): Promise<Date | null> {
+async function claim(postId: string, userId: string, status: PostStatus, visibility: PostVisibility): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
-    // Only while it's still shipped and its emails are due: the post's row locked, so a status change (Undo, say) or a
+    // Only while it still has the status it's emailed about and its emails are due: the post's row locked, so a status change (Undo, say) or a
     // resume that drops a pause's emails waits for this claim, or this claim sees it and emails nobody else. One claimed
     // already may still go. A visibility change since the audience was read (under the same lock) fails the run: its
     // retry reads who may see it now.
@@ -37,22 +53,33 @@ async function claim(postId: string, userId: string, visibility: PostVisibility)
     const [board] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM board WHERE id = (SELECT "boardId" FROM post WHERE id = ${postId}) FOR SHARE`;
     const [post] = await tx.$queryRaw<{ status: string; due: Date | null; visibility: PostVisibility; boardId: string }[]>`
       SELECT status, "shippedEmailsDueAt" AS due, ${SEEN_AS_SQL} AS visibility, "boardId" FROM post WHERE id = ${postId} FOR UPDATE`;
-    if (post?.status !== "COMPLETED" || post.due === null) {
+    if (post?.status !== status || post.due === null) {
       return null;
     }
     if (post.visibility !== visibility || post.boardId !== board?.id) {
       throw visibilityChanged(postId);
     }
-    // For this completion (its activity counts who it reached), read under the same lock.
-    const completion = await tx.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
-    const eventId = completion?.id ?? null;
+    // For this change (its activity counts who it reached), read under the same lock.
+    const change = await tx.postEvent.findFirst({ where: { postId, to: status }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true, from: true } });
+    // Planned and In progress: only while the latest move there was one forward (statusMoveEmails), as the run checked at
+    // its start; moved on and back to it since (a move that emails nobody), nobody else is claimed.
+    if (status !== "COMPLETED" && (!change || statusMoveEmails(change.from, status) !== "progress")) {
+      return null;
+    }
+    // Nor anyone told it shipped since the run read who was (completed, then reopened meanwhile): their email promises
+    // a shipped one that won't come.
+    if (status !== "COMPLETED" && (await tx.shippedEmail.count({ where: { postId, userId, sentAt: { not: null } } })) > 0) {
+      return null;
+    }
+    const eventId = change?.id ?? null;
     const claimedAt = new Date();
-    const { count } = await tx.shippedEmail.createMany({ data: [{ postId, userId, claimedAt, eventId }], skipDuplicates: true });
+    const { table, key } = claims(tx, status);
+    const { count } = await table.createMany({ data: [{ postId, userId, claimedAt, eventId, ...key }], skipDuplicates: true });
     if (count === 1) {
       return claimedAt;
     }
-    const taken = await tx.shippedEmail.updateMany({
-      where: { postId, userId, sentAt: null, claimedAt: { lt: late() } },
+    const taken = await table.updateMany({
+      where: { postId, userId, ...key, sentAt: null, claimedAt: { lt: late() } },
       data: { claimedAt, eventId },
     });
     return taken.count === 1 ? claimedAt : null;
@@ -65,13 +92,14 @@ async function claim(postId: string, userId: string, visibility: PostVisibility)
  * sent, or (if the send failed) releases it for a retry. Both touch only this
  * run's claim: one taken over is someone else's. Returns the send's error, if any.
  */
-async function whileClaimed(claim: { postId: string; userId: string; claimedAt: Date }, send: () => Promise<unknown>) {
+async function whileClaimed(claim: { postId: string; userId: string; status: PostStatus; claimedAt: Date }, send: () => Promise<unknown>) {
   const { postId, userId } = claim;
+  const { table, key } = claims(prisma, claim.status);
   let current = claim.claimedAt;
   let renewing = Promise.resolve();
   const renew = async () => {
     const next = new Date();
-    const { count } = await prisma.shippedEmail.updateMany({ where: { postId, userId, claimedAt: current }, data: { claimedAt: next } });
+    const { count } = await table.updateMany({ where: { postId, userId, ...key, claimedAt: current }, data: { claimedAt: next } });
     if (count === 1) {
       current = next;
     }
@@ -86,19 +114,20 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
     clearInterval(heartbeat);
     await renewing.catch(() => {});
   }
-  const mine = { postId, userId, claimedAt: current };
+  const mine = { postId, userId, ...key, claimedAt: current };
   if (error) {
     // Released as stale, not deleted: still unsent, so another run finishing meanwhile doesn't take the post as done
     // (and clear its due time, which the retry needs), and the retry takes it over.
-    await prisma.shippedEmail.updateMany({ where: mine, data: { claimedAt: new Date(0) } });
+    await table.updateMany({ where: mine, data: { claimedAt: new Date(0) } });
     return error;
   }
   // Sent: never released from here on. If saving this fails, the claim stays unsent and is
   // taken over later, which may email them twice; better than not at all.
-  // Counted on its completion in the same write: only by the run that marks it sent, once.
+  // Counted on its status change in the same write: only by the run that marks it sent, once.
   await prisma.$transaction(async (tx) => {
-    const { count } = await tx.shippedEmail.updateMany({ where: mine, data: { sentAt: new Date() } });
-    const sent = count === 1 ? await tx.shippedEmail.findUnique({ where: { postId_userId: { postId, userId } }, select: { eventId: true } }) : null;
+    const { table, key } = claims(tx, claim.status);
+    const { count } = await table.updateMany({ where: mine, data: { sentAt: new Date() } });
+    const sent = count === 1 ? await table.findFirst({ where: { postId, userId, ...key }, select: { eventId: true } }) : null;
     if (sent?.eventId) {
       await tx.postEvent.update({ where: { id: sent.eventId }, data: { emailed: { increment: 1 } } });
     }
@@ -110,18 +139,24 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
 const NOTE_WINDOW_MS = 10 * 60_000;
 
 /**
- * A post became Completed: emails its author, voters, commenters and subscribers that it
- * shipped (as postAudience has who may be told), each once.
+ * A post moved to Planned, In progress or Completed: emails its author, voters, commenters and subscribers about the
+ * status it has now (as postAudience has who may be told), each once per status: that it shipped (shippedEmail), or
+ * the progress (statusEmail).
  */
 export async function postShipped({ postId }: JobInput<"postShipped">, log: JobLogger): Promise<JobResult> {
-  // Only while it's still shipped (the team may have reopened it since) and not merged away; never for sample content
-  // (Home's "Add sample content"), whatever completed it.
+  // The post's generation as the run starts (postGeneration), read before the post and its people: its clears below are
+  // only while there's been no move since, so a move made meanwhile (even back to this status, with people who came in
+  // between) keeps its due time for its own run, and this run's people are never older than the move it checks.
+  const generation = await postGeneration(postId);
+  // Only while it still has a status its people hear about (the team may have reopened it since) and not merged away;
+  // never for sample content (Home's "Add sample content"), whatever moved it.
   const post = await prisma.post.findFirst({
     // Only while its emails are due: a resume drops a pause's (apps/web/src/server/email-pause.ts), even a retry's.
-    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false, shippedEmailsDueAt: { not: null } },
+    where: { id: postId, status: { in: EMAILED }, duplicateOfId: null, sample: false, shippedEmailsDueAt: { not: null } },
     select: {
       number: true,
       title: true,
+      status: true,
       voteCount: true,
       board: { select: { slug: true, name: true, off: true, postVisibility: true } },
       projectId: true,
@@ -134,45 +169,61 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     },
   });
   if (!post) {
-    await prisma.post.updateMany({ where: { id: postId }, data: { shippedEmailsDueAt: null } });
+    await whileUnmoved(postId, generation, (db) => db.post.updateMany({ where: { id: postId }, data: { shippedEmailsDueAt: null } }));
     return { skipped: true };
   }
-  const { projectId, project } = post;
+  const { projectId, project, status } = post;
+  const { table, key } = claims(prisma, status);
+  // Planned and In progress only as the move that set it was one forward (statusMoveEmails), checked here too: a due
+  // time a move back left (the previous release's, during a deploy) emails nobody about it.
+  if (status !== "COMPLETED") {
+    const moved = await prisma.postEvent.findFirst({ where: { postId, to: status }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { from: true } });
+    if (!moved || statusMoveEmails(moved.from, status) !== "progress") {
+      await whileUnmoved(postId, generation, (db) => db.post.updateMany({ where: { id: postId, status }, data: { shippedEmailsDueAt: null } }));
+      return { skipped: true };
+    }
+  }
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const people = await postAudience(projectId, project, post, [
+  const everyone = await postAudience(projectId, project, post, [
     post.authorId,
     ...post.votes.map((v) => v.userId),
     ...post.comments.map((c) => c.authorId),
     ...post.subscriptions.map((s) => s.userId),
   ]);
+  // Planned and In progress promise an email when it ships: not for people told it shipped already (reopened since).
+  const shippedTo =
+    status === "COMPLETED" ? new Set<string>() : new Set((await prisma.shippedEmail.findMany({ where: { postId, sentAt: { not: null } }, select: { userId: true } })).map(({ userId }) => userId));
+  const people = everyone.filter((person) => !shippedTo.has(person.id));
   // Claims a failed or crashed try left unsent for people it won't email now (they unsubscribed, a private portal
   // that's the team's only): dropped, so the post isn't due again and again. A run still sending keeps its claim (not
   // stale yet), so it can mark it sent. The few stale claims are read and checked here: no list of the whole audience
   // goes into a query.
   const audience = new Set(people.map((person) => person.id));
-  const stale = await prisma.shippedEmail.findMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } }, select: { userId: true } });
+  const stale = await table.findMany({ where: { postId, ...key, sentAt: null, claimedAt: { lt: late() } }, select: { userId: true } });
   const gone = stale.map(({ userId }) => userId).filter((userId) => !audience.has(userId));
   if (gone.length > 0) {
-    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() }, userId: { in: gone } } });
+    await table.deleteMany({ where: { postId, ...key, sentAt: null, claimedAt: { lt: late() }, userId: { in: gone } } });
   }
 
-  // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,
-  // never a comment that merely came before a completion by hand.
-  const completed = await prisma.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+  // The team's comment Autopilot's review posted with the change (its update's `note`): quoted. Only that one,
+  // never a comment that merely came before a change by hand. Autopilot completes posts and moves them to In progress,
+  // never to Planned.
+  const completed = await prisma.postEvent.findFirst({ where: { postId, to: status }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
   // Approved since the post's status last changed before this completion: an older one (completed, reopened, then
   // completed by hand) isn't this completion's.
   const before = completed && (await prisma.postEvent.findFirst({ where: { postId, createdAt: { lt: completed.createdAt } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }));
   const since = new Date(Math.max(completed ? completed.createdAt.getTime() - NOTE_WINDOW_MS : 0, before ? before.createdAt.getTime() + 1 : 0));
   const update =
-    completed &&
-    (await prisma.codeChangeAction.findFirst({
-      where: { postId, kind: "RESOLVES", status: "APPLIED", decidedAt: { gte: since, lte: completed.createdAt } },
-      orderBy: { decidedAt: "desc" },
-      select: { payload: true },
-    }));
+    completed && status !== "PLANNED"
+      ? await prisma.codeChangeAction.findFirst({
+          where: { postId, kind: status === "COMPLETED" ? "RESOLVES" : "MOVES_FORWARD", status: "APPLIED", decidedAt: { gte: since, lte: completed.createdAt } },
+          orderBy: { decidedAt: "desc" },
+          select: { payload: true },
+        })
+      : null;
   const noteId = (update?.payload as { note?: unknown } | null)?.note;
   const comment =
     typeof noteId === "string" ? await prisma.comment.findFirst({ where: { id: noteId, postId }, select: { body: true, author: { select: { name: true } } } }) : null;
@@ -194,8 +245,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   let failed = 0;
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
-    // Claimed before sending, so a retry, a second run or the post completed again doesn't email them twice.
-    const claimedAt = await claim(postId, id, seenAs(post));
+    // Claimed before sending, so a retry, a second run or the post moved there again doesn't email them twice.
+    const claimedAt = await claim(postId, id, status, seenAs(post));
     if (!claimedAt) {
       continue;
     }
@@ -203,16 +254,18 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     // past it, they're let go and wait.
     const now = new Date();
     if (!(await claimProjectEmail(projectId, now))) {
-      await prisma.shippedEmail.deleteMany({ where: { postId, userId: id, claimedAt } });
+      await table.deleteMany({ where: { postId, userId: id, ...key, claimedAt } });
       held = true;
       break;
     }
     const token = encodeURIComponent(unsubscribeToken);
     const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
-    const error = await whileClaimed({ postId, userId: id, claimedAt }, () =>
+    const error = await whileClaimed({ postId, userId: id, status, claimedAt }, () =>
       sendEmail({
         to: address,
-        ...shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note }),
+        ...(status === "COMPLETED"
+          ? shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note })
+          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, board: boardName, votes: post.voteCount, postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note })),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {
@@ -238,16 +291,22 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   }
   if (held) {
     // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go; past the month's limit, from next month.
-    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: await dueAgain(projectId) } });
-    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait (the project's daily cap, its monthly limit, or a pause)`);
+    // Only while the post hasn't moved since the run began: a newer move's due time (now) is its own run's.
+    const again = await dueAgain(projectId);
+    await whileUnmoved(postId, generation, (db) => db.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: again } }));
+    log.info(`post ${postId} (${status}): emailed ${emailed}, the rest wait (the project's daily cap, its monthly limit, or a pause)`);
     return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
-  await prisma.post.updateMany({
-    where: { id: postId, shippedEmails: { none: { sentAt: null } } },
-    data: { shippedEmailsDueAt: null },
-  });
-  log.info(`post ${postId} shipped: emailed ${emailed}`);
+  // Only while it hasn't moved since the run began (even away and back to this status): it's due for that move's emails
+  // (its own run clears it).
+  await whileUnmoved(postId, generation, (db) =>
+    db.post.updateMany({
+      where: { id: postId, status, ...(status === "COMPLETED" ? { shippedEmails: { none: { sentAt: null } } } : { statusEmails: { none: { status, sentAt: null } } }) },
+      data: { shippedEmailsDueAt: null },
+    }),
+  );
+  log.info(`post ${postId} (${status}): emailed ${emailed}`);
   return { emailed };
 }
 

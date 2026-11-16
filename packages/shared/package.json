@@ -19,6 +19,7 @@
     "./log": "./src/log.ts",
     "./plans": "./src/plans.ts",
     "./colors": "./src/colors.ts",
+    "./status-emails": "./src/status-emails.ts",
     "./dates": "./src/dates.ts",
     "./license": "./src/license.ts",
     "./license-key": "./src/license-key.ts"

@@ -1,8 +1,8 @@
 import { prisma } from "@tuti/db";
 
 import { githubConfig } from "@/lib/github";
-import { treeOrder } from "@/lib/autopilot-words";
-import { autopilotTargets, emailedOnCompletion } from "@/server/operations/code-changes";
+import { progressWarning, treeOrder } from "@/lib/autopilot-words";
+import { autopilotTargets, emailedOnCompletion, emailedOnMove } from "@/server/operations/code-changes";
 import { awake } from "@/server/operations/conversations";
 import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
 import { supportDomain } from "@/server/inbound";
@@ -23,7 +23,8 @@ export type AttentionItem = {
   action: string;
   href: string;
   /** Autopilot's updates going out by themselves, with when the first goes (Publish now, Stop). */
-  scheduled?: { ids: string[]; dueAt: string; emails: number; posts: number };
+  /** `warning`: what Publish now's confirm says instead of completing's (a progress update's). */
+  scheduled?: { ids: string[]; dueAt: string; emails: number; posts: number; warning?: string };
 };
 
 /**
@@ -109,7 +110,16 @@ export async function homeOverview(projectId: string, slug: string) {
     select: { postId: true },
   });
   const completing = new Set(completions.flatMap((action) => (action.postId ? [action.postId] : [])));
-  const emails = await emailedOnCompletion(projectId, [...completing]);
+  // And on a progress update that moves its post on to In progress (by itself it emails nobody; Publish now is the
+  // teammate's, so it does), counted as Autopilot's review counts it.
+  const progressing = await prisma.codeChangeAction.findMany({
+    where: { id: { in: shown.flatMap((target) => target.scheduled) }, kind: "MOVES_FORWARD", post: { status: { in: ["OPEN", "UNDER_REVIEW", "PLANNED"] }, duplicateOfId: null } },
+    select: { post: { select: { id: true, status: true } } },
+  });
+  const [emails, progress] = await Promise.all([
+    emailedOnCompletion(projectId, [...completing]),
+    emailedOnMove(projectId, progressing.flatMap((action) => (action.post && !completing.has(action.post.id) ? [action.post] : []))),
+  ]);
 
   // Each kind with the list that has them all (`link`: "See all" unless it says otherwise); kinds with nothing waiting are left out.
   const attention: { key: string; title: string; total: number; href: string; link?: string; items: AttentionItem[] }[] = [
@@ -132,6 +142,7 @@ export async function homeOverview(projectId: string, slug: string) {
       items: shown.map((target): AttentionItem => {
         // A post's path is `feedback/<its id>`.
         const completes = completing.has(target.path.slice("feedback/".length));
+        const moving = progress.get(target.path.slice("feedback/".length))?.IN_PROGRESS ?? 0;
         return {
           key: `t${target.path}`,
           at: new Date(target.since),
@@ -139,7 +150,9 @@ export async function homeOverview(projectId: string, slug: string) {
           action: "Review",
           href: `${base}/autopilot/${target.path}`,
           ...(target.nextDueAt && {
-            scheduled: { ids: target.scheduled, dueAt: target.nextDueAt, emails: completes ? (emails.get(target.path.slice("feedback/".length)) ?? 0) : 0, posts: completes ? 1 : 0 },
+            scheduled: completes
+              ? { ids: target.scheduled, dueAt: target.nextDueAt, emails: emails.get(target.path.slice("feedback/".length)) ?? 0, posts: 1 }
+              : { ids: target.scheduled, dueAt: target.nextDueAt, emails: moving, posts: 0, ...(moving > 0 && { warning: progressWarning(moving) }) },
           }),
         };
       }),

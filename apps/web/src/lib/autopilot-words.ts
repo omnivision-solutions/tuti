@@ -361,7 +361,9 @@ function undoesOne(update: Update): string {
         update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
       }`;
     case "moves_forward":
-      return "Its progress update is deleted, and the post goes back to the status it had.";
+      return `Its progress update is deleted, and the post goes back to the status it had.${
+        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it's in progress; that can't be taken back.` : ""
+      }`;
     case "links":
       return "The post's link to the pull request is removed.";
     case "article_edit":
@@ -411,6 +413,10 @@ export function completingWarning(posts: number, emails: number): string {
     ? `Completing the post emails up to ${people} who asked for it that it shipped. That can't be taken back.`
     : `Completing ${posts} posts emails up to ${people} who asked for them that they shipped. That can't be taken back.`;
 }
+
+/** Approve's confirm on a progress update that emails people (`emails`: how many, more than none). */
+export const progressWarning = (emails: number) =>
+  `Moving the post to In progress emails up to ${plural(emails, "person", "people")} who asked for it. That can't be taken back.`;
 
 /**
  * What an article's Dismiss takes out: every edit still to go out (waiting, scheduled or out of date, not one decided),
