@@ -7,7 +7,7 @@ import { lastingMediaUrl } from "./lasting-media";
 
 /**
  * How emails sent on a project's behalf show it (Layout): its name, accent and portal logo (its smallest WebP, once
- * processed; none without uploads or APP_URL), and whether "Powered by tuti" ends them, by the portal's rule
+ * processed; none without uploads or a working APP_URL), and whether "Powered by tuti" ends them, by the portal's rule
  * (poweredByShown).
  */
 export async function emailBrand(projectId: string): Promise<EmailBrand> {
@@ -28,9 +28,13 @@ export async function emailBrand(projectId: string): Promise<EmailBrand> {
     prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true, latestSeenAt: true } }),
   ]);
   const image = project.brandLogo;
-  const logo =
-    image?.status === "READY" && image.width && image.height && mediaStorage() && process.env.APP_URL
-      ? { url: lastingMediaUrl(imageKey(image.id, imageWidths(image.width)[0]!)), width: image.width, height: image.height }
-      : null;
+  let logo: EmailBrand["logo"] = null;
+  if (image?.status === "READY" && image.width && image.height && mediaStorage()) {
+    try {
+      logo = { url: lastingMediaUrl(imageKey(image.id, imageWidths(image.width)[0]!)), width: image.width, height: image.height };
+    } catch {
+      // No APP_URL, or one that isn't a URL: the letter's square, so an email never fails over its logo.
+    }
+  }
   return { projectName: project.name, accent: project.brandColor, poweredBy: poweredByShown(project, installation), logo, logoText: project.logoText };
 }

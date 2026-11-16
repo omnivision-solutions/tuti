@@ -486,7 +486,16 @@ test("emails on the project's behalf show its portal logo, at its smallest store
   const logo = await uploaded();
   await update({ logo: logo.id, logoText: "Acme Help" });
   expect(await emailBrand(project.id)).toMatchObject({ logo: { url: lastingMediaUrl(imageKey(logo.id, 480)), width: 600, height: 200 }, logoText: "Acme Help" });
-  // Without uploads set up there's no link to it: the letter's square, as before.
+  // Without APP_URL, or with one that isn't a URL, there's no link to it: the letter's square, and the email still goes.
+  vi.stubEnv("APP_URL", "");
+  expect((await emailBrand(project.id)).logo).toBeNull();
+  vi.stubEnv("APP_URL", "not a url");
+  expect((await emailBrand(project.id)).logo).toBeNull();
+  // Nor without uploads set up.
+  vi.unstubAllEnvs();
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
   vi.stubEnv("MEDIA_S3_BUCKET", "");
   expect((await emailBrand(project.id)).logo).toBeNull();
 });
