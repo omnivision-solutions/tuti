@@ -12,7 +12,7 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
-  Emails sent on a project's behalf (to its customers and readers) are the team's: its portal's header at the top: its
+  Emails sent on a project's behalf (to its customers and readers) are the team's: its portal's header at the top, centred over the card (Tuti's own emails keep their mark on the left): its
   uploaded logo (32px tall, at most 160px wide) with the logo's text beside it, or without a logo a square in its accent
   with the name's first letter beside the text or name (Outlook for Windows, which can't show the logo's WebP, gets the
   square and the text or name too), and its accent for buttons and links, as its portal does (too faint: the same darker shade
