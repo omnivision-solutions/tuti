@@ -340,4 +340,12 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.locator(".inbox-email-waits")).toHaveText(`This month's emails from your license are used: replies are emailed on ${day}. Billing`);
   await checkpoint(owner, "reply-waits-for-license-month");
+  // Sent, it's saved, its email held: said as it's sent, and under the reply, short, with the whole reason as its title.
+  const why = `Emailed ${day}: your license's emails for this month are used (Settings → Billing)`;
+  await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText(why);
+  await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
+  await expect(owner.getByTitle(why).locator("[aria-hidden]")).toHaveText(`Emailed ${day}`);
+  await expect(owner.getByTitle(why).locator(".sr-only")).toHaveText(why);
 });
