@@ -347,6 +347,7 @@ test.each([
   ["whole", (greeting: string) => greeting],
   ["its first line", (greeting: string) => `${greeting.split("! ")[0]}!`],
   ["cut", (greeting: string) => `${greeting.slice(0, 20)}…`],
+  ["cut, with three full stops", (greeting: string) => `${greeting.slice(0, 20)}...`],
 ])("a title that is only the bot's greeting (%s) gives way to the person's first message", async (_, titled) => {
   const { closed, greeting } = greetedByBot();
   const parts = closed.conversationParts as Record<string, unknown>[];
