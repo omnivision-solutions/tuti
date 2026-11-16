@@ -182,8 +182,11 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
     }
     await route.fallback();
   });
-  await dialog.getByRole("button", { name: "Unassign license" }).click();
+  // Pressed from the keyboard, it keeps the keyboard's place while it runs (a refusal leaves the dialog open on it).
+  await dialog.getByRole("button", { name: "Unassign license" }).focus();
+  await owner.keyboard.press("Enter");
   await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeFocused();
   release();
   await owner.unroute("**/settings/billing");
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
