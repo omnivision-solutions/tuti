@@ -152,7 +152,7 @@ export async function unassignPlanLicense(licenseId: string, projectSlug?: strin
     },
     true,
   );
-  if (from) {
+  if (from && !result.error) {
     await endBadgeWithLicense(from);
   }
   return result;

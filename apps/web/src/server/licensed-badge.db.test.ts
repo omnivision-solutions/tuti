@@ -77,6 +77,12 @@ test("monthly where it's sold so, else yearly", async () => {
   expect(stripe.sessions.at(-1)!.price).toBe(FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_YEARLY.id);
 });
 
+test("monthly even when a yearly plan the project once had left its interval behind", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { planInterval: "year" } });
+  await badge(true);
+  expect(stripe.sessions.at(-1)!.price).toBe(FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_MONTHLY.id);
+});
+
 test("removed, its subscription is cancelled and the badge is back; cancelled in Stripe, the same", async () => {
   const subscription = await buy();
   expect(await badge(false)).toEqual({ on: false });

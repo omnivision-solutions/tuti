@@ -165,7 +165,8 @@ export const setBadgeAddOn = defineOperation({
     });
     // A plan license gives the plan (no subscription): the add-on is a subscription of its own, monthly where it's sold so.
     const licensed = project.planStatus === null && project.planLicense?.revokedAt === null;
-    const price = planSalesEnabled() ? (badgePrice(project.planInterval === "year" ? "year" : "month") ?? (licensed ? badgePrice("year") : null)) : null;
+    // A licensed project's add-on bills on its own: monthly where sold, else yearly (an old plan's interval doesn't count).
+    const price = !planSalesEnabled() ? null : licensed ? (badgePrice("month") ?? badgePrice("year")) : badgePrice(project.planInterval === "year" ? "year" : "month");
     if (on && !price) {
       throw new OperationError(503, "plans_unavailable", 'Hiding "Powered by tuti" isn\'t sold on this server');
     }
