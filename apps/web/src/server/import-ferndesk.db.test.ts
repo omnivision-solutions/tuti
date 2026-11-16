@@ -278,20 +278,21 @@ test("the changelog comes across: entries oldest first, a page at a time, publis
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
 });
 
-test("an entry whose text opens with an image has it as its cover, out of the text: Ferndesk has no featured image; one with an image further down has no cover", async () => {
-  const search = fake.fixtures.entries.find((entry) => entry.id === "art_search")!;
-  search.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Faster search"></p><p>Search results load twice as fast.</p>`;
+test("an entry whose text opens with a full-width image, described by its title or not at all, has it as its cover, out of the text: Ferndesk has no featured image; a small one stays", async () => {
+  const html = (entry: string, img: string, text: string) => (fake.fixtures.entries.find((e) => e.id === entry)!.contentHtml = `<p>${img}</p><p>${text}</p>`);
+  html("art_search", `<img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Faster search">`, "Search results load twice as fast.");
+  html("art_exports", `<img src="${FAKE_FERNDESK_FILES}user-images/exports.png">`, "Exports take half the time.");
+  // An icon at a quarter of the width: it stays where it is.
+  fake.fixtures.entries.find((e) => e.id === "art_sso")!.draft!.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/sso.png" alt="Lock" data-width="25"></p><p>Coming soon.</p>`;
   const done = await importParts(["changelog"], { publishArticles: true });
-  expect(done.counts).toMatchObject({ changelogImages: { imported: 1, leftOut: {} } });
-  const rows = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, content: true, coverId: true } });
-  const cover = await prisma.media.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true, attachedAt: true } });
-  expect(rows.map(({ title, body, coverId }) => ({ title, body, coverId }))).toEqual([
-    { title: "Exports", body: "Exports take half the time.", coverId: null },
-    { title: "Faster search", body: "Search results load twice as fast.", coverId: cover.id },
-    { title: "Single sign-on (beta)", body: "Coming soon.", coverId: null },
+  expect(done.counts).toMatchObject({ changelogImages: { imported: 3, leftOut: {} } });
+  const rows = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, content: true, cover: { select: { attachedAt: true } } } });
+  expect(rows.map(({ title, body, cover }) => ({ title, body, cover: Boolean(cover?.attachedAt) }))).toEqual([
+    { title: "Exports", body: "Exports take half the time.", cover: true },
+    { title: "Faster search", body: "Search results load twice as fast.", cover: true },
+    { title: "Single sign-on (beta)", body: "Lock\nComing soon.", cover: false },
   ]);
-  expect(JSON.stringify(rows[1]!.content)).not.toContain('"image"');
-  expect(cover.attachedAt).not.toBeNull();
+  expect(rows.slice(0, 2).map((row) => JSON.stringify(row.content).includes('"image"'))).toEqual([false, false]);
 });
 
 test("an opening image whose description says more than the entry's title stays in the text, so its words aren't lost: no cover", async () => {

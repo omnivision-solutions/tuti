@@ -51,14 +51,15 @@ function entryTitle(title: string | null | undefined): string {
 /**
  * An entry with no featured image (Ferndesk's never have one) whose text opens with an image: that image as its cover,
  * taken out of the text so it isn't shown twice, as the team would set it up by hand. Only one whose description says
- * nothing past the entry's title (a cover is described by the title): one that says more stays in the text, so the
- * words aren't lost. Any other: as it is, no cover.
+ * nothing past the entry's title (a cover is described by the title), at full width: one that says more stays in the
+ * text, so the words aren't lost, and a small one stays where it is. Any other: as it is, no cover.
  */
 function openingImageAsCover(content: HtmlContent, title: string): { content: HtmlContent; cover: { mediaId: string } | null } {
   const [first, ...rest] = content.doc.content ?? [];
   const mediaId = first?.type === "image" ? first.attrs?.mediaId : undefined;
   const alt = String(first?.attrs?.alt ?? "").trim().toLowerCase();
-  if (typeof mediaId !== "string" || (alt !== "" && alt !== title.trim().toLowerCase())) {
+  // At full width too: a small image (an icon) at the top would be stretched across the entry as its cover.
+  if (typeof mediaId !== "string" || first?.attrs?.width !== "100" || (alt !== "" && alt !== title.trim().toLowerCase())) {
     return { content, cover: null };
   }
   const doc = { ...content.doc, content: rest };
