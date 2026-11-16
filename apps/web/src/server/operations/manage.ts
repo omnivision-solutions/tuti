@@ -57,7 +57,9 @@ export const updatePost = defineOperation({
     const status = input.status && fromApiStatus(input.status);
     // The change and its event (the post's activity) together: by whoever made it (an API key: its creator).
     // The status it has now, read with its row locked: changes at the same moment (a teammate, publishing its entry) go one after the other.
-    const { updated, previous } = await prisma.$transaction(async (tx) => {
+    // A change nobody on the team approved (Autopilot's progress update going out by itself: `quietly`) emails nobody.
+    const quiet = "quietly" in context;
+    const { updated, previous, event } = await prisma.$transaction(async (tx) => {
       // The owner is on the team (by their email), its membership row held until this commits: taken off the
       // team meanwhile, their removal waits for this, and then clears them as owner. Held before the post's row,
       // in the order their removal takes them, so the two never wait on each other.
@@ -84,6 +86,8 @@ export const updatePost = defineOperation({
         where: { id: post.id },
         data: {
           ...(status && { status }),
+          // A quiet move leaves nothing due with the status it writes: an earlier move's run can't send about it meanwhile.
+          ...(status && status !== previous && quiet && { shippedEmailsDueAt: null }),
           ...(boardId && { boardId }),
           ...(ownerId !== undefined && { ownerId }),
           ...(eta !== undefined && { eta }),
@@ -91,15 +95,15 @@ export const updatePost = defineOperation({
         },
         select: postSummarySelect,
       });
-      if (status && status !== previous) {
-        await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status } });
-      }
-      return { updated: saved, previous };
+      const event =
+        status && status !== previous
+          ? await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status }, select: { id: true, createdAt: true } })
+          : null;
+      return { updated: saved, previous, event };
     });
     const result = summary(updated, portal);
     if (updated.status !== previous) {
-      // A change nobody on the team approved (Autopilot's progress update going out by itself: `quietly`) emails nobody.
-      await postStatusChanged(projectId, post.id, result, previous, { email: !("quietly" in context) });
+      await postStatusChanged(projectId, post.id, result, previous, { email: !quiet, event });
     }
     return result;
   },

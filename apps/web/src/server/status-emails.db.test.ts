@@ -224,3 +224,30 @@ test("moved on and back to the same status while its run goes, nobody else is cl
   expect(subjectsTo(voter.email)).toEqual([]);
   expect(await prisma.statusEmail.count({ where: { postId } })).toBe(0);
 });
+
+test("a run that finishes after its post moved away and back to the same status leaves the newer move's emails due", async () => {
+  const voter = await verified("Voter");
+  const post = await postVotedBy(await verified("Author"), [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  // Planned and due, its run not started yet (set here, so no job runs).
+  await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+  // As the run takes its first person, the team reopens it and plans it again: a new move, due for its own run.
+  const transaction = prisma.$transaction.bind(prisma);
+  let claims = 0;
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
+    if (++claims === 1) {
+      await prisma.postEvent.create({ data: { postId, from: "PLANNED", to: "OPEN" } });
+      await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
+    }
+    return transaction(...args);
+  }) as never);
+  try {
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  } finally {
+    spy.mockRestore();
+  }
+  // The older run didn't clear what the newer move left due.
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).not.toBeNull();
+});

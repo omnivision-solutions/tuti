@@ -1,6 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { autopilotDue, autopilotDueToken, lockProject, scheduleByItself } from "@tuti/jobs";
+import { autopilotDue, autopilotDueToken, handlers, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { billingFile, startModelFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
@@ -407,6 +407,37 @@ test("a progress update going out by itself emails nobody that it's in progress;
   expect(await publishCodeChangesNow(project.slug, [published.action.id])).toEqual({});
   const { title } = await prisma.post.findUniqueOrThrow({ where: { id: published.postId! } });
   expect(told()).toEqual([`In progress: ${title}`]);
+});
+
+test("a progress update going out by itself leaves nothing due with its status: an earlier move's run right after it sends nothing", async () => {
+  const voter = await signUp("Vera Voter");
+  await prisma.user.update({ where: { id: voter.id }, data: { emailVerified: true } });
+  const quiet = await update("MOVES_FORWARD");
+  const postId = quiet.postId!;
+  const { number: post } = await prisma.post.findUniqueOrThrow({ where: { id: postId } });
+  await call(setVote, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { number: post, voted: true });
+  // Planned by the team earlier, its emails still due (held), its run not gone yet.
+  await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+  await scheduleByItself(project.id, quiet.codeChangeId);
+  await prisma.codeChangeAction.updateMany({ where: { id: quiet.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Right after the runner's move is saved, before anything else follows it, the earlier move's run goes.
+  const count = prisma.post.count.bind(prisma.post) as (...args: unknown[]) => Promise<number>;
+  let ran = false;
+  vi.spyOn(prisma.post, "count").mockImplementation((async (args: { where?: { id?: string; sample?: boolean } }) => {
+    if (!ran && args?.where?.id === postId && args.where.sample === true) {
+      ran = true;
+      await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    }
+    return count(args);
+  }) as never);
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(ran).toBe(true);
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { status: true, shippedEmailsDueAt: true } })).toEqual({ status: "IN_PROGRESS", shippedEmailsDueAt: null });
+  expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && /^(In progress|Planned):/.test(email.subject))).toEqual([]);
 });
 
 test("the worker's minute reaches the runner only with the server's token", async () => {

@@ -80,8 +80,11 @@ export async function postStatusChanged(
   postId: string,
   post: ReturnType<typeof postSummary>,
   previousStatus: PostStatus,
-  /** False: a move nobody on the team approved (Autopilot's progress update going out by itself), which emails nobody. */
-  { email = true }: { email?: boolean } = {},
+  /**
+   * `email` false: a move nobody on the team approved (Autopilot's progress update going out by itself), which emails
+   * nobody. `event`: the move's own (its post_event), so a later move (even back to this status) is left to its handler.
+   */
+  { email = true, event = null }: { email?: boolean; event?: { id: string; createdAt: Date } | null } = {},
 ) {
   // Sample content (Home's "Add sample content") reaches no webhooks, and its voters aren't emailed.
   if ((await prisma.post.count({ where: { id: postId, sample: true } })) > 0) {
@@ -94,7 +97,8 @@ export async function postStatusChanged(
   const emailed = email && statusMoveEmails(previousStatus, post.status.toUpperCase() as PostStatus) !== null;
   // Only while the post still has this change's status: another change made while the webhooks were told is the
   // post's own to settle, and this one mustn't clear (or set) its emails' due time.
-  const still = { id: postId, status: post.status.toUpperCase() as PostStatus };
+  // Nor once the post moved again since this move (`event`), even back to this status: that move's due time is its own.
+  const still = { id: postId, status: post.status.toUpperCase() as PostStatus, ...unmovedSince(event) };
   // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
   // on later mustn't find its emails still due, an earlier completion's either.
   if (!emailed || post.visibility === "team") {
@@ -111,6 +115,13 @@ export async function postStatusChanged(
     }
   }
 }
+
+/**
+ * A post not moved since `event` (its latest post_event, by createdAt then id, as claims read it): for a write only the
+ * run or handler of that move may make. Nothing to check without one.
+ */
+export const unmovedSince = (event: { id: string; createdAt: Date } | null) =>
+  event ? { events: { none: { OR: [{ createdAt: { gt: event.createdAt } }, { createdAt: event.createdAt, id: { gt: event.id } }] } } } : {};
 
 /** A post as the API and webhook payloads show it. */
 export type PostRow = {

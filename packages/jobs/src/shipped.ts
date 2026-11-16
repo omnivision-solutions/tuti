@@ -3,7 +3,7 @@ import { type ProgressStatus, sendEmail, shippedEmail, statusEmail } from "@tuti
 import { type JobInput, plansEnabled } from "@tuti/shared";
 import { statusMoveEmails } from "@tuti/shared/status-emails";
 
-import { portalPostUrl } from "./events";
+import { portalPostUrl, unmovedSince } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
@@ -165,12 +165,15 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   }
   const { projectId, project, status } = post;
   const { table, key } = claims(prisma, status);
+  // The post's latest move as the run starts: its clears below are only while there's none since (unmovedSince), so a
+  // move made meanwhile, even back to this status, keeps its due time for its own run.
+  const latest = await prisma.postEvent.findFirst({ where: { postId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true, createdAt: true } });
   // Planned and In progress only as the move that set it was one forward (statusMoveEmails), checked here too: a due
   // time a move back left (the previous release's, during a deploy) emails nobody about it.
   if (status !== "COMPLETED") {
     const moved = await prisma.postEvent.findFirst({ where: { postId, to: status }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { from: true } });
     if (!moved || statusMoveEmails(moved.from, status) !== "progress") {
-      await prisma.post.updateMany({ where: { id: postId, status }, data: { shippedEmailsDueAt: null } });
+      await prisma.post.updateMany({ where: { id: postId, status, ...unmovedSince(latest) }, data: { shippedEmailsDueAt: null } });
       return { skipped: true };
     }
   }
@@ -280,9 +283,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
-  // Only while it still has this status: moved on since, it's due for the next one's emails (its own run clears it).
+  // Only while it hasn't moved since the run began (even away and back to this status): it's due for that move's emails
+  // (its own run clears it).
   await prisma.post.updateMany({
-    where: { id: postId, status, ...(status === "COMPLETED" ? { shippedEmails: { none: { sentAt: null } } } : { statusEmails: { none: { status, sentAt: null } } }) },
+    where: { id: postId, status, ...unmovedSince(latest), ...(status === "COMPLETED" ? { shippedEmails: { none: { sentAt: null } } } : { statusEmails: { none: { status, sentAt: null } } }) },
     data: { shippedEmailsDueAt: null },
   });
   log.info(`post ${postId} (${status}): emailed ${emailed}`);
