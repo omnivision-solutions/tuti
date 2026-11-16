@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { emailedOnMove } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
@@ -68,4 +68,23 @@ test("reopened after it shipped: Planned and In progress don't count those told 
   const reopened = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } }, select: { id: true, status: true } });
 
   expect((await emailedOnMove(project.id, [reopened])).get(reopened.id)).toEqual({ PLANNED: 1, IN_PROGRESS: 1, COMPLETED: 1 });
+});
+
+test("a status no picked post's move emails isn't counted at all, and a page of completed posts runs no count", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+  const voter = await signUp("Voter");
+  const post = await call(createPost, as(owner.id), { board: "feature-requests", title: "SSO" });
+  await call(setVote, as(voter.id), { number: post.number, voted: true });
+  await call(updatePost, as(owner.id), { number: post.number, status: "completed" });
+  const done = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } }, select: { id: true, status: true } });
+
+  const query = vi.spyOn(prisma, "$queryRaw");
+  try {
+    expect((await emailedOnMove(project.id, [done])).get(done.id)).toEqual({ PLANNED: 0, IN_PROGRESS: 0, COMPLETED: 0 });
+    expect(query).not.toHaveBeenCalled();
+  } finally {
+    query.mockRestore();
+  }
 });

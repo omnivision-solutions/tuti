@@ -89,23 +89,56 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
 /**
  * How many people completing each post emails (its author, voters, commenters and subscribers, past the team,
  * those who turned the project's emails off and those it emailed already; none for sample posts), by post id, as
- * postShipped does. With `status` Planned or In progress: how many moving it there emails (those emailed about that
- * status already left out); whether the move emails at all is statusMoveEmails's to say. ponytail: before its other
- * rules (verified addresses, a private portal's readers): it can count a few it won't email.
+ * postShipped does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
+ * a few it won't email.
  */
-export async function emailedOnCompletion(
-  projectId: string,
-  postIds: string[],
-  status: "COMPLETED" | "PLANNED" | "IN_PROGRESS" = "COMPLETED",
-): Promise<Map<string, number>> {
+export async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
+  const counts = await emailedOnMoveTo(projectId, postIds, ["COMPLETED"]);
+  return new Map([...counts].map(([postId, by]) => [postId, by.COMPLETED]));
+}
+
+/**
+ * How many people moving each post to Planned, In progress or Completed emails now (a bulk move's question), by post id
+ * and status: none for a move statusMoveEmails says emails nobody (to Planned once it's in progress, say). A status no
+ * post's move emails isn't counted at all.
+ */
+export async function emailedOnMove(projectId: string, posts: { id: string; status: PostStatus }[]): Promise<Map<string, Partial<Record<PostStatus, number>>>> {
+  const emails = (post: { status: PostStatus }, to: EmailedMove) => statusMoveEmails(post.status, to) !== null;
+  const counted = EMAILED_MOVES.filter((to) => posts.some((post) => emails(post, to)));
+  const counts = await emailedOnMoveTo(projectId, posts.map((post) => post.id), counted);
+  return new Map(posts.map((post) => [post.id, Object.fromEntries(EMAILED_MOVES.map((to) => [to, emails(post, to) ? (counts.get(post.id)?.[to] ?? 0) : 0]))]));
+}
+
+const EMAILED_MOVES = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
+type EmailedMove = (typeof EMAILED_MOVES)[number];
+
+/**
+ * The audience (as emailedOnCompletion says) read once, counted for each of `statuses`: those emailed about that status
+ * already (shipped_email for Completed; status_email, and those told it shipped, for the others) left out. Posts nobody
+ * would hear about are left out of the map.
+ */
+async function emailedOnMoveTo<S extends EmailedMove>(projectId: string, postIds: string[], statuses: S[]): Promise<Map<string, Record<S, number>>> {
+  if (postIds.length === 0 || statuses.length === 0) {
+    return new Map();
+  }
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
   // A private portal on a plan without them is the team's only: postShipped emails nobody.
   // Nor while the project's email is paused: the resume lets what it held go.
-  if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal")) || (await projectEmailWaits(projectId))) {
+  if ((project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal")) || (await projectEmailWaits(projectId))) {
     return new Map();
   }
-  const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`
-    SELECT x."postId", COUNT(DISTINCT x."userId") AS people
+  // One count per status (`c0`, `c1`, …), each leaving out who that status has emailed already.
+  const columns = statuses.map((status, i) => {
+    const told =
+      status === "COMPLETED"
+        ? Prisma.sql`SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
+        : // Nor, for Planned and In progress, those told it shipped already (reopened since): postShipped skips them.
+          Prisma.sql`SELECT 1 FROM status_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s.status = ${status}::"PostStatus" AND s."sentAt" IS NOT NULL
+            UNION ALL SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`;
+    return Prisma.sql`COUNT(DISTINCT x."userId") FILTER (WHERE NOT EXISTS (${told})) AS ${Prisma.raw(`c${i}`)}`;
+  });
+  const rows = await prisma.$queryRaw<({ postId: string } & Record<string, bigint>)[]>`
+    SELECT x."postId", ${Prisma.join(columns)}
     FROM (
       SELECT id AS "postId", "authorId" AS "userId" FROM post WHERE id IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "userId" FROM vote WHERE "postId" IN (${Prisma.join(postIds)})
@@ -123,28 +156,14 @@ export async function emailedOnCompletion(
       AND NOT EXISTS (SELECT 1 FROM email_preference ep JOIN post p ON p.id = x."postId"
         WHERE ep."projectId" = ${projectId} AND ep."userId" = x."userId"
           AND NOT (CASE WHEN p."authorId" = x."userId" THEN ep."ownPosts" ELSE ep."followedPosts" END))
-      AND NOT EXISTS (${
-        status === "COMPLETED"
-          ? Prisma.sql`SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
-          : // Nor, for Planned and In progress, those told it shipped already (reopened since): postShipped skips them.
-            Prisma.sql`SELECT 1 FROM status_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s.status = ${status}::"PostStatus" AND s."sentAt" IS NOT NULL
-              UNION ALL SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
-      })
     GROUP BY x."postId"`;
-  return new Map(rows.map((row) => [row.postId, Number(row.people)]));
+  return new Map(
+    rows
+      .map((row) => [row.postId, Object.fromEntries(statuses.map((status, i) => [status, Number(row[`c${i}`])])) as Record<S, number>] as const)
+      // Only those with someone to tell, as before: a post everyone heard about already isn't listed.
+      .filter(([, by]) => Object.values<number>(by).some((n) => n > 0)),
+  );
 }
-
-/**
- * How many people moving each post to Planned, In progress or Completed emails now (a bulk move's question), by post id
- * and status: none for a move statusMoveEmails says emails nobody (to Planned once it's in progress, say).
- */
-export async function emailedOnMove(projectId: string, posts: { id: string; status: PostStatus }[]): Promise<Map<string, Partial<Record<PostStatus, number>>>> {
-  const ids = posts.map((post) => post.id);
-  const counts = await Promise.all(EMAILED_MOVES.map(async (to) => [to, await emailedOnCompletion(projectId, ids, to)] as const));
-  return new Map(posts.map((post) => [post.id, Object.fromEntries(counts.map(([to, map]) => [to, statusMoveEmails(post.status, to) ? (map.get(post.id) ?? 0) : 0]))]));
-}
-
-const EMAILED_MOVES = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
