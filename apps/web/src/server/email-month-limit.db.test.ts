@@ -576,10 +576,17 @@ test("a license upgraded mid-month gives the difference at once; a second licens
   expect([await claimProjectEmail(project.id), await claimProjectEmail(project.id), await claimProjectEmail(project.id)]).toEqual([true, true, false]);
   expect(limitEmails(owner.email)).toHaveLength(1);
 
-  // Its plan now gives 5 a month: 3 more this month.
+  expect(await cappedProjects()).toContain(project.id);
+
+  // Its plan now gives 5 a month: 3 more this month, so what waits isn't held any more.
   vi.stubEnv("BILLING_CONFIG", pro(5));
   expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 5, left: 3 });
+  expect(await cappedProjects()).not.toContain(project.id);
   expect(await claimProjectEmail(project.id)).toBe(true);
+  // Both of the month's grants have credits spent: a send that fails gives one back, to one of them.
+  await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL", credits: 2 }, data: { remaining: 0 } });
+  await releaseProjectEmail(project.id);
+  expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 5, left: 3 });
 
   // The license's next month starts a few days on, still this calendar month (as months starting on the 28th do): used
   // up too, its team hears again.

@@ -171,7 +171,10 @@ export async function releaseProjectEmail(projectId: string, now = new Date()) {
     // To its month's grant only: never one a refund emptied, nor another license's merged in.
     await prisma.$executeRaw`
       UPDATE "credit_grant" SET "remaining" = "remaining" + 1
-      WHERE ${licenseGrants(license.id, now)} AND "expiresAt" = ${license.creditsThrough} AND "remaining" + 1 <= "credits" - "takenBack"`;
+      WHERE "remaining" + 1 <= "credits" - "takenBack" AND "id" = (
+        SELECT "id" FROM "credit_grant"
+        WHERE ${licenseGrants(license.id, now)} AND "expiresAt" = ${license.creditsThrough} AND "remaining" + 1 <= "credits" - "takenBack"
+        ORDER BY "id" ASC LIMIT 1 FOR UPDATE)`;
   }
 }
 
@@ -245,15 +248,16 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
           select: { projectId: true, emails: true, project: { select: { plan: true, trialEndsAt: true } } },
         })
       : [],
-    // Licenses with no email credits left this month, given already (or not yet due: the month hasn't started).
-    prisma.$queryRaw<{ projectId: string; plan: string }[]>`
-      SELECT l."projectId", l."plan" FROM "plan_license" l
+    // Licenses with no email credits left: capped unless their month gives more (it hasn't given its plan's whole
+    // allowance, as after an upgrade), which needs it to have started.
+    prisma.$queryRaw<{ projectId: string; plan: string; started: boolean; given: number }[]>`
+      SELECT l."projectId", l."plan", (l."creditsThrough" IS NOT NULL AND l."creditsThrough" > ${now}) AS "started",
+        COALESCE((SELECT SUM(g."credits") FROM "credit_grant" g WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."expiresAt" = l."creditsThrough"), 0)::float8 AS "given"
+      FROM "plan_license" l
       WHERE l."projectId" IS NOT NULL AND l."revokedAt" IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM "credit_grant" g
-          WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."remaining" >= 1 AND (g."expiresAt" IS NULL OR g."expiresAt" > ${now}))
-        AND (l."creditsThrough" IS NULL OR l."creditsThrough" <= ${now} OR EXISTS (
-          SELECT 1 FROM "credit_grant" g WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."expiresAt" = l."creditsThrough"))`,
+          WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."remaining" >= 1 AND (g."expiresAt" IS NULL OR g."expiresAt" > ${now}))`,
   ]);
   const capped = months
     .filter(({ emails, project }) => {
@@ -262,7 +266,11 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
     })
     .map(({ projectId }) => projectId);
   // A licensed project's plan is its license's.
-  return [...capped, ...licensed.filter(({ plan }) => emailsPerMonth(plan) !== null).map(({ projectId }) => projectId)];
+  const held = licensed.filter(({ plan, started, given }) => {
+    const limit = emailsPerMonth(plan);
+    return limit !== null && (!started || given >= limit);
+  });
+  return [...capped, ...held.map(({ projectId }) => projectId)];
 }
 
 /** The projects whose email waits: new ones whose daily cap is used up today, and any whose month's limit is. */
