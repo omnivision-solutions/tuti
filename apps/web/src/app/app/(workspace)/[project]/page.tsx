@@ -220,7 +220,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                           <>
                             {/* Its buttons the row's own, so on phones Stop, Publish now and Review share its width. */}
                             {item.scheduled && (
-                              <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} posts={item.scheduled.posts} className="contents" />
+                              <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} posts={item.scheduled.posts} warning={item.scheduled.warning} className="contents" />
                             )}
                             <Link href={item.href} className={buttonVariants({ variant: "ghost", size: "sm" })}>
                               {item.action}
