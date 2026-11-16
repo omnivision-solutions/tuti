@@ -1,5 +1,7 @@
 -- AI credits become credits of a kind (AI, and email to come): the table, its keys and its type lose "ai".
--- Previous release: nobody uses Tuti's cloud or self-hosts it yet, so the old release's few minutes beside this one only touch the operator's projects.
+-- Previous release: only servers with AI credits on (AI_CREDITS, off by default) read or write these, and those (Tuti's cloud)
+-- deploy this release with the previous one stopped first, its web container and worker: renamed at once, so the old names
+-- don't linger.
 ALTER TABLE "ai_credit_grant" RENAME TO "credit_grant";
 -- Previous release: as above.
 ALTER TABLE "credit_grant" RENAME CONSTRAINT "ai_credit_grant_pkey" TO "credit_grant_pkey";
