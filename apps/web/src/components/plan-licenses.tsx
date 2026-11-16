@@ -56,6 +56,13 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
       (document.querySelector<HTMLElement>(`[data-license-control="${license.id}"]`) ?? statusRef.current)?.focus();
     }
   }, [state, license.id]);
+  // The action's own update has rendered (its refresh included): a row it left as it was stops waiting, so a later
+  // change from elsewhere doesn't take the keyboard. After the effect above, which moves it first where the row changed.
+  useEffect(() => {
+    if (!pending) {
+      from.current = undefined;
+    }
+  }, [pending]);
   const act = (run: () => Promise<{ error?: string }>, done: string) =>
     startTransition(async () => {
       from.current = state;
