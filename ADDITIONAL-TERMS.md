@@ -10,18 +10,20 @@ mentions, aren't covered.
 
 Each page of a portal that Tuti serves (its feedback board, roadmap, changelog, docs and help
 pages) shows in its footer the author attribution "Powered by tuti", with Tuti's logo, linking to
-https://tuti.so. The attribution is part of the Appropriate Legal Notices that Tuti displays. The
-widget, the panel Tuti opens inside other websites, has no footer and isn't one of these pages.
+https://tuti.so. So does the end of each email Tuti sends on a project's behalf to the people who
+use its portals (such as replies, status changes, changelog entries and sign-in links). The
+attribution is part of the Appropriate Legal Notices that Tuti displays. The widget, the panel Tuti
+opens inside other websites, has no footer and isn't one of these pages.
 
 If you convey Tuti or a work based on it, or run it, modified or not, so that people use its
-portals over a network, you must keep this attribution on each such page: visible, legible and
-linking to https://tuti.so. If showing the logo isn't reasonably feasible for technical reasons, show
+portals over a network, you must keep this attribution on each such page and email: visible,
+legible and linking to https://tuti.so. If showing the logo isn't reasonably feasible for technical reasons, show
 the words "Powered by tuti" instead. Hiding it by other means, such as custom CSS or HTML, removing
 it from the code or covering it, is not keeping it.
 
 ## 2. Permission to hide it with a licence (additional permission)
 
-You may hide the attribution on the pages of a project while that project has a current licence
+You may hide the attribution on the pages and emails of a project while that project has a current licence
 from Tuti for the installation of Tuti that serves it. Licences are sold at https://tuti.so. The
 licence is what permits hiding the attribution; the setting in Tuti that does it (Powered by tuti,
 in Settings → Branding; Customize → Powered by in older versions) is how, not a permission of its own.
