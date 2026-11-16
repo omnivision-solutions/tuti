@@ -299,9 +299,8 @@ test("the new key claimed by the same buyer before the upgrade arrives: the upgr
   expect(await planOf(project.id)).toBe("appsumo-2");
 });
 
-test("events for one key wait for each other: a refund and an activation can't both find no license", async () => {
-  const key = crypto.randomUUID();
-  // Another event for the key holds its lock (an open transaction, as a webhook mid-way would).
+/** Holds `key`'s lock in a transaction of its own (as an event mid-way would) until `release` is called. */
+async function holdKeyLock(key: string) {
   let release!: () => void;
   let locked!: () => void;
   const isLocked = new Promise<void>((resolve) => (locked = resolve));
@@ -311,18 +310,59 @@ test("events for one key wait for each other: a refund and an activation can't b
       locked();
       await new Promise<void>((resolve) => (release = resolve));
     },
-    { timeout: 20_000 },
+    { timeout: 60_000 },
   );
   await isLocked;
+  return { release: () => (release(), holding) };
+}
+
+/** Resolves once `count` sessions wait for `key`'s lock (Postgres's own view, not a clock). */
+async function waitingOn(key: string, count: number) {
+  for (;;) {
+    const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+      SELECT count(*)::int AS waiting FROM pg_locks
+      WHERE locktype = 'advisory' AND NOT granted AND classid = 7 AND objsubid = 2
+        AND objid::bigint = (hashtext(${key})::bigint + 4294967296) % 4294967296`;
+    if (waiting >= count) {
+      return "waiting";
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+test("events for one key wait for each other: a refund and an activation can't both find no license", async () => {
+  const key = crypto.randomUUID();
+  const lock = await holdKeyLock(key);
   const refund = deliver({ event: "deactivate", license_key: key, tier: 1 });
   const activation = deliver({ event: "activate", license_key: key, tier: 1 });
-  const settled = await Promise.race([Promise.all([refund, activation]).then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 500))]);
-  expect(settled).toBe("waiting");
+  // Both wait for the lock; without it they'd be done first.
+  expect(await Promise.race([waitingOn(key, 2), Promise.all([refund, activation]).then(() => "done")])).toBe("waiting");
   expect(await find(key)).toBeNull();
-  release();
-  await holding;
+  await lock.release();
   await Promise.all([refund, activation]);
   expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date) });
+});
+
+test("an older upgrade following its key to the newest one waits for that key's lock, so a refund of it isn't lost", async () => {
+  const { key, license } = await assigned();
+  const [second, third] = [crypto.randomUUID(), crypto.randomUUID()];
+  await deliver({ event: "downgrade", license_key: third, prev_license_key: second, tier: 1 });
+  const lock = await holdKeyLock(third);
+  const upgrade = deliver({ event: "upgrade", license_key: second, prev_license_key: key, tier: 2 });
+  expect(await Promise.race([waitingOn(third, 1), upgrade.then(() => "done")])).toBe("waiting");
+  await lock.release();
+  await upgrade;
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ externalKey: third });
+});
+
+test("the new key claimed before an upgrade from a key nobody claimed: the buyer keeps the license", async () => {
+  const [first, next] = [crypto.randomUUID(), crypto.randomUUID()];
+  await deliver({ event: "activate", license_key: first, tier: 1 });
+  await deliver({ event: "activate", license_key: next, tier: 2 });
+  const buyer = await signUp("Buyer");
+  await prisma.planLicense.update({ where: { source_externalKey: { source: "appsumo", externalKey: next } }, data: { userId: buyer.id, claimedAt: new Date() } });
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: first, tier: 2 });
+  expect(await licensesFor([first, next])).toEqual([expect.objectContaining({ externalKey: next, plan: "appsumo-2", userId: buyer.id, revokedAt: null })]);
 });
 
 test("two upgrades in a row: the first's retry and the first key's late events make no second license", async () => {
