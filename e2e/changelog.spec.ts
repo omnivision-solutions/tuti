@@ -975,8 +975,11 @@ test("the next release waits to be written; its entry gets a featured image read
       transfer.items.add(new File([new Uint8Array(bytes)], "cover.png", { type: "image/png" }));
       return transfer;
     }, [...bytes]);
+  // (Focus stays where it was: only an upload started from Add moves it to Replace.)
+  await team.getByLabel("Title").focus();
   await addButton.locator("..").dispatchEvent("drop", { dataTransfer: await droppedFile(first) });
   await expect(preview).toBeVisible();
+  await expect(team.getByLabel("Title")).toBeFocused();
   const firstSrc = await preview.getAttribute("src");
   // Replaced by another: while it uploads (its server calls held here), Save and Publish wait, the image saying why;
   // Remove waits too (the new image would come back after it), and no second upload starts meanwhile (each starts with
@@ -1046,6 +1049,26 @@ test("the next release waits to be written; its entry gets a featured image read
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
+  // Uploaded from Add, but moved on to the text while it uploads (its server calls held): focus stays in the text.
+  let releaseMovedOn!: () => void;
+  const movedOnHeld = new Promise<void>((resolve) => (releaseMovedOn = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await movedOnHeld;
+    }
+    await route.fallback();
+  });
+  await addButton.focus();
+  await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  const text = team.getByRole("textbox", { name: "What changed" });
+  await text.focus();
+  releaseMovedOn();
+  await expect(canvasCover).toBeVisible();
+  await expect(text).toBeFocused();
+  await team.unroute("**/*");
+  await removeButton.click();
+  await expect(addButton).toBeVisible();
   // Uploaded from Add with the keyboard: Add goes with the upload, and focus moves to Replace.
   await addButton.focus();
   await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });

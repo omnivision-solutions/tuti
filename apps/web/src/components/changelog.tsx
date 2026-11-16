@@ -174,11 +174,12 @@ function FeaturedImage({
     onBusy,
   });
   // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
-  // (Only then: a file dropped with the mouse leaves focus be.)
+  // (Only then, and only if focus went with Add: a file dropped with the mouse, or someone who moved on to the text
+  // while it uploaded, keeps theirs.)
   const replace = useRef<HTMLButtonElement>(null);
   const fromAdd = useRef(false);
   useEffect(() => {
-    if (image && fromAdd.current) {
+    if (image && fromAdd.current && (!document.activeElement || document.activeElement === document.body)) {
       replace.current?.focus();
     }
   }, [image]);
