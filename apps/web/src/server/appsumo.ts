@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { type Prisma, prisma } from "@tuti/db";
-import { applyPlanLicense } from "@tuti/jobs";
+import { applyPlanLicense, grantLicenseCredits } from "@tuti/jobs";
 import { appsumoTierPlan, log } from "@tuti/shared";
 
 import { signValue } from "@/lib/signed";
@@ -147,6 +147,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         return;
       }
       const keys = [key, ...(event.prev_license_key ? [event.prev_license_key] : [])];
+      let revivedId: string | null = null;
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, keys);
         const rows = await rowsFor(tx, keys);
@@ -195,8 +196,11 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           // The previous key's deactivation doesn't count against the license under its new key, but the new key's own
           // (a refund of the upgrade, before this upgrade or its retry) does.
           const revokedAt = row === previous ? (early ? early.revokedAt : null) : row.revokedAt;
-          // Back from the previous key's deactivation, which took its month's credits back: a new month starts (the hourly job).
+          // Back from the previous key's deactivation, which took its month's credits back: a new month starts, given below.
           const revived = row.revokedAt && !revokedAt ? { creditsThrough: null } : {};
+          if (row.revokedAt && !revokedAt) {
+            revivedId = row.id;
+          }
           await tx.planLicense.update({
             where: { id: row.id },
             data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, ...revived, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
@@ -211,6 +215,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         }
         await applyPlanLicense(tx, row.id);
       });
+      if (revivedId) {
+        await grantLicenseCredits(revivedId);
+      }
       return;
     }
     case "deactivate": {

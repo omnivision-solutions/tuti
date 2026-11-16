@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { grantCredits, grantLicenseCredits } from "@tuti/jobs";
+import { grantCredits } from "@tuti/jobs";
 import { appsumoWebhook, type AppsumoFake, billingFile, startAppsumoFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -9,7 +9,7 @@ import RedeemPage from "@/app/app/(account-pages)/licenses/redeem/page";
 import { actAs, createProject, redirectTarget, signUp } from "@/test/helpers";
 
 import { appsumoSigned, claimToken } from "./appsumo";
-import { assignPlanLicense, claimPlanLicense } from "./plan-licenses";
+import { assignPlanLicense, claimPlanLicense, unassignPlanLicense } from "./plan-licenses";
 
 /** AppSumo's lifetime deals (docs/plan.md, Plan licenses): its webhook makes and changes licenses; its sign-in claims one to an account. */
 
@@ -162,9 +162,20 @@ test("the old key's deactivation before an upgrade takes the month's credits bac
   await deliver({ event: "deactivate", license_key: key, tier: 1 });
   expect(await creditsLeft(project.id)).toMatchObject({ license: 0, takenBack: 400 });
   await deliver({ event: "upgrade", license_key: crypto.randomUUID(), prev_license_key: key, tier: 2 });
-  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: null, creditsThrough: null });
-  await grantLicenseCredits(license.id);
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: null, creditsThrough: expect.any(Date) });
   expect(await creditsLeft(project.id)).toMatchObject({ license: 1000 });
+});
+
+test("a refund after the license moved takes back what's left of its credits on the project it left too", async () => {
+  const { owner, project: first, key, license } = await assigned();
+  expect(await unassignPlanLicense(license.id)).toEqual({});
+  const second = await createProject(owner);
+  expect(await assignPlanLicense(second.slug, license.id)).toEqual({});
+  // Moved mid-month: no new month on the second project.
+  expect(await creditsLeft(first.id)).toMatchObject({ license: 400 });
+  expect(await creditsLeft(second.id)).toMatchObject({ license: 0 });
+  await deliver({ event: "deactivate", license_key: key, tier: 1 });
+  expect(await creditsLeft(first.id)).toMatchObject({ license: 0, takenBack: 400 });
 });
 
 test("the new key's activation arriving before the upgrade: the upgrade still keeps the holder's license", async () => {
