@@ -83,6 +83,19 @@ test("a published article's page has a TechArticle with its canonical address an
   ]);
 });
 
+test("a revised article's dateModified is when it was revised (with the updated date shown), its datePublished unchanged", async () => {
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Paying by card" } });
+  const revisedAt = new Date(article.publishedAt!.getTime() + 86_400_000);
+  await prisma.article.update({ where: { id: article.id }, data: { revisedAt } });
+  const dates = async () => {
+    const [data] = JSON.parse((await docsJsonLd(article.slug))!);
+    return [data.datePublished, data.dateModified];
+  };
+  expect(await dates()).toEqual([article.publishedAt!.toISOString(), revisedAt.toISOString()]);
+  await prisma.article.update({ where: { id: article.id }, data: { showUpdatedDate: false } });
+  expect(await dates()).toEqual([article.publishedAt!.toISOString(), article.publishedAt!.toISOString()]);
+});
+
 test("a tab showing an article in its place gives the tab's address", async () => {
   await call(createTab, as, { name: "Guides" });
   await call(createTab, as, { name: "API" });
