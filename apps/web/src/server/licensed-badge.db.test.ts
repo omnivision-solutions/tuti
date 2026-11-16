@@ -234,3 +234,11 @@ test("removed again after Stripe cancelled it but the sync failed: synced, so th
   expect(await stored()).toMatchObject({ badgeAddOn: false });
   expect(await shown()).toBe(true);
 });
+
+test("its license ending after Stripe's key was removed: the badge shows all the same, and the add-on is logged to cancel", async () => {
+  await buy();
+  vi.stubEnv("STRIPE_SECRET_KEY", "");
+  expect(await unassignPlanLicense(licenseId)).toEqual({});
+  expect(await stored()).toMatchObject({ badgeAddOn: false });
+  expect(await shown()).toBe(true);
+});
