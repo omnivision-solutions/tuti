@@ -209,7 +209,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
   const source = conversation.source;
   const cutShort = !since && parts.length >= MAX_PARTS && Date.parse(parts[0]!.createdAt) - Date.parse(conversation.createdAt) > OPENING_MS;
   if (cutShort && source?.bodyHtml) {
-    parts.unshift({ id: "source", partType: "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
+    parts.unshift({ id: "source", partType: source.author?.type === "bot" ? "bot_msg" : "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
   }
   // Their person: the contact taking part, else who started it or wrote.
   const contactId =
@@ -371,7 +371,15 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
   const spoken = messages.filter((m) => !m.note);
   const { conversationCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { conversationCount: { increment: 1 } }, select: { conversationCount: true } });
   // From what the user can see (the subject shows in the widget and their emails): never a note.
-  const subject = c.title?.trim() || c.source?.subject?.trim() || subjectFrom(messages.find((m) => !m.note && m.body)?.body ?? "") || "Conversation";
+  // A support bot's greeting is no subject: the first message by someone else is, and a title that is only a greeting
+  // the bot opened with (whole, its first line, or cut with an ellipsis, as Featurebase titles a conversation by its first
+  // message) gives way to it.
+  const spokenText = spoken.filter((m) => m.body);
+  const opened = spokenText.findIndex((m) => m.author !== "AI");
+  const title = squash(c.title ?? "");
+  const cut = /(…|\.\.\.)$/.test(title) && squash(title.replace(/(…|\.\.\.)$/, ""));
+  const greeting = spokenText.slice(0, opened < 0 ? undefined : opened).some((m) => [squash(m.body), squash(subjectFrom(m.body))].includes(title) || (cut && squash(m.body).startsWith(cut)));
+  const subject = (!greeting && title) || c.source?.subject?.trim() || subjectFrom(spokenText[opened]?.body ?? spokenText[0]?.body ?? "") || "Conversation";
   const { id } = await tx.conversation.create({
     data: {
       projectId: job.projectId,
@@ -477,6 +485,9 @@ const subjectFrom = (text: string) => {
   const line = text.split("\n", 1)[0]!.trim();
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 };
+
+/** Text with its whitespace collapsed, to compare a title with a message. */
+const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
  * Cuts the quotes from emails imported before imports cut them (by an import started before `importedBefore`, the

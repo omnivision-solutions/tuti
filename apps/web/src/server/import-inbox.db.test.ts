@@ -326,6 +326,71 @@ test("a subject is never taken from an internal note: the user sees it, in the w
   expect((await conversations()).find((c) => c.messages.some((m) => m.note && m.body === "Owes us three invoices"))!.subject).toBe("How do I reset my password?");
 });
 
+/** Conversation 1002, closed and untitled, opened by the support bot's greeting before the person asks. */
+const greetedByBot = () => {
+  const closed = fake.fixtures.conversations[2]!;
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  const greeting = "Hey there! What brings you here today?";
+  parts.unshift({ id: "p3000", partType: "bot_msg", createdAt: new Date(Date.parse(String(parts[0]!.createdAt)) - 60_000).toISOString(), bodyHtml: `<p>${greeting}</p>`, author: { id: null, type: "bot" } });
+  return { closed, greeting };
+};
+
+test("a conversation the support bot opened takes its subject from the person's first message, not the bot's greeting", async () => {
+  greetedByBot();
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.messages[0]!.author === "AI")!;
+  expect(conversation.messages.map((m) => m.author).slice(0, 2)).toEqual(["AI", "USER"]);
+  expect(conversation.subject).toBe("How do I reset my password?");
+});
+
+test.each([
+  ["whole", (greeting: string) => greeting],
+  ["its first line", (greeting: string) => `${greeting.split("! ")[0]}!`],
+  ["cut", (greeting: string) => `${greeting.slice(0, 20)}…`],
+  ["cut, with three full stops", (greeting: string) => `${greeting.slice(0, 20)}...`],
+])("a title that is only the bot's greeting (%s) gives way to the person's first message", async (_, titled) => {
+  const { closed, greeting } = greetedByBot();
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts[0]!.bodyHtml = `<p>${greeting.replace("! ", "!</p><p>")}</p>`;
+  closed.title = titled(greeting);
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("How do I reset my password?");
+});
+
+test("a conversation Featurebase cut to its newest 500 parts, which the bot opened, takes no subject from its greeting", async () => {
+  const conversation = fake.fixtures.conversations[2]!;
+  const start = Date.parse(String(conversation.createdAt));
+  const tags = Array.from({ length: 499 }, (_, i) => ({ object: "conversation_part", id: `t${i}`, partType: "tags", createdAt: new Date(start + 60 * 60_000 + i * 1000).toISOString() }));
+  const asked = { object: "conversation_part", id: "t499", partType: "user_msg", createdAt: new Date(start + 2 * 60 * 60_000).toISOString(), bodyHtml: "<p>Can I change my email?</p>", channel: "desktop", author: { id: "65f000000000000000000003", type: "lead" } };
+  conversation.source = { ...conversation.source!, bodyHtml: "<p>Hey there! What brings you here today?</p>", author: { id: null, type: "bot" } };
+  conversation.conversationParts = [...tags, asked];
+  await importInbox();
+  const imported = (await conversations()).find((c) => c.messages[0]?.author === "AI")!;
+  expect(imported.messages.map((m) => [m.author, m.body])).toEqual([
+    ["AI", "Hey there! What brings you here today?"],
+    ["USER", "Can I change my email?"],
+  ]);
+  expect(imported.subject).toBe("Can I change my email?");
+});
+
+test("a title someone wrote stays the subject of a conversation the bot opened, even one a later bot message starts with", async () => {
+  const { closed } = greetedByBot();
+  // A cut start of the later bot reply: it gives way only to what the bot opened with.
+  closed.title = "Password reset…";
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts.push({ id: "p3099", partType: "bot_msg", createdAt: new Date(Date.parse(String(parts.at(-1)!.createdAt)) + 60_000).toISOString(), bodyHtml: "<p>Password reset links last an hour.</p>", author: { id: null, type: "bot" } });
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("Password reset…");
+});
+
+test("a conversation the team opened, untitled, takes its subject from the team's first message, not the person's reply", async () => {
+  const closed = fake.fixtures.conversations[2]!;
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts.unshift({ id: "p3000", partType: "admin_msg", createdAt: new Date(Date.parse(String(parts[0]!.createdAt)) - 60_000).toISOString(), bodyHtml: "<p>Your March invoice is ready</p>", channel: "desktop", author: { id: "65f0000000000000000000a1", type: "admin" } });
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages[0]!.author === "TEAM")!.subject).toBe("Your March invoice is ready");
+});
+
 test("the team is never told of imported history: the cron that resends the team's missed notices finds none", async () => {
   vi.stubEnv("APP_URL", "https://tuti.example");
   // The user's last message an hour ago, unanswered, in a conversation assigned to the owner: inside the cron's window.
