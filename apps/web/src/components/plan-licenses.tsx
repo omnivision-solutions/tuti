@@ -45,22 +45,22 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
   const router = useRouter();
   const statusRef = useRef<HTMLSpanElement>(null);
   const assigned = license.project?.slug ?? null;
-  // Done, the pressed button is gone (Assign swaps for Unassign and back): once the row shows the change, the keyboard's
-  // place moves to its new control, or to its status where none is left (deactivated, or nowhere to assign it). `from`:
-  // the project before the action.
-  const from = useRef<string | null | undefined>(undefined);
+  // Done, or refused and refreshed (it changed elsewhere), the pressed button is gone (Assign swaps for Unassign and back,
+  // a deactivated row has none): once the row shows the change, the keyboard's place moves to its new control, or to its
+  // status where none is left. `from`: the row's state before the action.
+  const state = `${assigned ?? ""}|${license.revoked}`;
+  const from = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (from.current !== undefined && from.current !== assigned) {
+    if (from.current !== undefined && from.current !== state) {
       from.current = undefined;
       (document.querySelector<HTMLElement>(`[data-license-control="${license.id}"]`) ?? statusRef.current)?.focus();
     }
-  }, [assigned, license.id]);
+  }, [state, license.id]);
   const act = (run: () => Promise<{ error?: string }>, done: string) =>
     startTransition(async () => {
-      from.current = assigned;
+      from.current = state;
       const { error } = await run();
       if (error) {
-        from.current = undefined;
         toast.error(error);
         // Refused because the license changed elsewhere (another tab, a refund): the row shows how it is now.
         router.refresh();
