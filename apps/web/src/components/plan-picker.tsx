@@ -30,6 +30,9 @@ type Interval = "month" | "year";
 /** As a card's numbers show: 10k, 100k from ten thousand up, smaller ones in full (1,000); "Unlimited" for no limit. */
 const compact = (value: number | null) => (value === null ? "Unlimited" : value >= 10_000 ? `${(value / 1000).toLocaleString("en")}k` : value.toLocaleString("en"));
 
+/** "a, b and c". */
+const list = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : (items[0] ?? ""));
+
 /** A plan's yes/no lines, as its card lists what it adds to the one before (the pricing page's cards). */
 const yesNo = (facts: PlanFacts): [string, boolean][] => [
   ["Your own domain", facts.features.customDomain],
@@ -122,7 +125,7 @@ export function PlanPicker({ projectSlug, plans, current, trial = false, pricing
                   <>
                     <p className="font-semibold">{facts.features.codeChanges ? "The whole product" : "Includes"}</p>
                     <p className="text-muted-foreground">
-                      Help center, inbox, feedback{facts.features.codeChanges ? " and Autopilot" : facts.aiAnswers ? " and AI answers" : ""}
+                      {list(["Help center", "inbox", "feedback", ...(facts.features.codeChanges ? ["Autopilot"] : facts.aiAnswers ? ["AI answers"] : [])])}
                     </p>
                   </>
                 )}
