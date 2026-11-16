@@ -153,7 +153,19 @@ test("an upgrade whose new key is another account's revokes the old license, and
 });
 
 test("unassigning and AppSumo's deactivation wait for Stripe's webhook syncing the project, so neither misses the add-on it's recording", async () => {
-  const waiting = async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`)[0]!.n;
+  // Waiting on this project's lock 6 in this file's database (others share the server).
+  const waiting = async () => {
+    for (;;) {
+      const [{ n }] = await prisma.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM pg_locks
+        WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          AND classid = 6 AND objsubid = 2 AND objid::bigint = (hashtext(${project.id})::bigint + 4294967296) % 4294967296`;
+      if (n > 0) {
+        return "waiting";
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
   for (const change of [() => unassignPlanLicense(licenseId), () => applyAppsumoEvent({ event: "deactivate", license_key: licenseKey })]) {
     let release!: () => void;
     let locked!: () => void;
@@ -166,10 +178,8 @@ test("unassigning and AppSumo's deactivation wait for Stripe's webhook syncing t
       await held;
     }, { timeout: 30_000 });
     await isLocked;
-    let done = false;
-    const changing = change().then(() => (done = true));
-    await vi.waitFor(async () => expect(await waiting()).toBe(1), { timeout: 4_000 });
-    expect(done).toBe(false);
+    const changing = change();
+    expect(await Promise.race([waiting(), changing.then(() => "done")])).toBe("waiting");
     release();
     await webhook;
     await changing;
