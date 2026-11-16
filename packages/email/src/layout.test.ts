@@ -259,3 +259,8 @@ test("two buttons side by side let a long label break, so a phone's card never s
   const html = await render(createElement(Buttons, { href: "https://tuti.example/a", label: "Publish omnivision-solutions/tuti#848 now", second: { href: "https://tuti.example/b", label: "Stop omnivision-solutions/widget#848" } }));
   expect(html.match(/overflow-wrap:anywhere/g)?.length).toBe(2);
 });
+
+test("a diff line wraps a long word (a URL, a path), so a phone's card never scrolls sideways", async () => {
+  const html = await render(createElement(Diff, { lines: [{ kind: "added", text: "See https://docs.example.com/a/very/long/path/that/has/no/spaces/at/all" }] }));
+  expect(html).toContain("overflow-wrap:anywhere");
+});

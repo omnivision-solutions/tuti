@@ -170,7 +170,8 @@ export function Diff({ lines, more }: { lines: DiffLine[]; more?: number }) {
               <tr key={i}>
                 <td style={{ backgroundColor: look.backgroundColor, padding: "6px 12px" }}>
                   {/* A paragraph: a line of its own in plain text. */}
-                  <Text style={{ fontSize: 14, lineHeight: "21px", color: look.color, margin: 0 }}>
+                  {/* A long word (a URL, a path) wraps, so the line never makes a phone scroll sideways. */}
+                  <Text style={{ fontSize: 14, lineHeight: "21px", color: look.color, margin: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                     <span style={{ fontWeight: 700, opacity: 0.6 }}>{sign} </span>
                     <span style={{ textDecoration: look.textDecoration }}>{line.text}</span>
                   </Text>
