@@ -187,6 +187,31 @@ test("when Stripe can't say whether the project's subscription has ended, the li
   expect(await planOf()).toBe("free");
 });
 
+test("a Checkout still being paid (a bank debit, incomplete) keeps a license off the project", async () => {
+  await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" });
+  stripe.pay(stripe.sessions.at(-1)!.id);
+  const subscription = stripe.sessions.at(-1)!.subscription!;
+  await deliver(stripe.update(subscription, { status: "incomplete" }));
+  const held = await license();
+  expect((await assignPlanLicense(project.slug, held.id)).error).toMatch(/^This project pays for a plan/);
+});
+
+test("a subscription paid after its project was given a license doesn't take the project, even with the license revoked", async () => {
+  // A Checkout opened before the license was assigned, paid once the license was revoked (it gives no plan).
+  await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" });
+  const events = stripe.pay(stripe.sessions.at(-1)!.id);
+  const held = await license();
+  expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
+  await prisma.planLicense.update({ where: { id: held.id }, data: { revokedAt: new Date() } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
+  await deliver(...events);
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, stripeSubscriptionId: true } })).toEqual({
+    plan: null,
+    planStatus: null,
+    stripeSubscriptionId: null,
+  });
+});
+
 test("a project with a plan set by hand isn't given one", async () => {
   await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
   expect(await assignPlanLicense(project.slug, (await license()).id)).toEqual({ error: "This project has a plan already. Contact support to change it." });
