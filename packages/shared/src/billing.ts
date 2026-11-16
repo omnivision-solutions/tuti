@@ -87,6 +87,21 @@ export const billingSchema = z
       .strict()
       .optional()
       .describe("A free trial, no card: an account's first project starts on `plan` for `days` days, then is on the default plan unless it bought one. Absent: no trials."),
+    licenses: z
+      .object({
+        appsumo: z
+          .object({
+            tiers: z
+              .record(z.string().regex(/^[1-9][0-9]*$/, "a tier number"), z.string())
+              .describe('The plan each AppSumo tier gives, by tier number: { "1": "appsumo-1", … }.'),
+          })
+          .strict()
+          .optional()
+          .describe("AppSumo lifetime deals (with APPSUMO_API_KEY set): its licenses' tiers."),
+      })
+      .strict()
+      .optional()
+      .describe("Plan licenses (lifetime deals sold elsewhere) and the plans they give, by source. Their plans are usually hidden, with no prices, and sit apart from the plans sold: last in the list, and not held to have everything the plan before them has."),
     historyKeptDays: days.default(365).describe("Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history."),
   })
   .strict()
@@ -111,12 +126,20 @@ export const billingSchema = z
     if (lacks.length > 0) {
       context.addIssue({ code: "custom", path: ["trial", "plan"], message: `lacks ${lacks.join(", ")}, which the default plan has` });
     }
+    const licensed = new Set(Object.values(config.licenses?.appsumo?.tiers ?? {}));
+    for (const [tier, key] of Object.entries(config.licenses?.appsumo?.tiers ?? {})) {
+      if (!keys.includes(key)) {
+        context.addIssue({ code: "custom", path: ["licenses", "appsumo", "tiers", tier], message: `"${key}" isn't one of the plans` });
+      }
+    }
     // Each plan has everything the one before it has ("Everything in Pro, plus:"): its features, and limits no lower (null: none;
-    // a Reporting range only where the plan has Reporting).
+    // a Reporting range only where the plan has Reporting). Licenses' plans are apart: nobody upgrades to or from them.
     const room = (value: number | null) => value ?? Infinity;
     const reporting = (plan: BillingPlan) => (plan.features.includes("reporting") ? room(plan.limits.reportingDays) : 0);
-    config.plans.forEach((plan, index) => {
-      const before = config.plans[index - 1];
+    const ladder = config.plans.filter(({ key }) => !licensed.has(key));
+    ladder.forEach((plan) => {
+      const index = config.plans.indexOf(plan);
+      const before = ladder[ladder.indexOf(plan) - 1];
       if (!before) {
         return;
       }

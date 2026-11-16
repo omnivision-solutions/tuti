@@ -43,6 +43,7 @@ import * as managePosts from "./manage-posts";
 import * as media from "./media";
 import * as portalHandoff from "./portal-handoff";
 import * as passwordReset from "./password-reset";
+import * as planLicenses from "./plan-licenses";
 import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
 import * as projectSettings from "./project-settings";
@@ -91,6 +92,7 @@ const modules = {
   "manage-posts": managePosts,
   media,
   "password-reset": passwordReset,
+  "plan-licenses": planLicenses,
   "portal-handoff": portalHandoff,
   "portal-settings": portalSettings,
   posts,
@@ -570,6 +572,11 @@ const matrix: Matrix = {
         ),
     },
   },
+  // A license is its holder's: the fixture's admin holds one to assign, and another account one on its own project.
+  "plan-licenses": {
+    assignPlanLicense: { allowed: "ADMIN", takesIds: true, call: (slug, f) => planLicenses.assignPlanLicense(slug, f.planLicenseId) },
+    unassignPlanLicense: { allowed: "signed in", refusesSsoUsers: true, call: (_, f) => planLicenses.unassignPlanLicense(f.assignedPlanLicenseId) },
+  },
   "similar-posts": {
     findSimilarPosts: { allowed: "public", call: (slug) => similarPosts.findSimilarPosts(slug, "Dark mode please") },
   },
@@ -962,8 +969,15 @@ async function createFixture(own: "domain" | "site" = "domain") {
     },
     select: { id: true, actions: { select: { id: true, kind: true, status: true } } },
   });
+  const planLicense = await prisma.planLicense.create({ data: { source: "manual", externalKey: crypto.randomUUID(), plan: "pro", userId: users.ADMIN.id } });
+  const outsiderProject = await createProject(users.outsider);
+  const assignedPlanLicense = await prisma.planLicense.create({
+    data: { source: "manual", externalKey: crypto.randomUUID(), plan: "pro", userId: users.outsider.id, projectId: outsiderProject.id },
+  });
   return {
     slug: project.slug,
+    planLicenseId: planLicense.id,
+    assignedPlanLicenseId: assignedPlanLicense.id,
     codeChangeId: codeChange.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
     dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "PENDING")!.id,

@@ -82,6 +82,7 @@ model User {
   conversationMessages  ConversationMessage[]
   autopilotNotices      AutopilotNotice[]
   autopilotDigests      AutopilotDigest[]
+  planLicenses          PlanLicense[]
 
   @@unique([email])
   /// Partial: only sample people have it.
@@ -445,6 +446,7 @@ model Project {
   importedRecords         ImportedRecord[]
   aiUsage                 AiUsage[]
   aiCreditGrants          AiCreditGrant[]
+  planLicense             PlanLicense?
 
   autopilotDigests AutopilotDigest[]
 
@@ -2765,6 +2767,40 @@ model AiCreditGrant {
 
   @@index([projectId, expiresAt])
   @@map("ai_credit_grant")
+}
+
+/// A plan license (docs/plan.md, Plan licenses): a plan an account holds without paying through Stripe, such as an
+/// AppSumo lifetime deal. Not the self-hosted licence below (License), which hides "Powered by tuti". Its owner assigns it
+/// to one project they own or administer, whose plan it then is (server/plan-licenses.ts); a project has at most one.
+model PlanLicense {
+  id             String    @id @default(cuid())
+  /// Where it came from ("appsumo"), and its key there (an AppSumo license key), unique per source: support finds it by key.
+  source         String
+  externalKey    String
+  /// The plan it gives: a key in the billing file (often a hidden plan nobody buys).
+  plan           String
+  /// The account that claimed it; null until someone does.
+  userId         String?
+  /// The project it's assigned to, whose plan it is while it isn't revoked.
+  projectId      String?   @unique
+  /// What its source said (AppSumo's tier, its last event), for support.
+  metadata       Json      @default("{}")
+  claimedAt      DateTime?
+  assignedAt     DateTime?
+  /// Revoked by its source (a refund): it gives no plan, but stays assigned until unassigned, so an upgrade racing the
+  /// old key's deactivation (AppSumo sends both) brings it back where it was.
+  revokedAt      DateTime?
+  /// The end of the month of AI credits its project was last given (grantLicenseCredits); the next month's come then.
+  creditsThrough DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@unique([source, externalKey])
+  @@index([userId])
+  @@map("plan_license")
 }
 
 /// Licences Tuti sells (used only where LICENSE_PRIVATE_KEY is set: tuti.so), one per installation and

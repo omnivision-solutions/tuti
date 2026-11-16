@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { billingFile } from "@tuti/testkit";
+import { billingFile, withAppsumoPlans } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod";
 
@@ -72,6 +72,23 @@ test("each plan has everything the one before it has, as its card says", () => {
   expect(() => billingConfig()).toThrow(/lacks emailDomain, which pro has[\s\S]*plans\[2\]\.features/);
   expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.boards/);
   expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.emailsPerMonth/);
+});
+
+test("licenses' plans are plans the file lists, apart from the plans sold", () => {
+  // Tier 1 has less than Free (fewer boards, no Autopilot) though it comes after Business: not held to the ladder.
+  vi.stubEnv("BILLING_CONFIG", billingFile(withAppsumoPlans));
+  expect(billingConfig()?.licenses?.appsumo?.tiers).toEqual({ "1": "appsumo-1", "2": "appsumo-2" });
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    withAppsumoPlans(config);
+    config.licenses!.appsumo!.tiers["3"] = "appsumo-3";
+  }));
+  expect(() => billingConfig()).toThrow(/"appsumo-3" isn't one of the plans\n {2}→ at licenses\.appsumo\.tiers\.3/);
+  // Without the map, the same plans are on the ladder, and refused.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    withAppsumoPlans(config);
+    delete config.licenses;
+  }));
+  expect(() => billingConfig()).toThrow(/lacks codeChanges, .*which business has[\s\S]*plans\[3\]\.features/);
 });
 
 test("a file without monthly email limits is valid: none", () => {

@@ -4,7 +4,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
 import { defaultPlanKey, isBadgePrice, listedPlans, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
 
-import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
+import { cancelSubscription, getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 
 /**
  * Plans through Stripe (docs/plan.md, Plans): Stripe's webhook brings each project's plan in step with
@@ -14,8 +14,15 @@ import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 /** Statuses in which a subscription's plan holds: past_due too, while Stripe retries a failed payment. Any other is the free plan. */
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
+/** Statuses in which a subscription holds no plan but can still be paid, and then charge. */
+const PAYABLE = new Set(["incomplete", "unpaid", "paused"]);
+
+
 /** No paid plan: the billing file's default. The subscription stays recorded as the one that last held the plan. */
 const NO_PLAN = { plan: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
+
+/** A project on the default plan: none stored, one the file no longer lists, or the default's own key (not one set by hand). */
+const onDefaultPlan = (): Prisma.ProjectWhereInput[] => [{ plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])];
 
 const at = (seconds: number) => new Date(seconds * 1000);
 
@@ -47,8 +54,15 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const subscription = await getSubscription(id);
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
+      // A project whose plan comes from a plan license keeps it (plan-licenses.ts): a subscription that held its plan
+      // before is over, and one started since is a second plan, logged below.
       if (!LIVE.has(subscription.status) || !item || !paid) {
-        await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id }, data: NO_PLAN });
+        await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id, planLicense: { is: null } }, data: NO_PLAN });
+        // One that can still be paid (a bank debit processing, a failed payment) is recorded on a project on the default
+        // plan: assigning a plan license asks Stripe about it directly, as Stripe's search may not show it for a minute.
+        if (PAYABLE.has(subscription.status)) {
+          await tx.project.updateMany({ where: { id: projectId, planStatus: null, planLicense: { is: null }, OR: onDefaultPlan() }, data: { stripeSubscriptionId: id } });
+        }
         return projectId;
       }
       const periodEnd = at(item.current_period_end);
@@ -57,9 +71,10 @@ export async function syncSubscription(id: string): Promise<string | null> {
         // one the file no longer lists, or the default's own key. A plan the file sells set by hand (by quote) stays.
         where: {
           id: projectId,
+          planLicense: { is: null },
           OR: [
             { stripeSubscriptionId: id },
-            { planStatus: null, OR: [{ plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])] },
+            { planStatus: null, OR: onDefaultPlan() },
           ],
         },
         data: {
@@ -75,7 +90,12 @@ export async function syncSubscription(id: string): Promise<string | null> {
           trialEndsAt: null,
         },
       });
-      if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
+      if (count === 0 && (await tx.project.count({ where: { id: projectId, planLicense: { isNot: null } } }))) {
+        // Paid for a project a plan license gives its plan (a Checkout opened before the license was assigned): it's
+        // cancelled now, so it never charges again; its one payment is for the operator to refund.
+        await cancelSubscription(id);
+        log.error("A Stripe subscription paid for a project on a plan license: cancelled; refund its payment", { projectId, subscription: id });
+      } else if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
         log.error("A second live Stripe subscription for a project: cancel and refund it", { projectId, subscription: id });
       }
       return projectId;

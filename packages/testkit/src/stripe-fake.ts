@@ -95,6 +95,8 @@ export type StripeFake = {
   /** Every Checkout Session created, in order. */
   sessions: FakeCheckoutSession[];
   subscriptions: Map<string, FakeSubscription>;
+  /** Subscriptions search doesn't show yet (Stripe's search lags by up to a minute). */
+  hiddenFromSearch: Set<string>;
   invoices: Map<string, FakeInvoice>;
   /** Every charge, by id. */
   charges: Map<string, FakeCharge>;
@@ -148,6 +150,7 @@ function after(seconds: number, interval: "month" | "year") {
 export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = {}): Promise<StripeFake> {
   const sessions: FakeCheckoutSession[] = [];
   const subscriptions = new Map<string, FakeSubscription>();
+  const hiddenFromSearch = new Set<string>();
   const invoices = new Map<string, FakeInvoice>();
   const portals: StripeFake["portals"] = [];
   const charges = new Map<string, FakeCharge>();
@@ -350,6 +353,11 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         sendLater([update(sub.id, { status: "canceled" })]);
         return send(200, sub);
       }
+      if (req.method === "GET" && path === "/v1/subscriptions/search") {
+        // Only the query Tuti makes: metadata['projectId']:'<id>'.
+        const wanted = /^metadata\['projectId'\]:'([^']*)'$/.exec(new URL(req.url ?? "/", "http://fake").searchParams.get("query") ?? "");
+        return wanted ? send(200, { object: "search_result", data: [...subscriptions.values()].filter((sub) => sub.metadata.projectId === wanted[1] && !hiddenFromSearch.has(sub.id)) }) : send(400, { error: { message: "unsupported query" } });
+      }
       const read = /^\/v1\/(subscriptions|invoices)\/([^/]+)$/.exec(path);
       if (req.method === "GET" && read) {
         const found = (read[1] === "subscriptions" ? subscriptions : invoices).get(decodeURIComponent(read[2]!));
@@ -454,6 +462,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
     },
     sessions,
     subscriptions,
+    hiddenFromSearch,
     invoices,
     portals,
     event,
