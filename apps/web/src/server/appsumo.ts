@@ -147,7 +147,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         return;
       }
       const keys = [key, ...(event.prev_license_key ? [event.prev_license_key] : [])];
-      let revivedId: string | null = null;
+      let updatedId: string | null = null;
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, keys);
         const rows = await rowsFor(tx, keys);
@@ -198,9 +198,8 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           const revokedAt = row === previous ? (early ? early.revokedAt : null) : row.revokedAt;
           // Back from the previous key's deactivation, which took its month's credits back: a new month starts, given below.
           const revived = row.revokedAt && !revokedAt ? { creditsThrough: null } : {};
-          if (row.revokedAt && !revokedAt) {
-            revivedId = row.id;
-          }
+          // Its month is given after the commit; a retry gives it too, if the last attempt stopped before that.
+          updatedId = row.id;
           await tx.planLicense.update({
             where: { id: row.id },
             data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, ...revived, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
@@ -215,8 +214,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         }
         await applyPlanLicense(tx, row.id);
       });
-      if (revivedId) {
-        await grantLicenseCredits(revivedId);
+      if (updatedId) {
+        // Only when its month is over (a revived license's is): otherwise nothing.
+        await grantLicenseCredits(updatedId);
       }
       return;
     }

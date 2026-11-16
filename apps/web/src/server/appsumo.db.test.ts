@@ -161,8 +161,15 @@ test("the old key's deactivation before an upgrade takes the month's credits bac
   const { project, key, license } = await assigned();
   await deliver({ event: "deactivate", license_key: key, tier: 1 });
   expect(await creditsLeft(project.id)).toMatchObject({ license: 0, takenBack: 400 });
-  await deliver({ event: "upgrade", license_key: crypto.randomUUID(), prev_license_key: key, tier: 2 });
+  const upgrade = { event: "upgrade", license_key: crypto.randomUUID(), prev_license_key: key, tier: 2 };
+  await deliver(upgrade);
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: null, creditsThrough: expect.any(Date) });
+  expect(await creditsLeft(project.id)).toMatchObject({ license: 1000 });
+  // The upgrade committed but stopped before giving its month: AppSumo's retry gives it, once.
+  await prisma.aiCreditGrant.deleteMany({ where: { planLicenseId: license.id, credits: 1000 } });
+  await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough: null } });
+  await deliver(upgrade);
+  await deliver(upgrade);
   expect(await creditsLeft(project.id)).toMatchObject({ license: 1000 });
 });
 
