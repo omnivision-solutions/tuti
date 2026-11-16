@@ -86,7 +86,8 @@ test("a second pull request's progress update joins the waiting one: one update 
     comment: "Weekly repeats are out.\n\nMonthly ones are out too.",
     status: "pending",
     applyLikely: true,
-    emails: 0,
+    // Approving moves the Planned post on to In progress, which emails its author, Vera (not on the team): one person.
+    emails: 1,
     waitReason: null,
   });
   // The list shows the post once, as its one update.

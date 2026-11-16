@@ -279,9 +279,10 @@ the list picks none to approve at once.
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
   with Dismiss, Stop and Publish now; one a teammate stopped says who and when it would have gone out. A post's review is what
-  happens to the post and nothing else: its status change ("Open → In progress", "Open →
-  Completed · emails up to N people"), the one comment that goes with it in a text box to edit,
-  and one Approve (asking first) and Dismiss in a bar at the bottom; no list of updates, no
+  happens to the post and nothing else: its status change ("Open → In progress · emails up to N people" while it
+  waits for the team, as approving it emails them, nobody when it goes out by itself; "Open → Completed · emails up to
+  N people"), the one comment that goes with it in a text box to edit, and one Approve (asking first, naming whom a
+  progress update emails) and Dismiss in a bar at the bottom; no list of updates, no
   checkboxes, no per-pull-request summaries. Each pull request's part (what it is, why, what
   became of it, its Dismiss and Undo) is in its chip's popover, as on an article's. A link
   isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
