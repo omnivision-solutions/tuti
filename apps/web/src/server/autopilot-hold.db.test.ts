@@ -608,6 +608,26 @@ test("Home's Publish now says how many people a request it completes emails", as
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1, posts: 1 });
 });
 
+test("Home's Publish now on a progress update says how many people moving the post emails; none on a post past In progress", async () => {
+  const reader = await signUp("Rae Reader");
+  const moving = await update("MOVES_FORWARD");
+  const later = await update("MOVES_FORWARD");
+  for (const { action, postId } of [moving, later]) {
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+    await prisma.post.update({ where: { id: postId! }, data: { authorId: reader.id } });
+  }
+  await prisma.post.update({ where: { id: later.postId! }, data: { status: "IN_PROGRESS" } });
+  const home = await homeOverview(project.id, project.slug);
+  const rows = home.attention.find((group) => group.key === "autopilot")!.items;
+  expect(rows.find((item) => item.scheduled?.ids.includes(moving.action.id))?.scheduled).toMatchObject({
+    emails: 1,
+    warning: "Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.",
+  });
+  const past = rows.find((item) => item.scheduled?.ids.includes(later.action.id))?.scheduled;
+  expect(past).toMatchObject({ emails: 0 });
+  expect(past).not.toHaveProperty("warning");
+});
+
 test("Home's Publish now, on a row per post as To review lists them: each counts its own post once, and its people", async () => {
   const { codeChangeId, action, postId } = await update("RESOLVES");
   const other = await call(createPost, team(), { board: "feature-requests", title: "Export CSV" });
