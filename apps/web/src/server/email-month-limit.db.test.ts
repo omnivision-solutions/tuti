@@ -619,3 +619,18 @@ test("a license whose month hasn't started (issued straight onto a project, befo
   expect((await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).creditsThrough).not.toBeNull();
   expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 10000, left: 9999 });
 });
+
+test("a license month that doesn't start gives no email credits: never a grant without its month's end", async () => {
+  // The license's own plan gives no months (no AI credits, no email limit), while the project's plan has a limit.
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, business }) => {
+    free.limits.emailsPerMonth = 1;
+    business.monthlyCredits = 0;
+  }));
+  const { owner, project } = await setup();
+  await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "business", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  expect(await claimProjectEmail(project.id)).toBe(false);
+  expect(await prisma.creditGrant.count({ where: { projectId: project.id, kind: "EMAIL" } })).toBe(0);
+});

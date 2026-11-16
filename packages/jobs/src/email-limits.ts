@@ -81,7 +81,8 @@ async function grantLicenseEmails(projectId: string, licenseId: string, now: Dat
     const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER });
     const license = licenseOf(project);
     const limit = monthlyEmailLimit(project, now);
-    if (license?.id !== licenseId || limit === null) {
+    // Only into a started month (the caller starts it first): a grant always ends with its month.
+    if (license?.id !== licenseId || limit === null || !license.creditsThrough || license.creditsThrough <= now) {
       return;
     }
     const { due } = await licenseEmails(licenseId, license.creditsThrough, limit, now, tx);
