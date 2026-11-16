@@ -518,7 +518,7 @@ test("a license's email credits are its month's, wherever it is: moved to anothe
   });
   await prisma.project.update({ where: { id: a.project.id }, data: { plan: "pro" } });
   await grantLicenseCredits(license.id);
-  expect(await emailsThisMonth(a.project.id)).toEqual({ emails: 0, limit: 2, left: 2 });
+  expect(await emailsThisMonth(a.project.id)).toMatchObject({ emails: 0, limit: 2, left: 2 });
   expect([await claimProjectEmail(a.project.id), await claimProjectEmail(a.project.id), await claimProjectEmail(a.project.id)]).toEqual([true, true, false]);
 
   // Moved to B: B's on Pro, with none of its email until the license's next month; A, back on Free, sent its 1 already.
@@ -526,25 +526,37 @@ test("a license's email credits are its month's, wherever it is: moved to anothe
   await prisma.project.update({ where: { id: a.project.id }, data: { plan: null } });
   await prisma.project.update({ where: { id: b.project.id }, data: { plan: "pro" } });
   expect(await claimProjectEmail(b.project.id)).toBe(false);
-  expect(await emailsThisMonth(b.project.id)).toEqual({ emails: 0, limit: 2, left: 0 });
+  expect(await emailsThisMonth(b.project.id)).toMatchObject({ emails: 0, limit: 2, left: 0 });
   expect(await claimProjectEmail(a.project.id)).toBe(false);
-  expect(await emailsThisMonth(a.project.id)).toEqual({ emails: 2, limit: 1, left: 0 });
+  expect(await emailsThisMonth(a.project.id)).toMatchObject({ emails: 2, limit: 1, left: 0 });
   expect(await cappedProjects()).toEqual(expect.arrayContaining([a.project.id, b.project.id]));
   // B's team hears it's the license's month that's used up, though B sent none, and when its next month starts.
   const [told] = emailsTo(b.owner.email).filter((email) => email.subject.endsWith("reached its monthly email limit"));
   expect(told?.text).toContain(`${b.project.name}'s Pro license includes 2 emails a month, and this month's are used up`);
   expect(told?.text).not.toContain("Upgrade");
 
-  // The license's next month: B's.
+  // Into the next calendar month, still the license's month: B's team isn't told again.
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
-  vi.setSystemTime(creditsThrough!);
+  vi.setSystemTime(nextMonth(MID_MONTH));
+  expect(await claimProjectEmail(b.project.id)).toBe(false);
+  expect(emailsTo(b.owner.email).filter((email) => email.subject.endsWith("reached its monthly email limit"))).toHaveLength(1);
+
+  // Half an hour before the license's month ends the job starts the next: both months' grants count meanwhile, and an
+  // email takes one credit from one of them (the old one's first), a failed one's back to the new month's.
+  vi.setSystemTime(new Date(creditsThrough!.getTime() - 30 * 60_000));
+  await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL" }, data: { remaining: 1 } });
   await grantLicenseCredits(license.id);
   expect(await cappedProjects()).not.toContain(b.project.id);
   expect(await claimProjectEmail(b.project.id)).toBe(true);
+  expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 2 });
+  expect(await claimProjectEmail(b.project.id)).toBe(true);
   expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 1 });
-
-  // A send that fails gives its credit back.
   await releaseProjectEmail(b.project.id);
+  const next = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
+  expect((await prisma.creditGrant.findFirstOrThrow({ where: { planLicenseId: license.id, kind: "EMAIL", expiresAt: next.creditsThrough } })).remaining.toNumber()).toBe(2);
+  // With credits left on both, one email takes one.
+  await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL", expiresAt: creditsThrough }, data: { remaining: 1 } });
+  expect(await claimProjectEmail(b.project.id)).toBe(true);
   expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 2 });
 });
 

@@ -41,11 +41,24 @@ const licenseOf = (project: Sender) => (project.planLicense && !project.planLice
 const licenseGrants = (licenseId: string, now: Date) => Prisma.sql`
   "planLicenseId" = ${licenseId} AND "kind" = 'EMAIL' AND ("expiresAt" IS NULL OR "expiresAt" > ${now})`;
 
-/** Takes one of the license's email credits: false when none is left. */
+/** Takes one of the license's email credits, from one grant (its soonest-expiring with one left): false when none is left. */
 async function takeEmailCredit(licenseId: string, now: Date): Promise<boolean> {
-  const taken = await prisma.$queryRaw<unknown[]>`
-    UPDATE "credit_grant" SET "remaining" = "remaining" - 1 WHERE ${licenseGrants(licenseId, now)} AND "remaining" >= 1 RETURNING 1`;
-  return taken.length > 0;
+  // A claim at once may take the last of the grant picked: then the next is tried.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const taken = await prisma.$queryRaw<unknown[]>`
+      UPDATE "credit_grant" SET "remaining" = "remaining" - 1
+      WHERE "remaining" >= 1 AND "id" = (
+        SELECT "id" FROM "credit_grant" WHERE ${licenseGrants(licenseId, now)} AND "remaining" >= 1
+        ORDER BY "expiresAt" ASC NULLS LAST, "id" ASC LIMIT 1 FOR UPDATE)
+      RETURNING 1`;
+    if (taken.length > 0) {
+      return true;
+    }
+    if ((await prisma.creditGrant.count({ where: { planLicenseId: licenseId, kind: "EMAIL", remaining: { gte: 1 }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } })) === 0) {
+      return false;
+    }
+  }
+  return false;
 }
 
 /** The license's email credits left, and those its month gives once they're first needed (0 once given). */
@@ -152,19 +165,21 @@ export async function releaseProjectEmail(projectId: string, now = new Date()) {
   await prisma.projectEmailMonth.updateMany({ where: { projectId, month: monthOf(now), emails: { gt: 0 } }, data: { emails: { decrement: 1 } } });
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER });
   const license = monthlyEmailLimit(project, now) === null ? null : licenseOf(project);
-  if (license) {
+  if (license?.creditsThrough) {
+    // To its month's grant only: never one a refund emptied, nor another license's merged in.
     await prisma.$executeRaw`
       UPDATE "credit_grant" SET "remaining" = "remaining" + 1
-      WHERE "id" = (SELECT "id" FROM "credit_grant" WHERE ${licenseGrants(license.id, now)} AND "remaining" + 1 + "takenBack" <= "credits" ORDER BY "expiresAt" ASC NULLS LAST LIMIT 1 FOR UPDATE)`;
+      WHERE ${licenseGrants(license.id, now)} AND "expiresAt" = ${license.creditsThrough} AND "remaining" + 1 <= "credits" - "takenBack"`;
   }
 }
 
 /**
  * How many emails a project sent its users this calendar month (UTC), its plan's monthly allowance (`limit`, null: no
  * limit), and how many more it can send now (`left`: on a license, its email credits and those its month gives once
- * they're needed; otherwise the limit less what the month sent; null without a limit). Null without plans.
+ * they're needed; otherwise the limit less what the month sent; null without a limit), and on a license when its month
+ * ends (`until`). Null without plans.
  */
-export async function emailsThisMonth(projectId: string, now = new Date()): Promise<{ emails: number; limit: number | null; left: number | null } | null> {
+export async function emailsThisMonth(projectId: string, now = new Date()): Promise<{ emails: number; limit: number | null; left: number | null; until: Date | null } | null> {
   if (!plansEnabled()) {
     return null;
   }
@@ -176,13 +191,13 @@ export async function emailsThisMonth(projectId: string, now = new Date()): Prom
   const limit = monthlyEmailLimit(project, now);
   const license = limit === null ? null : licenseOf(project);
   if (limit === null) {
-    return { emails, limit, left: null };
+    return { emails, limit, left: null, until: null };
   }
   if (!license) {
-    return { emails, limit, left: Math.max(0, limit - emails) };
+    return { emails, limit, left: Math.max(0, limit - emails), until: null };
   }
   const { left, due } = await licenseEmails(license.id, license.creditsThrough, limit, now);
-  return { emails, limit, left: left + due };
+  return { emails, limit, left: left + due, until: license.creditsThrough };
 }
 
 /** Whether a project's email to its users waits for more: it has a limit, and nothing left this month (its license's month). */
@@ -228,8 +243,15 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
           select: { projectId: true, emails: true, project: { select: { plan: true, trialEndsAt: true } } },
         })
       : [],
-    // Few: one per license assigned.
-    prisma.planLicense.findMany({ where: { projectId: { not: null }, revokedAt: null }, select: { projectId: true } }),
+    // Licenses with no email credits left this month, given already (or not yet due: the month hasn't started).
+    prisma.$queryRaw<{ projectId: string; plan: string }[]>`
+      SELECT l."projectId", l."plan" FROM "plan_license" l
+      WHERE l."projectId" IS NOT NULL AND l."revokedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM "credit_grant" g
+          WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."remaining" >= 1 AND (g."expiresAt" IS NULL OR g."expiresAt" > ${now}))
+        AND (l."creditsThrough" IS NULL OR l."creditsThrough" <= ${now} OR EXISTS (
+          SELECT 1 FROM "credit_grant" g WHERE g."planLicenseId" = l."id" AND g."kind" = 'EMAIL' AND g."expiresAt" = l."creditsThrough"))`,
   ]);
   const capped = months
     .filter(({ emails, project }) => {
@@ -237,12 +259,8 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
       return limit !== null && emails >= limit;
     })
     .map(({ projectId }) => projectId);
-  for (const { projectId } of licensed) {
-    if (await monthlyLimitReached(projectId!, now)) {
-      capped.push(projectId!);
-    }
-  }
-  return capped;
+  // A licensed project's plan is its license's.
+  return [...capped, ...licensed.filter(({ plan }) => emailsPerMonth(plan) !== null).map(({ projectId }) => projectId)];
 }
 
 /** The projects whose email waits: new ones whose daily cap is used up today, and any whose month's limit is. */
@@ -275,6 +293,12 @@ export async function tellEmailLimit(projectId: string, now: Date) {
 
 async function tellEmailLimitOnce(projectId: string, now: Date) {
   if (!emailConfigured() || !process.env.APP_URL) {
+    return;
+  }
+  // On a license, once per license month too (it spans two calendar months): not if told since its month's emails came.
+  const held = licenseOf(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER }));
+  const since = held?.creditsThrough && (await prisma.creditGrant.findFirst({ where: { planLicenseId: held.id, kind: "EMAIL", expiresAt: held.creditsThrough }, select: { createdAt: true } }));
+  if (since && (await prisma.projectEmailMonth.count({ where: { projectId, limitToldAt: { gte: since.createdAt } } })) > 0) {
     return;
   }
   const told = await prisma.$queryRaw<unknown[]>`

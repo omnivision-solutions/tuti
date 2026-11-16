@@ -114,7 +114,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               <p className="text-sm text-muted-foreground">
                 {emails.limit === null
                   ? `${emails.emails.toLocaleString("en")} emails sent this month`
-                  : `${emails.emails.toLocaleString("en")} of ${emails.limit.toLocaleString("en")} emails sent this month`}
+                  : emails.until
+                    ? // A license's emails are its month's, wherever it was: what this project sent says little.
+                      `${emails.left!.toLocaleString("en")} of the license's ${emails.limit.toLocaleString("en")} emails left until ${day(emails.until)}`
+                    : `${emails.emails.toLocaleString("en")} of ${emails.limit.toLocaleString("en")} emails sent this month`}
               </p>
             )}
             {license?.revokedAt && (
