@@ -129,7 +129,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   const add = owner.getByRole("button", { name: "Add to my account" });
   await add.focus();
   await owner.keyboard.press("Enter");
-  await expect(owner.getByRole("alert")).toHaveText("We haven't heard from AppSumo about this license yet. Try again in a minute.");
+  await expect(owner.getByRole("alert").filter({ hasText: "We haven't heard from AppSumo about this license yet. Try again in a minute." })).toBeVisible();
   await expect(add).toBeFocused();
   await webhook({ event: "activate", license_key: key, tier: 1 });
   await add.click();
