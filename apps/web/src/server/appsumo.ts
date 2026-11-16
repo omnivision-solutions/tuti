@@ -162,6 +162,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         if (early) {
           await tx.planLicense.delete({ where: { id: own.id } });
         }
+        if (own && previous && !early) {
+          log.error("An AppSumo upgrade's new key is on another account or project than the license it replaces: both kept, for support to merge", { licenseId: own.id, previousLicenseId: previous.id });
+        }
         const row = early ? previous : (own ?? previous);
         if (!row) {
           await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan, metadata }], skipDuplicates: true });
