@@ -2,16 +2,18 @@ import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
 import { isArticleSlug } from "@/server/docs-queries";
-import { createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { GET as markdown } from "./docs/[slug]/md/route";
+import { GET as postMarkdown } from "./feedback/[board]/[post]/md/route";
+import { generateMetadata as postMetadata } from "./feedback/[board]/[post]/page";
 import { GET as llmsFull } from "./llms-full.txt/route";
 import { generateMetadata } from "./docs/[slug]/page";
 import { GET as llms } from "./llms.txt/route";
 import { GET as robots } from "./robots.txt/route";
 import { GET as sitemap } from "./sitemap.xml/route";
 
-/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /llms.txt, /llms-full.txt, /sitemap.xml and /robots.txt. */
+/** Serving the portal to search engines and AI tools: /docs/<slug>.md, <a post's path>.md, /llms.txt, /llms-full.txt, /sitemap.xml and /robots.txt. */
 
 const request = new Request("http://x");
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -76,6 +78,81 @@ test("an article's page links its Markdown for AI tools; a collection's or tab's
   const articles = await Promise.all(["billing", "old-billing", "old-basics", "getting-started", "guides", "secret-draft", "nothing"].map((slug) => isArticleSlug(project.slug, slug)));
   expect(articles).toEqual([true, true, false, false, false, false, false]);
   expect(await isArticleSlug((await createProject(await signUp())).slug, "billing")).toBe(false);
+});
+
+test("a public post is served as Markdown at its .md URL: what its page shows a signed-out visitor, comments in order", async () => {
+  const owner = await signUp("Owner");
+  const reader = await signUp("Sam *Reader*");
+  const project = await createProject(owner);
+  const portal = `http://${project.slug}.localhost:3100`;
+  const board = project.boards[0]!;
+  const post = (number: number, title: string, extra: object = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: reader.id, number, title, createdAt: new Date("2026-03-01T10:00:00Z"), ...extra } });
+  const dark = await post(1, "Dark mode", { body: "Easier on the eyes.", status: "PLANNED", voteCount: 3 });
+  const comment = (authorId: string, body: string, at: string, extra: object = {}) =>
+    prisma.comment.create({ data: { projectId: project.id, postId: dark.id, authorId, body, createdAt: new Date(at), ...extra } });
+  await comment(owner.id, "On our list.", "2026-03-03T10:00:00Z");
+  await comment(reader.id, "Me too!", "2026-03-02T10:00:00Z");
+  await comment(owner.id, "From my reader account.", "2026-03-04T10:00:00Z", { asReader: true });
+  await prisma.postNote.create({ data: { postId: dark.id, authorId: owner.id, body: "Internal: big customer asked" } });
+  const get = (slug: string, param: string, boardSlug = "feature-requests") =>
+    postMarkdown(request, { params: Promise.resolve({ project: slug, board: boardSlug, post: param }) });
+
+  const response = await get(project.slug, "dark-mode-1");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+  expect(response.headers.get("cache-control")).toBe("private, max-age=300");
+  expect(response.headers.get("link")).toBe(`<${portal}/feedback/feature-requests/dark-mode-1>; rel="canonical"`);
+  expect(response.headers.get("x-robots-tag")).toBeNull();
+  expect(await response.text()).toBe(
+    [
+      "# Dark mode",
+      "Status: Planned · 3 votes · Board: Feature requests",
+      "Posted by Sam \\*Reader\\* on 1 March 2026",
+      "Easier on the eyes.",
+      "## 3 comments",
+      "### Sam \\*Reader\\* · 2 March 2026",
+      "Me too!",
+      "### Owner (Team) · 3 March 2026",
+      "On our list.",
+      "### Owner · 4 March 2026",
+      "From my reader account.",
+    ].join("\n\n") + "\n",
+  );
+
+  // Not a post a signed-out visitor can't see: private, team only, on a board that's off, or another project's.
+  await post(2, "Private one", { visibility: "PRIVATE" });
+  await post(3, "Team one", { visibility: "TEAM" });
+  expect((await get(project.slug, "private-one-2")).status).toBe(404);
+  expect((await get(project.slug, "team-one-3")).status).toBe(404);
+  expect((await get((await createProject(await signUp())).slug, "dark-mode-1")).status).toBe(404);
+  expect((await get(project.slug, "no-such-post")).status).toBe(404);
+  // Its page links it for AI tools; a private post's page (for its author) doesn't.
+  const alternates = async (param: string) => {
+    actAs(reader);
+    return (await postMetadata({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: param }) } as never)).alternates;
+  };
+  expect((await alternates("dark-mode-1"))?.types).toEqual({ "text/markdown": `${portal}/feedback/feature-requests/dark-mode-1.md` });
+  expect((await alternates("private-one-2"))?.types).toBeUndefined();
+  actAs(null);
+
+  // Retitled or moved: to its current .md. Merged: to the post it's in now, unless that one's hidden.
+  const moved = await get(project.slug, "old-title-1", "elsewhere");
+  expect([moved.status, moved.headers.get("location"), moved.headers.get("cache-control")]).toEqual([308, "/feedback/feature-requests/dark-mode-1.md", "private, no-store"]);
+  await post(4, "Night theme", { duplicateOfId: dark.id });
+  expect((await get(project.slug, "night-theme-4")).headers.get("location")).toBe("/feedback/feature-requests/dark-mode-1.md");
+  await post(5, "Into a private one", { duplicateOfId: (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id });
+  expect((await get(project.slug, "into-a-private-one-5")).status).toBe(404);
+
+  // Sample content: kept from search engines.
+  await post(6, "A sample", { sample: true });
+  expect((await get(project.slug, "a-sample-6")).headers.get("x-robots-tag")).toBe("noindex");
+
+  // A Team only board isn't named; a board that's off hides its posts.
+  await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM" } });
+  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · 3 votes\n");
+  await prisma.board.update({ where: { id: board.id }, data: { off: true } });
+  expect((await get(project.slug, "dark-mode-1")).status).toBe(404);
 });
 
 test("llms.txt describes the portal and links each collection's page, each published article's Markdown, the changelog and the boards", async () => {

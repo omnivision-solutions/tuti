@@ -20,7 +20,8 @@ import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
  *   rewritten to /portal/<project>/…, so
  *   acme.tuti.so/b/ideas renders app/portal/[project]/(site)/b/[board].
  *   An article's Markdown, /docs/<slug>.md, goes to docs/[slug]/md (a route
- *   segment can't be part dynamic, part ".md").
+ *   segment can't be part dynamic, part ".md"); a post's, <its path>.md, to
+ *   feedback/[board]/[post]/md.
  * The auth API (/api/*) is served on every host so sessions stay per host.
  * Pages can't be framed by other sites (clickjacking), except a portal's
  * /widget, which customers embed with the widget script; the app may frame
@@ -202,13 +203,15 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
   const url = request.nextUrl.clone();
   // An article's page asked for as Markdown (an AI agent's Accept header): its .md, the same route. A tab's or
   // collection's page (the same kind of path) has no Markdown: the page.
+  // A post's page too: every /feedback/<board>/<post> is one.
   const docsPage = /^\/docs\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
+  const postPage = /^\/feedback\/[^/]+\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
   const markdown =
-    docsPage &&
+    (docsPage || postPage) &&
     (request.method === "GET" || request.method === "HEAD") &&
     prefersMarkdown(request.headers.get("accept")) &&
-    (await isArticleSlug(slug, decodeURIComponent(pathname.slice("/docs/".length))));
-  const path = markdown ? `${pathname}/md` : pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
+    (postPage || (await isArticleSlug(slug, decodeURIComponent(pathname.slice("/docs/".length)))));
+  const path = markdown ? `${pathname}/md` : pathname.replace(/^(\/docs\/[^/]+|\/feedback\/[^/]+\/[^/]+)\.md$/, "$1/md");
   url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
   // Always set, so a request can't say a path of its own.
   const forwarded = mount ? fromSite(request, mount) : new Headers(request.headers);
@@ -226,7 +229,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     // (Set here, it wins over the routes' own public cache-control.)
     response.headers.set("cache-control", "private, no-store");
   }
-  if (docsPage) {
+  if (docsPage || postPage) {
     // HTML or Markdown by the Accept header: caches keep them apart.
     response.headers.set("vary", "Accept");
   }

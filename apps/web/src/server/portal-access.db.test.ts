@@ -140,6 +140,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     "/",
     "/feedback/feature-requests",
     "/feedback/feature-requests/dark-mode-1",
+    "/feedback/feature-requests/dark-mode-1.md",
     "/roadmap",
     "/changelog",
     "/changelog/1",
@@ -210,6 +211,7 @@ test("a private portal sends visitors to sign in and back to where they were; si
   await setAccess(project.id, "PRIVATE");
   expect(await visit(project.slug, "/")).toBe("sign in: /sign-in");
   expect(await visit(project.slug, "/docs/getting-started.md")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/docs/getting-started.md" })}`);
+  expect(await visit(project.slug, "/feedback/feature-requests/dark-mode-1.md")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/feedback/feature-requests/dark-mode-1.md" })}`);
   expect(await visit(project.slug, "/docs?q=start")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/docs?q=start" })}`);
   for (const path of ["/sign-in", "/sign-in/link", "/sign-up", "/forgot-password", "/reset-password", "/sso", "/sso/error", "/continue", "/unsubscribe", "/robots.txt", "/widget"]) {
     expect(await visit(project.slug, path), path).toBe("served");

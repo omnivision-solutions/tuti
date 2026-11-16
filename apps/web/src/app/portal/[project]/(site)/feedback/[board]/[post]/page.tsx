@@ -27,7 +27,7 @@ import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
 import { firstBoardPath } from "@/server/portal-home";
-import { canSeePost } from "@/server/post-visibility";
+import { canSeePost, SIGNED_OUT_VIEWER } from "@/server/post-visibility";
 import { postsLike } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
@@ -70,6 +70,8 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/feedb
     path: postPath(post),
     article: { publishedTime: post.createdAt, modifiedTime: post.updatedAt },
     noindex: post.sample,
+    // Its Markdown (md/route.ts) has what a signed-out visitor sees: none for a post only its author sees.
+    markdown: canSeePost(SIGNED_OUT_VIEWER, post),
   });
 }
 
