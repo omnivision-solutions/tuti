@@ -31,7 +31,7 @@ import { storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
-import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { emailedOnMove } from "@/server/operations/code-changes";
 import { conversationPerson } from "@/server/operations/conversations";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
@@ -131,7 +131,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     howShipped(post.id),
     post.duplicateOf ? [] : postsLike(project.id, post, TEAM_VIEWER),
     postNeighbours(project.id, post.number),
-    emailedOnCompletion(project.id, [post.id]),
+    emailedOnMove(project.id, [post]),
     // Only for the reply form, which a merged post doesn't have.
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
     // Feedback's menu, its queries alongside the post's.
@@ -256,7 +256,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                   projectSlug={slug}
                   postId={post.id}
                   status={post.status}
-                  completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+                  completing={{ title: post.title, emails: emails.get(post.id) ?? {} }}
                   className={QUIET_TRIGGER}
                 />
               </PropertyRow>

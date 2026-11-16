@@ -1,6 +1,7 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
+import type { DiffLine } from "@tuti/content";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Diff, Eyebrow, Layout, Stats, textStyle, Title } from "./layout";
 
 type VerifyArticleProps = {
   projectName: string;
@@ -9,6 +10,9 @@ type VerifyArticleProps = {
   counts: { current: number; outdated: number; unclear: number };
   /** What its fix changes, in a sentence (the model's). */
   reason: string;
+  /** What its fix changes, line by line, and the lines left out ("N more lines in Tuti"). */
+  diff?: DiffLine[];
+  diffMore?: number;
   /** The article's review in Autopilot. */
   url: string;
 };
@@ -16,20 +20,30 @@ type VerifyArticleProps = {
 const statements = (count: number) => (count === 1 ? "1 statement" : `${count} statements`);
 
 /** To a project's owners: Verify found an article out of date and wrote its fix, which waits for them (docs/plan.md, V5). */
-export function VerifyArticleEmail({ projectName, articleTitle, counts, reason, url }: VerifyArticleProps) {
+export function VerifyArticleEmail({ projectName, articleTitle, counts, reason, diff, diffMore, url }: VerifyArticleProps) {
   return (
-    <Layout preview={`${statements(counts.outdated)} in “${articleTitle}” ${counts.outdated === 1 ? "is" : "are"} out of date. The fix waits for you.`} label="Autopilot">
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        Verify checked <strong>{articleTitle}</strong> against your repository: {statements(counts.current)} still true,{" "}
-        {counts.outdated} out of date{counts.unclear > 0 ? `, ${counts.unclear} it couldn't tell` : ""}.
-      </Text>
-      {reason && <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>{reason}</Text>}
-      <Button href={url} style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>
-        Review the fix
-      </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
-      </Text>
+    <Layout
+      preview={`${statements(counts.outdated)} in “${articleTitle}” ${counts.outdated === 1 ? "is" : "are"} out of date. The fix waits for you.`}
+      label="Verify"
+      footer={
+        <>
+          Verify&apos;s fixes never go out by themselves. You get this as an owner of {projectName}.
+        </>
+      }
+    >
+      <Eyebrow>Help center · Verify</Eyebrow>
+      <Title>“{articleTitle}” is out of date</Title>
+      <Text style={textStyle}>Verify checked it against your repository, statement by statement.</Text>
+      <Stats
+        items={[
+          { n: counts.current, label: "still true" },
+          { n: counts.outdated, label: "out of date" },
+          { n: counts.unclear, label: "unclear" },
+        ]}
+      />
+      {reason && <Text style={textStyle}>{reason}</Text>}
+      {diff && diff.length > 0 && <Diff lines={diff} more={diffMore} />}
+      <Buttons href={url} label="Review the fix" />
     </Layout>
   );
 }

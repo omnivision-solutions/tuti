@@ -1,7 +1,8 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { emailConfigured } from "@tuti/email";
+import { emailConfigured, passwordChangedEmail, sendEmail } from "@tuti/email";
+import { emailBrand, projectSender } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { APIError } from "better-auth/api";
 import { headers } from "next/headers";
@@ -103,6 +104,14 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
     }
     // Otherwise used up since the check: the same as any other dead link.
     return { location: FAILED_PASSWORD_RESET_PATH };
+  }
+  try {
+    // From the portal it was asked on, as the reset link was; the app's from Tuti.
+    const [brand, sender] = reset.projectId ? await Promise.all([emailBrand(reset.projectId), projectSender(reset.projectId)]) : [null, {}];
+    await sendEmail({ to: reset.email, ...passwordChangedEmail(brand), ...sender });
+  } catch (error) {
+    // The password is already changed; a missing notice mustn't make it look like it wasn't.
+    log.error("Sending the password changed email failed", { error });
   }
   // Signing in with it on the app, saying it's changed. Asked for a portal: then the "Continue to <project>" card, with the
   // portal's address, for this account to click on; never off the app by itself (a team may run that address).

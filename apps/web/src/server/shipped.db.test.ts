@@ -9,13 +9,17 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as unsubscribe } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
 import UnsubscribePage from "@/app/portal/[project]/(site)/unsubscribe/page";
+import { installationId } from "@/server/license";
 import { upsertProjectUser } from "@/server/project-users";
 import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { issueLicense } from "@/test/license";
 import { mailbox } from "@/test/mailbox";
+
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -60,11 +64,14 @@ describe("when a post ships", () => {
     await call(createComment, as(commenter.id), { number: post.number, body: "Yes please" });
 
     await setStatus(post.number, "completed");
+    const { voteCount } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { voteCount: true } });
 
     for (const address of [author.email, voter.email, commenter.email, ssoEmail]) {
       const [email, ...more] = emailsTo(address);
       expect(more).toEqual([]);
       expect(email!.subject).toBe("Done: Dark mode");
+      // The post's card: its votes, board, title and status.
+      expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} ${voteCount === 1 ? "vote" : "votes"} Feature requests Dark mode Completed`);
       expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
       expect(email!.headers["list-unsubscribe"]).toMatch(
         new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[^.>]+\\.[\\w-]+>$`),
@@ -81,7 +88,18 @@ describe("when a post ships", () => {
     expect(emailsTo(author.email)).toHaveLength(1);
   });
 
-  test("the email takes the project's accent colour; Tuti's wordmark stays green", async () => {
+  test("a public post on a Team only board: the email's card leaves the board's name out, as its page does", async () => {
+    const voter = await verified("Voter");
+    const post = await call(createPost, as(voter.id), { board: "feature-requests", title: "Dark mode" });
+    // Made Team only since: the post stays public, the board is off the portal.
+    await prisma.board.updateMany({ where: { projectId: project.id, slug: "feature-requests" }, data: { postVisibility: "TEAM" } });
+    await setStatus(post.number, "completed");
+    const [email] = emailsTo(voter.email);
+    expect(email!.text.replace(/\s+/g, " ")).toMatch(/\d+ votes? Dark mode Completed/);
+    expect(email!.text).not.toContain("Feature requests");
+  });
+
+  test("the email is the project's: its name and accent colour at the top, not Tuti's wordmark", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
     const voter = await verified("Voter");
     const post = await call(createPost, as(owner.id), { board: "feature-requests", title: "Dark mode" });
@@ -90,9 +108,37 @@ describe("when a post ships", () => {
     await setStatus(post.number, "completed");
 
     const [email] = emailsTo(voter.email);
-    expect(email!.html).toContain("border-top:4px solid #7c3aed");
+    expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
     expect(email!.html).toMatch(/background-color:#7c3aed;color:#ffffff/);
-    expect(email!.html).toContain("color:#12804a");
+    expect(email!.html).toContain(`>${project.name}</p>`);
+    expect(email!.html).not.toContain("email-tuti.png");
+  });
+
+  test("Powered by tuti ends the email unless the project hides it, which needs a licence, as on its portal", async () => {
+    const voter = await verified("Voter");
+    let number = 0;
+    const shippedEmail = async () => {
+      const post = await call(createPost, as(owner.id), { board: "feature-requests", title: `Idea ${++number}` });
+      await call(setVote, as(voter.id), { number: post.number, voted: true });
+      await setStatus(post.number, "completed");
+      return emailsTo(voter.email).find((email) => email.subject === `Done: Idea ${number}`)!;
+    };
+    const badge = "https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge";
+
+    // Turned off without a licence (only the database can do that): it still shows.
+    await prisma.project.update({ where: { id: project.id }, data: { poweredBy: false } });
+    expect((await shippedEmail()).text).toContain(badge);
+
+    // Licensed and turned off: gone.
+    const licenseKey = issueLicense({ installation: await installationId(), project: project.id });
+    await prisma.project.update({ where: { id: project.id }, data: { licenseKey } });
+    const licensed = await shippedEmail();
+    expect(licensed.text).not.toContain("Powered by");
+    expect(licensed.html).not.toContain("tuti.so");
+
+    // Licensed but left on: it shows.
+    await prisma.project.update({ where: { id: project.id }, data: { poweredBy: true } });
+    expect((await shippedEmail()).text).toContain(badge);
   });
 
   test("on a private portal, only people who may still read it hear about it: its SSO users and verified readers", async () => {
