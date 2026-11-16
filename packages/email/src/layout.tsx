@@ -271,7 +271,7 @@ export function Layout({
               <>
                 {project.logo ? (
                   <Column
-                    style={{ width: logoSize(project.logo).w + 10, verticalAlign: "middle" }}
+                    style={{ width: "1%", paddingRight: 10, verticalAlign: "middle" }}
                     // Outlook for Windows can't show WebP: it gets the letter's square, and the name where no text names it (conditional
                     // comments, which React can't write).
                     dangerouslySetInnerHTML={{

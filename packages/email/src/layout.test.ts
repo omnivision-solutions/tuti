@@ -196,10 +196,11 @@ test("a customer email's header: the portal's logo and its text, with the letter
   const alone = await render(signInLinkEmail({ projectName: "Acme", logo, url, minutes: 15 }).body);
   expect(alone).toMatch(/<!--\[if mso\]>.*>A<\/td><td[^>]*>Acme<\/td>.*<!\[endif\]-->/);
   expect(alone).not.toMatch(/<p[^>]*>Acme<\/p>/);
-  // No logo: the letter's square and the text, or the name.
-  const none = await render(signInLinkEmail({ projectName: "Acme", logoText: "Acme Help", url, minutes: 15 }).body);
+  // No logo: the letter's square and the text, or the name, as the portal's LetterMark: the text's letter first.
+  const none = await render(signInLinkEmail({ projectName: "Acme", logoText: "Help desk", url, minutes: 15 }).body);
   expect(none).not.toContain("<img");
-  expect(none).toContain(">Acme Help</p>");
+  expect(none).toMatch(/>H<\/td>/);
+  expect(none).toContain(">Help desk</p>");
 });
 
 test("Verify's emails count what it found on tiles: each number over what it counts", async () => {
