@@ -652,3 +652,24 @@ test("a license on a plan sending no email is held", async () => {
   expect(await claimProjectEmail(project.id)).toBe(false);
   expect(await cappedProjects()).toContain(project.id);
 });
+
+test("sends at once on a license each take a credit while any is left, across its grants", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => {
+    free.limits.emailsPerMonth = 1;
+    pro.limits.emailsPerMonth = 4;
+  }));
+  const { owner, project } = await setup();
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "pro", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await grantLicenseCredits(license.id);
+  const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
+  // Its month's 4, as four grants of one (as an upgrade adds a grant).
+  await prisma.creditGrant.createMany({
+    data: Array.from({ length: 4 }, () => ({ projectId: project.id, kind: "EMAIL" as const, source: "PLAN" as const, credits: 1, remaining: 1, expiresAt: creditsThrough, planLicenseId: license.id })),
+  });
+  const claims = await Promise.all(Array.from({ length: 6 }, () => claimProjectEmail(project.id)));
+  expect(claims.filter(Boolean)).toHaveLength(4);
+  expect(await emailsThisMonth(project.id)).toMatchObject({ emails: 4, left: 0 });
+});

@@ -44,8 +44,9 @@ const licenseGrants = (licenseId: string, now: Date) => Prisma.sql`
 
 /** Takes one of the license's email credits, from one grant (its soonest-expiring with one left): false when none is left. */
 async function takeEmailCredit(licenseId: string, now: Date): Promise<boolean> {
-  // A claim at once may take the last of the grant picked: then the next is tried.
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // A claim at once may take the last of the grant picked: then the next is tried, while any has credits left (each miss
+  // is a grant another claim emptied, so it ends).
+  for (;;) {
     const taken = await prisma.$queryRaw<unknown[]>`
       UPDATE "credit_grant" SET "remaining" = "remaining" - 1
       WHERE "remaining" >= 1 AND "id" = (
@@ -59,7 +60,6 @@ async function takeEmailCredit(licenseId: string, now: Date): Promise<boolean> {
       return false;
     }
   }
-  return false;
 }
 
 /** The license's email credits left, and those its month gives once they're first needed (0 once given). */
