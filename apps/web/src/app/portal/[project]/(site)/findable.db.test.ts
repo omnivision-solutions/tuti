@@ -88,7 +88,12 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   const board = project.boards[0]!;
   const post = (number: number, title: string, extra: object = {}) =>
     prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: reader.id, number, title, createdAt: new Date("2026-03-01T10:00:00Z"), ...extra } });
-  const dark = await post(1, "Dark mode", { body: "Easier on the eyes.", status: "PLANNED", voteCount: 3 });
+  const dark = await post(1, "Dark mode", { body: "Easier on the eyes.", status: "PLANNED", voteCount: 3, eta: new Date(Date.UTC(2099, 2)) });
+  // The changelog entry it shipped in, once published.
+  const shipped = (number: number, title: string, publishedAt: Date | null) =>
+    prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, posts: { create: { postId: dark.id } } } });
+  await shipped(1, "Night owls rejoice", new Date("2026-03-05T10:00:00Z"));
+  await shipped(2, "Unpublished draft", null);
   const comment = (authorId: string, body: string, at: string, extra: object = {}) =>
     prisma.comment.create({ data: { projectId: project.id, postId: dark.id, authorId, body, createdAt: new Date(at), ...extra } });
   await comment(owner.id, "On our list.", "2026-03-03T10:00:00Z");
@@ -107,7 +112,8 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   expect(await response.text()).toBe(
     [
       "# Dark mode",
-      "Status: Planned · 3 votes · Board: Feature requests",
+      "Status: Planned · Expected March 2099 · 3 votes · Board: Feature requests",
+      "Shipped in Night owls rejoice",
       "Posted by Sam \\*Reader\\* on 1 March 2026",
       "Easier on the eyes.",
       "## 3 comments",
@@ -150,7 +156,7 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
 
   // A Team only board isn't named; a board that's off hides its posts.
   await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM" } });
-  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · 3 votes\n");
+  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · Expected March 2099 · 3 votes\n");
   await prisma.board.update({ where: { id: board.id }, data: { off: true } });
   expect((await get(project.slug, "dark-mode-1")).status).toBe(404);
 });

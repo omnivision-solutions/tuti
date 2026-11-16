@@ -1,8 +1,8 @@
 import { prisma } from "@tuti/db";
 import { type Doc, isEmptyDoc, toMarkdown } from "@tuti/content";
-import { formatDate } from "@tuti/shared/dates";
 
 import { STATUS_LABELS } from "@/components/post-status-badge";
+import { etaOnPortal, formatDate, formatMonth } from "@/lib/format";
 import { postNumberFromParam, postPath } from "@/lib/post-urls";
 import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
@@ -14,7 +14,8 @@ const board = { select: { slug: true, name: true, off: true, postVisibility: tru
 
 /**
  * A post as Markdown, at <its path>.md (proxy.ts sends it here), for AI tools: what its page shows a signed-out
- * visitor (its title, status, votes, board, description and comments), whoever asks. Internal notes are another table.
+ * visitor (its title, status, when it's expected, votes, board, the changelog entry it shipped in, description and
+ * comments), whoever asks. Internal notes are another table.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/feedback/[board]/[post]/md">) {
   const { project, board: boardParam, post: param } = await params;
@@ -32,6 +33,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         },
         project: { select: { team: { select: { userId: true } } } },
         duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board } },
+        changelogEntries: {
+          where: { entry: { publishedAt: { not: null } } },
+          orderBy: { entry: { publishedAt: "desc" } },
+          take: 1,
+          select: { entry: { select: { title: true } } },
+        },
       },
     }));
   // As the page: one a visitor may not see is missing, and so is one merged into a post they may not see.
@@ -56,11 +63,13 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       paragraph(
         [
           `Status: ${STATUS_LABELS[post.status]}`,
+          ...(post.eta && etaOnPortal(post.eta, post.status) ? [`Expected ${formatMonth(post.eta)}`] : []),
           `${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,
           // A Team only board isn't named to readers, as on the page.
           ...(post.board.postVisibility === "TEAM" ? [] : [`Board: ${post.board.name}`]),
         ].join(" · "),
       ),
+      ...(post.changelogEntries[0] ? [paragraph(`Shipped in ${post.changelogEntries[0].entry.title}`)] : []),
       paragraph(`Posted by ${post.author.name} on ${formatDate(post.createdAt)}`),
       ...(isEmptyDoc(body) ? [] : (body.content ?? [])),
       heading(2, `${comments.length} ${comments.length === 1 ? "comment" : "comments"}`),
