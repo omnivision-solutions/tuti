@@ -358,3 +358,16 @@ test("a refund landing between a claim's check and its claim: the license isn't 
   expect(await claimPlanLicense(claimToken("appsumo", key))).toEqual({ error: "This license changed on AppSumo just now. Redeem it from AppSumo again." });
   expect(await find(key)).toMatchObject({ userId: null, revokedAt: expect.any(Date) });
 });
+
+test("the new key already on another project when its upgrade arrives: the old license is revoked, so one purchase gives one plan", async () => {
+  const { owner, project, key, license } = await assigned();
+  const next = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: next, tier: 2 });
+  const other = await createProject(owner);
+  const nextLicense = await prisma.planLicense.update({ where: { source_externalKey: { source: "appsumo", externalKey: next } }, data: { userId: owner.id, claimedAt: new Date() } });
+  expect(await assignPlanLicense(other.slug, nextLicense.id)).toEqual({});
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: expect.any(Date), projectId: project.id });
+  expect(await planOf(project.id)).toBeNull();
+  expect(await planOf(other.id)).toBe("appsumo-2");
+});
