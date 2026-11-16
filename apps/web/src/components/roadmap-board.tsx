@@ -1,7 +1,6 @@
 "use client";
 
 import type { PostStatus, PostVisibility } from "@tuti/db";
-import { statusMoveEmails } from "@tuti/shared/status-emails";
 import { CalendarIcon, ChevronUpIcon, CircleCheckIcon, CircleDashedIcon, LoaderCircleIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { initial } from "@/lib/format";
+import { statusPrompt } from "@/lib/status-prompt";
 import { cn } from "@/lib/utils";
 import { changePostStatus } from "@/server/manage-posts";
 
@@ -44,6 +44,9 @@ type Card = {
   /** The start of what was asked, under the title. */
   excerpt: string | null;
 };
+
+/** A move asked about first: its card, the status it goes to and what the question says (statusPrompt). */
+type Asked = { card: Card; status: PostStatus; prompt: string };
 
 /** Each column's icon, in its status's colour (the dot elsewhere). */
 const COLUMN_ICONS: Partial<Record<PostStatus, { icon: LucideIcon; colour: string }>> = {
@@ -68,8 +71,8 @@ const COLUMN_NOTES: Partial<Record<PostStatus, string>> = {
 
 /**
  * The team's roadmap: a column per status, each card dragged to another to change its status (or
- * moved with its status menu, from the keyboard). A move that emails the people who asked (Completed; Planned and In
- * progress moving forward, when it reaches anyone) asks first. A card moved
+ * moved with its status menu, from the keyboard). A move that emails the people who asked asks first, as a post's
+ * status menu does (statusPrompt). A card moved
  * from its status menu takes the focus in its new column, on its status button, so the keyboard carries on from it.
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
@@ -77,18 +80,20 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
-  // The move asked about: its card and the status it goes to.
-  const [asking, setAsking] = useState<{ card: Card; status: PostStatus } | null>(null);
+  // The move asked about.
+  const [asking, setAsking] = useState<Asked | null>(null);
   // The last move asked about, kept while its question fades out.
-  const [question, setQuestion] = useState<{ card: Card; status: PostStatus } | null>(null);
+  const [question, setQuestion] = useState<Asked | null>(null);
+  // Asks before moving `card` to `status` when the move emails its people (statusPrompt, as a post's menu asks); false
+  // when it goes without asking.
   const ask = (card: Card, status: PostStatus) => {
-    setAsking({ card, status });
-    setQuestion({ card, status });
+    const prompt = statusPrompt(card.status, status, card.emails);
+    if (prompt) {
+      setAsking({ card, status, prompt });
+      setQuestion({ card, status, prompt });
+    }
+    return prompt !== null;
   };
-  // Whether moving `card` to `status` asks first: Completed always (saying when nobody is emailed), Planned and In
-  // progress when they email someone (statusMoveEmails).
-  const asks = (card: Card, status: PostStatus) =>
-    status === "COMPLETED" ? card.status !== status : (card.emails[status] ?? 0) > 0 && statusMoveEmails(card.status, status) !== null;
   // The column a phone shows (the others are beside it from tablet width up).
   const [shown, setShown] = useState<PostStatus>(columns[0]?.status ?? "PLANNED");
   // A card moved, and the pointer presses so far as it was moved if the move began with a key on one of its controls
@@ -149,7 +154,6 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
 
   // The status asked about, as the question says it: "completed", "in progress".
   const label = STATUS_LABELS[question?.status ?? "COMPLETED"].toLowerCase();
-  const reach = question ? (question.card.emails[question.status] ?? 0) : 0;
 
   const drop = (status: PostStatus) => {
     const card = dragging;
@@ -158,9 +162,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
     if (!card || card.status === status) {
       return;
     }
-    if (asks(card, status)) {
-      ask(card, status);
-    } else {
+    if (!ask(card, status)) {
       move(card, status);
     }
   };
@@ -252,7 +254,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                         // The column says the status.
                         badge={false}
                         // From the menu (the keyboard's and a phone's way) a move that emails asks first too.
-                        onAsk={(status) => asks(card, status) && (ask(card, status), true)}
+                        onAsk={(status) => ask(card, status)}
                         onChanged={(status) => {
                           setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 });
                           // Off the roadmap (Open, Closed…): the column shown stays.
@@ -304,9 +306,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
               Mark “{question?.card.title}” {label}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {reach
-                ? `This emails up to ${reach} ${reach === 1 ? "person" : "people"} who asked for it that ${question?.status === "COMPLETED" ? "it shipped" : `it's ${label}`}.`
-                : "Nobody is emailed."}
+              {question?.prompt}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
