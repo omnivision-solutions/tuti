@@ -272,11 +272,12 @@ export function Layout({
                 {project.logo ? (
                   <Column
                     style={{ width: logoSize(project.logo).w + 10, verticalAlign: "middle" }}
-                    // Outlook for Windows can't show WebP: it gets the letter's square (conditional comments, which React can't write).
+                    // Outlook for Windows can't show WebP: it gets the letter's square, and the name where no text names it (conditional
+                    // comments, which React can't write).
                     dangerouslySetInnerHTML={{
                       __html:
                         `<!--[if !mso]><!--><img src="${escapeHtml(project.logo.url)}" width="${logoSize(project.logo).w}" height="${logoSize(project.logo).h}" alt="${project.logoText ? "" : escapeHtml(project.projectName)}" style="display:block;border:0;outline:none"><!--<![endif]-->` +
-                        `<!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="32" height="32" align="center" style="background-color:${accent};color:${onAccent};font-size:16px;font-weight:700;line-height:32px">${escapeHtml(initial)}</td></tr></table><![endif]-->`,
+                        `<!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0"><tr><td aria-hidden="true" width="32" height="32" align="center" style="background-color:${accent};color:${onAccent};font-size:16px;font-weight:700;line-height:32px">${escapeHtml(initial)}</td>${project.logoText ? "" : `<td style="padding-left:10px;font-size:16px;font-weight:650;color:${colors.text};line-height:32px">${escapeHtml(project.projectName)}</td>`}</tr></table><![endif]-->`,
                     }}
                   />
                 ) : (

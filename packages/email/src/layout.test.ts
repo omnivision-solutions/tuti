@@ -191,9 +191,11 @@ test("a customer email's header: the portal's logo and its text, with the letter
   expect(html).toContain('<!--[if !mso]><!--><img src="https://tuti.example/api/media/m1/480.webp?s=a&amp;b" width="160" height="16" alt=""');
   expect(html).toMatch(/<!--\[if mso\]>.*>A<\/td>.*<!\[endif\]-->/);
   expect(html).toContain(">Acme Help</p>");
-  // A logo without text: the logo alone, as on the portal.
-  const alone = await render(signInLinkEmail({ projectName: "Acme", logo, url, minutes: 15 }).body, { plainText: true });
-  expect(alone).not.toMatch(/^\s*Acme\b/);
+  expect(html).not.toMatch(/<!--\[if mso\]>.*>Acme<\/td>/);
+  // A logo without text: the logo alone, as on the portal; Outlook for Windows gets the square and the name.
+  const alone = await render(signInLinkEmail({ projectName: "Acme", logo, url, minutes: 15 }).body);
+  expect(alone).toMatch(/<!--\[if mso\]>.*>A<\/td><td[^>]*>Acme<\/td>.*<!\[endif\]-->/);
+  expect(alone).not.toMatch(/<p[^>]*>Acme<\/p>/);
   // No logo: the letter's square and the text, or the name.
   const none = await render(signInLinkEmail({ projectName: "Acme", logoText: "Acme Help", url, minutes: 15 }).body);
   expect(none).not.toContain("<img");
