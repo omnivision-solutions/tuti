@@ -254,11 +254,12 @@ the list picks none to approve at once.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
-  ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
+  ("Link post…"), how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
   "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
-  and on phones the title shows once, the one to edit. The cover shows under the title in the
-  text's column, as readers see it. One way into AI: while the text is still the pull requests'
+  and on phones the title shows once, the one to edit. The featured image (its cover, and its link
+  preview) shows under the title across the text's column, as readers see it, with Replace and Remove over it on
+  hover, focus and touch screens; without one, a dashed band there adds one (picked or dropped). One way into AI: while the text is still the pull requests'
   titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
   toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.

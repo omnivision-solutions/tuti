@@ -36,6 +36,8 @@ export async function portalPageMetadata(
     noindex?: boolean;
     /** An article's page: its Markdown copy, at <path>.md, listed for AI tools. */
     markdown?: boolean;
+    /** The page's own link card (a changelog entry's featured image), in place of the one made for it. */
+    image?: { url: string; width: number; height: number } | null;
   },
 ): Promise<Metadata> {
   const [address, site, home] = await Promise.all([portalAddress(slug), portalSite(slug), portalHomePath(slug)]);
@@ -52,11 +54,14 @@ export async function portalPageMetadata(
       ...(description && { description }),
       url,
       ...(site && { siteName: site.name }),
-      // The team's own share image (Customize → SEO) on that page too, as at the portal's address; a card made for every other page.
+      // The page's own image; the team's share image (Customize → SEO) on the page the portal opens on, as at the
+      // portal's address; a card made for every other page. (Twitter's card reads these too: the layout's twitter has no image.)
       images: [
-        site?.brand.seoImage && page.path === home
-          ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
-          : { url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
+        page.image
+          ? { url: page.image.url, width: page.image.width, height: page.image.height, alt: page.title }
+          : site?.brand.seoImage && page.path === home
+            ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
+            : { url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
       ],
       ...(page.article
         ? { type: "article", ...(publishedTime && { publishedTime: publishedTime.toISOString() }), ...(modifiedTime && { modifiedTime: modifiedTime.toISOString() }) }

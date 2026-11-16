@@ -9,7 +9,7 @@ import { ChangelogMenu, changelogByEmail } from "@/components/changelog-pages";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
-import { mediaUrls } from "@/server/media-urls";
+import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
 
@@ -18,7 +18,7 @@ const listedEntry = cache(async (project: string, number: string) =>
   /^\d{1,9}$/.test(number)
     ? prisma.changelogEntry.findFirst({
         where: { project: { slug: project }, number: Number(number), publishedAt: { not: null } },
-        select: { title: true, body: true, publishedAt: true, sample: true },
+        select: { title: true, body: true, publishedAt: true, sample: true, cover: { select: { id: true, status: true, width: true, height: true } } },
       })
     : null,
 );
@@ -36,6 +36,8 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/chang
     path: `/changelog/${Number(number)}`,
     article: { publishedTime: entry.publishedAt },
     noindex: entry.sample,
+    // Its featured image, once processed, is its link card.
+    image: shareImage(entry.cover),
   });
 }
 

@@ -1,12 +1,10 @@
-import { EMAIL_IMAGE_WIDTH, emailImageKey } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { plansEnabled } from "@tuti/shared";
-import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
 import { badgeLicensed, installation as thisInstallation, poweredByShown } from "../license";
-import { type LastingImage, lastingImage, lastingMediaUrl } from "../media-urls";
+import { type LastingImage, lastingImage, shareImage } from "../media-urls";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import {
   COLOR_SCHEMES,
@@ -120,17 +118,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     return null;
   }
   // Lasting links: link cards are fetched long after the page, and API clients keep what they read.
-  const storage = mediaStorage();
   const url = lastingImage;
-  // Link cards want a JPEG about 1200 pixels wide: every image has one (made for emails).
-  const shareImage = (media: Parameters<typeof url>[0]): BrandImage | null => {
-    const image = url(media);
-    if (!image || !storage) {
-      return image;
-    }
-    const width = Math.min(image.width, EMAIL_IMAGE_WIDTH);
-    return { ...image, url: lastingMediaUrl(emailImageKey(image.id)), width, height: Math.round((image.height * width) / image.width) };
-  };
   const links = (value: unknown) => {
     const parsed = z.array(httpsLink).safeParse(value);
     return parsed.success ? parsed.data : [];
