@@ -326,6 +326,36 @@ test("a subject is never taken from an internal note: the user sees it, in the w
   expect((await conversations()).find((c) => c.messages.some((m) => m.note && m.body === "Owes us three invoices"))!.subject).toBe("How do I reset my password?");
 });
 
+/** Conversation 1002, closed and untitled, opened by the support bot's greeting before the person asks. */
+const greetedByBot = () => {
+  const closed = fake.fixtures.conversations[2]!;
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  const greeting = "Hey there! What brings you here today?";
+  parts.unshift({ id: "p3000", partType: "bot_msg", createdAt: new Date(Date.parse(String(parts[0]!.createdAt)) - 60_000).toISOString(), bodyHtml: `<p>${greeting}</p>`, author: { id: null, type: "bot" } });
+  return { closed, greeting };
+};
+
+test("a conversation the support bot opened takes its subject from the person's first message, not the bot's greeting", async () => {
+  greetedByBot();
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.messages[0]!.author === "AI")!;
+  expect(conversation.messages.map((m) => m.author).slice(0, 2)).toEqual(["AI", "USER"]);
+  expect(conversation.subject).toBe("How do I reset my password?");
+});
+
+test("a title that is only the bot's greeting, whole or cut, gives way to the person's first message", async () => {
+  const { closed, greeting } = greetedByBot();
+  closed.title = `${greeting.slice(0, 20)}…`;
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("How do I reset my password?");
+});
+
+test("a title someone wrote stays the subject of a conversation the bot opened", async () => {
+  greetedByBot().closed.title = "Password reset link expired";
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("Password reset link expired");
+});
+
 test("the team is never told of imported history: the cron that resends the team's missed notices finds none", async () => {
   vi.stubEnv("APP_URL", "https://tuti.example");
   // The user's last message an hour ago, unanswered, in a conversation assigned to the owner: inside the cron's window.

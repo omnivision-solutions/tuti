@@ -371,7 +371,13 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
   const spoken = messages.filter((m) => !m.note);
   const { conversationCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { conversationCount: { increment: 1 } }, select: { conversationCount: true } });
   // From what the user can see (the subject shows in the widget and their emails): never a note.
-  const subject = c.title?.trim() || c.source?.subject?.trim() || subjectFrom(messages.find((m) => !m.note && m.body)?.body ?? "") || "Conversation";
+  // A support bot's greeting is no subject: the person's first message is, and a title that is only the greeting (whole
+  // or cut, as Featurebase titles a conversation by its first message) gives way to it.
+  const spokenText = spoken.filter((m) => m.body);
+  const title = c.title?.trim();
+  const greeting = title && spokenText.some((m) => m.author === "AI" && squash(m.body).startsWith(squash(title).replace(/(…|\.\.\.)$/, "")));
+  const firstText = spokenText.find((m) => m.author === "USER") ?? spokenText[0];
+  const subject = (!greeting && title) || c.source?.subject?.trim() || subjectFrom(firstText?.body ?? "") || "Conversation";
   const { id } = await tx.conversation.create({
     data: {
       projectId: job.projectId,
@@ -477,6 +483,9 @@ const subjectFrom = (text: string) => {
   const line = text.split("\n", 1)[0]!.trim();
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 };
+
+/** Text with its whitespace collapsed, to compare a title with a message. */
+const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
  * Cuts the quotes from emails imported before imports cut them (by an import started before `importedBefore`, the
