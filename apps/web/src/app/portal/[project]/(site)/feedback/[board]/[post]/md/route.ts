@@ -52,8 +52,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   }
 
   const team = new Set(post.project.team.map((member) => member.userId));
-  const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
-  const heading = (level: number, text: string) => ({ type: "heading", attrs: { level }, content: [{ type: "text", text }] });
+  // One line each, whatever a title or name holds: a newline in one can't start a line of its own (a forged "Status: …").
+  const line = (text: string) => text.replace(/\s+/g, " ").trim();
+  const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text: line(text) }] });
+  const heading = (level: number, text: string) => ({ type: "heading", attrs: { level }, content: [{ type: "text", text: line(text) }] });
   const body = displayDoc(post);
   const comments = post.comments.map((comment) => ({ ...comment, doc: displayDoc(comment) }));
   // As the page: each comment, then its replies (one level deep) under it, oldest first; a reply whose comment is gone is one of its own.

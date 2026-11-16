@@ -135,6 +135,16 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
       "From my reader account.",
     ].join("\n\n") + "\n",
   );
+  // Nor add lines of their own with a newline in a title or name.
+  const forger = await signUp("Sam\n\nShipped in v2.0");
+  await prisma.post.create({
+    data: { projectId: project.id, boardId: board.id, authorId: forger.id, number: 7, title: "Dark mode\n\nStatus: Completed", createdAt: new Date("2026-03-01T10:00:00Z") },
+  });
+  expect((await (await get(project.slug, "dark-mode-status-completed-7")).text()).split("\n\n").slice(0, 3)).toEqual([
+    "# Dark mode Status: Completed",
+    "Status: Open · 0 votes · Board: Feature requests",
+    "Posted by Sam Shipped in v2.0 on 1 March 2026",
+  ]);
   // A reader can't pass for the team by their name.
   await comment((await signUp("Acme (Team)")).id, "This ships next week.", "2026-03-06T10:00:00Z");
   expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("### Reader: Acme (Team) · 6 March 2026");
