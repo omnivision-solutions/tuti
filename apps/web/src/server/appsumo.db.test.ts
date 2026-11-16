@@ -139,6 +139,29 @@ test("the new key's activation arriving before the upgrade: the upgrade still ke
   expect(await planOf(project.id)).toBe("appsumo-2");
 });
 
+test("a refund of the upgrade itself holds, whatever order the upgrade comes in", async () => {
+  // Upgraded, the upgrade refunded, then the upgrade said again (a retry): still revoked.
+  const first = await assigned();
+  const next = crypto.randomUUID();
+  const upgrade = { event: "upgrade", license_key: next, prev_license_key: first.key, tier: 2 };
+  await deliver(upgrade);
+  await deliver({ event: "deactivate", license_key: next });
+  await deliver(upgrade);
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: first.license.id } })).toMatchObject({ externalKey: next, revokedAt: expect.any(Date) });
+  expect(await planOf(first.project.id)).toBeNull();
+
+  // The new key activated and refunded before the upgrade arrives: the holder's license takes the key, revoked.
+  const second = await assigned();
+  const later = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: later, tier: 2 });
+  await deliver({ event: "deactivate", license_key: later });
+  await deliver({ event: "upgrade", license_key: later, prev_license_key: second.key, tier: 2 });
+  expect(await prisma.planLicense.findMany({ where: { externalKey: { in: [second.key, later] } } })).toEqual([
+    expect.objectContaining({ id: second.license.id, externalKey: later, revokedAt: expect.any(Date) }),
+  ]);
+  expect(await planOf(second.project.id)).toBeNull();
+});
+
 test("AppSumo's signature: the timestamp in seconds or milliseconds within 5 minutes, hex in either case or base64", async () => {
   const { createHmac } = await import("node:crypto");
   const now = Date.UTC(2026, 10, 15, 12);
@@ -172,12 +195,18 @@ test("a deactivation (a refund) revokes the license: its project is back on its 
   const other = await assigned();
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
     withAppsumoPlans(config);
-    delete config.licenses!.appsumo!.tiers["1"];
+    // Its plan still a license's (under another tier), so the file is valid.
+    config.licenses!.appsumo!.tiers = { "2": "appsumo-2", "9": "appsumo-1" };
   }));
   expect((await deliver({ event: "deactivate", license_key: other.key, tier: 1 })).status).toBe(200);
   expect(await planOf(other.project.id)).toBeNull();
-  // A key nobody has: acknowledged.
-  expect((await deliver({ event: "deactivate", license_key: crypto.randomUUID() })).status).toBe(200);
+  // A key we haven't heard of: acknowledged, and kept revoked, so its activation arriving late gives nothing.
+  const unheard = crypto.randomUUID();
+  expect((await deliver({ event: "deactivate", license_key: unheard })).status).toBe(200);
+  await deliver({ event: "activate", license_key: unheard, tier: 2 });
+  expect(await find(unheard)).toMatchObject({ plan: "appsumo-2", revokedAt: expect.any(Date) });
+  actAs(await signUp("Late buyer"));
+  expect(await claimPlanLicense(claimToken("appsumo", unheard))).toEqual({ error: "This license was deactivated on AppSumo." });
 });
 
 test("the redirect answers AppSumo's check, and trades a buyer's code for a claim on their license", async () => {
