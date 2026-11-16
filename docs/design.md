@@ -12,8 +12,22 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
-  Emails sent on a project's behalf (to its customers and readers) take its accent for the card's top edge, buttons
-  and links, as its portal does (too faint: the same darker shade of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint for text, 4.5:1); the small "tuti" wordmark above stays green.
+  Emails sent on a project's behalf (to its customers and readers) are the team's: its name at the top, beside a square
+  in its accent with the name's first letter, as its portal's header (not its uploaded logo: stored as WebP, which many
+  email clients don't show), and its accent for buttons and links, as its portal does (too faint: the same darker shade
+  of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint
+  for text, 4.5:1), on a neutral page in a system sans (Inter where it's installed). Tuti's credit is in the footer: the
+  portal's "Powered by tuti" pill, its mark grey, under the reason for the email, hidden under the portal's rule.
+  Emails from Tuti to a team have the parrot and the green wordmark at the top, with the part of Tuti they're from
+  (Inbox, Verify, Billing, Autopilot) muted beside it, on the cream page with green buttons, and always end with the
+  pill in Tuti's colours. Both: a white card with 16px corners and a soft shadow, the reason under it.
+  In the card (`packages/email`): a heading (`Title`), over it a line in the accent saying what the email is about
+  (`Eyebrow`; none on sign-in links and passwords, whose heading says it), then the body. A support reply is the
+  exception: the team's messages only, no eyebrow or heading, as it reads as the conversation itself. A post is
+  its card (`PostCard`: the votes in a box, its board over its title, its status as the portal's pill, in the portal's
+  hues); someone's message is their initial in their avatar colour, their name, "<Project> team" tinted in the accent
+  for the team's, and the text in a soft rounded fill (`Message`); asides are soft rounded notes (`Note`). Layout is
+  tables and inline styles (no flexbox or grid), so it holds in Gmail, Outlook and Apple Mail.
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
   its own (Settings → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
@@ -265,9 +279,10 @@ the list picks none to approve at once.
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
   with Dismiss, Stop and Publish now; one a teammate stopped says who and when it would have gone out. A post's review is what
-  happens to the post and nothing else: its status change ("Open → In progress", "Open →
-  Completed · emails up to N people"), the one comment that goes with it in a text box to edit,
-  and one Approve (asking first) and Dismiss in a bar at the bottom; no list of updates, no
+  happens to the post and nothing else: its status change ("Open → In progress · emails up to N people" while it
+  waits for the team, as approving it emails them, nobody when it goes out by itself; "Open → Completed · emails up to
+  N people"), the one comment that goes with it in a text box to edit, and one Approve (asking first, naming whom a
+  progress update emails) and Dismiss in a bar at the bottom; no list of updates, no
   checkboxes, no per-pull-request summaries. Each pull request's part (what it is, why, what
   became of it, its Dismiss and Undo) is in its chip's popover, as on an article's. A link
   isn't a review item (it changes nothing customers see): Autopilot applies the ones it's sure
@@ -476,11 +491,11 @@ the list picks none to approve at once.
     status pill and "Expected <month>" with a calendar, the body at 17px. The rail is a plain column, no card:
     **Upvote** with the count after a rule (`shape="upvote"`; the page's one filled primary before voting; voted,
     "Upvoted" in the accent's soft tint with a thin inset ring in it), Subscribe a secondary grey fill with "Get an
-    email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces under a "Voters" label, then
+    email as it moves forward and when it ships." under it (In progress: "when it ships") (Unsubscribe quiet, without the line), the voters' faces under a "Voters" label, then
     under one line Board, Status, Expected and Posted as rows without lines between them, Copy link and Share (the
     device's share sheet, where it has one) as round icon buttons, "Have another idea? Post it". On phones and tablets
     the same actions in one row under the body (Upvote widest, Subscribe without its bell; the row wraps rather
-    squeezing Upvote), "You'll hear when it ships." and the voters under them. The thread: "N comments" and its
+    squeezing Upvote), "You'll hear as it moves forward and when it ships." (by its status, as the hint) and the voters under them. The thread: "N comments" and its
     sort, the comment box under them (the face, the box, a grey Comment button: Upvote stays the one primary); signed
     out, one "Join the conversation" bar (a fill, Sign in a secondary) instead. The team's replies on the accent's soft
     tint with a 2px accent rule and the Team badge, status changes inline with the status's icon and pill. Similar ideas
@@ -521,7 +536,7 @@ the list picks none to approve at once.
     title, its tags and date under it), the reactions, then "Get updates by email" as a plain section under a line
     (no card), its Subscribe the page's one filled button.
   - **Sign-in**: one card (max-w-sm, the width and offset of every sign-in page) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
-    "Vote, comment and follow ideas. We'll email you when they ship.", the email with a mail icon, **Email me a sign-in
+    "Vote, comment and follow ideas. We'll email you as they move forward and when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and
     "Team member? Sign in with Tuti".
   - **Account** (`/account`): the page header ("Account", "Signed in as <address>"), then a section list beside the
@@ -654,7 +669,9 @@ Use these instead of hand-rolling layout:
 - **The team's roadmap**: no column fill (the cards make the lanes), each column's header an icon in its status's
   colour, its name, count and a one-line note; cards: board, the vote pill and "⋯" (status menu) on top, a 16px
   title, two lines of the post, then the owner and ETA when there are. On phones one column at a time, picked from a
-  segmented row with counts.
+  segmented row with counts. A card dropped (or moved from its menu) where its people are emailed asks first: "Mark
+  “<title>” in progress?", "This emails up to N people who asked for it that it's in progress."; one that emails
+  nobody goes at once. Completed always asks, saying "Nobody is emailed." when it doesn't.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):
   every list of things (posts, boards, team, invites, suggestions), usually in
   a `Card`. Titles wrap, never get cut off.
@@ -688,7 +705,7 @@ Use these instead of hand-rolling layout:
     away (the action done, Clear), focus moves to the first filter (Feedback: its Filters button, once its
     transitions are done: `invisible` takes `visibility` with them, and a hidden button can't take focus). Each is done as it is
     for one; what fails is said, the rest still go. What emails people
-    (Completed) or can't be undone (Merge) asks first, naming how many.
+    (Completed, and Planned or In progress moving forward) or can't be undone (Merge) asks first, naming how many.
   - Feedback's rows (`PickedRow`), the same at every width: the votes in a small bordered box (`VoteBox`); the
     board as a small uppercase label over the title (17px semibold), a line of the post, then who · when · comments;
     at the right the owner's face (tablet width up) and the status menu, a quiet "⋯" (`PostStatusMenu

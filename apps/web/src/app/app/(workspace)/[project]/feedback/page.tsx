@@ -31,7 +31,7 @@ import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
-import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { emailedOnMove } from "@/server/operations/code-changes";
 import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
 
@@ -80,13 +80,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const group = project.readerGroups.find((g) => g.key === first(searchParams.group));
   const scope = { board, q, group: group && storedRule(group) };
   const [{ posts, more }, counts] = await Promise.all([teamPosts(project.id, filters, { ...scope, duplicatesOnly }), teamPostCounts(project.id, scope)]);
-  // Who's asking, and how many completing each one emails (asked first, from its row or picked with others).
-  const [totals, emails] = await Promise.all([
-    voterTotals(project.id, project.askingProperty, posts.map((post) => post.id)),
-    emailedOnCompletion(project.id, posts.map((post) => post.id)),
-  ]);
-  // What completing it now emails: nobody, if it's completed already (picked with others, say).
-  const emailing = (post: (typeof posts)[number]) => (post.status === "COMPLETED" ? 0 : (emails.get(post.id) ?? 0));
+  // Who's asking, and how many moving each one to each status that emails does (asked first, from its row or picked
+  // with others: none for a move that emails nobody, to Completed when it's completed already, say).
+  const [totals, moves] = await Promise.all([voterTotals(project.id, project.askingProperty, posts.map((post) => post.id)), emailedOnMove(project.id, posts)]);
+  const emailing = (post: (typeof posts)[number]) => moves.get(post.id) ?? {};
 
   // All, when it mixes statuses: the posts grouped by status in the tabs' order, each group most voted first (as listed);
   // only once it's all loaded, so each group's count is all of them and Load more doesn't add rows to groups above it.
@@ -346,7 +343,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                               projectSlug={slug}
                               postId={post.id}
                               status={post.status}
-                              completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+                              completing={{ title: post.title, emails: emailing(post) }}
                               badge={mixedUngrouped}
                             />
                           }

@@ -1,5 +1,6 @@
 import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
+import { statusMoveEmails } from "@tuti/shared/status-emails";
 import {
   type ArticlePlace,
   articlesViews,
@@ -92,21 +93,60 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
  * a few it won't email.
  */
 export async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
+  const counts = await emailedOnMoveTo(projectId, postIds, ["COMPLETED"]);
+  return new Map([...counts].map(([postId, by]) => [postId, by.COMPLETED]));
+}
+
+/**
+ * How many people moving each post to Planned, In progress or Completed emails now (a bulk move's question), by post id
+ * and status: none for a move statusMoveEmails says emails nobody (to Planned once it's in progress, say). A status no
+ * post's move emails isn't counted at all.
+ */
+export async function emailedOnMove(projectId: string, posts: { id: string; status: PostStatus }[]): Promise<Map<string, Partial<Record<PostStatus, number>>>> {
+  const emails = (post: { status: PostStatus }, to: EmailedMove) => statusMoveEmails(post.status, to) !== null;
+  const counted = EMAILED_MOVES.filter((to) => posts.some((post) => emails(post, to)));
+  const counts = await emailedOnMoveTo(projectId, posts.map((post) => post.id), counted);
+  return new Map(posts.map((post) => [post.id, Object.fromEntries(EMAILED_MOVES.map((to) => [to, emails(post, to) ? (counts.get(post.id)?.[to] ?? 0) : 0]))]));
+}
+
+const EMAILED_MOVES = ["PLANNED", "IN_PROGRESS", "COMPLETED"] as const;
+type EmailedMove = (typeof EMAILED_MOVES)[number];
+
+/**
+ * The audience (as emailedOnCompletion says) read once, counted for each of `statuses`: those emailed about that status
+ * already (shipped_email for Completed; status_email, and those told it shipped, for the others) left out. Posts nobody
+ * would hear about are left out of the map.
+ */
+async function emailedOnMoveTo<S extends EmailedMove>(projectId: string, postIds: string[], statuses: S[]): Promise<Map<string, Record<S, number>>> {
+  if (postIds.length === 0 || statuses.length === 0) {
+    return new Map();
+  }
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
   // A private portal on a plan without them is the team's only: postShipped emails nobody.
   // Nor while the project's email is paused: the resume lets what it held go.
-  if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal")) || (await projectEmailWaits(projectId))) {
+  if ((project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal")) || (await projectEmailWaits(projectId))) {
     return new Map();
   }
-  const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`
-    SELECT x."postId", COUNT(DISTINCT x."userId") AS people
+  // One count per status (`c0`, `c1`, …), each leaving out who that status has emailed already.
+  const columns = statuses.map((status, i) => {
+    const told =
+      status === "COMPLETED"
+        ? Prisma.sql`SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`
+        : // Nor, for Planned and In progress, those told it shipped already (reopened since): postShipped skips them.
+          Prisma.sql`SELECT 1 FROM status_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s.status = ${status}::"PostStatus" AND s."sentAt" IS NOT NULL
+            UNION ALL SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL`;
+    return Prisma.sql`COUNT(DISTINCT x."userId") FILTER (WHERE NOT EXISTS (${told})) AS ${Prisma.raw(`c${i}`)}`;
+  });
+  const rows = await prisma.$queryRaw<({ postId: string } & Record<string, bigint>)[]>`
+    SELECT x."postId", ${Prisma.join(columns)}
     FROM (
       SELECT id AS "postId", "authorId" AS "userId" FROM post WHERE id IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "userId" FROM vote WHERE "postId" IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "userId" FROM post_subscription WHERE "postId" IN (${Prisma.join(postIds)})
     ) x
-    WHERE NOT EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND p.sample)
+    -- Nobody for a sample post, or one merged into another (postShipped emails only posts that aren't duplicates).
+    WHERE NOT EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND (p.sample OR p."duplicateOfId" IS NOT NULL))
       -- Only people who may see the post (postAudience): a private one's author, nobody about a Team only one or one on a
       -- board turned off.
       AND EXISTS (SELECT 1 FROM post p JOIN board b ON b.id = p."boardId" WHERE p.id = x."postId" AND NOT b.off
@@ -117,9 +157,13 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
       AND NOT EXISTS (SELECT 1 FROM email_preference ep JOIN post p ON p.id = x."postId"
         WHERE ep."projectId" = ${projectId} AND ep."userId" = x."userId"
           AND NOT (CASE WHEN p."authorId" = x."userId" THEN ep."ownPosts" ELSE ep."followedPosts" END))
-      AND NOT EXISTS (SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL)
     GROUP BY x."postId"`;
-  return new Map(rows.map((row) => [row.postId, Number(row.people)]));
+  return new Map(
+    rows
+      .map((row) => [row.postId, Object.fromEntries(statuses.map((status, i) => [status, Number(row[`c${i}`])])) as Record<S, number>] as const)
+      // Only those with someone to tell, as before: a post everyone heard about already isn't listed.
+      .filter(([, by]) => Object.values<number>(by).some((n) => n > 0)),
+  );
 }
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
@@ -422,17 +466,28 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId,
     )
     .map((action) => action.post!.id);
-  // For Undo to say first: those already emailed that it shipped, since it was approved (they can't be unemailed).
+  // Approving a progress update emails the same people when it moves the post forward; going out by itself, nobody.
+  // Waiting, or going out by itself: by itself it emails nobody, but a teammate's Publish now does.
+  const progresses = (action: ActionRow) =>
+    action.kind === "MOVES_FORWARD" && (action.status === "PENDING" || action.status === "SCHEDULED") && !!action.post && !action.post.duplicateOfId && movesForward(action.post.status);
+  const progressing = actions.filter(progresses).map((action) => action.post!);
+  // For Undo to say first: those already emailed that it shipped, or (a progress update) that it's in progress, since it
+  // was approved (they can't be unemailed).
   const sent = new Map(
     await Promise.all(
       actions
-        .filter((action) => action.kind === "RESOLVES" && action.status === "APPLIED" && action.post && action.decidedAt)
-        .map(async (action) => [action.id, await prisma.shippedEmail.count({ where: { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } } })] as const),
+        .filter((action) => (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD") && action.status === "APPLIED" && action.post && action.decidedAt)
+        .map(async (action) => {
+          const since = { postId: action.post!.id, sentAt: { not: null }, claimedAt: { gte: action.decidedAt! } };
+          const count = action.kind === "RESOLVES" ? await prisma.shippedEmail.count({ where: since }) : await prisma.statusEmail.count({ where: { ...since, status: "IN_PROGRESS" } });
+          return [action.id, count] as const;
+        }),
     ),
   );
-  const [portal, emails, made, places] = await Promise.all([
+  const [portal, emails, progressEmails, made, places] = await Promise.all([
     projectPortal(projectId),
     emailedOnCompletion(projectId, completing),
+    emailedOnMove(projectId, progressing),
     // Approved new articles' drafts: the collection approving made, which Undo removes with it (as it was made, with
     // nothing else in it), by name.
     Promise.all(
@@ -465,10 +520,11 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
       /** Ticked as the review page opens (see likelyToApply). */
       applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
-      /** For a post it completed: how many it emailed that it shipped (Undo can't take those back). */
+      /** For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back). */
       ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
-      /** For a post it completes: how many people completing it emails. */
+      /** For a post it completes or moves forward: how many people approving (or publishing) it emails. */
       ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+      ...(progresses(action) && { emails: progressEmails.get(action.post!.id)?.IN_PROGRESS ?? 0 }),
       reason: action.reason,
       /** The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too). */
       ...((action.kind === "MOVES_FORWARD" || (action.kind === "RESOLVES" && payload.comment !== undefined)) && { comment: payload.comment ?? "" }),
@@ -812,7 +868,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
                 parts.every((part) => part.status === "scheduled" || part.applyLikely) &&
                 (whole.completes || whole.comment.trim() !== "") &&
                 whole.comment.length <= POST_COMMENT_MAX,
-              emails: parts.find((part) => part.kind === "resolves")?.emails ?? 0,
+              emails: parts.find((part) => part.kind === (whole.completes ? "resolves" : "moves_forward") && part.emails !== undefined)?.emails ?? 0,
               /** Why it waits for the team as it is, whatever its parts say: its comment too long to post. */
               waitReason: whole.comment.length > POST_COMMENT_MAX ? tooLong(whole.comment) : null,
             };
@@ -1166,6 +1222,8 @@ const actorUser = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
 
 /** Statuses a post moves on from to In progress when a code change moves it forward. */
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
+/** Whether a progress update moving a post of `status` on to In progress emails its people (as apply moves it). */
+const movesForward = (status: PostStatus) => NOT_STARTED.has(status) && statusMoveEmails(status, "IN_PROGRESS") === "progress";
 
 /**
  * Puts a claimed action back (waiting again, or out of date) after a failure, then rethrows `error`.
@@ -1392,9 +1450,12 @@ export const applyCodeChangeAction = defineOperation({
     // The comment posted before the completion (see below), and whether it can't be told it was saved.
     let first = false;
     let unsureComment = false;
+    // The note's due time to the post's author (comment-email), cleared just before the completion: put back if it fails,
+    // so a comment that stays only a comment (held, then dismissed or approved with another) is still emailed.
+    let noteDue: Date | null = null;
     try {
       if (reuse) {
-        // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
+        // Before moving it: the email that sends quotes that comment (postShipped reads `note`).
         shared.commentId = reuse;
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
       }
@@ -1426,32 +1487,71 @@ export const applyCodeChangeAction = defineOperation({
           await linkEntryPosts(prisma, entries.map(({ entryId }) => ({ entryId, postId: post.id })), { skipDuplicates: true });
         }
       }
-      // Completing it with the team's comment: the comment first, so the email the completion sends has it (postShipped
-      // quotes it); a failure after it takes it out again. Else the comment last: once it's being posted, a failure may
-      // come after it was saved.
-      first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim() && !reuse;
+      // Completing it, or moving it to In progress, with the team's comment: the comment first, so the email the move
+      // sends has it (postShipped quotes it); a failure after it takes it out again. Else the comment last: once it's
+      // being posted, a failure may come after it was saved.
+      const moves = whole?.completes ? post.status !== "COMPLETED" : progress && NOT_STARTED.has(post.status);
+      first = moves && commenting && !!comment.trim() && !reuse;
       if (first) {
+        // Checked as comments.create checks it (call), before it's being posted: refused, it's an OperationError, so the
+        // update waits again with nothing posted (never "maybe saved").
+        const commentInput = createComment.input.safeParse({ number: post.number, body: comment });
+        if (!commentInput.success) {
+          throw new OperationError(400, "invalid_input", commentInput.error.issues[0]?.message ?? "Invalid input");
+        }
         posting = true;
-        shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
+        // Saved as any comment (due to the post's author, comment-email): until the completion goes, it's only a comment.
+        shared.commentId = (await createComment.run(context, commentInput.data)).id;
         posting = false;
-        // The email completing it sends quotes this comment and no other (postShipped reads `note`).
+        // The email moving it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note } } })));
       }
+      // Only from the status read: one the team set while the comment was posted (even the one this moves it to) is kept,
+      // and the update waits again. Refused so, nothing was moved: there's no status to put back, which would overwrite theirs.
+      const move = async (to: PostStatus, as: typeof context) => {
+        shared.status = post.status;
+        try {
+          await call(updatePost, as, { number: post.number, status: toApiStatus(to), from: toApiStatus(post.status) });
+        } catch (error) {
+          if (error instanceof OperationError && error.code === "changed") {
+            shared.status = null;
+          }
+          throw error;
+        }
+      };
+      // The move's note: people hear of it through the email the move sends (shipped or progress), which quotes it, never
+      // as a comment email to the post's author. Cleared before the move, which queues that email (so it can't go first);
+      // put back if the move fails (below).
+      const noteNotEmailedAsComment = async () => {
+        if (shared.commentId && (first || reuse)) {
+          noteDue = (await prisma.comment.findUnique({ where: { id: shared.commentId }, select: { authorEmailDueAt: true } }))?.authorEmailDueAt ?? null;
+          await prisma.comment.updateMany({ where: { id: shared.commentId }, data: { authorEmailDueAt: null } });
+        }
+      };
       if (whole?.completes) {
         if (post.status !== "COMPLETED") {
-          shared.status = post.status;
-          await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });
+          await noteNotEmailedAsComment();
+          // Completing emails its people however it went out (by itself only once an owner turned that on): never `quietly`.
+          await move("COMPLETED", { actor: context.actor, projectId });
         }
       } else if (progress && NOT_STARTED.has(post.status)) {
-        shared.status = post.status;
-        await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
+        // Applied by the runner after the hold (`quietly`: nobody on the team approved it), it emails nobody: only
+        // completing does, and that waits for someone unless an owner turns it on. Then its comment stays a comment,
+        // emailed to the post's author as any is.
+        if (!("quietly" in context)) {
+          await noteNotEmailedAsComment();
+        }
+        await move("IN_PROGRESS", context);
       }
       if (commenting && comment.trim() && !first && !reuse) {
         posting = true;
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
     } catch (error) {
+      if (shared.commentId && noteDue) {
+        await prisma.comment.updateMany({ where: { id: shared.commentId, authorEmailDueAt: null }, data: { authorEmailDueAt: noteDue } }).catch(() => {});
+      }
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
@@ -1590,7 +1690,12 @@ async function putBackPost(
   const movedTo = kind === "RESOLVES" ? "COMPLETED" : "IN_PROGRESS";
   const now = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: { status: true } });
   if (undo.status && now.status === movedTo) {
-    await call(updatePost, context, { number: post.number, status: toApiStatus(undo.status as PostStatus) });
+    // Only while it still has the status this moved it to: one a teammate set since is kept (nothing to put back).
+    await call(updatePost, context, { number: post.number, status: toApiStatus(undo.status as PostStatus), from: toApiStatus(movedTo) }).catch((error: unknown) => {
+      if (!(error instanceof OperationError && error.code === "changed")) {
+        throw error;
+      }
+    });
   }
 }
 
@@ -2344,7 +2449,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       continue;
     }
     try {
-      await call(applyCodeChangeAction, byItself({ actor: { kind: "user", userId: owner.userId }, projectId }), { id: action.id, ...(revision && { revision }) });
+      // `quietly`: its progress move emails nobody (posts.update), as nobody on the team approved it.
+      await call(applyCodeChangeAction, { ...byItself({ actor: { kind: "user", userId: owner.userId }, projectId }), quietly: true } as Parameters<typeof byItself>[0], { id: action.id, ...(revision && { revision }) });
     } catch (error) {
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
       const saved = (error as { saved?: boolean | "unknown" }).saved;

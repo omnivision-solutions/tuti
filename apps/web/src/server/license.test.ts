@@ -6,7 +6,7 @@ import { issueLicense } from "@/test/license";
 
 import { licensedUntil } from "./license";
 
-vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 const DAY = 24 * 60 * 60 * 1000;
 const ours = { installation: "installation-1", project: "project-1" };
@@ -34,7 +34,7 @@ test("a key for another project or installation, signed by anyone else, or edite
 });
 
 test("Tuti's own public keys are Ed25519 keys", async () => {
-  const { LICENSE_PUBLIC_KEYS } = await vi.importActual<typeof import("./license-key")>("./license-key");
+  const { LICENSE_PUBLIC_KEYS } = await vi.importActual<typeof import("@tuti/shared/license-key")>("@tuti/shared/license-key");
   expect(LICENSE_PUBLIC_KEYS.length).toBeGreaterThan(0);
   for (const key of LICENSE_PUBLIC_KEYS) {
     expect(createPublicKey({ key: Buffer.from(key, "base64"), format: "der", type: "spki" }).asymmetricKeyType).toBe("ed25519");

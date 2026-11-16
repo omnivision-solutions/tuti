@@ -2,7 +2,7 @@ import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 
 /**
  * Licence keys in tests, signed by a key pair made for the run instead of Tuti's. Stand it in for
- * Tuti's public keys with `vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey)`.
+ * Tuti's public keys with `vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey)`.
  */
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 

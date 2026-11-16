@@ -241,7 +241,7 @@ export const likeComment = defineOperation({
 
 export const setSubscription = defineOperation({
   name: "subscriptions.set",
-  summary: "Follow a post without voting for it, or stop: its followers are emailed when it ships, as its voters are",
+  summary: "Follow a post without voting for it, or stop: its followers are emailed as it moves forward and when it ships, as its voters are",
   method: "POST",
   path: "/posts/{number}/subscription",
   scope: "write",

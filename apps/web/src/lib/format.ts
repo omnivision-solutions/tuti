@@ -22,10 +22,8 @@ export function timeAgo(date: Date, now = new Date()): string {
   return "just now";
 }
 
-/** A day, like "19 October 2026" (UTC, so server and browser agree). */
-export function formatDate(date: Date): string {
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-}
+/** A day, like "19 October 2026" (UTC, so server and browser agree); shared with the emails. */
+export { formatDate } from "@tuti/shared/dates";
 
 /** A day, short, like "6 Oct" (UTC, as formatDate). */
 export function formatDay(date: Date): string {

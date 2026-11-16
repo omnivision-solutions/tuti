@@ -57,7 +57,7 @@ test("a reply they haven't seen a minute on is emailed from the project's addres
   await aMinuteOn(project.id);
   await run();
   const [email] = emailsTo(kim);
-  expect(email!.html).toContain("border-top:4px solid #7c3aed");
+  expect(email!.html).toContain("border-radius:9px;background-color:#7c3aed");
   expect(email).toMatchObject({
     from: `"Olive Owner at ${project.name}" <support@${subdomain}.${DOMAIN}>`,
     subject: "Re: Invoice missing",

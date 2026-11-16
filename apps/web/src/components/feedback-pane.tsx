@@ -16,7 +16,7 @@ import { asking, timeAgo } from "@/lib/format";
 import type { PropertyFormats } from "@/lib/property-formats";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { emailedOnMove } from "@/server/operations/code-changes";
 import { postVoters, votersToEmail, voterTotals } from "@/server/post-lists";
 
 /**
@@ -64,7 +64,7 @@ export async function FeedbackPane({
   const [totals, voters, emails, toEmail] = await Promise.all([
     voterTotals(projectId, askingProperty, [post.id]),
     postVoters(projectId, askingProperty, post.id),
-    emailedOnCompletion(projectId, [post.id]),
+    emailedOnMove(projectId, [post]),
     votersToEmail(projectId, post.id),
   ]);
   const total = totals.get(post.id);
@@ -103,7 +103,7 @@ export async function FeedbackPane({
                 projectSlug={projectSlug}
                 postId={post.id}
                 status={post.status}
-                completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+                completing={{ title: post.title, emails: emails.get(post.id) ?? {} }}
                 className="w-full"
               />
             </Property>

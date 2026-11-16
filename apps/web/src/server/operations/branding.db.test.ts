@@ -14,7 +14,7 @@ import { lastingMediaUrl } from "../media-urls";
 import { brandCss, getBranding, updateBranding } from "./branding";
 import { call } from "./run";
 
-vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 let s3: S3Fake;
 let owner: TestUser;
