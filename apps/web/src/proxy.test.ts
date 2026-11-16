@@ -6,6 +6,8 @@ import { proxy } from "./proxy";
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-redirects", () => ({ redirectFor: async () => null }));
 vi.mock("@/server/portal-access", () => ({ portalVisitor: async () => "public", previewTokenFor: async () => false, PREVIEW_READER_COOKIE: "tuti_preview_reader" }));
+// /docs/billing is an article's page; any other /docs/<slug>, a tab's or collection's (see findable.db.test.ts).
+vi.mock("@/server/docs-queries", () => ({ isArticleSlug: async (_project: string, slug: string) => slug === "billing" }));
 // Nobody's signed in either (loading sessions loads the auth config, which needs a server's settings).
 vi.mock("@/server/session", () => ({}));
 // No portal is under a path of a site, or has an address of its own, here (see site-mount.db.test.ts).
@@ -53,6 +55,25 @@ test("an article's .md URL is served by its Markdown route", async () => {
   expect(await rewrite("/docs/inviting-your-team.md")).toBe("http://acme.tuti.example/portal/acme/docs/inviting-your-team/md");
   expect(await rewrite("/docs/inviting-your-team")).toBe("http://acme.tuti.example/portal/acme/docs/inviting-your-team");
   expect(await rewrite("/llms.txt")).toBe("http://acme.tuti.example/portal/acme/llms.txt");
+});
+
+test("an article's page asked for as Markdown (an AI agent's Accept header) is served by its Markdown route; browsers get the page", async () => {
+  const served = async (accept: string | null, path = "/docs/billing", method = "GET") => {
+    const response = await proxy(new NextRequest(`http://acme.tuti.example${path}`, { method, headers: { host: "acme.tuti.example", ...(accept && { accept }) } }));
+    return [response.headers.get("x-middleware-rewrite")?.replace("http://acme.tuti.example/portal/acme", ""), response.headers.get("vary")];
+  };
+  for (const accept of ["text/markdown", "text/markdown, text/html", "text/html;q=0.5, text/markdown", "text/markdown;q=0.9, */*;q=0.8", "TEXT/Markdown"]) {
+    expect(await served(accept)).toEqual(["/docs/billing/md", "Accept"]);
+  }
+  const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+  for (const accept of [browser, "*/*", null, "text/html, text/markdown;q=0.9", "text/markdown;q=0", "text/*, text/markdown;q=0.5"]) {
+    expect(await served(accept)).toEqual(["/docs/billing", "Accept"]);
+  }
+  // Only an article's page: not a tab's or collection's, /docs, the .md (already Markdown), nor a form posted to the page.
+  expect(await served("text/markdown", "/docs/getting-started")).toEqual(["/docs/getting-started", "Accept"]);
+  expect(await served("text/markdown", "/docs")).toEqual(["/docs", null]);
+  expect(await served("text/markdown", "/docs/billing.md")).toEqual(["/docs/billing/md", null]);
+  expect(await served("text/markdown", "/docs/billing", "POST")).toEqual(["/docs/billing", "Accept"]);
 });
 
 test("“Preview as a reader”: only a portal page's own ?preview=signed-out asks for it, never a header the request sends", async () => {

@@ -24,7 +24,7 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
     }
     return portalPageMetadata(project, { ...docsPageListing(page.landing), path });
   }
-  return portalPageMetadata(project, { ...docsPageListing(page), path });
+  return portalPageMetadata(project, { ...docsPageListing(page), path, markdown: page.kind === "article" });
 }
 
 /** /docs/<slug>: an article, a tab or a collection (one name each), or where one went since. */

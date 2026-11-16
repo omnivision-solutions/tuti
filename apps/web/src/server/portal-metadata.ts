@@ -34,6 +34,8 @@ export async function portalPageMetadata(
     /** For articles, posts and changelog entries. */
     article?: { publishedTime?: Date | null; modifiedTime?: Date | null };
     noindex?: boolean;
+    /** An article's page: its Markdown copy, at <path>.md, listed for AI tools. */
+    markdown?: boolean;
   },
 ): Promise<Metadata> {
   const [address, site, home] = await Promise.all([portalAddress(slug), portalSite(slug), portalHomePath(slug)]);
@@ -44,7 +46,7 @@ export async function portalPageMetadata(
   return {
     title: page.title,
     ...(description && { description }),
-    alternates: { canonical: url },
+    alternates: { canonical: url, ...(page.markdown && { types: { "text/markdown": `${url}.md` } }) },
     openGraph: {
       title: page.title,
       ...(description && { description }),
