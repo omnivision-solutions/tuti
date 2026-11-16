@@ -7,15 +7,16 @@ export const verifyEmailSubject = "Verify your email for Tuti";
 export function VerifyEmail({ name, url }: { name: string; url: string }) {
   return (
     <Layout
-      preview="Confirm your email address to finish setting up your account."
+      preview="Confirm your email address to finish signing up."
       footer={
         <>
           The link works for 24 hours. If you didn&apos;t sign up for Tuti, you can ignore this email.
         </>
       }
     >
-      <Title>Welcome to Tuti, {name}</Title>
-      <Text style={textStyle}>Confirm that this is your email address to finish setting up your Tuti account.</Text>
+      {/* Sent on signing up on the app or a portal, and again on Resend, maybe months later: no welcome. */}
+      <Title>Confirm your email, {name}</Title>
+      <Text style={textStyle}>Confirm this is your email to finish signing up.</Text>
       <Buttons href={url} label="Verify my email" />
     </Layout>
   );

@@ -216,7 +216,7 @@ test("Tuti's emails to teams open with a line in green saying what it's about, t
   expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: true, subject: "Can't export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New conversation · Acme" });
   expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: false, subject: "Export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New reply · Acme", title: "Export" });
   expect(await heads(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url }))).toMatchObject({ eyebrow: "You&#x27;re invited", title: "Join Acme on Tuti" });
-  expect(await heads(verifyEmail({ name: "Ada", url }))).toMatchObject({ title: "Welcome to Tuti, Ada" });
+  expect(await heads(verifyEmail({ name: "Ada", url }))).toMatchObject({ title: "Confirm your email, Ada" });
   expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "120", url }))).toMatchObject({ eyebrow: "Acme · Billing", title: "120 AI credits left" });
   expect(await heads(creditsEmail({ projectName: "Acme", out: true, left: "0", url }))).toMatchObject({ title: "Out of AI credits" });
   // One credit is singular, in the title and the text; a fraction of one isn't.
