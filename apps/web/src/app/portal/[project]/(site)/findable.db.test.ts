@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { createProject, signUp } from "@/test/helpers";
 
 import { GET as markdown } from "./docs/[slug]/md/route";
+import { generateMetadata } from "./docs/[slug]/page";
 import { GET as llms } from "./llms.txt/route";
 import { GET as robots } from "./robots.txt/route";
 import { GET as sitemap } from "./sitemap.xml/route";
@@ -52,6 +53,19 @@ test("a published article is served as Markdown at its .md URL; drafts, missing 
   expect((await get(project.slug, "secret-draft")).status).toBe(404);
   expect((await get(project.slug, "no-such-article")).status).toBe(404);
   expect((await get(other.slug, "inviting-your-team")).status).toBe(404);
+});
+
+test("an article's page links its Markdown for AI tools; a collection's or tab's page has none", async () => {
+  const project = await docsContents();
+  await prisma.docsTab.create({ data: { projectId: project.id, slug: "guides", name: "Guides" } });
+  const alternates = async (slug: string) =>
+    (await generateMetadata({ params: Promise.resolve({ project: project.slug, slug }) } as never)).alternates;
+  expect(await alternates("billing")).toEqual({
+    canonical: `http://${project.slug}.localhost:3100/docs/billing`,
+    types: { "text/markdown": `http://${project.slug}.localhost:3100/docs/billing.md` },
+  });
+  expect((await alternates("getting-started"))?.types).toBeUndefined();
+  expect((await alternates("guides"))?.types).toBeUndefined();
 });
 
 test("llms.txt describes the portal and links each collection's page, each published article's Markdown, the changelog and the boards", async () => {

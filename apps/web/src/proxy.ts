@@ -199,7 +199,12 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     return framedByApp(response);
   }
   const url = request.nextUrl.clone();
-  const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
+  // An article's page asked for as Markdown (an AI agent's Accept header): its .md, the same route.
+  const articlePage = /^\/docs\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
+  const path =
+    articlePage && (request.method === "GET" || request.method === "HEAD") && prefersMarkdown(request.headers.get("accept"))
+      ? `${pathname}/md`
+      : pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
   url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
   // Always set, so a request can't say a path of its own.
   const forwarded = mount ? fromSite(request, mount) : new Headers(request.headers);
@@ -217,7 +222,30 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     // (Set here, it wins over the routes' own public cache-control.)
     response.headers.set("cache-control", "private, no-store");
   }
+  if (articlePage) {
+    // HTML or Markdown by the Accept header: caches keep them apart.
+    response.headers.set("vary", "Accept");
+  }
   return pathname === "/widget" ? response : framedByApp(response);
+}
+
+/**
+ * Whether an Accept header asks for Markdown (text/markdown, named) at least as much as HTML
+ * (text/html, else text/*, else *\/*). Browsers never name text/markdown, so they get HTML.
+ */
+export function prefersMarkdown(accept: string | null): boolean {
+  const q = new Map<string, number>();
+  for (const part of (accept ?? "").split(",")) {
+    const [type, ...params] = part.split(";").map((s) => s.trim().toLowerCase());
+    const value = params.find((p) => p.startsWith("q="));
+    const weight = value ? Number(value.slice(2)) : 1;
+    if (type && !q.has(type)) {
+      q.set(type, Number.isFinite(weight) ? weight : 0);
+    }
+  }
+  const markdown = q.get("text/markdown") ?? 0;
+  const html = q.get("text/html") ?? q.get("text/*") ?? q.get("*/*") ?? 0;
+  return markdown > 0 && markdown >= html;
 }
 
 /**
