@@ -198,7 +198,7 @@ export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlu
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={pending} onClick={() => change(false)}>
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => change(false)}>
               Show the badge again
             </AlertDialogAction>
           </AlertDialogFooter>

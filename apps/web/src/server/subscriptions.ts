@@ -149,6 +149,10 @@ async function syncLicensedBadge(tx: Prisma.TransactionClient, projectId: string
  * it has one that can still charge: cancelled in Stripe and synced at once, so the badge is back. Its license removed it, or its team did.
  */
 export async function endLicensedBadge(projectId: string): Promise<void> {
+  // Without Stripe, no add-on was ever bought.
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return;
+  }
   const { stripeSubscriptionId: id, planStatus } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { stripeSubscriptionId: true, planStatus: true } });
   if (!id || planStatus !== null) {
     return;
