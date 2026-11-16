@@ -144,6 +144,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     "/roadmap",
     "/changelog",
     "/changelog/1",
+    "/changelog/1.md",
     "/changelog/rss.xml",
     "/docs",
     "/docs?q=start",

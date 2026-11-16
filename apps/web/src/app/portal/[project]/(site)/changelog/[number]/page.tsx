@@ -36,6 +36,7 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/chang
     path: `/changelog/${Number(number)}`,
     article: { publishedTime: entry.publishedAt },
     noindex: entry.sample,
+    markdown: true,
     // Its featured image, once processed, is its link card.
     image: shareImage(entry.cover),
   });

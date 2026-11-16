@@ -2,6 +2,7 @@ import { toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
 import { portalAddress } from "@/server/custom-domains";
+import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { type DocsCollection, docsContents, docsTabPath } from "@/server/docs-queries";
@@ -14,20 +15,34 @@ type Link = { name: string; url: string; note?: string | null };
 const linkParagraph = (item: Link) => ({ type: "paragraph", content: [text(item.name, item.url), ...(item.note ? [text(`: ${item.note}`)] : [])] });
 const list = (items: object[]) => ({ type: "bulletList", content: items });
 const links = (items: Link[]) => list(items.map((item) => ({ type: "listItem", content: [linkParagraph(item)] })));
+/** How many changelog entries it links, the newest. */
+const LLMS_ENTRIES = 50;
 /** Headings go to ####; collections deeper than that are list items. */
 const DEEPEST_HEADING = 4;
 
 /**
  * The portal for AI tools (llmstxt.org): what it is, then links to every docs
  * article's Markdown (by tab, if the docs have them, under links to the tabs' and collections' pages;
- * collections nest as headings to ####, then as lists), the changelog and the feedback boards. Built as
+ * collections nest as headings to ####, then as lists), the changelog and its newest entries' Markdown, and the
+ * feedback boards. Built as
  * a document so names and titles are escaped like any Markdown we serve.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/llms.txt">) {
   const { project: slug } = await params;
   const project = await prisma.project.findUnique({
     where: { slug },
-    select: { name: true, boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true, description: true } } },
+    select: {
+      name: true,
+      // The newest published entries; sample content (server/sample-content.ts) is left out, as search engines leave it.
+      // ponytail: the latest 50; the changelog's pages list the rest, should an agent want older ones.
+      changelogEntries: {
+        where: { publishedAt: { not: null }, sample: false },
+        orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+        take: LLMS_ENTRIES,
+        select: { number: true, title: true, publishedAt: true },
+      },
+      boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true, description: true } },
+    },
   });
   if (!project) {
     return new Response("Not found", { status: 404 });
@@ -92,7 +107,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
           ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Docs"), articleLinks(uncollected)] : []),
         ]),
     heading(2, "Changelog"),
-    links([{ name: "Changelog", url: `${portal}/changelog`, note: `What's new, improved and fixed in ${project.name}` }]),
+    links([
+      { name: "Changelog", url: `${portal}/changelog`, note: `What's new, improved and fixed in ${project.name}` },
+      ...project.changelogEntries.map((entry) => ({ name: entry.title, url: `${portal}/changelog/${entry.number}.md`, note: formatDate(entry.publishedAt!) })),
+    ]),
     heading(2, "Feedback"),
     links([
       ...project.boards.map((board) => ({ name: board.name, url: `${portal}${boardPath(board)}`, note: board.description })),
