@@ -34,9 +34,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         return [];
       }
       // Its title, then where it's from, then what it says.
-      return articleMarkdown({ title: row.title, doc: displayDoc(row) }).then((markdown) =>
-        markdown.replace("\n", `\nSource: ${portal}/docs/${articleSlug}\n`),
-      );
+      return articleMarkdown({ title: row.title, doc: displayDoc(row) }).then((markdown) => {
+        const titleEnd = markdown.indexOf("\n");
+        return `${markdown.slice(0, titleEnd)}\nSource: ${portal}/docs/${articleSlug}\n${markdown.slice(titleEnd + 1)}`;
+      });
     }),
   );
   const title = toMarkdown({ type: "doc", content: [{ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: project.name }] }] });
