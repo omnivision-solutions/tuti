@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { collectionOptions, docsContents, publishedArticle } from "./docs-queries";
@@ -353,6 +354,14 @@ describe("readers", () => {
       ].join("\n\n"),
     );
     expect(text).not.toContain("Empty");
+  });
+
+  test("llms-full.txt has the articles in llms.txt's order: tab by tab, each tab's articles in no collection last", async () => {
+    await withTabs();
+    const params = Promise.resolve({ project: project.slug });
+    const text = await (await llmsFull(new Request("http://x"), { params })).text();
+    const sources = [...text.matchAll(/^Source: .*\/docs\/(.+)$/gm)].map((match) => match[1]);
+    expect(sources).toEqual(["start-here", "downloading-invoices", "contact-us", "listing-posts"]);
   });
 });
 

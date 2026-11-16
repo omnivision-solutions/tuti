@@ -8,7 +8,7 @@ export const MAX_REDIRECTS = 200;
 const MAX_LENGTH = 500;
 
 /** Paths the portal needs for itself: signing in and its links, the widget, its files and API. */
-const RESERVED = /^\/(api|_tuti|_next|sign-in|sign-up|forgot-password|reset-password|sso|continue|unsubscribe|widget|robots\.txt|sitemap\.xml|llms\.txt)(\/|$)/;
+const RESERVED = /^\/(api|_tuti|_next|sign-in|sign-up|forgot-password|reset-password|sso|continue|unsubscribe|widget|robots\.txt|sitemap\.xml|llms\.txt|llms-full\.txt)(\/|$)/;
 
 /**
  * A path as rules match it: lowercase, no trailing slash. A loop, not a regex: it runs on every

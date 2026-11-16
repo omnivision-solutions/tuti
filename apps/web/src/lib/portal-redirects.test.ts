@@ -20,7 +20,7 @@ test("an old address as pasted becomes a path, lowercase and without a trailing 
 });
 
 test("the portal's own addresses can't be redirected", () => {
-  for (const own of ["/api/auth/session", "/_tuti/_next/x.js", "/sign-in", "/sso/error", "/widget", "/robots.txt", "/sitemap.xml"]) {
+  for (const own of ["/api/auth/session", "/_tuti/_next/x.js", "/sign-in", "/sso/error", "/widget", "/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt"]) {
     expect(redirectFrom(own)).toMatchObject({ error: expect.stringContaining("portal's own") });
   }
   // A path that only starts like one is fine.

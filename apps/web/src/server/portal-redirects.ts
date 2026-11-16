@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { redirectKey } from "@/lib/portal-redirects";
+import { redirectFrom, redirectKey } from "@/lib/portal-redirects";
 
 /**
  * A portal's redirects (Settings → Domain → Redirects), for proxy.ts on every portal request: kept for a
@@ -19,7 +19,9 @@ export async function redirectFor(slug: string, path: string): Promise<string | 
   if (!cached || cached.until <= Date.now()) {
     const started = forgets;
     const rows = await prisma.portalRedirect.findMany({ where: { project: { slug } }, select: { from: true, to: true } });
-    cached = { rules: new Map(rows.map((row) => [row.from, row.to])), until: Date.now() + CACHE_MS };
+    // Not a rule saved before its address became one of the portal's own (e.g. /llms-full.txt): the portal's wins.
+    const rules = rows.filter((row) => "from" in redirectFrom(row.from)).map((row) => [row.from, row.to] as const);
+    cached = { rules: new Map(rules), until: Date.now() + CACHE_MS };
     if (forgets === started) {
       if (cache.size >= MAX_CACHED) {
         cache.clear();
