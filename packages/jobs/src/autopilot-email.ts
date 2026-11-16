@@ -151,6 +151,17 @@ function paired(lines: DiffLine[]): DiffLine[] {
   return out;
 }
 
+/** An edit's lines an email shows (paired, cut after DIFF_LINES, unchanged ones clipped), and how many it leaves out. */
+export function emailDiff(before: string, after: string): { diff: DiffLine[]; diffMore?: number } {
+  const edit = paired(nearChanges(diffLines(before, after), 1));
+  // Cut after DIFF_LINES, but not between a removed paragraph and its replacement.
+  const cut = Math.min(DIFF_LINES, edit.length) + (edit[DIFF_LINES - 1]?.kind === "removed" && edit[DIFF_LINES]?.kind === "added" ? 1 : 0);
+  return {
+    diff: edit.slice(0, cut).map((line) => (line.kind === "same" ? { ...line, text: clip(line.text) } : line)),
+    ...(edit.length > cut && { diffMore: edit.length - cut }),
+  };
+}
+
 /** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
 const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
   action.kind === "MOVES_FORWARD" && !((action.payload ?? {}) as { comment?: string }).comment?.trim();
@@ -186,14 +197,12 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
     CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
   };
   const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text }] : undefined);
-  const edit = action.kind === "ARTICLE_EDIT" ? paired(nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1)) : [];
-  // Cut after DIFF_LINES, but not between a removed paragraph and its replacement.
-  const cut = Math.min(DIFF_LINES, edit.length) + (edit[DIFF_LINES - 1]?.kind === "removed" && edit[DIFF_LINES]?.kind === "added" ? 1 : 0);
+  const edit = action.kind === "ARTICLE_EDIT" ? emailDiff(payload.before ?? "", payload.body ?? "") : undefined;
   const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
     // Completing with progress updates folded in: their comment too.
     RESOLVES: added(payload.comment),
     MOVES_FORWARD: added(payload.comment),
-    ARTICLE_EDIT: edit.slice(0, cut).map((line) => (line.kind === "same" ? { ...line, text: clip(line.text) } : line)),
+    ARTICLE_EDIT: edit?.diff,
     CHANGELOG_LINE: added(payload.line),
   };
   return {
@@ -201,7 +210,7 @@ function previewOf(action: ActionRow, now: Date, posts?: OneClick["posts"], plac
     title: action.post?.title ?? action.article?.title ?? payload.title ?? "Changelog",
     fact: fact[action.kind],
     ...(diff[action.kind] && { diff: diff[action.kind] }),
-    ...(edit.length > cut && { diffMore: edit.length - cut }),
+    ...(edit?.diffMore && { diffMore: edit.diffMore }),
     ...(action.status === "SCHEDULED" && { goesOut: when(action.dueAt, now) }),
     // A changelog line is written for every change, not guessed. Rounded down, as the setting compares it
     // ("Less than 90% sure" is never shown as 90).

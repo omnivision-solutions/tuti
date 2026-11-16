@@ -1,7 +1,7 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 import { CREDIT_FEATURES } from "@tuti/shared";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Eyebrow, Layout, textStyle, Title } from "./layout";
 
 type CreditsProps = {
   projectName: string;
@@ -13,19 +13,24 @@ type CreditsProps = {
   url: string;
 };
 
+/** "120 AI credits left", "1 AI credit left" (`left` as the app shows it: "0.5" stays plural). */
+const creditsLeft = (left: string) => `${left} AI ${left === "1" ? "credit" : "credits"} left`;
+
 /** To a project's owners and admins: its AI credits are running low, or out (docs/plan.md, AI usage per project). */
 export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
   return (
     <Layout
       label="Billing"
-      preview={out ? `${projectName}'s AI is paused until it has more credits.` : `${projectName} has ${left} AI credits left.`}
+      preview={out ? `${projectName}'s AI is paused until it has more credits.` : `${projectName} has ${creditsLeft(left)}.`}
       footer={
         <>
           You get this as an owner or admin of {projectName}, once until the project gets more credits.
         </>
       }
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
+      <Eyebrow>{projectName} · Billing</Eyebrow>
+      <Title>{out ? "Out of AI credits" : creditsLeft(left)}</Title>
+      <Text style={textStyle}>
         {out ? (
           <>
             <strong>{projectName}</strong> is out of AI credits, so {CREDIT_FEATURES} are paused until it has
@@ -33,17 +38,12 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
           </>
         ) : (
           <>
-            <strong>{projectName}</strong> has {left} AI credits left. When they run out, {CREDIT_FEATURES} pause until it
+            <strong>{projectName}</strong> has {creditsLeft(left)}. When they run out, {CREDIT_FEATURES} pause until it
             has more.
           </>
         )}
       </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        See Billing
-      </Button>
+      <Buttons href={url} label="See Billing" />
     </Layout>
   );
 }

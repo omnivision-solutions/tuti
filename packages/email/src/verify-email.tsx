@@ -1,29 +1,23 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Layout, textStyle, Title } from "./layout";
 
 export const verifyEmailSubject = "Verify your email for Tuti";
 
 export function VerifyEmail({ name, url }: { name: string; url: string }) {
   return (
     <Layout
-      preview="Confirm your email address to finish setting up your account."
+      preview="Confirm your email address to finish signing up."
       footer={
         <>
           The link works for 24 hours. If you didn&apos;t sign up for Tuti, you can ignore this email.
         </>
       }
     >
-      <Text style={{ fontSize: 16, color: colors.text }}>Hi {name},</Text>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        Confirm that this is your email address to finish setting up your Tuti account.
-      </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        Verify email
-      </Button>
+      {/* Sent on signing up on the app or a portal, and again on Resend, maybe months later: no welcome. */}
+      <Title>Confirm your email, {name}</Title>
+      <Text style={textStyle}>Confirm this is your email to finish signing up.</Text>
+      <Buttons href={url} label="Verify my email" />
     </Layout>
   );
 }
