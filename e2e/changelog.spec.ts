@@ -975,11 +975,14 @@ test("the next release waits to be written; its entry gets a featured image read
       transfer.items.add(new File([new Uint8Array(bytes)], "cover.png", { type: "image/png" }));
       return transfer;
     }, [...bytes]);
-  // (Focus stays where it was: only an upload started from Add moves it to Replace.)
-  await team.getByLabel("Title").focus();
+  // (Focus stays on the page, where a reload or a click on blank space leaves it: only an upload started from Add
+  // moves it to Replace.)
+  const replaceButton = featured.getByRole("button", { name: "Replace featured image" });
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await addButton.locator("..").dispatchEvent("drop", { dataTransfer: await droppedFile(first) });
   await expect(preview).toBeVisible();
-  await expect(team.getByLabel("Title")).toBeFocused();
+  await expect(replaceButton).not.toBeFocused();
+  expect(await team.evaluate(() => document.activeElement === document.body)).toBe(true);
   const firstSrc = await preview.getAttribute("src");
   // Replaced by another: while it uploads (its server calls held here), Save and Publish wait, the image saying why;
   // Remove waits too (the new image would come back after it), and no second upload starts meanwhile (each starts with
@@ -997,7 +1000,6 @@ test("the next release waits to be written; its entry gets a featured image read
     await route.fallback();
   });
   // Picked from Replace with the keyboard: focus stays on it through the upload (it's off, but not taken out of reach).
-  const replaceButton = featured.getByRole("button", { name: "Replace featured image" });
   const removeButton = featured.getByRole("button", { name: "Remove featured image" });
   await replaceButton.focus();
   // Shown on keyboard focus.
