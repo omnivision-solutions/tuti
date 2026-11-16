@@ -64,6 +64,9 @@ test("people hear when what they asked for is started and when it ships, and can
   const mail = await (await browser.newContext()).newPage();
   await mail.setContent(email.html);
   await expect(mail.getByText("Acme", { exact: true })).toBeVisible();
+  // The post's card: its votes, board, title and the portal's Completed pill.
+  await expect(mail.getByRole("heading", { name: "Dark mode is done" })).toBeVisible();
+  expect(email.text.replace(/\s+/g, " ")).toContain("1 vote Feature requests Dark mode Completed");
   await expect(mail.getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge");
   await checkpoint(mail, "shipped-email");
 

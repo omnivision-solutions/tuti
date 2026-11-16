@@ -1,6 +1,7 @@
-import { Button, Text } from "@react-email/components";
+import { Button } from "@react-email/components";
 
-import { buttonStyle, colors, type EmailBrand, Layout } from "./layout";
+import { Paragraph } from "./blocks";
+import { buttonStyle, type EmailBrand, Layout, Note, Title } from "./layout";
 
 /** `project`: the portal it was asked on (sent on its behalf); none for the app (from Tuti). */
 type PasswordResetProps = { project?: EmailBrand | null; url: string; minutes: number };
@@ -13,18 +14,17 @@ export function PasswordResetEmail({ project, url, minutes }: PasswordResetProps
       project={project ?? undefined}
       footer={<>If you didn&apos;t ask for this, ignore it: your password stays the same.</>}
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
+      <Title>Reset your password</Title>
+      <Paragraph>
         Someone asked to reset the password for your account on <strong>{siteName}</strong>.
-      </Text>
+      </Paragraph>
       <Button
         href={url}
         style={buttonStyle(project?.accent)}
       >
         Set a new password
       </Button>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        The link works once and expires in {minutes} minutes.
-      </Text>
+      <Note>The link works once and expires in {minutes} minutes.</Note>
     </Layout>
   );
 }
@@ -38,12 +38,9 @@ export const passwordResetEmail = (props: PasswordResetProps) => ({
 export function PasswordChangedEmail({ project }: { project?: EmailBrand | null }) {
   return (
     <Layout preview="Your password was just changed." project={project ?? undefined}>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        The password for your account was just changed with a reset link, and you were signed out everywhere else.
-      </Text>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        If this wasn&apos;t you, use &quot;Forgot your password?&quot; on the sign-in page to set a new one right away.
-      </Text>
+      <Title>Your password was changed</Title>
+      <Paragraph>The password for your account was just changed with a reset link, and you were signed out everywhere else.</Paragraph>
+      <Note kind="warn">If this wasn&apos;t you, use &quot;Forgot your password?&quot; on the sign-in page to set a new one right away.</Note>
     </Layout>
   );
 }

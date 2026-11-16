@@ -64,11 +64,14 @@ describe("when a post ships", () => {
     await call(createComment, as(commenter.id), { number: post.number, body: "Yes please" });
 
     await setStatus(post.number, "completed");
+    const { voteCount } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { voteCount: true } });
 
     for (const address of [author.email, voter.email, commenter.email, ssoEmail]) {
       const [email, ...more] = emailsTo(address);
       expect(more).toEqual([]);
       expect(email!.subject).toBe("Done: Dark mode");
+      // The post's card: its votes, board, title and status.
+      expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} ${voteCount === 1 ? "vote" : "votes"} Feature requests Dark mode Completed`);
       expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
       expect(email!.headers["list-unsubscribe"]).toMatch(
         new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[^.>]+\\.[\\w-]+>$`),
@@ -83,6 +86,17 @@ describe("when a post ships", () => {
     await setStatus(post.number, "open");
     await setStatus(post.number, "completed");
     expect(emailsTo(author.email)).toHaveLength(1);
+  });
+
+  test("a public post on a Team only board: the email's card leaves the board's name out, as its page does", async () => {
+    const voter = await verified("Voter");
+    const post = await call(createPost, as(voter.id), { board: "feature-requests", title: "Dark mode" });
+    // Made Team only since: the post stays public, the board is off the portal.
+    await prisma.board.updateMany({ where: { projectId: project.id, slug: "feature-requests" }, data: { postVisibility: "TEAM" } });
+    await setStatus(post.number, "completed");
+    const [email] = emailsTo(voter.email);
+    expect(email!.text.replace(/\s+/g, " ")).toMatch(/\d+ votes? Dark mode Completed/);
+    expect(email!.text).not.toContain("Feature requests");
   });
 
   test("the email is the project's: its name and accent colour at the top, not Tuti's wordmark", async () => {

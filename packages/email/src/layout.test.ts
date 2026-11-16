@@ -96,12 +96,12 @@ test("emails a project's customers get take its accent", async () => {
 test("a changelog entry's links take the project's accent", async () => {
   const doc: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "docs", marks: [{ type: "link", attrs: { href: "https://acme.example/docs" } }] }] }] };
   const html = await render(
-    changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", doc, unsubscribeUrl: "https://acme.example/u", accent: "#7c3aed" }).body,
+    changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", publishedAt: new Date(), doc, unsubscribeUrl: "https://acme.example/u", accent: "#7c3aed" }).body,
   );
   expect(html).toMatch(/<a href="https:\/\/acme.example\/docs" style="color:#7c3aed/);
   // A grey that's enough for a button (3:1) but not for text this size (under 4.5:1): links in the text colour.
   const grey = await render(
-    changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", doc, unsubscribeUrl: "https://acme.example/u", accent: "#808080" }).body,
+    changelogEmail({ projectName: "Acme", entryTitle: "New", entryUrl: "https://acme.example/c/1", publishedAt: new Date(), doc, unsubscribeUrl: "https://acme.example/u", accent: "#808080" }).body,
   );
   expect(grey).toMatch(new RegExp(`<a href="https://acme.example/docs" style="color:${colors.text}`));
   expect(grey).toContain("background-color:#808080");
@@ -151,9 +151,9 @@ test("every email to a project's customers drops Powered by tuti when the projec
     const brand = { projectName: "Acme", accent: null, poweredBy };
     return {
       shipped: shippedEmail({ ...brand, postTitle: "Dark mode", postUrl: u, unsubscribeUrl: u }),
-      status: statusEmail({ ...brand, status: "IN_PROGRESS", postTitle: "Dark mode", boardName: "Feature requests", votes: 3, postUrl: u, unsubscribeUrl: u }),
+      status: statusEmail({ ...brand, status: "IN_PROGRESS", postTitle: "Dark mode", board: "Feature requests", votes: 3, postUrl: u, unsubscribeUrl: u }),
       reply: replyEmail({ ...brand, authorName: "Ada", postTitle: "Dark mode", text: "Hi", doc, postUrl: u, unsubscribeUrl: u }),
-      changelog: changelogEmail({ ...brand, entryTitle: "New", entryUrl: u, doc, unsubscribeUrl: u }),
+      changelog: changelogEmail({ ...brand, entryTitle: "New", entryUrl: u, publishedAt: new Date(), doc, unsubscribeUrl: u }),
       changelogConfirm: changelogConfirmEmail({ ...brand, url: u }),
       supportReply: conversationReplyEmail({ ...brand, subject: "Re: Hi", messages: [{ name: "Ada", body: "Hi" }] }),
       signInLink: signInLinkEmail({ ...brand, url: u, minutes: 15 }),

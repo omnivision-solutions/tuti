@@ -108,7 +108,9 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
         select: {
           number: true,
           title: true,
-          board: { select: { slug: true, off: true } },
+          status: true,
+          voteCount: true,
+          board: { select: { slug: true, name: true, off: true, postVisibility: true } },
           projectId: true,
           authorId: true,
           visibility: true,
@@ -170,6 +172,10 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           ...brand,
           authorName: comment.author.name,
           postTitle: post.title,
+          votes: post.voteCount,
+          // A Team only board isn't on the portal: its post's page doesn't name it, nor does the email.
+          board: post.board.postVisibility === "TEAM" ? undefined : post.board.name,
+          status: post.status,
           text,
           doc,
           mediaUrls,

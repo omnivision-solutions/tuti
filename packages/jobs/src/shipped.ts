@@ -149,7 +149,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       title: true,
       status: true,
       voteCount: true,
-      board: { select: { slug: true, off: true, name: true } },
+      board: { select: { slug: true, name: true, off: true, postVisibility: true } },
       projectId: true,
       authorId: true,
       visibility: true,
@@ -223,6 +223,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
   const postUrl = portalPostUrl(origin, post);
+  // A Team only board isn't on the portal: its post's page doesn't name it, nor does the email.
+  const boardName = post.board.postVisibility === "TEAM" ? undefined : post.board.name;
   let emailed = 0;
   let failed = 0;
   let held = false;
@@ -246,8 +248,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       sendEmail({
         to: address,
         ...(status === "COMPLETED"
-          ? shippedEmail({ ...brand, postTitle: post.title, postUrl, unsubscribeUrl, note })
-          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, boardName: post.board.name, votes: post.voteCount, postUrl, unsubscribeUrl, note })),
+          ? shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note })
+          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, board: boardName, votes: post.voteCount, postUrl, unsubscribeUrl, note })),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {

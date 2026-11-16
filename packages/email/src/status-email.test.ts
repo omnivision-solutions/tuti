@@ -6,7 +6,7 @@ import { statusEmail } from "./status-email";
 const props = {
   projectName: "Acme",
   postTitle: "CSV export with tags",
-  boardName: "Feature requests",
+  board: "Feature requests",
   votes: 64,
   postUrl: "https://acme.example/p/1",
   unsubscribeUrl: "https://acme.example/u",
@@ -18,12 +18,14 @@ test("In progress: the news, the post with its votes and status, what comes next
   const text = await render(email.body, { plainText: true });
   for (const part of [
     "Update on an idea you asked for",
-    "CSV export with tags is in progress",
+    // The heading (an h1, upper-cased in plain text).
+    "CSV EXPORT WITH TAGS IS IN PROGRESS",
     "Feature requests",
     "64",
     "In progress",
     "The team has started building it. We'll email you again when it ships.",
-    "Ada from the team:",
+    "Ada",
+    "Acme team",
     "Out next week.",
     "See the idea",
     "Unsubscribe from Acme",
@@ -41,9 +43,9 @@ test("Planned: its own words, and no note when the change came without one", asy
   const email = statusEmail({ ...props, status: "PLANNED" });
   expect(email.subject).toBe("Planned: CSV export with tags");
   const text = await render(email.body, { plainText: true });
-  expect(text).toContain("CSV export with tags is planned");
+  expect(text).toContain("CSV EXPORT WITH TAGS IS PLANNED");
   expect(text).toContain("The team plans to build it. We'll email you again when it ships.");
-  expect(text).not.toContain("from the team");
+  expect(text).not.toContain("Acme team");
   // The portal's blue.
   expect(await render(email.body)).toContain("color:#1467c2");
 });

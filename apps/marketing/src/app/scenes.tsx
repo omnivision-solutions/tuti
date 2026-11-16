@@ -174,28 +174,61 @@ const Tiles = () => (
 
 // ---- The hero's window, one per tab ----
 
+/** A page of Lumen's portal, as the help center, feedback and changelog tabs show it: its header, a sidebar of `side`'s sections (the first open) with their counts, and the page. */
+function Portal({ page, side, children }: { page: string; side: [string, number][]; children: ReactNode }) {
+  return (
+    <>
+      <div className="sc-ph">
+        <b>
+          <i /> Lumen
+        </b>
+        <nav>
+          {["Help", "Feedback", "Roadmap", "Changelog"].map((name) => (
+            <span key={name} className={name === page ? "on" : undefined}>
+              {name}
+            </span>
+          ))}
+        </nav>
+      </div>
+      <div className="sc-pb">
+        <div className="sc-side">
+          {side.map(([name, count], n) => (
+            <span key={name} className={n === 0 ? "on" : undefined}>
+              {name}
+              <small>{count}</small>
+            </span>
+          ))}
+        </div>
+        <div className="sc-main">{children}</div>
+      </div>
+    </>
+  );
+}
+
 export function HeroAutopilot() {
   return (
-    <Pic className="hero-sc sc-ap" label={`Pull request #230 merged, and from it: the article “${ARTICLE}” rewritten, the feature request “${REQUEST}” completed with its 42 voters emailed, and a changelog entry drafted`}>
+    <Pic className="hero-sc sc-ap" label={`Pull request #230 merged, and from it: the article “${ARTICLE}” rewritten, the feature request “${REQUEST}” completed with its 42 voters emailed, and release notes drafted`}>
       <Pr />
       <div className="sc-from">
         <small>From #230</small>
         <div className="sc-card">
           <div className="h">
-            <FileTextIcon {...i} /> {ARTICLE} <Pill tone="upd">Updated</Pill>
+            <FileTextIcon {...i} /> Article updated
           </div>
+          <span className="sc-mute tt">{ARTICLE}</span>
           <Diff />
         </div>
         <div className="sc-card">
           <div className="h">
-            <MessageCircleIcon {...i} /> {REQUEST} <Pill tone="done">Completed</Pill>
+            <MessageCircleIcon {...i} /> Feature request completed
           </div>
-          <span className="sc-mute">42 voters emailed</span>
+          <span className="sc-mute tt">{REQUEST}, 42 voters emailed</span>
         </div>
         <div className="sc-card">
           <div className="h">
-            <SparklesIcon {...i} /> {ENTRY} <Pill tone="open">Changelog draft</Pill>
+            <SparklesIcon {...i} /> Release notes drafted
           </div>
+          <span className="sc-mute tt">{ENTRY}</span>
         </div>
       </div>
     </Pic>
@@ -205,9 +238,17 @@ export function HeroAutopilot() {
 export function HeroHelp() {
   return (
     <Pic className="hero-sc sc-hc" label="A help center answering “How do I cancel my plan?” with AI, citing the article it came from">
-      <div className="brand">Lumen Help</div>
-      <Answer wide />
-      <Tiles />
+      <Portal page="Help" side={[["Getting started", 8], ["Calendars and events", 14], ["Plans and billing", 6], ["Integrations", 9]]}>
+        <Answer wide />
+        <div className="sc-pop">
+          <small>Popular articles</small>
+          {[ARTICLE, "Invite your team", "Set reminder defaults"].map((title) => (
+            <span key={title}>
+              <FileTextIcon {...i} /> {title}
+            </span>
+          ))}
+        </div>
+      </Portal>
     </Pic>
   );
 }
@@ -269,11 +310,13 @@ export function HeroInbox() {
 export function HeroFeedback() {
   return (
     <Pic className="hero-sc sc-fb" label="A feedback board: feature requests ranked by votes, Google Calendar sync on top with 42">
-      <div className="sc-boardhead">
-        <b>Feature requests</b>
-        <span className="sc-btn">Share an idea</span>
-      </div>
-      <Votes rows={6} />
+      <Portal page="Feedback" side={[["All posts", 34], ["In progress", 1], ["Planned", 4], ["Open", 29]]}>
+        <div className="sc-boardhead">
+          <b>Feature requests</b>
+          <span className="sc-btn">Share an idea</span>
+        </div>
+        <Votes rows={6} />
+      </Portal>
     </Pic>
   );
 }
@@ -281,13 +324,15 @@ export function HeroFeedback() {
 export function HeroChangelog() {
   return (
     <Pic className="hero-sc sc-cl" label="A changelog: Two-way Google Calendar sync, new, and an improvement and a fix before it">
-      <div className="sc-boardhead">
-        <b>Changelog</b>
-        <span className="sc-btn">Subscribe</span>
-      </div>
-      <Entry date="Today" />
-      <Entry tag="Improved" date="Last week" title="Fewer duplicate reminders" line="Each reminder now goes out once, however many devices you use." />
-      <Entry tag="Fixed" date="Oct 28" title="Time zones on shared events" line="Shared events now show in each guest's own time zone." />
+      <Portal page="Changelog" side={[["All updates", 48], ["New", 17], ["Improved", 22], ["Fixed", 9]]}>
+        <div className="sc-boardhead">
+          <b>Changelog</b>
+          <span className="sc-btn">Subscribe</span>
+        </div>
+        <Entry date="Today" />
+        <Entry tag="Improved" date="Last week" title="Fewer duplicate reminders" line="Each reminder now goes out once, however many devices you use." />
+        <Entry tag="Fixed" date="Oct 28" title="Time zones on shared events" line="Shared events now show in each guest's own time zone." />
+      </Portal>
     </Pic>
   );
 }
@@ -530,7 +575,7 @@ export function CellAiTools() {
 
 export function HeroAsk() {
   return (
-    <Pic className="hero-sc sc-hc" label="A help center answering “How do I cancel my plan?” with AI, citing the article it came from, with Ask a person under it">
+    <Pic className="hero-sc sc-hc solo" label="A help center answering “How do I cancel my plan?” with AI, citing the article it came from, with Ask a person under it">
       <div className="brand">Lumen Help</div>
       <Answer wide />
       <div className="sc-ask">
