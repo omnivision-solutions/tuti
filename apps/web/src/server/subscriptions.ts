@@ -26,6 +26,9 @@ const onDefaultPlan = (): Prisma.ProjectWhereInput[] => [{ plan: null }, { plan:
 
 const at = (seconds: number) => new Date(seconds * 1000);
 
+/** A subscription holding only the "Powered by tuti" add-on: a licensed project's (not a plan the file no longer lists, with it). */
+export const badgeOnly = ({ items }: StripeSubscription) => items.data.length > 0 && items.data.every(({ price }) => isBadgePrice(price.id));
+
 /**
  * Brings the project's plan (and its "Powered by tuti" add-on) in step with subscription `id` as Stripe has it now, not as an event said it
  * was, so events arriving late or out of order can't leave an old state behind. One at a time per
@@ -54,7 +57,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const subscription = await getSubscription(id);
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
-      if (!item && subscription.items.data.some(({ price }) => isBadgePrice(price.id))) {
+      if (badgeOnly(subscription)) {
         await syncLicensedBadge(tx, projectId, subscription);
         return projectId;
       }
@@ -151,7 +154,7 @@ export async function endLicensedBadge(projectId: string): Promise<void> {
     return;
   }
   const subscription = await getSubscription(id);
-  if (["canceled", "incomplete_expired"].includes(subscription.status) || subscription.items.data.some(({ price }) => planOfPrice(price.id))) {
+  if (["canceled", "incomplete_expired"].includes(subscription.status) || !badgeOnly(subscription)) {
     return;
   }
   await cancelSubscription(id);

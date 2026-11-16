@@ -2,7 +2,7 @@
 
 import { type Prisma, prisma } from "@tuti/db";
 import { applyPlanLicense, grantLicenseCredits, lockPlanLicense, lockProject, releasePlanLicense } from "@tuti/jobs";
-import { onDefaultPlan, planOfPrice } from "@tuti/shared";
+import { onDefaultPlan } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -11,7 +11,7 @@ import { verifyValue } from "@/lib/signed";
 import { getAdminProject } from "./membership";
 import { getAccountSession } from "./session";
 import { getSubscription, projectSubscriptions } from "./stripe";
-import { endBadgeWithLicense } from "./subscriptions";
+import { badgeOnly, endBadgeWithLicense } from "./subscriptions";
 
 /**
  * Plan licenses (docs/plan.md, Plan licenses; packages/jobs/src/plan-licenses.ts): an account's licenses, each assigned to
@@ -38,7 +38,7 @@ async function stillCharging(projectId: string, recorded: string | null): Promis
     const found = await projectSubscriptions(projectId);
     const last = recorded && !found.some(({ id }) => id === recorded) ? [await getSubscription(recorded)] : [];
     // One holding only the "Powered by tuti" add-on goes with a license (syncSubscription).
-    return [...found, ...last].some(({ status, items }) => !ENDED.has(status) && items.data.some(({ price }) => planOfPrice(price.id)));
+    return [...found, ...last].some((subscription) => !ENDED.has(subscription.status) && !badgeOnly(subscription));
   } catch {
     throw new Refused("We couldn't check this project's plan with Stripe. Try again in a minute.");
   }

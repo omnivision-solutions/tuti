@@ -1,12 +1,13 @@
 import { prisma } from "@tuti/db";
-import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
 import { branding, updateBranding } from "@/server/operations/branding";
 import { getPlan, setBadgeAddOn, subscribePlan } from "@/server/operations/plan";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { assignPlanLicense } from "@/server/plan-licenses";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** Hiding "Powered by tuti" on tuti.so (docs/plan.md, Plans and Licences): a $49 add-on on a paid plan, hiding the badge while both are paid. */
 
@@ -189,4 +190,18 @@ test("the add-on comes off Stripe even for a project whose plan the file no long
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.plans = config.plans.filter(({ key }) => key !== "pro"); }));
   expect(await badge(false)).toEqual({ on: false });
   expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_MONTHLY.id]);
+});
+
+test("a plan the file no longer lists, with the add-on, isn't taken for a licensed project's add-on: it isn't cancelled, and keeps a license off", async () => {
+  const subscription = await subscribe();
+  await badge(true);
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    withAppsumoPlans(config);
+    config.plans = config.plans.filter(({ key }) => key !== "pro");
+  }));
+  await deliver(stripe.update(subscription, {}));
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("active");
+  actAs(owner);
+  const license = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: crypto.randomUUID(), plan: "appsumo-1", userId: owner.id } });
+  expect((await assignPlanLicense(project.slug, license.id)).error).toMatch(/^This project has a Stripe subscription that can still be paid/);
 });
