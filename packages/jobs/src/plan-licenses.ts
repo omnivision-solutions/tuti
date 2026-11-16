@@ -2,6 +2,7 @@ import { type Prisma, prisma } from "@tuti/db";
 import { planCredits, planDisplay } from "@tuti/shared";
 
 import { grantCredits } from "./credits";
+import { lockProject } from "./running-draft";
 import type { JobResult } from "./index";
 
 /**
@@ -17,9 +18,20 @@ const HOUR_MS = 3_600_000;
  * Puts the project license `id` is assigned to on the plan it gives, or back on its own plan once it's revoked: none
  * stored, which is the default plan (or its trial's while that runs). In `tx`, holding the license's row. A project
  * paying through Stripe is never given a license (assignment refuses it), so its plan is never touched here.
+ * Revoked (a refund), the AI credits it gave that are left go too, on whichever project has them; spent ones stay spent.
  */
 export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const license = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { plan: true, projectId: true, revokedAt: true } });
+  if (license.revokedAt) {
+    const grants = await tx.aiCreditGrant.findMany({ where: { planLicenseId: id, remaining: { gt: 0 } }, select: { projectId: true } });
+    // Under each project's lock, as charges take it (chargeCredits), so a charge can't write back what it read before.
+    for (const projectId of [...new Set(grants.map((grant) => grant.projectId))].sort()) {
+      await lockProject(tx, projectId);
+      for (const grant of await tx.aiCreditGrant.findMany({ where: { planLicenseId: id, projectId, remaining: { gt: 0 } }, select: { id: true, remaining: true, takenBack: true } })) {
+        await tx.aiCreditGrant.update({ where: { id: grant.id }, data: { remaining: 0, takenBack: grant.takenBack.plus(grant.remaining) } });
+      }
+    }
+  }
   if (license.projectId) {
     await tx.project.updateMany({ where: { id: license.projectId, planStatus: null }, data: { plan: license.revokedAt ? null : license.plan } });
   }
@@ -64,7 +76,7 @@ export async function grantLicenseCredits(id: string, now = new Date()): Promise
     end.setUTCMonth(end.getUTCMonth() + 1);
     end.setUTCDate(Math.min(start.getUTCDate(), new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate()));
     await tx.planLicense.update({ where: { id }, data: { creditsThrough: end } });
-    await grantCredits(license.projectId, "PLAN", credits, { expiresAt: end, note: `${planDisplay(license.plan).name} license` }, tx);
+    await grantCredits(license.projectId, "PLAN", credits, { expiresAt: end, note: `${planDisplay(license.plan).name} license`, planLicenseId: id }, tx);
     return credits;
   });
 }

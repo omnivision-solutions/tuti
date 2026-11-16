@@ -60,7 +60,8 @@ export async function grantCredits(
     stripeSessionId,
     stripeInvoiceId,
     paidCents,
-  }: { days?: number | null; expiresAt?: Date | null; note?: string; stripeSessionId?: string; stripeInvoiceId?: string; paidCents?: number },
+    planLicenseId,
+  }: { days?: number | null; expiresAt?: Date | null; note?: string; stripeSessionId?: string; stripeInvoiceId?: string; paidCents?: number; planLicenseId?: string },
   tx: Prisma.TransactionClient = prisma,
 ) {
   const amount = toCredits(credits);
@@ -75,6 +76,7 @@ export async function grantCredits(
       stripeSessionId,
       stripeInvoiceId,
       paidCents,
+      planLicenseId,
     },
   });
 }

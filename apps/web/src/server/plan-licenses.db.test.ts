@@ -4,6 +4,7 @@ import { billingFile, type FakeStripeEvent, startStripeFake, type StripeFake, wi
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
+import { topUpCredits } from "@/server/operations/credits";
 import { getPlan, subscribePlan } from "@/server/operations/plan";
 import { call } from "@/server/operations/run";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -315,4 +316,11 @@ test("a month of credits from January 31 lasts until February's last day", async
   const held = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: crypto.randomUUID(), plan: "appsumo-2", userId: owner.id, projectId: project.id } });
   await grantLicenseCredits(held.id, new Date("2027-01-31T12:00:00Z"));
   expect((await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id } })).creditsThrough).toEqual(new Date("2027-02-28T12:00:00Z"));
+});
+
+test("a project on a license can still buy AI credits", async () => {
+  const held = await license();
+  expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
+  const { url } = await call(topUpCredits, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { dollars: 10 });
+  expect(url).toEqual(expect.any(String));
 });

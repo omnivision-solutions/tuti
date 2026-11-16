@@ -195,9 +195,11 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           // The previous key's deactivation doesn't count against the license under its new key, but the new key's own
           // (a refund of the upgrade, before this upgrade or its retry) does.
           const revokedAt = row === previous ? (early ? early.revokedAt : null) : row.revokedAt;
+          // Back from the previous key's deactivation, which took its month's credits back: a new month starts (the hourly job).
+          const revived = row.revokedAt && !revokedAt ? { creditsThrough: null } : {};
           await tx.planLicense.update({
             where: { id: row.id },
-            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
+            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, ...revived, userId: row.userId ?? early?.userId ?? null, metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
           });
         }
         // The previous key, renamed or never seen, is marked replaced, so its late events change nothing.

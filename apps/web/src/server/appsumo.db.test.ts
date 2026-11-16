@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { grantCredits, grantLicenseCredits } from "@tuti/jobs";
 import { appsumoWebhook, type AppsumoFake, billingFile, startAppsumoFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -134,6 +135,36 @@ test("the old key's deactivation arriving before the upgrade: the upgrade brings
   await deliver({ event: "downgrade", license_key: next, prev_license_key: key, tier: 1 });
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ externalKey: next, projectId: project.id, revokedAt: null });
   expect(await planOf(project.id)).toBe("appsumo-1");
+});
+
+/** The project's AI credits left from its license (PLAN) and from top-ups, and what was taken back. */
+const creditsLeft = async (projectId: string) => {
+  const grants = await prisma.aiCreditGrant.findMany({ where: { projectId }, select: { source: true, remaining: true, takenBack: true } });
+  const sum = (source: string, field: "remaining" | "takenBack") => grants.filter((one) => one.source === source).reduce((total, one) => total + one[field].toNumber(), 0);
+  return { license: sum("PLAN", "remaining"), takenBack: sum("PLAN", "takenBack"), topups: sum("TOPUP", "remaining") };
+};
+
+test("a refund takes back the AI credits its license gave that are left, and leaves the project's top-ups", async () => {
+  const { project, key } = await assigned();
+  await grantCredits(project.id, "TOPUP", 500, { days: 365 });
+  const spent = await prisma.aiCreditGrant.findFirstOrThrow({ where: { projectId: project.id, source: "PLAN" } });
+  await prisma.aiCreditGrant.update({ where: { id: spent.id }, data: { remaining: 300 } });
+  expect(await creditsLeft(project.id)).toEqual({ license: 300, takenBack: 0, topups: 500 });
+  await deliver({ event: "deactivate", license_key: key, tier: 1, extra: { reason: "Refunded" } });
+  expect(await creditsLeft(project.id)).toEqual({ license: 0, takenBack: 300, topups: 500 });
+  // Said again (a retry), nothing more.
+  await deliver({ event: "deactivate", license_key: key, tier: 1, extra: { reason: "Refunded" } });
+  expect(await creditsLeft(project.id)).toEqual({ license: 0, takenBack: 300, topups: 500 });
+});
+
+test("the old key's deactivation before an upgrade takes the month's credits back, and the upgrade starts a new month", async () => {
+  const { project, key, license } = await assigned();
+  await deliver({ event: "deactivate", license_key: key, tier: 1 });
+  expect(await creditsLeft(project.id)).toMatchObject({ license: 0, takenBack: 400 });
+  await deliver({ event: "upgrade", license_key: crypto.randomUUID(), prev_license_key: key, tier: 2 });
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: null, creditsThrough: null });
+  await grantLicenseCredits(license.id);
+  expect(await creditsLeft(project.id)).toMatchObject({ license: 1000 });
 });
 
 test("the new key's activation arriving before the upgrade: the upgrade still keeps the holder's license", async () => {
