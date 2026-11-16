@@ -25,7 +25,7 @@ const newest = (dates: (Date | undefined)[]) => dates.reduce<Date | undefined>((
 /**
  * The portal's public pages for search engines: home, boards, posts, the
  * roadmap, the changelog and the docs (with their tabs' and collections' pages), each with when it
- * last changed (a tab's or collection's: the newest of itself and the articles listed here in it). Merged posts
+ * last changed (a tab's or collection's: the newest of itself, the collections in it and the articles listed here in them). Merged posts
  * (they redirect), drafts, articles that aren't listed everywhere or block search indexing,
  * pages for signed-in readers or some groups only (and tabs with nothing else), sample content (server/sample-content.ts)
  * and the sign-in pages are left out.
@@ -66,7 +66,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const collectionDates = new Map(project.collections.map((collection) => [collection.slug, collection.updatedAt]));
   const tabDates = new Map(project.docsTabs.map((tab) => [tab.slug, tab.updatedAt]));
   const datesOf = (links: DocsArticleLink[]) => links.flatMap((link) => articleDates.get(link.slug) ?? []);
-  const datesIn = (collection: DocsCollection): Date[] => [...datesOf(collection.articles), ...collection.collections.flatMap(datesIn)];
+  // A collection's own and the ones in it: their pages show the names and descriptions of the collections in them.
+  const datesIn = (collection: DocsCollection): (Date | undefined)[] => [
+    collectionDates.get(collection.slug),
+    ...datesOf(collection.articles),
+    ...collection.collections.flatMap(datesIn),
+  ];
   const latestPost = project.posts[0]?.updatedAt;
   const pages: { path: string; lastmod?: Date }[] = [
     { path: "", lastmod: latestPost },
@@ -88,7 +93,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       .filter((collection) => !collection.sample)
       .map((collection) => ({
         path: `/docs/${collection.slug}`,
-        lastmod: newest([collectionDates.get(collection.slug), ...datesIn(collection)]),
+        lastmod: newest(datesIn(collection)),
       })),
     ...articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.

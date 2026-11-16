@@ -356,7 +356,7 @@ describe("readers", () => {
     expect(text).not.toContain("Empty");
   });
 
-  test("the sitemap dates a tab by the newest of itself and the listed articles in it, never a hidden one's", async () => {
+  test("the sitemap dates a tab by the newest of itself, its collections and the listed articles in them, never a hidden one's", async () => {
     await withTabs();
     const old = new Date("2026-01-01T10:00:00Z");
     await prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
@@ -371,6 +371,12 @@ describe("readers", () => {
     const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
     expect(xml).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-03-01T10:00:00.000Z</lastmod></url>`);
     expect(xml).not.toContain(`${portal}/docs/empty<`);
+
+    // A collection in it changing (its name, say) changes the pages it's on: its tab's, and the collection it's in.
+    await prisma.collection.updateMany({ where: { projectId: project.id, slug: { in: ["endpoints", "invoices"] } }, data: { updatedAt: new Date("2026-04-01T10:00:00Z") } });
+    const again = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(again).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
+    expect(again).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
   });
 });
 
