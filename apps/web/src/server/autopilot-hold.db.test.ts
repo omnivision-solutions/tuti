@@ -469,7 +469,7 @@ test("a request that goes out by itself says how many people completing it email
   expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "scheduled", emails: 1 });
 });
 
-test("a progress update says how many people approving or publishing it emails: those not told it's in progress yet, none on a post past In progress", async () => {
+test("a progress update says how many people approving or publishing it emails: those not told it's in progress (or that it shipped) yet, none on a post past In progress", async () => {
   const reader = await signUp("Rae Reader");
   const waiting = await update("MOVES_FORWARD");
   const scheduled = await update("MOVES_FORWARD");
@@ -482,7 +482,7 @@ test("a progress update says how many people approving or publishing it emails: 
   }
   await prisma.codeChangeAction.update({ where: { id: scheduled.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
   await prisma.post.update({ where: { id: later.postId! }, data: { status: "IN_PROGRESS" } });
-  // Completed and reopened: told it shipped, never that it's in progress, so moving it on emails them.
+  // Completed and reopened: told it shipped already, which the In progress email skips.
   await prisma.shippedEmail.create({ data: { postId: reopened.postId!, userId: reader.id, sentAt: new Date() } });
   // Told it's in progress before (moved back since): not again.
   await prisma.statusEmail.create({ data: { postId: toldBefore.postId!, userId: reader.id, status: "IN_PROGRESS", sentAt: new Date() } });
@@ -490,7 +490,7 @@ test("a progress update says how many people approving or publishing it emails: 
   expect(await view(waiting)).toMatchObject({ status: "pending", emails: 1 });
   expect(await view(scheduled)).toMatchObject({ status: "scheduled", emails: 1 });
   expect(await view(later)).not.toHaveProperty("emails");
-  expect(await view(reopened)).toMatchObject({ emails: 1 });
+  expect(await view(reopened)).toMatchObject({ emails: 0 });
   expect(await view(toldBefore)).toMatchObject({ emails: 0 });
 });
 
