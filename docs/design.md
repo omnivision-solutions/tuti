@@ -528,8 +528,8 @@ the list picks none to approve at once.
     with the email form) at its end; on phones a round RSS and a round filled bell beside the title. On wide screens a
     timeline: each entry's short date and a neutral dot (a ring in the muted text colour) on a `divider` line in a
     110px margin; beside it the grey tag (Breaking destructive) above a 28px title, then an excerpt of the text, plain
-    (no images, embeds or code) and linking to the entry's page: the first page's newest entry its cover framed as a
-    card and up to eight lines, fading out where it's cut; the others three lines, no cover. Then "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
+    (no images, embeds or code) and linking to the entry's page: every entry its cover (if it has one) framed as a
+    card, the first loading at once and the rest lazily, then up to three lines, fading out where they're cut. Then "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
     the title is read out after the pill's words) it shipped, and its reactions as grey pills, the emoji grey until
     picked (your own the accent's tint and ring); a line between entries. A "Jump to month" index beside the list past
     eight entries, plain rows (the page's month in the neutral fill): the latest six months, older ones under "Earlier

@@ -1131,6 +1131,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const cover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
   await expect(cover).toBeVisible();
   await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  // The list's first cover, likely in view, loads at once.
+  await expect(cover).toHaveAttribute("loading", "eager");
   await checkpoint(ada, "portal-changelog-cover");
   await ada.goto("/changelog/1");
   await expect(cover).toBeVisible();
