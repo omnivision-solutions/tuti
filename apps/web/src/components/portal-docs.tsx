@@ -29,6 +29,7 @@ import { formatDate } from "@/lib/format";
 import { CUSTOMIZE } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
+import { portalArticleJsonLd } from "@/server/portal-metadata";
 import {
   articleCount,
   articleEnd,
@@ -236,7 +237,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
   }
   switch (landing.kind) {
     case "article":
-      return <DocsArticle project={project} slug={landing.slug} article={landing.article} />;
+      return <DocsArticle project={project} slug={landing.slug} article={landing.article} path={tab ? docsTabPath(docs, tab.slug) : "/docs"} />;
     case "collection":
       return <DocsCollectionPage page={landing} />;
     case "overview":
@@ -318,10 +319,13 @@ export async function DocsArticle({
   project,
   slug,
   article,
+  path = `/docs/${slug}`,
 }: {
   project: string;
   slug: string;
   article: Extract<DocsPage, { kind: "article" }>["article"] | LockedArticle;
+  /** Its canonical path: a tab showing it in its place, the tab's. */
+  path?: string;
 }) {
   const at = await portalLinks();
   const readable = "doc" in article ? article : null;
@@ -337,8 +341,25 @@ export async function DocsArticle({
   const markdown = readable && (await articleMarkdown(readable));
   // How long it takes to read, at about 200 words a minute.
   const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
+  // For search engines, when it's for them and every signed-out reader: its breadcrumb as shown, Documentation first.
+  const listing = readable && docsPageListing({ kind: "article", article: readable });
+  const jsonLd =
+    readable &&
+    listing &&
+    !listing.noindex &&
+    !readable.restricted &&
+    (await portalArticleJsonLd(project, {
+      type: "TechArticle",
+      title: readable.title,
+      description: listing.description,
+      path,
+      published: readable.publishedAt,
+      modified: readable.updatedAt,
+      breadcrumb: [{ name: "Documentation", path: "/docs" }, ...(up.href === "/docs" ? [] : [{ name: up.label, path: up.href }]), { name: readable.title, path }],
+    }));
   return (
     <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
+      {jsonLd}
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it

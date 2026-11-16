@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
@@ -9,18 +10,23 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
-import { portalPageMetadata } from "@/server/portal-metadata";
+import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
+
+/** A published entry's search listing, once per request (its metadata and its page's JSON-LD). */
+const listedEntry = cache(async (project: string, number: string) =>
+  /^\d{1,9}$/.test(number)
+    ? prisma.changelogEntry.findFirst({
+        where: { project: { slug: project }, number: Number(number), publishedAt: { not: null } },
+        select: { title: true, body: true, publishedAt: true, updatedAt: true, sample: true },
+      })
+    : null,
+);
 
 /** An entry's search listing and link card; sample content (server/sample-content.ts) is kept from search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/changelog/[number]">): Promise<Metadata> {
   const { project, number } = await props.params;
-  const entry =
-    /^\d{1,9}$/.test(number) &&
-    (await prisma.changelogEntry.findFirst({
-      where: { project: { slug: project }, number: Number(number), publishedAt: { not: null } },
-      select: { title: true, body: true, publishedAt: true, sample: true },
-    }));
+  const entry = await listedEntry(project, number);
   if (!entry) {
     return {};
   }
@@ -47,8 +53,22 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   if (!entry) {
     notFound();
   }
+  // For search engines (every entry is for signed-out readers too); sample content isn't for them, as in generateMetadata.
+  const listed = await listedEntry(slug, param);
+  const jsonLd =
+    listed &&
+    !listed.sample &&
+    (await portalArticleJsonLd(slug, {
+      type: "BlogPosting",
+      title: listed.title,
+      description: summary(listed.body),
+      path: `/changelog/${number}`,
+      published: listed.publishedAt,
+      modified: listed.updatedAt,
+    }));
   return (
     <div className="flex flex-col gap-6">
+      {jsonLd}
       <ChangelogMenu slug={slug} current={entry.number} />
       <ChangelogEntryView
         entry={entry}
