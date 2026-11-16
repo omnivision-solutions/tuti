@@ -198,6 +198,25 @@ test("an older subscription still unpaid keeps a license off, whatever happened 
   expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
 });
 
+test("a Checkout still being paid that Stripe's search doesn't show yet keeps a license off the project", async () => {
+  await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" });
+  stripe.pay(stripe.sessions.at(-1)!.id);
+  const subscription = stripe.sessions.at(-1)!.subscription!;
+  stripe.hiddenFromSearch.add(subscription);
+  await deliver(stripe.update(subscription, { status: "incomplete" }));
+  const held = await license();
+  expect((await assignPlanLicense(project.slug, held.id)).error).toMatch(/^This project has a Stripe subscription that can still be paid/);
+});
+
+test("a Checkout still being paid on a project given a plan by hand since isn't recorded, so it can't take that plan", async () => {
+  await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" });
+  stripe.pay(stripe.sessions.at(-1)!.id);
+  const subscription = stripe.sessions.at(-1)!.subscription!;
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await deliver(stripe.update(subscription, { status: "incomplete" }));
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { stripeSubscriptionId: true } })).toEqual({ stripeSubscriptionId: null });
+});
+
 test("a subscription paid after its project was given a license doesn't take the project, even with the license revoked", async () => {
   // A Checkout opened before the license was assigned, paid once the license was revoked (it gives no plan).
   await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" });

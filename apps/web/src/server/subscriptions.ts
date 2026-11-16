@@ -14,6 +14,9 @@ import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 /** Statuses in which a subscription's plan holds: past_due too, while Stripe retries a failed payment. Any other is the free plan. */
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
+/** Statuses in which a subscription holds no plan but can still be paid, and then charge. */
+const PAYABLE = new Set(["incomplete", "unpaid", "paused"]);
+
 
 /** No paid plan: the billing file's default. The subscription stays recorded as the one that last held the plan. */
 const NO_PLAN = { plan: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
@@ -55,6 +58,11 @@ export async function syncSubscription(id: string): Promise<string | null> {
       // before is over, and one started since is a second plan, logged below.
       if (!LIVE.has(subscription.status) || !item || !paid) {
         await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id, planLicense: { is: null } }, data: NO_PLAN });
+        // One that can still be paid (a bank debit processing, a failed payment) is recorded on a project on the default
+        // plan: assigning a plan license asks Stripe about it directly, as Stripe's search may not show it for a minute.
+        if (PAYABLE.has(subscription.status)) {
+          await tx.project.updateMany({ where: { id: projectId, planStatus: null, planLicense: { is: null }, OR: onDefaultPlan() }, data: { stripeSubscriptionId: id } });
+        }
         return projectId;
       }
       const periodEnd = at(item.current_period_end);
