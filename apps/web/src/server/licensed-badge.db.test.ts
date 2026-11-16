@@ -131,3 +131,23 @@ test("a live add-on doesn't keep a license off the project, and its webhook afte
   await deliver(stripe.update(subscription, {}));
   expect(await stored()).toMatchObject({ plan: "appsumo-2", badgeAddOn: true });
 });
+
+test("an upgrade's old key deactivated first keeps the add-on: the upgrade gives the license back with the badge still hidden", async () => {
+  const subscription = await buy();
+  await applyAppsumoEvent({ event: "deactivate", license_key: licenseKey, extra: { reason: "Upgraded by the customer" } });
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("active");
+  await applyAppsumoEvent({ event: "upgrade", license_key: crypto.randomUUID(), prev_license_key: licenseKey, tier: 2 });
+  expect(await stored()).toMatchObject({ plan: "appsumo-2", badgeAddOn: true });
+  expect(await shown()).toBe(false);
+});
+
+test("an upgrade whose new key is another account's revokes the old license, and its add-on ends with it", async () => {
+  const subscription = await buy();
+  const other = await signUp("Other");
+  const next = crypto.randomUUID();
+  await prisma.planLicense.create({ data: { source: "appsumo", externalKey: next, plan: "appsumo-2", userId: other.id } });
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  await applyAppsumoEvent({ event: "upgrade", license_key: next, prev_license_key: licenseKey, tier: 2 });
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("canceled");
+  expect(await stored()).toMatchObject({ plan: null, badgeAddOn: false });
+});

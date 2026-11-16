@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { creditBalance, emailsThisMonth } from "@tuti/jobs";
-import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, effectivePlan, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled, trialState } from "@tuti/shared";
+import { badgeOffered, badgePrice, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, effectivePlan, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled, trialState } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -67,6 +67,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // Stripe (the add-on is bought on its own); or, revoked, the reason the project can't buy a plan until it's unassigned.
   const license = plan.planLicense && { ...plan.planLicense, from: LICENSE_SOURCES[plan.planLicense.source] ?? plan.planLicense.source };
   const licensed = Boolean(license && !license.revokedAt);
+  // A licensed project's add-on is billed monthly where it's sold so, else yearly (plan.badge).
+  const licensedBilling = badgePrice("month") ? "monthly" : "yearly";
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -142,7 +144,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               licensed
                 ? plan.badgeAddOn
                   ? "Hidden on this project, billed on its own. It ends with the license."
-                  : `The badge at the foot of the portal: hide it for $${badge} a month, billed on its own.`
+                  : `The badge at the foot of the portal: hide it for $${badge} a month, billed ${licensedBilling} on its own.`
                 : plan.badgeAddOn
                 ? // What it's billed at may be an older price than the file's: no amount.
                   "Hidden on this project's plan. It ends with the plan."
@@ -158,7 +160,11 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} licensed={licensed} />
+                <div className="flex flex-wrap items-start gap-2">
+                  <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} licensed={licensed ? licensedBilling : undefined} />
+                  {/* Its card and invoices: the add-on is the licensed project's only subscription. */}
+                  {licensed && plan.badgeAddOn && <ManagePlan projectSlug={slug} />}
+                </div>
               ))}
           </SettingRow>
         </SettingsCard>

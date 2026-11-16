@@ -149,6 +149,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         return;
       }
       const keys = [key, ...(event.prev_license_key ? [event.prev_license_key] : [])];
+      let revoked: string | null = null;
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, keys);
         const rows = await rowsFor(tx, keys);
@@ -179,6 +180,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
           log.error("An AppSumo upgrade's new key is on another account or project than the license it replaces: the old one revoked, for support to merge", { licenseId: own.id, previousLicenseId: previous.id });
           await tx.planLicense.update({ where: { id: previous.id }, data: { revokedAt: new Date() } });
           await applyPlanLicense(tx, previous.id);
+          revoked = previous.projectId;
         }
         if (stale && !early) {
           // Nothing to move (the previous key's license isn't here yet, or can't merge): still, its key is marked replaced.
@@ -211,6 +213,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         }
         await applyPlanLicense(tx, row.id);
       });
+      if (revoked) {
+        await endBadgeWithLicense(revoked);
+      }
       return;
     }
     case "deactivate": {
@@ -231,7 +236,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         await applyPlanLicense(tx, row.id);
         return row.projectId;
       });
-      if (revoked) {
+      // An upgrade's old key keeps its add-on: the upgrade gives the license back, whichever arrives first. If none
+      // does, its next renewal is cancelled for a refund (syncSubscription).
+      if (revoked && !/upgrade|downgrade/i.test(event.extra?.reason ?? "")) {
         await endBadgeWithLicense(revoked);
       }
       return;
