@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         author: { select: { name: true } },
         comments: {
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          select: { body: true, content: true, createdAt: true, asReader: true, authorId: true, author: { select: { name: true } } },
+          select: { id: true, parentId: true, body: true, content: true, createdAt: true, asReader: true, authorId: true, author: { select: { name: true } } },
         },
         project: { select: { team: { select: { userId: true } } } },
         duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board } },
@@ -56,6 +56,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const heading = (level: number, text: string) => ({ type: "heading", attrs: { level }, content: [{ type: "text", text }] });
   const body = displayDoc(post);
   const comments = post.comments.map((comment) => ({ ...comment, doc: displayDoc(comment) }));
+  // As the page: each comment, then its replies (one level deep) under it, oldest first; a reply whose comment is gone is one of its own.
+  const ids = new Set(comments.map((comment) => comment.id));
+  const isReply = (comment: (typeof comments)[number]) => !!comment.parentId && ids.has(comment.parentId);
+  const thread = comments
+    .filter((comment) => !isReply(comment))
+    .flatMap((comment) => [{ comment, reply: false }, ...comments.filter((reply) => isReply(reply) && reply.parentId === comment.id).map((reply) => ({ comment: reply, reply: true }))]);
   const doc: Doc = {
     type: "doc",
     content: [
@@ -73,8 +79,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       paragraph(`Posted by ${post.author.name} on ${formatDate(post.createdAt)}`),
       ...(isEmptyDoc(body) ? [] : (body.content ?? [])),
       heading(2, `${comments.length} ${comments.length === 1 ? "comment" : "comments"}`),
-      ...comments.flatMap((comment) => [
-        heading(3, `${comment.author.name}${team.has(comment.authorId) && !comment.asReader ? " (Team)" : ""} · ${formatDate(comment.createdAt)}`),
+      ...thread.flatMap(({ comment, reply }) => [
+        heading(reply ? 4 : 3, `${reply ? "Reply from " : ""}${comment.author.name}${team.has(comment.authorId) && !comment.asReader ? " (Team)" : ""} · ${formatDate(comment.createdAt)}`),
         ...(comment.doc.content ?? []),
       ]),
     ],

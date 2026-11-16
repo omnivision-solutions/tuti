@@ -97,7 +97,9 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   const comment = (authorId: string, body: string, at: string, extra: object = {}) =>
     prisma.comment.create({ data: { projectId: project.id, postId: dark.id, authorId, body, createdAt: new Date(at), ...extra } });
   await comment(owner.id, "On our list.", "2026-03-03T10:00:00Z");
-  await comment(reader.id, "Me too!", "2026-03-02T10:00:00Z");
+  const first = await comment(reader.id, "Me too!", "2026-03-02T10:00:00Z");
+  // A reply, later than the next comment: under the comment it answers.
+  await comment(owner.id, "Thanks!", "2026-03-05T10:00:00Z", { parentId: first.id });
   await comment(owner.id, "From my reader account.", "2026-03-04T10:00:00Z", { asReader: true });
   await prisma.postNote.create({ data: { postId: dark.id, authorId: owner.id, body: "Internal: big customer asked" } });
   const get = (slug: string, param: string, boardSlug = "feature-requests") =>
@@ -116,9 +118,11 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
       "Shipped in Night owls rejoice",
       "Posted by Sam \\*Reader\\* on 1 March 2026",
       "Easier on the eyes.",
-      "## 3 comments",
+      "## 4 comments",
       "### Sam \\*Reader\\* · 2 March 2026",
       "Me too!",
+      "#### Reply from Owner (Team) · 5 March 2026",
+      "Thanks!",
       "### Owner (Team) · 3 March 2026",
       "On our list.",
       "### Owner · 4 March 2026",
@@ -153,6 +157,13 @@ test("a public post is served as Markdown at its .md URL: what its page shows a 
   // Sample content: kept from search engines.
   await post(6, "A sample", { sample: true });
   expect((await get(project.slug, "a-sample-6")).headers.get("x-robots-tag")).toBe("noindex");
+
+  // When it's expected, only while that's still to come (as on the page).
+  await prisma.post.update({ where: { id: dark.id }, data: { status: "COMPLETED" } });
+  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Completed · 3 votes · Board");
+  await prisma.post.update({ where: { id: dark.id }, data: { status: "PLANNED", eta: new Date(Date.UTC(2020, 2)) } });
+  expect(await (await get(project.slug, "dark-mode-1")).text()).toContain("Status: Planned · 3 votes · Board");
+  await prisma.post.update({ where: { id: dark.id }, data: { eta: new Date(Date.UTC(2099, 2)) } });
 
   // A Team only board isn't named; a board that's off hides its posts.
   await prisma.board.update({ where: { id: board.id }, data: { postVisibility: "TEAM" } });
