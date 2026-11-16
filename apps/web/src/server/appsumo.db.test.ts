@@ -32,6 +32,9 @@ async function deliver(payload: Record<string, unknown>, options?: Parameters<ty
   return { status: response.status, body: (text ? JSON.parse(text) : null) as unknown };
 }
 const find = (key: string) => prisma.planLicense.findUnique({ where: { source_externalKey: { source: "appsumo", externalKey: key } } });
+/** The licenses with these keys, leaving out the revoked rows replaced keys keep. */
+const licensesFor = async (keys: string[]) =>
+  (await prisma.planLicense.findMany({ where: { externalKey: { in: keys } } })).filter((one) => !(one.metadata as { replacedBy?: string }).replacedBy);
 const planOf = async (projectId: string) => (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, trialEndsAt: true } })).plan;
 
 test("a purchase and its activation make an unclaimed license on the tier's plan, once however often they come", async () => {
@@ -113,7 +116,7 @@ test("an upgrade gives the license its new key and plan, keeping its holder and 
   // Said again (a retry), the same.
   await deliver(upgrade);
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ externalKey: next, plan: "appsumo-2", userId: owner.id, projectId: project.id, revokedAt: null });
-  expect(await find(key)).toBeNull();
+  expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date), userId: null, projectId: null, metadata: { replacedBy: next } });
   expect(await planOf(project.id)).toBe("appsumo-2");
 });
 
@@ -133,7 +136,7 @@ test("the new key's activation arriving before the upgrade: the upgrade still ke
   await deliver({ event: "activate", license_key: next, tier: 2 });
   await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
   await deliver({ event: "deactivate", license_key: key });
-  expect(await prisma.planLicense.findMany({ where: { externalKey: { in: [key, next] } } })).toEqual([
+  expect(await licensesFor([key, next])).toEqual([
     expect.objectContaining({ id: license.id, externalKey: next, plan: "appsumo-2", userId: owner.id, projectId: project.id, revokedAt: null }),
   ]);
   expect(await planOf(project.id)).toBe("appsumo-2");
@@ -156,7 +159,7 @@ test("a refund of the upgrade itself holds, whatever order the upgrade comes in"
   await deliver({ event: "activate", license_key: later, tier: 2 });
   await deliver({ event: "deactivate", license_key: later });
   await deliver({ event: "upgrade", license_key: later, prev_license_key: second.key, tier: 2 });
-  expect(await prisma.planLicense.findMany({ where: { externalKey: { in: [second.key, later] } } })).toEqual([
+  expect(await licensesFor([second.key, later])).toEqual([
     expect.objectContaining({ id: second.license.id, externalKey: later, revokedAt: expect.any(Date) }),
   ]);
   expect(await planOf(second.project.id)).toBeNull();
@@ -273,7 +276,7 @@ test("an activation for a key an upgrade replaced, arriving late, makes no secon
   const next = crypto.randomUUID();
   await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
   await deliver({ event: "activate", license_key: key, tier: 1 });
-  expect(await find(key)).toBeNull();
+  expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date), userId: null, metadata: { replacedBy: next } });
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ externalKey: next, revokedAt: null });
 });
 
@@ -284,7 +287,7 @@ test("the new key claimed by the same buyer before the upgrade arrives: the upgr
   await prisma.planLicense.update({ where: { source_externalKey: { source: "appsumo", externalKey: next } }, data: { userId: owner.id, claimedAt: new Date() } });
   await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
   await deliver({ event: "deactivate", license_key: key });
-  expect(await prisma.planLicense.findMany({ where: { externalKey: { in: [key, next] } } })).toEqual([
+  expect(await licensesFor([key, next])).toEqual([
     expect.objectContaining({ id: license.id, externalKey: next, plan: "appsumo-2", userId: owner.id, projectId: project.id, revokedAt: null }),
   ]);
   expect(await planOf(project.id)).toBe("appsumo-2");
@@ -295,4 +298,23 @@ test("a refund and an activation for a new key arriving together: the refund hol
   await Promise.all([deliver({ event: "deactivate", license_key: key, tier: 1 }), deliver({ event: "activate", license_key: key, tier: 1 })]);
   // Either order: revoked (the activation first, then the refund) or kept revoked (the refund first).
   expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date) });
+});
+
+test("two upgrades in a row: the first's retry and the first key's late events make no second license", async () => {
+  const { owner, project, key, license } = await assigned();
+  const second = crypto.randomUUID();
+  const third = crypto.randomUUID();
+  await deliver({ event: "upgrade", license_key: second, prev_license_key: key, tier: 2 });
+  await deliver({ event: "downgrade", license_key: third, prev_license_key: second, tier: 1 });
+  await deliver({ event: "activate", license_key: second, tier: 2 });
+  await deliver({ event: "upgrade", license_key: second, prev_license_key: key, tier: 2 });
+  await deliver({ event: "activate", license_key: key, tier: 1 });
+  await deliver({ event: "deactivate", license_key: key });
+  await deliver({ event: "deactivate", license_key: second });
+  expect(await licensesFor([key, second, third])).toEqual([
+    expect.objectContaining({ id: license.id, externalKey: third, plan: "appsumo-1", userId: owner.id, projectId: project.id, revokedAt: null }),
+  ]);
+  expect(await planOf(project.id)).toBe("appsumo-1");
+  // The replaced keys can't be claimed: they read as deactivated.
+  expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date), userId: null });
 });
