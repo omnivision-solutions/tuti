@@ -267,3 +267,32 @@ test("a deactivated license can't be claimed", async () => {
   actAs(await signUp("Buyer"));
   expect(await claimPlanLicense(claimToken("appsumo", key))).toEqual({ error: "This license was deactivated on AppSumo." });
 });
+
+test("an activation for a key an upgrade replaced, arriving late, makes no second license", async () => {
+  const { key, license } = await assigned();
+  const next = crypto.randomUUID();
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
+  await deliver({ event: "activate", license_key: key, tier: 1 });
+  expect(await find(key)).toBeNull();
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ externalKey: next, revokedAt: null });
+});
+
+test("the new key claimed by the same buyer before the upgrade arrives: the upgrade still lands on the license's project", async () => {
+  const { owner, project, key, license } = await assigned();
+  const next = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: next, tier: 2 });
+  await prisma.planLicense.update({ where: { source_externalKey: { source: "appsumo", externalKey: next } }, data: { userId: owner.id, claimedAt: new Date() } });
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
+  await deliver({ event: "deactivate", license_key: key });
+  expect(await prisma.planLicense.findMany({ where: { externalKey: { in: [key, next] } } })).toEqual([
+    expect.objectContaining({ id: license.id, externalKey: next, plan: "appsumo-2", userId: owner.id, projectId: project.id, revokedAt: null }),
+  ]);
+  expect(await planOf(project.id)).toBe("appsumo-2");
+});
+
+test("a refund and an activation for a new key arriving together: the refund holds", async () => {
+  const key = crypto.randomUUID();
+  await Promise.all([deliver({ event: "deactivate", license_key: key, tier: 1 }), deliver({ event: "activate", license_key: key, tier: 1 })]);
+  // Either order: revoked (the activation first, then the refund) or kept revoked (the refund first).
+  expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date) });
+});
