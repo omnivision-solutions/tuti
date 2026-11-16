@@ -102,8 +102,14 @@ async function lockKeys(tx: Prisma.TransactionClient, keys: string[]) {
   }
 }
 
-/** Whether an upgrade gave `key`'s license a new key: events for the old one are late, and change nothing. */
-const superseded = (tx: Prisma.TransactionClient, key: string) => tx.planLicense.count({ where: { source: APPSUMO, metadata: { path: ["previousKey"], equals: key } } }).then(Boolean);
+/**
+ * A key an upgrade replaced keeps a row of its own, revoked, with the key that replaced it (metadata.replacedBy): its
+ * late or repeated events (an activation, an older upgrade's retry) find it and change nothing, never making a second license.
+ */
+type Row = { id: string; externalKey: string; userId: string | null; projectId: string | null; revokedAt: Date | null; replacedBy: string | null };
+const rowsFor = (tx: Prisma.TransactionClient, keys: string[]) => tx.$queryRaw<Row[]>`
+  SELECT id, "externalKey", "userId", "projectId", "revokedAt", metadata->>'replacedBy' AS "replacedBy" FROM plan_license
+  WHERE source = ${APPSUMO} AND "externalKey" = ANY(${keys}) FOR UPDATE`;
 
 export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
   const key = event.license_key;
@@ -125,11 +131,11 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
       }
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, [key]);
-        if (!(await tx.planLicense.count({ where: { source: APPSUMO, externalKey: key } })) && (await superseded(tx, key))) {
+        await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan, metadata }], skipDuplicates: true });
+        const [row] = await rowsFor(tx, [key]);
+        if (row!.replacedBy) {
           return;
         }
-        await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan, metadata }], skipDuplicates: true });
-        const [row] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM plan_license WHERE source = ${APPSUMO} AND "externalKey" = ${key} FOR UPDATE`;
         await tx.planLicense.update({ where: { id: row!.id }, data: { plan, metadata } });
         await applyPlanLicense(tx, row!.id);
       });
@@ -143,10 +149,12 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
       const keys = [key, ...(event.prev_license_key ? [event.prev_license_key] : [])];
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, keys);
-        const rows = await tx.$queryRaw<{ id: string; externalKey: string; userId: string | null; projectId: string | null; revokedAt: Date | null }[]>`
-          SELECT id, "externalKey", "userId", "projectId", "revokedAt" FROM plan_license WHERE source = ${APPSUMO} AND "externalKey" = ANY(${keys}) FOR UPDATE`;
+        const rows = await rowsFor(tx, keys);
         const own = rows.find((one) => one.externalKey === key);
-        const previous = rows.find((one) => one.externalKey !== key);
+        if (own?.replacedBy) {
+          return; // An older upgrade's retry: its new key has been replaced since.
+        }
+        const previous = rows.find((one) => one.externalKey !== key && !one.replacedBy);
         // The previous key's license takes the new key: its holder and project carry over. The new key's own row is a retry
         // (the previous one renamed already), or one the new key's activation made before the upgrade arrived: that one
         // goes, its holder kept, unless it's on a project or another account holds the previous (support sorts that out).
@@ -163,6 +171,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         // (a refund of the upgrade, before this upgrade or its retry) does.
         const revokedAt = row === previous ? (early ? own.revokedAt : null) : row.revokedAt;
         await tx.planLicense.update({ where: { id: row.id }, data: { externalKey: key, plan, revokedAt, userId: row.userId ?? (early ? own.userId : null), metadata: { ...metadata, previousKey: event.prev_license_key ?? null } } });
+        if (row === previous) {
+          await tx.planLicense.create({ data: { source: APPSUMO, externalKey: previous.externalKey, plan: "", revokedAt: new Date(), metadata: { replacedBy: key } } });
+        }
         await applyPlanLicense(tx, row.id);
       });
       return;
@@ -170,14 +181,15 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
     case "deactivate": {
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, [key]);
-        const [row] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM plan_license WHERE source = ${APPSUMO} AND "externalKey" = ${key} FOR UPDATE`;
+        const [row] = await rowsFor(tx, [key]);
+        if (row?.replacedBy) {
+          return; // An upgraded license's old key: the license has the new one now.
+        }
         if (!row) {
-          // An upgraded license's old key (it has the new one now): nothing. Any other key we haven't heard of (its
-          // activation late, or failing for a tier the file lacks): kept revoked, so its activation can't bring it to life.
-          if (!(await superseded(tx, key))) {
-            const tier = event.tier === undefined ? null : appsumoTierPlan(event.tier);
-            await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan: tier ?? "", revokedAt: new Date(), metadata }], skipDuplicates: true });
-          }
+          // A key we haven't heard of (its activation late, or failing for a tier the file lacks): kept revoked, so its
+          // activation can't bring it to life.
+          const tier = event.tier === undefined ? null : appsumoTierPlan(event.tier);
+          await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan: tier ?? "", revokedAt: new Date(), metadata }], skipDuplicates: true });
           return;
         }
         await tx.planLicense.update({ where: { id: row.id }, data: { revokedAt: new Date(), metadata } });
