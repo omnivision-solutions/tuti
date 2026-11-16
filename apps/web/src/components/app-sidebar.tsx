@@ -136,7 +136,7 @@ export function AppSidebar({
                         id={countId(item.title)}
                         // Collapsed to icons, still shown: a smaller count on the icon's corner.
                         className={cn(
-                          "group-data-[collapsible=icon]:top-0! group-data-[collapsible=icon]:-right-1 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:h-4 group-data-[collapsible=icon]:min-w-4 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:text-[0.625rem]",
+                          "group-data-[collapsible=icon]:top-0! group-data-[collapsible=icon]:-right-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:h-4 group-data-[collapsible=icon]:min-w-4 group-data-[collapsible=icon]:px-1",
                           item.badge.urgent && "bg-highlight text-highlight-foreground",
                         )}
                       >
