@@ -41,17 +41,18 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
   // Each row's controls say which license they're for.
   const named = `${license.plan} license ${license.key}`;
   const [pending, startTransition] = useTransition();
-  const row = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLSpanElement>(null);
   const assigned = license.project?.slug ?? null;
   // Done, the pressed button is gone (Assign swaps for Unassign and back): once the row shows the change, the keyboard's
-  // place moves to its new control. `from`: the project before the action.
+  // place moves to its new control, or to its status where none is left (deactivated, or nowhere to assign it). `from`:
+  // the project before the action.
   const from = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (from.current !== undefined && from.current !== assigned) {
       from.current = undefined;
-      row.current?.querySelector<HTMLElement>("button")?.focus();
+      (document.querySelector<HTMLElement>(`[data-license-control="${license.id}"]`) ?? statusRef.current)?.focus();
     }
-  }, [assigned]);
+  }, [assigned, license.id]);
   const act = (run: () => Promise<{ error?: string }>, done: string) =>
     startTransition(async () => {
       from.current = assigned;
@@ -76,23 +77,24 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
         <>
           {license.source} · <span className="font-mono text-xs break-all">{license.key}</span>
           <br />
-          {status}
+          <span ref={statusRef} tabIndex={-1} className="outline-none">
+            {status}
+          </span>
         </>
       }
     >
-      <div ref={row} className="contents">
       {license.project ? (
-        <Button variant="outline" aria-label={`Unassign ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
+        <Button variant="outline" data-license-control={license.id} aria-label={`Unassign ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
           {pending ? "Unassigning…" : "Unassign"}
         </Button>
       ) : license.revoked ? null : projects.length === 0 ? (
-        <Link href="/app/new" className={buttonVariants({ variant: "outline" })}>
+        <Link href="/app/new" data-license-control={license.id} className={buttonVariants({ variant: "outline" })}>
           Create a project
         </Link>
       ) : (
         <div className="flex flex-wrap gap-2">
           <Select items={Object.fromEntries(projects.map((one) => [one.slug, one.name]))} value={project} onValueChange={(value) => setPicked(String(value))}>
-            <SelectTrigger className="w-48" aria-label={`Project for ${named}`}>
+            <SelectTrigger className="w-48" data-license-control={license.id} aria-label={`Project for ${named}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -108,7 +110,6 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
           </Button>
         </div>
       )}
-      </div>
     </SettingRow>
   );
 }

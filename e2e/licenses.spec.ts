@@ -77,6 +77,8 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   await buyer.getByRole("button", { name: `Unassign ${license}` }).click();
   await expect(buyer.getByText("Deactivated · On Acme")).toBeHidden();
   await expect(buyer.getByText("Deactivated")).toBeVisible();
+  // No control left in its row: the keyboard's place is its status.
+  await expect(buyer.getByText("Deactivated", { exact: true })).toBeFocused();
   await expect(buyer.getByRole("button", { name: `Unassign ${license}` })).toBeHidden();
   // The project is back on its own plan.
   await buyer.goto(`/app/${slug}/settings/billing`);
