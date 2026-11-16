@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { CHANGELOG_PAGE, importsSettled, portalAddress } from "@tuti/jobs";
-import { FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, startFerndeskFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_FERNDESK_FILES, FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, startFerndeskFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
@@ -276,6 +276,22 @@ test("the changelog comes across: entries oldest first, a page at a time, publis
   expect(again.counts).toMatchObject({ changelogEntries: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
   expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(3);
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("an entry whose text opens with an image has it as its cover, out of the text: Ferndesk has no featured image; one with an image further down has no cover", async () => {
+  const search = fake.fixtures.entries.find((entry) => entry.id === "art_search")!;
+  search.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Search"></p><p>Search results load twice as fast.</p>`;
+  const done = await importParts(["changelog"], { publishArticles: true });
+  expect(done.counts).toMatchObject({ changelogImages: { imported: 1, leftOut: {} } });
+  const rows = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, content: true, coverId: true } });
+  const cover = await prisma.media.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true, attachedAt: true } });
+  expect(rows.map(({ title, body, coverId }) => ({ title, body, coverId }))).toEqual([
+    { title: "Exports", body: "Exports take half the time.", coverId: null },
+    { title: "Faster search", body: "Search results load twice as fast.", coverId: cover.id },
+    { title: "Single sign-on (beta)", body: "Coming soon.", coverId: null },
+  ]);
+  expect(JSON.stringify(rows[1]!.content)).not.toContain('"image"');
+  expect(cover.attachedAt).not.toBeNull();
 });
 
 test("by default, changelog entries published in Ferndesk come as drafts for the team to check and publish, with their dates: Ferndesk doesn't say who could read them", async () => {
