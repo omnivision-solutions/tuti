@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { setBoardOff } from "@/server/boards";
 import { resumeEmailSending } from "@/server/email-pause";
-import { createComment, createPost } from "@/server/operations/create";
+import { createComment, createPost, writeComment } from "@/server/operations/create";
 import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
@@ -374,4 +374,13 @@ test("a run that fails before sending (the project's brand can't be read) takes 
   expect(await prisma.projectEmailMonth.findMany({ where: { projectId: project.id, emails: { gt: 0 } } })).toEqual([]);
   expect(await prisma.replyEmail.count({ where: { commentId: comment.id } })).toBe(0);
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+});
+
+test("a comment saved quiet to the author (a completion's, which its shipped email quotes) is never due to them, from the moment it's saved", async () => {
+  const { post } = await authorsPost();
+  const quiet = await writeComment(as(owner.id), { number: post.number, body: "It's out." }, { quietToAuthor: true });
+  const loud = await writeComment(as(owner.id), { number: post.number, body: "More soon." });
+  const due = async (id: string) => (await prisma.comment.findUniqueOrThrow({ where: { id } })).authorEmailDueAt;
+  expect(await due(quiet.id)).toBeNull();
+  expect(await due(loud.id)).not.toBeNull();
 });

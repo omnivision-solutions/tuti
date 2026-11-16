@@ -46,7 +46,7 @@ import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 import { lucideIcon } from "@/lib/lucide-icons";
 
-import { createComment } from "./create";
+import { createComment, writeComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { collectionNamed, createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
@@ -1394,8 +1394,10 @@ export const applyCodeChangeAction = defineOperation({
     let unsureComment = false;
     try {
       if (reuse) {
-        // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
+        // Before completing it: the email it sends quotes that comment (postShipped reads `note`), so it isn't emailed
+        // to the post's author as a comment too, if it's still waiting to be.
         shared.commentId = reuse;
+        await prisma.comment.updateMany({ where: { id: reuse }, data: { authorEmailDueAt: null } });
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
       }
       for (const part of parts) {
@@ -1432,12 +1434,12 @@ export const applyCodeChangeAction = defineOperation({
       first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim() && !reuse;
       if (first) {
         posting = true;
-        shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
+        // The email completing it quotes this comment (postShipped reads `note`): saved never due to the post's author as
+        // a comment too (comment-email), whatever fails after.
+        shared.commentId = (await writeComment(context, createComment.input.parse({ number: post.number, body: comment }), { quietToAuthor: true })).id;
         posting = false;
-        // The email completing it sends quotes this comment and no other (postShipped reads `note`), so it isn't also
-        // emailed to the post's author as a comment (comment-email).
+        // The email completing it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;
-        await prisma.comment.update({ where: { id: note }, data: { authorEmailDueAt: null } });
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note } } })));
       }
       if (whole?.completes) {
