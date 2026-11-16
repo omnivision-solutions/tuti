@@ -26,7 +26,7 @@ export default async function LicensesPage() {
     prisma.planLicense.findMany({
       where: { userId: session.user.id },
       orderBy: [{ claimedAt: "asc" }, { id: "asc" }],
-      select: { id: true, source: true, externalKey: true, plan: true, revokedAt: true, project: { select: { slug: true, name: true } } },
+      select: { id: true, source: true, externalKey: true, plan: true, revokedAt: true, project: { select: { slug: true, name: true, badgeAddOn: true } } },
     }),
     prisma.teamMember.findMany({
       where: { userId: session.user.id, role: { in: ["OWNER", "ADMIN"] } },

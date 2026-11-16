@@ -123,7 +123,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               </Alert>
             )}
             {license ? (
-              <UnassignLicense projectSlug={slug} licenseId={license.id} active={!license.revokedAt} />
+              <UnassignLicense projectSlug={slug} licenseId={license.id} active={!license.revokedAt} badge={plan.badgeAddOn} />
             ) : onPaidPlan ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
