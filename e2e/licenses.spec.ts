@@ -43,9 +43,10 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   await buyer.getByRole("button", { name: /Bea Buyer/ }).click();
   await buyer.getByRole("menuitem", { name: "Licenses" }).click();
   await buyer.waitForURL("**/app/licenses");
-  await expect(buyer.getByRole("combobox", { name: "Project" })).toContainText("Acme");
+  const license = `AppSumo Tier 2 license ${key}`;
+  await expect(buyer.getByRole("combobox", { name: `Project for ${license}` })).toContainText("Acme");
   await checkpoint(buyer, "licenses-unassigned");
-  await buyer.getByRole("button", { name: "Assign" }).click();
+  await buyer.getByRole("button", { name: `Assign ${license}` }).click();
   await expect(buyer.getByText("License assigned")).toBeVisible();
   await expect(buyer.getByRole("link", { name: "Acme" })).toBeVisible();
   await checkpoint(buyer, "licenses-assigned");
@@ -57,8 +58,14 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
 
   // Unassigned, the project is back on its own plan (its trial's, or the default).
   await buyer.goto("/app/licenses");
-  await buyer.getByRole("button", { name: "Unassign" }).click();
+  await buyer.getByRole("button", { name: `Unassign ${license}` }).click();
   await expect(buyer.getByText("License unassigned")).toBeVisible();
+  await expect(buyer.getByText("Not assigned to a project")).toBeVisible();
+  // On the same page, the project is offered again: assign it back, then off for good.
+  await expect(buyer.getByRole("combobox", { name: `Project for ${license}` })).toContainText("Acme");
+  await buyer.getByRole("button", { name: `Assign ${license}` }).click();
+  await expect(buyer.getByRole("link", { name: "Acme" })).toBeVisible();
+  await buyer.getByRole("button", { name: `Unassign ${license}` }).click();
   await expect(buyer.getByText("Not assigned to a project")).toBeVisible();
   await buyer.goto(`/app/${slug}/settings/billing`);
   await expect(buyer.getByText("AppSumo Tier 2 plan")).toBeHidden();
@@ -72,5 +79,10 @@ test("someone without licenses is told how to redeem one", async ({ browser }, t
   await person.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
   await person.goto("/app/licenses");
   await expect(person.getByText("No licenses yet")).toBeVisible();
+  // Nothing in their menu for it: it's there once they hold one.
+  await person.getByRole("button", { name: /Nora None/ }).click();
+  await expect(person.getByRole("menuitem", { name: "Account settings" })).toBeVisible();
+  await expect(person.getByRole("menuitem", { name: "Licenses" })).toBeHidden();
+  await person.keyboard.press("Escape");
   await checkpoint(person, "licenses-empty");
 });

@@ -29,9 +29,9 @@ export default async function LicensesPage() {
       select: { id: true, source: true, externalKey: true, plan: true, revokedAt: true, project: { select: { slug: true, name: true } } },
     }),
     prisma.teamMember.findMany({
-      where: { userId: session.user.id, role: { in: ["OWNER", "ADMIN"] }, project: { planLicense: { is: null } } },
+      where: { userId: session.user.id, role: { in: ["OWNER", "ADMIN"] } },
       orderBy: { createdAt: "asc" },
-      select: { project: { select: { slug: true, name: true } } },
+      select: { project: { select: { slug: true, name: true, planLicense: { select: { id: true } } } } },
     }),
   ]);
   return (
@@ -51,9 +51,10 @@ export default async function LicensesPage() {
                   key: license.externalKey,
                   plan: planDisplay(license.plan).name,
                   revoked: license.revokedAt !== null,
-                  project: license.project,
+                  project: license.project && { ...license.project, open: memberships.some(({ project }) => project.slug === license.project!.slug) },
                 }))}
-                projects={memberships.map(({ project }) => project)}
+                // Those it can go on: the ones without a license.
+                projects={memberships.flatMap(({ project: { planLicense, ...project } }) => (planLicense ? [] : [project]))}
               />
             )}
           </div>

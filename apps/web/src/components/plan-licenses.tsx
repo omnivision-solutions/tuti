@@ -17,7 +17,8 @@ export type PlanLicenseView = {
   /** Its plan's name. */
   plan: string;
   revoked: boolean;
-  project: { slug: string; name: string } | null;
+  /** `open`: its holder may open its Billing (they own or administer it still). */
+  project: { slug: string; name: string; open: boolean } | null;
 };
 
 /**
@@ -35,7 +36,11 @@ export function PlanLicenses({ licenses, projects }: { licenses: PlanLicenseView
 }
 
 function LicenseRow({ license, projects }: { license: PlanLicenseView; projects: { slug: string; name: string }[] }) {
-  const [project, setProject] = useState(projects[0]?.slug ?? "");
+  const [picked, setPicked] = useState<string>();
+  // The pick while it's still offered (assigning another license may take it), else the first project offered.
+  const project = projects.some((one) => one.slug === picked) ? picked! : (projects[0]?.slug ?? "");
+  // Each row's controls say which license they're for.
+  const named = `${license.plan} license ${license.key}`;
   const [pending, startTransition] = useTransition();
   const act = (run: () => Promise<{ error?: string }>, done: string) =>
     startTransition(async () => {
@@ -46,16 +51,19 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
         toast.success(done);
       }
     });
-  const status = license.revoked ? "Deactivated" : license.project ? (
+  const on = license.project && (
     <>
       On{" "}
-      <Link href={`/app/${license.project.slug}/settings/billing`} className="font-medium text-foreground underline-offset-4 hover:underline">
-        {license.project.name}
-      </Link>
+      {license.project.open ? (
+        <Link href={`/app/${license.project.slug}/settings/billing`} className="font-medium text-foreground underline-offset-4 hover:underline">
+          {license.project.name}
+        </Link>
+      ) : (
+        <span className="font-medium text-foreground">{license.project.name}</span>
+      )}
     </>
-  ) : (
-    "Not assigned to a project"
   );
+  const status = license.revoked ? <>Deactivated{on && <> · {on}</>}</> : (on ?? "Not assigned to a project");
   return (
     <SettingRow
       label={`${license.plan} plan`}
@@ -68,7 +76,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
       }
     >
       {license.project ? (
-        <Button variant="outline" disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
+        <Button variant="outline" aria-label={`Unassign ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
           {pending ? "Unassigning…" : "Unassign"}
         </Button>
       ) : license.revoked ? null : projects.length === 0 ? (
@@ -77,8 +85,8 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
         </Link>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <Select items={Object.fromEntries(projects.map((one) => [one.slug, one.name]))} value={project} onValueChange={(value) => setProject(String(value))}>
-            <SelectTrigger className="w-48" aria-label="Project">
+          <Select items={Object.fromEntries(projects.map((one) => [one.slug, one.name]))} value={project} onValueChange={(value) => setPicked(String(value))}>
+            <SelectTrigger className="w-48" aria-label={`Project for ${named}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -89,7 +97,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
               ))}
             </SelectContent>
           </Select>
-          <Button disabled={pending || !project} focusableWhenDisabled onClick={() => act(() => assignPlanLicense(project, license.id), "License assigned")}>
+          <Button aria-label={`Assign ${named}`} disabled={pending || !project} focusableWhenDisabled onClick={() => act(() => assignPlanLicense(project, license.id), "License assigned")}>
             {pending ? "Assigning…" : "Assign"}
           </Button>
         </div>
