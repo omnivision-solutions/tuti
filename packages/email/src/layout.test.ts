@@ -17,7 +17,7 @@ import { emailPausedTeamEmail } from "./email-paused-email";
 import { verifyEmail } from "./verify-email";
 import { autopilotEmail } from "./autopilot-email";
 import { inviteEmail } from "./invite-email";
-import { accentColors, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
+import { accentColors, Buttons, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
 import { verifyAllEmail } from "./verify-all-email";
 import { verifyArticleEmail } from "./verify-article-email";
@@ -253,4 +253,9 @@ test("four tiles lay out two by two, so a phone's card fits them; three stay in 
   const three = rows(await tiles(3));
   expect(three).toHaveLength(1);
   expect(three[0]!.match(/tile \d/g)).toHaveLength(3);
+});
+
+test("two buttons side by side let a long label break, so a phone's card never scrolls sideways", async () => {
+  const html = await render(createElement(Buttons, { href: "https://tuti.example/a", label: "Publish omnivision-solutions/tuti#848 now", second: { href: "https://tuti.example/b", label: "Stop omnivision-solutions/widget#848" } }));
+  expect(html.match(/overflow-wrap:anywhere/g)?.length).toBe(2);
 });

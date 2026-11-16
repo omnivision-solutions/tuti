@@ -90,7 +90,8 @@ const SOFT_FILL = "#fafaf9";
 
 /** The main button, and a second one (a grey fill) beside it: a table, so they sit side by side in every client. */
 export function Buttons({ href, label, second, small = false }: { href: string; label: string; second?: { href: string; label: string }; small?: boolean }) {
-  const size = small ? { padding: "8px 14px", fontSize: 14, borderRadius: 8 } : {};
+  // A long label ("Publish org/repo#848 now") may break anywhere, so two buttons side by side still fit a phone's card.
+  const size = { ...(small ? { padding: "8px 14px", fontSize: 14, borderRadius: 8 } : {}), overflowWrap: "anywhere" as const, wordBreak: "break-word" as const };
   return (
     <table role="presentation" cellPadding={0} cellSpacing={0} style={{ margin: small ? "12px 0 0" : "22px 0 4px", borderCollapse: "separate" }}>
       <tbody>
