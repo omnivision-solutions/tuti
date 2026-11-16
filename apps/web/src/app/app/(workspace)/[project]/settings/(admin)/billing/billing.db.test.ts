@@ -34,8 +34,7 @@ const billing = async () =>
 test("on the default plan, its own card says so; the plans for sale have Upgrade, one sold by quote neither a price nor Upgrade", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   let page = await billing();
-  expect(page.match(/this project's plan/g)).toHaveLength(1);
-  expect(page).toContain("$0, this project's plan");
+  expect(page.match(/>Your plan</g)).toHaveLength(1);
   expect(page).toContain("Upgrade to Pro");
   expect(page).toContain("Upgrade to Business");
 
@@ -45,7 +44,29 @@ test("on the default plan, its own card says so; the plans for sale have Upgrade
   expect(page).toContain("By quote");
   expect(page).toMatch(/href="mailto:[^"]*"[^>]*>Contact us</);
   expect(page).not.toContain("Upgrade to Business");
-  expect(page.match(/this project's plan/g)).toHaveLength(1);
+  expect(page.match(/>Your plan</g)).toHaveLength(1);
+});
+
+test("a plan sold only yearly is shown and bought yearly, though Monthly is picked", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices = { year: pro.prices!.year }; }));
+  const page = await billing();
+  expect(page).toContain("$384 billed yearly");
+  expect(page).toContain("Upgrade to Pro");
+});
+
+test("every feature: Tuti's pricing page in a new tab on Tuti's cloud; elsewhere each plan's lines, opened here", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  vi.stubEnv("APP_URL", "https://tuti.so");
+  let page = await billing();
+  expect(page).toMatch(/<a href="https:\/\/tuti.so\/pricing" target="_blank" rel="noopener"[^>]*>Compare all features.*\(opens in a new tab\)<\/span><\/a>/);
+  expect(page).not.toContain("<details");
+
+  vi.stubEnv("APP_URL", "https://feedback.example.com");
+  page = await billing();
+  expect(page).not.toContain("tuti.so/pricing");
+  expect(page).toMatch(/<details[^>]*><summary[^>]*>Compare all features/);
+  // What the cards leave out, such as each plan's team members.
+  expect(page).toContain("3 team members");
 });
 
 test("the add-on's card shows only where it's sold", async () => {

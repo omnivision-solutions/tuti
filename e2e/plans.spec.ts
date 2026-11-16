@@ -38,7 +38,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(pro.getByRole("listitem")).toContainText(["Your own domain"]);
   const business = owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Business", exact: true }) });
   await expect(business.getByRole("listitem")).toContainText(["Subpath on your domain", "Private help center", "Fine-tune Autopilot", "Priority support"]);
-  // Every feature is on Tuti's pricing page, linked only on Tuti's own cloud (tuti.so): not this server.
+  // Every feature is on Tuti's pricing page, linked only on Tuti's own cloud (tuti.so); this server opens each plan's lines here.
   await expect(owner.getByRole("link", { name: /Compare all features/ })).toHaveCount(0);
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
@@ -47,8 +47,10 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
-  await business.getByRole("button", { name: "Upgrade to Business" }).scrollIntoViewIfNeeded();
-  await checkpoint(owner, "team-settings-billing-plans-foot");
+  await owner.getByText("Compare all features").click();
+  await expect(owner.getByText("3 team members")).toBeVisible();
+  await owner.getByText("3 team members").scrollIntoViewIfNeeded();
+  await checkpoint(owner, "team-settings-billing-plans-compared");
   // From the keyboard: while Stripe's page is being opened (its request held here), Upgrade is off but keeps the focus.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));

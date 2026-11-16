@@ -14,8 +14,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { BilledToggle } from "@tuti/ui/plan-line";
-import { CheckIcon, ExternalLinkIcon } from "lucide-react";
+import { BilledToggle, PlanLineItem } from "@tuti/ui/plan-line";
+import { CheckIcon, ChevronDownIcon, ExternalLinkIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { billedAs, yearlyNote } from "@/lib/plans";
@@ -142,12 +142,36 @@ export function PlanPicker({ projectSlug, plans, current, trial = false, pricing
         })}
       </ul>
       {error && <FieldError>{error}</FieldError>}
-      {pricingPage && (
+      {pricingPage ? (
         <a href={pricingPage} target="_blank" rel="noopener" className="flex items-center gap-1.5 self-start text-sm font-medium text-primary hover:underline">
           Compare all features
           <ExternalLinkIcon aria-hidden className="size-3.5" />
           <span className="sr-only">(opens in a new tab)</span>
         </a>
+      ) : (
+        // No pricing page to link (a server other than Tuti's cloud): every line of each plan here, opened on demand.
+        <details className="group">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-primary [&::-webkit-details-marker]:hidden">
+            Compare all features
+            <ChevronDownIcon aria-hidden className="size-3.5 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-3 grid gap-4 @2xl/settings:grid-cols-3">
+            {plans.map((plan) => (
+              <div key={plan.key} className="flex flex-col gap-1.5 text-sm">
+                <h4 className="font-semibold">{plan.name}</h4>
+                <ul className="flex flex-col gap-1.5">
+                  {plan.highlights.map((line) => (
+                    <PlanLineItem key={line.text} line={line} />
+                  ))}
+                  {plan.intro && <li className="text-muted-foreground">{plan.intro}</li>}
+                  {plan.features.map((line) => (
+                    <PlanLineItem key={line.text} line={line} />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );
