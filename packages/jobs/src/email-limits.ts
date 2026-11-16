@@ -168,13 +168,19 @@ export async function releaseProjectEmail(projectId: string, now = new Date()) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER });
   const license = monthlyEmailLimit(project, now) === null ? null : licenseOf(project);
   if (license?.creditsThrough) {
-    // To its month's grant only: never one a refund emptied, nor another license's merged in.
-    await prisma.$executeRaw`
-      UPDATE "credit_grant" SET "remaining" = "remaining" + 1
-      WHERE "remaining" + 1 <= "credits" - "takenBack" AND "id" = (
-        SELECT "id" FROM "credit_grant"
-        WHERE ${licenseGrants(license.id, now)} AND "expiresAt" = ${license.creditsThrough} AND "remaining" + 1 <= "credits" - "takenBack"
-        ORDER BY "id" ASC LIMIT 1 FOR UPDATE)`;
+    // To its month's grant only: never one a refund emptied, nor another license's merged in. A give-back at once may
+    // fill the grant picked: then the next is tried.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const given = await prisma.$executeRaw`
+        UPDATE "credit_grant" SET "remaining" = "remaining" + 1
+        WHERE "remaining" + 1 <= "credits" - "takenBack" AND "id" = (
+          SELECT "id" FROM "credit_grant"
+          WHERE ${licenseGrants(license.id, now)} AND "expiresAt" = ${license.creditsThrough} AND "remaining" + 1 <= "credits" - "takenBack"
+          ORDER BY "id" ASC LIMIT 1 FOR UPDATE)`;
+      if (given > 0) {
+        break;
+      }
+    }
   }
 }
 

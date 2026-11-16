@@ -587,6 +587,10 @@ test("a license upgraded mid-month gives the difference at once; a second licens
   await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL", credits: 2 }, data: { remaining: 0 } });
   await releaseProjectEmail(project.id);
   expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 5, left: 3 });
+  // Two at once, each grant with room for one: both come back.
+  await prisma.$executeRaw`UPDATE "credit_grant" SET "remaining" = "credits" - 1 WHERE "planLicenseId" = ${license.id} AND "kind" = 'EMAIL'`;
+  await Promise.all([releaseProjectEmail(project.id), releaseProjectEmail(project.id)]);
+  expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 5, left: 5 });
 
   // The license's next month starts a few days on, still this calendar month (as months starting on the 28th do): used
   // up too, its team hears again.
