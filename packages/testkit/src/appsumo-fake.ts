@@ -8,7 +8,8 @@ export const FAKE_APPSUMO_API_KEY = "appsumo-test-key";
  * AppSumo's sign-in (OAuth) for licenses, as the app uses it: `POST /openid/token/` trades a code given out by `code(key)`
  * (single-use, for this client and redirect URI) for an access token, and `GET /openid/license_key/?access_token=…`
  * gives that token's license key. `env`: APPSUMO_URL, APPSUMO_CLIENT_ID, APPSUMO_CLIENT_SECRET and APPSUMO_API_KEY for
- * an app using it. `requests`: each token request's form, in order.
+ * an app using it. `requests`: each token request's form, in order. Journeys (other processes) get a code with
+ * `POST /_fake/code?key=…`.
  */
 export type AppsumoFake = {
   url: string;
@@ -44,6 +45,11 @@ export async function startAppsumoFake(): Promise<AppsumoFake> {
       const token = randomUUID().replaceAll("-", "");
       tokens.set(token, key);
       return send(200, { access_token: token, token_type: "bearer", expires_in: 3600, refresh_token: randomUUID(), id_token: "fake" });
+    }
+    if (req.method === "POST" && address.pathname === "/_fake/code") {
+      const code = randomUUID().replaceAll("-", "");
+      codes.set(code, address.searchParams.get("key") ?? "");
+      return send(200, { code });
     }
     if (req.method === "GET" && address.pathname === "/openid/license_key/") {
       const key = tokens.get(address.searchParams.get("access_token") ?? "");

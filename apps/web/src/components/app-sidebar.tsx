@@ -22,6 +22,7 @@ import {
   SearchIcon,
   SettingsIcon,
   SunIcon,
+  TicketIcon,
   UserIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -88,7 +89,8 @@ export function AppSidebar({
 }: {
   projects: ProjectSummary[];
   fallbackSlug: string | null;
-  user: { name: string; email: string; image: string | null };
+  /** `licenses`: they hold plan licenses (Licenses, in their menu). */
+  user: { name: string; email: string; image: string | null; licenses?: boolean };
 }) {
   const pathname = usePathname();
   const current = useCurrentProject(projects, fallbackSlug);
@@ -450,7 +452,7 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
   );
 }
 
-function NavUser({ user }: { user: { name: string; email: string; image: string | null } }) {
+function NavUser({ user }: { user: { name: string; email: string; image: string | null; licenses?: boolean } }) {
   const { isMobile } = useSidebar();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -477,6 +479,12 @@ function NavUser({ user }: { user: { name: string; email: string; image: string 
               <UserIcon />
               Account settings
             </DropdownMenuItem>
+            {user.licenses && (
+              <DropdownMenuItem render={<Link href="/app/licenses" />}>
+                <TicketIcon />
+                Licenses
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <SunIcon />

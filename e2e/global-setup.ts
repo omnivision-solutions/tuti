@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startFerndeskFake, startFrillFake, startGithubFake, startGoogleFake, startHelpCenterFake, startIntercomFake, startModelFake, startNoltFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startFerndeskFake, startFrillFake, startGithubFake, startGoogleFake, startHelpCenterFake, startIntercomFake, startModelFake, startNoltFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake, startAppsumoFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -65,6 +65,9 @@ export default async function globalSetup() {
   process.env.E2E_SITE_URL = site.origin;
   // Stripe for buying AI credits and plans: its pages post the events Stripe would to the cloud's webhook.
   const stripe = await startStripeFake({ webhookUrl: `${CLOUD_URL}/api/stripe/webhook` });
+  // AppSumo's sign-in, for redeeming its licenses; journeys get a buyer's code through /_fake/code.
+  const appsumo = await startAppsumoFake();
+  process.env.E2E_APPSUMO_URL = appsumo.url;
   // Amazon SES for teams' own domains; journeys say when SES finds a domain's records through /_fake/verify (e2e/ses.ts).
   const ses = await startSesFake();
   process.env.E2E_SES_URL = ses.url;
@@ -102,6 +105,7 @@ export default async function globalSetup() {
     GITHUB_CLIENT_SECRET: github.env.GITHUB_APP_CLIENT_SECRET,
     ...google.env,
     ...stripe.env,
+    ...appsumo.env,
     DNS_LOOKUP_URL: dns.url,
     ...cloudflare.env,
     ...ses.env,
@@ -123,7 +127,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), intercom.close(), ferndesk.close(), canny.close(), helpCenter.close(), frill.close(), nolt.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), appsumo.close(), ses.close(), featurebase.close(), intercom.close(), ferndesk.close(), canny.close(), helpCenter.close(), frill.close(), nolt.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };
