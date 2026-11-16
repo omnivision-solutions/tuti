@@ -46,7 +46,7 @@ import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 import { lucideIcon } from "@/lib/lucide-icons";
 
-import { createComment } from "./create";
+import { createComment, writeComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { collectionNamed, createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
@@ -1394,8 +1394,10 @@ export const applyCodeChangeAction = defineOperation({
     let unsureComment = false;
     try {
       if (reuse) {
-        // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
+        // Before completing it: the email it sends quotes that comment (postShipped reads `note`). The completion's note
+        // now, so never a comment email to the post's author, however the held try saved it.
         shared.commentId = reuse;
+        await prisma.comment.updateMany({ where: { id: reuse }, data: { authorEmailDueAt: null } });
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
       }
       for (const part of parts) {
@@ -1438,9 +1440,9 @@ export const applyCodeChangeAction = defineOperation({
           throw new OperationError(400, "invalid_input", commentInput.error.issues[0]?.message ?? "Invalid input");
         }
         posting = true;
-        // Due to the post's author as any comment is (comment-email): the completion's email, if it reaches them, quotes
-        // it and takes its claim, so it's emailed to them once either way.
-        shared.commentId = (await createComment.run(context, commentInput.data)).id;
+        // The completion's note: people hear of it through the shipped email, which quotes it, never as a comment email
+        // to the post's author (comment-email). Saved so, whatever fails after.
+        shared.commentId = (await writeComment(context, commentInput.data, { quietToAuthor: true })).id;
         posting = false;
         // The email completing it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;

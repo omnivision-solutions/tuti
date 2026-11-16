@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { handlers, POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
+import { COMMENT_UNSURE, handlers, POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
 import { startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -147,95 +147,40 @@ test("the comment a completion posts reaches the post's author once, in the ship
   expect(more).toEqual([]);
 });
 
-test("a completion's comment waits for its shipped email, however late that runs, and reaches the author once, quoted in it", async () => {
-  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
-  const log = { info: () => {}, warn: () => {} };
-  const minutesLater = async () => {
-    await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000), authorEmailQueuedAt: null } });
-    await handlers.commentEmailsDue({}, log);
-  };
-  // The shipped email is late (a backlog, a cap): its job doesn't run yet.
-  const late = vi.spyOn(handlers, "postShipped").mockResolvedValue({ queued: true });
-  const completes = await part("RESOLVES");
-  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
-  late.mockRestore();
-  // Past the comment's 5 minutes, twice: it waits, still due.
-  await minutesLater();
-  await minutesLater();
-  expect(author(voter.email)).toEqual([]);
-  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(1);
-
-  // The shipped email goes, quoting it; the comment email then has nothing to send.
-  await handlers.postShipped({ postId: post.id }, log);
-  await minutesLater();
-  const [shipped, ...more] = author(voter.email);
-  expect(shipped!.subject).toBe("Done: Recurring events");
-  expect(shipped!.text).toContain("Monthly ones too: it's all out.");
-  expect(more).toEqual([]);
-  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
-});
-
-test("a completion's comment waits while the author's shipped email failed and waits for its retry, then goes once, in it", async () => {
-  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
-  const log = { info: () => {}, warn: () => {} };
-  vi.spyOn(console, "error").mockImplementation(() => {});
-  const minutesLater = async () => {
-    await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000), authorEmailQueuedAt: null } });
-    await handlers.commentEmailsDue({}, log);
-  };
-  // The shipped email to the author fails (its claim stays, unsent, for the retry).
-  mailbox.refuseNext(voter.email, { code: 421 });
-  const completes = await part("RESOLVES");
-  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
-  expect(await prisma.shippedEmail.count({ where: { postId: post.id, userId: voter.id, sentAt: null } })).toBe(1);
-  // The comment emails' minute before the retry: nothing.
-  await minutesLater();
-  expect(author(voter.email)).toEqual([]);
-  // The retry, then the comment emails again.
-  await prisma.shippedEmail.updateMany({ where: { postId: post.id }, data: { claimedAt: new Date(0) } });
-  await handlers.postShipped({ postId: post.id }, log);
-  await minutesLater();
-  expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
-  expect(author(voter.email)[0]!.text).toContain("Monthly ones too: it's all out.");
-});
-
-test("a completion's comment held over a day for a late shipped email still reaches the author if the post is reopened before it goes", async () => {
-  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
-  const log = { info: () => {}, warn: () => {} };
-  const late = vi.spyOn(handlers, "postShipped").mockResolvedValue({ queued: true });
-  const completes = await part("RESOLVES");
-  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
-  late.mockRestore();
-  const note = await prisma.comment.findFirstOrThrow({ where: { postId: post.id }, select: { id: true } });
-  // Waiting a day on the shipped email: each pass (every ten minutes) finds it waiting; here the last one, 23 hours in.
-  await prisma.comment.update({ where: { id: note.id }, data: { authorEmailDueAt: new Date(Date.now() - 23 * 3_600_000), authorEmailQueuedAt: null } });
-  await handlers.commentEmailsDue({}, log);
-  expect(author(voter.email)).toEqual([]);
-  // Two hours on (past a day since it was first due), the team reopens it, and the late shipped email emails nobody.
-  await prisma.comment.update({ where: { id: note.id }, data: { authorEmailDueAt: new Date((await prisma.comment.findUniqueOrThrow({ where: { id: note.id } })).authorEmailDueAt!.getTime() - 2 * 3_600_000), authorEmailQueuedAt: null } });
-  await call(updatePost, team(), { number: post.number, status: "planned" });
-  await handlers.postShipped({ postId: post.id }, log);
-  await handlers.commentEmailsDue({}, log);
-  const [email, ...more] = author(voter.email);
-  expect(more).toEqual([]);
-  expect(email!.subject).toBe("New comment on “Recurring events”");
-  expect(email!.text).toContain("Monthly ones too: it's all out.");
-});
-
-test("completed again after a reopen, the completion's comment reaches the author as a comment, since its shipped email doesn't go again", async () => {
+test("a completion's note never becomes a comment email to the author, however it's completed: completed again after a reopen too (the shipped email, as for everyone, doesn't go again)", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   await call(updatePost, team(), { number: post.number, status: "completed" });
-  expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
   await call(updatePost, team(), { number: post.number, status: "planned" });
-
   const completes = await part("RESOLVES");
   await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Now it's really out, monthly ones too." });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
+  await prisma.comment.updateMany({ where: { postId: post.id }, data: { authorEmailQueuedAt: null } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
+});
+
+test("a held try's comment approved again as the completion's note (COMMENT_UNSURE) isn't a comment email to the author, however it was saved", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const completes = await part("RESOLVES");
+  // A try that may have posted its comment, and did (saved as an ordinary comment, due to the author): held so.
+  const decidedAt = new Date(Date.now() - 60_000);
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt, waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  await call(createComment, team(), { number: post.number, body: "It's all out." });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(1);
+  // Approved with the box as it was: that comment is the note, quoted in the shipped email.
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", commentCount: 1 });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
+  // The comment emails' minute, well past the batch's wait (whatever were still due, then).
   await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
   await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
-  const [, again, ...more] = author(voter.email);
+  const [shipped, ...more] = author(voter.email);
+  expect(shipped!.subject).toBe("Done: Recurring events");
+  expect(shipped!.text).toContain("It's all out.");
   expect(more).toEqual([]);
-  expect(again!.subject).toBe("New comment on “Recurring events”");
-  expect(again!.text).toContain("Now it's really out, monthly ones too.");
 });
 
 test("a completion's comment comments.create refuses (its limits drifting from the review's) says why, posts nothing and leaves the update waiting", async () => {
