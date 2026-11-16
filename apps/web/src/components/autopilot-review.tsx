@@ -256,7 +256,7 @@ export function PostReview({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={pending} onClick={approve}>
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={approve}>
               {pending ? "Approving…" : "Approve"}
             </AlertDialogAction>
           </AlertDialogFooter>

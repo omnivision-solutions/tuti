@@ -150,7 +150,7 @@ export function ScheduledButtons({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={pending} onClick={publish}>
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={publish}>
               Publish now
             </AlertDialogAction>
           </AlertDialogFooter>

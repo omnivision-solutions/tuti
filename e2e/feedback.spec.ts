@@ -1397,7 +1397,21 @@ test("the team's roadmap: a card dragged to another column changes its status; a
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await expect(column("Planned").getByRole("listitem")).toHaveCount(1);
   await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Completed"));
-  await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
+  // While the move is on its way, the button keeps focus (disabled, still focusable).
+  let releaseCompleting!: () => void;
+  const completingHeld = new Promise<void>((resolve) => (releaseCompleting = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await completingHeld;
+    }
+    await route.fallback();
+  });
+  const markCompleted = team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" });
+  await markCompleted.click();
+  await expect(markCompleted).toHaveAttribute("aria-disabled", "true");
+  await expect(markCompleted).toBeFocused();
+  releaseCompleting();
+  await team.unrouteAll({ behavior: "wait" });
   await expect(team.getByText("Dark mode: Completed")).toBeVisible();
   await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
   // Dragged and confirmed with the mouse: the focus isn't brought to the card.

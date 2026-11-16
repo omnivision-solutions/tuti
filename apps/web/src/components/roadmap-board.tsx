@@ -312,7 +312,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
             {/* Enter or Space clicks it with `detail` 0: confirmed with a key. */}
-            <AlertDialogAction disabled={pending} onClick={(event) => asking && move(asking.card, asking.status, event.detail === 0)}>
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={(event) => asking && move(asking.card, asking.status, event.detail === 0)}>
               Mark {label}
             </AlertDialogAction>
           </AlertDialogFooter>
