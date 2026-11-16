@@ -172,6 +172,14 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
 /** `licensed`: a plan license's project, which buys the add-on on its own, billed each month or year. */
 export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlug: string; on: boolean; perMonth: number; licensed?: "monthly" | "yearly" }) {
   const [pending, startTransition] = useTransition();
+  // Shown again, the offer to hide it takes the button's place: the keyboard's place moves to it.
+  const moved = useRef(false);
+  useEffect(() => {
+    if (moved.current && !on) {
+      moved.current = false;
+      document.querySelector<HTMLElement>("[data-badge-control]")?.focus();
+    }
+  }, [on]);
   const change = (hide: boolean) =>
     startTransition(async () => {
       const result = await setBadge(projectSlug, hide);
@@ -181,13 +189,15 @@ export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlu
         // A licensed project's add-on is paid on Stripe's page.
         window.location.assign(result.url);
       } else {
+        moved.current = !hide;
         toast.success(hide ? '"Powered by tuti" is hidden' : '"Powered by tuti" is back on your portal');
       }
     });
   if (on && licensed) {
     // Its own subscription is cancelled at once, with no refund: asked first.
+    // Keyed apart from the offer below, so the open dialog closes once the badge is back instead of turning into it.
     return (
-      <AlertDialog>
+      <AlertDialog key="show">
         <AlertDialogTrigger render={<Button type="button" variant="outline" disabled={pending} focusableWhenDisabled />}>
           Show the badge again
         </AlertDialogTrigger>
@@ -199,7 +209,7 @@ export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlu
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => change(false)}>
-              Show the badge again
+              {pending ? "Showing the badge…" : "Show the badge again"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -216,8 +226,8 @@ export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlu
     );
   }
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button type="button" variant="outline" disabled={pending} />}>Hide the badge</AlertDialogTrigger>
+    <AlertDialog key="hide">
+      <AlertDialogTrigger render={<Button type="button" variant="outline" data-badge-control disabled={pending} />}>Hide the badge</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Hide &quot;Powered by tuti&quot;?</AlertDialogTitle>

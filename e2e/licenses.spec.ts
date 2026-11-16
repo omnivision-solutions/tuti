@@ -164,6 +164,19 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await show.getByRole("button", { name: "Cancel" }).click();
   await expect(show).toBeHidden();
   await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  // Confirmed: the badge is back, no dialog is left open, and the keyboard is on the offer to hide it.
+  await owner.getByRole("button", { name: "Show the badge again" }).click();
+  await show.getByRole("button", { name: "Show the badge again" }).click();
+  await expect(owner.getByText('"Powered by tuti" is back on your portal')).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Hide the badge" })).toBeFocused();
+  // Hidden again, for what follows.
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
   // Unassigning it here asks first: only its holder can assign it again.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
