@@ -18,11 +18,11 @@ import { setPostSubscription } from "@/server/posts";
  * again and for people its emails can't reach.
  */
 /**
- * What's still to come for a post in `status`, as its email promises (the team's moves forward email; Completed and
- * Closed posts offer no Subscribe).
+ * What's still to come for a post in `status`, as its emails promise: the team's moves forward email (Autopilot's own
+ * don't, so no step is promised), and shipping does. Completed and Closed posts offer no Subscribe.
  */
 export function stillToCome(status: PostStatus) {
-  return status === "PLANNED" ? "when it's started and shipped" : status === "IN_PROGRESS" ? "when it ships" : "when it's planned, started and shipped";
+  return status === "IN_PROGRESS" ? "when it ships" : "as it moves forward and when it ships";
 }
 
 // In the phone's row of actions beside Upvote and Copy link: the words alone, so the row fits a phone.

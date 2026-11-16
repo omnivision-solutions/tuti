@@ -231,7 +231,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
 
   // Ada (email verified) posted it: she hears anyway, so she gets no button.
   await ada.goto(darkPath);
-  await expect(ada.getByText("You'll hear when it's planned, started and shipped.", { exact: true })).toBeVisible();
+  await expect(ada.getByText("You'll hear as it moves forward and when it ships.", { exact: true })).toBeVisible();
   await expect(ada.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
   // Copy link copies the post's address on the portal.
   await ada.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -259,7 +259,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await cy.goto(linkIn(await latestEmailTo(cy.email), "http"));
   await cy.goto(darkPath);
   // What Subscribe does, under it, only while it offers Subscribe.
-  const hint = cy.getByText("Get an email when it's planned, started and shipped.");
+  const hint = cy.getByText("Get an email as it moves forward and when it ships.");
   await expect(hint).toBeVisible();
   await cy.getByRole("button", { name: "Subscribe" }).click();
   // Saved once it's enabled again (it shows Unsubscribe right away).
@@ -304,7 +304,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   const di = await signUp(browser, portalUrl(slug), "Di");
   await di.goto(linkIn(await latestEmailTo(di.email), "http"));
   await di.goto(darkPath);
-  const hears = di.getByText("You'll hear when it's planned, started and shipped.", { exact: true });
+  const hears = di.getByText("You'll hear as it moves forward and when it ships.", { exact: true });
   await di.getByRole("button", { name: "Upvote" }).click();
   // Saved once it's enabled again (the count changes at once).
   await expect(di.getByRole("button", { name: "Upvoted" })).toBeEnabled();
