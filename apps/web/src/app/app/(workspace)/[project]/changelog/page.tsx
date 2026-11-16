@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { PlusIcon } from "lucide-react";
+import { ImageIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -16,6 +16,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { formatDate, timeAgo } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
 import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
+import { lastingImage } from "@/server/media-urls";
 import { getMembership } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Changelog" };
@@ -43,6 +44,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       collecting: true,
       sample: true,
       updatedAt: true,
+      cover: { select: { id: true, status: true, width: true, height: true } },
       _count: { select: { posts: true, pullRequests: true } },
     },
   });
@@ -127,6 +129,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
               {listed.map((entry) => (
                 <ItemRow
                   key={entry.number}
+                  leading={<Thumbnail url={lastingImage(entry.cover)?.url} />}
                   title={
                     <Link href={`/app/${slug}/changelog/${entry.number}`} className="hover:underline">
                       {entry.title}
@@ -155,5 +158,21 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         </PaneBody>
       </Pane>
     </PaneLayout>
+  );
+}
+
+/**
+ * The entry's featured image, small (the 480px size: sharp at 2×), or a placeholder of the same size so titles line
+ * up. Decorative: the title beside it names the entry.
+ */
+function Thumbnail({ url }: { url: string | undefined }) {
+  const tile = "aspect-[1200/630] w-19 shrink-0 rounded-md border @max-[48rem]/app:w-15";
+  return url ? (
+    // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+    <img src={url} alt="" loading="lazy" className={`${tile} object-cover`} />
+  ) : (
+    <div aria-hidden className={`${tile} flex items-center justify-center bg-muted`}>
+      <ImageIcon className="size-4 text-muted-foreground/50" />
+    </div>
   );
 }

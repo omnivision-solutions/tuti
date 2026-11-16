@@ -1152,6 +1152,22 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await expect(cover).toHaveCount(0);
   await ada.goto("/changelog/1");
   await expect(cover).toBeVisible();
+  // The team's list shows each entry's featured image small, beside its title (decorative: the title names it), loaded;
+  // an entry without one gets a placeholder tile the same size, so titles line up.
+  await team.goto(`/app/${slug}/changelog?tab=published`);
+  const thumbnail = team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).locator("img");
+  await expect(thumbnail).toHaveAttribute("alt", "");
+  await expect(thumbnail).toHaveAttribute("src", /\/480\.webp/);
+  await expect.poll(() => thumbnail.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  const noCover = team.getByRole("listitem").filter({ hasText: "Faster exports" });
+  await expect(noCover.locator("img")).toHaveCount(0);
+  const placeholder = noCover.locator("[aria-hidden]").filter({ has: team.locator("svg.lucide-image") });
+  expect((await placeholder.boundingBox())!.width).toBe((await thumbnail.boundingBox())!.width);
+  await checkpoint(team, "team-changelog-thumbnails");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(70);
+  await checkpoint(team, "team-changelog-thumbnails-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
 
   // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
   await team.goto(`/app/${slug}/changelog/1`);
