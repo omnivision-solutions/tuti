@@ -111,6 +111,9 @@ test("someone without licenses is told how to redeem one", async ({ browser }, t
   await checkpoint(person, "licenses-empty");
 });
 
+/** Billing's page, whatever its query (`?badge=1` after Stripe): where its actions post. */
+const billingPage = (url: URL) => url.pathname.endsWith("/settings/billing");
+
 test("Billing says a project's plan comes from its license and unassigns it, asking first while it gives its plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const key = randomUUID();
@@ -175,7 +178,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   let opened!: () => void;
   const opening = new Promise<void>((resolve) => (opened = resolve));
-  await owner.route("**/settings/billing", async (route) => {
+  await owner.route(billingPage, async (route) => {
     if (route.request().method() === "POST") {
       await opening;
     }
@@ -186,7 +189,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(confirm.getByRole("button", { name: "Opening Stripe…" })).toBeDisabled();
   await expect(confirm.getByRole("button", { name: "Opening Stripe…" })).toBeFocused();
   opened();
-  await owner.unroute("**/settings/billing");
+  await owner.unroute(billingPage);
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
   await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
@@ -223,7 +226,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   // While it runs (its request held here), the dialog's button is off: a second press can't send it again.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
-  await owner.route("**/settings/billing", async (route) => {
+  await owner.route(billingPage, async (route) => {
     if (route.request().method() === "POST") {
       await held;
     }
@@ -235,7 +238,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeDisabled();
   await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeFocused();
   release();
-  await owner.unroute("**/settings/billing");
+  await owner.unroute(billingPage);
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
   // The add-on ended with it.
