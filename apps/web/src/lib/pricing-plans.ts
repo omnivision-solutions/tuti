@@ -1,5 +1,7 @@
 import { articleLimit, articleVersionsKept, badgePerMonth, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, emailsPerMonth, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled, trialTerms } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
+
+import { appUrl } from "@/lib/hosts";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
 const SALES_EMAIL = "hello@tuti.so";
@@ -228,6 +230,9 @@ export function plansWithFacts(): (PricingPlan & { facts: PlanFacts })[] {
   const facts = planFacts();
   return pricingPlans().map((plan, index) => ({ ...plan, facts: facts[index]! }));
 }
+
+/** Tuti's pricing page (apps/marketing), where the app is Tuti's cloud: every feature, plan by plan. Null elsewhere, where none is. */
+export const pricingPage = () => (appUrl().hostname === "tuti.so" ? new URL("/pricing", appUrl()).href : null);
 
 /** The "Powered by tuti" add-on's price a month (and a month billed yearly), and the free trial's length: null where not offered. */
 export const pricingTerms = () => ({ badgePerMonth: badgePerMonth("month"), badgeYearPerMonth: badgePerMonth("year"), trialDays: trialTerms()?.days ?? null });

@@ -18,14 +18,11 @@ import { BilledToggle } from "@tuti/ui/plan-line";
 import { CheckIcon, ExternalLinkIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
-import { yearlyNote } from "@/lib/plans";
+import { billedAs, yearlyNote } from "@/lib/plans";
 import type { PlanFacts, PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 import { manageSubscription, setBadge, subscribe } from "@/server/credits";
 import { unassignPlanLicense } from "@/server/plan-licenses";
-
-/** Every feature, plan by plan: Tuti's pricing page, opened in a new tab from Billing. */
-const PRICING_PAGE = "https://tuti.so/pricing";
 
 type Plan = PricingPlan & { facts: PlanFacts };
 type Interval = "month" | "year";
@@ -47,24 +44,26 @@ const yesNo = (facts: PlanFacts): [string, boolean][] => [
 
 /**
  * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), as the
- * pricing page's cards show them (its price, three numbers, what it adds to the plan before), monthly or yearly, and a
- * link to that page for every feature. Upgrade goes to Stripe's payment page; the featured plan's is the page's one
+ * pricing page's cards show them (its price, three numbers, what it adds to the plan before), monthly or yearly, and
+ * (`pricingPage`, on Tuti's cloud) a link to that page for every feature. Upgrade goes to Stripe's payment page; the featured plan's is the page's one
  * primary button. During a free trial (`trial`), the default plan is the one after it.
  */
-export function PlanPicker({ projectSlug, plans, current, trial = false }: { projectSlug: string; plans: Plan[]; current: string; trial?: boolean }) {
+export function PlanPicker({ projectSlug, plans, current, trial = false, pricingPage }: { projectSlug: string; plans: Plan[]; current: string; trial?: boolean; pricingPage: string | null }) {
   const [interval, setBilled] = useState<Interval>("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   const credits = plans.some(({ facts }) => facts.credits !== null || facts.startCredits !== null);
   return (
     <div id="plans" className="flex scroll-mt-8 flex-col gap-4">
       <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote(plans.flatMap(({ price }) => (price ? [price] : []))) ?? undefined} />
-      <ul className="grid gap-4 lg:grid-cols-3">
+      <ul className="grid gap-4 @2xl/settings:grid-cols-3">
         {plans.map((plan, index) => {
           const previous = plans[index - 1];
           const { facts } = plan;
           const more = previous ? yesNo(facts).filter(([text, has]) => has && !yesNo(previous.facts).some(([other, had]) => other === text && had)) : [];
           const yours = plan.key === current;
-          const perMonth = plan.price ? (plan.price[interval] ?? plan.price.month ?? plan.price.year) : null;
+          // As picked, or the other way where it's sold only that way (its card says which).
+          const billed = billedAs(plan.price, interval);
+          const perMonth = billed && plan.price![billed];
           return (
             <li key={plan.key} className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4", plan.featured && "border-primary ring-1 ring-primary")}>
               <div className="flex items-center justify-between gap-2">
@@ -81,9 +80,9 @@ export function PlanPicker({ projectSlug, plans, current, trial = false }: { pro
                   {!plan.byQuote && <span className="text-sm text-muted-foreground">{plan.price ? "a month" : "forever"}</span>}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {plan.price?.year != null && (interval === "year" || plan.price.month === null)
-                    ? `$${(plan.price.year * 12).toLocaleString("en")} billed yearly`
-                    : plan.price
+                  {billed === "year"
+                    ? `$${(plan.price!.year! * 12).toLocaleString("en")} billed yearly`
+                    : billed
                       ? "Billed monthly"
                       : plan.byQuote
                         ? "Priced for your team"
@@ -91,7 +90,7 @@ export function PlanPicker({ projectSlug, plans, current, trial = false }: { pro
                 </p>
               </div>
               {/* The plan's numbers, a line each (the pricing page's strip of three, narrower here). */}
-              <dl className="flex flex-col gap-1 rounded-lg bg-muted px-2.5 py-2.5 text-[13px] whitespace-nowrap">
+              <dl className="flex flex-col gap-1 rounded-lg bg-muted px-2.5 py-2.5 text-[13px]">
                 {[
                   ...(credits
                     ? [[facts.credits === null && facts.startCredits !== null ? "AI credits to start" : "AI credits a month", plan.byQuote ? "By quote" : compact(facts.credits ?? facts.startCredits ?? 0)]]
@@ -99,9 +98,9 @@ export function PlanPicker({ projectSlug, plans, current, trial = false }: { pro
                   ["feedback boards", compact(facts.boards)],
                   ["emails a month", compact(facts.emails)],
                 ].map(([label, value]) => (
-                  <div key={label} className="flex flex-row-reverse justify-end gap-1.5">
+                  <div key={label} className="flex flex-wrap gap-x-1.5">
                     <dt className="text-muted-foreground">{label}</dt>
-                    <dd className="font-heading font-bold tabular-nums">{value}</dd>
+                    <dd className="order-first font-heading font-bold tabular-nums">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -133,8 +132,8 @@ export function PlanPicker({ projectSlug, plans, current, trial = false }: { pro
                   {plan.cta.label}
                 </a>
               )}
-              {!yours && plan.price?.[interval] != null && (
-                <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key!, interval)}>
+              {!yours && billed && (
+                <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key!, billed)}>
                   Upgrade to {plan.name}
                 </Button>
               )}
@@ -143,11 +142,13 @@ export function PlanPicker({ projectSlug, plans, current, trial = false }: { pro
         })}
       </ul>
       {error && <FieldError>{error}</FieldError>}
-      <a href={PRICING_PAGE} target="_blank" rel="noopener" className="flex items-center gap-1.5 self-start text-sm font-medium text-primary hover:underline">
-        Compare all features
-        <ExternalLinkIcon aria-hidden className="size-3.5" />
-        <span className="sr-only">(opens in a new tab)</span>
-      </a>
+      {pricingPage && (
+        <a href={pricingPage} target="_blank" rel="noopener" className="flex items-center gap-1.5 self-start text-sm font-medium text-primary hover:underline">
+          Compare all features
+          <ExternalLinkIcon aria-hidden className="size-3.5" />
+          <span className="sr-only">(opens in a new tab)</span>
+        </a>
+      )}
     </div>
   );
 }

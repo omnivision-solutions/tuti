@@ -30,7 +30,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.getByText("Monthly", { exact: true }).click();
   await expect(pro).toContainText("$39a monthBilled monthly");
   // Free beside Pro and Business, as the pricing page's cards show them: the numbers, then what each adds to the one
-  // before; every feature is on that page, in a new tab. Pro's button is the page's one primary.
+  // before. Pro's button is the page's one primary.
   await expect(pro.getByText("Most popular")).toBeVisible();
   await expect(owner.getByText("Your plan", { exact: true })).toBeVisible();
   await expect(pro.getByRole("definition")).toHaveText(["1,000", "5", "10k"]);
@@ -38,9 +38,8 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(pro.getByRole("listitem")).toContainText(["Your own domain"]);
   const business = owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Business", exact: true }) });
   await expect(business.getByRole("listitem")).toContainText(["Subpath on your domain", "Private help center", "Fine-tune Autopilot", "Priority support"]);
-  const compare = owner.getByRole("link", { name: "Compare all features (opens in a new tab)" });
-  await expect(compare).toHaveAttribute("href", "https://tuti.so/pricing");
-  await expect(compare).toHaveAttribute("target", "_blank");
+  // Every feature is on Tuti's pricing page, linked only on Tuti's own cloud (tuti.so): not this server.
+  await expect(owner.getByRole("link", { name: /Compare all features/ })).toHaveCount(0);
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
   );
@@ -48,8 +47,8 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
-  await compare.scrollIntoViewIfNeeded();
-  await checkpoint(owner, "team-settings-billing-plans-compare");
+  await business.getByRole("button", { name: "Upgrade to Business" }).scrollIntoViewIfNeeded();
+  await checkpoint(owner, "team-settings-billing-plans-foot");
   // From the keyboard: while Stripe's page is being opened (its request held here), Upgrade is off but keeps the focus.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
