@@ -205,6 +205,31 @@ test("a held try's comment emailed to the author before the team approves again 
   expect(emails.filter((email) => email.text.includes("It's all out."))).toHaveLength(1);
 });
 
+test("a held try's comment reused as the note, whose completion then fails, and is dismissed: its due time is back, and the author gets it as a comment", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const completes = await part("RESOLVES");
+  // A try that may have posted its comment, and did (saved as any comment, due to the author): held so.
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt: new Date(Date.now() - 60_000), waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  const comment = await call(createComment, team(), { number: post.number, body: "It's all out." });
+  // Approved again with the box as it was (that comment is the note), and the status move fails.
+  vi.spyOn(updatePost, "run").mockRejectedValueOnce(new Error("connection reset"));
+  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." })).rejects.toThrow();
+  expect(await postNow()).toMatchObject({ status: "PLANNED", commentCount: 1 });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  // Dismissed: it stays only a comment, so its email to the author goes.
+  await call(dismissCodeChangeAction, team(), { id: completes.id });
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [email, ...more] = author(voter.email);
+  expect(more).toEqual([]);
+  expect(email!.subject).toBe("New comment on “Recurring events”");
+  expect(email!.text).toContain("It's all out.");
+});
+
 test("a completion's comment held unsure (saved, but that couldn't be told), then dismissed, is still emailed to the author as a comment", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   vi.spyOn(console, "error").mockImplementation(() => {});
