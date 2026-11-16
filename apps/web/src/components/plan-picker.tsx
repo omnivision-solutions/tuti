@@ -111,8 +111,11 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
   );
 }
 
-/** A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and admins. */
-export function UnassignLicense({ projectSlug, licenseId }: { projectSlug: string; licenseId: string }) {
+/**
+ * A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and
+ * admins. While the license gives its plan (`active`), it asks first: only its holder can assign it again.
+ */
+export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlug: string; licenseId: string; active: boolean }) {
   const [pending, startTransition] = useTransition();
   const done = useRef(false);
   // Done, the plans take this button's place: the keyboard's place moves to the first of them.
@@ -134,12 +137,31 @@ export function UnassignLicense({ projectSlug, licenseId }: { projectSlug: strin
         toast.success("License unassigned");
       }
     });
+  if (!active) {
+    return (
+      <div>
+        <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={unassign}>
+          {pending ? "Unassigning…" : "Unassign license"}
+        </Button>
+      </div>
+    );
+  }
   return (
-    <div>
-      <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={unassign}>
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button type="button" variant="outline" className="self-start" disabled={pending} />}>
         {pending ? "Unassigning…" : "Unassign license"}
-      </Button>
-    </div>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unassign this license?</AlertDialogTitle>
+          <AlertDialogDescription>This project loses the license&apos;s plan until the license&apos;s holder assigns it again.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={unassign}>Unassign license</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

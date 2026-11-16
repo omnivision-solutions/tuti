@@ -101,7 +101,7 @@ test("someone without licenses is told how to redeem one", async ({ browser }, t
   await checkpoint(person, "licenses-empty");
 });
 
-test("Billing says a project's plan comes from its license, and an admin unassigns a deactivated one there", async ({ browser }, testInfo) => {
+test("Billing says a project's plan comes from its license and unassigns it, asking first while it gives its plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const key = randomUUID();
   const webhook = (payload: Record<string, unknown>) => {
@@ -128,12 +128,30 @@ test("Billing says a project's plan comes from its license, and an admin unassig
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
   await expect(owner.getByText('Hide "Powered by tuti"')).toBeHidden();
   await checkpoint(owner, "team-settings-billing-license");
+  // Unassigning it here asks first: only its holder can assign it again.
+  await owner.getByRole("button", { name: "Unassign license" }).click();
+  const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
+  await expect(dialog).toContainText("This project loses the license's plan until the license's holder assigns it again.");
+  await checkpoint(owner, "team-settings-billing-unassign-license", { fullPage: false });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
+  await owner.getByRole("button", { name: "Unassign license" }).click();
+  await dialog.getByRole("button", { name: "Unassign license" }).click();
+  await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+  // Its holder assigns it again.
+  await owner.goto("/app/licenses");
+  await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  await expect(owner.getByText("License assigned")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/billing`);
 
   // Refunded on AppSumo: the project is on the free plan, and says why it can't buy one yet.
   await webhook({ event: "deactivate", license_key: key });
   await owner.reload();
   await expect(owner.getByText("This project's AppSumo license was deactivated. Unassign it to choose a plan.")).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license-deactivated");
+  // Deactivated, it gives no plan: unassigning it doesn't ask.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   await expect(owner.getByText("License unassigned")).toBeVisible();
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
