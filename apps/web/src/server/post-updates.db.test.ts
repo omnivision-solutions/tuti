@@ -147,6 +147,34 @@ test("the comment a completion posts reaches the post's author once, in the ship
   expect(more).toEqual([]);
 });
 
+test("a completion's comment waits for its shipped email, however late that runs, and reaches the author once, quoted in it", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const log = { info: () => {}, warn: () => {} };
+  const minutesLater = async () => {
+    await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000), authorEmailQueuedAt: null } });
+    await handlers.commentEmailsDue({}, log);
+  };
+  // The shipped email is late (a backlog, a cap): its job doesn't run yet.
+  const late = vi.spyOn(handlers, "postShipped").mockResolvedValue({ queued: true });
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
+  late.mockRestore();
+  // Past the comment's 5 minutes, twice: it waits, still due.
+  await minutesLater();
+  await minutesLater();
+  expect(author(voter.email)).toEqual([]);
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(1);
+
+  // The shipped email goes, quoting it; the comment email then has nothing to send.
+  await handlers.postShipped({ postId: post.id }, log);
+  await minutesLater();
+  const [shipped, ...more] = author(voter.email);
+  expect(shipped!.subject).toBe("Done: Recurring events");
+  expect(shipped!.text).toContain("Monthly ones too: it's all out.");
+  expect(more).toEqual([]);
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
+});
+
 test("completed again after a reopen, the completion's comment reaches the author as a comment, since its shipped email doesn't go again", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   await call(updatePost, team(), { number: post.number, status: "completed" });

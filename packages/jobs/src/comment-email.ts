@@ -35,6 +35,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       status: true,
       voteCount: true,
       sample: true,
+      shippedEmailsDueAt: true,
       authorId: true,
       visibility: true,
       board: { select: { slug: true, off: true } },
@@ -59,10 +60,15 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   }
   const { projectId, project } = post;
   const ids = comments.map((comment) => comment.id);
+  // Completions' comments waiting on their shipped email (below): left due.
+  const waitingOnShipped = new Set<string>();
   // Done once no email about them to the author is left in flight (another run's, or the reply's to voters): the cron
   // takes one that is again later, and its claim says whether it went. Other people's claims (a voter's) aren't this one's.
   const done = (authorId: string | null) =>
-    prisma.comment.updateMany({ where: { id: { in: ids }, ...(authorId && { replyEmails: { none: { userId: authorId, sentAt: null } } }) }, data: { authorEmailDueAt: null } });
+    prisma.comment.updateMany({
+      where: { id: { in: ids.filter((id) => !waitingOnShipped.has(id)) }, ...(authorId && { replyEmails: { none: { userId: authorId, sentAt: null } } }) },
+      data: { authorEmailDueAt: null },
+    });
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
@@ -72,6 +78,19 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
     await done(null);
     return { emailed: 0 };
   }
+  // The comment a completion posted (its update's `note`, which the shipped email quotes) waits while that email to the
+  // author is still to be decided, however late it runs (a cap, a backlog): the post's shipped emails due, and no claim
+  // of theirs yet. Once postShipped has taken them on (quoting it, it claims the note for them too: reply_email) or is
+  // done with the post, the usual rules: emailed here only if the shipped email didn't quote it.
+  if (post.shippedEmailsDueAt && (await prisma.shippedEmail.count({ where: { postId, userId: author.id } })) === 0) {
+    const notes = await prisma.codeChangeAction.findMany({
+      where: { postId, kind: "RESOLVES", OR: ids.map((id) => ({ payload: { path: ["note"], equals: id } })) },
+      select: { payload: true },
+    });
+    for (const { payload } of notes) {
+      waitingOnShipped.add((payload as { note: string }).note);
+    }
+  }
   // Read before anything is claimed or counted: one failing here leaves no claim to go stale and takes none of the
   // project's emails.
   const origin = await portalAddress(project.slug);
@@ -80,7 +99,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   // reply's email to voters doesn't email it twice. Their own comments never become due; left out all the same.
   const claimedAt = new Date();
   const claimed: typeof comments = [];
-  for (const comment of comments) {
+  for (const comment of comments.filter(({ id }) => !waitingOnShipped.has(id))) {
     if (comment.authorId !== author.id && (await claim(comment.id, author.id, seenAs(post), "authorEmailDueAt", claimedAt))) {
       claimed.push(comment);
     }
