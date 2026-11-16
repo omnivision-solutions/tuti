@@ -1,5 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
-import { postStatusChanged } from "@tuti/jobs";
+import { postGeneration, postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
 import { fromApiVisibility, VISIBILITIES } from "../post-visibility";
@@ -59,7 +59,7 @@ export const updatePost = defineOperation({
     // The status it has now, read with its row locked: changes at the same moment (a teammate, publishing its entry) go one after the other.
     // A change nobody on the team approved (Autopilot's progress update going out by itself: `quietly`) emails nobody.
     const quiet = "quietly" in context;
-    const { updated, previous, event } = await prisma.$transaction(async (tx) => {
+    const { updated, previous, generation } = await prisma.$transaction(async (tx) => {
       // The owner is on the team (by their email), its membership row held until this commits: taken off the
       // team meanwhile, their removal waits for this, and then clears them as owner. Held before the post's row,
       // in the order their removal takes them, so the two never wait on each other.
@@ -95,15 +95,18 @@ export const updatePost = defineOperation({
         },
         select: postSummarySelect,
       });
-      const event =
-        status && status !== previous
-          ? await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status }, select: { id: true, createdAt: true } })
-          : null;
-      return { updated: saved, previous, event };
+      // The move's generation (postGeneration, read under the post's lock with its event): its handler's writes are only
+      // while it's still the post's latest.
+      let generation: number | null = null;
+      if (status && status !== previous) {
+        await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status } });
+        generation = await postGeneration(post.id, tx);
+      }
+      return { updated: saved, previous, generation };
     });
     const result = summary(updated, portal);
     if (updated.status !== previous) {
-      await postStatusChanged(projectId, post.id, result, previous, { email: !quiet, event });
+      await postStatusChanged(projectId, post.id, result, previous, { email: !quiet, generation });
     }
     return result;
   },

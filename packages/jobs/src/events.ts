@@ -82,9 +82,10 @@ export async function postStatusChanged(
   previousStatus: PostStatus,
   /**
    * `email` false: a move nobody on the team approved (Autopilot's progress update going out by itself), which emails
-   * nobody. `event`: the move's own (its post_event), so a later move (even back to this status) is left to its handler.
+   * nobody. `generation`: the post's moves counted with this one (postGeneration), so a later move (even back to this
+   * status) is left to its own handler.
    */
-  { email = true, event = null }: { email?: boolean; event?: { id: string; createdAt: Date } | null } = {},
+  { email = true, generation = null }: { email?: boolean; generation?: number | null } = {},
 ) {
   // Sample content (Home's "Add sample content") reaches no webhooks, and its voters aren't emailed.
   if ((await prisma.post.count({ where: { id: postId, sample: true } })) > 0) {
@@ -97,17 +98,17 @@ export async function postStatusChanged(
   const emailed = email && statusMoveEmails(previousStatus, post.status.toUpperCase() as PostStatus) !== null;
   // Only while the post still has this change's status: another change made while the webhooks were told is the
   // post's own to settle, and this one mustn't clear (or set) its emails' due time.
-  // Nor once the post moved again since this move (`event`), even back to this status: that move's due time is its own.
-  const still = { id: postId, status: post.status.toUpperCase() as PostStatus, ...unmovedSince(event) };
+  // Nor once the post moved again since this move (`generation`), even back to this status: that move's due time is its own.
+  const still = { id: postId, status: post.status.toUpperCase() as PostStatus };
   // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
   // on later mustn't find its emails still due, an earlier completion's either.
   if (!emailed || post.visibility === "team") {
-    await prisma.post.updateMany({ where: { ...still, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
+    await whileUnmoved(postId, generation, (db) => db.post.updateMany({ where: { ...still, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } }));
   } else {
     try {
       // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
-      const { count } = await prisma.post.updateMany({ where: still, data: { shippedEmailsDueAt: new Date() } });
-      if (count > 0) {
+      const set = await whileUnmoved(postId, generation, (db) => db.post.updateMany({ where: still, data: { shippedEmailsDueAt: new Date() } }));
+      if (set && set.count > 0) {
         await enqueue("postShipped", { postId });
       }
     } catch (error) {
@@ -117,11 +118,27 @@ export async function postStatusChanged(
 }
 
 /**
- * A post not moved since `event` (its latest post_event, by createdAt then id, as claims read it): for a write only the
- * run or handler of that move may make. Nothing to check without one.
+ * A post's generation: how many moves it has had (its post_event rows). Every move adds one under the post's row lock
+ * (posts.update, publishing a changelog entry), so it only grows, one per committed move, whatever their timestamps.
  */
-export const unmovedSince = (event: { id: string; createdAt: Date } | null) =>
-  event ? { events: { none: { OR: [{ createdAt: { gt: event.createdAt } }, { createdAt: event.createdAt, id: { gt: event.id } }] } } } : {};
+export async function postGeneration(postId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
+  return db.postEvent.count({ where: { postId } });
+}
+
+/**
+ * Runs `write` (a write only a move's own handler or run may make) only while the post is still at `generation`
+ * (postGeneration): checked and written under the post's row lock, so no move lands in between. Null: no check. Returns
+ * what `write` returned, or null when the post moved since.
+ */
+export async function whileUnmoved<T>(postId: string, generation: number | null, write: (db: Prisma.TransactionClient) => Promise<T>): Promise<T | null> {
+  if (generation === null) {
+    return write(prisma);
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM post WHERE id = ${postId} FOR UPDATE`;
+    return (await postGeneration(postId, tx)) === generation ? write(tx) : null;
+  });
+}
 
 /** A post as the API and webhook payloads show it. */
 export type PostRow = {

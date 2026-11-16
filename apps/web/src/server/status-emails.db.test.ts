@@ -3,7 +3,8 @@ import { postStatusChanged } from "@tuti/jobs";
 import { readFileSync } from "node:fs";
 
 import { handlers } from "@tuti/jobs";
-import { beforeEach, expect, test, vi } from "vitest";
+import { billingFile } from "@tuti/testkit";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
@@ -20,6 +21,10 @@ let project: Awaited<ReturnType<typeof createProject>>;
 beforeEach(async () => {
   owner = await signUp("Owner");
   project = await createProject(owner);
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
@@ -250,4 +255,66 @@ test("a run that finishes after its post moved away and back to the same status 
   }
   // The older run didn't clear what the newer move left due.
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).not.toBeNull();
+});
+
+test("a run's people are never older than the move it checks: someone voting while the post goes away and back to Planned is emailed by the next run", async () => {
+  const voter = await verified("Voter");
+  const post = await postVotedBy(await verified("Author"), [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+  const later = await verified("Later");
+  // Right after the run reads the post and its people: reopened, Later votes, planned again (due for its own run).
+  const findFirst = prisma.post.findFirst.bind(prisma.post) as (...args: unknown[]) => Promise<unknown>;
+  let moved = false;
+  vi.spyOn(prisma.post, "findFirst").mockImplementation((async (args: { where?: { id?: string; status?: unknown } }) => {
+    const read = await findFirst(args);
+    if (!moved && args?.where?.id === postId && args.where.status !== undefined) {
+      moved = true;
+      await prisma.postEvent.create({ data: { postId, from: "PLANNED", to: "OPEN" } });
+      await prisma.vote.create({ data: { postId, userId: later.id, projectId: project.id } });
+      await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
+    }
+    return read;
+  }) as never);
+  await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  vi.restoreAllMocks();
+  expect(moved).toBe(true);
+  expect(subjectsTo(voter.email)).toEqual(["Planned: CSV export"]);
+  // The older run's people didn't have Later; it left the newer move due, so its run emails them.
+  expect(subjectsTo(later.email)).toEqual([]);
+  await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+  expect(subjectsTo(later.email)).toEqual(["Planned: CSV export"]);
+  expect(subjectsTo(voter.email)).toHaveLength(1);
+});
+
+test("a status handler that resumes after another move committed neither clears nor sets that move's due time", async () => {
+  // The project's email paused, so the newer move's emails stay due (its run waits) for the delayed handler to meet.
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  const voter = await verified("Voter");
+  const post = await postVotedBy(await verified("Author"), [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "IN_PROGRESS" } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "IN_PROGRESS" } });
+  // Moved back to Planned (emails nobody: its handler clears what's due); that handler waits as it starts, while the
+  // post goes to Open and is planned again (due for its emails).
+  const count = prisma.post.count.bind(prisma.post) as (...args: unknown[]) => Promise<number>;
+  let delayed = false;
+  vi.spyOn(prisma.post, "count").mockImplementation((async (args: { where?: { id?: string; sample?: boolean } }) => {
+    if (!delayed && args?.where?.id === postId && args.where.sample === true) {
+      delayed = true;
+      await setStatus(post.number, "open");
+      await setStatus(post.number, "planned");
+    }
+    return count(args);
+  }) as never);
+  await setStatus(post.number, "planned");
+  vi.restoreAllMocks();
+  expect(delayed).toBe(true);
+  const due = await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { status: true, shippedEmailsDueAt: true } });
+  expect(due.status).toBe("PLANNED");
+  // The newer move's due time is still there, for its run once the email resumes.
+  expect(due.shippedEmailsDueAt).not.toBeNull();
 });
