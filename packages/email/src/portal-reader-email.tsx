@@ -6,11 +6,11 @@ import { buttonStyle, type EmailBrand, Eyebrow, Layout, Note, Title } from "./la
 type PortalReaderProps = EmailBrand & { inviterName: string; email: string; url: string };
 
 /** To someone the team added as a reader of its private portal: where to sign in, and with which address. */
-export function PortalReaderEmail({ inviterName, projectName, email, url, accent, poweredBy }: PortalReaderProps) {
+export function PortalReaderEmail({ inviterName, projectName, email, url, accent, poweredBy, logo, logoText }: PortalReaderProps) {
   return (
     <Layout
       preview={`You can now read ${projectName}'s portal.`}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={<>If you weren&apos;t expecting this, you can ignore this email.</>}
     >
       <Eyebrow accent={accent}>You&apos;re invited</Eyebrow>
