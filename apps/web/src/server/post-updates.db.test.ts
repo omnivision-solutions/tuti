@@ -183,26 +183,32 @@ test("a held try's comment approved again as the completion's note (COMMENT_UNSU
   expect(more).toEqual([]);
 });
 
-test("a held try's comment whose completion then fails, and is dismissed, is still emailed to the author as a comment", async () => {
+test("a completion's comment held unsure (saved, but that couldn't be told), then dismissed, is still emailed to the author as a comment", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   vi.spyOn(console, "error").mockImplementation(() => {});
   const completes = await part("RESOLVES");
-  await prisma.codeChangeAction.update({
-    where: { id: completes.id },
-    data: { status: "PENDING", decidedById: owner.id, decidedAt: new Date(Date.now() - 60_000), waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
-  });
-  const comment = await call(createComment, team(), { number: post.number, body: "It's all out." });
-  // Approved again with the box as it was (reusing that comment), and the completion fails after it's taken as the note.
-  const updateMany = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
-  vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementation((async (...args: unknown[]) => {
-    if ((args[0] as { data?: { payload?: { note?: unknown } } }).data?.payload?.note) {
+  // Approving it posts the comment, which saves; then a read right after fails, and so does the check of whether it was saved.
+  const saved = () => prisma.comment.count({ where: { postId: post.id, body: "It's all out." } });
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.teamMember, "findUnique").mockImplementation((async (...args: unknown[]) => {
+    if ((await saved()) > 0) {
       throw new Error("connection reset");
     }
-    return updateMany(...args);
+    return findUnique(...args);
   }) as never);
-  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." })).rejects.toThrow();
-  vi.mocked(prisma.codeChangeAction.updateMany).mockRestore();
-  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  const findFirst = prisma.comment.findFirst.bind(prisma.comment) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.comment, "findFirst").mockImplementation((async (...args: unknown[]) => {
+    if ((args[0] as { where?: { createdAt?: unknown } }).where?.createdAt) {
+      throw new Error("connection reset");
+    }
+    return findFirst(...args);
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "It's all out." })).rejects.toThrow();
+  vi.mocked(prisma.teamMember.findUnique).mockRestore();
+  vi.mocked(prisma.comment.findFirst).mockRestore();
+  expect(await saved()).toBe(1);
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: completes.id } })).waitReason).toBe(COMMENT_UNSURE);
+  expect(await postNow()).toMatchObject({ status: "PLANNED" });
   // Dismissed: it stays only a comment, so its email to the author goes.
   await call(dismissCodeChangeAction, team(), { id: completes.id });
   await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });

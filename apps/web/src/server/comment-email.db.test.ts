@@ -410,3 +410,16 @@ test("a run started before the batch's wait is over (by hand, a retry ahead of i
   expect(await handlers.commentsEmailed({ postId }, log)).toEqual({ skipped: true });
   expect(commentEmails(author.email)).toEqual([]);
 });
+
+test("a post on a Team only board: the email doesn't name the board (it isn't on the portal)", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  // The board turned Team only since; the post itself stays public.
+  await prisma.board.updateMany({ where: { projectId: project.id, slug: "feature-requests" }, data: { name: "Churn risks Q1", postVisibility: "TEAM" } });
+  await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  await minutesLater();
+  const [email] = commentEmails(author.email);
+  expect(email!.text).toContain("Nice idea.");
+  expect(email!.html).not.toContain("Churn risks Q1");
+  expect(email!.text).not.toContain("Churn risks Q1");
+});

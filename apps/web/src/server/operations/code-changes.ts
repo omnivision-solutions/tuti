@@ -46,7 +46,7 @@ import { outcomeOf, targetBadge } from "@/lib/autopilot-words";
 import { appUrl } from "@/lib/hosts";
 import { lucideIcon } from "@/lib/lucide-icons";
 
-import { createComment, writeComment } from "./create";
+import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { collectionNamed, createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
@@ -1392,16 +1392,13 @@ export const applyCodeChangeAction = defineOperation({
     // The comment posted before the completion (see below), and whether it can't be told it was saved.
     let first = false;
     let unsureComment = false;
-    // A reused comment's due time to its post's author (comment-email), cleared as it becomes the note: put back if the
-    // completion fails, so a comment that stays only a comment (dismissed, approved with another) is still emailed.
-    let reusedDue: Date | null = null;
+    // The note's due time to the post's author (comment-email), cleared just before the completion: put back if it fails,
+    // so a comment that stays only a comment (held, then dismissed or approved with another) is still emailed.
+    let noteDue: Date | null = null;
     try {
       if (reuse) {
-        // Before completing it: the email it sends quotes that comment (postShipped reads `note`). The completion's note
-        // now, so never a comment email to the post's author, however the held try saved it.
+        // Before completing it: the email it sends quotes that comment (postShipped reads `note`).
         shared.commentId = reuse;
-        reusedDue = (await prisma.comment.findUnique({ where: { id: reuse }, select: { authorEmailDueAt: true } }))?.authorEmailDueAt ?? null;
-        await prisma.comment.updateMany({ where: { id: reuse }, data: { authorEmailDueAt: null } });
         await Promise.all(parts.map((part) => prisma.codeChangeAction.updateMany({ where: { id: part.id, status: "APPLIED" }, data: { payload: { ...asObject(part.payload), note: reuse } } })));
       }
       for (const part of parts) {
@@ -1444,9 +1441,8 @@ export const applyCodeChangeAction = defineOperation({
           throw new OperationError(400, "invalid_input", commentInput.error.issues[0]?.message ?? "Invalid input");
         }
         posting = true;
-        // The completion's note: people hear of it through the shipped email, which quotes it, never as a comment email
-        // to the post's author (comment-email). Saved so, whatever fails after.
-        shared.commentId = (await writeComment(context, commentInput.data, { quietToAuthor: true })).id;
+        // Saved as any comment (due to the post's author, comment-email): until the completion goes, it's only a comment.
+        shared.commentId = (await createComment.run(context, commentInput.data)).id;
         posting = false;
         // The email completing it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;
@@ -1454,6 +1450,12 @@ export const applyCodeChangeAction = defineOperation({
       }
       if (whole?.completes) {
         if (post.status !== "COMPLETED") {
+          // The completion's note: people hear of it through the shipped email, which quotes it, never as a comment email
+          // to the post's author. Cleared before the completion, which queues that email (so it can't go first).
+          if (shared.commentId && (first || reuse)) {
+            noteDue = (await prisma.comment.findUnique({ where: { id: shared.commentId }, select: { authorEmailDueAt: true } }))?.authorEmailDueAt ?? null;
+            await prisma.comment.updateMany({ where: { id: shared.commentId }, data: { authorEmailDueAt: null } });
+          }
           shared.status = post.status;
           await call(updatePost, context, { number: post.number, status: toApiStatus("COMPLETED") });
         }
@@ -1466,8 +1468,8 @@ export const applyCodeChangeAction = defineOperation({
         shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
       }
     } catch (error) {
-      if (reuse && reusedDue) {
-        await prisma.comment.updateMany({ where: { id: reuse, authorEmailDueAt: null }, data: { authorEmailDueAt: reusedDue } }).catch(() => {});
+      if (shared.commentId && noteDue) {
+        await prisma.comment.updateMany({ where: { id: shared.commentId, authorEmailDueAt: null }, data: { authorEmailDueAt: noteDue } }).catch(() => {});
       }
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).

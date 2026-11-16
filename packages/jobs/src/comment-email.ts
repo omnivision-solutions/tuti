@@ -56,7 +56,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
       sample: true,
       authorId: true,
       visibility: true,
-      board: { select: { slug: true, off: true, name: true } },
+      board: { select: { slug: true, off: true, name: true, postVisibility: true } },
       projectId: true,
       project: { select: { slug: true, portalAccess: true, plan: true } },
       comments: {
@@ -133,7 +133,8 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
         postTitle: post.title,
         voteCount: post.voteCount,
         status: post.status,
-        board: post.board.name,
+        // A Team only board isn't on the portal: its post's page doesn't name it, nor does the email (as replyEmailed's).
+        board: post.board.postVisibility === "TEAM" ? undefined : post.board.name,
         comments: claimed.map((comment) => ({ authorId: comment.authorId, authorName: comment.author.name, text: quotedText(comment) })),
         postUrl: portalPostUrl(origin, post),
         unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
