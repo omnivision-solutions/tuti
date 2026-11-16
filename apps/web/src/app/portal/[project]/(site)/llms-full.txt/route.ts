@@ -41,6 +41,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   );
   const title = toMarkdown({ type: "doc", content: [{ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: project.name }] }] });
   return new Response([`${title}\n`, ...articles].join("\n"), {
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" },
+    // Never from a shared cache, like each article's .md: any of them may become for some readers only at any time.
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, max-age=300" },
   });
 }

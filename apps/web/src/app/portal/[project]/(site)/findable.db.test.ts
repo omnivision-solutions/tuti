@@ -91,7 +91,7 @@ test("llms-full.txt has the full text of every article llms.txt links, each with
 
   const response = await llmsFull(request, { params: Promise.resolve({ project: project.slug }) });
   expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
-  expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+  expect(response.headers.get("cache-control")).toBe("private, max-age=300");
   expect(await response.text()).toBe(
     [
       `# Project ${project.slug}\n`,
