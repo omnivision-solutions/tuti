@@ -88,6 +88,12 @@ test("llms-full.txt has the full text of every article llms.txt links, each with
   await left("unlisted", { listing: "UNLISTED" });
   await left("for-members", { access: "SIGNED_IN" });
   await left("a-sample", { sample: true });
+  // In a collection in another: after its parent's articles. In a collection for signed-in readers: left out, though it's for everyone.
+  const parent = await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "getting-started" } });
+  const nested = await prisma.collection.create({ data: { projectId: project.id, parentId: parent.id, slug: "advanced", name: "Advanced" } });
+  await prisma.article.create({ data: { projectId: project.id, collectionId: nested.id, slug: "roles", title: "Roles", body: "Owners and admins.", publishedAt: new Date() } });
+  const members = await prisma.collection.create({ data: { projectId: project.id, slug: "members", name: "Members", access: "SIGNED_IN" } });
+  await left("in-members", { collectionId: members.id });
 
   const response = await llmsFull(request, { params: Promise.resolve({ project: project.slug }) });
   expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
@@ -96,6 +102,7 @@ test("llms-full.txt has the full text of every article llms.txt links, each with
     [
       `# Project ${project.slug}\n`,
       `# Inviting \\*your\\* team\nSource: ${portal}/docs/inviting-your-team\n\n## Who can invite\n\nOwners and **admins**.\n`,
+      `# Roles\nSource: ${portal}/docs/roles\n\nOwners and admins.\n`,
       `# Billing\nSource: ${portal}/docs/billing\n\nPlans and invoices.\n`,
     ].join("\n"),
   );
