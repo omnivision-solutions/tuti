@@ -9,9 +9,9 @@ type ReplyProps = EmailBrand & {
 };
 
 /** To a user: the team's replies in the support inbox that they haven't seen (docs/plan.md, Support inbox, "Reaching the user"). */
-export function ConversationReplyEmail({ projectName, messages, subject, accent, poweredBy }: ReplyProps) {
+export function ConversationReplyEmail({ projectName, messages, subject, accent, poweredBy, logo, logoText }: ReplyProps) {
   return (
-    <Layout preview={messages[0]?.body.slice(0, 120) ?? ""} project={{ projectName, accent, poweredBy }} footer={<>Reply to this email to answer {projectName}.</>}>
+    <Layout preview={messages[0]?.body.slice(0, 120) ?? ""} project={{ projectName, accent, poweredBy, logo, logoText }} footer={<>Reply to this email to answer {projectName}.</>}>
       {messages.map((message, i) => (
         // A message with no teammate's name is the project's own: no "Acme Acme team".
         <Message key={i} name={message.name} team={message.name === projectName ? undefined : `${projectName} team`} accent={accent}>

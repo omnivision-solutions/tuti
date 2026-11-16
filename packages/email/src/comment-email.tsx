@@ -34,13 +34,13 @@ function who(comments: CommentProps["comments"]) {
 const plural = (comments: CommentProps["comments"]) => (comments.length > 1 ? "New comments" : "New comment");
 
 /** Someone else's comments on a post, sent to its author (those that came close together in one email). */
-export function CommentEmail({ projectName, accent, poweredBy, postTitle, voteCount, status, board, comments, postUrl, unsubscribeUrl }: CommentProps) {
+export function CommentEmail({ projectName, accent, poweredBy, logo, logoText, postTitle, voteCount, status, board, comments, postUrl, unsubscribeUrl }: CommentProps) {
   const heading = `${who(comments)} commented on your idea`;
   const hidden = comments.length - SHOWN;
   return (
     <Layout
       preview={heading}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={
         <>
           You get this because you posted this idea. <FooterLink href={unsubscribeUrl}>Unsubscribe from {projectName}</FooterLink>

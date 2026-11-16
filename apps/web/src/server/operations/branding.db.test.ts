@@ -1,6 +1,6 @@
 import { emailImageKey, imageKey, mediaKeys } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { emailBrand, handlers } from "@tuti/jobs";
 import { billingFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
@@ -479,4 +479,14 @@ test("the colour becomes the accent and its tint, with readable text on it; wher
   // A pale tint the same: beige's readable shade is all but grey.
   expect(brandCss("#f5f5dc")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#f5f5dc;--primary-foreground:#000000;--ring:#f5f5dc}${tints("#f5f5dc")}`);
   expect(brandCss("#000000")).toBe(`html:not(.dark){--primary:#000000;--primary-foreground:#ffffff;--ring:#000000}html.dark{${theme}}${tints("#000000")}`);
+});
+
+test("emails on the project's behalf show its portal logo, at its smallest stored size, and the text beside it", async () => {
+  expect(await emailBrand(project.id)).toMatchObject({ logo: null, logoText: "" });
+  const logo = await uploaded();
+  await update({ logo: logo.id, logoText: "Acme Help" });
+  expect(await emailBrand(project.id)).toMatchObject({ logo: { url: lastingMediaUrl(imageKey(logo.id, 480)), width: 600, height: 200 }, logoText: "Acme Help" });
+  // Without uploads set up there's no link to it: the letter's square, as before.
+  vi.stubEnv("MEDIA_S3_BUCKET", "");
+  expect((await emailBrand(project.id)).logo).toBeNull();
 });

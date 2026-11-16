@@ -15,11 +15,11 @@ type ShippedProps = EmailBrand & {
   note?: { from: string; text: string };
 };
 
-export function ShippedEmail({ projectName, postTitle, votes, board, status = "COMPLETED", postUrl, unsubscribeUrl, note, accent, poweredBy }: ShippedProps) {
+export function ShippedEmail({ projectName, postTitle, votes, board, status = "COMPLETED", postUrl, unsubscribeUrl, note, accent, poweredBy, logo, logoText }: ShippedProps) {
   return (
     <Layout
       preview={`${postTitle} is done.`}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={
         <>
           You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
