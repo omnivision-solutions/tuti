@@ -123,12 +123,31 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
  * or the project's owners and admins (a license whose holder left the team, or that was revoked, mustn't keep the
  * project from buying a plan).
  */
-export async function unassignPlanLicense(licenseId: string): Promise<{ error?: string }> {
+export async function unassignPlanLicense(licenseId: string, projectSlug?: string): Promise<{ error?: string }> {
   const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in to manage your licenses" };
   }
-  return change(session.user.id, String(licenseId), (tx) => releasePlanLicense(tx, licenseId), true);
+  // An owner or admin of that project who doesn't hold the license hears it moved too, not that it isn't theirs.
+  const moved = { error: "This license isn't on this project any more. Reload the page." };
+  if (projectSlug !== undefined) {
+    const project = await getAdminProject(String(projectSlug));
+    if (project && !(await prisma.planLicense.count({ where: { id: String(licenseId), projectId: project.id } }))) {
+      return moved;
+    }
+  }
+  return change(
+    session.user.id,
+    String(licenseId),
+    async (tx) => {
+      // From a project's Billing (`projectSlug`): that project's license only, should it have moved since the page loaded.
+      if (projectSlug !== undefined && !(await tx.planLicense.count({ where: { id: licenseId, project: { slug: String(projectSlug) } } }))) {
+        throw new Refused(moved.error);
+      }
+      await releasePlanLicense(tx, licenseId);
+    },
+    true,
+  );
 }
 
 /**

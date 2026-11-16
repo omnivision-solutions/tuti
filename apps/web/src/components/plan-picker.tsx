@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -21,6 +21,7 @@ import { planPriceText, yearlyNote } from "@/lib/plans";
 import type { PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 import { manageSubscription, setBadge, subscribe } from "@/server/credits";
+import { unassignPlanLicense } from "@/server/plan-licenses";
 
 /**
  * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), each with what
@@ -107,6 +108,63 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
       </div>
       {error && <FieldError>{error}</FieldError>}
     </div>
+  );
+}
+
+/**
+ * A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and
+ * admins. While the license gives its plan (`active`), it asks first: only its holder can assign it again.
+ */
+export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlug: string; licenseId: string; active: boolean }) {
+  const [pending, startTransition] = useTransition();
+  const done = useRef(false);
+  // Done, the plans take this button's place: the keyboard's place moves to the first of them, or to the line saying
+  // plans can't be bought here.
+  useEffect(
+    () => () => {
+      if (done.current) {
+        requestAnimationFrame(() => (document.querySelector<HTMLElement>('#plans [data-slot="button"]') ?? document.getElementById("plans-unavailable"))?.focus());
+      }
+    },
+    [],
+  );
+  const unassign = () =>
+    startTransition(async () => {
+      const result = await unassignPlanLicense(licenseId, projectSlug);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        done.current = true;
+        toast.success("License unassigned");
+      }
+    });
+  if (!active) {
+    return (
+      <div>
+        <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={unassign}>
+          {pending ? "Unassigning…" : "Unassign license"}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button type="button" variant="outline" className="self-start" disabled={pending} focusableWhenDisabled />}>
+        {pending ? "Unassigning…" : "Unassign license"}
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unassign this license?</AlertDialogTitle>
+          <AlertDialogDescription>This project loses the license&apos;s plan until the license&apos;s holder assigns it again.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={unassign}>
+            {pending ? "Unassigning…" : "Unassign license"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

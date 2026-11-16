@@ -167,6 +167,45 @@ test("a subscription that holds no plan but can still be paid (unpaid) keeps a l
   expect(await planOf()).toBe("appsumo-2");
 });
 
+test("unassigning from a project's Billing takes the license off that project only", async () => {
+  const held = await license();
+  const other = await createProject(owner);
+  expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
+  // Moved since (another tab), then Billing's old page says unassign: refused, still on the other project.
+  expect(await unassignPlanLicense(held.id)).toEqual({});
+  expect(await assignPlanLicense(other.slug, held.id)).toEqual({});
+  expect(await unassignPlanLicense(held.id, project.slug)).toEqual({ error: "This license isn't on this project any more. Reload the page." });
+  expect(await planOf(other.id)).toBe("appsumo-2");
+  expect(await unassignPlanLicense(held.id, other.slug)).toEqual({});
+  expect(await planOf(other.id)).toBe("free");
+});
+
+test("the holder, no longer an admin of the Billing page's project, can't take the license off the project it moved to", async () => {
+  // The holder's own project Q, and P where they're a plain member (demoted since opening P's Billing).
+  const holder = await signUp("Holder");
+  const p = await createProject(owner);
+  await prisma.teamMember.create({ data: { projectId: p.id, userId: holder.id, role: "MEMBER" } });
+  actAs(holder);
+  const q = await createProject(holder);
+  const held = await license(holder.id);
+  expect(await assignPlanLicense(q.slug, held.id)).toEqual({});
+  expect(await unassignPlanLicense(held.id, p.slug)).toEqual({ error: "This license isn't on this project any more. Reload the page." });
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id }, select: { projectId: true } })).toEqual({ projectId: q.id });
+});
+
+test("an admin who doesn't hold the license, unassigning from Billing after it moved, is told to reload", async () => {
+  const held = await license();
+  const admin = await addMember(project.id, "ADMIN");
+  expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
+  // The holder moves it to a project the admin isn't on.
+  expect(await unassignPlanLicense(held.id)).toEqual({});
+  const mine = await createProject(owner);
+  expect(await assignPlanLicense(mine.slug, held.id)).toEqual({});
+  actAs(admin);
+  expect(await unassignPlanLicense(held.id, project.slug)).toEqual({ error: "This license isn't on this project any more. Reload the page." });
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id }, select: { projectId: true } })).toEqual({ projectId: mine.id });
+});
+
 test("when Stripe can't say whether the project's subscription has ended, the license isn't assigned", async () => {
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_wrong");
   const held = await license();
