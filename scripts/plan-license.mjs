@@ -8,7 +8,7 @@
 //
 // issue   gives the account a license (on its Licenses page). With a project slug it's assigned there at once,
 //         replacing a plan set by hand (gone for good: unassigned or revoked, the project is on the default plan);
-//         refused while the project pays through Stripe or holds a license. A first Stripe payment still
+//         refused unless the account owns or administers the project, and while the project pays through Stripe or holds a license. A first Stripe payment still
 //         processing doesn't show here (Assign in the app asks Stripe): check the customer in Stripe first.
 // revoke  takes it back: its project returns to its own plan and the credits it gave that are left go.
 import { randomUUID } from "node:crypto";
@@ -53,6 +53,10 @@ try {
       throw new Refused(`no project ${slug}`);
     }
     if (project) {
+      // Assign's rule in the app: the holder owns or administers it (a mistyped slug or email is caught here).
+      if (!(await client.query(`SELECT 1 FROM team_member WHERE "projectId" = $1 AND "userId" = $2 AND role IN ('OWNER', 'ADMIN')`, [project.id, user.id])).rowCount) {
+        throw new Refused(`${email} isn't an owner or admin of ${slug}`);
+      }
       if ((await lockProject(project.id)).planStatus !== null) {
         throw new Refused(`${slug} pays for a plan through Stripe; cancel that first`);
       }
@@ -76,10 +80,14 @@ try {
     if (!license) {
       throw new Refused(`no license ${key}`);
     }
+    if (license.revokedAt) {
+      // Done already: its project may have had a plan set since, which a second revoke mustn't clear.
+      throw new Refused(`${key} was revoked already`);
+    }
     if (license.projectId && (await lockProject(license.projectId)).badgeAddOn) {
       throw new Refused("its project has the Powered by tuti add-on: hide the badge again from Billing first");
     }
-    await client.query(`UPDATE plan_license SET "revokedAt" = COALESCE("revokedAt", (now() AT TIME ZONE 'UTC')), "updatedAt" = (now() AT TIME ZONE 'UTC') WHERE id = $1`, [license.id]);
+    await client.query(`UPDATE plan_license SET "revokedAt" = (now() AT TIME ZONE 'UTC'), "updatedAt" = (now() AT TIME ZONE 'UTC') WHERE id = $1`, [license.id]);
     // Under each project's row lock, as charges take it (chargeCredits).
     await client.query(`SELECT id FROM project WHERE id IN (SELECT "projectId" FROM ai_credit_grant WHERE "planLicenseId" = $1 AND remaining > 0) ORDER BY id FOR UPDATE`, [license.id]);
     await client.query(`UPDATE ai_credit_grant SET "takenBack" = "takenBack" + remaining, remaining = 0 WHERE "planLicenseId" = $1 AND remaining > 0`, [license.id]);

@@ -72,6 +72,9 @@ test("issue without a project leaves it on the account; unknown plans, accounts 
   expect(await run("issue", "e2e-nobody@example.com", "pro")).toEqual({ ok: false, out: "issue: no account e2e-nobody@example.com" });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "pro", planStatus: "active" } });
   expect(await run("issue", owner.email, "pro", project.slug)).toMatchObject({ ok: false, out: expect.stringContaining("pays for a plan") });
+  // Only onto a project the account owns or administers.
+  const other = await createProject(await signUp("Other"));
+  expect(await run("issue", owner.email, "pro", other.slug)).toEqual({ ok: false, out: `issue: ${owner.email} isn't an owner or admin of ${other.slug}` });
   expect(await prisma.planLicense.count({ where: { source: "tuti", userId: owner.id } })).toBe(1);
 });
 
@@ -86,6 +89,10 @@ test("revoke refuses while its project has the badge add-on, and takes back a li
   await prisma.planLicense.update({ where: { id: license.id }, data: { projectId: null, assignedAt: null } });
   expect((await run("revoke", license.externalKey)).ok).toBe(true);
   expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: expect.any(Date), projectId: null });
+  // Again: nothing more, so a plan set on the project since stays.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
+  expect(await run("revoke", license.externalKey)).toEqual({ ok: false, out: `revoke: ${license.externalKey} was revoked already` });
+  expect(await planOf()).toBe("business");
   expect(await run("revoke", "tuti-nope")).toEqual({ ok: false, out: "revoke: no license tuti-nope" });
   expect(await run("issue", owner.email, "pro", "no-such-project")).toEqual({ ok: false, out: "issue: no project no-such-project" });
 });
