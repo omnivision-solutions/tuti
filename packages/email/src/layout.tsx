@@ -299,6 +299,8 @@ export function Layout({
               borderRadius: 16,
               padding: "8px 28px 28px",
               boxShadow: "0 1px 2px rgba(28,25,23,.06), 0 8px 28px rgba(28,25,23,.06)",
+              // Inherited by everything in the card, so any long word (a title, a URL, a repository's name) wraps.
+              ...wraps,
             }}
           >
             {children}

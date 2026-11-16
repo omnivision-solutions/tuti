@@ -270,3 +270,8 @@ test("a title, an eyebrow and a note wrap a long word, so a phone's card never s
     expect(await render(element)).toContain("overflow-wrap:anywhere");
   }
 });
+
+test("the card itself wraps long words, so text in any email's body (an Autopilot update's title too) never makes a phone scroll", async () => {
+  const html = await render(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url: "https://tuti.example/i" }).body);
+  expect(html).toMatch(/border-radius:16px[^"]*overflow-wrap:anywhere/);
+});
