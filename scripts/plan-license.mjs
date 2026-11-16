@@ -7,7 +7,9 @@
 //   DATABASE_URL=… node scripts/plan-license.mjs revoke <license key>
 //
 // issue   gives the account a license (on its Licenses page). With a project slug it's assigned there at once,
-//         replacing a plan set by hand; refused while the project pays through Stripe or holds a license.
+//         replacing a plan set by hand (gone for good: unassigned or revoked, the project is on the default plan);
+//         refused while the project pays through Stripe or holds a license. A first Stripe payment still
+//         processing doesn't show here (Assign in the app asks Stripe): check the customer in Stripe first.
 // revoke  takes it back: its project returns to its own plan and the credits it gave that are left go.
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";

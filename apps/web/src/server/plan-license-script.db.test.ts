@@ -74,3 +74,18 @@ test("issue without a project leaves it on the account; unknown plans, accounts 
   expect(await run("issue", owner.email, "pro", project.slug)).toMatchObject({ ok: false, out: expect.stringContaining("pays for a plan") });
   expect(await prisma.planLicense.count({ where: { source: "tuti", userId: owner.id } })).toBe(1);
 });
+
+test("revoke refuses while its project has the badge add-on, and takes back a license that was unassigned", async () => {
+  await run("issue", owner.email, "pro", project.slug);
+  const license = await prisma.planLicense.findFirstOrThrow({ where: { source: "tuti", projectId: project.id } });
+  await prisma.project.update({ where: { id: project.id }, data: { badgeAddOn: true } });
+  expect(await run("revoke", license.externalKey)).toMatchObject({ ok: false, out: expect.stringContaining("Powered by tuti") });
+  expect(await planOf()).toBe("pro");
+
+  await prisma.project.update({ where: { id: project.id }, data: { badgeAddOn: false, plan: null } });
+  await prisma.planLicense.update({ where: { id: license.id }, data: { projectId: null, assignedAt: null } });
+  expect((await run("revoke", license.externalKey)).ok).toBe(true);
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).toMatchObject({ revokedAt: expect.any(Date), projectId: null });
+  expect(await run("revoke", "tuti-nope")).toEqual({ ok: false, out: "revoke: no license tuti-nope" });
+  expect(await run("issue", owner.email, "pro", "no-such-project")).toEqual({ ok: false, out: "issue: no project no-such-project" });
+});

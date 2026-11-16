@@ -40,7 +40,7 @@ export default async function LicensesPage() {
         <PaneHeader title="Licenses" />
         <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
-            <p className="text-muted-foreground">Lifetime deals on your account. Each one gives its plan to one project you own or administer.</p>
+            <p className="text-muted-foreground">Plan licenses on your account, such as AppSumo lifetime deals. Each one gives its plan to one project you own or administer.</p>
             {licenses.length === 0 ? (
               <EmptyState title="No licenses yet" description="Bought Tuti on AppSumo? Redeem your license from your AppSumo account, and it comes here." />
             ) : (
