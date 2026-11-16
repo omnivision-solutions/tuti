@@ -940,6 +940,8 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
     await nextModelReply(JSON.stringify({ why: "", changelog: next, proposals: { p1: { reason: `${title} is out.`, comment: `${title} are out.` } } }), next);
     await mergePullRequest(installationId, { number: number + 1 + i, title: next });
   }
+  // A customer asked for the second: going out by itself it emails nobody, but a teammate's Publish now emails them.
+  await api("/posts/2/vote", { voted: true, author: { id: "e2e-ada", name: "Ada", email: `e2e-ada-${id}@example.com` } });
   await runAutopilot(slug);
   const list = owner.getByRole("complementary", { name: "Changes" });
   // (Its own row, not its board's, which holds it.)
@@ -1023,6 +1025,15 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await list.getByRole("link", { name: posts[1]! }).click();
   await expect(owner.getByRole("heading", { name: posts[1]!, level: 1 })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  // Its status change says no emails (by itself it sends none); Publish now asks first, naming whom it emails.
+  await expect(happens).toContainText("Open → In progress");
+  await expect(happens).not.toContainText("emails up to");
+  await owner.getByRole("button", { name: "Publish now" }).click();
+  const publishing = owner.getByRole("alertdialog", { name: "Publish it now?" });
+  await expect(publishing).toContainText("Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
+  await checkpoint(owner, "autopilot-scheduled-progress-publish", { fullPage: false });
+  await publishing.getByRole("button", { name: "Cancel" }).click();
+  await expect(publishing).toBeHidden();
   const why = owner.getByRole("dialog").filter({ has: owner.getByRole("textbox", { name: "Why not? (optional)" }) });
   // On a phone, its popover keeps its own width beside the bar's small Dismiss (once it has zoomed in).
   await owner.setViewportSize({ width: 390, height: 844 });
