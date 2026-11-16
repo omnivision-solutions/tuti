@@ -371,3 +371,11 @@ test("the new key already on another project when its upgrade arrives: the old l
   expect(await planOf(project.id)).toBeNull();
   expect(await planOf(other.id)).toBe("appsumo-2");
 });
+
+test("two upgrades in reverse order before the first key's activation: its late activation makes no second license", async () => {
+  const [first, second, third] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  await deliver({ event: "downgrade", license_key: third, prev_license_key: second, tier: 1 });
+  await deliver({ event: "upgrade", license_key: second, prev_license_key: first, tier: 2 });
+  await deliver({ event: "activate", license_key: first, tier: 1 });
+  expect(await licensesFor([first, second, third])).toEqual([expect.objectContaining({ externalKey: third, plan: "appsumo-1", revokedAt: null })]);
+});
