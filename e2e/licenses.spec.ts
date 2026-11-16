@@ -64,6 +64,10 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   await expect(buyer.getByText("Not assigned to a project")).toBeVisible();
   // On the same page, the project is offered again: assign it back, then off for good.
   await expect(buyer.getByRole("combobox", { name: `Project for ${license}` })).toContainText("Acme");
+  // A second tab left showing it unassigned (used once the license is refunded, below).
+  const stale = await buyer.context().newPage();
+  await stale.goto("/app/licenses");
+  await expect(stale.getByRole("button", { name: `Assign ${license}`, exact: true })).toBeVisible();
   await buyer.getByRole("button", { name: `Assign ${license}`, exact: true }).click();
   await expect(buyer.getByText("On Acme")).toBeVisible();
 
@@ -80,6 +84,12 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   // No control left in its row: the keyboard's place is its status.
   await expect(buyer.getByText("Deactivated", { exact: true })).toBeFocused();
   await expect(buyer.getByRole("button", { name: `Unassign ${license}` })).toBeHidden();
+  // The stale tab still offers Assign: refused, and its row shows the license as it is now, the keyboard on its status.
+  await stale.getByRole("button", { name: `Assign ${license}`, exact: true }).click();
+  await expect(stale.getByText("This license was revoked by where it came from, so it gives no plan")).toBeVisible();
+  await expect(stale.getByRole("button", { name: `Assign ${license}`, exact: true })).toBeHidden();
+  await expect(stale.getByText("Deactivated", { exact: true })).toBeFocused();
+  await stale.close();
   // The project is back on its own plan.
   await buyer.goto(`/app/${slug}/settings/billing`);
   await expect(buyer.getByText("Free plan", { exact: true })).toBeVisible();
