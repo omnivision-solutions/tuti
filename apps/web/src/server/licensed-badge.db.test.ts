@@ -101,6 +101,31 @@ test("paid for a project whose license was unassigned meanwhile: cancelled for a
   expect(await stored()).toMatchObject({ plan: null, badgeAddOn: false });
 });
 
+test("a second Checkout paid (two tabs, or opened again before the first's webhook): cancelled for a refund, and the first stays the project's", async () => {
+  await badge(true);
+  await badge(true);
+  const [first, second] = stripe.sessions.slice(-2);
+  await deliver(...stripe.pay(first.id));
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  await deliver(...stripe.pay(second.id));
+  expect(stripe.subscriptions.get(second.subscription!)!.status).toBe("canceled");
+  expect(stripe.subscriptions.get(first.subscription!)!.status).toBe("active");
+  expect(errors.mock.calls.flat().join(" ")).toContain("refund its payment");
+  expect(await stored()).toMatchObject({ plan: "appsumo-2", badgeAddOn: true, stripeSubscriptionId: first.subscription });
+});
+
+test("paid for a project on a paid plan since its Checkout opened: cancelled for a refund, and the plan's subscription stays", async () => {
+  await badge(true);
+  const session = stripe.sessions.at(-1)!;
+  // On a plan meanwhile, as one set by hand (by quote) is.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro", planStatus: "active", stripeSubscriptionId: "sub_plan" } });
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  await deliver(...stripe.pay(session.id));
+  expect(stripe.subscriptions.get(session.subscription!)!.status).toBe("canceled");
+  expect(errors.mock.calls.flat().join(" ")).toContain("refund its payment");
+  expect(await stored()).toMatchObject({ plan: "pro", badgeAddOn: false, stripeSubscriptionId: "sub_plan" });
+});
+
 test("it ends with the license: unassigned, or revoked by AppSumo; the license goes back on with no subscription left charging", async () => {
   const subscription = await buy();
   expect(await unassignPlanLicense(licenseId)).toEqual({});

@@ -184,6 +184,28 @@ export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlu
         toast.success(hide ? '"Powered by tuti" is hidden' : '"Powered by tuti" is back on your portal');
       }
     });
+  if (on && licensed) {
+    // Its own subscription is cancelled at once, with no refund: asked first.
+    return (
+      <AlertDialog>
+        <AlertDialogTrigger render={<Button type="button" variant="outline" disabled={pending} focusableWhenDisabled />}>
+          Show the badge again
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Show &quot;Powered by tuti&quot; again?</AlertDialogTitle>
+            <AlertDialogDescription>The add-on stops now. What&apos;s left of the month or year you paid for isn&apos;t refunded.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={pending} onClick={() => change(false)}>
+              Show the badge again
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
   if (on) {
     return (
       <div>

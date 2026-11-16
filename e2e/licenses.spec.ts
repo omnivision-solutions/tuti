@@ -150,6 +150,14 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   // Its card and invoices are in Stripe's portal.
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license-badge");
+  // Showing the badge again asks first: the add-on stops at once, with no refund.
+  await owner.getByRole("button", { name: "Show the badge again" }).click();
+  const show = owner.getByRole("alertdialog", { name: 'Show "Powered by tuti" again?' });
+  await expect(show).toContainText("The add-on stops now. What's left of the month or year you paid for isn't refunded.");
+  await checkpoint(owner, "team-settings-billing-license-show-badge", { fullPage: false });
+  await show.getByRole("button", { name: "Cancel" }).click();
+  await expect(show).toBeHidden();
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
   // Unassigning it here asks first: only its holder can assign it again.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
