@@ -299,10 +299,29 @@ test("the new key claimed by the same buyer before the upgrade arrives: the upgr
   expect(await planOf(project.id)).toBe("appsumo-2");
 });
 
-test("a refund and an activation for a new key arriving together: the refund holds", async () => {
+test("events for one key wait for each other: a refund and an activation can't both find no license", async () => {
   const key = crypto.randomUUID();
-  await Promise.all([deliver({ event: "deactivate", license_key: key, tier: 1 }), deliver({ event: "activate", license_key: key, tier: 1 })]);
-  // Either order: revoked (the activation first, then the refund) or kept revoked (the refund first).
+  // Another event for the key holds its lock (an open transaction, as a webhook mid-way would).
+  let release!: () => void;
+  let locked!: () => void;
+  const isLocked = new Promise<void>((resolve) => (locked = resolve));
+  const holding = prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${key}))`;
+      locked();
+      await new Promise<void>((resolve) => (release = resolve));
+    },
+    { timeout: 20_000 },
+  );
+  await isLocked;
+  const refund = deliver({ event: "deactivate", license_key: key, tier: 1 });
+  const activation = deliver({ event: "activate", license_key: key, tier: 1 });
+  const settled = await Promise.race([Promise.all([refund, activation]).then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 500))]);
+  expect(settled).toBe("waiting");
+  expect(await find(key)).toBeNull();
+  release();
+  await holding;
+  await Promise.all([refund, activation]);
   expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date) });
 });
 
