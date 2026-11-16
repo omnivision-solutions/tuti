@@ -7,6 +7,10 @@ export function yearlyNote(prices: PlanPrice[]): string | null {
   return saved > 0 ? `Save up to ${saved}%` : null;
 }
 
+/** How a plan is billed when `interval` is picked: that way, or the other where it's sold only that way; null for a plan not sold. */
+export const billedAs = (price: PlanPrice | null, interval: "month" | "year"): "month" | "year" | null =>
+  price === null || (price.month === null && price.year === null) ? null : price[interval] !== null ? interval : interval === "year" ? "month" : "year";
+
 /** "$39 a month", or for yearly "$32 a month, billed yearly"; "Not billed yearly" where it isn't sold that way. */
 export const planPriceText = (price: PlanPrice, interval: "month" | "year") =>
   price[interval] === null ? `Not billed ${interval === "year" ? "yearly" : "monthly"}` : `$${price[interval]} a month${interval === "year" ? ", billed yearly" : ""}`;

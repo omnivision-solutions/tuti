@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { planFacts, pricingPlans, pricingTerms } from "./pricing-plans";
+import { planFacts, pricingPage, pricingPlans, pricingTerms } from "./pricing-plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -231,4 +231,11 @@ test("the pricing page's comparison gets each plan's numbers and features from t
     [null, true, ["Onboarding call", "Priority support"]],
   ]);
   expect(pricingTerms()).toEqual({ badgePerMonth: null, badgeYearPerMonth: null, trialDays: null });
+});
+
+test("the link to every feature is Tuti's pricing page, only on Tuti's cloud", () => {
+  vi.stubEnv("APP_URL", "https://tuti.so");
+  expect(pricingPage()).toBe("https://tuti.so/pricing");
+  vi.stubEnv("APP_URL", "https://feedback.example.com");
+  expect(pricingPage()).toBeNull();
 });
