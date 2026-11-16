@@ -11,7 +11,7 @@ import { getAccountSession } from "@/server/session";
 export const metadata: Metadata = { title: "Licenses" };
 
 /** Where a license's source is named for people. */
-const SOURCES: Record<string, string> = { appsumo: "AppSumo" };
+const SOURCES: Record<string, string> = { appsumo: "AppSumo", tuti: "Tuti" };
 
 /**
  * The account's plan licenses (docs/plan.md, Plan licenses): lifetime deals redeemed to it (AppSumo's redeem page comes
