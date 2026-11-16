@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPlans } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
@@ -117,4 +117,19 @@ test("on a free trial, the month's email is counted against the trial's own allo
   expect(await billing()).toContain("0 of 500 emails sent this month");
   await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
   expect(await billing()).toContain("0 of 1,000 emails sent this month");
+});
+
+test("where plans can't be bought, a deactivated license's alert says to unassign it, and the line saying so can take the keyboard's place", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile(withAppsumoPlans));
+  vi.stubEnv("STRIPE_SECRET_KEY", "");
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
+  const owner = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { team: { select: { userId: true }, take: 1 } } });
+  const license = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: crypto.randomUUID(), plan: "appsumo-1", userId: owner.team[0]!.userId, projectId, revokedAt: new Date() } });
+  const page = await billing();
+  expect(page).toContain("license was deactivated. Unassign it to take it off this project.");
+  expect(page).not.toContain("Unassign it to choose a plan.");
+
+  // Unassigned, the plans' line takes the button's place, focusable (UnassignLicense moves the keyboard to it).
+  await prisma.planLicense.update({ where: { id: license.id }, data: { projectId: null } });
+  expect(await billing()).toMatch(/<p id="plans-unavailable" tabindex="-1"[^>]*>\s*Plans can't be bought here right now\./);
 });
