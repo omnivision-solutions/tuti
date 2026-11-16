@@ -350,6 +350,11 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         sendLater([update(sub.id, { status: "canceled" })]);
         return send(200, sub);
       }
+      if (req.method === "GET" && path === "/v1/subscriptions/search") {
+        // Only the query Tuti makes: metadata['projectId']:'<id>'.
+        const wanted = /^metadata\['projectId'\]:'([^']*)'$/.exec(new URL(req.url ?? "/", "http://fake").searchParams.get("query") ?? "");
+        return wanted ? send(200, { object: "search_result", data: [...subscriptions.values()].filter((sub) => sub.metadata.projectId === wanted[1]) }) : send(400, { error: { message: "unsupported query" } });
+      }
       const read = /^\/v1\/(subscriptions|invoices)\/([^/]+)$/.exec(path);
       if (req.method === "GET" && read) {
         const found = (read[1] === "subscriptions" ? subscriptions : invoices).get(decodeURIComponent(read[2]!));
