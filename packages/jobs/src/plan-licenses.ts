@@ -77,8 +77,17 @@ export async function grantLicenseCredits(id: string, now = new Date()): Promise
     const credits = planCredits(license.plan);
     const through = license.creditsThrough;
     // A plan with no AI credits still has its months where it has email credits (email-limits.ts: given per license month).
-    if (!license.projectId || license.revokedAt || (credits === 0 && !emailsPerMonth(license.plan)) || (through && through.getTime() > now.getTime() + HOUR_MS)) {
+    if (!license.projectId || license.revokedAt || (credits === 0 && !emailsPerMonth(license.plan))) {
       return 0;
+    }
+    if (through && through.getTime() > now.getTime() + HOUR_MS) {
+      // Its month runs: nothing more, unless it gave no AI credits (its plan had none, and now has, as after an upgrade
+      // from a tier without): then the month's, lasting the month.
+      if (credits === 0 || (await tx.creditGrant.count({ where: { planLicenseId: id, kind: "AI", expiresAt: through } })) > 0) {
+        return 0;
+      }
+      await grantCredits(license.projectId, "PLAN", credits, { expiresAt: through, note: `${planDisplay(license.plan).name} license`, planLicenseId: id }, tx);
+      return credits;
     }
     const start = through && through.getTime() > now.getTime() - 24 * HOUR_MS ? through : now;
     // A month on, or the month's last day when it's shorter (January 31 → February 28, then the 28th each month): one

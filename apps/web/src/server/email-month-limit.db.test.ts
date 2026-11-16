@@ -710,3 +710,25 @@ test("a take or give-back that keeps losing races still goes through while credi
     await prisma.$executeRawUnsafe(`DROP TABLE "test_lost_races"`);
   }
 });
+
+test("a license whose plan gains AI credits mid-month gets the month's at once, once", async () => {
+  const pro = (credits: number) => billingFile((_, { free, pro }) => {
+    free.limits.emailsPerMonth = 1;
+    pro.monthlyCredits = credits;
+  });
+  vi.stubEnv("BILLING_CONFIG", pro(0));
+  const { owner, project } = await setup();
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "pro", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  // A month for its email, with no AI credits.
+  expect(await grantLicenseCredits(license.id)).toBe(0);
+  const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
+  expect(creditsThrough).not.toBeNull();
+  // Upgraded to a tier with AI credits (AppSumo's webhook grants after it): the month's, lasting it.
+  vi.stubEnv("BILLING_CONFIG", pro(1000));
+  expect(await grantLicenseCredits(license.id)).toBe(1000);
+  expect(await grantLicenseCredits(license.id)).toBe(0);
+  expect(await prisma.creditGrant.findMany({ where: { planLicenseId: license.id, kind: "AI" }, select: { expiresAt: true } })).toEqual([{ expiresAt: creditsThrough }]);
+});
