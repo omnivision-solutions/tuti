@@ -534,6 +534,8 @@ test("a license's email credits are its month's, wherever it is: moved to anothe
   const [told] = emailsTo(b.owner.email).filter((email) => email.subject.endsWith("reached its monthly email limit"));
   expect(told?.text).toContain(`${b.project.name}'s Pro license includes 2 emails a month, and this month's are used up`);
   expect(told?.text).not.toContain("Upgrade");
+  const starts = (await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } })).creditsThrough!.toLocaleDateString("en", { month: "long", day: "numeric", timeZone: "UTC" });
+  expect(told?.text).toContain(`waiting until the license's next month starts on ${starts}.`);
 
   // Into the next calendar month, still the license's month: B's team isn't told again.
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
