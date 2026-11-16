@@ -1,6 +1,6 @@
 import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
-import { cappedProjects, claimProjectEmail, emailsThisMonth, grantLicenseCredits, handlers, resumeToken } from "@tuti/jobs";
+import { cappedProjects, claimProjectEmail, emailsThisMonth, grantLicenseCredits, handlers, releaseProjectEmail, resumeToken } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -528,23 +528,23 @@ test("a license's email credits are its month's, wherever it is: moved to anothe
   expect(await claimProjectEmail(b.project.id)).toBe(false);
   expect(await emailsThisMonth(b.project.id)).toEqual({ emails: 0, limit: 2, left: 0 });
   expect(await claimProjectEmail(a.project.id)).toBe(false);
-  expect(await cappedProjects()).toEqual(expect.arrayContaining([a.project.id]));
+  expect(await emailsThisMonth(a.project.id)).toEqual({ emails: 2, limit: 1, left: 0 });
+  expect(await cappedProjects()).toEqual(expect.arrayContaining([a.project.id, b.project.id]));
+  // B's team hears it's the license's month that's used up, though B sent none, and when its next month starts.
+  const [told] = emailsTo(b.owner.email).filter((email) => email.subject.endsWith("reached its monthly email limit"));
+  expect(told?.text).toContain(`${b.project.name}'s Pro license includes 2 emails a month, and this month's are used up`);
+  expect(told?.text).not.toContain("Upgrade");
 
   // The license's next month: B's.
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
   vi.setSystemTime(creditsThrough!);
   await grantLicenseCredits(license.id);
+  expect(await cappedProjects()).not.toContain(b.project.id);
   expect(await claimProjectEmail(b.project.id)).toBe(true);
   expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 1 });
+
+  // A send that fails gives its credit back.
+  await releaseProjectEmail(b.project.id);
+  expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 2 });
 });
 
-test("a plan changed mid-month gives the difference in email credits, counting what the month sent", async () => {
-  const { project } = await setup();
-  expect(await claimProjectEmail(project.id)).toBe(true);
-  expect(await claimProjectEmail(project.id)).toBe(false);
-  // Upgraded to Pro (10,000 a month): 9,999 more this month.
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
-  expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 10000, left: 9999 });
-  expect(await claimProjectEmail(project.id)).toBe(true);
-  expect((await prisma.creditGrant.findMany({ where: { projectId: project.id, kind: "EMAIL" }, orderBy: { createdAt: "asc" } })).map((grant) => grant.credits.toNumber())).toEqual([1, 9999]);
-});
