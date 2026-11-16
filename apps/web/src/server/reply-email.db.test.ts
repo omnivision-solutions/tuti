@@ -78,6 +78,17 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
   expect(await prisma.comment.count({ where: { votersEmailDueAt: { not: null } } })).toBe(0);
 });
 
+test("a public post on a Team only board: the reply's card leaves the board's name out, as its page does", async () => {
+  const voter = await verified("Voter");
+  const { post } = await votedFor(voter);
+  // Made Team only since: the post stays public, the board is off the portal.
+  await prisma.board.updateMany({ where: { projectId: project.id, slug: "feature-requests" }, data: { postVisibility: "TEAM" } });
+  await call(createComment, as(owner.id), { number: post.number, body: "On it.", emailVoters: true });
+  const [email] = emailsTo(voter.email);
+  expect(email!.text.replace(/\s+/g, " ")).toMatch(/\d+ votes? Dark mode Open/);
+  expect(email!.text).not.toContain("Feature requests");
+});
+
 test("the reply's images are in the email to voters, at lasting links", async () => {
   const s3 = await startS3Fake();
   for (const [name, value] of Object.entries(s3.env)) {
