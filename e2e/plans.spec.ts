@@ -23,18 +23,24 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.getByRole("radio", { name: "Monthly" }).focus();
   await owner.keyboard.press("ArrowRight");
   await expect(owner.getByRole("radio", { name: "Yearly" })).toBeChecked();
-  await expect(owner.getByText("$32 a month, billed yearly")).toBeVisible();
+  const pro = owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Pro", exact: true }) });
+  await expect(pro).toContainText("$32a month$384 billed yearly");
   // What yearly saves, as on the pricing page.
   await expect(owner.getByText("Save up to 20%")).toBeVisible();
   await owner.getByText("Monthly", { exact: true }).click();
-  await expect(owner.getByText("$39 a month", { exact: true })).toBeVisible();
-  // Free beside Pro and Business, each with what it includes, as on the pricing page; Pro's button is the page's one primary.
-  await expect(owner.getByText("3 team members")).toBeVisible();
-  await expect(owner.getByText("Unlimited team members")).toBeVisible();
-  await expect(owner.getByText("A private help center")).toBeVisible();
-  await expect(owner.getByText("Email from your own domain")).toBeVisible();
-  await expect(owner.getByText("2 versions kept per help article")).toBeVisible();
-  await expect(owner.getByText("1,000 emails a month to your users")).toBeVisible();
+  await expect(pro).toContainText("$39a monthBilled monthly");
+  // Free beside Pro and Business, as the pricing page's cards show them: the numbers, then what each adds to the one
+  // before; every feature is on that page, in a new tab. Pro's button is the page's one primary.
+  await expect(pro.getByText("Most popular")).toBeVisible();
+  await expect(owner.getByText("Your plan", { exact: true })).toBeVisible();
+  await expect(pro.getByRole("definition")).toHaveText(["1,000", "5", "10k"]);
+  await expect(pro.getByText("Everything in Free, plus")).toBeVisible();
+  await expect(pro.getByRole("listitem")).toContainText(["Your own domain"]);
+  const business = owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Business", exact: true }) });
+  await expect(business.getByRole("listitem")).toContainText(["Subpath on your domain", "Private help center", "Fine-tune Autopilot", "Priority support"]);
+  const compare = owner.getByRole("link", { name: "Compare all features (opens in a new tab)" });
+  await expect(compare).toHaveAttribute("href", "https://tuti.so/pricing");
+  await expect(compare).toHaveAttribute("target", "_blank");
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
   );
@@ -42,6 +48,8 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
+  await compare.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "team-settings-billing-plans-compare");
   // From the keyboard: while Stripe's page is being opened (its request held here), Upgrade is off but keeps the focus.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));

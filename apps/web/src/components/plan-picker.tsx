@@ -14,60 +14,140 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { BilledToggle, PlanLineItem } from "@tuti/ui/plan-line";
+import { BilledToggle } from "@tuti/ui/plan-line";
+import { CheckIcon, ExternalLinkIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
-import { planPriceText, yearlyNote } from "@/lib/plans";
-import type { PricingPlan } from "@/lib/pricing-plans";
+import { yearlyNote } from "@/lib/plans";
+import type { PlanFacts, PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 import { manageSubscription, setBadge, subscribe } from "@/server/credits";
 import { unassignPlanLicense } from "@/server/plan-licenses";
 
+/** Every feature, plan by plan: Tuti's pricing page, opened in a new tab from Billing. */
+const PRICING_PAGE = "https://tuti.so/pricing";
+
+type Plan = PricingPlan & { facts: PlanFacts };
+type Interval = "month" | "year";
+
+/** As a card's numbers show: 10k, 100k from ten thousand up, smaller ones in full (1,000); "Unlimited" for no limit. */
+const compact = (value: number | null) => (value === null ? "Unlimited" : value >= 10_000 ? `${(value / 1000).toLocaleString("en")}k` : value.toLocaleString("en"));
+
+/** A plan's yes/no lines, as its card lists what it adds to the one before (the pricing page's cards). */
+const yesNo = (facts: PlanFacts): [string, boolean][] => [
+  ["Your own domain", facts.features.customDomain],
+  ["Subpath on your domain", facts.features.sitePath],
+  ["Private help center", facts.features.privatePortal],
+  ["AI answers", facts.aiAnswers],
+  ["Autopilot", facts.features.codeChanges],
+  ["Fine-tune Autopilot", facts.features.aiTuning],
+  ["Email from your domain", facts.features.emailDomain],
+  ...facts.extras.map((extra): [string, boolean] => [extra, true]),
+];
+
 /**
- * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), each with what
- * it includes (as on the pricing page), monthly or yearly; Upgrade goes to Stripe's payment page. The featured plan's is the
- * page's one primary button: the plan to move to. During a free trial (`trial`), the default plan is the one after it.
+ * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), as the
+ * pricing page's cards show them (its price, three numbers, what it adds to the plan before), monthly or yearly, and a
+ * link to that page for every feature. Upgrade goes to Stripe's payment page; the featured plan's is the page's one
+ * primary button. During a free trial (`trial`), the default plan is the one after it.
  */
-export function PlanPicker({ projectSlug, plans, current, trial = false }: { projectSlug: string; plans: PricingPlan[]; current: string; trial?: boolean }) {
-  const [interval, setBilled] = useState<"month" | "year">("month");
+export function PlanPicker({ projectSlug, plans, current, trial = false }: { projectSlug: string; plans: Plan[]; current: string; trial?: boolean }) {
+  const [interval, setBilled] = useState<Interval>("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
+  const credits = plans.some(({ facts }) => facts.credits !== null || facts.startCredits !== null);
   return (
     <div id="plans" className="flex scroll-mt-8 flex-col gap-4">
       <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote(plans.flatMap(({ price }) => (price ? [price] : []))) ?? undefined} />
-      <div className="grid gap-4 md:grid-cols-3">
-        {plans.map((plan) => (
-          <div key={plan.key} className={cn("flex flex-col gap-3 rounded-xl border p-4", plan.featured && "ring-2 ring-primary")}>
-            <div>
-              <h3 className="font-semibold">{plan.name}</h3>
-              <p className="text-sm text-muted-foreground">
-                {[plan.price ? planPriceText(plan.price, interval) : plan.key === current ? "$0" : plan.byQuote ? "By quote" : "Not sold here", plan.key === current && (trial ? "after your trial" : "this project's plan")]
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            </div>
-            <ul className="flex flex-1 flex-col gap-1.5 text-sm">
-              {plan.highlights.map((line) => (
-                <PlanLineItem key={line.text} line={line} />
-              ))}
-              {plan.intro && <li className="text-muted-foreground">{plan.intro}</li>}
-              {plan.features.map((line) => (
-                <PlanLineItem key={line.text} line={line} />
-              ))}
-            </ul>
-            {plan.key !== current && plan.byQuote && (
-              <a href={plan.cta.href} className={buttonVariants({ variant: plan.featured ? "default" : "outline" })}>
-                {plan.cta.label}
-              </a>
-            )}
-            {plan.key !== current && plan.price?.[interval] != null && (
-              <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key!, interval)}>
-                Upgrade to {plan.name}
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
+      <ul className="grid gap-4 lg:grid-cols-3">
+        {plans.map((plan, index) => {
+          const previous = plans[index - 1];
+          const { facts } = plan;
+          const more = previous ? yesNo(facts).filter(([text, has]) => has && !yesNo(previous.facts).some(([other, had]) => other === text && had)) : [];
+          const yours = plan.key === current;
+          const perMonth = plan.price ? (plan.price[interval] ?? plan.price.month ?? plan.price.year) : null;
+          return (
+            <li key={plan.key} className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4", plan.featured && "border-primary ring-1 ring-primary")}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-heading text-lg font-bold tracking-tight">{plan.name}</h3>
+                {yours ? (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{trial ? "After your trial" : "Your plan"}</span>
+                ) : (
+                  plan.featured && <span className="rounded-full bg-soft px-2 py-0.5 text-xs font-semibold text-soft-foreground">Most popular</span>
+                )}
+              </div>
+              <div>
+                <p className="flex items-baseline gap-1.5">
+                  <span className="font-heading text-[32px] leading-none font-extrabold tracking-tight">{plan.byQuote ? "By quote" : `$${perMonth ?? 0}`}</span>
+                  {!plan.byQuote && <span className="text-sm text-muted-foreground">{plan.price ? "a month" : "forever"}</span>}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {plan.price?.year != null && (interval === "year" || plan.price.month === null)
+                    ? `$${(plan.price.year * 12).toLocaleString("en")} billed yearly`
+                    : plan.price
+                      ? "Billed monthly"
+                      : plan.byQuote
+                        ? "Priced for your team"
+                        : "No card needed"}
+                </p>
+              </div>
+              {/* The plan's numbers, a line each (the pricing page's strip of three, narrower here). */}
+              <dl className="flex flex-col gap-1 rounded-lg bg-muted px-2.5 py-2.5 text-[13px] whitespace-nowrap">
+                {[
+                  ...(credits
+                    ? [[facts.credits === null && facts.startCredits !== null ? "AI credits to start" : "AI credits a month", plan.byQuote ? "By quote" : compact(facts.credits ?? facts.startCredits ?? 0)]]
+                    : []),
+                  ["feedback boards", compact(facts.boards)],
+                  ["emails a month", compact(facts.emails)],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex flex-row-reverse justify-end gap-1.5">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="font-heading font-bold tabular-nums">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="flex flex-1 flex-col gap-1.5 text-sm">
+                {previous ? (
+                  more.length > 0 && (
+                    <>
+                      <p className="font-semibold">Everything in {previous.name}, plus</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {more.map(([text]) => (
+                          <li key={text} className="flex gap-2">
+                            <CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" strokeWidth={2.5} /> {text}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <p className="font-semibold">{facts.features.codeChanges ? "The whole product" : "Includes"}</p>
+                    <p className="text-muted-foreground">
+                      Help center, inbox, feedback{facts.features.codeChanges ? " and Autopilot" : facts.aiAnswers ? " and AI answers" : ""}
+                    </p>
+                  </>
+                )}
+              </div>
+              {!yours && plan.byQuote && (
+                <a href={plan.cta.href} className={buttonVariants({ variant: plan.featured ? "default" : "outline" })}>
+                  {plan.cta.label}
+                </a>
+              )}
+              {!yours && plan.price?.[interval] != null && (
+                <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key!, interval)}>
+                  Upgrade to {plan.name}
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
       {error && <FieldError>{error}</FieldError>}
+      <a href={PRICING_PAGE} target="_blank" rel="noopener" className="flex items-center gap-1.5 self-start text-sm font-medium text-primary hover:underline">
+        Compare all features
+        <ExternalLinkIcon aria-hidden className="size-3.5" />
+        <span className="sr-only">(opens in a new tab)</span>
+      </a>
     </div>
   );
 }

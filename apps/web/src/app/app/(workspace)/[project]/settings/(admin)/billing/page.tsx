@@ -11,7 +11,7 @@ import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { planPriceText } from "@/lib/plans";
-import { pricingPlans } from "@/lib/pricing-plans";
+import { plansWithFacts } from "@/lib/pricing-plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
@@ -127,7 +127,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             ) : onPaidPlan ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={defaultPlanKey()!} trial={trial?.ended === false} />
+              <PlanPicker projectSlug={slug} plans={plansWithFacts()} current={defaultPlanKey()!} trial={trial?.ended === false} />
             ) : (
               <p id="plans-unavailable" tabIndex={-1} className="text-sm text-muted-foreground outline-none">
                 Plans can&apos;t be bought here right now.

@@ -223,6 +223,12 @@ export function planFacts(): PlanFacts[] {
   });
 }
 
+/** pricingPlans() with each plan's facts (planFacts()), as tuti.so's pricing page and Billing's cards show them. Server only. */
+export function plansWithFacts(): (PricingPlan & { facts: PlanFacts })[] {
+  const facts = planFacts();
+  return pricingPlans().map((plan, index) => ({ ...plan, facts: facts[index]! }));
+}
+
 /** The "Powered by tuti" add-on's price a month (and a month billed yearly), and the free trial's length: null where not offered. */
 export const pricingTerms = () => ({ badgePerMonth: badgePerMonth("month"), badgeYearPerMonth: badgePerMonth("year"), trialDays: trialTerms()?.days ?? null });
 
