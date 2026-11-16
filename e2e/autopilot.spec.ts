@@ -1540,7 +1540,22 @@ test("pull requests' progress updates on one post are one update: its status cha
   const approving = owner.getByRole("alertdialog", { name: "Approve the update?" });
   await expect(approving).toContainText("1 progress update posted. Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
   await checkpoint(owner, "post-update-approve-emails", { fullPage: false });
-  await approving.getByRole("button", { name: "Approve" }).click();
+  // While it's on its way, the button keeps focus (disabled, still focusable).
+  let releaseApproval!: () => void;
+  const approvalHeld = new Promise<void>((resolve) => (releaseApproval = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await approvalHeld;
+    }
+    await route.fallback();
+  });
+  const approve = approving.getByRole("button", { name: "Approve" });
+  await approve.click();
+  const approvingNow = approving.getByRole("button", { name: "Approving…" });
+  await expect(approvingNow).toHaveAttribute("aria-disabled", "true");
+  await expect(approvingNow).toBeFocused();
+  releaseApproval();
+  await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByText("Approved", { exact: true })).toBeVisible();
   const happened = owner.getByRole("region", { name: "What happened" });
   await expect(happened).toContainText("In progress · approved by Olive Owner");

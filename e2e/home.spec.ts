@@ -174,7 +174,21 @@ test("Home's Publish now on a progress update going out by itself asks first, na
   const ask = owner.getByRole("alertdialog", { name: "Publish it now?" });
   await expect(ask).toContainText("Moving the post to In progress emails up to 1 person who asked for it. That can't be taken back.");
   await checkpoint(owner, "home-publish-progress", { fullPage: false });
-  await ask.getByRole("button", { name: "Publish now" }).click();
+  // While it's on its way, the button keeps focus (disabled, still focusable).
+  let releasePublish!: () => void;
+  const publishHeld = new Promise<void>((resolve) => (releasePublish = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await publishHeld;
+    }
+    await route.fallback();
+  });
+  const publish = ask.getByRole("button", { name: "Publish now" });
+  await publish.click();
+  await expect(publish).toHaveAttribute("aria-disabled", "true");
+  await expect(publish).toBeFocused();
+  releasePublish();
+  await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByText("Published", { exact: true })).toBeVisible();
   expect((await latestEmailTo(ada, { subject: /^In progress:/ })).subject).toBe(`In progress: ${title}`);
   await owner.goto(`/app/${slug}/p/1`);
