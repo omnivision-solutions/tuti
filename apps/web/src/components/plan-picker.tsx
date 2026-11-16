@@ -159,7 +159,7 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={pending} onClick={unassign}>
+          <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={unassign}>
             {pending ? "Unassigning…" : "Unassign license"}
           </AlertDialogAction>
         </AlertDialogFooter>

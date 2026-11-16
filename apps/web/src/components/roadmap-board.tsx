@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { initial } from "@/lib/format";
+import { statusPrompt } from "@/lib/status-prompt";
 import { cn } from "@/lib/utils";
 import { changePostStatus } from "@/server/manage-posts";
 
@@ -36,12 +37,16 @@ type Card = {
   /** Who sees it besides the team (a badge when it isn't everyone). */
   visibility: PostVisibility;
   asking: string | null;
-  emails: number;
+  /** How many people moving it to each status emails (emailedOnMove). */
+  emails: Partial<Record<PostStatus, number>>;
   eta: string | null;
   owner: { name: string; image: string | null } | null;
   /** The start of what was asked, under the title. */
   excerpt: string | null;
 };
+
+/** A move asked about first: its card, the status it goes to and what the question says (statusPrompt). */
+type Asked = { card: Card; status: PostStatus; prompt: string };
 
 /** Each column's icon, in its status's colour (the dot elsewhere). */
 const COLUMN_ICONS: Partial<Record<PostStatus, { icon: LucideIcon; colour: string }>> = {
@@ -66,7 +71,8 @@ const COLUMN_NOTES: Partial<Record<PostStatus, string>> = {
 
 /**
  * The team's roadmap: a column per status, each card dragged to another to change its status (or
- * moved with its status menu, from the keyboard). Completed asks first: it emails the people who asked. A card moved
+ * moved with its status menu, from the keyboard). A move that emails the people who asked asks first, as a post's
+ * status menu does (statusPrompt). A card moved
  * from its status menu takes the focus in its new column, on its status button, so the keyboard carries on from it.
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
@@ -74,11 +80,24 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
-  const [completing, setCompleting] = useState<Card | null>(null);
+  // The move asked about.
+  const [asking, setAsking] = useState<Asked | null>(null);
+  // The last move asked about, kept while its question fades out.
+  const [question, setQuestion] = useState<Asked | null>(null);
+  // Asks before moving `card` to `status` when the move emails its people (statusPrompt, as a post's menu asks); false
+  // when it goes without asking.
+  const ask = (card: Card, status: PostStatus) => {
+    const prompt = statusPrompt(card.status, status, card.emails);
+    if (prompt) {
+      setAsking({ card, status, prompt });
+      setQuestion({ card, status, prompt });
+    }
+    return prompt !== null;
+  };
   // The column a phone shows (the others are beside it from tablet width up).
   const [shown, setShown] = useState<PostStatus>(columns[0]?.status ?? "PLANNED");
   // A card moved, and the pointer presses so far as it was moved if the move began with a key on one of its controls
-  // (its status menu, or its Completed question; -1 for a drag or a pointer's pick or confirm: the focus stays).
+  // (its status menu, or its question; -1 for a drag or a pointer's pick or confirm: the focus stays).
   const [moved, setMoved] = useState<{ id: string; status: PostStatus; presses: number } | null>(null);
   const focused = useRef<typeof moved>(null);
   const board = useRef<HTMLDivElement>(null);
@@ -104,23 +123,23 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
 
   // Once the card is in its new column (the refreshed columns can come after the change is saved), the focus follows it
   // if the move began with a key on its control and the focus is still there: gone with it (to the page), or in its
-  // closing Completed question. Anywhere else (pressed elsewhere, tabbed on, another card's question open), it stays.
+  // closing question. Anywhere else (pressed elsewhere, tabbed on, another card's question open), it stays.
   useEffect(() => {
     if (moved && moved !== focused.current && columns.some(({ status, posts }) => status === moved.status && posts.some((post) => post.id === moved.id))) {
       focused.current = moved;
       const at = document.activeElement;
-      if (moved.presses === presses.current && completing === null && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
+      if (moved.presses === presses.current && asking === null && (!at || at === document.body || at.closest('[role="alertdialog"]'))) {
         board.current?.querySelector<HTMLElement>(`[data-card="${moved.id}"] [aria-label^="Status:"]`)?.focus();
       }
     }
-  }, [moved, columns, completing]);
+  }, [moved, columns, asking]);
 
-  // `byKey`: confirmed with a key in the Completed question. A drag, or a click on Mark completed, leaves the focus alone.
+  // `byKey`: confirmed with a key in the question. A drag, or a click on its Mark button, leaves the focus alone.
   const move = (card: Card, status: PostStatus, byKey = false) => {
     const from = byKey ? presses.current : -1;
     startTransition(async () => {
       const result = await changePostStatus(projectSlug, card.id, status);
-      setCompleting(null);
+      setAsking(null);
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -133,6 +152,9 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
     });
   };
 
+  // The status asked about, as the question says it: "completed", "in progress".
+  const label = STATUS_LABELS[question?.status ?? "COMPLETED"].toLowerCase();
+
   const drop = (status: PostStatus) => {
     const card = dragging;
     setDragging(null);
@@ -140,9 +162,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
     if (!card || card.status === status) {
       return;
     }
-    if (status === "COMPLETED") {
-      setCompleting(card);
-    } else {
+    if (!ask(card, status)) {
       move(card, status);
     }
   };
@@ -233,8 +253,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                         status={card.status}
                         // The column says the status.
                         badge={false}
-                        // Completed from the menu (the keyboard's and a phone's way) asks first too.
-                        onComplete={() => setCompleting(card)}
+                        // From the menu (the keyboard's and a phone's way) a move that emails asks first too.
+                        onAsk={(status) => ask(card, status)}
                         onChanged={(status) => {
                           setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 });
                           // Off the roadmap (Open, Closed…): the column shown stays.
@@ -279,21 +299,21 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         ))}
       </div>
 
-      <AlertDialog open={completing !== null} onOpenChange={(open) => !open && !pending && setCompleting(null)}>
+      <AlertDialog open={asking !== null} onOpenChange={(open) => !open && !pending && setAsking(null)}>
         <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
-            <AlertDialogTitle className="wrap-anywhere">Mark “{completing?.title}” completed?</AlertDialogTitle>
+            <AlertDialogTitle className="wrap-anywhere">
+              Mark “{question?.card.title}” {label}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {completing?.emails
-                ? `This emails up to ${completing.emails} ${completing.emails === 1 ? "person" : "people"} who asked for it that it shipped.`
-                : "Nobody is emailed."}
+              {question?.prompt}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
             {/* Enter or Space clicks it with `detail` 0: confirmed with a key. */}
-            <AlertDialogAction disabled={pending} onClick={(event) => completing && move(completing, "COMPLETED", event.detail === 0)}>
-              Mark completed
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={(event) => asking && move(asking.card, asking.status, event.detail === 0)}>
+              Mark {label}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

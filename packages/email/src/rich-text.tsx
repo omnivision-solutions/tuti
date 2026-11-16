@@ -8,8 +8,8 @@ import { accentColors, colors } from "./layout";
 type Node = NonNullable<Doc["content"]>[number];
 type Context = { media?: MediaUrls; linkUrl: string; accent: string; tight?: boolean };
 
-/** Width of the text inside Layout's card (480 container − 2×24 padding − 2×24 card padding). */
-export const CONTENT_WIDTH = 384;
+/** Width of the text inside Layout's card (560 container − 2×12 padding − 2×1 card edge − 2×28 card padding). */
+export const CONTENT_WIDTH = 478;
 
 const text = { fontSize: 15, lineHeight: "24px", color: colors.text } as const;
 const mono = { fontFamily: "SFMono-Regular, Menlo, Consolas, monospace", fontSize: 13 } as const;

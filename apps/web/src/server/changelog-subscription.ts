@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { changelogConfirmEmail, sendEmail } from "@tuti/email";
-import { changelogReach, type ChangelogReach, projectEmailWaits, projectSender } from "@tuti/jobs";
+import { changelogReach, type ChangelogReach, emailBrand, projectEmailWaits, projectSender } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { hashSecret } from "@/lib/portal-handoff";
@@ -70,15 +70,13 @@ export async function emailConfirmation(
   });
   const url = new URL(`${await portalAddress(project.slug)}/changelog/subscription`);
   url.searchParams.set("confirm", confirm);
-  const { brandColor } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { brandColor: true } });
   try {
     await sendEmail({
       to: subscriber.email,
       ...changelogConfirmEmail({
-        projectName: project.name,
+        ...(await emailBrand(project.id)),
         url: url.toString(),
         optedOut: (await changelogReach(project.id, { email: subscriber.email, confirmed: true })) === "opted-out",
-        accent: brandColor,
       }),
       ...(await projectSender(project.id)),
     });

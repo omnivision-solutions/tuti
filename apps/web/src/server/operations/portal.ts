@@ -1,6 +1,6 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, portalReaderEmail, sendEmail } from "@tuti/email";
-import { lockProject, projectSender } from "@tuti/jobs";
+import { emailBrand, lockProject, projectSender } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -161,17 +161,15 @@ export const addPortalReaders = defineOperation({
         select: { name: true, email: true },
       });
       const url = signInUrl;
-      // Inside each send: setting up the project's sender failing is a failed email, never a failed add.
-      const sender = projectSender(projectId, inviter?.email);
+      // Inside each send: setting up the project's sender or reading its brand failing is a failed email, never a failed add.
+      // Both awaited together, so a failing brand is handled even when the sender failed first.
+      const setup = Promise.all([projectSender(projectId, inviter?.email), emailBrand(projectId)]);
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
-        toEmail.map(async (email) =>
-          sendEmail({
-            to: email,
-            ...(await sender),
-            ...portalReaderEmail({ inviterName: inviter?.name ?? project.name, projectName: project.name, email, url, accent: project.brandColor }),
-          }),
-        ),
+        toEmail.map(async (email) => {
+          const [sender, brand] = await setup;
+          return sendEmail({ to: email, ...sender, ...portalReaderEmail({ ...brand, inviterName: inviter?.name ?? project.name, email, url }) });
+        }),
       );
       for (const result of sent) {
         if (result.status === "rejected") {

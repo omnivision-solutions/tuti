@@ -9,6 +9,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { cappedProjects, claimProjectEmail, monthCappedProjects, releaseProjectEmail, tellEmailLimit } from "./email-limits";
 import { sesTenantHeaders } from "./ses-tenant";
+import { emailBrand } from "./email-brand";
 
 /** Tuti's loop header (apps/web lib/email-noise.ts): mail that comes back with it is known as ours. */
 const LOOP_HEADER = "X-Tuti-Loop";
@@ -349,7 +350,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       throw new Error("Its attachments can't be read: this server has no file storage");
     }
     const attachments = await Promise.all(files.map(async (f) => ({ filename: f.filename, contentType: f.contentType, content: await storage!.get(f.key) })));
-    const tenant = await sesTenantHeaders(conversation.projectId, domain, teamDomain?.domain, "reply");
+    const [tenant, brand] = await Promise.all([sesTenantHeaders(conversation.projectId, domain, teamDomain?.domain, "reply"), emailBrand(conversation.projectId)]);
     response = await sendEmail({
       to,
       from,
@@ -362,10 +363,9 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         ...(references.length > 0 && { "In-Reply-To": references.at(-1)!, References: references.join(" ") }),
       },
       ...conversationReplyEmail({
-        projectName: conversation.project.name,
+        ...brand,
         subject: conversation.subject,
         messages: messages.map((m) => ({ name: m.authorUser?.name ?? conversation.project.name, body: m.body })),
-        accent: conversation.project.brandColor,
       }),
     });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { emailImageKey, imageKey, mediaKeys } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { emailBrand, handlers } from "@tuti/jobs";
 import { billingFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
@@ -14,7 +14,7 @@ import { lastingMediaUrl } from "../media-urls";
 import { brandCss, getBranding, updateBranding } from "./branding";
 import { call } from "./run";
 
-vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
+vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 let s3: S3Fake;
 let owner: TestUser;
@@ -479,4 +479,23 @@ test("the colour becomes the accent and its tint, with readable text on it; wher
   // A pale tint the same: beige's readable shade is all but grey.
   expect(brandCss("#f5f5dc")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#f5f5dc;--primary-foreground:#000000;--ring:#f5f5dc}${tints("#f5f5dc")}`);
   expect(brandCss("#000000")).toBe(`html:not(.dark){--primary:#000000;--primary-foreground:#ffffff;--ring:#000000}html.dark{${theme}}${tints("#000000")}`);
+});
+
+test("emails on the project's behalf show its portal logo, at its smallest stored size, and the text beside it", async () => {
+  expect(await emailBrand(project.id)).toMatchObject({ logo: null, logoText: "" });
+  const logo = await uploaded();
+  await update({ logo: logo.id, logoText: "Acme Help" });
+  expect(await emailBrand(project.id)).toMatchObject({ logo: { url: lastingMediaUrl(imageKey(logo.id, 480)), width: 600, height: 200 }, logoText: "Acme Help" });
+  // Without APP_URL, or with one that isn't a URL, there's no link to it: the letter's square, and the email still goes.
+  vi.stubEnv("APP_URL", "");
+  expect((await emailBrand(project.id)).logo).toBeNull();
+  vi.stubEnv("APP_URL", "not a url");
+  expect((await emailBrand(project.id)).logo).toBeNull();
+  // Nor without uploads set up.
+  vi.unstubAllEnvs();
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  vi.stubEnv("MEDIA_S3_BUCKET", "");
+  expect((await emailBrand(project.id)).logo).toBeNull();
 });

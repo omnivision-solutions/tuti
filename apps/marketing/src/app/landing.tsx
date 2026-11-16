@@ -108,7 +108,6 @@ export function Landing({ aiInEveryPlan }: { aiInEveryPlan: boolean | null }) {
 
 const icon = { "aria-hidden": true, size: 16 } as const;
 
-
 function Hero() {
   // The window is open on Autopilot first.
   const panels: [string, ReactNode, string, ReactNode][] = [
@@ -173,10 +172,12 @@ function Familiar() {
   ];
   return (
     <section className="fam">
-      <div className="wrap center">
-        <div className="eyebrow">Sound familiar?</div>
-        <h2>This week, you renamed a plan.</h2>
-        <p className="sub">Your help center still says the old name.</p>
+      <div className="wrap fam-g">
+        <div>
+          <div className="eyebrow">Sound familiar?</div>
+          <h2>This week, you renamed a plan.</h2>
+          <p className="sub">Your help center still says the old name.</p>
+        </div>
         <ul className="changes">
           {changes.map(([change, stale]) => (
             <li key={change}>
@@ -269,6 +270,9 @@ function Bento() {
         <div className="center">
           <h2>One place for every customer question.</h2>
           <p className="sub">Help center, inbox, feedback and changelog, all connected.</p>
+          <a className="tlink head" href={DOCS}>
+            See a live help center <ArrowRightIcon aria-hidden size={16} />
+          </a>
         </div>
         <div className="bento">
           <Cell id="help" className="c-help" icon={<BookOpenIcon {...icon} />} label="Help center" title="Answers customers trust." line="Search and AI answers in one box, every answer cited.">
@@ -310,11 +314,6 @@ function Bento() {
             <CellAiTools />
           </Cell>
         </div>
-        <Next>
-          <a className="tlink" href={DOCS}>
-            See a live help center <ArrowRightIcon aria-hidden size={16} />
-          </a>
-        </Next>
       </div>
     </section>
   );
@@ -433,7 +432,7 @@ function Faq() {
     ["How does the free trial work?", "Your first project gets 7 days free, no card needed. Pick a plan whenever you're ready."],
   ];
   return (
-    <section className="flush">
+    <section>
       <div className="wrap faq">
         <h2>Questions, answered.</h2>
         <div>

@@ -44,6 +44,8 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
   await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
+  // Asked first: it emails Ada and Bo.
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // And says when they expect it (the key's page is on the way: back to the post after).
   // A year from now: always still to come (a month that's passed isn't shown).
@@ -229,7 +231,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
 
   // Ada (email verified) posted it: she hears anyway, so she gets no button.
   await ada.goto(darkPath);
-  await expect(ada.getByText("You'll hear when it ships.", { exact: true })).toBeVisible();
+  await expect(ada.getByText("You'll hear as it moves forward and when it ships.", { exact: true })).toBeVisible();
   await expect(ada.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
   // Copy link copies the post's address on the portal.
   await ada.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -257,7 +259,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await cy.goto(linkIn(await latestEmailTo(cy.email), "http"));
   await cy.goto(darkPath);
   // What Subscribe does, under it, only while it offers Subscribe.
-  const hint = cy.getByText("Get an email when it ships.");
+  const hint = cy.getByText("Get an email as it moves forward and when it ships.");
   await expect(hint).toBeVisible();
   await cy.getByRole("button", { name: "Subscribe" }).click();
   // Saved once it's enabled again (it shows Unsubscribe right away).
@@ -302,7 +304,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   const di = await signUp(browser, portalUrl(slug), "Di");
   await di.goto(linkIn(await latestEmailTo(di.email), "http"));
   await di.goto(darkPath);
-  const hears = di.getByText("You'll hear when it ships.", { exact: true });
+  const hears = di.getByText("You'll hear as it moves forward and when it ships.", { exact: true });
   await di.getByRole("button", { name: "Upvote" }).click();
   // Saved once it's enabled again (the count changes at once).
   await expect(di.getByRole("button", { name: "Upvoted" })).toBeEnabled();

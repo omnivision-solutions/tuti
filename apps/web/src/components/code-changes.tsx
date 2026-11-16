@@ -100,11 +100,14 @@ export function ScheduledButtons({
   before,
   disabled = false,
   className,
+  warning,
 }: {
   projectSlug: string;
   actionIds: string[];
   emails: number;
   posts: number;
+  /** What its confirm says instead of completing's (a progress update's). */
+  warning?: string;
   /** Before Stop, as part of the same bar (a review's Dismiss), off while Stop or Publish now runs (`busy`). */
   before?: (busy: boolean) => ReactNode;
   /** While the rest of the bar works (a Dismiss under way). */
@@ -142,12 +145,12 @@ export function ScheduledButtons({
           <AlertDialogHeader>
             <AlertDialogTitle>{one ? "Publish it now?" : "Publish them now?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {completingWarning(posts, emails)}
+              {warning ?? completingWarning(posts, emails)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={pending} onClick={publish}>
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={publish}>
               Publish now
             </AlertDialogAction>
           </AlertDialogFooter>
