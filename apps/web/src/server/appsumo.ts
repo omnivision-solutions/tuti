@@ -158,6 +158,9 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         const stale = Boolean(own?.replacedBy);
         for (let hops = 0; own?.replacedBy && hops < 20; hops++) {
           target = own.replacedBy;
+          // Its key's lock too, before its row: a refund of the newest key waits for this, rather than finding no row.
+          // (Taken after the others: a deadlock with another event aborts one, which AppSumo then retries.)
+          await lockKeys(tx, [target]);
           [own] = await rowsFor(tx, [target]);
         }
         if (own?.replacedBy) {
