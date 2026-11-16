@@ -374,11 +374,12 @@ test("a conversation Featurebase cut to its newest 500 parts, which the bot open
 
 test("a title someone wrote stays the subject of a conversation the bot opened, even one a later bot message starts with", async () => {
   const { closed } = greetedByBot();
-  closed.title = "Password reset";
+  // A cut start of the later bot reply: it gives way only to what the bot opened with.
+  closed.title = "Password reset…";
   const parts = closed.conversationParts as Record<string, unknown>[];
   parts.push({ id: "p3099", partType: "bot_msg", createdAt: new Date(Date.parse(String(parts.at(-1)!.createdAt)) + 60_000).toISOString(), bodyHtml: "<p>Password reset links last an hour.</p>", author: { id: null, type: "bot" } });
   await importInbox();
-  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("Password reset");
+  expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("Password reset…");
 });
 
 test("a conversation the team opened, untitled, takes its subject from the team's first message, not the person's reply", async () => {
