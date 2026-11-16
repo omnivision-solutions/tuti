@@ -6,6 +6,17 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingRow, SettingsCard } from "@/components/settings-card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { assignPlanLicense, unassignPlanLicense } from "@/server/plan-licenses";
@@ -18,7 +29,8 @@ export type PlanLicenseView = {
   /** Its plan's name. */
   plan: string;
   revoked: boolean;
-  project: { slug: string; name: string } | null;
+  /** `badge`: it has the "Powered by tuti" add-on, which ends with the license. */
+  project: { slug: string; name: string; badgeAddOn: boolean } | null;
 };
 
 /**
@@ -94,7 +106,28 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
         </>
       }
     >
-      {license.project ? (
+      {license.project?.badgeAddOn ? (
+        // Its project's paid add-on stops with it, with no refund: asked first.
+        <AlertDialog>
+          <AlertDialogTrigger render={<Button variant="outline" data-license-control={license.id} aria-label={`${pending ? "Unassigning…" : "Unassign"} ${named}`} disabled={pending} focusableWhenDisabled />}>
+            {pending ? "Unassigning…" : "Unassign"}
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Unassign this license?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {license.project.name}&apos;s &quot;Powered by tuti&quot; add-on stops now, and what&apos;s left of the month or year isn&apos;t refunded.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
+                {pending ? "Unassigning…" : "Unassign"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : license.project ? (
         <Button variant="outline" data-license-control={license.id} aria-label={`${pending ? "Unassigning…" : "Unassign"} ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
           {pending ? "Unassigning…" : "Unassign"}
         </Button>

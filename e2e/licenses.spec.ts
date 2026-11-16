@@ -111,6 +111,9 @@ test("someone without licenses is told how to redeem one", async ({ browser }, t
   await checkpoint(person, "licenses-empty");
 });
 
+/** Billing's page, whatever its query (`?badge=1` after Stripe): where its actions post. */
+const billingPage = (url: URL) => url.pathname.endsWith("/settings/billing");
+
 test("Billing says a project's plan comes from its license and unassigns it, asking first while it gives its plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const key = randomUUID();
@@ -137,17 +140,84 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
   await expect(owner.getByText("License assigned")).toBeVisible();
 
-  // Billing: the license's plan, nothing to manage in Stripe, no add-on to buy.
+  // Billing: the license's plan, nothing to manage in Stripe; the add-on is bought on its own.
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
   await expect(owner.getByText("Given by a license from AppSumo, a lifetime deal: it doesn't renew or bill.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
-  await expect(owner.getByText('Hide "Powered by tuti"')).toBeHidden();
+  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license");
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
+  await expect(confirm).toContainText("$49 a month, billed monthly on its own until you show the badge again or the license is unassigned.");
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  // Stripe's page (the fake), then back to Billing with the badge hidden; the license still gives the plan.
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
+  // Its card and invoices are in Stripe's portal.
+  await expect(owner.getByRole("button", { name: "Manage plan" })).toBeVisible();
+  await checkpoint(owner, "team-settings-billing-license-badge");
+  // Showing the badge again asks first: the add-on stops at once, with no refund.
+  await owner.getByRole("button", { name: "Show the badge again" }).click();
+  const show = owner.getByRole("alertdialog", { name: 'Show "Powered by tuti" again?' });
+  await expect(show).toContainText("The add-on stops now. What's left of the month or year you paid for isn't refunded.");
+  await checkpoint(owner, "team-settings-billing-license-show-badge", { fullPage: false });
+  await show.getByRole("button", { name: "Cancel" }).click();
+  await expect(show).toBeHidden();
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  // Confirmed: the badge is back, no dialog is left open, and the keyboard is on the offer to hide it.
+  await owner.getByRole("button", { name: "Show the badge again" }).click();
+  await show.getByRole("button", { name: "Show the badge again" }).click();
+  await expect(owner.getByText('"Powered by tuti" is back on your portal')).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Hide the badge" })).toBeFocused();
+  // Hidden again, for what follows. While Stripe's page is made (held here), the dialog's button is off and keeps the keyboard.
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  let opened!: () => void;
+  const opening = new Promise<void>((resolve) => (opened = resolve));
+  await owner.route(billingPage, async (route) => {
+    if (route.request().method() === "POST") {
+      await opening;
+    }
+    await route.fallback();
+  });
+  await confirm.getByRole("button", { name: "Hide the badge" }).focus();
+  await owner.keyboard.press("Enter");
+  await expect(confirm.getByRole("button", { name: "Opening Stripe…" })).toBeDisabled();
+  await expect(confirm.getByRole("button", { name: "Opening Stripe…" })).toBeFocused();
+  opened();
+  await owner.unroute(billingPage);
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  // Unassigning it from Licenses says the add-on stops with it, and asks first.
+  await owner.goto("/app/licenses");
+  await owner.getByRole("button", { name: `Unassign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  const fromLicenses = owner.getByRole("alertdialog", { name: "Unassign this license?" });
+  await expect(fromLicenses).toContainText(`Acme's "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
+  await fromLicenses.getByRole("button", { name: "Cancel" }).click();
+  await expect(fromLicenses).toBeHidden();
+  // Confirmed, it's unassigned and the add-on ends; assigned and hidden again, for what follows.
+  await owner.getByRole("button", { name: `Unassign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  await fromLicenses.getByRole("button", { name: "Unassign" }).click();
+  await expect(owner.getByText("License unassigned")).toBeVisible();
+  await expect(fromLicenses).toBeHidden();
+  await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  await expect(owner.getByText("License assigned")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
   // Unassigning it here asks first: only its holder can assign it again.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
-  await expect(dialog).toContainText("This project loses the license's plan until the license's holder assigns it again.");
+  await expect(dialog).toContainText(`This project loses the license's plan until the license's holder assigns it again. Its "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
   await checkpoint(owner, "team-settings-billing-unassign-license", { fullPage: false });
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
@@ -156,18 +226,23 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   // While it runs (its request held here), the dialog's button is off: a second press can't send it again.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
-  await owner.route("**/settings/billing", async (route) => {
+  await owner.route(billingPage, async (route) => {
     if (route.request().method() === "POST") {
       await held;
     }
     await route.fallback();
   });
-  await dialog.getByRole("button", { name: "Unassign license" }).click();
+  // Pressed from the keyboard, it keeps the keyboard's place while it runs (a refusal leaves the dialog open on it).
+  await dialog.getByRole("button", { name: "Unassign license" }).focus();
+  await owner.keyboard.press("Enter");
   await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeFocused();
   release();
-  await owner.unroute("**/settings/billing");
+  await owner.unroute(billingPage);
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+  // The add-on ended with it.
+  await expect(owner.getByRole("link", { name: "Choose a plan" })).toBeVisible();
   // Its holder assigns it again.
   await owner.goto("/app/licenses");
   await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
@@ -185,4 +260,24 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   // The plans take its place, and the keyboard's place moves to the first.
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+
+  // Deactivated by an upgrade's old key (its new key not here yet), the add-on is kept: unassigning then asks first, about it alone.
+  const next = randomUUID();
+  await webhook({ event: "activate", license_key: next, tier: 1 });
+  await owner.goto(`/api/appsumo/redirect?code=${await appsumoCode(next)}`);
+  await owner.getByRole("button", { name: "Add to my account" }).click();
+  await owner.waitForURL("**/app/licenses");
+  await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${next}`, exact: true }).click();
+  await expect(owner.getByText("License assigned")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  await webhook({ event: "deactivate", license_key: next, tier: 1, extra: { reason: "Upgraded by the customer" } });
+  await owner.reload();
+  await owner.getByRole("button", { name: "Unassign license" }).click();
+  await expect(dialog).toHaveAccessibleDescription(`Its "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
+  await dialog.getByRole("button", { name: "Unassign license" }).click();
+  await expect(owner.getByText("License unassigned")).toBeVisible();
 });

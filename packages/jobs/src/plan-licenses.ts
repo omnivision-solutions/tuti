@@ -22,6 +22,10 @@ const HOUR_MS = 3_600_000;
  */
 export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const license = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { plan: true, projectId: true, revokedAt: true } });
+  // Stripe's webhook's lock for the project first, then rows (the project's below), in the webhook's order.
+  if (license.projectId) {
+    await lockBilling(tx, license.projectId);
+  }
   if (license.revokedAt) {
     const grants = await tx.aiCreditGrant.findMany({ where: { planLicenseId: id, remaining: { gt: 0 } }, select: { projectId: true } });
     // Under each project's lock, as charges take it (chargeCredits), so a charge can't write back what it read before.
@@ -37,14 +41,21 @@ export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string)
   }
 }
 
-/** Takes the project's plan from license `id` away (it's being unassigned): back on its own. In `tx`, holding the license's row. */
+/** Takes the project's plan from license `id` away (it's being unassigned): back on its own, its add-on with it. In `tx`, holding the license's row. */
 export async function releasePlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const { projectId } = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { projectId: true } });
   if (projectId) {
-    await tx.project.updateMany({ where: { id: projectId, planStatus: null }, data: { plan: null } });
+    await lockBilling(tx, projectId);
+    await tx.project.updateMany({ where: { id: projectId, planStatus: null }, data: { plan: null, badgeAddOn: false } });
     await tx.planLicense.update({ where: { id }, data: { projectId: null, assignedAt: null } });
   }
 }
+
+/**
+ * Stripe's webhook's lock for the project (syncSubscription), for the rest of `tx`: a subscription it's syncing meanwhile
+ * (the "Powered by tuti" add-on a licensed project bought) is written before this reads, or reads the license after.
+ */
+const lockBilling = (tx: Prisma.TransactionClient, projectId: string) => tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${projectId}))`;
 
 /** Locks license `id`'s row for the rest of `tx`: one change to a license at a time. False if there's none. */
 export async function lockPlanLicense(tx: Prisma.TransactionClient, id: string): Promise<boolean> {

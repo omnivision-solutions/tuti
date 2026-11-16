@@ -115,7 +115,7 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
  * A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and
  * admins. While the license gives its plan (`active`), it asks first: only its holder can assign it again.
  */
-export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlug: string; licenseId: string; active: boolean }) {
+export function UnassignLicense({ projectSlug, licenseId, active, badge = false }: { projectSlug: string; licenseId: string; active: boolean; badge?: boolean }) {
   const [pending, startTransition] = useTransition();
   const done = useRef(false);
   // Done, the plans take this button's place: the keyboard's place moves to the first of them, or to the line saying
@@ -138,7 +138,8 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
         toast.success("License unassigned");
       }
     });
-  if (!active) {
+  // Deactivated, it gives no plan: unassigning asks only when the project's add-on would stop with it.
+  if (!active && !badge) {
     return (
       <div>
         <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={unassign}>
@@ -155,7 +156,10 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Unassign this license?</AlertDialogTitle>
-          <AlertDialogDescription>This project loses the license&apos;s plan until the license&apos;s holder assigns it again.</AlertDialogDescription>
+          <AlertDialogDescription>
+            {active && <>This project loses the license&apos;s plan until the license&apos;s holder assigns it again. </>}
+            {badge && <>Its &quot;Powered by tuti&quot; add-on stops now, and what&apos;s left of the month or year isn&apos;t refunded.</>}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -169,17 +173,53 @@ export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlu
 }
 
 /** The "Powered by tuti" add-on on a paid plan: "Hide the badge" (after saying what it costs), or "Show the badge again". */
-export function BadgeAddOn({ projectSlug, on, perMonth }: { projectSlug: string; on: boolean; perMonth: number }) {
+/** `licensed`: a plan license's project, which buys the add-on on its own, billed each month or year. */
+export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlug: string; on: boolean; perMonth: number; licensed?: "monthly" | "yearly" }) {
   const [pending, startTransition] = useTransition();
+  // Shown again, the offer to hide it takes the button's place: the keyboard's place moves to it.
+  const moved = useRef(false);
+  useEffect(() => {
+    if (moved.current && !on) {
+      moved.current = false;
+      document.querySelector<HTMLElement>("[data-badge-control]")?.focus();
+    }
+  }, [on]);
   const change = (hide: boolean) =>
     startTransition(async () => {
       const result = await setBadge(projectSlug, hide);
       if (result.error) {
         toast.error(result.error);
+      } else if (result.url) {
+        // A licensed project's add-on is paid on Stripe's page.
+        window.location.assign(result.url);
       } else {
+        moved.current = !hide;
         toast.success(hide ? '"Powered by tuti" is hidden' : '"Powered by tuti" is back on your portal');
       }
     });
+  if (on && licensed) {
+    // Its own subscription is cancelled at once, with no refund: asked first.
+    // Keyed apart from the offer below, so the open dialog closes once the badge is back instead of turning into it.
+    return (
+      <AlertDialog key="show">
+        <AlertDialogTrigger render={<Button type="button" variant="outline" disabled={pending} focusableWhenDisabled />}>
+          Show the badge again
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Show &quot;Powered by tuti&quot; again?</AlertDialogTitle>
+            <AlertDialogDescription>The add-on stops now. What&apos;s left of the month or year you paid for isn&apos;t refunded.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => change(false)}>
+              {pending ? "Showing the badge…" : "Show the badge again"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
   if (on) {
     return (
       <div>
@@ -190,18 +230,22 @@ export function BadgeAddOn({ projectSlug, on, perMonth }: { projectSlug: string;
     );
   }
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button type="button" variant="outline" disabled={pending} />}>Hide the badge</AlertDialogTrigger>
+    <AlertDialog key="hide">
+      <AlertDialogTrigger render={<Button type="button" variant="outline" data-badge-control disabled={pending} focusableWhenDisabled />}>Hide the badge</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Hide &quot;Powered by tuti&quot;?</AlertDialogTitle>
           <AlertDialogDescription>
-            ${perMonth} a month is added to this project&apos;s plan. You pay for the rest of this billing period now, with the card on the plan.
+            {licensed
+              ? `$${perMonth} a month, billed ${licensed} on its own until you show the badge again or the license is unassigned. You pay on Stripe's page next.`
+              : `$${perMonth} a month is added to this project's plan. You pay for the rest of this billing period now, with the card on the plan.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={() => change(true)}>Hide the badge</AlertDialogAction>
+          <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => change(true)}>
+            {pending ? (licensed ? "Opening Stripe…" : "Hiding the badge…") : "Hide the badge"}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

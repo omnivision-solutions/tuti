@@ -11,6 +11,7 @@ import { verifyValue } from "@/lib/signed";
 import { getAdminProject } from "./membership";
 import { getAccountSession } from "./session";
 import { getSubscription, projectSubscriptions } from "./stripe";
+import { badgeOnly, endBadgeWithLicense } from "./subscriptions";
 
 /**
  * Plan licenses (docs/plan.md, Plan licenses; packages/jobs/src/plan-licenses.ts): an account's licenses, each assigned to
@@ -36,7 +37,8 @@ async function stillCharging(projectId: string, recorded: string | null): Promis
     // ponytail: two subscriptions started within the same minute could still hide one; a list per customer fixes that.
     const found = await projectSubscriptions(projectId);
     const last = recorded && !found.some(({ id }) => id === recorded) ? [await getSubscription(recorded)] : [];
-    return [...found, ...last].some(({ status }) => !ENDED.has(status));
+    // One holding only the "Powered by tuti" add-on goes with a license (syncSubscription).
+    return [...found, ...last].some((subscription) => !ENDED.has(subscription.status) && !badgeOnly(subscription));
   } catch {
     throw new Refused("We couldn't check this project's plan with Stripe. Try again in a minute.");
   }
@@ -136,7 +138,8 @@ export async function unassignPlanLicense(licenseId: string, projectSlug?: strin
       return moved;
     }
   }
-  return change(
+  let from: string | null = null;
+  const result = await change(
     session.user.id,
     String(licenseId),
     async (tx) => {
@@ -144,10 +147,15 @@ export async function unassignPlanLicense(licenseId: string, projectSlug?: strin
       if (projectSlug !== undefined && !(await tx.planLicense.count({ where: { id: licenseId, project: { slug: String(projectSlug) } } }))) {
         throw new Refused(moved.error);
       }
+      from = (await tx.planLicense.findUniqueOrThrow({ where: { id: licenseId }, select: { projectId: true } })).projectId;
       await releasePlanLicense(tx, licenseId);
     },
     true,
   );
+  if (from && !result.error) {
+    await endBadgeWithLicense(from);
+  }
+  return result;
 }
 
 /**

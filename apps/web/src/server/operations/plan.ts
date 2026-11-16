@@ -5,7 +5,7 @@ import { z } from "zod";
 import { appUrl, portalUrl } from "@/lib/hosts";
 
 import { addSubscriptionItem, createPortal, createSubscriptionCheckout, getSubscription, removeSubscriptionItem, StripeError } from "../stripe";
-import { syncSubscription } from "../subscriptions";
+import { endLicensedBadge, syncSubscription } from "../subscriptions";
 import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
@@ -151,21 +151,55 @@ export const managePlan = defineOperation({
 export const setBadgeAddOn = defineOperation({
   name: "plan.badge",
   summary:
-    'The add-on hiding "Powered by tuti" on the portal (on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
+    'The add-on hiding "Powered by tuti" on the portal (on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. On a project whose plan comes from a plan license, it\'s a subscription of its own: `on` gives a Stripe Checkout page (`url`) to pay on, and it hides the badge once Stripe says it\'s paid; `on: false` cancels it; it ends with the license. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
   method: "POST",
   path: "/plan/badge",
   scope: "write",
   access: "admin",
   input: z.object({ on: z.boolean() }),
   example: { on: true },
-  run: async ({ projectId }, { on }) => {
+  run: async ({ actor, projectId }, { on }) => {
     const project = await prisma.project.findUniqueOrThrow({
       where: { id: projectId },
-      select: { plan: true, planInterval: true, planStatus: true, stripeSubscriptionId: true },
+      select: { plan: true, planInterval: true, planStatus: true, stripeSubscriptionId: true, stripeCustomerId: true, badgeAddOn: true, name: true, slug: true, planLicense: { select: { revokedAt: true } } },
     });
-    const price = planSalesEnabled() ? badgePrice(project.planInterval === "year" ? "year" : "month") : null;
+    // A plan license gives the plan (no subscription): the add-on is a subscription of its own, monthly where it's sold so.
+    const licensed = project.planStatus === null && project.planLicense?.revokedAt === null;
+    // A licensed project's add-on bills on its own: monthly where sold, else yearly (an old plan's interval doesn't count).
+    const price = !planSalesEnabled() ? null : licensed ? (badgePrice("month") ?? badgePrice("year")) : badgePrice(project.planInterval === "year" ? "year" : "month");
     if (on && !price) {
       throw new OperationError(503, "plans_unavailable", 'Hiding "Powered by tuti" isn\'t sold on this server');
+    }
+    if (licensed && on && !project.badgeAddOn) {
+      const [buyer, billing] = await Promise.all([actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null, billingUrl(projectId)]);
+      try {
+        const session = await createSubscriptionCheckout({
+          price: price!,
+          metadata: { projectId },
+          description: `Tuti, hiding "Powered by tuti" for ${project.name} (${new URL(portalUrl(project.slug)).host})`,
+          reference: projectId,
+          customer: project.stripeCustomerId,
+          email: buyer?.email ?? null,
+          successUrl: `${billing}?badge=1`,
+          cancelUrl: billing.toString(),
+        });
+        return { on: false, url: session.url };
+      } catch (error) {
+        log.error('Starting a Stripe Checkout for the "Powered by tuti" add-on failed', { projectId, error });
+        throw new OperationError(502, "stripe_failed", "Couldn't open the payment page. Try again in a moment.");
+      }
+    }
+    if (project.planLicense && project.planStatus === null && (licensed || !on)) {
+      if (!on) {
+        try {
+          await endLicensedBadge(projectId);
+        } catch (error) {
+          log.error('Cancelling a licensed project\'s "Powered by tuti" add-on failed', { projectId, error });
+          throw new OperationError(502, "stripe_failed", "Couldn't confirm the change with Stripe: it may have gone through. Check Billing in a moment before trying again.");
+        }
+        await prisma.project.update({ where: { id: projectId }, data: { poweredBy: true } });
+      }
+      return { on: (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { badgeAddOn: true } })).badgeAddOn };
     }
     // Only a live subscription has the add-on to add or remove (its plan may be one the file no longer lists).
     if (project.planStatus === null || !project.stripeSubscriptionId) {
