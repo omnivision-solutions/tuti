@@ -445,3 +445,23 @@ test("overlapping runs: one finds the comment claimed by another, which then fai
   await later();
   expect(commentEmails(author.email)).toHaveLength(1);
 });
+
+test("a teammate's comment is tagged as the team's in the email; a reader's isn't, nor a teammate's written as a reader on the portal", async () => {
+  const { author, post } = await authorsPost();
+  const reader = await verified("Reader");
+  const { name } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { name: true } });
+  await call(createComment, as(owner.id), { number: post.number, body: "We're on it." });
+  await call(createComment, as(reader.id), { number: post.number, body: "Same here!" });
+  await minutesLater();
+  const [email] = commentEmails(author.email);
+  expect(email!.text.match(new RegExp(`${name} team`, "g"))).toHaveLength(1);
+  expect(email!.text.indexOf(`${name} team`)).toBeLessThan(email!.text.indexOf("We're on it."));
+  expect(email!.text.indexOf(`${name} team`)).toBeLessThan(email!.text.indexOf("Same here!"));
+  // Written with a portal's session (asReader): a reader's, as the portal shows it.
+  const portal = await call(createComment, as(owner.id), { number: post.number, body: "As a reader." });
+  await prisma.comment.update({ where: { id: portal.id }, data: { asReader: true } });
+  await minutesLater();
+  const [, second] = commentEmails(author.email);
+  expect(second!.text).toContain("As a reader.");
+  expect(second!.text).not.toContain(`${name} team`);
+});

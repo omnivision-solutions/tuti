@@ -63,7 +63,14 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
         // Every one still due goes in the email, those within the batch's wait too; not what's no longer news.
         where: { authorEmailDueAt: { not: null }, NOT: expired(started) },
         orderBy: { createdAt: "asc" },
-        select: { id: true, authorId: true, body: true, content: true, author: { select: { name: true } } },
+        select: {
+          id: true,
+          authorId: true,
+          body: true,
+          content: true,
+          asReader: true,
+          author: { select: { name: true, teamMemberships: { where: { project: { posts: { some: { id: postId } } } }, select: { projectId: true } } } },
+        },
       },
     },
   });
@@ -138,7 +145,13 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
         status: post.status,
         // A Team only board isn't on the portal: its post's page doesn't name it, nor does the email (as replyEmailed's).
         board: post.board.postVisibility === "TEAM" ? undefined : post.board.name,
-        comments: claimed.map((comment) => ({ authorId: comment.authorId, authorName: comment.author.name, text: quotedText(comment) })),
+        // The team's, as comments.list says it: written by a team member, and not with a portal's session (asReader).
+        comments: claimed.map((comment) => ({
+          authorId: comment.authorId,
+          authorName: comment.author.name,
+          team: !comment.asReader && comment.author.teamMemberships.length > 0,
+          text: quotedText(comment),
+        })),
         postUrl: portalPostUrl(origin, post),
         unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
       }),

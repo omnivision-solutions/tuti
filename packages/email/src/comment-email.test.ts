@@ -54,3 +54,14 @@ test("several: named once each, the first five shown and the rest counted", asyn
   expect(one).toMatch(/Sam commented on your idea/i);
   expect(one).not.toMatch(/Sam and/i);
 });
+
+test("the team's comment carries the project's team tag; a reader's doesn't", async () => {
+  const comments = [
+    { authorId: "u-olive", authorName: "Olive Owner", team: true, text: "We're on it." },
+    { authorId: "u-sam", authorName: "Sam Lee", text: "Same here!" },
+  ];
+  const text = await render(commentEmail({ ...props, comments }).body, { plainText: true });
+  expect(text.match(/Acme team/g)).toHaveLength(1);
+  expect(text.indexOf("Acme team")).toBeLessThan(text.indexOf("We're on it."));
+  expect(text.indexOf("Acme team")).toBeGreaterThan(text.indexOf("Olive Owner"));
+});

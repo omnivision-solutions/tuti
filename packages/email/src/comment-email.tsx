@@ -14,8 +14,8 @@ type CommentProps = EmailBrand & {
   status: PostStatus;
   /** Its board's name, over its title. */
   board?: string;
-  /** Oldest first, each as plain text; `authorId` tells people apart (two can share a name). */
-  comments: { authorId: string; authorName: string; text: string }[];
+  /** Oldest first, each as plain text; `authorId` tells people apart (two can share a name); `team`: the team's (tagged). */
+  comments: { authorId: string; authorName: string; team?: boolean; text: string }[];
   postUrl: string;
   unsubscribeUrl: string;
 };
@@ -52,7 +52,7 @@ export function CommentEmail({ projectName, accent, poweredBy, postTitle, voteCo
       <PostCard title={postTitle} votes={voteCount} board={board} status={status} />
       {comments.slice(0, SHOWN).map((comment, index) => (
         // An image alone: its writer, no empty quote.
-        <Message key={index} name={comment.authorName}>
+        <Message key={index} name={comment.authorName} team={comment.team ? `${projectName} team` : undefined} accent={accent}>
           {comment.text.length > QUOTED ? `${comment.text.slice(0, QUOTED).trimEnd()}…` : comment.text || undefined}
         </Message>
       ))}
