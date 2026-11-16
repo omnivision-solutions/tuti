@@ -318,3 +318,25 @@ test("two upgrades in a row: the first's retry and the first key's late events m
   // The replaced keys can't be claimed: they read as deactivated.
   expect(await find(key)).toMatchObject({ revokedAt: expect.any(Date), userId: null });
 });
+
+test("an upgrade before either key's activation: the old key's late activation makes no second license", async () => {
+  const key = crypto.randomUUID();
+  const next = crypto.randomUUID();
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
+  await deliver({ event: "activate", license_key: key, tier: 1 });
+  expect(await licensesFor([key, next])).toEqual([expect.objectContaining({ externalKey: next, plan: "appsumo-2", revokedAt: null })]);
+});
+
+test("two upgrades arriving in reverse order: the holder's license ends on the newest key and its plan", async () => {
+  const { owner, project, key, license } = await assigned();
+  const second = crypto.randomUUID();
+  const third = crypto.randomUUID();
+  await deliver({ event: "downgrade", license_key: third, prev_license_key: second, tier: 1 });
+  await deliver({ event: "upgrade", license_key: second, prev_license_key: key, tier: 2 });
+  await deliver({ event: "deactivate", license_key: key });
+  await deliver({ event: "deactivate", license_key: second });
+  expect(await licensesFor([key, second, third])).toEqual([
+    expect.objectContaining({ id: license.id, externalKey: third, plan: "appsumo-1", userId: owner.id, projectId: project.id, revokedAt: null }),
+  ]);
+  expect(await planOf(project.id)).toBe("appsumo-1");
+});

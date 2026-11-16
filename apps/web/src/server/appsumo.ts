@@ -106,9 +106,9 @@ async function lockKeys(tx: Prisma.TransactionClient, keys: string[]) {
  * A key an upgrade replaced keeps a row of its own, revoked, with the key that replaced it (metadata.replacedBy): its
  * late or repeated events (an activation, an older upgrade's retry) find it and change nothing, never making a second license.
  */
-type Row = { id: string; externalKey: string; userId: string | null; projectId: string | null; revokedAt: Date | null; replacedBy: string | null };
+type Row = { id: string; externalKey: string; plan: string; userId: string | null; projectId: string | null; revokedAt: Date | null; replacedBy: string | null };
 const rowsFor = (tx: Prisma.TransactionClient, keys: string[]) => tx.$queryRaw<Row[]>`
-  SELECT id, "externalKey", "userId", "projectId", "revokedAt", metadata->>'replacedBy' AS "replacedBy" FROM plan_license
+  SELECT id, "externalKey", plan, "userId", "projectId", "revokedAt", metadata->>'replacedBy' AS "replacedBy" FROM plan_license
   WHERE source = ${APPSUMO} AND "externalKey" = ANY(${keys}) FOR UPDATE`;
 
 export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
@@ -150,32 +150,47 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
       await prisma.$transaction(async (tx) => {
         await lockKeys(tx, keys);
         const rows = await rowsFor(tx, keys);
-        const own = rows.find((one) => one.externalKey === key);
-        if (own?.replacedBy) {
-          return; // An older upgrade's retry: its new key has been replaced since.
-        }
         const previous = rows.find((one) => one.externalKey !== key && !one.replacedBy);
-        // The previous key's license takes the new key: its holder and project carry over. The new key's own row is a retry
-        // (the previous one renamed already), or one the new key's activation made before the upgrade arrived: that one
-        // goes, its holder kept, unless it's on a project or another account holds the previous (support sorts that out).
-        const early = own && previous && !own.projectId && (!own.userId || !previous.userId || own.userId === previous.userId);
-        if (early) {
-          await tx.planLicense.delete({ where: { id: own.id } });
+        // An older upgrade, arriving after a later one replaced its new key: the newest key's license is the one meant, on
+        // the plan it has now.
+        let own = rows.find((one) => one.externalKey === key);
+        let target = key;
+        const stale = Boolean(own?.replacedBy);
+        for (let hops = 0; own?.replacedBy && hops < 20; hops++) {
+          target = own.replacedBy;
+          [own] = await rowsFor(tx, [target]);
         }
+        // The previous key's license takes the new key: its holder and project carry over. The new key's own row is a retry
+        // (the previous one renamed already), or one the new key's activation (or a later upgrade) made before this arrived:
+        // that one goes, its holder kept, unless it's on a project or another account holds the previous (support sorts that out).
+        const early = own && previous && !own.projectId && (!own.userId || !previous.userId || own.userId === previous.userId);
         if (own && previous && !early) {
           log.error("An AppSumo upgrade's new key is on another account or project than the license it replaces: both kept, for support to merge", { licenseId: own.id, previousLicenseId: previous.id });
+        }
+        if (stale && !early) {
+          return;
+        }
+        if (early) {
+          await tx.planLicense.delete({ where: { id: own.id } });
         }
         const row = early ? previous : (own ?? previous);
         if (!row) {
           await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan, metadata }], skipDuplicates: true });
-          return;
+        } else {
+          // The previous key's deactivation doesn't count against the license under its new key, but the new key's own
+          // (a refund of the upgrade, before this upgrade or its retry) does.
+          const revokedAt = row === previous ? (early ? own.revokedAt : null) : row.revokedAt;
+          await tx.planLicense.update({
+            where: { id: row.id },
+            data: { externalKey: target, plan: stale ? own!.plan : plan, revokedAt, userId: row.userId ?? (early ? own.userId : null), metadata: { ...metadata, previousKey: event.prev_license_key ?? null } },
+          });
         }
-        // The previous key's deactivation doesn't count against the license under its new key, but the new key's own
-        // (a refund of the upgrade, before this upgrade or its retry) does.
-        const revokedAt = row === previous ? (early ? own.revokedAt : null) : row.revokedAt;
-        await tx.planLicense.update({ where: { id: row.id }, data: { externalKey: key, plan, revokedAt, userId: row.userId ?? (early ? own.userId : null), metadata: { ...metadata, previousKey: event.prev_license_key ?? null } } });
-        if (row === previous) {
-          await tx.planLicense.create({ data: { source: APPSUMO, externalKey: previous.externalKey, plan: "", revokedAt: new Date(), metadata: { replacedBy: key } } });
+        // The previous key, renamed or never seen, is marked replaced, so its late events change nothing.
+        if (event.prev_license_key) {
+          await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: event.prev_license_key, plan: "", revokedAt: new Date(), metadata: { replacedBy: target } }], skipDuplicates: true });
+        }
+        if (!row) {
+          return;
         }
         await applyPlanLicense(tx, row.id);
       });
