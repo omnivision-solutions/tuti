@@ -57,8 +57,11 @@ export async function grantLicenseCredits(id: string, now = new Date()): Promise
       return 0;
     }
     const start = through && through.getTime() > now.getTime() - 24 * HOUR_MS ? through : now;
+    // A month on, on the same day, or the month's last when it's shorter (January 31 → February 28).
     const end = new Date(start);
+    end.setUTCDate(1);
     end.setUTCMonth(end.getUTCMonth() + 1);
+    end.setUTCDate(Math.min(start.getUTCDate(), new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate()));
     await tx.planLicense.update({ where: { id }, data: { creditsThrough: end } });
     await grantCredits(license.projectId, "PLAN", credits, { expiresAt: end, note: `${planDisplay(license.plan).name} license` }, tx);
     return credits;
