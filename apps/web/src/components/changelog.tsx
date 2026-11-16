@@ -170,6 +170,7 @@ function FeaturedImage({
     projectSlug,
     name: "cover",
     id,
+    label: "Featured image",
     image: entry?.cover ? { id: entry.cover.id, url: entry.wideCoverUrl ?? entry.cover.url } : null,
     onBusy,
   });

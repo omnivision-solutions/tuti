@@ -286,6 +286,7 @@ export function useImageUpload({
   projectSlug,
   name,
   id,
+  label,
   image: initial,
   onBusy,
 }: {
@@ -293,6 +294,8 @@ export function useImageUpload({
   projectSlug?: string;
   name: string;
   id: string;
+  /** The file input's name, for a field with no label pointing at `id`. */
+  label?: string;
   image: Image;
   onBusy: (delta: number) => void;
 }) {
@@ -352,6 +355,7 @@ export function useImageUpload({
       <input
         ref={picker}
         id={id}
+        aria-label={label}
         type="file"
         tabIndex={-1}
         disabled={uploading || !projectSlug}

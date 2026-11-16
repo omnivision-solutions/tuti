@@ -947,7 +947,8 @@ test("the next release waits to be written; its entry gets a featured image read
   await scratch.close();
   const sidebar = team.getByRole("complementary", { name: "Entry settings" });
   const featured = team.getByRole("group", { name: "Featured image" });
-  const file = featured.locator('input[type="file"]');
+  // The file input, named (out of sight and of the tab order: Add and Replace open it).
+  const file = featured.getByLabel("Featured image", { exact: true });
   const preview = featured.getByRole("img");
   const addButton = featured.getByRole("button", { name: "Add featured image" });
   // Not in the sidebar any more: it leads the text, between the title and the text.
