@@ -197,6 +197,20 @@ test("the new key's activation arriving before the upgrade: the upgrade still ke
   expect(await planOf(project.id)).toBe("appsumo-2");
 });
 
+test("credits from the new key's own license, before the upgrade merged it, are taken back by a refund too", async () => {
+  const { owner, key } = await assigned();
+  const next = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: next, tier: 2 });
+  const early = await prisma.planLicense.update({ where: { source_externalKey: { source: "appsumo", externalKey: next } }, data: { userId: owner.id } });
+  const other = await createProject(owner);
+  expect(await assignPlanLicense(other.slug, early.id)).toEqual({});
+  expect(await unassignPlanLicense(early.id)).toEqual({});
+  expect(await creditsLeft(other.id)).toMatchObject({ license: 1000 });
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
+  await deliver({ event: "deactivate", license_key: next });
+  expect(await creditsLeft(other.id)).toMatchObject({ license: 0, takenBack: 1000 });
+});
+
 test("a refund of the upgrade itself holds, whatever order the upgrade comes in", async () => {
   // Upgraded, the upgrade refunded, then the upgrade said again (a retry): still revoked.
   const first = await assigned();
