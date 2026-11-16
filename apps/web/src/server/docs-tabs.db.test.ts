@@ -385,6 +385,20 @@ describe("readers", () => {
     expect(sample).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-01-01T10:00:00.000Z</lastmod></url>`);
   });
 
+  test("the sitemap dates a tab showing an article in its place by that article's edits, even an unlisted one", async () => {
+    await withTabs();
+    const old = new Date("2026-01-01T10:00:00Z");
+    const { slug } = await call(createArticle, as(), { title: "API overview", body: "Start here.", collection: "endpoints" });
+    await call(publishArticle, as(), { slug });
+    await call(updateTab, as(), { slug: "api", landing: "page", landingPage: slug });
+    await prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.collection.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { listing: "UNLISTED", updatedAt: new Date("2026-06-01T10:00:00Z") } });
+    const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(xml).toContain(`<url><loc>http://${project.slug}.localhost:3100/docs/api</loc><lastmod>2026-06-01T10:00:00.000Z</lastmod></url>`);
+  });
+
   test("llms-full.txt has the articles in llms.txt's order: tab by tab, each tab's articles in no collection last", async () => {
     await withTabs();
     const params = Promise.resolve({ project: project.slug });

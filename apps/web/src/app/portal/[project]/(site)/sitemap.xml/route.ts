@@ -11,6 +11,8 @@ import {
   everyCollection,
   listedArticle,
   readableArticle,
+  servedArticle,
+  tabLandingSlug,
 } from "@/server/docs-queries";
 import { PORTAL_BOARDS, SIGNED_OUT_VIEWER, visiblePosts } from "@/server/post-visibility";
 
@@ -62,6 +64,22 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     }),
     docsContents(slug, { reader: SIGNED_OUT, locks: false }),
   ]);
+  // A tab showing an article in its place (its first, or one the team picked): that article's edits change its page, even
+  // when it's unlisted or kept from search engines (still only one everyone may read).
+  const landingSlugs = docs.tabs.flatMap((tab) => tabLandingSlug(tab) ?? []);
+  const landings = new Map(
+    (landingSlugs.length > 0
+      ? await prisma.article.findMany({
+          where: { projectId: project.id, ...servedArticle, sample: false, slug: { in: landingSlugs }, ...(await readableArticle(project.id, SIGNED_OUT)) },
+          select: { slug: true, updatedAt: true },
+        })
+      : []
+    ).map((article) => [article.slug, article.updatedAt]),
+  );
+  const landingDate = (tab: (typeof docs.tabs)[number]) => {
+    const landing = tabLandingSlug(tab);
+    return landing ? landings.get(landing) : undefined;
+  };
   // Only the articles listed here count: a hidden one's edit never shows in its tab's or collection's date.
   const articleDates = new Map(articles.map((article) => [article.slug, article.updatedAt]));
   const collectionDates = new Map(project.collections.map((collection) => [collection.slug, collection.updatedAt]));
@@ -88,7 +106,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       .filter((tab) => tab.slug !== docs.home)
       .map((tab) => ({
         path: docsTabPath(docs, tab.slug),
-        lastmod: newest([tabDates.get(tab.slug), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected)]),
+        lastmod: newest([tabDates.get(tab.slug), landingDate(tab), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected)]),
       })),
     ...everyCollection(docs.collections)
       .filter((collection) => !collection.sample)
