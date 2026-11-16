@@ -119,11 +119,15 @@ test("what went out by itself shows what customers saw; what only the team sees,
 
 test("an update's card keeps its one-click buttons: Approve and Review first side by side, Publish now and Stop under what goes out, and its kind's colours", async () => {
   const html = await render(autopilotEmail(props).body);
-  const button = (href: string, label: string) => new RegExp(`<a href="${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>[\\s\\S]*?${label}[\\s\\S]*?</a>`);
-  expect(html).toMatch(button("https://app.example.com/act?token=approve", "Approve"));
-  expect(html).toMatch(button("https://app.example.com/review?select=edit", "Review first"));
-  expect(html).toMatch(button("https://app.example.com/act?token=publish", "Publish now"));
-  expect(html).toMatch(button("https://app.example.com/act?token=stop", "Stop"));
+  // The link's text, from its own <a href="…"> to its closing tag (plain search: the URLs aren't patterns).
+  const button = (href: string) => {
+    const start = html.indexOf(`<a href="${href}"`);
+    return start < 0 ? null : html.slice(start, html.indexOf("</a>", start));
+  };
+  expect(button("https://app.example.com/act?token=approve")).toContain("Approve");
+  expect(button("https://app.example.com/review?select=edit")).toContain("Review first");
+  expect(button("https://app.example.com/act?token=publish")).toContain("Publish now");
+  expect(button("https://app.example.com/act?token=stop")).toContain("Stop");
   // Two buttons in one row: cells side by side, not stacked.
   expect(html).toMatch(/Approve[\s\S]*?<\/td><td[^>]*>[\s\S]*?Review first/);
   // Out of date and missing info in the edit colour; a progress update in the progress colour.
