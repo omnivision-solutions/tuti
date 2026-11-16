@@ -174,14 +174,18 @@ function FeaturedImage({
     onBusy,
   });
   // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
+  // (Only then: a file dropped with the mouse leaves focus be.)
   const replace = useRef<HTMLButtonElement>(null);
-  const shown = useRef(image !== null);
+  const fromAdd = useRef(false);
   useEffect(() => {
-    if (image && !shown.current && (!document.activeElement || document.activeElement === document.body)) {
+    if (image && fromAdd.current) {
       replace.current?.focus();
     }
-    shown.current = image !== null;
   }, [image]);
+  // After the effect above, which reads it (an upload's image and its end land together); a failed one's is forgotten.
+  useEffect(() => {
+    fromAdd.current = uploading && document.activeElement === add.current;
+  }, [uploading]);
   const status = uploading && (
     <p role="status" className="text-sm text-muted-foreground">
       Uploading…
