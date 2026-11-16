@@ -132,7 +132,14 @@ export function AppSidebar({
                       <span>{item.title}</span>
                     </SidebarMenuButton>
                     {!!item.badge && (
-                      <SidebarMenuBadge id={countId(item.title)} className={cn(item.badge.urgent && "bg-highlight text-highlight-foreground")}>
+                      <SidebarMenuBadge
+                        id={countId(item.title)}
+                        // Collapsed to icons, still shown: a smaller count on the icon's corner.
+                        className={cn(
+                          "group-data-[collapsible=icon]:top-0! group-data-[collapsible=icon]:-right-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:h-4 group-data-[collapsible=icon]:min-w-4 group-data-[collapsible=icon]:px-1",
+                          item.badge.urgent && "bg-highlight text-highlight-foreground",
+                        )}
+                      >
                         {item.badge.count}
                         <span className="sr-only"> {item.badge.label}</span>
                       </SidebarMenuBadge>
