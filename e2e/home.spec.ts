@@ -80,6 +80,9 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   const counts = owner.locator('[data-slot="sidebar"][data-state] [data-sidebar="menu-badge"]');
   await expect(counts.filter({ hasText: /^\d+ open$/ })).toHaveClass(/\bbg-highlight\b/);
   await expect(counts.filter({ hasText: /to triage$/ })).not.toHaveClass(/\bbg-highlight\b/);
+  // The sidebar starts collapsed to icons; its counts still show, on the icons.
+  await expect(owner.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "collapsed");
+  for (const count of [/^\d+ open$/, /to triage$/, /to review$/]) await expect(counts.filter({ hasText: count })).toBeVisible();
   // Autopilot's rows are To review's: a post or article each (here the two drafts, from one pull request), counted
   // as the tile above and the sidebar count them, each opening its review.
   const changes = owner.getByRole("region", { name: "To review in Autopilot" });
