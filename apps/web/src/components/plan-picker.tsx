@@ -227,7 +227,7 @@ export function BadgeAddOn({ projectSlug, on, perMonth, licensed }: { projectSlu
   }
   return (
     <AlertDialog key="hide">
-      <AlertDialogTrigger render={<Button type="button" variant="outline" data-badge-control disabled={pending} />}>Hide the badge</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button type="button" variant="outline" data-badge-control disabled={pending} focusableWhenDisabled />}>Hide the badge</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Hide &quot;Powered by tuti&quot;?</AlertDialogTitle>

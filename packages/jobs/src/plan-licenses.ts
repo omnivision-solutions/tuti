@@ -22,6 +22,10 @@ const HOUR_MS = 3_600_000;
  */
 export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const license = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { plan: true, projectId: true, revokedAt: true } });
+  // Stripe's webhook's lock for the project first, then rows (the project's below), in the webhook's order.
+  if (license.projectId) {
+    await lockBilling(tx, license.projectId);
+  }
   if (license.revokedAt) {
     const grants = await tx.aiCreditGrant.findMany({ where: { planLicenseId: id, remaining: { gt: 0 } }, select: { projectId: true } });
     // Under each project's lock, as charges take it (chargeCredits), so a charge can't write back what it read before.
@@ -33,7 +37,6 @@ export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string)
     }
   }
   if (license.projectId) {
-    await lockBilling(tx, license.projectId);
     await tx.project.updateMany({ where: { id: license.projectId, planStatus: null }, data: { plan: license.revokedAt ? null : license.plan } });
   }
 }
