@@ -13,7 +13,8 @@ import {
   listCodeChangeTargets,
   undoCodeChangeAction,
 } from "@/server/operations/code-changes";
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost, MAX_TEXT_LENGTH } from "@/server/operations/create";
+import { updatePost } from "@/server/operations/manage";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -146,10 +147,29 @@ test("the comment a completion posts reaches the post's author once, in the ship
   expect(more).toEqual([]);
 });
 
-test("a completion's comment that's refused (too long) says why, posts nothing and leaves the update waiting", async () => {
+test("completed again after a reopen, the completion's comment reaches the author as a comment, since its shipped email doesn't go again", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  await call(updatePost, team(), { number: post.number, status: "completed" });
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
+  await call(updatePost, team(), { number: post.number, status: "planned" });
+
   const completes = await part("RESOLVES");
-  const result = await applyCodeChange(project.slug, completes.id, { comment: "x".repeat(POST_COMMENT_MAX + 1), revision: postVersion([completes.id]) });
-  expect(result.error).toMatch(/too long|characters/i);
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Now it's really out, monthly ones too." });
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [, again, ...more] = author(voter.email);
+  expect(more).toEqual([]);
+  expect(again!.subject).toBe("New comment on “Recurring events”");
+  expect(again!.text).toContain("Now it's really out, monthly ones too.");
+});
+
+test("a completion's comment comments.create refuses (its limits drifting from the review's) says why, posts nothing and leaves the update waiting", async () => {
+  // No input reaches this today: the review's own limits are tighter. Simulated, so the check stays in front of posting.
+  const refused = createComment.input.safeParse({ number: 1, body: "x".repeat(MAX_TEXT_LENGTH * 2 + 1) });
+  vi.spyOn(createComment.input, "safeParse").mockReturnValueOnce(refused as ReturnType<typeof createComment.input.safeParse>);
+  const completes = await part("RESOLVES");
+  const result = await applyCodeChange(project.slug, completes.id, { comment: "It's out.", revision: postVersion([completes.id]) });
+  expect(result.error).toBeTruthy();
   expect(await postNow()).toMatchObject({ status: "PLANNED", commentCount: 0, comments: [] });
   expect(await statuses(completes.id)).toEqual(["PENDING"]);
 });

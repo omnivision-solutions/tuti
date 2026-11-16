@@ -21,7 +21,11 @@ test("one comment: who wrote it, the post with its votes and status, Reply and w
   for (const line of ["New comment on your idea", "23", "Under review", "Sam Lee", "Same here!", "Reply", "You get this because you posted this idea.", "Unsubscribe from Acme"]) {
     expect(text).toContain(line);
   }
+  // The arrow and the dot are decoration: hidden from screen readers and the plain text; the count says it's votes.
+  expect(text).not.toMatch(/[▲●]/);
+  expect(text).toMatch(/23 votes/);
   const html = await render(body);
+  expect(html).toContain('aria-label="23 votes"');
   expect(html).toContain(`href="${props.postUrl}"`);
   expect(html).toContain(`href="${props.unsubscribeUrl}"`);
 });

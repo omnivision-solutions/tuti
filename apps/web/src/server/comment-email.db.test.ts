@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { setBoardOff } from "@/server/boards";
 import { resumeEmailSending } from "@/server/email-pause";
-import { createComment, createPost, writeComment } from "@/server/operations/create";
+import { createComment, createPost } from "@/server/operations/create";
 import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
@@ -378,11 +378,21 @@ test("a run that fails before sending (the project's brand can't be read) takes 
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
 });
 
-test("a comment saved quiet to the author (a completion's, which its shipped email quotes) is never due to them, from the moment it's saved", async () => {
+test("a post still queued isn't queued again by the next minute's cron, only once that run is late", async () => {
   const { post } = await authorsPost();
-  const quiet = await writeComment(as(owner.id), { number: post.number, body: "It's out." }, { quietToAuthor: true });
-  const loud = await writeComment(as(owner.id), { number: post.number, body: "More soon." });
-  const due = async (id: string) => (await prisma.comment.findUniqueOrThrow({ where: { id } })).authorEmailDueAt;
-  expect(await due(quiet.id)).toBeNull();
-  expect(await due(loud.id)).not.toBeNull();
+  const reader = await verified("Reader");
+  await call(createComment, as(reader.id), { number: post.number, body: "Nice idea." });
+  await prisma.comment.updateMany({ where: { projectId: project.id }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  // Its run queued but not started (a backlog): the queueing is all that happens here.
+  const queuedOnly = vi.spyOn(handlers, "commentsEmailed").mockResolvedValue({ queued: true });
+  try {
+    expect(await handlers.commentEmailsDue({}, log)).toEqual({ found: 1, queued: 1 });
+    expect(await handlers.commentEmailsDue({}, log)).toEqual({ found: 0, queued: 0 });
+    // Ten minutes on, a run that never started or died is taken again.
+    await prisma.comment.updateMany({ where: { projectId: project.id }, data: { authorEmailQueuedAt: new Date(Date.now() - 11 * 60_000) } });
+    expect(await handlers.commentEmailsDue({}, log)).toEqual({ found: 1, queued: 1 });
+    expect(queuedOnly).toHaveBeenCalledTimes(2);
+  } finally {
+    queuedOnly.mockRestore();
+  }
 });

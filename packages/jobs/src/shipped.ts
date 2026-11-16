@@ -177,6 +177,9 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const comment =
     typeof noteId === "string" ? await prisma.comment.findFirst({ where: { id: noteId, postId }, select: { body: true, author: { select: { name: true } } } }) : null;
   const note = comment?.body.trim() ? { from: comment.author.name, text: comment.body.trim() } : undefined;
+  // That comment, once this email has quoted it to the post's author, isn't emailed to them as a comment too
+  // (comment-email): the two share its claim (reply_email), one email per comment and person.
+  const noteCommentId = note && typeof noteId === "string" ? noteId : null;
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
@@ -222,6 +225,9 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       continue;
     }
     emailed++;
+    if (noteCommentId && id === post.authorId) {
+      await prisma.replyEmail.createMany({ data: [{ commentId: noteCommentId, userId: id, claimedAt: now, sentAt: new Date() }], skipDuplicates: true });
+    }
   }
   if (failed > 0) {
     // Held for a month (dueAgain), the safety nets would take it every run, for good: due from now instead, so it's retried

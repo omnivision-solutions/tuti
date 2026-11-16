@@ -1,4 +1,5 @@
 import { Button, Column, Row, Section, Text } from "@react-email/components";
+import type { CSSProperties } from "react";
 
 import { buttonStyle, colors, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 
@@ -30,6 +31,8 @@ type CommentProps = EmailBrand & {
   postUrl: string;
   unsubscribeUrl: string;
 };
+
+const votes = (count: number) => `${count} ${count === 1 ? "vote" : "votes"}`;
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
@@ -65,15 +68,24 @@ export function CommentEmail({ projectName, accent, poweredBy, postTitle, voteCo
         <Row>
           <Column style={{ width: 48, verticalAlign: "middle" }}>
             <Text style={{ fontSize: 15, fontWeight: 600, color: colors.text, textAlign: "center", backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: 8, margin: 0, padding: "4px 0", lineHeight: "18px" }}>
-              ▲<br />
-              {voteCount}
+              {/* The arrow is decoration; the count is labelled "N votes" for screen readers and in the plain text (#859's PostCard). */}
+              <span aria-hidden="true" data-skip-in-text="true" style={{ display: "block" }}>
+                &#9650;
+              </span>
+              <span role="img" aria-label={votes(voteCount)} style={{ display: "block" }}>
+                {voteCount}
+                <span style={{ display: "none", msoHide: "all" } as CSSProperties}> {voteCount === 1 ? "vote" : "votes"}</span>
+              </span>
             </Text>
           </Column>
           <Column style={{ verticalAlign: "middle", paddingLeft: 12 }}>
             <Text style={{ fontSize: 15, fontWeight: 600, color: colors.text, lineHeight: "22px", margin: 0 }}>{postTitle}</Text>
             <Text style={{ fontSize: 13, color: colors.text, margin: "6px 0 0", lineHeight: "18px" }}>
               <span style={{ backgroundColor: pill.tint, borderRadius: 999, padding: "2px 10px", whiteSpace: "nowrap" }}>
-                <span style={{ color: pill.dot }}>●</span> {pill.label}
+                <span aria-hidden="true" data-skip-in-text="true" style={{ color: pill.dot }}>
+                  &#9679;&nbsp;
+                </span>
+                {pill.label}
               </span>
             </Text>
           </Column>
