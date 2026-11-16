@@ -341,9 +341,12 @@ test("a sample post's progress update and completion email nobody, and the email
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  // Their own lines (the change's other updates, on real posts, still say they email).
-  expect(email!.text).toMatch(/^Progress update · Marks it in progress, with this comment$/m);
-  expect(email!.text).toMatch(/^Completes the post · Open → Completed$/m);
+  // Each update's card: its kind and post, how sure, then what it does. The sample posts' say nothing of emailing; the
+  // change's own update on a real post still does.
+  const card = (kind: string, title: string, outcome: string) => new RegExp(`^${kind} ${title}\n\n\\d+% sure\n\n${outcome}$`, "m");
+  expect(email!.text).toMatch(card("Progress update", "Themes", "Marks it in progress, with this comment"));
+  expect(email!.text).toMatch(card("Completes the post", "Themes", "Open → Completed"));
+  expect(email!.text).toMatch(card("Completes the post", "Dark mode \\d+", "Open → Completed, emailing the people who asked"));
 });
 
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
