@@ -1242,6 +1242,9 @@ model ProjectEmailMonth {
   /// The month's first day.
   month       DateTime  @db.Date
   emails      Int       @default(0)
+  /// The email credits its plan's (or trial's) allowance gave it for the month (packages/jobs/src/email-limits.ts), so a
+  /// month is topped up to the allowance once, not again as credits are spent.
+  granted     Int       @default(0)
   /// When its owners and admins were told it reached its limit this month.
   limitToldAt DateTime?
 

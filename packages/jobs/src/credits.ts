@@ -1,4 +1,4 @@
-import { type CreditSource, Prisma, prisma } from "@tuti/db";
+import { type CreditKind, type CreditSource, Prisma, prisma } from "@tuti/db";
 import { creditsEmail, sendEmail } from "@tuti/email";
 import { creditsEnabled, freeCredits, log, lowCreditsAt, topupExpiryDays } from "@tuti/shared";
 
@@ -48,7 +48,7 @@ export async function chargeCredits(tx: Prisma.TransactionClient, projectId: str
   await tx.project.update({ where: { id: projectId }, data: { aiCreditDebt: owed } });
 }
 
-/** Gives the project credits, lasting `days` or until `expiresAt`: for good without either. */
+/** Gives the project credits (AI unless `kind` says otherwise), lasting `days` or until `expiresAt`: for good without either. */
 export async function grantCredits(
   projectId: string,
   source: CreditSource,
@@ -61,13 +61,15 @@ export async function grantCredits(
     stripeInvoiceId,
     paidCents,
     planLicenseId,
-  }: { days?: number | null; expiresAt?: Date | null; note?: string; stripeSessionId?: string; stripeInvoiceId?: string; paidCents?: number; planLicenseId?: string },
+    kind = "AI",
+  }: { days?: number | null; expiresAt?: Date | null; note?: string; stripeSessionId?: string; stripeInvoiceId?: string; paidCents?: number; planLicenseId?: string; kind?: CreditKind },
   tx: Prisma.TransactionClient = prisma,
 ) {
   const amount = toCredits(credits);
   return tx.creditGrant.create({
     data: {
       projectId,
+      kind,
       source,
       credits: amount,
       remaining: amount,
