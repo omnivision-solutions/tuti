@@ -168,7 +168,7 @@ export function PortalLinksRow() {
 
 /**
  * The footer: the team's links, and "Powered by tuti" unless the project has a licence to hide it.
- * The attribution is required by Tuti's additional licence terms (AGPL section 7(b)): see
+ * The attribution (here and on the emails sent on a project's behalf) is required by Tuti's additional licence terms (AGPL section 7(b)): see
  * ADDITIONAL-TERMS.md at the root of the repository.
  */
 export function PortalFooter({ docs = false }: { docs?: boolean }) {
