@@ -53,6 +53,12 @@ test("a purchase and its activation make an unclaimed license on the tier's plan
   ]);
 });
 
+test("a purchase that says its tier makes the license, before any activation", async () => {
+  const key = crypto.randomUUID();
+  await deliver({ event: "purchase", license_key: key, tier: 1 });
+  expect(await find(key)).toMatchObject({ plan: "appsumo-1", userId: null, revokedAt: null });
+});
+
 test("only AppSumo's signature, from the last 5 minutes, is read; test events change nothing", async () => {
   const key = crypto.randomUUID();
   expect((await deliver({ event: "activate", license_key: key, tier: 1 }, { key: "someone-else" })).status).toBe(401);

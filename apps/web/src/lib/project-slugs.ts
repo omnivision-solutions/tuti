@@ -6,7 +6,7 @@ export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const RESERVED_SLUGS = new Set([
   // /app/<slug> must not shadow /app/account, /app/new, …
-  "account", "design", "invite", "license", "new",
+  "account", "design", "invite", "license", "licenses", "new",
   "admin", "api", "app", "assets", "auth", "billing", "blog", "cdn", "dashboard", "dev", "docs",
   "email", "feedback", "help", "img", "login", "mail", "portal", "sso", "staging", "static",
   "status", "support", "test", "tuti", "www",
