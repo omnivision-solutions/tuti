@@ -99,6 +99,7 @@ test("a published changelog entry is served as Markdown at its .md URL, with its
   expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
   expect(response.headers.get("link")).toBe(`<http://${project.slug}.localhost:3100/changelog/1>; rel="canonical"`);
   expect(response.headers.get("x-robots-tag")).toBeNull();
+  expect(response.headers.get("cache-control")).toBe("public, max-age=300");
   expect(await response.text()).toBe("# Dark \\*mode\\*\n\n1 May 2026\n\nEasy on the **eyes**.\n");
   expect(await (await get(project.slug, "2")).text()).toBe("# Plain\n\n2 May 2026\n\nBefore rich text.\n");
   expect((await get(project.slug, "3")).headers.get("x-robots-tag")).toBe("noindex");
