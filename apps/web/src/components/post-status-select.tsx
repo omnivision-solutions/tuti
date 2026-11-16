@@ -30,7 +30,7 @@ export type Completing = { title: string; emails: Partial<Record<PostStatus, num
 
 /**
  * A post's status change, a move that emails its people asked about first when `completing` says how many (statusPrompt;
- * the roadmap asks for its own Completed): `pick` takes the status chosen, `asking` holds it until it's confirmed or cancelled.
+ * the roadmap asks for its own, onAsk): `pick` takes the status chosen, `asking` holds it until it's confirmed or cancelled.
  */
 function useStatusChange(projectSlug: string, postId: string, status: PostStatus, completing?: Completing, onChanged?: (status: PostStatus) => void) {
   const [pending, startTransition] = useTransition();
@@ -128,7 +128,7 @@ export function PostStatusSelect({
 
 /**
  * Team-only, for lists: the status as its badge, which opens a menu to change it. A move that emails people asks first
- * with `completing` (Completed goes to `onComplete` instead, for the list to ask); `onChanged` hears each change saved.
+ * with `completing`, or goes to `onAsk` for the list to ask (true when it does); `onChanged` hears each change saved.
  * With `badge={false}`, where the list already says the status (a roadmap column), a small button opens the menu instead.
  */
 export function PostStatusMenu({
@@ -136,7 +136,7 @@ export function PostStatusMenu({
   postId,
   status,
   completing,
-  onComplete,
+  onAsk,
   onChanged,
   badge = true,
 }: {
@@ -144,7 +144,7 @@ export function PostStatusMenu({
   postId: string;
   status: PostStatus;
   completing?: Completing;
-  onComplete?: () => void;
+  onAsk?: (status: PostStatus) => boolean;
   onChanged?: (status: PostStatus) => void;
   badge?: boolean;
 }) {
@@ -176,7 +176,9 @@ export function PostStatusMenu({
         <DropdownMenuContent align="end" className="w-auto min-w-40">
           <DropdownMenuRadioGroup
             value={status}
-            onValueChange={(value) => (value === "COMPLETED" && onComplete ? onComplete() : pick(value as PostStatus))}
+            onValueChange={(value) => {
+              if (!onAsk?.(value as PostStatus)) pick(value as PostStatus);
+            }}
           >
             {STATUSES.map((s) => (
               <DropdownMenuRadioItem key={s} value={s} closeOnClick>

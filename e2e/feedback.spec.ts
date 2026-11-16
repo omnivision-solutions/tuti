@@ -1295,18 +1295,19 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await expect(visitor.getByRole("button", { name: "Board: More ideas 4" })).toBeVisible();
 });
 
-test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {
+test("the team's roadmap: a card dragged to another column changes its status; a move that emails asks first, saying who's emailed", async ({ browser }, testInfo) => {
   // A long journey: drags, and saves held while the keyboard moves on.
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   // Two planned ideas; Ada, from the app, voted for one.
+  const ada = `e2e-ada-${slug}@example.com`;
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts", { board: "feature-requests", title: "Calendar sync" });
-  await api("/posts/1/vote", { voted: true, author: { id: "user-ada", name: "Ada", email: "e2e-ada@example.com" } });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-ada", name: "Ada", email: ada } });
   for (const number of [1, 2]) {
     await api(`/posts/${number}`, { status: "planned" }, "PATCH");
   }
@@ -1359,8 +1360,35 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   // Moved with the mouse, the focus stays where it was (only the keyboard's moves take it along, below).
   await expect(card("Calendar sync").getByRole("button", { name: "Status: In progress" })).not.toBeFocused();
 
+  // Dragged forward to In progress with Ada's vote: asked first, saying who is emailed. Cancelled: back in Planned.
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("In progress"));
+  const progress = team.getByRole("alertdialog", { name: "Mark “Dark mode” in progress?" });
+  await expect(progress).toContainText("This emails up to 1 person who asked for it that it's in progress.");
+  await checkpoint(team, "team-roadmap-in-progress", { fullPage: false });
+  await progress.getByRole("button", { name: "Cancel" }).click();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  // From its status menu too.
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "In progress" }).click();
+  await team.getByRole("alertdialog", { name: "Mark “Dark mode” in progress?" }).getByRole("button", { name: "Mark in progress" }).click();
+  await expect(team.getByText("Dark mode: In progress")).toBeVisible();
+  await latestEmailTo(ada, { subject: /^In progress: Dark mode/ });
+  // Dragged back to Planned: that emails nobody, so it moves at once.
+  await column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Planned"));
+  await expect(team.getByText("Dark mode: Planned")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  // Forward again: Ada heard it's in progress already, so In progress's own count is nobody and it doesn't ask (while
+  // Completed's, below, still counts her).
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("In progress"));
+  await expect(column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await column("In progress").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Planned"));
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
+
   // Dragged to Completed: asked first, saying who is emailed (Ada; the team never is).
-  await card("Dark mode").dragTo(column("Completed"));
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Completed"));
   const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
   await expect(ask).toContainText("This emails up to 1 person who asked for it that it shipped.");
   await checkpoint(team, "team-roadmap-complete", { fullPage: false });
@@ -1368,7 +1396,7 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await expect(column("Planned").getByRole("listitem")).toHaveCount(1);
-  await card("Dark mode").dragTo(column("Completed"));
+  await column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" }).dragTo(column("Completed"));
   await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
   await expect(team.getByText("Dark mode: Completed")).toBeVisible();
   await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
@@ -1445,6 +1473,10 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await release();
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" })).toBeVisible();
   await expect(boardFilter).toBeFocused();
+  // Ada's vote taken back: Dark mode's moves below email nobody, so they don't ask.
+  await api("/posts/1/vote", { voted: false, author: { id: "user-ada", name: "Ada", email: ada } });
+  await team.reload();
+  await team.getByRole("combobox", { name: "Board" }).waitFor();
   // Dragged, then a key pressed while it saves: still the mouse's move, the focus left alone.
   await team.getByRole("heading", { name: "In progress" }).click();
   release = await holdSaves();
