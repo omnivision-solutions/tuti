@@ -29,8 +29,9 @@ const chat = (cost: number | null): AiUsage => ({ kind: "chat", model: "acme/wri
 /** A request the provider answered, for `projectId`'s AI answers, as a feature's meter records it. */
 const answered = async (cost: number | null, projectId = project.id) => (await aiFor(projectId, "answers")).meter(chat(cost));
 const balance = async () => (await creditBalance(project.id)).balance;
+// Longest-lasting first: with Date faked, grants made one after another share a createdAt.
 const left = async () =>
-  (await prisma.aiCreditGrant.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { note: true, remaining: true } })).map(
+  (await prisma.aiCreditGrant.findMany({ where: { projectId: project.id }, orderBy: { expiresAt: { sort: "desc", nulls: "first" } }, select: { note: true, remaining: true } })).map(
     (grant) => `${grant.note} ${grant.remaining.toNumber()}`,
   );
 
