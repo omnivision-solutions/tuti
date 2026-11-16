@@ -25,7 +25,7 @@ export default async function RedeemPage(props: PageProps<"/app/licenses/redeem"
     <div className="mx-auto flex w-full max-w-md flex-col gap-6">
       <div className="flex flex-col gap-2">
         <h1 className="font-heading text-2xl font-bold tracking-tight">Redeem your license</h1>
-        <p className="text-muted-foreground">
+        <p className="break-words text-muted-foreground">
           Your AppSumo license goes on your Tuti account, signed in as {session.user.email}. Then pick the project it&apos;s for.
         </p>
       </div>
