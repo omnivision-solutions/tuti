@@ -466,6 +466,11 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId,
     )
     .map((action) => action.post!.id);
+  // Approving a progress update emails the same people when it moves the post forward; going out by itself, nobody.
+  // Waiting, or going out by itself: by itself it emails nobody, but a teammate's Publish now does.
+  const progresses = (action: ActionRow) =>
+    action.kind === "MOVES_FORWARD" && (action.status === "PENDING" || action.status === "SCHEDULED") && !!action.post && !action.post.duplicateOfId && movesForward(action.post.status);
+  const progressing = actions.filter(progresses).map((action) => action.post!);
   // For Undo to say first: those already emailed that it shipped, or (a progress update) that it's in progress, since it
   // was approved (they can't be unemailed).
   const sent = new Map(
@@ -479,9 +484,10 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
         }),
     ),
   );
-  const [portal, emails, made, places] = await Promise.all([
+  const [portal, emails, progressEmails, made, places] = await Promise.all([
     projectPortal(projectId),
     emailedOnCompletion(projectId, completing),
+    emailedOnMove(projectId, progressing),
     // Approved new articles' drafts: the collection approving made, which Undo removes with it (as it was made, with
     // nothing else in it), by name.
     Promise.all(
@@ -516,8 +522,9 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
       /** For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back). */
       ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
-      /** For a post it completes: how many people completing it emails. */
+      /** For a post it completes or moves forward: how many people approving (or publishing) it emails. */
       ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+      ...(progresses(action) && { emails: progressEmails.get(action.post!.id)?.IN_PROGRESS ?? 0 }),
       reason: action.reason,
       /** The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too). */
       ...((action.kind === "MOVES_FORWARD" || (action.kind === "RESOLVES" && payload.comment !== undefined)) && { comment: payload.comment ?? "" }),
@@ -861,7 +868,7 @@ export async function targetReview(projectId: string, type: "feedback" | "articl
                 parts.every((part) => part.status === "scheduled" || part.applyLikely) &&
                 (whole.completes || whole.comment.trim() !== "") &&
                 whole.comment.length <= POST_COMMENT_MAX,
-              emails: parts.find((part) => part.kind === "resolves")?.emails ?? 0,
+              emails: parts.find((part) => part.kind === (whole.completes ? "resolves" : "moves_forward") && part.emails !== undefined)?.emails ?? 0,
               /** Why it waits for the team as it is, whatever its parts say: its comment too long to post. */
               waitReason: whole.comment.length > POST_COMMENT_MAX ? tooLong(whole.comment) : null,
             };
@@ -1215,6 +1222,8 @@ const actorUser = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
 
 /** Statuses a post moves on from to In progress when a code change moves it forward. */
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
+/** Whether a progress update moving a post of `status` on to In progress emails its people (as apply moves it). */
+const movesForward = (status: PostStatus) => NOT_STARTED.has(status) && statusMoveEmails(status, "IN_PROGRESS") === "progress";
 
 /**
  * Puts a claimed action back (waiting again, or out of date) after a failure, then rethrows `error`.

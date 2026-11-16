@@ -500,6 +500,35 @@ test("a request that goes out by itself says how many people completing it email
   expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "scheduled", emails: 1 });
 });
 
+test("a progress update says how many people approving or publishing it emails: those not told it's in progress (or that it shipped) yet, none on a post past In progress or merged into another", async () => {
+  const reader = await signUp("Rae Reader");
+  const waiting = await update("MOVES_FORWARD");
+  const scheduled = await update("MOVES_FORWARD");
+  const later = await update("MOVES_FORWARD");
+  const reopened = await update("MOVES_FORWARD");
+  const toldBefore = await update("MOVES_FORWARD");
+  const merged = await update("MOVES_FORWARD");
+  // Each post's author (not the team) asked for it: one person.
+  for (const { postId } of [waiting, scheduled, later, reopened, toldBefore, merged]) {
+    await prisma.post.update({ where: { id: postId! }, data: { authorId: reader.id } });
+  }
+  await prisma.codeChangeAction.update({ where: { id: scheduled.action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+  await prisma.post.update({ where: { id: later.postId! }, data: { status: "IN_PROGRESS" } });
+  // Completed and reopened: told it shipped already, which the In progress email skips.
+  await prisma.shippedEmail.create({ data: { postId: reopened.postId!, userId: reader.id, sentAt: new Date() } });
+  // Told it's in progress before (moved back since): not again.
+  await prisma.statusEmail.create({ data: { postId: toldBefore.postId!, userId: reader.id, status: "IN_PROGRESS", sentAt: new Date() } });
+  // Merged into another post since: apply moves (and emails) nothing.
+  await prisma.post.update({ where: { id: merged.postId! }, data: { duplicateOfId: waiting.postId! } });
+  const view = async ({ codeChangeId, action }: { codeChangeId: string; action: { id: string } }) => (await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id);
+  expect(await view(waiting)).toMatchObject({ status: "pending", emails: 1 });
+  expect(await view(scheduled)).toMatchObject({ status: "scheduled", emails: 1 });
+  expect(await view(later)).not.toHaveProperty("emails");
+  expect(await view(reopened)).toMatchObject({ emails: 0 });
+  expect(await view(toldBefore)).toMatchObject({ emails: 0 });
+  expect(await view(merged)).not.toHaveProperty("emails");
+});
+
 test("held back at its time, it's told about (code_change.ready); one a teammate stopped meanwhile keeps who stopped it", async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   const receiver = await startWebhookReceiver();
