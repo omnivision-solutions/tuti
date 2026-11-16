@@ -260,4 +260,24 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   // The plans take its place, and the keyboard's place moves to the first.
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+
+  // Deactivated by an upgrade's old key (its new key not here yet), the add-on is kept: unassigning then asks first, about it alone.
+  const next = randomUUID();
+  await webhook({ event: "activate", license_key: next, tier: 1 });
+  await owner.goto(`/api/appsumo/redirect?code=${await appsumoCode(next)}`);
+  await owner.getByRole("button", { name: "Add to my account" }).click();
+  await owner.waitForURL("**/app/licenses");
+  await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${next}`, exact: true }).click();
+  await expect(owner.getByText("License assigned")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
+  await webhook({ event: "deactivate", license_key: next, tier: 1, extra: { reason: "Upgraded by the customer" } });
+  await owner.reload();
+  await owner.getByRole("button", { name: "Unassign license" }).click();
+  await expect(dialog).toHaveAccessibleDescription(`Its "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
+  await dialog.getByRole("button", { name: "Unassign license" }).click();
+  await expect(owner.getByText("License unassigned")).toBeVisible();
 });
