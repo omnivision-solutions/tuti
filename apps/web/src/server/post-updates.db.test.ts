@@ -159,6 +159,30 @@ test("a completion's note never becomes a comment email to the author, however i
   expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
 });
 
+test("a held try's comment approved again as the completion's note (COMMENT_UNSURE) before any comment-email run isn't a comment email to the author, only quoted in the shipped email", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const completes = await part("RESOLVES");
+  // A try that may have posted its comment, and did (saved as an ordinary comment, due to the author): held so.
+  const decidedAt = new Date(Date.now() - 60_000);
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt, waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  await call(createComment, team(), { number: post.number, body: "It's all out." });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(1);
+  // Approved with the box as it was: that comment is the note, quoted in the shipped email.
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", commentCount: 1 });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
+  // The comment emails' minute, well past the batch's wait (whatever were still due, then).
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [shipped, ...more] = author(voter.email);
+  expect(shipped!.subject).toBe("Done: Recurring events");
+  expect(shipped!.text).toContain("It's all out.");
+  expect(more).toEqual([]);
+});
+
 test("a held try's comment emailed to the author before the team approves again (COMMENT_UNSURE) isn't quoted to them again in the shipped email", async () => {
   const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
   const log = { info: () => {}, warn: () => {} };
