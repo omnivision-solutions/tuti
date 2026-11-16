@@ -79,6 +79,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const content = [
     heading(1, project.name),
     { type: "blockquote", content: [paragraph(`Docs, changelog and feedback for ${project.name}.`)] },
+    { type: "paragraph", content: [text("Every docs article's full text: "), text("llms-full.txt", `${portal}/llms-full.txt`)] },
     ...(tabs.length > 0
       ? // A tab's heading, then its collections a level down; the first has the articles in none.
         tabs.flatMap((tab) => [

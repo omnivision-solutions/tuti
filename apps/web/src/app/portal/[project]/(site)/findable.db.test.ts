@@ -4,11 +4,12 @@ import { expect, test } from "vitest";
 import { createProject, signUp } from "@/test/helpers";
 
 import { GET as markdown } from "./docs/[slug]/md/route";
+import { GET as llmsFull } from "./llms-full.txt/route";
 import { GET as llms } from "./llms.txt/route";
 import { GET as robots } from "./robots.txt/route";
 import { GET as sitemap } from "./sitemap.xml/route";
 
-/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /llms.txt, /sitemap.xml and /robots.txt. */
+/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /llms.txt, /llms-full.txt, /sitemap.xml and /robots.txt. */
 
 const request = new Request("http://x");
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -63,6 +64,7 @@ test("llms.txt describes the portal and links each collection's page, each publi
     [
       `# Project ${project.slug}`,
       `> Docs, changelog and feedback for Project ${project.slug}.`,
+      `Every docs article's full text: [llms-full.txt](${portal}/llms-full.txt)`,
       `## [Getting started](${portal}/docs/getting-started)`,
       "The basics.",
       `- [Inviting \\*your\\* team](${portal}/docs/inviting-your-team.md)`,
@@ -75,6 +77,29 @@ test("llms.txt describes the portal and links each collection's page, each publi
     ].join("\n\n") + "\n",
   );
   expect((await llms(request, { params: Promise.resolve({ project: "no-such-project" }) })).status).toBe(404);
+});
+
+test("llms-full.txt has the full text of every article llms.txt links, each with where it's from", async () => {
+  const project = await docsContents();
+  const portal = `http://${project.slug}.localhost:3100`;
+  const left = (slug: string, extra: object) =>
+    prisma.article.create({ data: { projectId: project.id, slug, title: slug, body: "Not for AI tools.", publishedAt: new Date(), ...extra } });
+  await left("noindexed", { noindex: true });
+  await left("unlisted", { listing: "UNLISTED" });
+  await left("for-members", { access: "SIGNED_IN" });
+  await left("a-sample", { sample: true });
+
+  const response = await llmsFull(request, { params: Promise.resolve({ project: project.slug }) });
+  expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+  expect(await response.text()).toBe(
+    [
+      `# Project ${project.slug}\n`,
+      `# Inviting \\*your\\* team\nSource: ${portal}/docs/inviting-your-team\n\n## Who can invite\n\nOwners and **admins**.\n`,
+      `# Billing\nSource: ${portal}/docs/billing\n\nPlans and invoices.\n`,
+    ].join("\n"),
+  );
+  expect((await llmsFull(request, { params: Promise.resolve({ project: "no-such-project" }) })).status).toBe(404);
 });
 
 test("the sitemap lists the portal's public pages with when they changed, and nothing a visitor can't see", async () => {
