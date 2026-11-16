@@ -1,4 +1,4 @@
-import { type AiCreditSource, Prisma, prisma } from "@tuti/db";
+import { type CreditSource, Prisma, prisma } from "@tuti/db";
 import { creditsEmail, sendEmail } from "@tuti/email";
 import { creditsEnabled, freeCredits, log, lowCreditsAt, topupExpiryDays } from "@tuti/shared";
 
@@ -19,12 +19,12 @@ export class OutOfCredits extends Error {
   }
 }
 
-/** Grants that still count at `now`, in the order they're spent. */
+/** AI grants that still count at `now`, in the order they're spent. */
 const spendable = (projectId: string, now: Date) =>
   ({
-    where: { projectId, remaining: { gt: 0 }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    where: { projectId, kind: "AI", remaining: { gt: 0 }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
     orderBy: [{ expiresAt: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }, { id: "asc" }],
-  }) satisfies Prisma.AiCreditGrantFindManyArgs;
+  }) satisfies Prisma.CreditGrantFindManyArgs;
 
 /** Credits as stored: six places. */
 export const toCredits = (value: Prisma.Decimal | number | string) => new Prisma.Decimal(value).toDecimalPlaces(6);
@@ -37,9 +37,9 @@ export async function chargeCredits(tx: Prisma.TransactionClient, projectId: str
   if (owed.lte(0)) {
     return;
   }
-  for (const grant of await tx.aiCreditGrant.findMany({ ...spendable(projectId, new Date()), select: { id: true, remaining: true } })) {
+  for (const grant of await tx.creditGrant.findMany({ ...spendable(projectId, new Date()), select: { id: true, remaining: true } })) {
     const take = Prisma.Decimal.min(grant.remaining, owed);
-    await tx.aiCreditGrant.update({ where: { id: grant.id }, data: { remaining: grant.remaining.minus(take) } });
+    await tx.creditGrant.update({ where: { id: grant.id }, data: { remaining: grant.remaining.minus(take) } });
     owed = owed.minus(take);
     if (owed.lte(0)) {
       break;
@@ -51,7 +51,7 @@ export async function chargeCredits(tx: Prisma.TransactionClient, projectId: str
 /** Gives the project credits, lasting `days` or until `expiresAt`: for good without either. */
 export async function grantCredits(
   projectId: string,
-  source: AiCreditSource,
+  source: CreditSource,
   credits: number,
   {
     days = null,
@@ -65,7 +65,7 @@ export async function grantCredits(
   tx: Prisma.TransactionClient = prisma,
 ) {
   const amount = toCredits(credits);
-  return tx.aiCreditGrant.create({
+  return tx.creditGrant.create({
     data: {
       projectId,
       source,
@@ -89,15 +89,15 @@ export async function grantCredits(
  */
 export async function takeBackCredits(grantId: string, share: number): Promise<number> {
   return prisma.$transaction(async (tx) => {
-    const { projectId } = await tx.aiCreditGrant.findUniqueOrThrow({ where: { id: grantId }, select: { projectId: true } });
+    const { projectId } = await tx.creditGrant.findUniqueOrThrow({ where: { id: grantId }, select: { projectId: true } });
     await lockProject(tx, projectId);
-    const grant = await tx.aiCreditGrant.findUniqueOrThrow({ where: { id: grantId }, select: { credits: true, remaining: true, takenBack: true } });
+    const grant = await tx.creditGrant.findUniqueOrThrow({ where: { id: grantId }, select: { credits: true, remaining: true, takenBack: true } });
     const owed = toCredits(grant.credits.times(Math.min(1, Math.max(0, share)))).minus(grant.takenBack);
     if (owed.lte(0)) {
       return 0;
     }
     const fromGrant = Prisma.Decimal.min(grant.remaining, owed);
-    await tx.aiCreditGrant.update({ where: { id: grantId }, data: { remaining: grant.remaining.minus(fromGrant), takenBack: grant.takenBack.plus(owed) } });
+    await tx.creditGrant.update({ where: { id: grantId }, data: { remaining: grant.remaining.minus(fromGrant), takenBack: grant.takenBack.plus(owed) } });
     if (owed.gt(fromGrant)) {
       await tx.project.update({ where: { id: projectId }, data: { aiCreditDebt: { increment: owed.minus(fromGrant) } } });
     }
@@ -119,13 +119,13 @@ async function giveFreeCredits(projectId: string) {
   });
 }
 
-export type CreditGrant = { id: string; source: AiCreditSource; credits: number; remaining: number; expiresAt: Date | null; createdAt: Date };
+export type CreditGrant = { id: string; source: CreditSource; credits: number; remaining: number; expiresAt: Date | null; createdAt: Date };
 
 /** The project's balance (giving it its free credits first, if it hasn't had them), and its grants that still count. */
 export async function creditBalance(projectId: string): Promise<{ balance: number; grants: CreditGrant[] }> {
   await giveFreeCredits(projectId);
   const [grants, project] = await Promise.all([
-    prisma.aiCreditGrant.findMany({
+    prisma.creditGrant.findMany({
       ...spendable(projectId, new Date()),
       select: { id: true, source: true, credits: true, remaining: true, expiresAt: true, createdAt: true },
     }),
@@ -152,7 +152,7 @@ export async function aiPausedIn(tx: Prisma.TransactionClient, projectId: string
     return false;
   }
   const [{ _sum }, project] = await Promise.all([
-    tx.aiCreditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
+    tx.creditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
     tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiCreditDebt: true } }),
   ]);
   return (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt).lte(0);
@@ -160,7 +160,7 @@ export async function aiPausedIn(tx: Prisma.TransactionClient, projectId: string
 
 /**
  * Emails the project's owners and admins (verified addresses) once its balance is under AI_CREDITS_LOW,
- * and again once it's out, once each until the next grant (which clears both: a trigger on ai_credit_grant).
+ * and again once it's out, once each until the next grant (an AI one, which clears both: a trigger on credit_grant).
  * Checked and claimed under the project's lock, which that trigger also takes: a grant either came first
  * and counts, or comes after and clears the claim, and two charges at once send one email. An email that
  * fails then isn't retried (logged), as the banner in the app says it too.
@@ -178,7 +178,7 @@ export async function emailIfCreditsLow(projectId: string): Promise<void> {
   const claimed = await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const [{ _sum }, project] = await Promise.all([
-      tx.aiCreditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
+      tx.creditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
       tx.project.findUniqueOrThrow({
         where: { id: projectId },
         select: {

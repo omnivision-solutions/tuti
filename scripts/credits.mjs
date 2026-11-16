@@ -21,7 +21,7 @@ const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 try {
   const { rowCount } = await client.query(
-    `INSERT INTO ai_credit_grant (id, "projectId", source, credits, remaining, "expiresAt", note)
+    `INSERT INTO credit_grant (id, "projectId", source, credits, remaining, "expiresAt", note)
      SELECT $1, id, 'MANUAL', $2, $2, CASE WHEN $3::int > 0 THEN (now() AT TIME ZONE 'UTC') + make_interval(days => $3::int) END, $4 FROM project WHERE slug = $5`,
     [randomUUID(), credits, lasts, note.join(" "), slug],
   );

@@ -96,8 +96,8 @@ try {
     }
     await client.query(`UPDATE plan_license SET "revokedAt" = (now() AT TIME ZONE 'UTC'), "updatedAt" = (now() AT TIME ZONE 'UTC') WHERE id = $1`, [license.id]);
     // Under each project's row lock, as charges take it (chargeCredits).
-    await client.query(`SELECT id FROM project WHERE id IN (SELECT "projectId" FROM ai_credit_grant WHERE "planLicenseId" = $1 AND remaining > 0) ORDER BY id FOR UPDATE`, [license.id]);
-    await client.query(`UPDATE ai_credit_grant SET "takenBack" = "takenBack" + remaining, remaining = 0 WHERE "planLicenseId" = $1 AND remaining > 0`, [license.id]);
+    await client.query(`SELECT id FROM project WHERE id IN (SELECT "projectId" FROM credit_grant WHERE "planLicenseId" = $1 AND remaining > 0) ORDER BY id FOR UPDATE`, [license.id]);
+    await client.query(`UPDATE credit_grant SET "takenBack" = "takenBack" + remaining, remaining = 0 WHERE "planLicenseId" = $1 AND remaining > 0`, [license.id]);
     if (license.projectId) {
       await client.query(`UPDATE project SET "planKey" = NULL WHERE id = $1 AND "planStatus" IS NULL`, [license.projectId]);
     }

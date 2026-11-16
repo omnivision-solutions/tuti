@@ -192,7 +192,7 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
         }
         if (early) {
           // Credits it gave (assigned for a while, then unassigned) go with the license it merges into, so its refund finds them.
-          await tx.aiCreditGrant.updateMany({ where: { planLicenseId: early.id }, data: { planLicenseId: previous!.id } });
+          await tx.creditGrant.updateMany({ where: { planLicenseId: early.id }, data: { planLicenseId: previous!.id } });
           await tx.planLicense.delete({ where: { id: early.id } });
         }
         const row = early ? previous : (own ?? previous);

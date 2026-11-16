@@ -24,7 +24,7 @@ export async function takeBackCharge(chargeId: string): Promise<void> {
   const session = await checkoutOf(charge.payment_intent);
   const invoiceId = session ? null : await invoiceOf(charge.payment_intent);
   const paidFor = session ? { stripeSessionId: session } : invoiceId ? { stripeInvoiceId: invoiceId } : null;
-  const find = () => paidFor && prisma.aiCreditGrant.findFirst({ where: paidFor, select: { id: true, projectId: true } });
+  const find = () => paidFor && prisma.creditGrant.findFirst({ where: paidFor, select: { id: true, projectId: true } });
   let grant = await find();
   // Stripe said it's refunded before saying it's paid: what it paid for is given first (once, as its paid
   // event would), so taking it back now leaves nothing for that event to give later.

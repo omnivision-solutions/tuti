@@ -27,12 +27,12 @@ export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string)
     await lockBilling(tx, license.projectId);
   }
   if (license.revokedAt) {
-    const grants = await tx.aiCreditGrant.findMany({ where: { planLicenseId: id, remaining: { gt: 0 } }, select: { projectId: true } });
+    const grants = await tx.creditGrant.findMany({ where: { planLicenseId: id, remaining: { gt: 0 } }, select: { projectId: true } });
     // Under each project's lock, as charges take it (chargeCredits), so a charge can't write back what it read before.
     for (const projectId of [...new Set(grants.map((grant) => grant.projectId))].sort()) {
       await lockProject(tx, projectId);
-      for (const grant of await tx.aiCreditGrant.findMany({ where: { planLicenseId: id, projectId, remaining: { gt: 0 } }, select: { id: true, remaining: true, takenBack: true } })) {
-        await tx.aiCreditGrant.update({ where: { id: grant.id }, data: { remaining: 0, takenBack: grant.takenBack.plus(grant.remaining) } });
+      for (const grant of await tx.creditGrant.findMany({ where: { planLicenseId: id, projectId, remaining: { gt: 0 } }, select: { id: true, remaining: true, takenBack: true } })) {
+        await tx.creditGrant.update({ where: { id: grant.id }, data: { remaining: 0, takenBack: grant.takenBack.plus(grant.remaining) } });
       }
     }
   }

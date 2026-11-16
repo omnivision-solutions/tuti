@@ -48,7 +48,7 @@ test("the AI is paused at 0 credits or below, only with credits on", async () =>
   await grantCredits(project.id, "MANUAL", 1, { days: null });
   await expect(aiFor(project.id, "answers")).resolves.toMatchObject({ model: expect.any(String) as string });
   vi.stubEnv("AI_CREDITS", "");
-  await prisma.aiCreditGrant.deleteMany({ where: { projectId: project.id } });
+  await prisma.creditGrant.deleteMany({ where: { projectId: project.id } });
   await expect(aiFor(project.id, "answers")).resolves.toMatchObject({ model: expect.any(String) as string });
 });
 
@@ -79,11 +79,11 @@ test("an article unpublished while the credits are checked isn't offered instead
   const article = await call(createArticle, team(), { title: TITLE, body: TEXT });
   await call(publishArticle, team(), { slug: article.slug });
   // The sections are found, then the article is taken down while the balance is read.
-  const findGrants = prisma.aiCreditGrant.findMany.bind(prisma.aiCreditGrant);
-  vi.spyOn(prisma.aiCreditGrant, "findMany").mockImplementationOnce((async (args: Parameters<typeof findGrants>[0]) => {
+  const findGrants = prisma.creditGrant.findMany.bind(prisma.creditGrant);
+  vi.spyOn(prisma.creditGrant, "findMany").mockImplementationOnce((async (args: Parameters<typeof findGrants>[0]) => {
     await call(unpublishArticle, team(), { slug: article.slug });
     return findGrants(args);
-  }) as unknown as typeof prisma.aiCreditGrant.findMany);
+  }) as unknown as typeof prisma.creditGrant.findMany);
   expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, {})).toMatchObject({ status: "unavailable", sources: [] });
   vi.restoreAllMocks();
 });
@@ -93,7 +93,7 @@ test("a credit check that fails otherwise (the database) is a failed answer, wit
   openai.setVector(articleChunkText(TITLE, { heading: "", text: TEXT }), [1, 0]);
   const article = await call(createArticle, team(), { title: TITLE, body: TEXT });
   await call(publishArticle, team(), { slug: article.slug });
-  vi.spyOn(prisma.aiCreditGrant, "findMany").mockRejectedValueOnce(new Error("database blip"));
+  vi.spyOn(prisma.creditGrant, "findMany").mockRejectedValueOnce(new Error("database blip"));
   expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, {})).toMatchObject({
     status: "failed",
     sources: [expect.objectContaining({ title: TITLE })],

@@ -9,7 +9,7 @@ export async function spendCredits(slug: string) {
   await client.connect();
   try {
     // Its free credits too, and they count as given (every project gets them once).
-    await client.query(`UPDATE ai_credit_grant SET remaining = 0 WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+    await client.query(`UPDATE credit_grant SET remaining = 0 WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
     await client.query(`UPDATE project SET "freeCreditsGrantedAt" = COALESCE("freeCreditsGrantedAt", now() AT TIME ZONE 'UTC') WHERE slug = $1`, [slug]);
   } finally {
     await client.end();

@@ -45,7 +45,7 @@ const license = (userId: string | null = owner.id, plan = "appsumo-2") =>
   prisma.planLicense.create({ data: { source: "appsumo", externalKey: crypto.randomUUID(), plan, userId } });
 const planOf = async (projectId = project.id) => (await call(getPlan, { actor: { kind: "user", userId: owner.id }, projectId }, {})).plan;
 const grants = (projectId = project.id) =>
-  prisma.aiCreditGrant.findMany({ where: { projectId, source: "PLAN" }, orderBy: { createdAt: "asc" }, select: { credits: true, expiresAt: true, note: true } });
+  prisma.creditGrant.findMany({ where: { projectId, source: "PLAN" }, orderBy: { createdAt: "asc" }, select: { credits: true, expiresAt: true, note: true } });
 const deliver = async (...events: FakeStripeEvent[]) => {
   for (const { body, headers } of events) {
     expect((await webhook(new Request("https://app.tuti.example/api/stripe/webhook", { method: "POST", body, headers }))).status).toBe(200);
