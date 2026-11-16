@@ -48,9 +48,24 @@ export const secondaryButtonStyle = { backgroundColor: "#f5f5f4", color: colors.
 
 /**
  * How an email sent on a project's behalf shows it: its name, its accent (Project.brandColor; null for Tuti's green) and
- * whether "Powered by tuti" ends it (false only where the portal hides it too: emailBrand in @tuti/jobs).
+ * whether "Powered by tuti" ends it (false only where the portal hides it too: emailBrand in @tuti/jobs), and its
+ * portal's logo (an uploaded WebP) and the text beside it (Project.logoText).
  */
-export type EmailBrand = { projectName: string; accent?: string | null; poweredBy?: boolean };
+export type EmailBrand = {
+  projectName: string;
+  accent?: string | null;
+  poweredBy?: boolean;
+  logo?: { url: string; width: number; height: number } | null;
+  logoText?: string;
+};
+
+const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (c) => `&${{ "&": "amp", "<": "lt", ">": "gt", '"': "quot" }[c]};`);
+
+/** The logo at the portal header's size: 32px tall, at most 160px wide. */
+function logoSize({ width, height }: { width: number; height: number }) {
+  const w = Math.min(160, Math.round((width * 32) / height));
+  return { w, h: Math.round((w * height) / width) };
+}
 
 /**
  * Tuti's own images, from the app's public files (an email can't show an SVG): none without APP_URL, or with one that
@@ -222,8 +237,8 @@ function PoweredBy({ mono }: { mono: boolean }) {
  * why they get it, and how to stop) and "Powered by tuti".
  * - Sent on a project's behalf to its customers and readers (`project`): its accent's square with the name's first
  *   letter, and its name, as its portal's header; its accent for buttons and links; a neutral page. "Powered by tuti"
- *   unless the project hides it (EmailBrand). Uploaded logos aren't shown: they're stored as WebP, which many email
- *   clients don't show.
+ *   unless the project hides it (EmailBrand). With an uploaded logo, the logo and its text instead, as the portal's
+ *   header; the logo is WebP, which Outlook for Windows can't show, so there it keeps the letter's square.
  * - From Tuti to a team (no `project`): the parrot and the wordmark, with the part of Tuti it's from (`label`:
  *   "Autopilot") beside them, on Tuti's cream page, and always "Powered by tuti" in Tuti's colours.
  */
@@ -243,6 +258,9 @@ export function Layout({
   const team = !project;
   const { accent, onAccent } = accentColors(project?.accent);
   const logo = team ? appImage("email-tuti.png") : null;
+  // As the portal's header (PortalLogo): with a logo only its text, if any; without one the text or the project's name.
+  const name = project && (project.logo ? project.logoText : project.logoText || project.projectName);
+  const initial = [...(project?.logoText || project?.projectName || "").trim()][0]?.toUpperCase() ?? "";
   return (
     <Html lang="en">
       <Head />
@@ -252,28 +270,43 @@ export function Layout({
           <Row style={{ margin: "0 0 16px" }}>
             {project ? (
               <>
-                <Column style={{ width: 42, verticalAlign: "middle" }}>
-                  <table role="presentation" cellPadding={0} cellSpacing={0} style={{ borderCollapse: "separate" }}>
-                    <tbody>
-                      <tr>
-                        <td
-                          // The name beside it says it: no "A Acme" for screen readers or in the plain text.
-                          aria-hidden="true"
-                          data-skip-in-text="true"
-                          width={32}
-                          height={32}
-                          align="center"
-                          style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: accent, color: onAccent, fontSize: 16, fontWeight: 700, textAlign: "center", lineHeight: "32px" }}
-                        >
-                          {[...project.projectName.trim()][0]?.toUpperCase() ?? ""}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </Column>
-                <Column style={{ verticalAlign: "middle" }}>
-                  <Text style={{ fontSize: 16, fontWeight: 650, letterSpacing: -0.2, color: colors.text, lineHeight: "32px", margin: 0 }}>{project.projectName}</Text>
-                </Column>
+                {project.logo ? (
+                  <Column
+                    style={{ width: "1%", paddingRight: 10, verticalAlign: "middle" }}
+                    // Outlook for Windows can't show WebP: it gets the letter's square, and the name where no text names it (conditional
+                    // comments, which React can't write).
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        `<!--[if !mso]><!--><img src="${escapeHtml(project.logo.url)}" width="${logoSize(project.logo).w}" height="${logoSize(project.logo).h}" alt="${project.logoText ? "" : escapeHtml(project.projectName)}" style="display:block;border:0;outline:none"><!--<![endif]-->` +
+                        `<!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0"><tr><td aria-hidden="true" width="32" height="32" align="center" style="background-color:${accent};color:${onAccent};font-size:16px;font-weight:700;line-height:32px">${escapeHtml(initial)}</td>${project.logoText ? "" : `<td style="padding-left:10px;font-size:16px;font-weight:650;color:${colors.text};line-height:32px">${escapeHtml(project.projectName)}</td>`}</tr></table><![endif]-->`,
+                    }}
+                  />
+                ) : (
+                  <Column style={{ width: 42, verticalAlign: "middle" }}>
+                    <table role="presentation" cellPadding={0} cellSpacing={0} style={{ borderCollapse: "separate" }}>
+                      <tbody>
+                        <tr>
+                          <td
+                            // The name beside it says it: no "A Acme" for screen readers or in the plain text.
+                            aria-hidden="true"
+                            data-skip-in-text="true"
+                            width={32}
+                            height={32}
+                            align="center"
+                            style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: accent, color: onAccent, fontSize: 16, fontWeight: 700, textAlign: "center", lineHeight: "32px" }}
+                          >
+                            {initial}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </Column>
+                )}
+                {name && (
+                  <Column style={{ verticalAlign: "middle" }}>
+                    <Text style={{ fontSize: 16, fontWeight: 650, letterSpacing: -0.2, color: colors.text, lineHeight: "32px", margin: 0 }}>{name}</Text>
+                  </Column>
+                )}
               </>
             ) : (
               <>

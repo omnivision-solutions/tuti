@@ -10,11 +10,11 @@ type ChangelogConfirmProps = EmailBrand & { url: string; optedOut?: boolean };
  * "Get updates by email" on a portal's changelog: nothing is sent until they confirm. To an address that's turned all
  * of the project's emails off, it promises nothing: it says so, and the link turns them back on.
  */
-export function ChangelogConfirmEmail({ projectName, url, optedOut = false, accent, poweredBy }: ChangelogConfirmProps) {
+export function ChangelogConfirmEmail({ projectName, url, optedOut = false, accent, poweredBy, logo, logoText }: ChangelogConfirmProps) {
   return (
     <Layout
       preview={optedOut ? `You've turned off ${projectName}'s emails.` : `Confirm to get ${projectName}'s updates by email.`}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={<>If you didn&apos;t ask for this, ignore it: you won&apos;t get anything.</>}
     >
       <Eyebrow accent={accent}>One more step</Eyebrow>

@@ -20,11 +20,11 @@ type ChangelogProps = EmailBrand & {
 };
 
 /** A published changelog entry, in full, to the changelog's subscribers. */
-export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt, doc, coverUrl, mediaUrls, unsubscribeUrl, accent, poweredBy }: ChangelogProps) {
+export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt, doc, coverUrl, mediaUrls, unsubscribeUrl, accent, poweredBy, logo, logoText }: ChangelogProps) {
   return (
     <Layout
       preview={toPlainText(doc).slice(0, 140) || entryTitle}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={
         <>
           You&apos;re getting this because you subscribed to {projectName}&apos;s changelog. <FooterLink href={unsubscribeUrl}>Unsubscribe</FooterLink>

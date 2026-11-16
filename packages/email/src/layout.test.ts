@@ -18,7 +18,7 @@ import { emailPausedTeamEmail } from "./email-paused-email";
 import { verifyEmail } from "./verify-email";
 import { autopilotEmail } from "./autopilot-email";
 import { inviteEmail } from "./invite-email";
-import { accentColors, Buttons, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
+import { accentColors, Buttons, colors, Diff, type EmailBrand, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
 import { statusEmail } from "./status-email";
 import { verifyAllEmail } from "./verify-all-email";
@@ -151,8 +151,8 @@ test("every email to a project's customers drops Powered by tuti when the projec
   vi.stubEnv("APP_URL", "https://tuti.example");
   const u = "https://acme.example/x";
   const doc: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hi" }] }] };
-  const emails = (poweredBy: boolean) => {
-    const brand = { projectName: "Acme", accent: null, poweredBy };
+  const emails = (poweredBy: boolean, more: Partial<EmailBrand> = {}) => {
+    const brand = { projectName: "Acme", accent: null, poweredBy, ...more };
     return {
       shipped: shippedEmail({ ...brand, postTitle: "Dark mode", postUrl: u, unsubscribeUrl: u }),
       status: statusEmail({ ...brand, status: "IN_PROGRESS", postTitle: "Dark mode", board: "Feature requests", votes: 3, postUrl: u, unsubscribeUrl: u }),
@@ -175,6 +175,32 @@ test("every email to a project's customers drops Powered by tuti when the projec
     const html = await render(email.body);
     expect({ name, badge: html.includes(`href="${POWERED_BY_URL.replaceAll("&", "&amp;")}"`) }).toEqual({ name, badge: true });
   }
+  // The portal's logo heads every one of them, as the portal's header does.
+  const logo = { url: "https://tuti.example/api/media/m1/480.webp?s=x", width: 480, height: 120 };
+  for (const [name, email] of Object.entries(emails(true, { logo }))) {
+    const html = await render(email.body);
+    expect({ name, logo: html.includes(`<img src="${logo.url}" width="128" height="32" alt="Acme"`) }).toEqual({ name, logo: true });
+  }
+});
+
+test("a customer email's header: the portal's logo and its text, with the letter's square for Outlook for Windows (no WebP there)", async () => {
+  const url = "https://acme.example/x";
+  const logo = { url: "https://tuti.example/api/media/m1/480.webp?s=a&b", width: 1000, height: 100 };
+  const html = await render(signInLinkEmail({ projectName: "Acme", accent: "#ff0000", poweredBy: true, logo, logoText: "Acme Help", url, minutes: 15 }).body);
+  // At most 160px wide; the text says the name, so the picture has no alt of its own.
+  expect(html).toContain('<!--[if !mso]><!--><img src="https://tuti.example/api/media/m1/480.webp?s=a&amp;b" width="160" height="16" alt=""');
+  expect(html).toMatch(/<!--\[if mso\]>.*>A<\/td>.*<!\[endif\]-->/);
+  expect(html).toContain(">Acme Help</p>");
+  expect(html).not.toMatch(/<!--\[if mso\]>.*>Acme<\/td>/);
+  // A logo without text: the logo alone, as on the portal; Outlook for Windows gets the square and the name.
+  const alone = await render(signInLinkEmail({ projectName: "Acme", logo, url, minutes: 15 }).body);
+  expect(alone).toMatch(/<!--\[if mso\]>.*>A<\/td><td[^>]*>Acme<\/td>.*<!\[endif\]-->/);
+  expect(alone).not.toMatch(/<p[^>]*>Acme<\/p>/);
+  // No logo: the letter's square and the text, or the name, as the portal's LetterMark: the text's letter first.
+  const none = await render(signInLinkEmail({ projectName: "Acme", logoText: "Help desk", url, minutes: 15 }).body);
+  expect(none).not.toContain("<img");
+  expect(none).toMatch(/>H<\/td>/);
+  expect(none).toContain(">Help desk</p>");
 });
 
 test("Verify's emails count what it found on tiles: each number over what it counts", async () => {

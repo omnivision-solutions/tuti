@@ -5,11 +5,11 @@ import { buttonStyle, type EmailBrand, Layout, Note, Title } from "./layout";
 
 type SignInLinkProps = EmailBrand & { url: string; minutes: number };
 
-export function SignInLinkEmail({ projectName, url, minutes, accent, poweredBy }: SignInLinkProps) {
+export function SignInLinkEmail({ projectName, url, minutes, accent, poweredBy, logo, logoText }: SignInLinkProps) {
   return (
     <Layout
       preview={`Your sign-in link for ${projectName}.`}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={<>If you didn&apos;t ask for this, ignore it.</>}
     >
       <Title>Sign in to {projectName}</Title>

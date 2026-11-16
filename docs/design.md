@@ -12,9 +12,10 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
-  Emails sent on a project's behalf (to its customers and readers) are the team's: its name at the top, beside a square
-  in its accent with the name's first letter, as its portal's header (not its uploaded logo: stored as WebP, which many
-  email clients don't show), and its accent for buttons and links, as its portal does (too faint: the same darker shade
+  Emails sent on a project's behalf (to its customers and readers) are the team's: its portal's header at the top: its
+  uploaded logo (32px tall, at most 160px wide) with the logo's text beside it, or without a logo a square in its accent
+  with the name's first letter beside the text or name (Outlook for Windows, which can't show the logo's WebP, gets the
+  square and the text or name too), and its accent for buttons and links, as its portal does (too faint: the same darker shade
   of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint
   for text, 4.5:1), on a neutral page in a system sans (Inter where it's installed). Tuti's credit is in the footer: the
   portal's "Powered by tuti" pill, its mark grey, under the reason for the email, hidden under the portal's rule.

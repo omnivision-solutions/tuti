@@ -22,12 +22,12 @@ type StatusProps = EmailBrand & {
   note?: { from: string; text: string };
 };
 
-export function StatusEmail({ projectName, accent, poweredBy, status, postTitle, board, votes, postUrl, unsubscribeUrl, note }: StatusProps) {
+export function StatusEmail({ projectName, accent, poweredBy, logo, logoText, status, postTitle, board, votes, postUrl, unsubscribeUrl, note }: StatusProps) {
   const { is, next } = STATUSES[status];
   return (
     <Layout
       preview={`An idea you're following moved to ${STATUS_PILLS[status].label}`}
-      project={{ projectName, accent, poweredBy }}
+      project={{ projectName, accent, poweredBy, logo, logoText }}
       footer={
         <>
           You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
