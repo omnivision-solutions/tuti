@@ -44,7 +44,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         take: MAX_URLS,
         select: { boardId: true, number: true, title: true, updatedAt: true, board: { select: { slug: true } } },
       },
-      collections: { select: { slug: true, updatedAt: true } },
+      // Not sample collections: the portal shows no name or text of theirs, so their edits change no page.
+      collections: { where: { sample: false }, select: { slug: true, updatedAt: true } },
       docsTabs: { select: { slug: true, updatedAt: true } },
       changelogEntries: { where: { publishedAt: { not: null }, sample: false }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
     },

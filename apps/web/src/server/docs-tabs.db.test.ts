@@ -378,6 +378,11 @@ describe("readers", () => {
     const again = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
     expect(again).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
     expect(again).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
+
+    // A sample collection's own edits don't count: the portal shows nothing of it but the team's pages in it.
+    await prisma.collection.updateMany({ where: { projectId: project.id, slug: "invoices" }, data: { sample: true, updatedAt: new Date("2026-05-01T10:00:00Z") } });
+    const sample = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(sample).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-01-01T10:00:00.000Z</lastmod></url>`);
   });
 
   test("llms-full.txt has the articles in llms.txt's order: tab by tab, each tab's articles in no collection last", async () => {
