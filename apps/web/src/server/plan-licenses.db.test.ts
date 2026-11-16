@@ -154,16 +154,16 @@ test("a project paying through Stripe isn't given one until its plan ends, and o
   });
 });
 
-test("a subscription live again after the project was given a license doesn't take its plan", async () => {
+test("a subscription that holds no plan but can still be paid (unpaid) keeps a license off the project", async () => {
   await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" });
   const events = stripe.pay(stripe.sessions.at(-1)!.id);
   const subscription = stripe.sessions.at(-1)!.subscription!;
   await deliver(...events);
-  // Unpaid, it holds no plan but stays the project's subscription; then it's paid after all.
   await deliver(stripe.update(subscription, { status: "unpaid" }));
   const held = await license();
+  expect((await assignPlanLicense(project.slug, held.id)).error).toMatch(/^This project pays for a plan/);
+  await deliver(stripe.update(subscription, { status: "canceled" }));
   expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
-  await deliver(stripe.update(subscription, { status: "active" }));
   expect(await planOf()).toBe("appsumo-2");
 });
 
