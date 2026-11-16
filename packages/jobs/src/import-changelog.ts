@@ -1,3 +1,4 @@
+import { toPlainText } from "@tuti/content";
 import { htmlToContent, type HtmlContent, sameFile } from "@tuti/content/html";
 import { type ChangelogTag, type Prisma, prisma } from "@tuti/db";
 import { MAX_ENTRY_LENGTH } from "@tuti/shared";
@@ -45,6 +46,24 @@ const restricted = (entry: FeaturebaseChangelog) => Boolean(entry.allowedSegment
 function entryTitle(title: string | null | undefined): string {
   const words = (title ?? "").trim().slice(0, 120);
   return words.length >= 3 ? words : words ? `Update: ${words}` : "Untitled";
+}
+
+/**
+ * An entry with no featured image (Ferndesk's never have one) whose text opens with an image: that image as its cover,
+ * taken out of the text so it isn't shown twice, as the team would set it up by hand. Only one whose description says
+ * nothing past the entry's title (a cover is described by the title), at full width: one that says more stays in the
+ * text, so the words aren't lost, and a small one stays where it is. Any other: as it is, no cover.
+ */
+function openingImageAsCover(content: HtmlContent, title: string): { content: HtmlContent; cover: { mediaId: string } | null } {
+  const [first, ...rest] = content.doc.content ?? [];
+  const mediaId = first?.type === "image" ? first.attrs?.mediaId : undefined;
+  const alt = String(first?.attrs?.alt ?? "").trim().toLowerCase();
+  // At full width too: a small image (an icon) at the top would be stretched across the entry as its cover.
+  if (typeof mediaId !== "string" || first?.attrs?.width !== "100" || (alt !== "" && alt !== title.trim().toLowerCase())) {
+    return { content, cover: null };
+  }
+  const doc = { ...content.doc, content: rest };
+  return { content: { ...content, doc, text: toPlainText(doc) }, cover: { mediaId } };
 }
 
 const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null);
@@ -106,7 +125,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
   const copy = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById }) : undefined;
   const media: typeof copy = copy && (async (source) => (CHANGELOG_PAGE.now() - begun > CHANGELOG_PAGE.hardMs ? { leftOut: "unreachable" } : copy(source)));
   // Images copied first, outside the page's transaction and lock; past the soft limit, the rest are left to the next page.
-  const copied = new Map<string, { content: HtmlContent | { error: string }; cover: Awaited<ReturnType<NonNullable<typeof media>>> | null }>();
+  const copied = new Map<string, { content: HtmlContent | { error: string }; cover: Awaited<ReturnType<NonNullable<typeof media>>> | { mediaId: string } | null }>();
   let done = 0;
   for (const entry of rest) {
     if (done > 0 && CHANGELOG_PAGE.now() - begun > CHANGELOG_PAGE.softMs) {
@@ -120,7 +139,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
       // Keyed as the text's images are (signatures aside), so a cover that's also in the text is one copy.
       const url = !tooLong && entry.featuredImage;
       const cover = url ? await (media?.({ kind: "image", url, key: sameFile(url) }) ?? { leftOut: "unsupported" as const }) : null;
-      copied.set(entry.id, { content, cover });
+      copied.set(entry.id, cover || "error" in content ? { content, cover } : openingImageAsCover(content, entryTitle(entry.title)));
     }
     done++;
   }

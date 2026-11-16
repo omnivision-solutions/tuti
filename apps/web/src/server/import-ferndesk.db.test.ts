@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { CHANGELOG_PAGE, importsSettled, portalAddress } from "@tuti/jobs";
-import { FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, startFerndeskFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_FERNDESK_FILES, FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, startFerndeskFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
@@ -276,6 +276,33 @@ test("the changelog comes across: entries oldest first, a page at a time, publis
   expect(again.counts).toMatchObject({ changelogEntries: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
   expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(3);
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("an entry whose text opens with a full-width image, described by its title or not at all, has it as its cover, out of the text: Ferndesk has no featured image; a small one stays", async () => {
+  const html = (entry: string, img: string, text: string) => (fake.fixtures.entries.find((e) => e.id === entry)!.contentHtml = `<p>${img}</p><p>${text}</p>`);
+  html("art_search", `<img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Faster search">`, "Search results load twice as fast.");
+  html("art_exports", `<img src="${FAKE_FERNDESK_FILES}user-images/exports.png">`, "Exports take half the time.");
+  // An icon at a quarter of the width: it stays where it is.
+  (fake.fixtures.entries.find((e) => e.id === "art_sso")!.draft as { contentHtml: string }).contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/sso.png" alt="Lock" data-width="25"></p><p>Coming soon.</p>`;
+  const done = await importParts(["changelog"], { publishArticles: true });
+  expect(done.counts).toMatchObject({ changelogImages: { imported: 3, leftOut: {} } });
+  const rows = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, content: true, cover: { select: { attachedAt: true } } } });
+  expect(rows.map(({ title, body, cover }) => ({ title, body, cover: Boolean(cover?.attachedAt) }))).toEqual([
+    { title: "Exports", body: "Exports take half the time.", cover: true },
+    { title: "Faster search", body: "Search results load twice as fast.", cover: true },
+    { title: "Single sign-on (beta)", body: "Lock\nComing soon.", cover: false },
+  ]);
+  expect(rows.slice(0, 2).map((row) => JSON.stringify(row.content).includes('"image"'))).toEqual([false, false]);
+});
+
+test("an opening image whose description says more than the entry's title stays in the text, so its words aren't lost: no cover", async () => {
+  const search = fake.fixtures.entries.find((entry) => entry.id === "art_search")!;
+  search.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Median search time fell by half"></p><p>Search results load twice as fast.</p>`;
+  await importParts(["changelog"], { publishArticles: true });
+  expect(await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, title: "Faster search" }, select: { body: true, coverId: true } })).toEqual({
+    body: "Median search time fell by half\nSearch results load twice as fast.",
+    coverId: null,
+  });
 });
 
 test("by default, changelog entries published in Ferndesk come as drafts for the team to check and publish, with their dates: Ferndesk doesn't say who could read them", async () => {
