@@ -846,6 +846,8 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await reader.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
   await reader.goto("/changelog");
+  // Not only the first entry's: on the whole list, Release 20 (the second) fades too.
+  await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");
   // A long idea's pill stays in its entry (its title shortened), and the page doesn't scroll sideways.
   const shipped = main.getByRole("article", { name: "Release 19" });
   const pill = (await shipped.getByRole("link", { name: /^Export every board/ }).boundingBox())!;
