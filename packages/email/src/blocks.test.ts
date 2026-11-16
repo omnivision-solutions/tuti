@@ -62,6 +62,9 @@ test("the reply and shipped emails show the post's card and the team's message",
     { plainText: true },
   );
   expect(shipped.replace(/\s+/g, " ")).toContain("12 votes Ideas Dark mode Completed Ada Acme team Live now.");
+  // It goes to the author, voters, commenters and subscribers: true of each of them, not "you asked for".
+  expect(shipped).toContain("An idea you're following is live");
+  expect(shipped).not.toMatch(/asked for/i);
 });
 
 test("the team's tag reads on its own tint (4.5:1) in every accent, Tuti's green and an orange too", async () => {

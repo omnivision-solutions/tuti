@@ -1,6 +1,7 @@
 import { Button, Img } from "@react-email/components";
 import { type Doc, toPlainText } from "@tuti/content";
 import type { MediaUrls } from "@tuti/content/media";
+import { formatDate } from "@tuti/shared/dates";
 
 import { buttonStyle, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 import { CONTENT_WIDTH, EmailRichText } from "./rich-text";
@@ -9,7 +10,7 @@ type ChangelogProps = EmailBrand & {
   entryTitle: string;
   entryUrl: string;
   doc: Doc;
-  /** When it was published: "New · November 15" over its title. */
+  /** When it was published: "New · 15 November 2026" over its title, as the portal's changelog shows it. */
   publishedAt: Date;
   /** Its cover image (a lasting URL of its email JPEG), shown over the title; null without one. */
   coverUrl?: string | null;
@@ -31,7 +32,7 @@ export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt,
       }
     >
       {coverUrl && <Img src={coverUrl} alt={entryTitle} width={CONTENT_WIDTH} style={{ borderRadius: 12, margin: "20px 0 0", maxWidth: "100%", height: "auto" }} />}
-      <Eyebrow accent={accent}>{`New · ${publishedAt.toLocaleDateString("en", { month: "long", day: "numeric", timeZone: "UTC" })}`}</Eyebrow>
+      <Eyebrow accent={accent}>{`New · ${formatDate(publishedAt)}`}</Eyebrow>
       <Title>{entryTitle}</Title>
       <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} accent={accent} />
       <Button

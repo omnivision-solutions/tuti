@@ -27,9 +27,9 @@ export function ShippedEmail({ projectName, postTitle, votes, board, status = "C
         </>
       }
     >
-      <Eyebrow accent={accent}>An idea you asked for is live</Eyebrow>
+      <Eyebrow accent={accent}>An idea you&apos;re following is live</Eyebrow>
       <Title>{postTitle} is done</Title>
-      <Paragraph>Good news from {projectName}. Thanks for asking for it.</Paragraph>
+      <Paragraph>Good news from {projectName}.</Paragraph>
       <PostCard title={postTitle} votes={votes} board={board} status={status} />
       {note && (
         <Message name={note.from} team={`${projectName} team`} accent={accent}>
