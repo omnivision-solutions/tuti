@@ -138,7 +138,8 @@ export function UnassignLicense({ projectSlug, licenseId, active, badge = false 
         toast.success("License unassigned");
       }
     });
-  if (!active) {
+  // Deactivated, it gives no plan: unassigning asks only when the project's add-on would stop with it.
+  if (!active && !badge) {
     return (
       <div>
         <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={unassign}>
@@ -156,8 +157,8 @@ export function UnassignLicense({ projectSlug, licenseId, active, badge = false 
         <AlertDialogHeader>
           <AlertDialogTitle>Unassign this license?</AlertDialogTitle>
           <AlertDialogDescription>
-            This project loses the license&apos;s plan until the license&apos;s holder assigns it again.
-            {badge && <> Its &quot;Powered by tuti&quot; add-on stops now, and what&apos;s left of the month or year isn&apos;t refunded.</>}
+            {active && <>This project loses the license&apos;s plan until the license&apos;s holder assigns it again. </>}
+            {badge && <>Its &quot;Powered by tuti&quot; add-on stops now, and what&apos;s left of the month or year isn&apos;t refunded.</>}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

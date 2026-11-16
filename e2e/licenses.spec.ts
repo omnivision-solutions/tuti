@@ -197,7 +197,20 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(fromLicenses).toContainText(`Acme's "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
   await fromLicenses.getByRole("button", { name: "Cancel" }).click();
   await expect(fromLicenses).toBeHidden();
+  // Confirmed, it's unassigned and the add-on ends; assigned and hidden again, for what follows.
+  await owner.getByRole("button", { name: `Unassign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  await fromLicenses.getByRole("button", { name: "Unassign" }).click();
+  await expect(owner.getByText("License unassigned")).toBeVisible();
+  await expect(fromLicenses).toBeHidden();
+  await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  await expect(owner.getByText("License assigned")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  await owner.getByRole("button", { name: "Hide the badge" }).click();
+  await confirm.getByRole("button", { name: "Hide the badge" }).click();
+  await owner.getByRole("button", { name: "Subscribe" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
+  await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
   // Unassigning it here asks first: only its holder can assign it again.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
