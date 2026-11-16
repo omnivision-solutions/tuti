@@ -51,7 +51,7 @@ export default async function LicensesPage() {
                   key: license.externalKey,
                   plan: planDisplay(license.plan).name,
                   revoked: license.revokedAt !== null,
-                  project: license.project && { ...license.project, open: memberships.some(({ project }) => project.slug === license.project!.slug) },
+                  project: license.project,
                 }))}
                 // Those it can go on: the ones without a license.
                 projects={memberships.flatMap(({ project: { planLicense, ...project } }) => (planLicense ? [] : [project]))}

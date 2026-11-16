@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingRow, SettingsCard } from "@/components/settings-card";
@@ -17,8 +17,7 @@ export type PlanLicenseView = {
   /** Its plan's name. */
   plan: string;
   revoked: boolean;
-  /** `open`: its holder may open its Billing (they own or administer it still). */
-  project: { slug: string; name: string; open: boolean } | null;
+  project: { slug: string; name: string } | null;
 };
 
 /**
@@ -42,10 +41,23 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
   // Each row's controls say which license they're for.
   const named = `${license.plan} license ${license.key}`;
   const [pending, startTransition] = useTransition();
+  const row = useRef<HTMLDivElement>(null);
+  const assigned = license.project?.slug ?? null;
+  // Done, the pressed button is gone (Assign swaps for Unassign and back): once the row shows the change, the keyboard's
+  // place moves to its new control. `from`: the project before the action.
+  const from = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (from.current !== undefined && from.current !== assigned) {
+      from.current = undefined;
+      row.current?.querySelector<HTMLElement>("button")?.focus();
+    }
+  }, [assigned]);
   const act = (run: () => Promise<{ error?: string }>, done: string) =>
     startTransition(async () => {
+      from.current = assigned;
       const { error } = await run();
       if (error) {
+        from.current = undefined;
         toast.error(error);
       } else {
         toast.success(done);
@@ -53,14 +65,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
     });
   const on = license.project && (
     <>
-      On{" "}
-      {license.project.open ? (
-        <Link href={`/app/${license.project.slug}/settings/billing`} className="font-medium text-foreground underline-offset-4 hover:underline">
-          {license.project.name}
-        </Link>
-      ) : (
-        <span className="font-medium text-foreground">{license.project.name}</span>
-      )}
+      On <span className="font-medium text-foreground">{license.project.name}</span>
     </>
   );
   const status = license.revoked ? <>Deactivated{on && <> · {on}</>}</> : (on ?? "Not assigned to a project");
@@ -75,6 +80,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
         </>
       }
     >
+      <div ref={row} className="contents">
       {license.project ? (
         <Button variant="outline" aria-label={`Unassign ${named}`} disabled={pending} focusableWhenDisabled onClick={() => act(() => unassignPlanLicense(license.id), "License unassigned")}>
           {pending ? "Unassigning…" : "Unassign"}
@@ -102,6 +108,7 @@ function LicenseRow({ license, projects }: { license: PlanLicenseView; projects:
           </Button>
         </div>
       )}
+      </div>
     </SettingRow>
   );
 }
