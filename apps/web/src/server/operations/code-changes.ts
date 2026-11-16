@@ -1433,10 +1433,16 @@ export const applyCodeChangeAction = defineOperation({
       // come after it was saved.
       first = !!whole?.completes && post.status !== "COMPLETED" && commenting && !!comment.trim() && !reuse;
       if (first) {
+        // Checked as comments.create checks it (call), before it's being posted: refused, it's an OperationError, so the
+        // update waits again with nothing posted (never "maybe saved").
+        const commentInput = createComment.input.safeParse({ number: post.number, body: comment });
+        if (!commentInput.success) {
+          throw new OperationError(400, "invalid_input", commentInput.error.issues[0]?.message ?? "Invalid input");
+        }
         posting = true;
         // The email completing it quotes this comment (postShipped reads `note`): saved never due to the post's author as
         // a comment too (comment-email), whatever fails after.
-        shared.commentId = (await writeComment(context, createComment.input.parse({ number: post.number, body: comment }), { quietToAuthor: true })).id;
+        shared.commentId = (await writeComment(context, commentInput.data, { quietToAuthor: true })).id;
         posting = false;
         // The email completing it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;

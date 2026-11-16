@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { GET as act } from "@/app/app/(workspace)/[project]/autopilot/[id]/act/route";
 import { POST_COMMENT_LIMIT, postWaits } from "@/lib/autopilot-words";
-import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
+import { applyCodeChange, approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
 import {
   applyCodeChangeAction,
   dismissCodeChangeAction,
@@ -144,6 +144,14 @@ test("the comment a completion posts reaches the post's author once, in the ship
   expect(shipped!.subject).toBe("Done: Recurring events");
   expect(shipped!.text).toContain("Monthly ones too: it's all out.");
   expect(more).toEqual([]);
+});
+
+test("a completion's comment that's refused (too long) says why, posts nothing and leaves the update waiting", async () => {
+  const completes = await part("RESOLVES");
+  const result = await applyCodeChange(project.slug, completes.id, { comment: "x".repeat(POST_COMMENT_MAX + 1), revision: postVersion([completes.id]) });
+  expect(result.error).toMatch(/too long|characters/i);
+  expect(await postNow()).toMatchObject({ status: "PLANNED", commentCount: 0, comments: [] });
+  expect(await statuses(completes.id)).toEqual(["PENDING"]);
 });
 
 test("dismissing one pull request's part takes only its part out of the comment while it waits", async () => {

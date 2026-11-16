@@ -240,12 +240,14 @@ test("a resume drops the comments the pause held, not those the monthly limit ho
 });
 
 test("what the monthly limit held, whose first run on the 1st fails, is still retried and sent", async () => {
+  // Mid-month, so the runs can't straddle two months (this month's start stays a held date throughout).
+  const now = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15, 12));
+  vi.useFakeTimers({ toFake: ["Date"], now });
   const { author, post } = await authorsPost();
   const reader = await verified("Reader");
   vi.spyOn(logger, "warn").mockImplementation(() => {});
   const comment = await call(createComment, as(reader.id), { number: post.number, body: "Held for a month." });
   // Held till this month's start (heldDueDates), written days before.
-  const now = new Date();
   await prisma.comment.update({
     where: { id: comment.id },
     data: { authorEmailDueAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), createdAt: new Date(Date.now() - 3 * 24 * 3_600_000) },
