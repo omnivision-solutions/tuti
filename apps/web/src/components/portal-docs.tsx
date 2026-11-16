@@ -225,7 +225,20 @@ function LockedMessage({ signedIn }: { signedIn: boolean }) {
  * A tab's path (/docs for the first; `tab` null without tabs): its overview, or the article or
  * collection it shows in its place; a locked tab, its name and LockedMessage.
  */
-export function DocsTabPage({ project, docs, tab, landing }: { project: string; docs: DocsContents; tab: DocsTabView | null; landing: TabLanding }) {
+export function DocsTabPage({
+  project,
+  docs,
+  tab,
+  landing,
+  path,
+}: {
+  project: string;
+  docs: DocsContents;
+  tab: DocsTabView | null;
+  landing: TabLanding;
+  /** Its own path (/docs, or /docs/<tab>): the canonical one of the article it shows. */
+  path: string;
+}) {
   if (tab?.locked) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
@@ -237,7 +250,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
   }
   switch (landing.kind) {
     case "article":
-      return <DocsArticle project={project} slug={landing.slug} article={landing.article} path={tab ? docsTabPath(docs, tab.slug) : "/docs"} />;
+      return <DocsArticle project={project} slug={landing.slug} article={landing.article} path={path} />;
     case "collection":
       return <DocsCollectionPage page={landing} />;
     case "overview":

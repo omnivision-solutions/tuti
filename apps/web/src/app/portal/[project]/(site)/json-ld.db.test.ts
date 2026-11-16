@@ -119,6 +119,15 @@ test("at /docs, the first tab's article has no step for /docs, and no trail with
     `Paying by card ${portal}/docs`,
   ]);
 
+  // A first tab for signed-in readers only: /docs shows the next one's article, still at /docs.
+  await call(updateTab, as, { slug: "guides", access: "signed_in" });
+  await call(createCollection, as, { name: "Endpoints", tab: "api" });
+  const { slug } = await call(createArticle, as, { title: "Authentication", body: "Use a key.", collection: "endpoints" });
+  await call(publishArticle, as, { slug });
+  await call(updateTab, as, { slug: "api", landing: "page", landingPage: slug });
+  expect((await docsJsonLd())[0]).toMatchObject({ headline: "Authentication", url: `${portal}/docs` });
+  await call(updateTab, as, { slug: "guides", access: "inherit" });
+
   // In no collection: the page alone, so no trail.
   await prisma.article.update({ where: { id: billing.id }, data: { collectionId: null } });
   expect((await docsJsonLd())["@type"]).toBe("TechArticle");
