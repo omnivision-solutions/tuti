@@ -212,3 +212,19 @@ test("unassigning and AppSumo's deactivation wait for Stripe's webhook syncing t
     expect(await assignPlanLicense(project.slug, licenseId)).toEqual({});
   }
 });
+
+test("revoked while Stripe can't be reached, the badge shows all the same, and the add-on is logged to cancel", async () => {
+  await buy();
+  vi.stubEnv("STRIPE_API_URL", "http://127.0.0.1:9");
+  await applyAppsumoEvent({ event: "deactivate", license_key: licenseKey });
+  expect(await stored()).toMatchObject({ plan: null, badgeAddOn: false });
+  expect(await shown()).toBe(true);
+});
+
+test("removed again after Stripe cancelled it but the sync failed: synced, so the badge shows", async () => {
+  const subscription = await buy();
+  stripe.subscriptions.get(subscription)!.status = "canceled";
+  expect(await badge(false)).toEqual({ on: false });
+  expect(await stored()).toMatchObject({ badgeAddOn: false });
+  expect(await shown()).toBe(true);
+});

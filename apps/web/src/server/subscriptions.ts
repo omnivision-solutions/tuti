@@ -154,17 +154,22 @@ export async function endLicensedBadge(projectId: string): Promise<void> {
     return;
   }
   const subscription = await getSubscription(id);
-  if (["canceled", "incomplete_expired"].includes(subscription.status) || !badgeOnly(subscription)) {
+  if (!badgeOnly(subscription)) {
     return;
   }
-  await cancelSubscription(id);
+  // Cancelled already (a retry after the sync failed): synced all the same, so the badge shows.
+  if (!["canceled", "incomplete_expired"].includes(subscription.status)) {
+    await cancelSubscription(id);
+  }
   await syncSubscription(id);
 }
 
 /** The "Powered by tuti" add-on a licensed project bought ends with its license (unassigned or revoked): cancelled in Stripe. */
 export async function endBadgeWithLicense(projectId: string): Promise<void> {
-  await endLicensedBadge(projectId).catch((error: unknown) => {
+  await endLicensedBadge(projectId).catch(async (error: unknown) => {
     log.error('Cancelling a licensed project\'s "Powered by tuti" add-on after its license ended failed: cancel it in Stripe', { projectId, error });
+    // The badge shows all the same: the add-on ended with the license, whatever Stripe says.
+    await prisma.project.updateMany({ where: { id: projectId, planStatus: null }, data: { badgeAddOn: false } });
   });
 }
 
