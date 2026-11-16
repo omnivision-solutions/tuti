@@ -1092,12 +1092,26 @@ test("the next release waits to be written; its entry gets a featured image read
   await team.unroute("**/*");
   await removeButton.click();
   await expect(addButton).toBeVisible();
-  // Uploaded from Add with the keyboard: Add goes with the upload, and focus moves to Replace.
+  // Uploaded from Add with the keyboard: Add goes with the upload, and focus moves to Replace, even after a press
+  // meanwhile that left focus on Add (a touch starting a scroll; its server calls held for it).
+  let releasePressed!: () => void;
+  const pressedHeld = new Promise<void>((resolve) => (releasePressed = resolve));
+  await team.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) {
+      await pressedHeld;
+    }
+    await route.fallback();
+  });
   await addButton.focus();
   await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
+  await expect(featured.getByRole("status").filter({ hasText: "Uploading…" })).toBeVisible();
+  await team.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  await expect(addButton).toBeFocused();
+  releasePressed();
   // Shown as soon as it's uploaded, before it's saved.
   await expect(canvasCover).toBeVisible();
   await expect(replaceButton).toBeFocused();
+  await team.unroute("**/*");
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await canvasCover.hover();
