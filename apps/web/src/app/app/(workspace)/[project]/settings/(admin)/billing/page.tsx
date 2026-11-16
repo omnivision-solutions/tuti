@@ -110,7 +110,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             )}
             {license?.revokedAt && (
               <Alert variant="destructive">
-                <AlertDescription>This project&apos;s {license.from} license was deactivated. Unassign it to choose a plan.</AlertDescription>
+                <AlertDescription>This project&apos;s {license.from} license was deactivated. {planSalesEnabled() ? "Unassign it to choose a plan." : "Unassign it to take it off this project."}</AlertDescription>
               </Alert>
             )}
             {license ? (
@@ -120,7 +120,9 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             ) : planSalesEnabled() ? (
               <PlanPicker projectSlug={slug} plans={pricingPlans()} current={defaultPlanKey()!} trial={trial?.ended === false} />
             ) : (
-              <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
+              <p id="plans-unavailable" tabIndex={-1} className="text-sm text-muted-foreground outline-none">
+                Plans can&apos;t be bought here right now.
+              </p>
             )}
           </SettingBlock>
         </SettingsCard>

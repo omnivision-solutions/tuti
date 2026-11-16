@@ -118,11 +118,12 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
 export function UnassignLicense({ projectSlug, licenseId, active }: { projectSlug: string; licenseId: string; active: boolean }) {
   const [pending, startTransition] = useTransition();
   const done = useRef(false);
-  // Done, the plans take this button's place: the keyboard's place moves to the first of them.
+  // Done, the plans take this button's place: the keyboard's place moves to the first of them, or to the line saying
+  // plans can't be bought here.
   useEffect(
     () => () => {
       if (done.current) {
-        requestAnimationFrame(() => document.querySelector<HTMLElement>('#plans [data-slot="button"]')?.focus());
+        requestAnimationFrame(() => (document.querySelector<HTMLElement>('#plans [data-slot="button"]') ?? document.getElementById("plans-unavailable"))?.focus());
       }
     },
     [],
