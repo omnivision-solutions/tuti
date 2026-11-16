@@ -152,9 +152,9 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await scratch.setContent('<div id="cover" style="width:1200px;height:600px;background:#1d4ed8"></div>');
   const coverPicture = await scratch.locator("#cover").screenshot();
   await scratch.close();
-  const sidebar = owner.getByRole("complementary", { name: "Entry settings" });
-  await sidebar.getByLabel("Cover image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: coverPicture });
-  await expect(sidebar.getByRole("img", { name: "Cover image preview" })).toBeVisible();
+  const featured = owner.getByRole("group", { name: "Featured image" });
+  await featured.locator('input[type="file"]').setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: coverPicture });
+  await expect(featured.getByRole("img")).toBeVisible();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   expect((await api("/changelog/2/publish", {})).ok).toBe(true);

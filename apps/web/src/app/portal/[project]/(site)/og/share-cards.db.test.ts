@@ -83,6 +83,29 @@ test("a changelog entry's link card is an article's, with its date", async () =>
   expect((await image(project.slug, ["changelog", "4"])).status).toBe(404);
 });
 
+test("a changelog entry with a featured image has it as its link card: a lasting 1200px JPEG on the app's address, not the card made for it", async () => {
+  const s3 = await startS3Fake();
+  onTestFinished(() => s3.close());
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  const { owner, project, portal } = await portalWithPost();
+  const cover = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 2400, height: 1260 } });
+  // Still processing: no image yet, so the card made for it.
+  const processing = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "PROCESSING" } });
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId: project.id, createdById: owner.id, number: 3, title: "Dark mode is here", body: "", publishedAt: new Date(), coverId: cover.id },
+      { projectId: project.id, createdById: owner.id, number: 4, title: "Faster search", body: "", publishedAt: new Date(), coverId: processing.id },
+    ],
+  });
+  const metadata = (number: string) => changelogEntryMetadata({ params: Promise.resolve({ project: project.slug, number }) } as never);
+  const [card] = (await metadata("3")).openGraph?.images as { url: string; width: number; height: number; alt: string }[];
+  expect(card).toEqual({ url: expect.stringMatching(new RegExp(`^${process.env.APP_URL}/api/media/${cover.id}/email\\.jpg\\?s=`)), width: 1200, height: 630, alt: "Dark mode is here" });
+  expect(card!.url).not.toMatch(/X-Amz-Expires/i);
+  expect((await metadata("4")).openGraph?.images).toEqual([expect.objectContaining({ url: `${portal}/og/changelog/4` })]);
+});
+
 test("a post only its author may see has no title in its metadata and no card for anyone else", async () => {
   const { project, board } = await portalWithPost("PRIVATE");
   expect(await postMetadata({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-7" }) } as never)).toEqual({});

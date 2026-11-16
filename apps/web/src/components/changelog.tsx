@@ -4,7 +4,7 @@ import type { Editor } from "@tiptap/react";
 import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { cn } from "cn";
-import { CheckIcon, ExternalLinkIcon, LinkIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import {
   createContext,
@@ -18,10 +18,11 @@ import {
   useState,
   useTransition,
 } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
-import { ImageField } from "@/components/branding-settings";
+import { useImageUpload } from "@/components/branding-settings";
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
@@ -68,7 +69,7 @@ type Entry = {
   tags: TagName[];
   posts: number[];
   published: boolean;
-  /** Its cover image (a link to show it by: its thumbnail's size, for the sidebar). */
+  /** Its cover (the featured image): a link to its thumbnail size. */
   cover: { id: string; url: string } | null;
   /** The cover at the text column's width (the editor shows it there as readers see it); null without one. */
   wideCoverUrl?: string | null;
@@ -149,7 +150,124 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
 }
 
 /**
- * Writes a new entry (`entry` null) or edits one: the title, its cover and the text, and beside them (under them on
+ * The entry's featured image (its `cover`), at the text column's width as readers see it: without one, a band to add
+ * one (picked or dropped on it); with one, Replace and Remove over it (shown on hover and focus, always on touch screens).
+ */
+function FeaturedImage({
+  projectSlug,
+  entry,
+  onBusy,
+  onRemove,
+}: {
+  projectSlug: string;
+  entry: Entry | null;
+  onBusy: (delta: number) => void;
+  onRemove: () => void;
+}) {
+  const id = useId();
+  const add = useRef<HTMLButtonElement>(null);
+  const { image, setImage, uploading, error, dragging, drop, inputs, pick } = useImageUpload({
+    projectSlug,
+    name: "cover",
+    id,
+    label: "Featured image",
+    image: entry?.cover ? { id: entry.cover.id, url: entry.wideCoverUrl ?? entry.cover.url } : null,
+    onBusy,
+  });
+  // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
+  // (Only then, and only if focus went with Add: a file dropped with the mouse, or someone who moved on while it
+  // uploaded, to the text or by a click anywhere else, keeps theirs.)
+  const replace = useRef<HTMLButtonElement>(null);
+  const fromAdd = useRef(false);
+  useEffect(() => {
+    if (image && fromAdd.current && (!document.activeElement || document.activeElement === document.body)) {
+      // Where they are on the page stays (scrolled away while it uploaded).
+      replace.current?.focus({ preventScroll: true });
+    }
+  }, [image]);
+  // After the effect above, which reads it (an upload's image and its end land together); a failed one's is forgotten.
+  useEffect(() => {
+    fromAdd.current = uploading && document.activeElement === add.current;
+    if (!uploading) {
+      return;
+    }
+    // A click elsewhere can leave focus on the page itself, as Add going does: it's moving on all the same. Only a press
+    // that takes focus from Add counts (checked once the press has moved it; a touch starting a scroll doesn't).
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const movedOn = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (add.current && document.activeElement !== add.current) {
+          fromAdd.current = false;
+        }
+      });
+    };
+    document.addEventListener("pointerdown", movedOn, true);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", movedOn, true);
+    };
+  }, [uploading]);
+  const status = uploading && (
+    <p role="status" className="text-sm text-muted-foreground">
+      Uploading…
+    </p>
+  );
+
+  return (
+    <div role="group" aria-label="Featured image" className="flex flex-col gap-2">
+      {image ? (
+        <div {...drop} className={cn("group/cover relative", dragging && "rounded-lg ring-2 ring-primary")}>
+          {/* Alt text the title, as on the portal. */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
+          <img src={image.url} alt={entry?.title ?? ""} className={cn("h-auto w-full rounded-lg border", uploading && "opacity-50")} />
+          {status && <div className="absolute inset-0 flex items-center justify-center">{status}</div>}
+          <div className="absolute top-2 right-2 flex gap-2 opacity-0 transition-opacity group-hover/cover:opacity-100 group-focus-within/cover:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100">
+            <Button type="button" variant="secondary" size="sm" aria-label="Replace featured image" ref={replace} disabled={uploading} focusableWhenDisabled onClick={pick}>
+              Replace
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-label="Remove featured image"
+              // Off while one uploads (its image would come back after), focusable all the same.
+              disabled={uploading}
+              focusableWhenDisabled
+              onClick={() => {
+                // Remove goes with the image: focus moves to Add, not out of the form.
+                flushSync(() => setImage(null));
+                add.current?.focus();
+                onRemove();
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div
+          {...drop}
+          className={cn(
+            "flex h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 transition-colors",
+            dragging && "border-primary bg-soft",
+          )}
+        >
+          <Button type="button" variant="outline" size="sm" className="rounded-full" ref={add} disabled={uploading} focusableWhenDisabled onClick={pick}>
+            <ImageIcon />
+            Add featured image
+          </Button>
+          {status || <span className="text-xs text-muted-foreground">or drop one here · 1200×630 works best</span>}
+        </div>
+      )}
+      {inputs}
+      {error && <FieldError>{error}</FieldError>}
+    </div>
+  );
+}
+
+/**
+ * Writes a new entry (`entry` null) or edits one: the title, its featured image and the text, and beside them (under them on
  * phones) its tags, the posts it completes and where readers see it.
  */
 export function ChangelogForm({
@@ -186,10 +304,8 @@ export function ChangelogForm({
     setPublished(entry?.published);
     setLinked(entry?.posts ?? []);
   }
-  // The cover uploading (how many): Save waits, "Uploading…" showing by the field.
+  // The featured image uploading (how many): Save waits, "Uploading…" showing on it.
   const [uploading, setUploading] = useState(0);
-  // The cover as picked in the sidebar, shown under the title as readers see it.
-  const [coverUrl, setCoverUrl] = useState(entry?.wideCoverUrl ?? null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -231,10 +347,17 @@ export function ChangelogForm({
           />
           {state.error && <FieldError id="entry-error">{state.error}</FieldError>}
         </div>
-        {/* As the portal shows it, under the title (alt text the title, as there). */}
-        {coverUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-          <img src={coverUrl} alt={entry?.title ?? ""} className="h-auto w-full rounded-lg border" />
+        {/* Under the title, as the portal shows it; only where uploads are set up (mediaUrls). */}
+        {mediaUrls && (
+          <FeaturedImage
+            projectSlug={projectSlug}
+            entry={entry}
+            onBusy={(delta) => {
+              setUploading((n) => n + delta);
+              setDirty(true);
+            }}
+            onRemove={() => setDirty(true)}
+          />
         )}
         <div className="flex flex-col gap-2">
           {entry && canEditWithAi && !saving?.locked && (
@@ -302,24 +425,6 @@ export function ChangelogForm({
           sampleEntry={entry?.sample ?? false}
           onChange={link}
         />
-        {/* Only where uploads are set up (mediaUrls). Replaced with a new upload, or removed. Its label set as the sidebar's headings. */}
-        {mediaUrls && (
-          <div className="[&_[data-slot=field-label]]:text-xs [&_[data-slot=field-label]]:text-muted-foreground">
-            <ImageField
-              projectSlug={projectSlug}
-              name="cover"
-              label="Cover image"
-              description="Shown with the entry on your portal."
-              image={entry?.cover ?? null}
-              onBusy={(delta) => {
-                setUploading((n) => n + delta);
-                setDirty(true);
-              }}
-              onRemove={() => setDirty(true)}
-              onChange={(image) => setCoverUrl(image?.url ?? null)}
-            />
-          </div>
-        )}
         {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
         <section aria-label="On your portal" className="flex flex-col gap-2">
           <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
