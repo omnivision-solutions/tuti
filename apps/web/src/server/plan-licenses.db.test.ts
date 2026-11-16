@@ -180,6 +180,19 @@ test("unassigning from a project's Billing takes the license off that project on
   expect(await planOf(other.id)).toBe("free");
 });
 
+test("the holder, no longer an admin of the Billing page's project, can't take the license off the project it moved to", async () => {
+  // The holder's own project Q, and P where they're a plain member (demoted since opening P's Billing).
+  const holder = await signUp("Holder");
+  const p = await createProject(owner);
+  await prisma.teamMember.create({ data: { projectId: p.id, userId: holder.id, role: "MEMBER" } });
+  actAs(holder);
+  const q = await createProject(holder);
+  const held = await license(holder.id);
+  expect(await assignPlanLicense(q.slug, held.id)).toEqual({});
+  expect(await unassignPlanLicense(held.id, p.slug)).toEqual({ error: "This license isn't on this project any more. Reload the page." });
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id }, select: { projectId: true } })).toEqual({ projectId: q.id });
+});
+
 test("an admin who doesn't hold the license, unassigning from Billing after it moved, is told to reload", async () => {
   const held = await license();
   const admin = await addMember(project.id, "ADMIN");
