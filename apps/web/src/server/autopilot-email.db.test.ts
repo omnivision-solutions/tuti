@@ -138,7 +138,7 @@ test("the email: what goes out by itself and when, what needs you (Edit on its p
   expect(email!.from).toBe('"Tuti Autopilot" <test@example.com>');
   expect(email!.subject).toBe("1 needs you, 1 goes out in 24 hours · Add a dark theme");
   // Needs you first, each update with how sure and its kind, a comment it posts as an added line.
-  expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Completes the post[\s\S]*⏳ Auto-updating\s+Dark mode \d+\s+97% sure\s+Progress update/);
+  expect(email!.text).toMatch(/✋ Needs your approval\s+Completes the post Dark mode \d+\s+90% sure[\s\S]*⏳ Auto-updating\s+Progress update Dark mode \d+\s+in 24 hours · 97% sure/);
   expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(completes the post\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
   expect(email!.text).toContain("+ Out soon");
   expect(email!.html).toContain(`/app/${project.slug}/autopilot/activity/${one.id}"`);
@@ -199,9 +199,9 @@ test("what needs you takes its room in the five first: five going out by themsel
   await sendAutopilotEmails(later());
   const [email] = to(owner);
   expect(email!.subject).toBe("1 needs you, 5 go out in 24 hours · Big release");
-  expect(email!.text).toMatch(/✋ Needs your approval\s+Dark mode \d+\s+90% sure\s+Completes the post/);
+  expect(email!.text).toMatch(/✋ Needs your approval\s+Completes the post Dark mode \d+\s+90% sure/);
   expect(email!.text).toMatch(/Approve http\S+\/act\?token=/);
-  expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(4);
+  expect(email!.text.match(/in 24 hours · \d+% sure/g)).toHaveLength(4);
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
@@ -214,8 +214,8 @@ test("five needing you still leave a place for what goes out by itself, with its
   await sendAutopilotEmails(later());
   const [email] = to(owner);
   expect(email!.subject).toBe("5 need you, 1 goes out in 24 hours · Big release");
-  expect(email!.text.match(/Edit http/g)).toHaveLength(4);
-  expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(1);
+  expect(email!.text.match(/Review first http/g)).toHaveLength(4);
+  expect(email!.text.match(/in 24 hours · \d+% sure/g)).toHaveLength(1);
   expect(email!.text).toMatch(/Stop http\S+\/act\?token=/);
   expect(email!.text).toContain("+1 more in Tuti");
 });
@@ -240,7 +240,7 @@ test("an earlier change's done updates don't take the place kept for what goes o
   expect(await sendAutopilotEmails()).toBe(1);
   const [email] = to(owner);
   expect(email!.subject).toBe("4 need you, 1 goes out in 24 hours · 2 pull requests");
-  expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(1);
+  expect(email!.text.match(/in 24 hours · \d+% sure/g)).toHaveLength(1);
   expect(email!.text).toMatch(/Stop #\d+ http\S+\/act\?token=/);
   expect(email!.text).toContain("+1 more in Tuti");
 });
@@ -261,7 +261,7 @@ test("each list's updates by kind: posts it completes first, then article edits 
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  expect(email!.text).toMatch(/90% sure\s+Completes the post[\s\S]*95% sure\s+Out of date[\s\S]*98% sure\s+New article/);
+  expect(email!.text).toMatch(/Completes the post [^\n]+\s+90% sure[\s\S]*Out of date [^\n]+\s+95% sure[\s\S]*New article [^\n]+\s+98% sure/);
   // (Ones the previous release left waiting: the line is written into the running draft, and reviewed there; a link
   // changes nothing customers see.)
   expect(email!.text).not.toContain("Changelog line");
@@ -665,7 +665,7 @@ test("what the runner puts out by itself reaches the owners even if the analysis
   const [email] = to(owner);
   expect(email!.subject).toBe("1 went out · Add a dark theme");
   // Said as what it did, not what it will do.
-  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Out soon/);
+  expect(email!.text).toMatch(/✅ Published already\s+Progress update Dark mode \d+\s+97% sure\s+In progress, with this comment\s+\+ Out soon/);
 });
 
 test("given up on one notice, another queued lately in the same email keeps its own tries", async () => {
@@ -701,7 +701,7 @@ test("analysed again and its new update applied mid-queue: an owner emailed abou
   // Emailed before that update existed: told now.
   expect(await tellOwners(one.id, proposed)).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Live now/);
+  expect(to(owner)[1]!.text).toMatch(/✅ Published already\s+Progress update Dark mode \d+\s+97% sure\s+In progress, with this comment\s+\+ Live now/);
   // Emailed since (about it): not again.
   expect(await tellOwners(one.id, proposed)).toBe(0);
 });
@@ -741,7 +741,7 @@ test("what went out by itself during a mail outage stays news when the change is
   expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
   const [email] = to(owner);
   expect(email!.text).toContain("Published already");
-  expect(email!.text).toMatch(/✅ Published already\s+Dark mode \d+ · in progress, with this comment · 97% sure\s+\+ Out soon/);
+  expect(email!.text).toMatch(/✅ Published already\s+Progress update Dark mode \d+\s+97% sure\s+In progress, with this comment\s+\+ Out soon/);
 });
 
 test("what goes out by itself while an email is being sent (read before it) is in the next one", async () => {
@@ -958,7 +958,7 @@ test("the daily digest: in their morning (their browser's time zone), once a day
   expect(await sendAutopilotDigests(new Date("2026-11-02T07:45:00Z"))).toBe(0);
   const [digest] = to(owner);
   expect(digest!.subject).toBe("1 still needs you · Add a dark theme");
-  expect(digest!.text).toMatch(/✋ 1 Still needs your approval[\s\S]*Dark mode \d+\s+90% sure\s+Completes the post/);
+  expect(digest!.text).toMatch(/1 Still needs your approval[\s\S]*Completes the post Dark mode \d+\s+90% sure/);
   // A day the sweep ran late (11:00 in Berlin): still that day's, once.
   expect(await sendAutopilotDigests(new Date("2026-11-03T10:00:00Z"))).toBe(1);
   expect(await sendAutopilotDigests(new Date("2026-11-03T10:01:00Z"))).toBe(0);

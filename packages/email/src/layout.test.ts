@@ -13,8 +13,11 @@ import { changelogEmail } from "./changelog-email";
 import { conversationEmail } from "./conversation-email";
 import { creditsEmail } from "./credits-email";
 import { emailLimitEmail } from "./email-limit-email";
+import { emailPausedTeamEmail } from "./email-paused-email";
+import { verifyEmail } from "./verify-email";
+import { autopilotEmail } from "./autopilot-email";
 import { inviteEmail } from "./invite-email";
-import { accentColors, colors, Eyebrow, Note, POWERED_BY_URL, Title } from "./layout";
+import { accentColors, Buttons, colors, Diff, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
 import { statusEmail } from "./status-email";
 import { verifyAllEmail } from "./verify-all-email";
@@ -170,4 +173,107 @@ test("every email to a project's customers drops Powered by tuti when the projec
     const html = await render(email.body);
     expect({ name, badge: html.includes(`href="${POWERED_BY_URL.replaceAll("&", "&amp;")}"`) }).toEqual({ name, badge: true });
   }
+});
+
+test("Verify's emails count what it found on tiles: each number over what it counts", async () => {
+  const url = "https://tuti.example/x";
+  const article = await render(verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 8, outdated: 2, unclear: 1 }, reason: "Moved.", url }).body, { plainText: true });
+  expect(article).toMatch(/8 still true\s+2 out of date\s+1 unclear/);
+  expect(article).toContain("Help center · Verify");
+  const all = await render(verifyAllEmail({ projectName: "Acme", checked: 8, total: 12, fixed: ["Export", "Seats"], stopped: "", url }).body, { plainText: true });
+  expect(all).toMatch(/8 checked\s+4 not checked\s+2 fixes waiting/);
+  expect(all).toMatch(/Fix waiting Export\s+Fix waiting Seats/);
+  // All of them checked: no tile for what wasn't.
+  const done = await render(verifyAllEmail({ projectName: "Acme", checked: 12, total: 12, fixed: ["Export"], stopped: "", url }).body, { plainText: true });
+  expect(done).toMatch(/12 checked\s+1 fix waiting/);
+  expect(done).not.toContain("not checked");
+  // The tiles' numbers big, over a muted label.
+  const html = await render(Stats({ items: [{ n: 8, label: "still true" }] }));
+  expect(html).toMatch(/font-size:22px[^>]*>8<\/span> (<!-- -->)?still true/);
+});
+
+test("a diff: removed lines struck through on soft red, added on soft green, each with its sign; the lines left out under it", async () => {
+  const lines = [
+    { kind: "removed" as const, text: "Open the board and choose Export." },
+    { kind: "added" as const, text: "Go to Settings → Data and choose Export CSV." },
+  ];
+  const html = await render(Diff({ lines, more: 4 }));
+  expect(html).toMatch(new RegExp(`background-color:${colors.destructiveSoft}[\\s\\S]*?text-decoration:line-through">Open the board and choose Export.<`));
+  expect(html).toMatch(new RegExp(`background-color:${colors.soft}[\\s\\S]*?text-decoration:none">Go to Settings → Data and choose Export CSV.<`));
+  // Verify's email shows its fix's.
+  const text = await render(
+    verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 1, outdated: 1, unclear: 0 }, reason: "Moved.", diff: lines, diffMore: 4, url: "https://tuti.example/x" }).body,
+    { plainText: true },
+  );
+  expect(text).toMatch(/− Open the board and choose Export.\s+\+ Go to Settings → Data and choose Export CSV.\s+4 more lines in Tuti/);
+});
+
+test("Tuti's emails to teams open with a line in green saying what it's about, then a title that says what happened", async () => {
+  const url = "https://tuti.example/x";
+  const heads = async (email: { body: Parameters<typeof render>[0] }) => {
+    const text = await render(email.body, { plainText: true });
+    const html = await render(email.body);
+    return { eyebrow: html.match(new RegExp(`font-weight:600;color:${colors.green}[^>]*>([^<]*(?:<!-- -->[^<]*)*)</p>`))?.[1]?.replaceAll("<!-- -->", ""), title: html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1]?.replaceAll("<!-- -->", ""), text };
+  };
+  expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: true, subject: "Can't export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New conversation · Acme" });
+  expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: false, subject: "Export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New reply · Acme", title: "Export" });
+  expect(await heads(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url }))).toMatchObject({ eyebrow: "You&#x27;re invited", title: "Join Acme on Tuti" });
+  expect(await heads(verifyEmail({ name: "Ada", url }))).toMatchObject({ title: "Confirm your email, Ada" });
+  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "120", url }))).toMatchObject({ eyebrow: "Acme · Billing", title: "120 AI credits left" });
+  expect(await heads(creditsEmail({ projectName: "Acme", out: true, left: "0", url }))).toMatchObject({ title: "Out of AI credits" });
+  // One credit is singular, in the title and the text; a fraction of one isn't.
+  const one = await heads(creditsEmail({ projectName: "Acme", out: false, left: "1", url }));
+  expect(one).toMatchObject({ title: "1 AI credit left" });
+  expect(one.text).toContain("Acme has 1 AI credit left.");
+  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "0.5", url }))).toMatchObject({ title: "0.5 AI credits left" });
+  const limit = await heads(emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "Upgrade to Pro for more.", url }));
+  expect(limit).toMatchObject({ eyebrow: "Acme · Billing", title: "You&#x27;ve sent all 1,000 emails this month" });
+  expect(limit.text).toContain("has sent the 1,000 emails its Starter plan includes this month");
+  const paused = await heads(emailPausedTeamEmail({ projectName: "Acme", reason: "bounces", url }));
+  expect(paused).toMatchObject({ eyebrow: "Acme · Email", title: "We paused Acme&#x27;s emails" });
+  // The warnings in the highlight note.
+  for (const email of [emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "", url }), emailPausedTeamEmail({ projectName: "Acme", reason: "bounces", url })]) {
+    expect(await render(email.body)).toContain(`background-color:#fff4ea;color:${colors.onHighlight}`);
+  }
+  expect(await heads(verifyArticleEmail({ projectName: "Acme", articleTitle: "Export", counts: { current: 1, outdated: 1, unclear: 0 }, reason: "", url }))).toMatchObject({ eyebrow: "Help center · Verify", title: "“Export” is out of date" });
+  // Autopilot: one pull request is its title; several, what they need.
+  const change = { title: "Add CSV export", pullRequest: "acme/app#1", summary: "", reviewUrl: url, goesOut: [], wentOut: [], done: [], needsYou: [{ kind: "Out of date", title: "Export", fact: "Publishes this edit" }] };
+  const autopilot = (changes: (typeof change)[], digest = false) =>
+    heads(autopilotEmail({ projectName: "Acme", changes, digest, totals: { needsYou: changes.length, goesOut: 0, wentOut: 0, first: "" }, more: 0, autopilotUrl: url, accountUrl: url }));
+  expect(await autopilot([change])).toMatchObject({ eyebrow: "Acme · acme/app#1", title: "Add CSV export" });
+  expect(await autopilot([change, { ...change, pullRequest: "acme/app#2" }])).toMatchObject({ eyebrow: "Acme · 2 merged pull requests", title: "2 need you" });
+  expect(await autopilot([change, { ...change, pullRequest: "acme/app#2" }], true)).toMatchObject({ title: "2 still need you" });
+});
+
+test("four tiles lay out two by two, so a phone's card fits them; three stay in one row", async () => {
+  const tiles = (n: number) => render(Stats({ items: Array.from({ length: n }, (_, i) => ({ n: i + 1, label: `tile ${i + 1}` })) }));
+  const rows = (html: string) => html.match(/<tr>[\s\S]*?<\/tr>/g)!.filter((row) => row.includes("tile "));
+  const four = rows(await tiles(4));
+  expect(four).toHaveLength(2);
+  expect(four.map((row) => row.match(/tile \d/g))).toEqual([["tile 1", "tile 2"], ["tile 3", "tile 4"]]);
+  expect(four[0]).toContain('width="48%"');
+  const three = rows(await tiles(3));
+  expect(three).toHaveLength(1);
+  expect(three[0]!.match(/tile \d/g)).toHaveLength(3);
+});
+
+test("two buttons side by side let a long label break, so a phone's card never scrolls sideways", async () => {
+  const html = await render(createElement(Buttons, { href: "https://tuti.example/a", label: "Publish omnivision-solutions/tuti#848 now", second: { href: "https://tuti.example/b", label: "Stop omnivision-solutions/widget#848" } }));
+  expect(html.match(/overflow-wrap:anywhere/g)?.length).toBe(2);
+});
+
+test("a diff line wraps a long word (a URL, a path), so a phone's card never scrolls sideways", async () => {
+  const html = await render(createElement(Diff, { lines: [{ kind: "added", text: "See https://docs.example.com/a/very/long/path/that/has/no/spaces/at/all" }] }));
+  expect(html).toContain("overflow-wrap:anywhere");
+});
+
+test("a title, an eyebrow and a note wrap a long word, so a phone's card never scrolls sideways", async () => {
+  for (const element of [createElement(Title, null, "omnivision-solutions/a-very-long-repository-name#848"), createElement(Eyebrow, null, "x"), createElement(Note, null, "x")]) {
+    expect(await render(element)).toContain("overflow-wrap:anywhere");
+  }
+});
+
+test("the card itself wraps long words, so text in any email's body (an Autopilot update's title too) never makes a phone scroll", async () => {
+  const html = await render(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url: "https://tuti.example/i" }).body);
+  expect(html).toMatch(/border-radius:16px[^"]*overflow-wrap:anywhere/);
 });

@@ -1,6 +1,6 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { Buttons, Eyebrow, Layout, Note, textStyle, Title } from "./layout";
 
 type EmailLimitProps = {
   projectName: string;
@@ -29,17 +29,19 @@ export function EmailLimitEmail({ projectName, planName, trial = false, limit, r
         </>
       }
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} its {planName} {trial ? "trial" : "plan"} includes this month, so its email to
-        your users (support replies, &quot;it shipped&quot; and changelog emails) is waiting until the month resets on {resets}. Nothing is lost:
-        replies still show in the inbox and the widget.{upgrade && ` ${upgrade}`}
+      <Eyebrow>{projectName} · Billing</Eyebrow>
+      <Title>
+        You&apos;ve sent all {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} this month
+      </Title>
+      <Text style={textStyle}>
+        <strong>{projectName}</strong> has sent the {limit.toLocaleString("en")} {limit === 1 ? "email" : "emails"} its {planName} {trial ? "trial" : "plan"} includes this month. Nothing is
+        lost: replies still show in the inbox and the widget.
       </Text>
-      <Button
-        href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
-      >
-        See Billing
-      </Button>
+      <Note kind="warn">
+        Email to your users (support replies, &quot;it shipped&quot; and changelog emails) is waiting until the month resets on <strong>{resets}</strong>.
+        {upgrade && ` ${upgrade}`}
+      </Note>
+      <Buttons href={url} label="See Billing" />
     </Layout>
   );
 }

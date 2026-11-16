@@ -827,11 +827,10 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const email = await latestEmailTo(owner.email, { subject: new RegExp(`· ${pr}$`) });
   expect(email.from).toContain("Tuti Autopilot");
   expect(email.subject).toBe(`1 goes out in 24 hours · ${pr}`);
-  expect(email.text).toMatch(new RegExp(`${article}\\s+\\d+% sure\\s+Out of date`));
+  expect(email.text).toMatch(new RegExp(`Out of date ${article}\\s+in 24 hours · \\d+% sure`));
   // The edit as lines: what it takes out, what it puts in.
   expect(email.text).toContain("− Pick Light in Settings.");
   expect(email.text).toContain("+ Pick Light, Dark or System in Settings.");
-  expect(email.text).toContain("goes out in 24 hours");
   // (The changelog line isn't in it: it's written into the running draft by itself, and reviewed there.)
   expect(email.text).not.toContain("Changelog line");
   // Publish now and Stop under what goes out; Review in Tuti opens the pull request's activity page.

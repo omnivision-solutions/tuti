@@ -39,26 +39,29 @@ const props = {
   accountUrl: "https://app.example.com/account",
 };
 
-test("Autopilot's email: from Tuti Autopilot, what needs you first in a short subject, the updates by name under it, a coloured overview, then each list with how sure, edits as lines", async () => {
+test("Autopilot's email: from Tuti Autopilot, what needs you first in a short subject, the updates by name under it, an overview's tiles, then each list's cards with how sure, edits as lines", async () => {
   const email = autopilotEmail(props);
   expect(email.fromName).toBe("Tuti Autopilot");
   expect(email.subject).toBe("1 needs you, 1 goes out in 24 hours · Email voters: the team's reply sent to the post's voters too");
   const [html, text] = await Promise.all([render(email.body), render(email.body, { plainText: true })]);
   // The preview, hidden: the line inboxes show under the subject.
   expect(html).toContain("Needs you: Signing in to a portal (missing info). Goes out in 24 hours: Email my voters (progress update). Done: Changelog (changelog line).");
-  // The overview: a tile per list with anything in it, then each list under its band, in that order.
-  const order = ["✋ 1 Needs your approval", "⏳ 1 Auto-updating in 24 hours", "📝 1 Only your team sees", "✋ Needs your approval", "⏳ Auto-updating", "📝 Only your team sees"];
+  // The pull request and its title on top; the overview: a tile per list with anything in it, then each list under its heading, in that order.
+  expect(text).toContain("Acme · acme/app#382");
+  expect(html).toMatch(/<h1[^>]*>Email voters: the team&#x27;s reply sent to the post&#x27;s voters too<\/h1>/);
+  const order = ["1 Needs your approval", "1 Auto-updating in 24 hours", "1 Only your team sees", "✋ Needs your approval", "⏳ Auto-updating", "📝 Only your team sees"];
   const at = order.map((line, i) => text.indexOf(line, i > 0 ? text.indexOf(order[i - 1]!) + 1 : 0));
   expect(at).not.toContain(-1);
   expect(text).not.toContain("Published already");
-  // How sure, by the title; what Autopilot did, a line each.
-  expect(text).toMatch(/Signing in to a portal\s+92% sure\s+Missing info · Publishes this edit/);
-  expect(text).toContain("Changelog · wrote this line in the changelog's draft");
+  // Each a card: its kind and title, how sure, then what it does. What only the team sees doesn't show its lines.
+  expect(text).toMatch(/Missing info Signing in to a portal\s+92% sure\s+Publishes this edit/);
+  expect(text).toMatch(/Changelog line Changelog\s+Wrote this line in the changelog's draft/);
+  expect(text).not.toContain("+ Replies can be emailed to voters");
   expect(text).toContain("− Replies only show on the post.");
   expect(text).toContain("+ The team's replies are emailed to the post's voters.");
   expect(html).toContain("line-through");
   // Each button's link whole in plain text, not run into the next one's label.
-  expect(text).toContain("https://app.example.com/act?token=approve Edit https://app.example.com/review?select=edit");
+  expect(text).toContain("https://app.example.com/act?token=approve Review first https://app.example.com/review?select=edit");
   expect(text).toContain("https://app.example.com/act?token=publish Stop https://app.example.com/act?token=stop");
 });
 
@@ -97,7 +100,7 @@ test("several changes going out by themselves: each one's Publish now and Stop s
   expect(text).toContain("Publish #382 now");
   expect(text).toContain("Stop #383");
   expect(text).not.toContain("Publish acme/app#382 now");
-  expect(text).toContain("⏳ 2 Auto-updating, first in 24 hours");
+  expect(text).toContain("2 Auto-updating, first in 24 hours");
 });
 
 test("two repositories' pull requests with one number: their buttons name the repository too", async () => {
@@ -110,6 +113,27 @@ test("two repositories' pull requests with one number: their buttons name the re
 test("what went out by itself shows what customers saw; what only the team sees, a line", async () => {
   const went = { kind: "Progress update", title: "Email my voters", fact: "In progress, with this comment", sure: 97, diff: [{ kind: "added" as const, text: "Live now" }] };
   const text = await render(autopilotEmail({ ...props, changes: [{ ...props.changes[0]!, wentOut: [went] }], totals: { ...props.totals, wentOut: 1 } }).body, { plainText: true });
-  expect(text).toMatch(/✅ Published already\s+Email my voters · in progress, with this comment · 97% sure\s+\+ Live now/);
+  expect(text).toMatch(/✅ Published already\s+Progress update Email my voters\s+97% sure\s+In progress, with this comment\s+\+ Live now/);
   expect(text).not.toContain("+ Replies can be emailed to voters");
+});
+
+test("an update's card keeps its one-click buttons: Approve and Review first side by side, Publish now and Stop under what goes out, and its kind's colours", async () => {
+  const html = await render(autopilotEmail(props).body);
+  // The link's text, from its own <a href="…"> to its closing tag (plain search: the URLs aren't patterns).
+  const button = (href: string) => {
+    const start = html.indexOf(`<a href="${href}"`);
+    return start < 0 ? null : html.slice(start, html.indexOf("</a>", start));
+  };
+  expect(button("https://app.example.com/act?token=approve")).toContain("Approve");
+  expect(button("https://app.example.com/review?select=edit")).toContain("Review first");
+  expect(button("https://app.example.com/act?token=publish")).toContain("Publish now");
+  expect(button("https://app.example.com/act?token=stop")).toContain("Stop");
+  // Two buttons in one row: cells side by side, not stacked.
+  expect(html).toMatch(/Approve[\s\S]*?<\/td><td[^>]*>[\s\S]*?Review first/);
+  // Out of date and missing info in the edit colour; a progress update in the progress colour.
+  expect(html).toMatch(/color:#7d5002;background-color:#ebe5d9[^>]*>Missing info</);
+  expect(html).toMatch(/color:#155aa7;background-color:#dce6f2[^>]*>Progress update</);
+  // "+N more in Tuti" still links to Autopilot.
+  const more = await render(autopilotEmail({ ...props, more: 3 }).body, { plainText: true });
+  expect(more).toContain("+3 more in Tuti https://app.example.com/autopilot");
 });

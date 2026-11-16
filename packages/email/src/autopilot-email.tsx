@@ -1,8 +1,8 @@
-import { Button, Column, Link, Row, Section, Text } from "@react-email/components";
+import { Column, Link, Row, Section, Text } from "@react-email/components";
 import type { DiffLine } from "@tuti/content";
 import { Fragment } from "react";
 
-import { colors, FooterLink, Layout } from "./layout";
+import { Buttons, colors, Diff, Eyebrow, FooterLink, Layout, Stats, textStyle, Title } from "./layout";
 
 /** One update, as the email previews it. `goesOut`: when it goes out by itself ("in 24 hours", "now"). */
 export type AutopilotEmailUpdate = {
@@ -54,116 +54,87 @@ type AutopilotProps = {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Each list's colour and icon, so a glance finds what needs them: amber waits for them, green goes out by itself, grey is done. */
+/** Each list's heading colour and icon, so a glance finds what needs them: orange waits for them, green goes out by itself, grey is done. */
 const tones = {
-  needsYou: { icon: "✋", color: colors.onHighlight, background: colors.highlight },
-  goesOut: { icon: "⏳", color: colors.onSoft, background: colors.soft },
-  wentOut: { icon: "✅", color: colors.muted, background: colors.mutedBackground },
-  done: { icon: "📝", color: colors.muted, background: colors.mutedBackground },
+  needsYou: { icon: "✋", color: colors.onHighlight },
+  goesOut: { icon: "⏳", color: colors.onSoft },
+  wentOut: { icon: "✅", color: colors.muted },
+  done: { icon: "📝", color: colors.muted },
 };
 type List = keyof typeof tones;
 
-const primary = { backgroundColor: colors.green, color: colors.onGreen, borderRadius: 8, padding: "8px 14px", fontSize: 14, fontWeight: 600 };
-const secondary = { ...primary, backgroundColor: colors.card, color: colors.green, border: `1px solid ${colors.border}`, padding: "7px 13px" };
+/** An update's kind badge in the app's `kind-*` colours (TargetBadge): its text on a 15% tint of it, grey for the rest. */
+const KIND_TONES: Record<string, { color: string; backgroundColor: string }> = {
+  closes: { color: "#146d34", backgroundColor: "#dce9e1" },
+  progress: { color: "#155aa7", backgroundColor: "#dce6f2" },
+  edit: { color: "#7d5002", backgroundColor: "#ebe5d9" },
+  neutral: { color: "#57534e", backgroundColor: "#f5f5f4" },
+};
+const KINDS: Record<string, keyof typeof KIND_TONES> = {
+  "Completes the post": "closes",
+  "New article": "closes",
+  "Progress update": "progress",
+  "Missing info": "edit",
+  "Out of date": "edit",
+};
 
-/** An edit as its lines: removed ones struck through in red, added ones in green, each with its sign (for plain text too). */
-function Diff({ lines }: { lines: DiffLine[] }) {
-  const looks = {
-    removed: { sign: "−", color: colors.destructive, background: colors.destructiveSoft },
-    added: { sign: "+", color: colors.onSoft, background: colors.soft },
-    same: { sign: " ", color: colors.muted, background: colors.card },
-  };
-  return (
-    <Section style={{ margin: "6px 0 0" }}>
-      {lines.map((line, i) => {
-        const look = looks[line.kind];
-        return (
-          <Text key={i} style={{ fontSize: 13, lineHeight: "19px", color: look.color, backgroundColor: look.background, borderRadius: 4, padding: "3px 8px", margin: "0 0 2px" }}>
-            <strong>{look.sign} </strong>
-            <span style={line.kind === "removed" ? { textDecoration: "line-through" } : undefined}>{line.text}</span>
-          </Text>
-        );
-      })}
-    </Section>
-  );
-}
-
-/** "92% sure", as a chip: how sure Autopilot is. */
-const Sure = ({ update }: { update: AutopilotEmailUpdate }) =>
-  update.sure === undefined ? null : (
-    <span style={{ fontSize: 12, fontWeight: 700, color: colors.muted, backgroundColor: colors.mutedBackground, borderRadius: 10, padding: "2px 7px", whiteSpace: "nowrap" }}>
-      {update.sure}% sure
-    </span>
-  );
-
-/** One update to act on (or to stop): its title and how sure, what kind and what it does, what it changes, and its buttons. */
-function Update({ update, pullRequest }: { update: AutopilotEmailUpdate; pullRequest?: string }) {
-  return (
-    <Section style={{ borderBottom: `1px solid ${colors.border}`, padding: "10px 2px" }}>
-      <Row>
-        <Column style={{ verticalAlign: "top" }}>
-          <Text style={{ fontSize: 15, fontWeight: 600, color: colors.text, lineHeight: "21px", margin: 0 }}>{update.title}</Text>
-        </Column>
-        <Column style={{ verticalAlign: "top", textAlign: "right", width: 80 }}>
-          {/* Apart from the title in plain text too. */}{" "}
-          <Sure update={update} />
-        </Column>
-      </Row>
-      <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "19px", margin: "1px 0 0" }}>
-        {[update.kind, update.fact, pullRequest].filter(Boolean).join(" · ")}
-        {update.goesOut && <span style={{ color: tones.goesOut.color, fontWeight: 600 }}> · goes out {update.goesOut}</span>}
-      </Text>
-      {update.diff && update.diff.length > 0 && <Diff lines={update.diff} />}
-      {!!update.diffMore && <Text style={{ fontSize: 13, color: colors.muted, margin: "4px 0 0" }}>{plural(update.diffMore, "more line", "more lines")} in Tuti</Text>}
-      {(update.approveUrl || update.editUrl) && (
-        <Section style={{ margin: "8px 0 0" }}>
-          {update.approveUrl && (
-            <Button href={update.approveUrl} style={{ ...primary, marginRight: 4 }}>
-              Approve
-            </Button>
-          )}
-          {/* Apart in plain text too, so each link stays whole. */}{" "}
-          {update.editUrl && (
-            <Button href={update.editUrl} style={secondary}>
-              Edit
-            </Button>
-          )}
-        </Section>
-      )}
-    </Section>
-  );
+function Kind({ kind }: { kind: string }) {
+  return <span style={{ ...KIND_TONES[KINDS[kind] ?? "neutral"], fontSize: 12, fontWeight: 600, borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap" }}>{kind}</span>;
 }
 
 /**
- * One update Autopilot did by itself, a line: its title, what it did, and how sure. What customers see (`shown`)
- * shows what it changed too: the email is how the team learns what went out without them.
+ * One update, a bordered card: its kind and title, when it goes out and how sure Autopilot is, what it does, what it
+ * changes (`shown`: what customers saw, or will), and its one-click buttons.
  */
-function Done({ update, pullRequest, shown }: { update: AutopilotEmailUpdate; pullRequest?: string; shown: boolean }) {
-  const fact = update.fact.charAt(0).toLowerCase() + update.fact.slice(1);
+function Update({ update, pullRequest, shown = true }: { update: AutopilotEmailUpdate; pullRequest?: string; shown?: boolean }) {
   return (
-    <Section style={{ borderBottom: `1px solid ${colors.border}`, padding: "7px 2px" }}>
-      <Text style={{ fontSize: 14, color: colors.text, lineHeight: "20px", margin: 0 }}>
-        <strong>{update.title}</strong>
-        <span style={{ fontSize: 13, color: colors.muted }}> · {[fact, update.sure !== undefined && `${update.sure}% sure`, pullRequest].filter(Boolean).join(" · ")}</span>
-      </Text>
-      {shown && update.diff && update.diff.length > 0 && <Diff lines={update.diff} />}
-      {shown && !!update.diffMore && <Text style={{ fontSize: 13, color: colors.muted, margin: "4px 0 0" }}>{plural(update.diffMore, "more line", "more lines")} in Tuti</Text>}
-    </Section>
+    <table role="presentation" width="100%" cellPadding={0} cellSpacing={0} style={{ margin: "10px 0 0", borderCollapse: "separate" }}>
+      <tbody>
+        <tr>
+          <td style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: "14px 16px" }}>
+            <Row>
+              <Column style={{ verticalAlign: "top" }}>
+                <Text style={{ fontSize: 14, lineHeight: "22px", color: colors.text, margin: 0 }}>
+                  <Kind kind={update.kind} /> <strong>{update.title}</strong>
+                </Text>
+              </Column>
+              {/* No fixed width: on a phone it wraps under its own words rather than push the card wider than the screen. */}
+              <Column style={{ verticalAlign: "top", textAlign: "right", paddingLeft: 8 }}>
+                {/* Apart from the title in plain text too. */}{" "}
+                <Text style={{ fontSize: 13, lineHeight: "22px", color: colors.muted, margin: 0 }}>
+                  {[update.goesOut, update.sure !== undefined && `${update.sure}% sure`].filter(Boolean).join(" · ")}
+                </Text>
+              </Column>
+            </Row>
+            <Text style={{ fontSize: 14, color: "#57534e", lineHeight: "20px", margin: "6px 0 0" }}>{[update.fact, pullRequest].filter(Boolean).join(" · ")}</Text>
+            {shown && update.diff && update.diff.length > 0 && <Diff lines={update.diff} more={update.diffMore} />}
+            {update.approveUrl ? (
+              <Buttons small href={update.approveUrl} label="Approve" second={update.editUrl ? { href: update.editUrl, label: "Review first" } : undefined} />
+            ) : (
+              update.editUrl && (
+                <Text style={{ fontSize: 14, margin: "10px 0 0" }}>
+                  <Link href={update.editUrl} style={{ color: colors.green, fontWeight: 600 }}>
+                    Review first →
+                  </Link>
+                </Text>
+              )
+            )}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
-/**
- * One list across every change, under its tinted band: what to act on in full, what Autopilot did a line each.
- * What goes out by itself ends each change's with Publish now and Stop.
- */
+/** One list across every change, under its heading. What goes out by itself ends each change's with Publish now and Stop. */
 function Group({ heading, list, changes }: { heading: string; list: List; changes: AutopilotEmailChange[] }) {
   if (changes.every((change) => change[list].length === 0)) {
     return null;
   }
   const tone = tones[list];
   return (
-    <Section style={{ margin: "18px 0 0" }}>
-      <Text style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: tone.color, backgroundColor: tone.background, borderRadius: 8, padding: "7px 10px", margin: "0 0 2px" }}>
+    <Section style={{ margin: "22px 0 0" }}>
+      <Text style={{ fontSize: 14, fontWeight: 700, color: tone.color, margin: 0 }}>
         {tone.icon} {heading}
       </Text>
       {changes.map((change, i) => {
@@ -173,23 +144,16 @@ function Group({ heading, list, changes }: { heading: string; list: List; change
         const which = number && changes.some((other) => other !== change && other.pullRequest.endsWith(number)) ? pullRequest : number;
         return (
           <Fragment key={i}>
-            {change[list].map((update, j) =>
-              list === "wentOut" || list === "done" ? (
-                <Done key={j} update={update} pullRequest={pullRequest} shown={list === "wentOut"} />
-              ) : (
-                <Update key={j} update={update} pullRequest={pullRequest} />
-              ),
-            )}
+            {change[list].map((update, j) => (
+              // What only the team sees is a line: the email is how they learn what customers saw.
+              <Update key={j} update={update} pullRequest={pullRequest} shown={list !== "done"} />
+            ))}
             {list === "goesOut" && change[list].length > 0 && change.publishUrl && change.stopUrl && (
-              <Section style={{ margin: "8px 0 4px" }}>
-                {/* Several changes: which one's they are. */}
-                <Button href={change.publishUrl} style={{ ...primary, marginRight: 4 }}>
-                  {which ? `Publish ${which} now` : "Publish now"}
-                </Button>{" "}
-                <Button href={change.stopUrl} style={secondary}>
-                  {which ? `Stop ${which}` : "Stop"}
-                </Button>
-              </Section>
+              <Buttons
+                href={change.publishUrl}
+                label={which ? `Publish ${which} now` : "Publish now"}
+                second={{ href: change.stopUrl, label: which ? `Stop ${which}` : "Stop" }}
+              />
             )}
           </Fragment>
         );
@@ -198,16 +162,15 @@ function Group({ heading, list, changes }: { heading: string; list: List; change
   );
 }
 
-/** The overview: a coloured tile per list with anything in it, its count over what it is ("3", "Need your approval"). */
-function overview(totals: AutopilotProps["totals"], digest = false): { list: List; n: number; text: string }[] {
-  const lines: { list: List; n: number; text: string }[] = [
-    { list: "needsYou", n: totals.needsYou, text: `${digest ? "Still need" : "Need"}${totals.needsYou === 1 ? "s" : ""} your approval` },
+/** The overview: a tile per list with anything in it, its count over what it is ("3", "Need your approval"). */
+function overview(totals: AutopilotProps["totals"], digest = false): { n: number; label: string }[] {
+  return [
+    { n: totals.needsYou, label: `${digest ? "Still need" : "Need"}${totals.needsYou === 1 ? "s" : ""} your approval` },
     // Each may go at its own time: the first's.
-    { list: "goesOut", n: totals.goesOut, text: `Auto-updating${totals.goesOut === 1 ? "" : ", first"} ${totals.first}` },
-    { list: "wentOut", n: totals.wentOut, text: "Published already" },
-    { list: "done", n: totals.done ?? 0, text: "Only your team sees" },
-  ];
-  return lines.filter((line) => line.n > 0);
+    { n: totals.goesOut, label: `Auto-updating${totals.goesOut === 1 ? "" : ", first"} ${totals.first}` },
+    { n: totals.wentOut, label: "Published already" },
+    { n: totals.done ?? 0, label: "Only your team sees" },
+  ].filter((line) => line.n > 0);
 }
 
 /**
@@ -215,6 +178,8 @@ function overview(totals: AutopilotProps["totals"], digest = false): { list: Lis
  * merged pull requests change, what needs them, what goes out by itself and when, and what's done.
  */
 export function AutopilotEmail({ projectName, changes, totals, digest, more, autopilotUrl, accountUrl }: AutopilotProps) {
+  const merged = totals.pullRequests ?? changes.length;
+  const one = merged === 1 ? changes[0] : undefined;
   return (
     <Layout
       preview={previewOf(changes)}
@@ -226,43 +191,39 @@ export function AutopilotEmail({ projectName, changes, totals, digest, more, aut
         </>
       }
     >
-      <Text style={{ fontSize: 13, color: colors.muted, margin: "14px 0 8px" }}>
-        {projectName} · {plural(totals.pullRequests ?? changes.length, "merged pull request", "merged pull requests")}
-      </Text>
-      {/* Tiles 4px apart: the table's own spacing (cells take no margin in email). */}
-      <Row style={{ borderCollapse: "separate", borderSpacing: "4px 0" }}>
-        {overview(totals, digest).map((line, _, lines) => (
-          <Column
-            key={line.list}
-            style={{ color: tones[line.list].color, backgroundColor: tones[line.list].background, borderRadius: 10, padding: "8px 8px 7px", verticalAlign: "top", width: `${100 / lines.length}%` }}
-          >
-            {/* One line in plain text: "✋ 3 Need your approval". */}
-            <Text style={{ fontSize: 12, fontWeight: 600, lineHeight: "15px", margin: 0 }}>
-              <span style={{ display: "block", fontSize: 13, lineHeight: "16px" }}>{tones[line.list].icon}</span>{" "}
-              <span style={{ display: "block", fontSize: 22, fontWeight: 800, lineHeight: "26px" }}>{line.n}</span> {line.text}
+      <Eyebrow>
+        {projectName} · {one ? one.pullRequest : plural(merged, "merged pull request", "merged pull requests")}
+      </Eyebrow>
+      <Title>{one ? one.title : sentence(headline(totals, digest))}</Title>
+      {one?.summary && <Text style={{ ...textStyle, margin: "0 0 4px" }}>{one.summary}</Text>}
+      {one && (
+        <Text style={{ fontSize: 14, margin: "0 0 4px" }}>
+          <Link href={one.reviewUrl} style={{ color: colors.green, fontWeight: 600 }}>
+            Review in Tuti →
+          </Link>
+        </Text>
+      )}
+      <Stats items={overview(totals, digest)} />
+      {!one &&
+        changes.map((change, i) => (
+          <Section key={i} style={{ borderBottom: "1px solid #f5f5f4", padding: "10px 0" }}>
+            <Text style={{ fontSize: 15, fontWeight: 600, color: colors.text, lineHeight: "22px", margin: 0 }}>{change.title}</Text>
+            {change.summary && <Text style={{ fontSize: 14, color: "#57534e", lineHeight: "21px", margin: "2px 0 0" }}>{change.summary}</Text>}
+            <Text style={{ fontSize: 13, color: colors.muted, margin: "2px 0 0" }}>
+              {change.pullRequest} ·{" "}
+              <Link href={change.reviewUrl} style={{ color: colors.green, fontWeight: 600 }}>
+                Review in Tuti →
+              </Link>
             </Text>
-          </Column>
+          </Section>
         ))}
-      </Row>
-      {changes.map((change, i) => (
-        <Section key={i} style={{ margin: "16px 0 0" }}>
-          <Text style={{ fontSize: 16, fontWeight: 700, color: colors.text, lineHeight: "22px", margin: 0 }}>{change.title}</Text>
-          {change.summary && <Text style={{ fontSize: 14, color: colors.text, lineHeight: "21px", margin: "2px 0 0" }}>{change.summary}</Text>}
-          <Text style={{ fontSize: 13, color: colors.muted, margin: "2px 0 0" }}>
-            {change.pullRequest} ·{" "}
-            <Link href={change.reviewUrl} style={{ color: colors.green, fontWeight: 600 }}>
-              Review in Tuti →
-            </Link>
-          </Text>
-        </Section>
-      ))}
       <Group heading="Needs your approval" list="needsYou" changes={changes} />
       <Group heading="Auto-updating" list="goesOut" changes={changes} />
       <Group heading="Published already" list="wentOut" changes={changes} />
       <Group heading="Only your team sees" list="done" changes={changes} />
       {more > 0 && (
-        <Text style={{ fontSize: 14, color: colors.text, marginTop: 16 }}>
-          <Link href={autopilotUrl} style={{ color: colors.green }}>
+        <Text style={{ fontSize: 14, margin: "18px 0 0" }}>
+          <Link href={autopilotUrl} style={{ color: colors.green, fontWeight: 600 }}>
             +{more} more in Tuti
           </Link>
         </Text>
@@ -270,6 +231,8 @@ export function AutopilotEmail({ projectName, changes, totals, digest, more, aut
     </Layout>
   );
 }
+
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** What needs them first, then what goes out by itself and what went: "1 needs you, 2 go out in 24 hours". */
 function headline(totals: AutopilotProps["totals"], digest = false): string {
