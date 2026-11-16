@@ -71,7 +71,7 @@ export const PRIVATE_PAGE = { robots: { index: false, follow: false } } satisfie
  * An article's or changelog entry's schema.org data for search and answer engines (rich results): a `<script
  * type="application/ld+json">` with its headline, description, canonical address (`path` on the portal's real
  * address, as portalPageMetadata), dates and the portal as publisher, and a `BreadcrumbList` of `breadcrumb` (portal
- * paths, the page last). None on a private portal: callers leave out pages that aren't for search engines or signed-out readers.
+ * paths, the page last; with steps before it). None on a private portal: callers leave out pages that aren't for search engines or signed-out readers.
  */
 export async function portalArticleJsonLd(
   slug: string,
@@ -103,7 +103,8 @@ export async function portalArticleJsonLd(
       publisher: { "@type": "Organization", name: site.name, url: address },
     },
   ];
-  if (page.breadcrumb) {
+  // A trail with steps before the page (one with the page alone says nothing).
+  if (page.breadcrumb && page.breadcrumb.length > 1) {
     data.push({
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",

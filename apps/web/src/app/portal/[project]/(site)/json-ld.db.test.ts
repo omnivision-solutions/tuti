@@ -9,15 +9,17 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 
 import ChangelogEntryPage from "./changelog/[number]/page";
 import DocsSlugPage from "./docs/[slug]/page";
+import DocsPage from "./docs/page";
 
 /** Articles' and changelog entries' schema.org data (JSON-LD) for search and answer engines. */
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let portal: string;
+let owner: Awaited<ReturnType<typeof signUp>>;
 let as: { actor: { kind: "user"; userId: string }; projectId: string };
 
 beforeEach(async () => {
-  const owner = await signUp("Owner");
+  owner = await signUp("Owner");
   project = await createProject(owner);
   portal = `http://${project.slug}.localhost:3100`;
   as = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
@@ -99,6 +101,29 @@ test("a tab showing an article in its place gives the tab's address", async () =
   ]);
 });
 
+test("at /docs, the first tab's article has no step for /docs, and no trail with its page alone", async () => {
+  await call(createTab, as, { name: "Guides" });
+  await call(createTab, as, { name: "API" });
+  const billing = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Paying by card" } });
+  await call(updateTab, as, { slug: "guides", landing: "page", landingPage: billing.slug });
+  const docsJsonLd = async () => {
+    const tab = (await DocsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never)) as ReactElement<
+      Parameters<typeof DocsTabPage>[0]
+    >;
+    return JSON.parse(jsonLdIn(await DocsArticle((DocsTabPage(tab.props) as ReactElement<Parameters<typeof DocsArticle>[0]>).props))!);
+  };
+  const [data, breadcrumb] = await docsJsonLd();
+  expect(data.url).toBe(`${portal}/docs`);
+  expect(breadcrumb.itemListElement.map((crumb: { name: string; item: string }) => `${crumb.name} ${crumb.item}`)).toEqual([
+    `Billing ${portal}/docs/billing`,
+    `Paying by card ${portal}/docs`,
+  ]);
+
+  // In no collection: the page alone, so no trail.
+  await prisma.article.update({ where: { id: billing.id }, data: { collectionId: null } });
+  expect((await docsJsonLd())["@type"]).toBe("TechArticle");
+});
+
 test("a title can't close the script tag: < is escaped, and the JSON still reads the same", async () => {
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: { startsWith: "Hidden" } } });
   const json = (await docsJsonLd(article.slug))!;
@@ -107,12 +132,26 @@ test("a title can't close the script tag: < is escaped, and the JSON still reads
   expect(JSON.parse(json)[0].headline).toBe("Hidden </script><script>alert(1)</script>");
 });
 
-test("an article kept from search engines, or a private portal's, has none", async () => {
+test("an article kept from search engines, for some readers only, or on a private portal has none", async () => {
   const hidden = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Internal notes" } });
   expect(await docsJsonLd(hidden.slug)).toBeNull();
   const shown = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: "Paying by card" } });
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  expect(await docsJsonLd(shown.slug)).toBeNull();
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC" } });
   await prisma.article.update({ where: { id: shown.id }, data: { listing: "UNLISTED" } });
   expect(await docsJsonLd(shown.slug)).toBeNull();
+
+  // For signed-in readers only: none, even for one who may read it.
+  const { slug } = await call(createCollection, as, { name: "Members", access: "signed_in" });
+  const members = await call(createArticle, as, { title: "Members only", body: "For members.", collection: slug });
+  await call(publishArticle, as, { slug: members.slug });
+  actAs(owner);
+  expect(await docsJsonLd(members.slug)).toBeNull();
+  // Moved where everyone may read it: there.
+  const billing = await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "billing" } });
+  await prisma.article.update({ where: { projectId_slug: { projectId: project.id, slug: members.slug } }, data: { collectionId: billing.id } });
+  expect(await docsJsonLd(members.slug)).not.toBeNull();
 });
 
 test("a changelog entry's page has a BlogPosting with its canonical address and dates; a sample entry's none", async () => {
