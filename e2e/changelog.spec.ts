@@ -1046,10 +1046,12 @@ test("the next release waits to be written; its entry gets a featured image read
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
-  await expect(addButton).toBeVisible();
+  // Uploaded from Add with the keyboard: Add goes with the upload, and focus moves to Replace.
+  await addButton.focus();
   await file.setInputFiles({ name: "cover-2.png", mimeType: "image/png", buffer: second });
   // Shown as soon as it's uploaded, before it's saved.
   await expect(canvasCover).toBeVisible();
+  await expect(replaceButton).toBeFocused();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await canvasCover.hover();

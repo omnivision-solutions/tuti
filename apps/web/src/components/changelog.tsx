@@ -173,6 +173,15 @@ function FeaturedImage({
     image: entry?.cover ? { id: entry.cover.id, url: entry.wideCoverUrl ?? entry.cover.url } : null,
     onBusy,
   });
+  // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
+  const replace = useRef<HTMLButtonElement>(null);
+  const shown = useRef(image !== null);
+  useEffect(() => {
+    if (image && !shown.current && (!document.activeElement || document.activeElement === document.body)) {
+      replace.current?.focus();
+    }
+    shown.current = image !== null;
+  }, [image]);
   const status = uploading && (
     <p role="status" className="text-sm text-muted-foreground">
       Uploading…
@@ -188,7 +197,7 @@ function FeaturedImage({
           <img src={image.url} alt={entry?.title ?? ""} className={cn("h-auto w-full rounded-lg border", uploading && "opacity-50")} />
           {status && <div className="absolute inset-0 flex items-center justify-center">{status}</div>}
           <div className="absolute top-2 right-2 flex gap-2 opacity-0 transition-opacity group-hover/cover:opacity-100 group-focus-within/cover:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100">
-            <Button type="button" variant="secondary" size="sm" aria-label="Replace featured image" disabled={uploading} focusableWhenDisabled onClick={pick}>
+            <Button type="button" variant="secondary" size="sm" aria-label="Replace featured image" ref={replace} disabled={uploading} focusableWhenDisabled onClick={pick}>
               Replace
             </Button>
             <Button
