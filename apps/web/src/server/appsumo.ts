@@ -125,10 +125,18 @@ export async function applyAppsumoEvent(event: AppsumoEvent): Promise<void> {
       }
       const keys = [key, ...(event.prev_license_key ? [event.prev_license_key] : [])];
       await prisma.$transaction(async (tx) => {
-        const rows = await tx.$queryRaw<{ id: string; externalKey: string }[]>`
-          SELECT id, "externalKey" FROM plan_license WHERE source = ${APPSUMO} AND "externalKey" = ANY(${keys}) FOR UPDATE`;
-        // The new key's own (a retry), else the previous key's.
-        const row = rows.find((one) => one.externalKey === key) ?? rows[0];
+        const rows = await tx.$queryRaw<{ id: string; externalKey: string; userId: string | null; projectId: string | null }[]>`
+          SELECT id, "externalKey", "userId", "projectId" FROM plan_license WHERE source = ${APPSUMO} AND "externalKey" = ANY(${keys}) FOR UPDATE`;
+        const own = rows.find((one) => one.externalKey === key);
+        const previous = rows.find((one) => one.externalKey !== key);
+        // The previous key's license takes the new key: its holder and project carry over. The new key's own row is a retry
+        // (the previous one renamed already), or, unclaimed and unassigned, one the new key's activation made before the
+        // upgrade arrived: that one goes.
+        const early = own && previous && !own.userId && !own.projectId;
+        if (early) {
+          await tx.planLicense.delete({ where: { id: own.id } });
+        }
+        const row = early ? previous : (own ?? previous);
         if (!row) {
           await tx.planLicense.createMany({ data: [{ source: APPSUMO, externalKey: key, plan, metadata }], skipDuplicates: true });
           return;

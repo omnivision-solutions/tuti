@@ -7,7 +7,7 @@ import { POST as webhookRoute } from "@/app/api/appsumo/webhook/route";
 import RedeemPage from "@/app/app/(account-pages)/licenses/redeem/page";
 import { actAs, createProject, redirectTarget, signUp } from "@/test/helpers";
 
-import { claimToken } from "./appsumo";
+import { appsumoSigned, claimToken } from "./appsumo";
 import { assignPlanLicense, claimPlanLicense } from "./plan-licenses";
 
 /** AppSumo's lifetime deals (docs/plan.md, Plan licenses): its webhook makes and changes licenses; its sign-in claims one to an account. */
@@ -127,6 +127,38 @@ test("the old key's deactivation arriving before the upgrade: the upgrade brings
   expect(await planOf(project.id)).toBe("appsumo-1");
 });
 
+test("the new key's activation arriving before the upgrade: the upgrade still keeps the holder's license", async () => {
+  const { owner, project, key, license } = await assigned();
+  const next = crypto.randomUUID();
+  await deliver({ event: "activate", license_key: next, tier: 2 });
+  await deliver({ event: "upgrade", license_key: next, prev_license_key: key, tier: 2 });
+  await deliver({ event: "deactivate", license_key: key });
+  expect(await prisma.planLicense.findMany({ where: { externalKey: { in: [key, next] } } })).toEqual([
+    expect.objectContaining({ id: license.id, externalKey: next, plan: "appsumo-2", userId: owner.id, projectId: project.id, revokedAt: null }),
+  ]);
+  expect(await planOf(project.id)).toBe("appsumo-2");
+});
+
+test("AppSumo's signature: the timestamp in seconds or milliseconds within 5 minutes, hex in either case or base64", async () => {
+  const { createHmac } = await import("node:crypto");
+  const now = Date.UTC(2026, 10, 15, 12);
+  const body = '{"event":"activate"}';
+  const sign = (timestamp: string, key = "k") => createHmac("sha256", key).update(timestamp + body).digest();
+  const seconds = String(now / 1000);
+  const millis = String(now);
+  expect(appsumoSigned(body, seconds, sign(seconds).toString("hex"), "k", now)).toBe(true);
+  expect(appsumoSigned(body, millis, sign(millis).toString("hex"), "k", now)).toBe(true);
+  expect(appsumoSigned(body, seconds, sign(seconds).toString("hex").toUpperCase(), "k", now)).toBe(true);
+  expect(appsumoSigned(body, seconds, sign(seconds).toString("base64"), "k", now)).toBe(true);
+  // Another key, another body, too old or too far ahead, or missing.
+  expect(appsumoSigned(body, seconds, sign(seconds, "other").toString("hex"), "k", now)).toBe(false);
+  expect(appsumoSigned(`${body} `, seconds, sign(seconds).toString("hex"), "k", now)).toBe(false);
+  expect(appsumoSigned(body, seconds, sign(seconds).toString("hex"), "k", now + 6 * 60_000)).toBe(false);
+  expect(appsumoSigned(body, seconds, sign(seconds).toString("hex"), "k", now - 6 * 60_000)).toBe(false);
+  expect(appsumoSigned(body, null, sign(seconds).toString("hex"), "k", now)).toBe(false);
+  expect(appsumoSigned(body, seconds, null, "k", now)).toBe(false);
+});
+
 test("a deactivation (a refund) revokes the license: its project is back on its own plan, the license stays on it until unassigned", async () => {
   const { project, key, license } = await assigned();
   expect(await deliver({ event: "deactivate", license_key: key, license_status: "active", extra: { reason: "Refunded by the user" } })).toEqual({
@@ -157,6 +189,9 @@ test("the redirect answers AppSumo's check, and trades a buyer's code for a clai
   expect(appsumo.requests.at(-1)).toMatchObject({ code, grant_type: "authorization_code", redirect_uri: "https://app.tuti.example/api/appsumo/redirect" });
   // The code is single-use: again, AppSumo refuses it.
   expect(await redirectTarget(redirectRoute(new Request(`https://app.tuti.example/api/appsumo/redirect?code=${code}`)))).toBe("/app/licenses/redeem?failed=1");
+  // A key with a dot can't be carried in a claim (its fields are dot-separated): refused, not cut short.
+  const dotted = appsumo.code(`${crypto.randomUUID()}.extra`);
+  expect(await redirectTarget(redirectRoute(new Request(`https://app.tuti.example/api/appsumo/redirect?code=${dotted}`)))).toBe("/app/licenses/redeem?failed=1");
 });
 
 test("signed out, the redeem page sends the buyer to sign up and back", async () => {
