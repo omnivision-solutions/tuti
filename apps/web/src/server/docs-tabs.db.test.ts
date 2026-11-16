@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -354,6 +355,48 @@ describe("readers", () => {
       ].join("\n\n"),
     );
     expect(text).not.toContain("Empty");
+  });
+
+  test("the sitemap dates a tab by the newest of itself, its collections and the listed articles in them, never a hidden one's", async () => {
+    await withTabs();
+    const old = new Date("2026-01-01T10:00:00Z");
+    await prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.collection.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id, slug: "listing-posts" }, data: { updatedAt: new Date("2026-03-01T10:00:00Z") } });
+    const { slug } = await call(createArticle, as(), { title: "Deleting posts", body: "Deleting posts.", collection: "endpoints" });
+    await call(publishArticle, as(), { slug });
+    await prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { noindex: true, updatedAt: new Date("2026-06-01T10:00:00Z") } });
+
+    const portal = `http://${project.slug}.localhost:3100`;
+    const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(xml).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-03-01T10:00:00.000Z</lastmod></url>`);
+    expect(xml).not.toContain(`${portal}/docs/empty<`);
+
+    // A collection in it changing (its name, say) changes the pages it's on: its tab's, and the collection it's in.
+    await prisma.collection.updateMany({ where: { projectId: project.id, slug: { in: ["endpoints", "invoices"] } }, data: { updatedAt: new Date("2026-04-01T10:00:00Z") } });
+    const again = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(again).toContain(`<url><loc>${portal}/docs/api</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
+    expect(again).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-04-01T10:00:00.000Z</lastmod></url>`);
+
+    // A sample collection's own edits don't count: the portal shows nothing of it but the team's pages in it.
+    await prisma.collection.updateMany({ where: { projectId: project.id, slug: "invoices" }, data: { sample: true, updatedAt: new Date("2026-05-01T10:00:00Z") } });
+    const sample = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(sample).toContain(`<url><loc>${portal}/docs/billing</loc><lastmod>2026-01-01T10:00:00.000Z</lastmod></url>`);
+  });
+
+  test("the sitemap dates a tab showing an article in its place by that article's edits, even an unlisted one", async () => {
+    await withTabs();
+    const old = new Date("2026-01-01T10:00:00Z");
+    const { slug } = await call(createArticle, as(), { title: "API overview", body: "Start here.", collection: "endpoints" });
+    await call(publishArticle, as(), { slug });
+    await call(updateTab, as(), { slug: "api", landing: "page", landingPage: slug });
+    await prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.collection.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id }, data: { updatedAt: old } });
+    await prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { listing: "UNLISTED", updatedAt: new Date("2026-06-01T10:00:00Z") } });
+    const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(xml).toContain(`<url><loc>http://${project.slug}.localhost:3100/docs/api</loc><lastmod>2026-06-01T10:00:00.000Z</lastmod></url>`);
   });
 
   test("llms-full.txt has the articles in llms.txt's order: tab by tab, each tab's articles in no collection last", async () => {

@@ -329,6 +329,10 @@ export type DocsPage =
 const firstIn = (collection: DocsCollection): string | undefined =>
   collection.articles.find((a) => !a.locked)?.slug ?? collection.collections.map(firstIn).find(Boolean);
 
+/** The article or collection tab `tab`'s path tries to show (its first article, or the page the team picked), or null for its overview. */
+export const tabLandingSlug = (tab: DocsTabView): string | null | undefined =>
+  tab.landing === "FIRST" ? (tab.collections.map(firstIn).find(Boolean) ?? tab.uncollected.find((a) => !a.locked)?.slug) : tab.landing === "PAGE" ? tab.page : null;
+
 /**
  * What tab `tab`'s path shows this reader: its first article (in its first collection, else the
  * first in none), the article or collection the team picked, or its overview. A picked page this
@@ -336,8 +340,7 @@ const firstIn = (collection: DocsCollection): string | undefined =>
  * another tab now) is the overview, as is a tab with no article.
  */
 export async function tabLanding(projectSlug: string, docs: DocsContents, tab: DocsTabView): Promise<TabLanding> {
-  const slug =
-    tab.landing === "FIRST" ? (tab.collections.map(firstIn).find(Boolean) ?? tab.uncollected.find((a) => !a.locked)?.slug) : tab.landing === "PAGE" ? tab.page : null;
+  const slug = tabLandingSlug(tab);
   if (!slug) {
     return { kind: "overview" };
   }
