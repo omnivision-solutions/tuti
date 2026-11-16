@@ -345,3 +345,30 @@ test("someone told it shipped while an In progress run was paused (completed, re
     expect(subjectsTo(person.email)).toEqual([]);
   }
 });
+
+test("a run the monthly limit holds leaves a newer move's due time as it was, not next month", async () => {
+  // One email a month: the run's second person waits.
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => {
+    free.limits.emailsPerMonth = 1;
+  }));
+  const voter = await verified("Voter");
+  const post = await postVotedBy(await verified("Author"), [voter]);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED", shippedEmailsDueAt: new Date() } });
+  await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+  // As the run takes its first person, the team reopens it and plans it again: due now, for that move's own run.
+  const newer = new Date(Date.now() - 1000);
+  const transaction = prisma.$transaction.bind(prisma);
+  let claims = 0;
+  vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
+    if (++claims === 1) {
+      await prisma.postEvent.create({ data: { postId, from: "PLANNED", to: "OPEN" } });
+      await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: newer } });
+    }
+    return transaction(...args);
+  }) as never);
+  expect(await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} })).toMatchObject({ emailed: 1, waiting: expect.any(String) });
+  vi.restoreAllMocks();
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).toEqual(newer);
+});

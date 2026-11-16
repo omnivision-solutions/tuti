@@ -284,7 +284,9 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   }
   if (held) {
     // Due from now, so the cron keeps bringing it back (it looks back a day) until the rest may go; past the month's limit, from next month.
-    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: await dueAgain(projectId) } });
+    // Only while the post hasn't moved since the run began: a newer move's due time (now) is its own run's.
+    const again = await dueAgain(projectId);
+    await whileUnmoved(postId, generation, (db) => db.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: again } }));
     log.info(`post ${postId} (${status}): emailed ${emailed}, the rest wait (the project's daily cap, its monthly limit, or a pause)`);
     return { emailed, waiting: "the project's daily cap, its monthly limit, or a pause" };
   }
