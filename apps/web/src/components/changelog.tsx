@@ -189,14 +189,22 @@ function FeaturedImage({
     if (!uploading) {
       return;
     }
-    // A click elsewhere can leave focus on the page itself, as Add going does: it's moving on all the same.
-    const movedOn = (event: PointerEvent) => {
-      if (!add.current?.contains(event.target as Node)) {
-        fromAdd.current = false;
-      }
+    // A click elsewhere can leave focus on the page itself, as Add going does: it's moving on all the same. Only a press
+    // that takes focus from Add counts (checked once the press has moved it; a touch starting a scroll doesn't).
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const movedOn = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (add.current && document.activeElement !== add.current) {
+          fromAdd.current = false;
+        }
+      });
     };
-    document.addEventListener("pointerdown", movedOn);
-    return () => document.removeEventListener("pointerdown", movedOn);
+    document.addEventListener("pointerdown", movedOn, true);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", movedOn, true);
+    };
   }, [uploading]);
   const status = uploading && (
     <p role="status" className="text-sm text-muted-foreground">
