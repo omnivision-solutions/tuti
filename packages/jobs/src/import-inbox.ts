@@ -209,7 +209,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
   const source = conversation.source;
   const cutShort = !since && parts.length >= MAX_PARTS && Date.parse(parts[0]!.createdAt) - Date.parse(conversation.createdAt) > OPENING_MS;
   if (cutShort && source?.bodyHtml) {
-    parts.unshift({ id: "source", partType: "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
+    parts.unshift({ id: "source", partType: source.author?.type === "bot" ? "bot_msg" : "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
   }
   // Their person: the contact taking part, else who started it or wrote.
   const contactId =

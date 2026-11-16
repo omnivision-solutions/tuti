@@ -343,11 +343,33 @@ test("a conversation the support bot opened takes its subject from the person's 
   expect(conversation.subject).toBe("How do I reset my password?");
 });
 
-test("a title that is only the bot's greeting, whole or cut, gives way to the person's first message", async () => {
+test.each([
+  ["whole", (greeting: string) => greeting],
+  ["its first line", (greeting: string) => `${greeting.split("! ")[0]}!`],
+  ["cut", (greeting: string) => `${greeting.slice(0, 20)}…`],
+])("a title that is only the bot's greeting (%s) gives way to the person's first message", async (_, titled) => {
   const { closed, greeting } = greetedByBot();
-  closed.title = `${greeting.slice(0, 20)}…`;
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts[0]!.bodyHtml = `<p>${greeting.replace("! ", "!</p><p>")}</p>`;
+  closed.title = titled(greeting);
   await importInbox();
   expect((await conversations()).find((c) => c.messages[0]!.author === "AI")!.subject).toBe("How do I reset my password?");
+});
+
+test("a conversation Featurebase cut to its newest 500 parts, which the bot opened, takes no subject from its greeting", async () => {
+  const conversation = fake.fixtures.conversations[2]!;
+  const start = Date.parse(String(conversation.createdAt));
+  const tags = Array.from({ length: 499 }, (_, i) => ({ object: "conversation_part", id: `t${i}`, partType: "tags", createdAt: new Date(start + 60 * 60_000 + i * 1000).toISOString() }));
+  const asked = { object: "conversation_part", id: "t499", partType: "user_msg", createdAt: new Date(start + 2 * 60 * 60_000).toISOString(), bodyHtml: "<p>Can I change my email?</p>", channel: "desktop", author: { id: "65f000000000000000000003", type: "lead" } };
+  conversation.source = { ...conversation.source!, bodyHtml: "<p>Hey there! What brings you here today?</p>", author: { id: null, type: "bot" } };
+  conversation.conversationParts = [...tags, asked];
+  await importInbox();
+  const imported = (await conversations()).find((c) => c.messages[0]?.author === "AI")!;
+  expect(imported.messages.map((m) => [m.author, m.body])).toEqual([
+    ["AI", "Hey there! What brings you here today?"],
+    ["USER", "Can I change my email?"],
+  ]);
+  expect(imported.subject).toBe("Can I change my email?");
 });
 
 test("a title someone wrote stays the subject of a conversation the bot opened, even one a later bot message starts with", async () => {
