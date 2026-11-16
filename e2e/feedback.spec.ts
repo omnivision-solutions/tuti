@@ -119,6 +119,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("tab", { name: "Reply" })).toHaveAttribute("aria-selected", "true");
   await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
+  // Asked first: it emails its people.
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its properties, beside it: who looks after it, and when it's expected.
@@ -281,6 +283,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("menuitemradio", { name: "In progress" }).click();
   // Picked, the menu closes.
   await expect(team.getByRole("menu")).toHaveCount(0);
+  // Asked first: it emails Ada.
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark in progress" }).click();
   await expect(team.getByText("Status: In progress")).toBeVisible();
   await expect(row.getByRole("button", { name: "Status: In progress" })).toBeVisible();
   await checkpoint(team, "team-feedback-list");

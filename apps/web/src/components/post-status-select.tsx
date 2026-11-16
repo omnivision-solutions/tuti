@@ -20,24 +20,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { statusPrompt } from "@/lib/status-prompt";
 import { changePostStatus } from "@/server/manage-posts";
 
 const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 
-/** A post being completed: its title, and how many people who asked for it that emails (emailedOnCompletion). */
-export type Completing = { title: string; emails: number };
+/** A post being moved: its title, and how many people who asked for it each move that emails reaches (emailedOnMoves). */
+export type Completing = { title: string; emails: Partial<Record<PostStatus, number>> };
 
 /**
- * A post's status change, Completed asked about first when `completing` says who it emails (as the roadmap
- * does): `pick` takes the status chosen, `asking` holds Completed until it's confirmed or cancelled.
+ * A post's status change, a move that emails its people asked about first when `completing` says how many (statusPrompt;
+ * the roadmap asks for its own Completed): `pick` takes the status chosen, `asking` holds it until it's confirmed or cancelled.
  */
 function useStatusChange(projectSlug: string, postId: string, status: PostStatus, completing?: Completing, onChanged?: (status: PostStatus) => void) {
   const [pending, startTransition] = useTransition();
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState<{ status: PostStatus; prompt: string } | null>(null);
   const change = (value: PostStatus) =>
     startTransition(async () => {
       const result = await changePostStatus(projectSlug, postId, value);
-      setAsking(false);
+      setAsking(null);
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -45,22 +46,29 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
         onChanged?.(value);
       }
     });
-  const pick = (value: PostStatus) => (value === "COMPLETED" && status !== "COMPLETED" && completing ? setAsking(true) : change(value));
+  const pick = (value: PostStatus) => {
+    const prompt = completing && statusPrompt(status, value, completing.emails);
+    return prompt ? setAsking({ status: value, prompt }) : change(value);
+  };
+  // Kept while the dialog closes, so its words don't change as it fades.
+  const [shown, setShown] = useState(asking);
+  if (asking && asking !== shown) {
+    setShown(asking);
+  }
+  const label = shown && STATUS_LABELS[shown.status].toLowerCase();
   const ask = completing && (
-    <AlertDialog open={asking} onOpenChange={(open) => !open && !pending && setAsking(false)}>
+    <AlertDialog open={asking !== null} onOpenChange={(open) => !open && !pending && setAsking(null)}>
       <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
-          <AlertDialogTitle className="wrap-anywhere">Mark “{completing.title}” completed?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {completing.emails
-              ? `This emails up to ${completing.emails} ${completing.emails === 1 ? "person" : "people"} who asked for it that it shipped.`
-              : "Nobody is emailed."}
-          </AlertDialogDescription>
+          <AlertDialogTitle className="wrap-anywhere">
+            Mark “{completing.title}” {label}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>{shown?.prompt}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={pending} onClick={() => change("COMPLETED")}>
-            Mark completed
+          <AlertDialogAction disabled={pending} onClick={() => shown && change(shown.status)}>
+            Mark {label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -69,7 +77,7 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
   return { pending, pick, ask };
 }
 
-/** Team-only: shows a post's status and changes it. With `completing`, Completed asks first, saying who it emails. */
+/** Team-only: shows a post's status and changes it. With `completing`, a move that emails people asks first, saying how many. */
 export function PostStatusSelect({
   projectSlug,
   postId,
@@ -119,8 +127,8 @@ export function PostStatusSelect({
 }
 
 /**
- * Team-only, for lists: the status as its badge, which opens a menu to change it. Completed (which emails
- * people) asks first with `completing`, or goes to `onComplete` for the list to ask; `onChanged` hears each change saved.
+ * Team-only, for lists: the status as its badge, which opens a menu to change it. A move that emails people asks first
+ * with `completing` (Completed goes to `onComplete` instead, for the list to ask); `onChanged` hears each change saved.
  * With `badge={false}`, where the list already says the status (a roadmap column), a small button opens the menu instead.
  */
 export function PostStatusMenu({

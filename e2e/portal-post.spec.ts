@@ -44,6 +44,8 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
   await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
+  // Asked first: it emails Ada and Bo.
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // And says when they expect it (the key's page is on the way: back to the post after).
   // A year from now: always still to come (a month that's passed isn't shown).

@@ -145,7 +145,8 @@ async function emailedOnMoveTo<S extends EmailedMove>(projectId: string, postIds
       UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
       UNION SELECT "postId", "userId" FROM post_subscription WHERE "postId" IN (${Prisma.join(postIds)})
     ) x
-    WHERE NOT EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND p.sample)
+    -- Nobody for a sample post, or one merged into another (postShipped emails only posts that aren't duplicates).
+    WHERE NOT EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND (p.sample OR p."duplicateOfId" IS NOT NULL))
       -- Only people who may see the post (postAudience): a private one's author, nobody about a Team only one or one on a
       -- board turned off.
       AND EXISTS (SELECT 1 FROM post p JOIN board b ON b.id = p."boardId" WHERE p.id = x."postId" AND NOT b.off

@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 
 import { emailedOnMove } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
-import { updatePost } from "@/server/operations/manage";
+import { mergePost, updatePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { prisma } from "@tuti/db";
@@ -87,4 +87,18 @@ test("a status no picked post's move emails isn't counted at all, and a page of 
   } finally {
     query.mockRestore();
   }
+});
+
+test("a post merged into another counts nobody: postShipped never emails a duplicate's people", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+  const [author, voter] = [await signUp("Author"), await signUp("Voter")];
+  const original = await call(createPost, as(owner.id), { board: "feature-requests", title: "Dark mode" });
+  const duplicate = await call(createPost, as(author.id), { board: "feature-requests", title: "Night theme" });
+  await call(setVote, as(voter.id), { number: duplicate.number, voted: true });
+  await call(mergePost, as(owner.id), { number: duplicate.number, into: original.number });
+  const merged = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: duplicate.number } }, select: { id: true, status: true } });
+
+  expect((await emailedOnMove(project.id, [merged])).get(merged.id)).toEqual({ PLANNED: 0, IN_PROGRESS: 0, COMPLETED: 0 });
 });
