@@ -634,3 +634,19 @@ test("a license month that doesn't start gives no email credits: never a grant w
   expect(await claimProjectEmail(project.id)).toBe(false);
   expect(await prisma.creditGrant.count({ where: { projectId: project.id, kind: "EMAIL" } })).toBe(0);
 });
+
+test("a license on a plan sending no email is held", async () => {
+  // Each plan's limit is no lower than the one before's.
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => {
+    free.limits.emailsPerMonth = 0;
+    pro.limits.emailsPerMonth = 0;
+    pro.monthlyCredits = 0;
+  }));
+  const { owner, project } = await setup();
+  await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "pro", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  expect(await claimProjectEmail(project.id)).toBe(false);
+  expect(await cappedProjects()).toContain(project.id);
+});

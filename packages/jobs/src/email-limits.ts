@@ -281,8 +281,8 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
   // A licensed project's plan is its license's.
   const held = licensed.filter(({ plan, started, given }) => {
     const limit = emailsPerMonth(plan);
-    // A month not started yet starts when its emails are first needed.
-    return limit !== null && started && given >= limit;
+    // A month not started yet starts when its emails are first needed; none ever come on a plan sending none.
+    return limit !== null && (limit === 0 || (started && given >= limit));
   });
   return [...capped, ...held.map(({ projectId }) => projectId)];
 }
