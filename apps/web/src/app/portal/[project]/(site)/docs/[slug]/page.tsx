@@ -40,7 +40,7 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
   }
   switch (page.kind) {
     case "tab":
-      return <DocsTabPage project={project} docs={page.docs} tab={page.tab} landing={page.landing} />;
+      return <DocsTabPage project={project} docs={page.docs} tab={page.tab} landing={page.landing} path={`/docs/${slug}`} />;
     case "collection":
       return <DocsCollectionPage page={page} />;
     case "article":

@@ -43,5 +43,5 @@ export default async function DocsPage(props: PageProps<"/portal/[project]/docs"
       </DocsLayout>
     );
   }
-  return <DocsTabPage project={slug} docs={docs} tab={tab} landing={landing} />;
+  return <DocsTabPage project={slug} docs={docs} tab={tab} landing={landing} path="/docs" />;
 }
