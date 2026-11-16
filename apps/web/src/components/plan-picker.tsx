@@ -68,7 +68,7 @@ export function PlanPicker({ projectSlug, plans, current, trial = false, pricing
           const billed = billedAs(plan.price, interval);
           const perMonth = billed && plan.price![billed];
           return (
-            <li key={plan.key} className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4", plan.featured && "border-primary ring-1 ring-primary")}>
+            <li key={plan.key} className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-xs", plan.featured && "border-primary ring-1 ring-primary")}>
               <div className="flex items-center justify-between gap-2">
                 <h3 className="font-heading text-lg font-bold tracking-tight">{plan.name}</h3>
                 {yours ? (
