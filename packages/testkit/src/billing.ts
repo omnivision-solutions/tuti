@@ -68,7 +68,7 @@ export function withAppsumoPlans(config: TestBilling): void {
       key: "appsumo-2",
       name: "AppSumo Tier 2",
       prices: {},
-      features: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
+      features: ["customDomain", "emailDomain", "reporting"],
       limits: { seats: null, boards: 2, articles: 50, historyDays: 30, articleVersions: 2, reportingDays: 31, emailsPerMonth: 10000 },
       monthlyCredits: 1000,
       hidden: true,

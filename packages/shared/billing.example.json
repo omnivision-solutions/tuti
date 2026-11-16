@@ -37,7 +37,7 @@
       "key": "appsumo-1",
       "name": "AppSumo Tier 1",
       "hidden": true,
-      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting"],
+      "features": ["customDomain", "emailDomain", "reporting"],
       "limits": { "seats": null, "boards": 1, "articles": 25, "historyDays": 30, "articleVersions": 2, "reportingDays": 31, "emailsPerMonth": 4000 },
       "monthlyCredits": 400
     },
@@ -45,7 +45,7 @@
       "key": "appsumo-2",
       "name": "AppSumo Tier 2",
       "hidden": true,
-      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting"],
+      "features": ["customDomain", "emailDomain", "reporting"],
       "limits": { "seats": null, "boards": 2, "articles": 50, "historyDays": 30, "articleVersions": 2, "reportingDays": 31, "emailsPerMonth": 10000 },
       "monthlyCredits": 1000
     },
