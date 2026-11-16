@@ -4,6 +4,7 @@ import { createElement, Fragment } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { changelogConfirmEmail } from "./changelog-confirm-email";
+import { commentEmail } from "./comment-email";
 import { conversationReplyEmail } from "./conversation-reply-email";
 import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
 import { portalReaderEmail } from "./portal-reader-email";
@@ -156,6 +157,7 @@ test("every email to a project's customers drops Powered by tuti when the projec
       shipped: shippedEmail({ ...brand, postTitle: "Dark mode", postUrl: u, unsubscribeUrl: u }),
       status: statusEmail({ ...brand, status: "IN_PROGRESS", postTitle: "Dark mode", board: "Feature requests", votes: 3, postUrl: u, unsubscribeUrl: u }),
       reply: replyEmail({ ...brand, authorName: "Ada", postTitle: "Dark mode", text: "Hi", doc, postUrl: u, unsubscribeUrl: u }),
+      comment: commentEmail({ ...brand, postTitle: "Dark mode", voteCount: 3, status: "OPEN", comments: [{ authorId: "u-1", authorName: "Sam Lee", text: "Hi" }], postUrl: u, unsubscribeUrl: u }),
       changelog: changelogEmail({ ...brand, entryTitle: "New", entryUrl: u, publishedAt: new Date(), doc, unsubscribeUrl: u }),
       changelogConfirm: changelogConfirmEmail({ ...brand, url: u }),
       supportReply: conversationReplyEmail({ ...brand, subject: "Re: Hi", messages: [{ name: "Ada", body: "Hi" }] }),

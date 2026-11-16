@@ -228,6 +228,13 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const comment =
     typeof noteId === "string" ? await prisma.comment.findFirst({ where: { id: noteId, postId }, select: { body: true, author: { select: { name: true } } } }) : null;
   const note = comment?.body.trim() ? { from: comment.author.name, text: comment.body.trim() } : undefined;
+  // Not quoted to anyone who already got that comment by email (its claim sent, reply_email: the comment email to the
+  // post's author, or the team's reply to voters), as when a held try's comment went out before the team approved again.
+  const gotNote = new Set(
+    note && typeof noteId === "string"
+      ? (await prisma.replyEmail.findMany({ where: { commentId: noteId, sentAt: { not: null } }, select: { userId: true } })).map(({ userId }) => userId)
+      : [],
+  );
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
@@ -257,8 +264,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       sendEmail({
         to: address,
         ...(status === "COMPLETED"
-          ? shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note })
-          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, board: boardName, votes: post.voteCount, postUrl, unsubscribeUrl, note })),
+          ? shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note })
+          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, board: boardName, votes: post.voteCount, postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note })),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {

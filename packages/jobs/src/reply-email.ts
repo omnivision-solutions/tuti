@@ -1,5 +1,5 @@
 import { type Doc, toPlainText } from "@tuti/content";
-import { type PostVisibility, prisma } from "@tuti/db";
+import { Prisma, type PostVisibility, prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
@@ -13,7 +13,7 @@ import { emailBrand } from "./email-brand";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due reply) this old belongs to a run that died or never started. */
-const LATE_MINUTES = 10;
+export const LATE_MINUTES = 10;
 /** After a day, a reply's emails aren't news anymore. */
 const RESUBMIT_FOR_HOURS = 24;
 /** Well under LATE_MINUTES, so a live run's claim never looks abandoned. */
@@ -22,11 +22,18 @@ const RENEW_MS = 60_000;
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
 /**
- * Takes on emailing one voter: a new claim, or one a crashed run left unsent. Returns the claim's time, which the
- * run then uses to mark it sent or release it (never touching a claim another run took over); null when someone
- * else has it, it's sent, or the reply's emails aren't due any more (a resume dropped a pause's).
+ * Takes on emailing one person a comment: a new claim, or one a crashed run left unsent. Returns the claim's time, which
+ * the run then uses to mark it sent or release it (never touching a claim another run took over); null when someone
+ * else has it, it's sent (by this email or the other: the reply's to voters, or the comment's to the post's author), or
+ * its email isn't due any more (`due`: the reply's to voters or the comment's to the author; a resume dropped a pause's).
  */
-async function claim(commentId: string, userId: string, visibility: PostVisibility): Promise<Date | null> {
+export async function claim(
+  commentId: string,
+  userId: string,
+  visibility: PostVisibility,
+  due: "votersEmailDueAt" | "authorEmailDueAt" = "votersEmailDueAt",
+  claimedAt = new Date(),
+): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
     // Its post's row held first (as a merge locks posts, then their comments): a visibility change since the audience
     // was read fails the run (its retry reads who may see it now), and one made meanwhile waits for this claim.
@@ -37,14 +44,13 @@ async function claim(commentId: string, userId: string, visibility: PostVisibili
     const [post] = await tx.$queryRaw<{ id: string; visibility: PostVisibility; boardId: string }[]>`
       SELECT id, ${SEEN_AS_SQL} AS visibility, "boardId" FROM post WHERE id = (SELECT "postId" FROM comment WHERE id = ${commentId}) FOR SHARE`;
     // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it.
-    const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT "votersEmailDueAt" AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
+    const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT ${Prisma.raw(`"${due}"`)} AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
     if (!comment?.due || !post) {
       return null;
     }
     if (post.visibility !== visibility || post.boardId !== board?.id) {
       throw visibilityChanged(post.id);
     }
-    const claimedAt = new Date();
     const { count } = await tx.replyEmail.createMany({ data: [{ commentId, userId, claimedAt }], skipDuplicates: true });
     if (count === 1) {
       return claimedAt;
@@ -54,17 +60,25 @@ async function claim(commentId: string, userId: string, visibility: PostVisibili
   });
 }
 
+/** A comment as an email quotes it: plain text, without its images' alt text (the reply's images are shown under it). */
+export function quotedText(comment: { body: string; content: unknown }): string {
+  const doc = comment.content as Doc | null;
+  return doc ? toPlainText({ ...doc, content: doc.content?.filter((node) => node.type !== "image") }) : comment.body;
+}
+
 /**
- * Sends while holding a claim, renewing it every minute meanwhile, then marks it sent, or (the send failed)
- * releases it for a retry. Both touch only this run's claim. Returns the send's error, if any.
+ * Sends while holding claims (one email about these comments, all claimed at `claimedAt`), renewing them every minute
+ * meanwhile, then marks them sent, or (the send failed) releases them for a retry. Both touch only this run's claims.
+ * Returns the send's error, if any.
  */
-async function whileClaimed(commentId: string, userId: string, claimedAt: Date, send: () => Promise<unknown>) {
+export async function whileClaimed(commentIds: string[], userId: string, claimedAt: Date, send: () => Promise<unknown>) {
+  const commentId = { in: commentIds };
   let current = claimedAt;
   let renewing = Promise.resolve();
   const renew = async () => {
     const next = new Date();
     const { count } = await prisma.replyEmail.updateMany({ where: { commentId, userId, claimedAt: current }, data: { claimedAt: next } });
-    if (count === 1) {
+    if (count > 0) {
       current = next;
     }
   };
@@ -146,8 +160,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   const postUrl = portalPostUrl(origin, post);
   const doc = (comment.content as Doc | null) ?? undefined;
   const mediaUrls = lastingMediaUrls(doc);
-  // Quoted without its images' alt text: the images are shown under the quote.
-  const text = doc ? toPlainText({ ...doc, content: doc.content?.filter((node) => node.type !== "image") }) : comment.body;
+  const text = quotedText(comment);
   let emailed = 0;
   let failed = 0;
   let held = false;
@@ -165,7 +178,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
       break;
     }
     const token = encodeURIComponent(unsubscribeToken);
-    const error = await whileClaimed(commentId, id, claimedAt, () =>
+    const error = await whileClaimed([commentId], id, claimedAt, () =>
       sendEmail({
         to: address,
         ...replyEmail({

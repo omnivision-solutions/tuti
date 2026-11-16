@@ -1,11 +1,11 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
+import { COMMENT_UNSURE, handlers, POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButton, scheduleByItself, sendAutopilotEmails, signAutopilotButton } from "@tuti/jobs";
 import { startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/(workspace)/[project]/autopilot/[id]/act/route";
 import { POST_COMMENT_LIMIT, postWaits } from "@/lib/autopilot-words";
-import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
+import { applyCodeChange, approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
 import {
   applyCodeChangeAction,
   dismissCodeChangeAction,
@@ -13,7 +13,8 @@ import {
   listCodeChangeTargets,
   undoCodeChangeAction,
 } from "@/server/operations/code-changes";
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost, MAX_TEXT_LENGTH } from "@/server/operations/create";
+import { updatePost } from "@/server/operations/manage";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -122,6 +123,159 @@ test("completing replaces a waiting progress update, its comment folded in; dism
   await call(applyCodeChangeAction, team(), { id: progress.id, revision: postVersion([progress.id, again.id]) });
   expect(await postNow()).toMatchObject({ status: "COMPLETED", comments: [{ body: "Weekly repeats are out." }] });
   expect(mailbox.emails.filter((email) => email.to.includes(voter.email) && !email.subject.startsWith("Verify"))).toHaveLength(1);
+});
+
+test("the comment a completion posts reaches the post's author once, in the shipped email, not again as a comment email; a progress comment does", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  // The comment emails' minute, once their wait is over.
+  const minutesLater = async () => {
+    await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+    await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  };
+  const progress = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  await call(applyCodeChangeAction, team(), { id: progress.id, revision: postVersion([progress.id]) });
+  await minutesLater();
+  // In progress emails nobody: the comment is how the author hears.
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["New comment on “Recurring events”"]);
+
+  // Completed with the team's comment: posted first, so the shipped email quotes it.
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Monthly ones too: it's all out." });
+  await minutesLater();
+  const [, shipped, ...more] = author(voter.email);
+  expect(shipped!.subject).toBe("Done: Recurring events");
+  expect(shipped!.text).toContain("Monthly ones too: it's all out.");
+  expect(more).toEqual([]);
+});
+
+test("a completion's note never becomes a comment email to the author, however it's completed: completed again after a reopen too (the shipped email, as for everyone, doesn't go again)", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  await call(updatePost, team(), { number: post.number, status: "completed" });
+  await call(updatePost, team(), { number: post.number, status: "planned" });
+  const completes = await part("RESOLVES");
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "Now it's really out, monthly ones too." });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
+  await prisma.comment.updateMany({ where: { postId: post.id }, data: { authorEmailQueuedAt: null } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["Done: Recurring events"]);
+});
+
+test("a held try's comment approved again as the completion's note (COMMENT_UNSURE) before any comment-email run isn't a comment email to the author, only quoted in the shipped email", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const completes = await part("RESOLVES");
+  // A try that may have posted its comment, and did (saved as an ordinary comment, due to the author): held so.
+  const decidedAt = new Date(Date.now() - 60_000);
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt, waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  await call(createComment, team(), { number: post.number, body: "It's all out." });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(1);
+  // Approved with the box as it was: that comment is the note, quoted in the shipped email.
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", commentCount: 1 });
+  expect(await prisma.comment.count({ where: { postId: post.id, authorEmailDueAt: { not: null } } })).toBe(0);
+  // The comment emails' minute, well past the batch's wait (whatever were still due, then).
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [shipped, ...more] = author(voter.email);
+  expect(shipped!.subject).toBe("Done: Recurring events");
+  expect(shipped!.text).toContain("It's all out.");
+  expect(more).toEqual([]);
+});
+
+test("a held try's comment emailed to the author before the team approves again (COMMENT_UNSURE) isn't quoted to them again in the shipped email", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  const log = { info: () => {}, warn: () => {} };
+  const completes = await part("RESOLVES");
+  // A try that may have posted its comment, and did (saved as any comment, due to the author): held so.
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt: new Date(Date.now() - 60_000), waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  await call(createComment, team(), { number: post.number, body: "It's all out." });
+  // The team takes a while: the comment emails' minute goes first, and the author gets it as a comment.
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, log);
+  expect(author(voter.email).map((email) => email.subject)).toEqual(["New comment on “Recurring events”"]);
+  // Approved with the box as it was: that comment is the note; the shipped email doesn't quote it to them again.
+  await call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." });
+  expect(await postNow()).toMatchObject({ status: "COMPLETED", commentCount: 1 });
+  const emails = author(voter.email);
+  expect(emails.map((email) => email.subject)).toEqual(["New comment on “Recurring events”", "Done: Recurring events"]);
+  expect(emails.filter((email) => email.text.includes("It's all out."))).toHaveLength(1);
+});
+
+test("a held try's comment reused as the note, whose completion then fails, and is dismissed: its due time is back, and the author gets it as a comment", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const completes = await part("RESOLVES");
+  // A try that may have posted its comment, and did (saved as any comment, due to the author): held so.
+  await prisma.codeChangeAction.update({
+    where: { id: completes.id },
+    data: { status: "PENDING", decidedById: owner.id, decidedAt: new Date(Date.now() - 60_000), waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
+  });
+  const comment = await call(createComment, team(), { number: post.number, body: "It's all out." });
+  // Approved again with the box as it was (that comment is the note), and the status move fails.
+  vi.spyOn(updatePost, "run").mockRejectedValueOnce(new Error("connection reset"));
+  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." })).rejects.toThrow();
+  expect(await postNow()).toMatchObject({ status: "PLANNED", commentCount: 1 });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
+  // Dismissed: it stays only a comment, so its email to the author goes.
+  await call(dismissCodeChangeAction, team(), { id: completes.id });
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [email, ...more] = author(voter.email);
+  expect(more).toEqual([]);
+  expect(email!.subject).toBe("New comment on “Recurring events”");
+  expect(email!.text).toContain("It's all out.");
+});
+
+test("a completion's comment held unsure (saved, but that couldn't be told), then dismissed, is still emailed to the author as a comment", async () => {
+  const author = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && !email.subject.startsWith("Verify"));
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const completes = await part("RESOLVES");
+  // Approving it posts the comment, which saves; then a read right after fails, and so does the check of whether it was saved.
+  const saved = () => prisma.comment.count({ where: { postId: post.id, body: "It's all out." } });
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.teamMember, "findUnique").mockImplementation((async (...args: unknown[]) => {
+    if ((await saved()) > 0) {
+      throw new Error("connection reset");
+    }
+    return findUnique(...args);
+  }) as never);
+  const findFirst = prisma.comment.findFirst.bind(prisma.comment) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.comment, "findFirst").mockImplementation((async (...args: unknown[]) => {
+    if ((args[0] as { where?: { createdAt?: unknown } }).where?.createdAt) {
+      throw new Error("connection reset");
+    }
+    return findFirst(...args);
+  }) as never);
+  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: postVersion([completes.id]), comment: "It's all out." })).rejects.toThrow();
+  vi.mocked(prisma.teamMember.findUnique).mockRestore();
+  vi.mocked(prisma.comment.findFirst).mockRestore();
+  expect(await saved()).toBe(1);
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: completes.id } })).waitReason).toBe(COMMENT_UNSURE);
+  expect(await postNow()).toMatchObject({ status: "PLANNED" });
+  // Dismissed: it stays only a comment, so its email to the author goes.
+  await call(dismissCodeChangeAction, team(), { id: completes.id });
+  await prisma.comment.updateMany({ where: { postId: post.id, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: new Date(Date.now() - 1000) } });
+  await handlers.commentEmailsDue({}, { info: () => {}, warn: () => {} });
+  const [email, ...more] = author(voter.email);
+  expect(more).toEqual([]);
+  expect(email!.subject).toBe("New comment on “Recurring events”");
+  expect(email!.text).toContain("It's all out.");
+});
+
+test("a completion's comment comments.create refuses (its limits drifting from the review's) says why, posts nothing and leaves the update waiting", async () => {
+  // No input reaches this today: the review's own limits are tighter. Simulated, so the check stays in front of posting.
+  const refused = createComment.input.safeParse({ number: 1, body: "x".repeat(MAX_TEXT_LENGTH * 2 + 1) });
+  vi.spyOn(createComment.input, "safeParse").mockReturnValueOnce(refused as ReturnType<typeof createComment.input.safeParse>);
+  const completes = await part("RESOLVES");
+  const result = await applyCodeChange(project.slug, completes.id, { comment: "It's out.", revision: postVersion([completes.id]) });
+  expect(result.error).toBeTruthy();
+  expect(await postNow()).toMatchObject({ status: "PLANNED", commentCount: 0, comments: [] });
+  expect(await statuses(completes.id)).toEqual(["PENDING"]);
 });
 
 test("dismissing one pull request's part takes only its part out of the comment while it waits", async () => {

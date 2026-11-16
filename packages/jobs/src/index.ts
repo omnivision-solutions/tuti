@@ -18,11 +18,13 @@ import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { failStaleImports, importStep } from "./imports";
 import { postCreated } from "./post-created";
+import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
 import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { UNUSED_UPLOAD_HOURS } from "./cleanup";
+export { COMMENT_BATCH_MINUTES } from "./comment-email";
 export { DAILY_INVITE_LIMIT, generateInvitationToken, hashInvitationToken, INVITATION_TTL_DAYS, invitationExpiry, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "./invitations";
 export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featurebase";
 export { contentBudget, FEATUREBASE_ICONS } from "./import-docs";
@@ -106,6 +108,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   resubmitShippedEmails,
   replyEmailed,
   resubmitReplyEmails,
+  commentsEmailed,
+  commentEmailsDue,
   changelogEmailed,
   resubmitChangelogEmails,
   autopilotDue: () => autopilotDue(),

@@ -110,7 +110,7 @@ export function EmailSettings({
       {notice}
       <div className="flex flex-col rounded-xl bg-card shadow-card ring-1 ring-card-edge">
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
-        {posts && row("ownPosts", "Posts I wrote", "As they move forward and when they ship, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
+        {posts && row("ownPosts", "Posts I wrote", "As they move forward and when they ship, when someone comments, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
         {posts &&
           row("followedPosts", "Posts I voted on or follow", "As they move forward and when they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}
         {/* Its subscription at their address, confirmed at once: so only with an address they've proven, as stopping. */}
