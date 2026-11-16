@@ -63,10 +63,12 @@ async function takeEmailCredit(licenseId: string, now: Date): Promise<boolean> {
 
 /** The license's email credits left, and those its month gives once they're first needed (0 once given). */
 async function licenseEmails(licenseId: string, through: Date | null, limit: number, now: Date, db: Prisma.TransactionClient = prisma): Promise<{ left: number; due: number }> {
-  const grants = await db.creditGrant.findMany({ where: { planLicenseId: licenseId, kind: "EMAIL", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, select: { remaining: true, expiresAt: true } });
+  const grants = await db.creditGrant.findMany({ where: { planLicenseId: licenseId, kind: "EMAIL", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, select: { credits: true, remaining: true, expiresAt: true } });
   const left = Math.floor(grants.reduce((sum, grant) => sum + grant.remaining.toNumber(), 0));
-  // Its month starts with the license-credits job (hourly), which moves creditsThrough on: none before.
-  const due = through && through > now && !grants.some((grant) => grant.expiresAt?.getTime() === through.getTime()) ? limit : 0;
+  // Its month starts with the license-credits job (hourly), which moves creditsThrough on: none before. Then its plan's
+  // allowance, less what the month gave already (a license upgraded mid-month gives the difference).
+  const given = grants.filter((grant) => grant.expiresAt?.getTime() === through?.getTime()).reduce((sum, grant) => sum + grant.credits.toNumber(), 0);
+  const due = through && through > now ? Math.max(0, limit - given) : 0;
   return { left, due };
 }
 
@@ -301,10 +303,11 @@ async function tellEmailLimitOnce(projectId: string, now: Date) {
   if (since && (await prisma.projectEmailMonth.count({ where: { projectId, limitToldAt: { gte: since.createdAt } } })) > 0) {
     return;
   }
+  // Once a calendar month; on a license, once a license month, so a second one this calendar month is told too.
   const told = await prisma.$queryRaw<unknown[]>`
     INSERT INTO "project_email_month" ("projectId", "month", "limitToldAt") VALUES (${projectId}, ${monthOf(now)}, ${now})
     ON CONFLICT ("projectId", "month") DO UPDATE SET "limitToldAt" = EXCLUDED."limitToldAt"
-    WHERE "project_email_month"."limitToldAt" IS NULL
+    WHERE "project_email_month"."limitToldAt" IS NULL OR "project_email_month"."limitToldAt" < ${since ? since.createdAt : null}::timestamp
     RETURNING 1`;
   if (told.length === 0) {
     return;

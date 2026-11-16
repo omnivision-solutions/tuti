@@ -33,3 +33,18 @@ export async function setThisMonthsEmails(slug: string, emails: number): Promise
     await client.end();
   }
 }
+
+/** Uses up the email credits of the license on a project for its month (journeys can't send thousands). */
+export async function useUpLicenseEmails(slug: string): Promise<void> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO credit_grant (id, "projectId", kind, source, credits, remaining, "expiresAt", "planLicenseId")
+       SELECT gen_random_uuid()::text, p.id, 'EMAIL', 'PLAN', 100000, 0, l."creditsThrough", l.id FROM project p JOIN plan_license l ON l."projectId" = p.id WHERE p.slug = $1`,
+      [slug],
+    );
+  } finally {
+    await client.end();
+  }
+}

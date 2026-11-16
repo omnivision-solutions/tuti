@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, historySince, inSomePlansHistory, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
@@ -214,7 +214,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // A sample conversation's replies are never emailed (its person's address goes nowhere): nothing waits.
   const emailable = !conversation.spam && !conversation.sample && !!person.email && !blocked;
   const waitsForPause = emailPaused && emailable;
-  const monthFull = !emailPaused && emailable && (await monthlyLimitReached(projectId));
+  const month = !emailPaused && emailable ? await emailsThisMonth(projectId) : null;
+  const monthFull = month?.left === 0;
+  // On a license, its emails come with its next month, not the calendar's.
+  const licenseMonth = month?.until?.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
   const capped = !emailPaused && emailable && !monthFull && (await cappedProjects()).includes(projectId);
   // Why: in the toast as a reply is sent, and as the title of its held message's short status. Warning: over the reply box, before Send,
   // with where to see more (for owners and admins: nobody else can open Settings).
@@ -226,6 +229,13 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         warning: "Your project's email is paused: replies are emailed once it's on again.",
         link: admin ? { label: "Settings", href: `/app/${slug}/settings/support` } : undefined,
       }
+    : monthFull && licenseMonth
+      ? {
+          status: `Emailed ${licenseMonth}`,
+          why: `Emailed ${licenseMonth}: your license's emails for this month are used (Settings → Billing)`,
+          warning: `This month's emails from your license are used: replies are emailed on ${licenseMonth}.`,
+          link: admin ? { label: "Billing", href: `/app/${slug}/settings/billing` } : undefined,
+        }
     : monthFull
       ? {
           status: "Emailed next month",

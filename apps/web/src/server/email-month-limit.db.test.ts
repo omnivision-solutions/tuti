@@ -560,3 +560,33 @@ test("a license's email credits are its month's, wherever it is: moved to anothe
   expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 2 });
 });
 
+
+test("a license upgraded mid-month gives the difference at once; a second license month used up in one calendar month is told too", async () => {
+  const pro = (emails: number) => billingFile((_, { free, pro }) => {
+    free.limits.emailsPerMonth = 1;
+    pro.limits.emailsPerMonth = emails;
+  });
+  vi.stubEnv("BILLING_CONFIG", pro(2));
+  const { owner, project } = await setup();
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: `tuti-${project.id}`, plan: "pro", userId: owner.id, projectId: project.id, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await grantLicenseCredits(license.id);
+  expect([await claimProjectEmail(project.id), await claimProjectEmail(project.id), await claimProjectEmail(project.id)]).toEqual([true, true, false]);
+  expect(limitEmails(owner.email)).toHaveLength(1);
+
+  // Its plan now gives 5 a month: 3 more this month.
+  vi.stubEnv("BILLING_CONFIG", pro(5));
+  expect(await emailsThisMonth(project.id)).toMatchObject({ limit: 5, left: 3 });
+  expect(await claimProjectEmail(project.id)).toBe(true);
+
+  // The license's next month starts a few days on, still this calendar month (as months starting on the 28th do): used
+  // up too, its team hears again.
+  vi.stubEnv("BILLING_CONFIG", pro(1));
+  vi.setSystemTime(new Date(MID_MONTH.getTime() + 3 * 24 * 60 * 60_000));
+  await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL" }, data: { expiresAt: new Date(Date.now() - 60_000) } });
+  await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough: new Date(Date.now() + 28 * 24 * 60 * 60_000) } });
+  expect([await claimProjectEmail(project.id), await claimProjectEmail(project.id)]).toEqual([true, false]);
+  expect(limitEmails(owner.email)).toHaveLength(2);
+});
