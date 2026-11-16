@@ -76,6 +76,22 @@ test("an article's page asked for as Markdown (an AI agent's Accept header) is s
   expect(await served("text/markdown", "/docs/billing", "POST")).toEqual(["/docs/billing", "Accept"]);
 });
 
+test("a changelog entry's .md URL and its page asked for as Markdown are served by its Markdown route; browsers get the page", async () => {
+  const served = async (accept: string | null, path: string, method = "GET") => {
+    const response = await proxy(new NextRequest(`http://acme.tuti.example${path}`, { method, headers: { host: "acme.tuti.example", ...(accept && { accept }) } }));
+    return [response.headers.get("x-middleware-rewrite")?.replace("http://acme.tuti.example/portal/acme", ""), response.headers.get("vary")];
+  };
+  expect(await served(null, "/changelog/12.md")).toEqual(["/changelog/12/md", null]);
+  expect(await served("text/markdown", "/changelog/12")).toEqual(["/changelog/12/md", "Accept"]);
+  expect(await served("text/html,*/*;q=0.8", "/changelog/12")).toEqual(["/changelog/12", "Accept"]);
+  expect(await served("text/markdown", "/changelog/12", "POST")).toEqual(["/changelog/12", "Accept"]);
+  // Not the changelog's other pages.
+  for (const path of ["/changelog", "/changelog/page/2", "/changelog/rss.xml", "/changelog/subscription"]) {
+    expect(await served("text/markdown", path), path).toEqual([path, null]);
+  }
+  expect(await served(null, "/changelog/page.md")).toEqual(["/changelog/page.md", null]);
+});
+
 test("“Preview as a reader”: only a portal page's own ?preview=signed-out asks for it, never a header the request sends", async () => {
   const preview = async (path: string, headers: Record<string, string> = {}) =>
     (await proxy(new NextRequest(`http://acme.tuti.example${path}`, { headers: { host: "acme.tuti.example", ...headers } }))).headers.get(

@@ -4,6 +4,8 @@ import { expect, test } from "vitest";
 import { isArticleSlug } from "@/server/docs-queries";
 import { createProject, signUp } from "@/test/helpers";
 
+import { GET as entryMarkdown } from "./changelog/[number]/md/route";
+import { generateMetadata as entryMetadata } from "./changelog/[number]/page";
 import { GET as markdown } from "./docs/[slug]/md/route";
 import { GET as llmsFull } from "./llms-full.txt/route";
 import { generateMetadata } from "./docs/[slug]/page";
@@ -11,7 +13,7 @@ import { GET as llms } from "./llms.txt/route";
 import { GET as robots } from "./robots.txt/route";
 import { GET as sitemap } from "./sitemap.xml/route";
 
-/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /llms.txt, /llms-full.txt, /sitemap.xml and /robots.txt. */
+/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /changelog/<number>.md, /llms.txt, /llms-full.txt, /sitemap.xml and /robots.txt. */
 
 const request = new Request("http://x");
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -76,6 +78,60 @@ test("an article's page links its Markdown for AI tools; a collection's or tab's
   const articles = await Promise.all(["billing", "old-billing", "old-basics", "getting-started", "guides", "secret-draft", "nothing"].map((slug) => isArticleSlug(project.slug, slug)));
   expect(articles).toEqual([true, true, false, false, false, false, false]);
   expect(await isArticleSlug((await createProject(await signUp())).slug, "billing")).toBe(false);
+});
+
+test("a published changelog entry is served as Markdown at its .md URL, with its page linking it; drafts, missing entries and other projects' aren't", async () => {
+  const project = await createProject(await signUp());
+  const other = await createProject(await signUp());
+  const entry = (projectId: string, number: number, title: string, publishedAt: Date | null, extra: object = {}) =>
+    prisma.changelogEntry.create({ data: { projectId, number, title, publishedAt, ...extra } });
+  await entry(project.id, 1, "Dark *mode*", new Date("2026-05-01T10:00:00Z"), {
+    content: doc({ type: "paragraph", content: [text("Easy on the "), text("eyes", [{ type: "bold" }]), text(".")] }),
+  });
+  await entry(project.id, 2, "Plain", new Date("2026-05-02T10:00:00Z"), { body: "Before rich text." });
+  await entry(project.id, 3, "A sample", new Date("2026-05-03T10:00:00Z"), { sample: true });
+  await entry(project.id, 4, "Draft", null);
+  await entry(other.id, 5, "Elsewhere", new Date());
+  const get = (projectSlug: string, number: string) => entryMarkdown(request, { params: Promise.resolve({ project: projectSlug, number }) });
+
+  const response = await get(project.slug, "1");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+  expect(response.headers.get("link")).toBe(`<http://${project.slug}.localhost:3100/changelog/1>; rel="canonical"`);
+  expect(response.headers.get("x-robots-tag")).toBeNull();
+  expect(await response.text()).toBe("# Dark \\*mode\\*\n\n1 May 2026\n\nEasy on the **eyes**.\n");
+  expect(await (await get(project.slug, "2")).text()).toBe("# Plain\n\n2 May 2026\n\nBefore rich text.\n");
+  expect((await get(project.slug, "3")).headers.get("x-robots-tag")).toBe("noindex");
+
+  for (const number of ["4", "6", "5", "0", "1x", "99999999999"]) {
+    expect((await get(project.slug, number)).status, number).toBe(404);
+  }
+  expect((await get(other.slug, "1")).status).toBe(404);
+
+  const alternates = async (number: string) => (await entryMetadata({ params: Promise.resolve({ project: project.slug, number }) } as never)).alternates;
+  expect(await alternates("1")).toEqual({
+    canonical: `http://${project.slug}.localhost:3100/changelog/1`,
+    types: { "text/markdown": `http://${project.slug}.localhost:3100/changelog/1.md` },
+  });
+  expect(await alternates("4")).toBeUndefined();
+});
+
+test("llms.txt links the newest 50 published changelog entries' Markdown under the changelog, newest first, without drafts or sample content", async () => {
+  const project = await createProject(await signUp());
+  const portal = `http://${project.slug}.localhost:3100`;
+  await prisma.changelogEntry.createMany({
+    data: [
+      ...Array.from({ length: 51 }, (_, i) => ({ projectId: project.id, number: i + 1, title: `Entry ${i + 1}`, publishedAt: new Date(Date.UTC(2026, 0, 1, 0, i)) })),
+      { projectId: project.id, number: 52, title: "Draft", publishedAt: null },
+      { projectId: project.id, number: 53, title: "A sample", publishedAt: new Date(Date.UTC(2026, 5, 1)), sample: true },
+    ],
+  });
+  const body = await (await llms(request, { params: Promise.resolve({ project: project.slug }) })).text();
+  const changelog = body.slice(body.indexOf("## Changelog"), body.indexOf("## Feedback")).trim().split("\n").slice(2);
+  expect(changelog).toHaveLength(51);
+  expect(changelog[0]).toBe(`- [Changelog](${portal}/changelog): What's new, improved and fixed in Project ${project.slug}`);
+  expect(changelog[1]).toBe(`- [Entry 51](${portal}/changelog/51.md): 1 January 2026`);
+  expect(changelog[50]).toBe(`- [Entry 2](${portal}/changelog/2.md): 1 January 2026`);
 });
 
 test("llms.txt describes the portal and links each collection's page, each published article's Markdown, the changelog and the boards", async () => {
