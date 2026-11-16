@@ -18,7 +18,7 @@ const listedEntry = cache(async (project: string, number: string) =>
   /^\d{1,9}$/.test(number)
     ? prisma.changelogEntry.findFirst({
         where: { project: { slug: project }, number: Number(number), publishedAt: { not: null } },
-        select: { title: true, body: true, publishedAt: true, updatedAt: true, sample: true },
+        select: { title: true, body: true, publishedAt: true, sample: true },
       })
     : null,
 );
@@ -63,8 +63,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       title: listed.title,
       description: summary(listed.body),
       path: `/changelog/${number}`,
+      // Its publishing date alone: emails going out change updatedAt too.
       published: listed.publishedAt,
-      modified: listed.updatedAt,
     }));
   return (
     <div className="flex flex-col gap-6">

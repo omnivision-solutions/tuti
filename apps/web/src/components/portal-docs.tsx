@@ -355,7 +355,11 @@ export async function DocsArticle({
       path,
       published: readable.publishedAt,
       modified: readable.updatedAt,
-      breadcrumb: [{ name: "Documentation", path: "/docs" }, ...(up.href === "/docs" ? [] : [{ name: up.label, path: up.href }]), { name: readable.title, path }],
+      // A tab showing it in its place is its own page: no step for it.
+      breadcrumb: [
+        ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }].filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path),
+        { name: readable.title, path },
+      ],
     }));
   return (
     <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>

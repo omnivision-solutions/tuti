@@ -2,8 +2,8 @@ import { prisma } from "@tuti/db";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, expect, test } from "vitest";
 
-import { DocsArticle } from "@/components/portal-docs";
-import { createArticle, createCollection, publishArticle, updateArticle } from "@/server/operations/docs";
+import { DocsArticle, DocsTabPage } from "@/components/portal-docs";
+import { createArticle, createCollection, createTab, publishArticle, updateArticle, updateTab } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -14,12 +14,13 @@ import DocsSlugPage from "./docs/[slug]/page";
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let portal: string;
+let as: { actor: { kind: "user"; userId: string }; projectId: string };
 
 beforeEach(async () => {
   const owner = await signUp("Owner");
   project = await createProject(owner);
   portal = `http://${project.slug}.localhost:3100`;
-  const as = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  as = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
   await call(createCollection, as, { name: "Billing" });
   for (const [title, noindex] of [
     ["Paying by card", false],
@@ -80,6 +81,24 @@ test("a published article's page has a TechArticle with its canonical address an
   ]);
 });
 
+test("a tab showing an article in its place gives the tab's address", async () => {
+  await call(createTab, as, { name: "Guides" });
+  await call(createTab, as, { name: "API" });
+  await call(createCollection, as, { name: "Endpoints", tab: "api" });
+  const { slug } = await call(createArticle, as, { title: "Authentication", body: "Use a key.", collection: "endpoints" });
+  await call(publishArticle, as, { slug });
+  await call(updateTab, as, { slug: "api", landing: "page", landingPage: slug });
+  const tab = (await DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug: "api" }) } as never)) as ReactElement<Parameters<typeof DocsTabPage>[0]>;
+  const article = DocsTabPage(tab.props) as ReactElement<Parameters<typeof DocsArticle>[0]>;
+  const [data, breadcrumb] = JSON.parse((jsonLdIn(await DocsArticle(article.props)))!);
+  expect(data.url).toBe(`${portal}/docs/api`);
+  expect(breadcrumb.itemListElement.map((crumb: { name: string; item: string }) => `${crumb.name} ${crumb.item}`)).toEqual([
+    `Documentation ${portal}/docs`,
+    `Endpoints ${portal}/docs/endpoints`,
+    `Authentication ${portal}/docs/api`,
+  ]);
+});
+
 test("a title can't close the script tag: < is escaped, and the JSON still reads the same", async () => {
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, title: { startsWith: "Hidden" } } });
   const json = (await docsJsonLd(article.slug))!;
@@ -98,7 +117,7 @@ test("an article kept from search engines, or a private portal's, has none", asy
 
 test("a changelog entry's page has a BlogPosting with its canonical address and dates; a sample entry's none", async () => {
   const publishedAt = new Date("2026-05-01T10:00:00Z");
-  const entry = await prisma.changelogEntry.create({ data: { projectId: project.id, number: 7, title: "Dark mode is here", body: "Turn it on in Settings.", publishedAt } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 7, title: "Dark mode is here", body: "Turn it on in Settings.", publishedAt } });
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 8, title: "Sample", publishedAt, sample: true } });
   const jsonLd = async (number: string) => jsonLdIn(await ChangelogEntryPage({ params: Promise.resolve({ project: project.slug, number }) } as never));
   expect(JSON.parse((await jsonLd("7"))!)).toEqual({
@@ -109,7 +128,7 @@ test("a changelog entry's page has a BlogPosting with its canonical address and 
     url: `${portal}/changelog/7`,
     mainEntityOfPage: `${portal}/changelog/7`,
     datePublished: publishedAt.toISOString(),
-    dateModified: entry.updatedAt.toISOString(),
+    dateModified: publishedAt.toISOString(),
     publisher: { "@type": "Organization", name: project.name, url: portal },
   });
   expect(await jsonLd("8")).toBeNull();
