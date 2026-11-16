@@ -7,7 +7,7 @@ import { refresh } from "next/cache";
 
 import { getAdminProject } from "./membership";
 import { getAccountSession } from "./session";
-import { projectSubscriptions } from "./stripe";
+import { getSubscription, projectSubscriptions } from "./stripe";
 
 /**
  * Plan licenses (docs/plan.md, Plan licenses; packages/jobs/src/plan-licenses.ts): an account's licenses, each assigned to
@@ -24,12 +24,16 @@ const ENDED = new Set(["canceled", "incomplete_expired"]);
  * Whether any subscription Tuti started for the project can still charge (not canceled or expired): an unpaid one, a bank
  * debit still processing, one bought again since. Refused when Stripe can't say, so a license never lands on a project still paying.
  */
-async function stillCharging(projectId: string): Promise<boolean> {
+async function stillCharging(projectId: string, recorded: string | null): Promise<boolean> {
   if (!process.env.STRIPE_SECRET_KEY) {
     return false;
   }
   try {
-    return (await projectSubscriptions(projectId)).some(({ status }) => !ENDED.has(status));
+    // Stripe's search lags by up to a minute; the subscription the webhook recorded last is read directly.
+    // ponytail: two subscriptions started within the same minute could still hide one; a list per customer fixes that.
+    const found = await projectSubscriptions(projectId);
+    const last = recorded && !found.some(({ id }) => id === recorded) ? [await getSubscription(recorded)] : [];
+    return [...found, ...last].some(({ status }) => !ENDED.has(status));
   } catch {
     throw new Refused("We couldn't check this project's plan with Stripe. Try again in a minute.");
   }
@@ -86,14 +90,14 @@ export async function assignPlanLicense(projectSlug: string, licenseId: string):
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${project.id}))`;
     await lockProject(tx, project.id);
     // The plan as stored (trialEndsAt selected: see @tuti/db).
-    const current = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, trialEndsAt: true, planLicense: { select: { id: true } } } });
+    const current = await tx.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planStatus: true, trialEndsAt: true, stripeSubscriptionId: true, planLicense: { select: { id: true } } } });
     if (current.planLicense) {
       throw new Refused("This project has a license already. Unassign it first.");
     }
     if (current.planStatus !== null) {
       throw new Refused("This project pays for a plan. Cancel it from Settings → Billing → Manage plan, and assign the license once it ends.");
     }
-    if (await stillCharging(project.id)) {
+    if (await stillCharging(project.id, current.stripeSubscriptionId)) {
       throw new Refused("This project has a Stripe subscription that can still be paid (a payment that failed or is processing). Contact support to cancel it, then assign the license.");
     }
     if (!onDefaultPlan(current.plan)) {
