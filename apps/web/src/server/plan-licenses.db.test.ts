@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { creditBalance, grantPlanLicenseCredits } from "@tuti/jobs";
+import { creditBalance, grantLicenseCredits, grantPlanLicenseCredits } from "@tuti/jobs";
 import { billingFile, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -223,4 +223,10 @@ test("each month the license is assigned and not revoked, its project gets the m
   await prisma.planLicense.update({ where: { id: held.id }, data: { revokedAt: new Date(), creditsThrough: new Date() } });
   await grantPlanLicenseCredits();
   expect(await grants()).toHaveLength(3);
+});
+
+test("a month of credits from January 31 lasts until February's last day", async () => {
+  const held = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: crypto.randomUUID(), plan: "appsumo-2", userId: owner.id, projectId: project.id } });
+  await grantLicenseCredits(held.id, new Date("2027-01-31T12:00:00Z"));
+  expect((await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id } })).creditsThrough).toEqual(new Date("2027-02-28T12:00:00Z"));
 });
