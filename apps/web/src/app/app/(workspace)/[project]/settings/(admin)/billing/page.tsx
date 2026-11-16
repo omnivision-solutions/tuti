@@ -5,7 +5,7 @@ import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, d
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
-import { BadgeAddOn, ManagePlan, PlanPicker } from "@/components/plan-picker";
+import { BadgeAddOn, ManagePlan, PlanPicker, UnassignLicense } from "@/components/plan-picker";
 import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,6 +17,8 @@ import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
 
 export const metadata: Metadata = { title: "Billing · Settings" };
+
+const LICENSE_SOURCES: Record<string, string> = { appsumo: "AppSumo" };
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
@@ -34,7 +36,17 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   }
   const [{ balance, grants }, plan, emails] = await Promise.all([
     creditsEnabled() ? creditBalance(project.id) : { balance: 0, grants: [] },
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true, trialEndsAt: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: {
+        plan: true,
+        planInterval: true,
+        planStatus: true,
+        planPeriodEnd: true,
+        planEndsAt: true,
+        badgeAddOn: true,
+        trialEndsAt: true,
+        planLicense: { select: { id: true, source: true, revokedAt: true } },
+      },
+    }),
     // Its email to its users this month, against its plan's limit (null without plans).
     emailsThisMonth(project.id),
   ]);
@@ -50,6 +62,9 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
   // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
   const badge = badgeOffered(plan);
+  // A plan license on the project (docs/plan.md, Plan licenses): its plan, not bought here, so nothing to manage in
+  // Stripe nor an add-on to add to it; or, revoked, the reason the project can't buy a plan until it's unassigned.
+  const license = plan.planLicense && { ...plan.planLicense, from: LICENSE_SOURCES[plan.planLicense.source] ?? plan.planLicense.source };
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -61,9 +76,11 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       )}
       {plansEnabled() && (
         <SettingsCard
-          title={trial ? (trial.ended ? "Your trial has ended" : `${shown.name} trial`) : `${shown.name} plan`}
+          title={license && !license.revokedAt ? `${shown.name} plan` : trial ? (trial.ended ? "Your trial has ended" : `${shown.name} trial`) : `${shown.name} plan`}
           description={
-            trial
+            license && !license.revokedAt
+              ? `Given by a license from ${license.from}, a lifetime deal: it doesn't renew or bill.`
+              : trial
               ? trial.ended
                 ? "Choose a plan to keep going. Plans are per project: readers are always unlimited."
                 : `Ends on ${day(trial.endsAt)}. Choose a plan to keep going.`
@@ -91,7 +108,14 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   : `${emails.emails.toLocaleString("en")} of ${emails.limit.toLocaleString("en")} emails sent this month`}
               </p>
             )}
-            {onPaidPlan ? (
+            {license?.revokedAt && (
+              <Alert variant="destructive">
+                <AlertDescription>This project&apos;s {license.from} license was deactivated. Unassign it to choose a plan.</AlertDescription>
+              </Alert>
+            )}
+            {license ? (
+              <UnassignLicense licenseId={license.id} />
+            ) : onPaidPlan ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
               <PlanPicker projectSlug={slug} plans={pricingPlans()} current={defaultPlanKey()!} trial={trial?.ended === false} />
@@ -101,7 +125,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && (badge !== null || plan.badgeAddOn) && (
+      {plansEnabled() && !license && (badge !== null || plan.badgeAddOn) && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'

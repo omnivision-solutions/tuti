@@ -21,6 +21,7 @@ import { planPriceText, yearlyNote } from "@/lib/plans";
 import type { PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 import { manageSubscription, setBadge, subscribe } from "@/server/credits";
+import { unassignPlanLicense } from "@/server/plan-licenses";
 
 /**
  * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), each with what
@@ -106,6 +107,27 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
         </Button>
       </div>
       {error && <FieldError>{error}</FieldError>}
+    </div>
+  );
+}
+
+/** A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and admins. */
+export function UnassignLicense({ licenseId }: { licenseId: string }) {
+  const [pending, startTransition] = useTransition();
+  const unassign = () =>
+    startTransition(async () => {
+      const result = await unassignPlanLicense(licenseId);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("License unassigned");
+      }
+    });
+  return (
+    <div>
+      <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={unassign}>
+        {pending ? "Unassigning…" : "Unassign license"}
+      </Button>
     </div>
   );
 }
