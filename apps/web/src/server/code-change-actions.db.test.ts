@@ -109,7 +109,7 @@ describe("applying", () => {
     await call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here: pick Dark in Settings → Appearance." });
     expect(await postOf(post.id)).toMatchObject({ status: "COMPLETED", comments: [{ body: "Dark is here: pick Dark in Settings → Appearance.", authorId: owner.id }] });
     const [email] = shippedTo(voter.email);
-    expect(email!.text).toContain("Olive Owner from the team:");
+    expect(email!.text).toContain(`Olive Owner ${project.name} team`);
     expect(email!.text).toContain("Dark is here: pick Dark in Settings → Appearance.");
     // The team's own comment changes nothing Autopilot wrote: How it's doing counts the completion as kept.
     expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 1 });
@@ -117,18 +117,18 @@ describe("applying", () => {
     const plain = await proposal("RESOLVES");
     await call(createComment, team(), { number: plain.post.number, body: "Thanks, we're tracking this." });
     await call(applyCodeChangeAction, team(), { id: plain.action.id });
-    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain(`${project.name} team`);
     // Reopened, then completed by hand at once: that completion's email quotes nothing, not the review's earlier comment.
     await call(updatePost, team(), { number: post.number, status: "in_progress" });
     await call(updatePost, team(), { number: post.number, status: "completed" });
     expect(shippedTo(voter.email).at(-1)!.subject).toBe(email!.subject);
-    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain(`${project.name} team`);
     // Completed by hand after a teammate's comment: nothing quoted either.
     const byHand = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: project.id }, { board: "feature-requests", title: "Week numbers" });
     await call(createComment, team(), { number: byHand.number, body: "Thanks, we're tracking this." });
     await call(updatePost, team(), { number: byHand.number, status: "completed" });
     expect(shippedTo(voter.email).at(-1)!.subject).toBe("Done: Week numbers");
-    expect(shippedTo(voter.email).at(-1)!.text).not.toContain("from the team:");
+    expect(shippedTo(voter.email).at(-1)!.text).not.toContain(`${project.name} team`);
   });
 
   test("completing with the team's comment: if completing fails after the comment, the comment goes and it waits again", async () => {

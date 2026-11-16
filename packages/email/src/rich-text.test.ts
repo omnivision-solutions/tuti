@@ -2,7 +2,7 @@ import { render } from "@react-email/render";
 import type { Doc } from "@tuti/content";
 import type { MediaUrls } from "@tuti/content/media";
 import { createElement } from "react";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { changelogEmail } from "./changelog-email";
 import { EmailRichText } from "./rich-text";
@@ -112,11 +112,18 @@ describe("EmailRichText", () => {
 });
 
 describe("changelogEmail", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   test("subject and body", async () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
     const email = changelogEmail({
       projectName: "Acme",
       entryTitle: "Dark mode",
       entryUrl: ENTRY,
+      // Just after midnight UTC: the day before west of it, where the test runs (TZ below).
+      publishedAt: new Date("2026-11-15T00:30:00Z"),
       doc: doc(p(text("Easier on the eyes.")), image()),
       coverUrl: "https://app.example.com/media/cover/email.jpg?s=x",
       mediaUrls: MEDIA,
@@ -125,7 +132,10 @@ describe("changelogEmail", () => {
     expect(email.subject).toBe("Acme: Dark mode");
     const out = await render(email.body);
     expect(out).toContain("Dark mode</h1>");
-    expect(out).toMatch(/<img alt="Dark mode"[^>]*src="https:\/\/app.example.com\/media\/cover\/email.jpg\?s=x"/);
+    // The cover over the date and the title; the date in UTC.
+    // The day the portal's changelog shows (formatDate: UTC, en-GB), whatever the server's time zone.
+    expect(out).toMatch(/<img alt="Dark mode"[^>]*src="https:\/\/app.example.com\/media\/cover\/email.jpg\?s=x"[\s\S]*New · 15 November 2026[\s\S]*Dark mode<\/h1>/);
+    expect(out).toContain("Read the update");
     expect(out).toContain("Easier on the eyes.");
     expect(out).toContain(SRC);
     expect(out).toContain(`href="${ENTRY}"`);

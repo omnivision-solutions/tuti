@@ -1,11 +1,21 @@
-import { Button, Text } from "@react-email/components";
+import { Button } from "@react-email/components";
 
-import { buttonStyle, colors, type EmailBrand, FooterLink, Layout } from "./layout";
+import { Message, Paragraph, PostCard, type PostStatus } from "./blocks";
+import { buttonStyle, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 
 /** `note`: the team's comment posted with the completion, quoted under the news. */
-type ShippedProps = EmailBrand & { postTitle: string; postUrl: string; unsubscribeUrl: string; note?: { from: string; text: string } };
+type ShippedProps = EmailBrand & {
+  postTitle: string;
+  /** The post's votes, board and status, shown in its card. */
+  votes?: number;
+  board?: string;
+  status?: PostStatus;
+  postUrl: string;
+  unsubscribeUrl: string;
+  note?: { from: string; text: string };
+};
 
-export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, note, accent, poweredBy }: ShippedProps) {
+export function ShippedEmail({ projectName, postTitle, votes, board, status = "COMPLETED", postUrl, unsubscribeUrl, note, accent, poweredBy }: ShippedProps) {
   return (
     <Layout
       preview={`${postTitle} is done.`}
@@ -17,15 +27,14 @@ export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, 
         </>
       }
     >
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        Good news from {projectName}: <strong>{postTitle}</strong> is done. Thanks for asking for it.
-      </Text>
+      <Eyebrow accent={accent}>An idea you&apos;re following is live</Eyebrow>
+      <Title>{postTitle} is done</Title>
+      <Paragraph>Good news from {projectName}.</Paragraph>
+      <PostCard title={postTitle} votes={votes} board={board} status={status} />
       {note && (
-        <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-line", borderLeft: `3px solid ${colors.border}`, paddingLeft: 12 }}>
-          <span style={{ color: colors.muted }}>{note.from} from the team:</span>
-          <br />
+        <Message name={note.from} team={`${projectName} team`} accent={accent}>
           {note.text}
-        </Text>
+        </Message>
       )}
       <Button
         href={postUrl}
