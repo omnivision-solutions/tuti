@@ -75,6 +75,13 @@ test("one rule per old address, none to itself, no chains (so no circles), not t
   expect(redirect.to).toBe("/docs?x=1#billing");
 });
 
+test("a rule saved before its address became one of the portal's own never takes it", async () => {
+  await prisma.portalRedirect.create({ data: { projectId: project.id, from: "/llms-full.txt", to: "/llms.txt" } });
+  await call(createRedirect, as(), { from: "/old", to: "/docs" });
+  expect(await where("/llms-full.txt")).toBe("served");
+  expect(await where("/old")).toBe(`308 http://${host()}/docs`);
+});
+
 test("up to 200 per project", async () => {
   await prisma.portalRedirect.createMany({ data: Array.from({ length: 200 }, (_, i) => ({ projectId: project.id, from: `/old/${i}`, to: "/docs" })) });
   await expect(call(createRedirect, as(), { from: "/one-more", to: "/docs" })).rejects.toMatchObject({ message: expect.stringContaining("Up to 200 redirects") });
