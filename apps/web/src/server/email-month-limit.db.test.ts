@@ -549,6 +549,10 @@ test("a license's email credits are its month's, wherever it is: moved to anothe
   expect(await cappedProjects()).not.toContain(b.project.id);
   expect(await claimProjectEmail(b.project.id)).toBe(true);
   expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 2 });
+  // Not sent after all: back to the old month's grant, which it came from (the new month's isn't given yet).
+  await releaseProjectEmail(b.project.id);
+  expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 3 });
+  expect(await claimProjectEmail(b.project.id)).toBe(true);
   expect(await claimProjectEmail(b.project.id)).toBe(true);
   expect(await emailsThisMonth(b.project.id)).toMatchObject({ limit: 2, left: 1 });
   await releaseProjectEmail(b.project.id);
