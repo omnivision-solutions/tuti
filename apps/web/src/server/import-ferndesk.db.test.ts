@@ -283,7 +283,7 @@ test("an entry whose text opens with a full-width image, described by its title 
   html("art_search", `<img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Faster search">`, "Search results load twice as fast.");
   html("art_exports", `<img src="${FAKE_FERNDESK_FILES}user-images/exports.png">`, "Exports take half the time.");
   // An icon at a quarter of the width: it stays where it is.
-  fake.fixtures.entries.find((e) => e.id === "art_sso")!.draft!.contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/sso.png" alt="Lock" data-width="25"></p><p>Coming soon.</p>`;
+  (fake.fixtures.entries.find((e) => e.id === "art_sso")!.draft as { contentHtml: string }).contentHtml = `<p><img src="${FAKE_FERNDESK_FILES}user-images/sso.png" alt="Lock" data-width="25"></p><p>Coming soon.</p>`;
   const done = await importParts(["changelog"], { publishArticles: true });
   expect(done.counts).toMatchObject({ changelogImages: { imported: 3, leftOut: {} } });
   const rows = await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, content: true, cover: { select: { attachedAt: true } } } });
