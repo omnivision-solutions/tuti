@@ -190,8 +190,18 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(visitor.getByRole("heading", { name: "Roadmap" })).toBeVisible();
 
   // Deleted, the old address is nothing again.
+  // Deleting asks first: Cancel keeps it.
   await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
+  const confirm = owner.getByRole("alertdialog", { name: "Delete this redirect?" });
+  await expect(confirm).toContainText("Visitors to /hc/en-us/articles/123-billing will no longer be sent to /roadmap.");
+  await checkpoint(owner, "customize-redirect-delete");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(list).toContainText("/hc/en-us/articles/123-billing");
+  await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
+  await confirm.getByRole("button", { name: "Delete redirect" }).click();
   await expect(owner.getByText("Redirect deleted")).toBeVisible();
+  await expect(list).toBeHidden();
   await expect(async () => {
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
