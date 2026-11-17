@@ -762,6 +762,9 @@ test("the collection drag hint requires two articles and a mouse-sized layout", 
   await team.goto(`/app/${slug}/docs/collections/guides`);
   const more = team.getByRole("button", { name: "More actions", exact: true });
   await more.click();
+  // "View on help center" is in the header at this width, so the menu doesn't repeat it.
+  await expect(team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "View on help center", exact: true })).toBeVisible();
+  await expect(team.getByRole("menuitem", { name: "View on help center", exact: true })).toHaveCount(0);
   await team.getByRole("menuitem", { name: "Delete", exact: true }).click();
   const confirm = team.getByRole("alertdialog");
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();

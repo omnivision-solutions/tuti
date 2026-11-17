@@ -111,7 +111,7 @@ export function DocsPageHeader({
             {actions}
             {(more || helpCenter) && (
               // With only the help center in it, the menu is for phones.
-              <DocsMore className={more ? undefined : "@min-[44rem]/docs-page:hidden"} onOpenChange={(open) => open && setInMenu(!liveLink.current?.checkVisibility())}>
+              <DocsMore className={more ? undefined : "@min-[44rem]/docs-page:hidden"} onOpenChange={(open) => open && setInMenu(!liveLink.current?.getClientRects().length)}>
                 {helpCenter && inMenu && (
                   <DropdownMenuItem render={<a href={helpCenter} target="_blank" rel="noreferrer" />}>
                     <ExternalLinkIcon />
