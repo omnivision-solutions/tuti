@@ -25,7 +25,9 @@ function trimSlashes(text: string, at: "start" | "end"): string {
 function absolute(server: string): string {
   if (server.startsWith("//")) return `https:${server}`;
   if (/^[a-z][a-z0-9+.-]*:/i.test(server)) return server;
-  return `${PLACEHOLDER_HOST}/${trimSlashes(server, "start")}`;
+  // "./v1" and "." are relative to where the spec is: the placeholder's root here.
+  const path = trimSlashes(server.startsWith("./") ? server.slice(2) : server === "." ? "" : server, "start");
+  return path ? `${PLACEHOLDER_HOST}/${path}` : PLACEHOLDER_HOST;
 }
 
 export type ExampleOptions = { server?: string; token?: string };
