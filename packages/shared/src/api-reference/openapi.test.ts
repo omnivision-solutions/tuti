@@ -866,10 +866,73 @@ test("a reference inside allOf is still a reference: named, and never spelled ou
   expect(example).toEqual({ id: "string", owner: { name: "string" } });
   // Folded in, a type's own fields are under it: Node's `next` is Node, named.
   expect(doc.types[2]!.schema.properties).toEqual([
-    { name: "next", required: false, type: "Node", ref: "Node" },
+    // Node folded in once more with its words; under itself it's only named.
+    { name: "next", required: false, type: "object", description: "The next.", properties: [{ name: "next", required: false, type: "Node", ref: "Node" }] },
     { name: "root", required: false, type: "Tree", ref: "Tree" },
   ]);
   expect(doc.warnings).toEqual([]);
+});
+
+test("types that share an allOf base are spelled out inside each other", () => {
+  const { schema, example, doc } = schemaOf(ref("Pet"), {
+    Resource: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+    Person: { allOf: [ref("Resource"), { properties: { name: { type: "string" } } }] },
+    Pet: { allOf: [ref("Resource"), { properties: { owner: ref("Person"), vet: { allOf: [ref("Person")], nullable: true } } }] },
+  });
+  const person = [
+    { name: "id", required: true, type: "string" },
+    { name: "name", required: false, type: "string" },
+  ];
+  expect(schema).toEqual({
+    type: "Pet",
+    ref: "Pet",
+    properties: [
+      { name: "id", required: true, type: "string" },
+      { name: "owner", required: false, type: "Person", ref: "Person", properties: person },
+      { name: "vet", required: false, type: "Person", ref: "Person", nullable: true, properties: person },
+    ],
+  });
+  expect(example).toEqual({ id: "string", owner: { id: "string", name: "string" }, vet: { id: "string", name: "string" } });
+  // A field that is the base itself, too.
+  const dog = schemaOf(ref("Dog"), {
+    Animal: { type: "object", properties: { legs: { type: "integer" } } },
+    Dog: { allOf: [ref("Animal"), { properties: { friend: ref("Animal") } }] },
+  });
+  expect(dog).toMatchObject({
+    schema: { type: "Dog", properties: [{ name: "legs", type: "integer" }, { name: "friend", type: "Animal", ref: "Animal", properties: [{ name: "legs", required: false, type: "integer" }] }] },
+    example: { legs: 0, friend: { legs: 0 } },
+  });
+  expect(doc.warnings).toEqual([]);
+});
+
+test("keywords beside a lone allOf reference are kept", () => {
+  const { schema, example } = schemaOf(
+    {
+      type: "object",
+      properties: {
+        id: { allOf: [ref("Uuid")], readOnly: true },
+        code: { allOf: [ref("Text")], maxLength: 10, enum: ["a", "b"] },
+        more: { allOf: [ref("Thing")], properties: { extra: { type: "boolean" } } },
+        plain: { allOf: [ref("Text")], description: "Just words.", nullable: true, default: "x", title: "Plain", "x-internal": true },
+      },
+    },
+    { Uuid: { type: "string", format: "uuid" }, Text: { type: "string", minLength: 1 }, Thing: { type: "object", properties: { a: { type: "string" } } } },
+  );
+  expect(schema.properties).toEqual([
+    { name: "id", required: false, type: "string", format: "uuid", constraints: "read-only" },
+    { name: "code", required: false, type: "string", constraints: "1–10 characters", enum: ["a", "b"] },
+    {
+      name: "more",
+      required: false,
+      type: "object",
+      properties: [
+        { name: "extra", required: false, type: "boolean" },
+        { name: "a", required: false, type: "string" },
+      ],
+    },
+    { name: "plain", required: false, type: "Text", ref: "Text", description: "Just words.", nullable: true, default: "x", constraints: "at least 1 character" },
+  ]);
+  expect(example).toEqual({ id: "00000000-0000-0000-0000-000000000000", code: "a", more: { extra: true, a: "string" }, plain: "x" });
 });
 
 test("a spec whose schemas fan out without end is read in bounded time, with a warning", () => {

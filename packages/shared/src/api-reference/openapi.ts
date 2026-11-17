@@ -42,6 +42,8 @@ const MESSAGES = {
 
 type Obj = Record<string, unknown>;
 
+/** What may sit beside a lone `allOf` reference and still leave it that reference: all of it is carried over or only words. */
+const BESIDE_A_REF = new Set(["allOf", "description", "nullable", "deprecated", "default", "title", "example"]);
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 const PARAM_PLACES = new Set(["path", "query", "header", "cookie"]);
 
@@ -324,7 +326,8 @@ function read(root: Obj): ApiDoc {
     return { choices, nullable: choices.length < all.length };
   }
 
-  type Place = { where: string; root: string; stack: string[]; named: number };
+  /** `stack`: the references it's inside. `folding`: the schemas above it that fold others in with `allOf`. */
+  type Place = { where: string; root: string; stack: string[]; named: number; folding: Obj[] };
 
   function toSchema(node: unknown, place: Place): ApiSchema {
     if (!isObj(node)) return { type: "any" };
@@ -342,6 +345,7 @@ function read(root: Obj): ApiDoc {
         root: place.root,
         stack: [...place.stack, node.$ref],
         named: place.named + (name === undefined ? 0 : 1),
+        folding: place.folding,
       });
       const description = str(node.description) || inner.description;
       return { ...inner, ...(name === undefined ? {} : { type: name, ref: name }), ...(description ? { description } : {}) };
@@ -351,26 +355,31 @@ function read(root: Obj): ApiDoc {
       return { type: "object" };
     }
 
-    // A reference among `allOf`'s parts is still a reference. Alone ("this type, nullable", as 3.0
-    // has to say it) it's read as one, keeping its name; one this schema is already inside is only
-    // named, as anywhere; the rest are folded in, and what's under them is inside them too.
+    // A reference among `allOf`'s parts. With nothing beside it but words ("this type, or null", as
+    // 3.0 has to say it) it's read as that reference, keeping its name. One this schema is already
+    // inside (a type's field that is the type and more) is only named, as anywhere; so is a schema
+    // met again under itself. Any other is folded in: a base two types share isn't either inside the other.
     const parts = list(node.allOf);
     // (A schema that folds itself in adds nothing to itself.)
     const folded = parts.flatMap((part) => (isObj(part) && typeof part.$ref === "string" && lookup(part.$ref)?.value !== node ? [part.$ref] : []));
-    const alone = parts.length === 1 && node.properties === undefined && node.type === undefined ? folded[0] : undefined;
-    const held = alone ?? folded.find((pointer) => place.stack.includes(pointer));
+    const alone = parts.length === 1 && Object.keys(node).every((key) => BESIDE_A_REF.has(key) || key.startsWith("x-")) ? folded[0] : undefined;
+    const inside = folded.find((pointer) => place.stack.includes(pointer)) ?? (place.folding.includes(node) ? folded[0] : undefined);
+    const held = inside ?? alone;
     if (held !== undefined) {
-      const only = toSchema({ $ref: held }, place);
+      const name = lookup(held)?.name;
+      const only = inside === undefined ? toSchema({ $ref: held }, place) : name === undefined ? { type: "object" } : { type: name, ref: name };
       const description = str(node.description) || only.description;
+      const limits = constraints(node);
       return {
         ...only,
         ...(description ? { description } : {}),
         ...(node.nullable === true ? { nullable: true } : {}),
         ...(node.deprecated === true ? { deprecated: true } : {}),
+        ...(limits ? { constraints: limits } : {}),
         ...(Object.hasOwn(node, "default") ? { default: node.default } : {}),
       };
     }
-    if (folded.length > 0) place = { ...place, stack: [...place.stack, ...folded] };
+    if (folded.length > 0) place = { ...place, folding: [...place.folding, node] };
 
     const schema = flatten(node);
     const { types, nullable } = typesOf(schema);
@@ -426,7 +435,7 @@ function read(root: Obj): ApiDoc {
   function sample(node: unknown, stack: Obj[]): unknown {
     const target = follow(node);
     if (!target) return isObj(node) ? {} : undefined;
-    // What it folds in with `allOf` it's inside too: a type's "this type, or null" field stops there.
+    // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.
     const bases = list(target.allOf).flatMap((part): Obj[] => {
       const base = follow(part);
       return base ? [base] : [];
@@ -439,7 +448,7 @@ function read(root: Obj): ApiDoc {
     const type = types[0];
     const value = list(schema.enum).find((entry) => entry !== null);
     if (value !== undefined) return value;
-    const inside = [...stack, target, ...bases];
+    const inside = [...stack, target];
     if (type === undefined) {
       const { choices } = choicesOf(schema);
       return choices.length > 0 ? sample(choices[0], inside) : undefined;
@@ -476,7 +485,7 @@ function read(root: Obj): ApiDoc {
   /** One schema as the pages show it; `named` is how many named types it's already inside. */
   function schemaAt(node: unknown, where: string, stack: string[] = [], named = 0): ApiSchema {
     rootNodes = 0;
-    return toSchema(node, { where, root: where, stack, named });
+    return toSchema(node, { where, root: where, stack, named, folding: [] });
   }
 
   /** The spec's example for a parameter, body or response, else one made from its schema. */
