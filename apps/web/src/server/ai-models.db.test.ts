@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
 import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
 import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
@@ -121,6 +123,21 @@ test("the settings form saves only what it sends: a feature it leaves out keeps 
   expect(await saveAiModels(project.slug, {}, form)).toEqual({});
   const models = await call(getAiModels, as(), {});
   expect([models.answers.model, models.changelog.model]).toEqual(["acme/tiny", "anthropic/claude-sonnet-5.5"]);
+});
+
+test("the migration: picks saved under the old names become their roles' (the Inbox's one pick both of its roles', the double-check Checks), and a role's own pick is kept", async () => {
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261117150000_ai_model_roles/migration.sql", import.meta.url), "utf8");
+  await prisma.project.update({
+    where: { id: project.id },
+    data: { aiModels: { support: "acme/tiny", code_changes_redecide: "off", support_summary: "anthropic/claude-sonnet-5.5", answers: "acme/tiny" } },
+  });
+  await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "project"')));
+  expect(await call(getAiModels, as(), {})).toMatchObject({
+    support_draft: { model: "acme/tiny" },
+    support_summary: { model: "anthropic/claude-sonnet-5.5" },
+    code_changes_check: { model: "off" },
+    answers: { model: "acme/tiny" },
+  });
 });
 
 test("every role is listed with its default: the Inbox's two share the support feature's", async () => {
