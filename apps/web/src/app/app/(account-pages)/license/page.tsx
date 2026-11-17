@@ -39,7 +39,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
     return (
       <EmptyState
         title="Open this page from your Tuti"
-        description='In Branding (in Settings; Customize on older versions), untick "Powered by tuti" and choose Get a licence: the link says which project it is for.'
+        description='In Branding (in Settings; Customize on older versions), switch off "Powered by tuti" and choose Get a licence: the link says which project it is for.'
       />
     );
   }
@@ -82,7 +82,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
         <div className="flex flex-col gap-2" role="status">
           <p className="font-medium">This project is licensed.</p>
           <p>
-            In Branding (in Settings; Customize on older versions), choose Check now (or wait for the daily check), then untick &quot;Powered by tuti&quot;.
+            In Branding (in Settings; Customize on older versions), choose Check now (or wait for the daily check), then switch off &quot;Powered by tuti&quot;.
           </p>
           {license.stripeSubscriptionId && (
             <p className="text-sm text-muted-foreground">
