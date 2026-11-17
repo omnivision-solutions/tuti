@@ -1043,7 +1043,18 @@ export function ChangelogEntryActions({
   if (part === "delete") {
     return (
       <AlertDialog>
-        <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
+        {/* A row of the "More actions" menu, as a destructive DropdownMenuItem looks; on its tint the text is the darker red (4.5:1). */}
+        <AlertDialogTrigger
+          render={
+            <Button
+              variant="ghost"
+              disabled={pending}
+              className="h-auto gap-1.5 rounded-md px-1.5 py-1 font-normal text-destructive hover:bg-destructive/10 hover:text-destructive-foreground focus-visible:bg-destructive/10 focus-visible:text-destructive-foreground aria-expanded:bg-destructive/10 aria-expanded:text-destructive-foreground dark:hover:bg-destructive/20 dark:focus-visible:bg-destructive/20"
+            />
+          }
+        >
+          Delete
+        </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
