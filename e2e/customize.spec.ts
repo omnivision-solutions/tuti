@@ -194,12 +194,25 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
   const confirm = owner.getByRole("alertdialog", { name: "Delete this redirect?" });
   await expect(confirm).toContainText("Visitors to /hc/en-us/articles/123-billing will no longer be sent to /roadmap.");
-  await checkpoint(owner, "customize-redirect-delete");
+  await checkpoint(owner, "customize-redirect-delete", { fullPage: false });
   await confirm.getByRole("button", { name: "Cancel" }).click();
   await expect(confirm).toBeHidden();
   await expect(list).toContainText("/hc/en-us/articles/123-billing");
   await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
+  // While the delete runs the question stays: nothing closes it as if it were cancelled.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) await held;
+    await route.fallback();
+  });
   await confirm.getByRole("button", { name: "Delete redirect" }).click();
+  await expect(confirm.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await expect(confirm.getByRole("button", { name: "Delete redirect" })).toBeDisabled();
+  await owner.keyboard.press("Escape");
+  await expect(confirm).toBeVisible();
+  release();
+  await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByText("Redirect deleted")).toBeVisible();
   await expect(list).toBeHidden();
   await expect(async () => {
@@ -301,6 +314,7 @@ test("custom code typed before the page's scripts ran is still a change to save"
   await owner.getByLabel("Custom HTML").fill('<p id="early">Typed early</p>');
   await checkpoint(owner, "customize-custom-code-typed-early");
   release();
+  await owner.unrouteAll({ behavior: "wait" });
   // Once the page runs, Save changes sees it differs from what's saved.
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
