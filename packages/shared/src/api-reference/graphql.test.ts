@@ -125,6 +125,7 @@ function read(text: string, options?: { endpoint?: string }): ApiDoc {
   return result.doc;
 }
 
+const many = (length: number, one: (n: number) => string) => Array.from({ length }, (_, n) => one(n)).join(" ");
 const doc = read(SDL);
 const operation = (key: string) => doc.operations.find((one) => one.key === key)!;
 const type = (name: string) => doc.types.find((one) => one.name === name)!;
@@ -425,13 +426,17 @@ test("a schema too large to spell out two levels down is spelled out fewer, with
   expect(doc.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toEqual([]);
 });
 
-test("an enum's values count towards a doc's size", () => {
-  const values = Array.from({ length: 300 }, (_, n) => `V${n}`).join(" ");
-  const fields = Array.from({ length: 300 }, (_, n) => `f${n}: Big`).join(" ");
-  const large = read(`type Query { t: T } type T { ${fields} } enum Big { ${values} }`);
+test("an enum's values count towards a doc's size, as the names they are", () => {
+  const values = many(1_000, (n) => `V${n}`);
+  // Spelled out at each of T's 1,000 fields, the enum is some 7 MB.
+  const large = read(`type Query { t: T } type T { ${many(1_000, (n) => `f${n}: Big`)} } enum Big { ${values} }`);
   expect(large.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toHaveLength(1);
-  expect(JSON.stringify(large).length).toBeLessThan(1024 * 1024);
-});
+  expect(JSON.stringify(large).length).toBeLessThanOrEqual(5_000_000);
+  // A large enum many root fields return is well under it: read, and not shortened.
+  const fits = read(`type Query { ${many(100, (n) => `r${n}: Big`)} } enum Big { ${values} }`);
+  expect(fits.warnings).toEqual([]);
+  expect(fits.operations[0]!.responses[0]!.schema!.enum).toHaveLength(1_000);
+}, 30_000);
 
 test("an input with nothing required gets its first field, as one read from an endpoint that takes exactly one needs", () => {
   const sdl = "input By @oneOf { id: ID, slug: String } type Query { find(by: By!): Int }";
@@ -462,12 +467,10 @@ test("an example is the caller's own: changing it leaves the next doc's alone", 
   expect(second.responses[0]!.example).toEqual({});
 });
 
-const many = (length: number, one: (n: number) => string) => Array.from({ length }, (_, n) => one(n)).join(" ");
-
 test.each([
   [
     "a wide union many root fields return",
-    `type Query { ${many(400, (n) => `r${n}: Wide`)} } union Wide = ${Array.from({ length: 400 }, (_, n) => `M${n}`).join(" | ")} ${many(400, (n) => `type M${n} { id: ID }`)}`,
+    `type Query { ${many(700, (n) => `r${n}: Wide`)} } union Wide = ${Array.from({ length: 700 }, (_, n) => `M${n}`).join(" | ")} ${many(700, (n) => `type M${n} { id: ID }`)}`,
   ],
   [
     "a long description on a type many root fields return",

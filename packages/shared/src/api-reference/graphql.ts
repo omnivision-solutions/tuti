@@ -178,7 +178,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     // The reckoning runs high (up to twice what the JSON comes to), and the doc as built is measured anyway.
     if (size > 2 * MAX_SIZE) throw TOO_LARGE;
   };
-  /** Counts what's about to be copied into the doc: fields, arguments, enum values or a union's members. */
+  /** Counts what's about to be copied into the doc: fields or arguments. */
   const weigh = (items: readonly { name: string; description?: string | null; type?: GraphQLType }[]) => {
     let text = 0;
     for (const item of items) text += 3 * item.name.length + (item.description?.length ?? 0) + 2 * String(item.type ?? "").length;
@@ -220,7 +220,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       return isListType(type) ? { type: wrapped, items: inner } : { ...inner, type: wrapped };
     }
     const text = type.name;
-    count(0, text.length + 20);
+    // Named, it's its name twice (`type` and `ref`).
+    count(0, 2 * text.length + 20);
     // A root type has no page: its fields are the operations.
     if (isSpecifiedScalarType(type) || rootTypes.has(type)) return { type: text };
     if (inside.length > levels || inside.includes(type.name)) return { type: text, ref: type.name };
@@ -231,7 +232,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       result.description = type.description;
     }
     if (isEnumType(type)) {
-      weigh(type.getValues());
+      // Only its values' names are copied.
+      count(0, type.getValues().reduce((sum, value) => sum + value.name.length + 3, 0));
       result.enum = type.getValues().map((value) => value.name);
     }
     if (isObjectType(type) || isInterfaceType(type) || isInputObjectType(type)) weigh(Object.values(type.getFields()));
@@ -270,10 +272,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       });
     }
     if (isAbstractType(type)) {
-      const members = schema.getPossibleTypes(type);
-      // Counted here, since a member that's only named counts nothing itself.
-      weigh(members);
-      result.oneOf = members.map((member) => schemaOf(member, within));
+      // Each member counts itself, named or spelled out.
+      result.oneOf = schema.getPossibleTypes(type).map((member) => schemaOf(member, within));
     }
     return result;
   };
