@@ -33,6 +33,7 @@ const MESSAGES = {
   UNKNOWN_SECURITY: "An operation names a way of signing the spec doesn't declare, so it was left out.",
   SECURITY_SKIPPED: "One of the ways an operation can be signed needs a scheme the reference doesn't show, so that way was left out.",
   UNSUPPORTED_AUTH: "A way of signing isn't one the reference shows (bearer, basic, an API key, OAuth 2 or OpenID Connect), so it was left out.",
+  ADDS_TO_ITSELF: "A schema adds to a type it's inside: it shows as that type, without what it adds.",
   SCHEMA_TOO_LARGE: 'A schema is too large to spell out in full: its deepest parts show as "object".',
   CALLBACKS_SKIPPED: "An operation's callbacks were left out.",
   RELATIVE_SERVER: "A server's address is relative, and a spec doesn't say what to: it's kept as written.",
@@ -42,8 +43,9 @@ const MESSAGES = {
 
 type Obj = Record<string, unknown>;
 
-/** What may sit beside a lone `allOf` reference and still leave it that reference: all of it is carried over or only words. */
-const BESIDE_A_REF = new Set(["allOf", "description", "nullable", "deprecated", "default", "title", "example"]);
+/** What may be said about an `allOf` reference and still leave it that reference: all of it is carried over or only words. */
+const WORDS = new Set(["description", "nullable", "deprecated", "default", "title", "example"]);
+const onlyWords = (schema: Obj, also?: string) => Object.keys(schema).every((key) => WORDS.has(key) || key === also || key.startsWith("x-"));
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 const PARAM_PLACES = new Set(["path", "query", "header", "cookie"]);
 
@@ -296,6 +298,12 @@ function read(root: Obj): ApiDoc {
     return ++rootNodes <= (docNodes <= DOC_NODES ? ROOT_NODES : ROOT_NODES_AFTER);
   };
   /** No room even to name another field: twice what may be spelled out, so the fields after a large one are still listed. */
+  /** Work that grows with a list in the spec (an `allOf`'s parts) counts as that many values, each time. */
+  const charge = (count: number) => {
+    rootNodes += count;
+    docNodes += count;
+    if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
+  };
   const spent = () => rootNodes >= 2 * (docNodes <= DOC_NODES ? ROOT_NODES : ROOT_NODES_AFTER);
 
   /** The type a schema says it is, without "null", else what its keywords imply; and whether it may be null. */
@@ -355,28 +363,33 @@ function read(root: Obj): ApiDoc {
       return { type: "object" };
     }
 
-    // A reference among `allOf`'s parts. With nothing beside it but words ("this type, or null", as
-    // 3.0 has to say it) it's read as that reference, keeping its name. One this schema is already
-    // inside (a type's field that is the type and more) is only named, as anywhere; so is a schema
-    // met again under itself. Any other is folded in: a base two types share isn't either inside the other.
+    // A reference among `allOf`'s parts. With nothing said about it but words ("this type, or
+    // null", as 3.0 has to say it; a description in a part of its own) it's read as that reference,
+    // keeping its name. One this schema is already inside (a type's field that is the type and
+    // more) is only named, as anywhere; so is a schema met again under itself. Any other is folded
+    // in: a base two types share isn't either inside the other.
     const parts = list(node.allOf);
+    charge(parts.length);
     // (A schema that folds itself in adds nothing to itself.)
     const folded = parts.flatMap((part) => (isObj(part) && typeof part.$ref === "string" && lookup(part.$ref)?.value !== node ? [part.$ref] : []));
-    const alone = parts.length === 1 && Object.keys(node).every((key) => BESIDE_A_REF.has(key) || key.startsWith("x-")) ? folded[0] : undefined;
+    const words = [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && onlyWords(part, part === node ? "allOf" : undefined));
+    const alone = folded.length === 1 && words.length === parts.length ? folded[0] : undefined;
     const inside = folded.find((pointer) => place.stack.includes(pointer)) ?? (place.folding.includes(node) ? folded[0] : undefined);
     const held = inside ?? alone;
     if (held !== undefined) {
+      if (alone === undefined) warn("ADDS_TO_ITSELF", place.where);
       const name = lookup(held)?.name;
       const only = inside === undefined ? toSchema({ $ref: held }, place) : name === undefined ? { type: "object" } : { type: name, ref: name };
-      const description = str(node.description) || only.description;
+      const said = (key: string) => words.find((part) => Object.hasOwn(part, key))?.[key];
+      const description = str(said("description")) || only.description;
       const limits = constraints(node);
       return {
         ...only,
         ...(description ? { description } : {}),
-        ...(node.nullable === true ? { nullable: true } : {}),
-        ...(node.deprecated === true ? { deprecated: true } : {}),
+        ...(said("nullable") === true ? { nullable: true } : {}),
+        ...(said("deprecated") === true ? { deprecated: true } : {}),
         ...(limits ? { constraints: limits } : {}),
-        ...(Object.hasOwn(node, "default") ? { default: node.default } : {}),
+        ...(said("default") === undefined ? {} : { default: said("default") }),
       };
     }
     if (folded.length > 0) place = { ...place, folding: [...place.folding, node] };
@@ -436,6 +449,7 @@ function read(root: Obj): ApiDoc {
     const target = follow(node);
     if (!target) return isObj(node) ? {} : undefined;
     // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.
+    charge(list(target.allOf).length);
     const bases = list(target.allOf).flatMap((part): Obj[] => {
       const base = follow(part);
       return base ? [base] : [];

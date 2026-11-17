@@ -866,11 +866,12 @@ test("a reference inside allOf is still a reference: named, and never spelled ou
   expect(example).toEqual({ id: "string", owner: { name: "string" } });
   // Folded in, a type's own fields are under it: Node's `next` is Node, named.
   expect(doc.types[2]!.schema.properties).toEqual([
-    // Node folded in once more with its words; under itself it's only named.
-    { name: "next", required: false, type: "object", description: "The next.", properties: [{ name: "next", required: false, type: "Node", ref: "Node" }] },
+    // A description in a part of its own is still only words about the reference.
+    { name: "next", required: false, type: "Node", ref: "Node", description: "The next.", properties: [{ name: "next", required: false, type: "Node", ref: "Node", description: "The next." }] },
     { name: "root", required: false, type: "Tree", ref: "Tree" },
   ]);
-  expect(doc.warnings).toEqual([]);
+  // What `twin` adds to the type it's inside is left out, and said so.
+  expect(codes(doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Category › twin"]);
 });
 
 test("types that share an allOf base are spelled out inside each other", () => {
@@ -914,9 +915,10 @@ test("keywords beside a lone allOf reference are kept", () => {
         code: { allOf: [ref("Text")], maxLength: 10, enum: ["a", "b"] },
         more: { allOf: [ref("Thing")], properties: { extra: { type: "boolean" } } },
         plain: { allOf: [ref("Text")], description: "Just words.", nullable: true, default: "x", title: "Plain", "x-internal": true },
+        author: { allOf: [ref("Thing"), { description: "Who wrote it.", nullable: true }] },
       },
     },
-    { Uuid: { type: "string", format: "uuid" }, Text: { type: "string", minLength: 1 }, Thing: { type: "object", properties: { a: { type: "string" } } } },
+    { Uuid: { type: "string", format: "uuid" }, Text: { type: "string", minLength: 1 }, Thing: { type: "object", description: "A thing.", properties: { a: { type: "string" } } } },
   );
   expect(schema.properties).toEqual([
     { name: "id", required: false, type: "string", format: "uuid", constraints: "read-only" },
@@ -925,14 +927,17 @@ test("keywords beside a lone allOf reference are kept", () => {
       name: "more",
       required: false,
       type: "object",
+      description: "A thing.",
       properties: [
         { name: "extra", required: false, type: "boolean" },
         { name: "a", required: false, type: "string" },
       ],
     },
     { name: "plain", required: false, type: "Text", ref: "Text", description: "Just words.", nullable: true, default: "x", constraints: "at least 1 character" },
+    // The field's own words win over the type's, and it's still the type.
+    { name: "author", required: false, type: "Thing", ref: "Thing", description: "Who wrote it.", nullable: true, properties: [{ name: "a", required: false, type: "string" }] },
   ]);
-  expect(example).toEqual({ id: "00000000-0000-0000-0000-000000000000", code: "a", more: { extra: true, a: "string" }, plain: "x" });
+  expect(example).toEqual({ id: "00000000-0000-0000-0000-000000000000", code: "a", more: { extra: true, a: "string" }, plain: "x", author: { a: "string" } });
 });
 
 test("a spec whose schemas fan out without end is read in bounded time, with a warning", () => {
@@ -978,6 +983,15 @@ test("many schemas that each fold in one wide schema stop the read early", () =>
   const few = spec({ components: { schemas: { Base: { type: "object", required: ["id"], properties: { id: {} } }, A: { allOf: [ref("Base")] }, B: { allOf: [ref("Base"), ref("A")] } } } });
   expect(few.types.map((type) => type.schema.properties)).toEqual(Array.from({ length: 3 }, () => [{ name: "id", required: true, type: "any" }]));
 }, 30_000);
+
+test("a very long allOf counts as its length each time it's used", () => {
+  const wide = { allOf: Array.from({ length: 5_000 }, () => ref("Leaf")) };
+  const holder = { type: "object", properties: Object.fromEntries(Array.from({ length: 300 }, (_, index) => [`f${index}`, ref("Wide")])) };
+  const { schema, doc } = schemaOf(ref("Holder"), { Leaf: { type: "string" }, Wide: wide, Holder: holder });
+  // The first use spends the schema's room, so the other 299 aren't gone through, and that's said.
+  expect(schema.properties).toEqual([{ name: "f0", required: false, type: "Wide", ref: "Wide" }]);
+  expect(codes(doc)).toContain("SCHEMA_TOO_LARGE @ GET /x › responses › 200");
+});
 
 test("after many large types, an operation's own schemas are still read", () => {
   const schemas = Object.fromEntries(
