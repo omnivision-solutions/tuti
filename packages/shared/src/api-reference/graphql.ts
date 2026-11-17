@@ -41,14 +41,29 @@ const LEVELS = 2;
 /**
  * The most a doc holds, in characters of its JSON. A schema whose types point at each other grows
  * far past its own size when spelled out, so one that would hold more is spelled out fewer levels
- * down, with a warning. It's reckoned as the doc is built (every field, enum value, member, argument
- * and operation wherever it's copied, with its name, description and default), so that one far past
- * it is given up before it's built, and measured on the doc once built.
+ * down, with a warning.
+ *
+ * Why a doc can't be built past it, in one place:
+ * 1. Every piece copied into a doc is bounded before anything is built (`unbounded`): a name by
+ *    `MAX_NAME`, a type's text by its name and `MAX_WRAPS`, a description or a default by
+ *    `MAX_TEXT` (cut, or left out, with a warning). So nothing copied is larger than a few
+ *    thousand characters, whatever the schema.
+ * 2. What's left is how many pieces are copied. That's reckoned as the doc is built (`count`, at
+ *    every field, value, member, argument, operation and wrapped type where it's made), and the
+ *    build is given up at twice the bound. A copy the reckoning misses is off by one bounded piece
+ *    per counted piece, not by the size of the schema.
+ * 3. The doc as built is measured, so none over the bound is returned.
  */
 const MAX_SIZE = 5_000_000;
 /** What a field is reckoned at besides its own text: about what its JSON takes. */
 const FIELD_SIZE = 100;
 const TOO_LARGE = Symbol("too large");
+/** The longest name of a type, field, argument or enum value: GraphQL sets none, and no real schema comes near. */
+const MAX_NAME = 256;
+/** The most lists and non-nulls around a type. */
+const MAX_WRAPS = 32;
+/** The most of a description that's copied, and the longest default (as JSON) that is. */
+const MAX_TEXT = 10_000;
 
 const ROOTS = [
   { kind: "query", key: "queries", name: "Queries" },
@@ -84,6 +99,8 @@ export function readGraphql(text: string, options: { endpoint?: string } = {}): 
     if (text.length > MAX_LENGTH) return { error: "The schema is over 5 MB, the most that can be read." };
     const parsed = parse(text);
     if ("error" in parsed) return parsed;
+    const refused = unbounded(parsed.schema);
+    if (refused) return { error: refused };
     for (let levels = LEVELS; levels >= 0; levels--) {
       try {
         const doc = toDoc(parsed.schema, options.endpoint, levels);
@@ -150,6 +167,46 @@ function parse(text: string): { schema: GraphQLSchema } | { error: string } {
   }
 }
 
+/**
+ * What in a schema has no bound of its own, as a sentence, or null: a name that's too long, or a
+ * type inside too many lists. Looked for once, before anything is built.
+ */
+function unbounded(schema: GraphQLSchema): string | null {
+  const name = (value: string, what: string) =>
+    value.length > MAX_NAME
+      ? `The ${what} "${value.slice(0, 40)}…" is ${value.length.toLocaleString("en-US")} characters long. Names of up to ${MAX_NAME} characters can be shown: shorten it.`
+      : null;
+  const wraps = (type: GraphQLType, where: string) => {
+    let depth = 0;
+    for (let inner = type; isNonNullType(inner) || isListType(inner); inner = inner.ofType) depth++;
+    return depth > MAX_WRAPS
+      ? `The type of ${where} is inside more than ${MAX_WRAPS} lists and non-nulls. A type that deep can't be shown: flatten it.`
+      : null;
+  };
+  for (const type of Object.values(schema.getTypeMap())) {
+    if (type.name.startsWith("__")) continue;
+    let refused = name(type.name, "type");
+    if (refused) return refused;
+    if (isEnumType(type)) {
+      for (const value of type.getValues()) {
+        refused = name(value.name, `value of ${type.name}`);
+        if (refused) return refused;
+      }
+    }
+    if (!isObjectType(type) && !isInterfaceType(type) && !isInputObjectType(type)) continue;
+    for (const field of Object.values(type.getFields())) {
+      refused = name(field.name, `field of ${type.name}`) ?? wraps(field.type, `${type.name}.${field.name}`);
+      if (refused) return refused;
+      for (const arg of "args" in field ? field.args : []) {
+        refused =
+          name(arg.name, `argument of ${type.name}.${field.name}`) ?? wraps(arg.type, `${type.name}.${field.name}'s argument ${arg.name}`);
+        if (refused) return refused;
+      }
+    }
+  }
+  return null;
+}
+
 /** "createPost" and "CreatePostInput" as a page's address: "create-post", "create-post-input". */
 function slugOf(name: string) {
   return (
@@ -181,10 +238,24 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
   /** Counts what's about to be copied into the doc: fields or arguments. */
   const weigh = (items: readonly { name: string; description?: string | null; type?: GraphQLType }[]) => {
     let text = 0;
-    for (const item of items) text += 3 * item.name.length + (item.description?.length ?? 0) + 2 * String(item.type ?? "").length;
+    for (const item of items) {
+      text += 3 * item.name.length + Math.min(item.description?.length ?? 0, MAX_TEXT) + 2 * String(item.type ?? "").length;
+    }
     count(items.length, text);
   };
-  const weighDefault = (value: unknown) => count(0, JSON.stringify(value)?.length ?? 0);
+  /** One warning for a place, however many times what's there is copied. */
+  const warned = new Set<string>();
+  const warnOnce = (code: string, message: string, where: string) => {
+    if (warned.has(`${code} ${where}`)) return;
+    warned.add(`${code} ${where}`);
+    warnings.push({ code, message, where });
+  };
+  /** A description as it's copied: all of it, or its first `MAX_TEXT` characters with a warning. */
+  const words = (text: string | null | undefined, where: string) => {
+    if (!text || text.length <= MAX_TEXT) return text ?? "";
+    warnOnce("DESCRIPTION_CUT", `A description over ${MAX_TEXT.toLocaleString("en-US")} characters is cut there.`, where);
+    return text.slice(0, MAX_TEXT);
+  };
   const slugs = new Set<string>();
   /** The next number to try for a slug that's taken, so many names of one slug aren't each counted up from 2. */
   const numbers = new Map<string, number>();
@@ -205,8 +276,24 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     return slug;
   };
 
-  const defaultOf = (input: GraphQLArgument | GraphQLInputField) =>
-    input.default && ("value" in input.default ? input.default.value : valueFromASTUntyped(input.default.literal));
+  /** Each default's length as JSON, measured once however many times it's copied. */
+  const defaultLengths = new Map<object, number>();
+  /** An argument's or input field's default, counted as it's copied; one too long to copy is left out, with a warning. */
+  const defaultOf = (input: GraphQLArgument | GraphQLInputField, where: string) => {
+    if (!input.default) return undefined;
+    const value = "value" in input.default ? input.default.value : valueFromASTUntyped(input.default.literal);
+    let length = defaultLengths.get(input);
+    if (length === undefined) {
+      length = JSON.stringify(value)?.length ?? 0;
+      defaultLengths.set(input, length);
+    }
+    if (length > MAX_TEXT) {
+      warnOnce("DEFAULT_LEFT_OUT", `A default over ${MAX_TEXT.toLocaleString("en-US")} characters isn't shown.`, where);
+      return undefined;
+    }
+    count(0, length);
+    return value;
+  };
 
   /** A type as the pages show it; `inside` holds the named types this one is being spelled out in. */
   const schemaOf = (type: GraphQLType, inside: string[]): ApiSchema => {
@@ -228,8 +315,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     const within = [...inside, type.name];
     const result: ApiSchema = { type: text, ref: type.name };
     if (type.description) {
-      count(0, type.description.length);
-      result.description = type.description;
+      result.description = words(type.description, type.name);
+      count(0, result.description.length);
     }
     if (isEnumType(type)) {
       // Only its values' names are copied.
@@ -247,7 +334,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
         // The field's own words, not its type's (which weren't copied after all).
         count(0, -(property.description?.length ?? 0));
         delete property.description;
-        if (field.description) property.description = field.description;
+        if (field.description) property.description = words(field.description, `${type.name} › ${field.name}`);
         if (field.deprecationReason != null) property.deprecated = true;
         return property;
       });
@@ -261,13 +348,10 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
         };
         count(0, -(property.description?.length ?? 0));
         delete property.description;
-        if (field.description) property.description = field.description;
+        if (field.description) property.description = words(field.description, `${type.name} › ${field.name}`);
         if (field.deprecationReason != null) property.deprecated = true;
-        const value = defaultOf(field);
-        if (value !== undefined) {
-          weighDefault(value);
-          property.default = value;
-        }
+        const value = defaultOf(field, `${type.name} › ${field.name}`);
+        if (value !== undefined) property.default = value;
         return property;
       });
     }
@@ -317,7 +401,11 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     return values.length > 0 ? Object.fromEntries(values) : (one() ?? {});
   };
   const leafExample = (type: GraphQLType) => {
-    if (isEnumType(type)) return type.getValues()[0]?.name ?? null;
+    if (isEnumType(type)) {
+      const value = type.getValues()[0]?.name ?? null;
+      count(0, (value?.length ?? 0) + 4);
+      return value;
+    }
     const name = getNamedType(type).name;
     // A copy: the doc is the caller's to change.
     return Object.hasOwn(SCALAR_EXAMPLES, name) ? structuredClone(SCALAR_EXAMPLES[name]) : "string";
@@ -339,7 +427,9 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     const example: Record<string, unknown> = {};
     if (isAbstractType(type)) {
       lines.push("__typename");
-      example.__typename = schema.getPossibleTypes(type)[0]?.name ?? type.name;
+      const member = schema.getPossibleTypes(type)[0]?.name ?? type.name;
+      count(1, member.length);
+      example.__typename = member;
     }
     if (isObjectType(type) || isInterfaceType(type)) {
       for (const field of Object.values(type.getFields())) {
@@ -353,6 +443,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     }
     if (lines.length === 0) {
       lines.push("__typename");
+      count(1, type.name.length);
       example.__typename = type.name;
     }
     return { text: ` {\n${lines.map((line) => `${indent}  ${line}\n`).join("")}${indent}}`, example };
@@ -362,7 +453,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     format: "graphql",
     title: "",
     version: null,
-    description: schema.description ?? "",
+    description: words(schema.description, "schema"),
     servers: endpoint ? [{ url: endpoint, description: "" }] : [],
     auth: [],
     groups: [],
@@ -376,20 +467,17 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     if (!rootType) continue;
     const fields = Object.values(rootType.getFields());
     if (fields.length === 0) continue;
-    doc.groups.push({ key: root.key, name: root.name, description: rootType.description ?? "" });
+    doc.groups.push({ key: root.key, name: root.name, description: words(rootType.description, rootType.name) });
     for (const field of fields) {
       const key = `${root.kind} ${field.name}`;
       // Its name is in its key, slug, path, title and query.
-      count(4, 6 * field.name.length + (field.description?.length ?? 0));
+      count(4, 6 * field.name.length + Math.min(field.description?.length ?? 0, MAX_TEXT));
       weigh(field.args);
       const variables: Record<string, unknown> = {};
       const params = field.args.map((arg) => {
         const paramSchema = schemaOf(arg.type, []);
-        const value = defaultOf(arg);
-        if (value !== undefined) {
-          weighDefault(value);
-          paramSchema.default = value;
-        }
+        const value = defaultOf(arg, `${key} › ${arg.name}`);
+        if (value !== undefined) paramSchema.default = value;
         if (arg.deprecationReason != null) paramSchema.deprecated = true;
         const example = inputExample(arg.type, []);
         // Only what the field needs is sent: a made-up cursor or filter fails, and unset ones take their
@@ -399,7 +487,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
           name: arg.name,
           in: "argument" as const,
           required: isRequiredArgument(arg),
-          description: arg.description ?? "",
+          description: words(arg.description, `${key} › ${arg.name}`),
           schema: paramSchema,
           example,
         };
@@ -415,7 +503,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
         kind: root.kind,
         path: field.name,
         title: field.name,
-        description: field.description ?? "",
+        description: words(field.description, key),
         deprecated: field.deprecationReason != null,
         auth: [],
         params,

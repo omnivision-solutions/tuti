@@ -472,36 +472,23 @@ test.each([
     "a wide union many root fields return",
     `type Query { ${many(700, (n) => `r${n}: Wide`)} } union Wide = ${Array.from({ length: 700 }, (_, n) => `M${n}`).join(" | ")} ${many(700, (n) => `type M${n} { id: ID }`)}`,
   ],
-  [
-    "a long description on a type many root fields return",
-    `type Query { ${many(200, (n) => `r${n}: Described`)} } """${"words ".repeat(20_000)}""" type Described { id: ID }`,
-  ],
   ["more root fields than a doc holds", `type Query { ${many(30_000, (n) => `r${n}: Int`)} }`],
   ["more arguments than a doc holds", `type Query { one(${many(60_000, (n) => `a${n}: Int`)}): Int }`],
-  [
-    "a long default on an input many root fields take",
-    `type Query { ${many(200, (n) => `r${n}(a: Long): Int`)} } input Long { a: String = "${"x".repeat(50_000)}" }`,
-  ],
-  [
-    "a deeply nested list many root fields return",
-    `type Query { ${many(300, (n) => `r${n}: ${"[".repeat(500)}Int${"]".repeat(500)}`)} }`,
-  ],
-  [
-    "a deeply nested list many root fields take",
-    `type Query { ${many(300, (n) => `r${n}(a: ${"[".repeat(500)}Int${"]".repeat(500)}): Int`)} }`,
-  ],
-  [
-    "a deeply nested list on a type many root fields return",
-    `type Query { ${many(3_000, (n) => `r${n}: Deep`)} } type Deep { a: ${"[".repeat(500)}Int${"]".repeat(500)} }`,
-  ],
 ])("%s is too large to show", (_name, sdl) => {
   expect(readGraphql(sdl)).toEqual({ error: expect.stringContaining("too large") });
   // Schemas this size take a second or two to parse: more on a busy machine.
 }, 30_000);
 
-test("a deeply nested list is given up before it's built", () => {
-  // Spelled out, each of these is 250,000 characters of type text: all of them would be 75 million.
-  const sdl = `type Query { ${many(300, (n) => `r${n}: ${"[".repeat(500)}Int${"]".repeat(500)}`)} }`;
+test.each([
+  [
+    "an enum value's name in every example",
+    `type Query { ${many(150, (n) => `r${n}: T`)} } type T { ${many(200, (n) => `f${n}: E`)} } enum E { ${"A".repeat(250)} }`,
+  ],
+  [
+    "a union's first member's name in every example",
+    `type Query { ${many(150, (n) => `r${n}: T`)} } type T { ${many(200, (n) => `f${n}: U`)} } union U = ${"M".repeat(250)} type ${"M".repeat(250)} { id: ID }`,
+  ],
+])("%s counts: a doc too large with them is given up before it's built", (_name, sdl) => {
   // A doc that's built is measured, so one never measured was given up on the way.
   const measured = vi.spyOn(JSON, "stringify");
   const result = readGraphql(sdl);
@@ -509,12 +496,86 @@ test("a deeply nested list is given up before it's built", () => {
   measured.mockRestore();
   expect(result).toEqual({ error: expect.stringContaining("too large") });
   expect(times).toBe(0);
-  // One such list alone is read.
-  expect(read(`type Query { one: ${"[".repeat(50)}Int${"]".repeat(50)} }`).operations[0]!.responses[0]!.schema!.type).toHaveLength(103);
+}, 30_000);
+
+test.each([
+  ["a type's name", `type Query { a: ${"T".repeat(257)} } type ${"T".repeat(257)} { id: ID }`, `The type "${"T".repeat(40)}…" is 257 characters long`],
+  ["a field's name", `type Query { ${"f".repeat(300)}: Int }`, `The field of Query "${"f".repeat(40)}…" is 300 characters long`],
+  ["an argument's name", `type Query { a(${"x".repeat(1_000)}: Int): Int }`, "The argument of Query.a"],
+  ["a nested field's argument's name", `type Query { t: T } type T { a(${"x".repeat(1_000)}: Int): Int }`, "The argument of T.a"],
+  ["an input field's name", `type Query { a(i: I): Int } input I { ${"x".repeat(257)}: Int }`, "The field of I"],
+  ["an enum value's name", `type Query { e: E } enum E { ${"A".repeat(1_000_000)} }`, `The value of E "${"A".repeat(40)}…" is 1,000,000 characters long`],
+  ["a returned type in too many lists", `type Query { a: ${"[".repeat(33)}Int${"]".repeat(33)} }`, "The type of Query.a is inside more than 32 lists"],
+  ["an argument's type in too many lists", `type Query { a(x: ${"[".repeat(500)}Int${"]".repeat(500)}): Int }`, "The type of Query.a's argument x is inside more than 32"],
+  ["a nested field's type in too many lists", `type Query { t: T } type T { a: ${"[".repeat(500)}Int${"]".repeat(500)} }`, "The type of T.a is inside more than 32"],
+  ["an input field's type in too many lists", `type Query { a(i: I): Int } input I { x: ${"[Int!]!".replace("Int!", `${"[".repeat(40)}Int${"]".repeat(40)}`)} }`, "The type of I.x is inside more than 32"],
+])("%s past what can be shown is refused before anything is built", (_name, sdl, expected) => {
+  const measured = vi.spyOn(JSON, "stringify");
+  const result = readGraphql(sdl);
+  const times = measured.mock.calls.length;
+  measured.mockRestore();
+  expect(result).toEqual({ error: expect.stringContaining(expected) });
+  expect(times).toBe(0);
+});
+
+test("names and lists at the limit are read", () => {
+  const name = "n".repeat(256);
+  const lists = `${"[".repeat(16)}Int${"]!".repeat(16)}`;
+  const atLimit = read(`type Query { ${name}(${name}: ${lists}): ${lists} } enum ${"E".repeat(256)} { ${"V".repeat(256)} }`);
+  expect(atLimit.operations[0]!.path).toBe(name);
+  expect(atLimit.operations[0]!.responses[0]!.schema!.type).toBe(lists);
+  expect(atLimit.operations[0]!.params[0]!.schema.type).toBe(lists);
+});
+
+test("a description over 10,000 characters is cut, with one warning for its place", () => {
+  const long = "words ".repeat(20_000);
+  const cutDoc = read(`
+    """${long}""" schema { query: Query }
+    """${long}""" type Described { """${long}""" id: ID }
+    type Query {
+      """${long}""" a("""${long}""" x: Int): Described
+      ${many(200, (n) => `r${n}: Described`)}
+    }
+  `);
+  expect(cutDoc.description).toBe(long.slice(0, 10_000));
+  expect(cutDoc.groups[0]!.description).toBe("");
+  expect(cutDoc.operations[0]!.description).toHaveLength(10_000);
+  expect(cutDoc.operations[0]!.params[0]!.description).toHaveLength(10_000);
+  const described = cutDoc.operations[1]!.responses[0]!.schema!;
+  expect(described.description).toHaveLength(10_000);
+  expect(described.properties![0]!.description).toHaveLength(10_000);
+  // Copied 200 times over, each is said once.
+  expect(cutDoc.warnings.filter((warning) => warning.code === "DESCRIPTION_CUT").map((warning) => warning.where)).toEqual([
+    "schema",
+    "query a › x",
+    "query a",
+    "Described",
+    "Described › id",
+  ]);
+  expect(doc.warnings.filter((warning) => warning.code === "DESCRIPTION_CUT")).toEqual([]);
+}, 30_000);
+
+test("a default over 10,000 characters isn't shown, with a warning, and the rest of the schema is", () => {
+  const long = "x".repeat(50_000);
+  const left = read(`
+    type Query { a(text: String! = "${long}", short: String! = "s", i: Long): Int ${many(200, (n) => `r${n}(i: Long): Int`)} }
+    input Long { a: String = "${long}", b: Int = 2 }
+  `);
+  const [text, short, input] = left.operations[0]!.params;
+  expect(text!.schema).toEqual({ type: "String!" });
+  expect(short!.schema).toEqual({ type: "String!", default: "s" });
+  expect(property(input!.schema, "a")).toEqual({ name: "a", required: false, type: "String" });
+  expect(property(input!.schema, "b").default).toBe(2);
+  // Without its default to send, a non-null argument gets an example.
+  expect(left.operations[0]!.query!.variables).toEqual({ text: "string", short: "s" });
+  expect(left.warnings.filter((warning) => warning.code === "DEFAULT_LEFT_OUT").map((warning) => warning.where)).toEqual([
+    "query a › text",
+    "Long › a",
+  ]);
 }, 30_000);
 
 test("many names of one slug each get the next number, without trying the ones before it again", () => {
-  const sdl = `type Query { ${many(500, (n) => `a${"_".repeat(n + 1)}: Int`)} }`;
+  const sdl = `type Query { ${many(250, (n) => `a${"_".repeat(n + 1)}: Int`)} }`;
   const looked = vi.spyOn(Set.prototype, "has");
   const result = readGraphql(sdl);
   const times = looked.mock.calls.length;
@@ -522,9 +583,9 @@ test("many names of one slug each get the next number, without trying the ones b
   if ("error" in result) throw new Error(result.error);
   const slugs = result.doc.operations.map((one) => one.slug);
   expect(slugs.slice(0, 3)).toEqual(["a", "a-2", "a-3"]);
-  expect(new Set(slugs).size).toBe(500);
-  // Counting up from 2 for each of them is 125,000 looks.
-  expect(times).toBeLessThan(10_000);
+  expect(new Set(slugs).size).toBe(250);
+  // Counting up from 2 for each of them is over 30,000 looks.
+  expect(times).toBeLessThan(5_000);
 }, 30_000);
 
 test("a doc is measured once built, whatever was reckoned on the way", () => {
