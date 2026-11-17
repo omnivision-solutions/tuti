@@ -18,18 +18,23 @@ function trimSlashes(text: string, at: "start" | "end"): string {
   return text.slice(from, to);
 }
 
+/**
+ * A spec's server as an address that can be called. One without a host ("/v1", "v1") goes on the
+ * placeholder's, as nothing here knows where the spec is served; "//host/v1" only lacks its scheme.
+ */
+function absolute(server: string): string {
+  if (server.startsWith("//")) return `https:${server}`;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(server)) return server;
+  return `${PLACEHOLDER_HOST}/${trimSlashes(server, "start")}`;
+}
+
 export type ExampleOptions = { server?: string; token?: string };
 
 /** The request an operation's page shows and the console starts from. */
 export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: ExampleOptions = {}): ExampleRequest {
   const spec = operation.servers?.[0] ?? doc.servers[0];
   // A server from the spec may have variables in its address; one asked for is used as it is.
-  const filled =
-    options.server ??
-    spec?.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder) ??
-    PLACEHOLDER_HOST;
-  // A spec may give a server without a host ("/v1"): nothing can call that, so it goes on the placeholder's.
-  const server = filled.startsWith("/") ? PLACEHOLDER_HOST + filled : filled;
+  const server = options.server ?? (spec ? absolute(spec.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder)) : PLACEHOLDER_HOST);
   const token = options.token ?? "YOUR_API_KEY";
   const headers: Record<string, string> = {};
   let query: [name: string, value: string][] = [];

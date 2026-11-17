@@ -56,6 +56,10 @@ const NASTY = "it's \"quoted\" \\ $HOME `id` ${x} $(id)\nsecond line\ttab é 日
 describe("exampleRequest: where it goes", () => {
   it("puts a server without a host on the placeholder's, so the example can be run", () => {
     expect(exampleRequest(doc({ servers: [{ url: "/api/v3", description: "" }] }), operation()).url).toBe("https://api.example.com/api/v3/posts");
+    expect(exampleRequest(doc({ servers: [{ url: "v1", description: "" }] }), operation()).url).toBe("https://api.example.com/v1/posts");
+    expect(exampleRequest(doc({ servers: [{ url: "//api.acme.test/v1", description: "" }] }), operation()).url).toBe("https://api.acme.test/v1/posts");
+    // The one asked for is used as it is: a console may send to its own origin.
+    expect(exampleRequest(doc(), operation(), { server: "/proxy" }).url).toBe("/proxy/posts");
   });
 
   it("joins a server and a path with one slash, however many either has", () => {
