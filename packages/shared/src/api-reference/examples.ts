@@ -68,7 +68,7 @@ export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: Ex
       headers["Content-Type"] = contentType;
       if (typeof example === "string" && !isJson(contentType)) body = example;
       else if (/x-www-form-urlencoded/i.test(contentType) && typeof example === "object" && example !== null)
-        body = new URLSearchParams(Object.entries(example).map(([name, value]): [string, string] => [name, asText(value)])).toString();
+        body = new URLSearchParams(Object.entries(example).flatMap(([name, value]) => (Array.isArray(value) ? value : [value]).map((item): [string, string] => [name, asText(item)]))).toString();
       // ponytail: multipart with an object example goes as JSON, which no server reads; write its parts when a spec needs it
       else body = JSON.stringify(example, null, 2);
     }

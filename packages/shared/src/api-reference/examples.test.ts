@@ -169,7 +169,7 @@ describe("exampleRequest: the body", () => {
       doc(),
       operation({ kind: "POST", body: body({ email: "e2e-a+b@example.com", tags: ["a", "b c"], n: 1 }, "application/x-www-form-urlencoded") }),
     );
-    expect(request.body).toBe("email=e2e-a%2Bb%40example.com&tags=a%2Cb+c&n=1");
+    expect(request.body).toBe("email=e2e-a%2Bb%40example.com&tags=a&tags=b+c&n=1");
     expect(request.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
   });
 
