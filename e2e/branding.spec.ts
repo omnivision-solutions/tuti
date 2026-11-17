@@ -164,7 +164,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(owner.getByLabel("Header link 1 URL")).toHaveValue("https://docs.example.com");
 
   // "Powered by tuti" (in Branding now; its old address lands there): hiding the badge needs a licence for the
-  // project; unticking it asks about one instead.
+  // project; switching it off asks about one instead.
   await owner.goto(`/app/${slug}/customize/powered-by`);
   await owner.waitForURL(`**/app/${slug}/settings/branding#powered-by`);
   const badge = owner.locator("form").filter({ has: owner.getByLabel('Show "Powered by tuti" in the footer') });
