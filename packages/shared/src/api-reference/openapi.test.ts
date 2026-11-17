@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { stringify } from "yaml";
 import { readOpenApi } from "./openapi";
 import type { ApiDoc, ApiSchema } from "./types";
@@ -1006,10 +1006,29 @@ test("a long list of choices, used by thousands of fields, is gone through once"
   const many = { type: "object", properties: Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`f${index}`, ref("Big")])) };
   const paths = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [`/${index}`, { get: { summary: `S${index}`, responses: { "200": json(ref("A")) } } }]));
   const chain = (to: string) => ({ type: "object", properties: { next: ref(to) } });
-  const result = readOpenApi(JSON.stringify({ openapi: "3.0.0", paths, components: { schemas: { Big: big, D: many, A: chain("B"), B: chain("C"), C: chain("D") } } }));
-  // Whether it reads or is too large, it gets there without scanning the list for every field of every response.
+  const text = JSON.stringify({ openapi: "3.0.0", paths, components: { schemas: { Big: big, D: many, A: chain("B"), B: chain("C"), C: chain("D") } } });
+  // How often a list as long as Big's is filtered: once, not for every field of every response.
+  let scans = 0;
+  const filter = Array.prototype.filter;
+  const spy = vi.spyOn(Array.prototype, "filter").mockImplementation(function (this: unknown[], ...args: Parameters<typeof filter>) {
+    if (this.length >= 50_000) scans++;
+    return filter.apply(this, args);
+  });
+  const result = readOpenApi(text);
+  spy.mockRestore();
   expect("doc" in result ? result.doc.operations.length : result.error).toBeTruthy();
-}, 30_000);
+  expect(scans).toBe(1);
+});
+
+test("the spec's own security list counts for every operation that has none of its own", () => {
+  const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`/${index}`, { get: { summary: `S${index}` } }]));
+  const securitySchemes = { bearer: { type: "http", scheme: "bearer" } };
+  const long = { openapi: "3.0.0", security: Array.from({ length: 1_000 }, () => ({ bearer: [] })), paths: paths(1_500), components: { securitySchemes } };
+  expect(errorOf(JSON.stringify(long))).toMatch(/too large once its references are followed/);
+  const short = spec({ security: [{ bearer: [] }, {}], paths: paths(1_500), components: { securitySchemes } });
+  expect(short.operations).toHaveLength(1_500);
+  expect(short.operations[1_499]!.auth).toEqual([["bearer"], []]);
+});
 
 test("after many large types, an operation's own schemas are still read", () => {
   const schemas = Object.fromEntries(
