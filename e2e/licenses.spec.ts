@@ -4,9 +4,11 @@ import { promisify } from "node:util";
 
 import { appsumoWebhook } from "../packages/testkit/src/appsumo-fake";
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, cloudEnv, cloudPortalUrl } from "./env";
+import { useUpLicenseEmails } from "./email-days";
+import { CLOUD_URL, cloudEnv, cloudPortalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { expect, test } from "./fixtures";
 import { createProject, fillSignUp, newPerson } from "./helpers";
+import { rawEmail, receive } from "./inbound";
 
 /** A buyer's code from AppSumo's sign-in (the fake's), for license `key`. */
 async function appsumoCode(key: string): Promise<string> {
@@ -148,6 +150,8 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByText("Given by a license from AppSumo, a lifetime deal: it doesn't renew or bill.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
   await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  // Its emails are the license's month's: what's left of them, and until when.
+  await expect(owner.getByText(/^4,000 of the license's 4,000 emails left until [A-Z][a-z]{2} \d{1,2}, \d{4}$/)).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license");
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
@@ -305,4 +309,43 @@ test("a license Tuti issues to a project gives its plan, named as Tuti's", async
   await expect(owner.getByText("Plan licenses on your account, such as AppSumo lifetime deals.", { exact: false })).toBeVisible();
   await expect(owner.getByText(`Tuti · ${key}`)).toBeVisible();
   await expect(owner.getByText("On Acme")).toBeVisible();
+});
+
+test("a licensed project whose month's emails are used: Billing says none are left, and a reply waits for the license's next month", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const key = randomUUID();
+  const owner = await newPerson(browser, CLOUD_URL);
+  await owner.goto("/app/auth/sign-up");
+  await fillSignUp(owner, "Una Used", `e2e-${randomUUID()}@example.com`);
+  await owner.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  const { body, headers } = appsumoWebhook({ event: "activate", license_key: key, tier: 1 });
+  await fetch(`${CLOUD_URL}/api/appsumo/webhook`, { method: "POST", body, headers });
+  await owner.goto(`/api/appsumo/redirect?code=${await appsumoCode(key)}`);
+  await owner.getByRole("button", { name: "Add to my account" }).click();
+  await owner.waitForURL("**/app/licenses");
+  await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
+  await expect(owner.getByText("License assigned")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
+  await useUpLicenseEmails(slug);
+
+  await owner.goto(`/app/${slug}/settings/billing`);
+  const until = /^0 of the license's 4,000 emails left until ([A-Z][a-z]{2} \d{1,2}), \d{4}$/;
+  await expect(owner.getByText(until)).toBeVisible();
+  const day = until.exec((await owner.getByText(until).textContent())!)![1]!;
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.locator(".inbox-email-waits")).toHaveText(`This month's emails from your license are used: replies are emailed on ${day}. Billing`);
+  await checkpoint(owner, "reply-waits-for-license-month");
+  // Sent, it's saved, its email held: said as it's sent, and under the reply, short, with the whole reason as its title.
+  const why = `Emailed ${day}: your license's emails for this month are used (Settings → Billing)`;
+  await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText(why);
+  await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
+  await expect(owner.getByTitle(why).locator("[aria-hidden]")).toHaveText(`Emailed ${day}`);
+  await expect(owner.getByTitle(why).locator(".sr-only")).toHaveText(why);
 });

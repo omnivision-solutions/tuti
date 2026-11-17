@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { claimProjectEmail, grantLicenseCredits } from "@tuti/jobs";
 import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPlans } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
@@ -130,6 +131,21 @@ test("the plan's card counts this month's email to the project's users against i
   expect(await billing()).toContain("1,234 emails sent this month");
   vi.stubEnv("BILLING_CONFIG", "");
   expect(await billing()).not.toContain("emails sent this month");
+});
+
+test("on a license, the card says what's left of the license's emails for its month, and until when", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const holder = (await prisma.teamMember.findFirstOrThrow({ where: { projectId }, select: { userId: true } })).userId;
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: crypto.randomUUID(), plan: "pro", userId: holder, projectId, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro" } });
+  await grantLicenseCredits(license.id);
+  const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
+  const until = creditsThrough!.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  expect(await billing()).toContain(`10,000 of the license's 10,000 emails left until ${until}`);
+  expect(await claimProjectEmail(projectId)).toBe(true);
+  expect(await billing()).toContain(`9,999 of the license's 10,000 emails left until ${until}`);
 });
 
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {

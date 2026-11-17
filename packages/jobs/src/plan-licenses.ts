@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { planCredits, planDisplay } from "@tuti/shared";
+import { emailsPerMonth, planCredits, planDisplay } from "@tuti/shared";
 
 import { grantCredits } from "./credits";
 import { lockProject } from "./running-draft";
@@ -76,8 +76,18 @@ export async function grantLicenseCredits(id: string, now = new Date()): Promise
     const license = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { plan: true, projectId: true, revokedAt: true, creditsThrough: true } });
     const credits = planCredits(license.plan);
     const through = license.creditsThrough;
-    if (!license.projectId || license.revokedAt || credits === 0 || (through && through.getTime() > now.getTime() + HOUR_MS)) {
+    // A plan with no AI credits still has its months where it has email credits (email-limits.ts: given per license month).
+    if (!license.projectId || license.revokedAt || (credits === 0 && !emailsPerMonth(license.plan))) {
       return 0;
+    }
+    if (through && through.getTime() > now.getTime() + HOUR_MS) {
+      // Its month runs: nothing more, unless it gave no AI credits (its plan had none, and now has, as after an upgrade
+      // from a tier without): then the month's, lasting the month.
+      if (credits === 0 || (await tx.creditGrant.count({ where: { planLicenseId: id, kind: "AI", expiresAt: through } })) > 0) {
+        return 0;
+      }
+      await grantCredits(license.projectId, "PLAN", credits, { expiresAt: through, note: `${planDisplay(license.plan).name} license`, planLicenseId: id }, tx);
+      return credits;
     }
     const start = through && through.getTime() > now.getTime() - 24 * HOUR_MS ? through : now;
     // A month on, or the month's last day when it's shorter (January 31 → February 28, then the 28th each month): one
@@ -87,7 +97,9 @@ export async function grantLicenseCredits(id: string, now = new Date()): Promise
     end.setUTCMonth(end.getUTCMonth() + 1);
     end.setUTCDate(Math.min(start.getUTCDate(), new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate()));
     await tx.planLicense.update({ where: { id }, data: { creditsThrough: end } });
-    await grantCredits(license.projectId, "PLAN", credits, { expiresAt: end, note: `${planDisplay(license.plan).name} license`, planLicenseId: id }, tx);
+    if (credits > 0) {
+      await grantCredits(license.projectId, "PLAN", credits, { expiresAt: end, note: `${planDisplay(license.plan).name} license`, planLicenseId: id }, tx);
+    }
     return credits;
   });
 }

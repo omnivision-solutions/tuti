@@ -46,7 +46,7 @@ export { audienceReach, postAudience, projectUnsubscribeToken, provenAddress, ty
 export { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
-export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing } from "./email-limits";
+export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
