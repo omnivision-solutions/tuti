@@ -56,6 +56,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByRole("link", { name: "Discarded" })).toHaveCount(0);
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
+  await expect(dialog.getByLabel("Name")).toHaveValue("");
   await dialog.getByLabel("Name").fill("Getting started");
   await dialog.getByLabel("Description").fill("The basics, in five minutes.");
   // An icon, found by searching Lucide's names: the search box has focus, an arrow key reaches the icons, Enter picks one.
