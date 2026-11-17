@@ -69,7 +69,7 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
                     }.`,
                 )
                 .join(" ")}
-              {planIncludes(project.plan, "aiTuning") && " Picking a model below switches that feature to your own models, for every role it has."}
+              {planIncludes(project.plan, "aiTuning") && " Picking a different model below switches that feature to your own models, for every role it has."}
             </p>
           </AlertDescription>
         </Alert>
