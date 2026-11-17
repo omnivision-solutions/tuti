@@ -65,6 +65,8 @@ const typeKey = (name: string) => `type:${name}`;
  * - Operations the doc before didn't have are `unseen`, and start hidden once the team has hidden
  *   anything: a renamed tag or a moved path never publishes what was hidden. A first read hides nothing
  *   and marks nothing.
+ * - An operation that was off the help center stays off: one whose hidden tag was renamed (its key is
+ *   the same, its group a new one) is hidden by itself.
  * - Keys that left the spec leave `unseen`, and stay in `slugs`, `hiddenOperations` and `hiddenGroups`.
  * - The groups keep the team's order, new ones after them in the spec's.
  */
@@ -91,16 +93,20 @@ export function settle(previous: { doc: ApiDoc; state: ApiReferenceState } | nul
   const keys = new Set(operations.map((operation) => operation.key));
   const added = previous ? [...keys].filter((key) => !known.has(key)) : [];
   const hidesSomething = (before?.hiddenOperations.length ?? 0) + (before?.hiddenGroups.length ?? 0) > 0;
-  return {
-    doc: { ...next, operations, types },
-    state: {
-      slugs,
-      hiddenOperations: [...new Set([...(before?.hiddenOperations ?? []), ...(hidesSomething ? added : [])])],
-      hiddenGroups: before?.hiddenGroups ?? [],
-      unseen: [...new Set([...(before?.unseen ?? []).filter((key) => keys.has(key)), ...added])],
-      groupOrder: [...new Set([...(before?.groupOrder ?? []), ...next.groups.map((group) => group.key)])],
-    },
+  const doc = { ...next, operations, types };
+  const state: ApiReferenceState = {
+    slugs,
+    hiddenOperations: [...new Set([...(before?.hiddenOperations ?? []), ...(hidesSomething ? added : [])])],
+    hiddenGroups: before?.hiddenGroups ?? [],
+    unseen: [...new Set([...(before?.unseen ?? []).filter((key) => keys.has(key)), ...added])],
+    groupOrder: [...new Set([...(before?.groupOrder ?? []), ...next.groups.map((group) => group.key)])],
   };
+  if (previous && hidesSomething) {
+    const wasOn = new Set(onHelpCenter(previous.doc, previous.state).operations.map((operation) => operation.key));
+    const opened = onHelpCenter(doc, state).operations.filter((operation) => known.has(operation.key) && !wasOn.has(operation.key));
+    state.hiddenOperations.push(...opened.map((operation) => operation.key));
+  }
+  return { doc, state };
 }
 
 /** The named types a schema uses, wherever in it. */

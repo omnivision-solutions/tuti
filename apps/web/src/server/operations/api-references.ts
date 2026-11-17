@@ -35,12 +35,19 @@ function read(text: string): ApiDoc {
     throw new OperationError(400, "invalid_input", "This spec has no operations to show.");
   }
   // As it's stored (no undefined values), so a doc read again compares equal to the stored one.
-  const json = JSON.stringify(result.doc);
+  const doc = JSON.parse(JSON.stringify(result.doc)) as ApiDoc;
   // PostgreSQL stores no null character, in text or JSON.
-  if (text.includes("\0") || json.includes("\\u0000")) {
+  if (text.includes("\0") || hasNull(doc)) {
     throw new OperationError(400, "invalid_input", "This spec has a null character (\\u0000), which can't be stored. Remove it and try again.");
   }
-  return JSON.parse(json) as ApiDoc;
+  return doc;
+}
+
+/** Whether a string anywhere in `value` (JSON; a key too) has a null character. */
+function hasNull(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("\0");
+  if (typeof value !== "object" || value === null) return false;
+  return Array.isArray(value) ? value.some(hasNull) : Object.entries(value).some(([key, inner]) => key.includes("\0") || hasNull(inner));
 }
 
 /** The columns lists read, kept beside the state they count. */

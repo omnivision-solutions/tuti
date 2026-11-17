@@ -121,11 +121,14 @@ describe("settle", () => {
       operations: [operation("GET /posts"), operation("DELETE /posts", { group: "Internal" }), operation("DELETE /internal/posts", { group: "Internal" })],
     });
     const again = settle(first, renamed);
-    // The operation that only changed its tag was there before: it isn't new, but its new group isn't hidden.
+    // The operation that only changed its tag was there before: it isn't new, and it stays off, hidden by itself.
     expect(again.state.unseen).toEqual(["DELETE /internal/posts"]);
-    expect(again.state.hiddenOperations).toEqual(["DELETE /internal/posts"]);
+    expect(again.state.hiddenOperations).toEqual(["DELETE /internal/posts", "DELETE /posts"]);
     expect(again.state.hiddenGroups).toEqual(["Admin"]);
-    expect(onHelpCenter(again.doc, again.state).operations.map((o) => o.key)).toEqual(["GET /posts", "DELETE /posts"]);
+    expect(onHelpCenter(again.doc, again.state).operations.map((o) => o.key)).toEqual(["GET /posts"]);
+    // Read again, nothing more is hidden; and the tag's old name coming back opens nothing.
+    expect(settle(again, renamed).state).toEqual(again.state);
+    expect(onHelpCenter(settle(again, posts).doc, settle(again, posts).state).operations.map((o) => o.key)).toEqual(["GET /posts"]);
 
     const moved = settle(hide(settle(null, posts), { hiddenOperations: ["DELETE /posts"] }), doc({ ...posts, operations: [operation("GET /posts"), operation("DELETE /v2/posts", { group: "Admin" })] }));
     expect(moved.state.hiddenOperations).toEqual(["DELETE /posts", "DELETE /v2/posts"]);

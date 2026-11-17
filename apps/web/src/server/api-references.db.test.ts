@@ -114,6 +114,9 @@ describe("adding and reading", () => {
     await expect(add("Null", POSTS.replace("List posts", "List\\u0000posts"))).rejects.toMatchObject({ ...refused, message: expect.stringContaining("null character") });
     await expect(add("Big", "x".repeat(5 * 1024 * 1024 + 1))).rejects.toMatchObject({ ...refused, message: expect.stringContaining("5 MB") });
     expect(await prisma.apiReference.count({ where: { projectId: project.id } })).toBe(0);
+    // The six characters "\u0000" as text are no null character.
+    expect(await add("Escaped", POSTS.replace("List posts", "Names have no \\\\u0000"))).toMatchObject({ slug: "escaped" });
+    expect((await get("escaped")).operations[0]!.title).toBe("Names have no \\u0000");
   });
 
   test("another project's reference isn't found", async () => {
@@ -266,6 +269,12 @@ describe("a new spec", () => {
   test("once something is hidden, a renamed tag and a moved path start off the help center", async () => {
     await add();
     await call(updateApiReference, as(), { slug: "api-reference", hideGroups: ["Admin"] });
+    // The hidden tag renamed over the same path: the operation isn't new, and stays off.
+    expect(await call(replaceApiReference, as(), { slug: "api-reference", spec: POSTS.replace('"Admin"', '"Internal"') })).toMatchObject({
+      counts: { operations: 3, onHelpCenter: 2, new: 0 },
+    });
+    expect((await operations()).at(-1)).toBe("DELETE /posts delete-every-post off");
+    await call(replaceApiReference, as(), { slug: "api-reference", spec: POSTS });
     const next = spec({
       "GET /posts": ["Posts", "List posts"],
       "POST /posts": ["Posts", "Create a post"],
