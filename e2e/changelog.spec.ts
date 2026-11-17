@@ -811,14 +811,20 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   expect((await fix.locator("time:visible").boundingBox())!.y).toBeLessThan((await fix.getByRole("heading").boundingBox())!.y);
   await expect(months).toBeHidden();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  // RSS and Subscribe as round buttons beside the title; the row's own pair is hidden.
-  const heading = (await main.getByRole("heading", { level: 1, name: "Changelog" }).boundingBox())!;
-  await expect(main.getByRole("link", { name: "RSS feed" })).toHaveCount(1);
-  const rss = (await main.getByRole("link", { name: "RSS feed" }).boundingBox())!;
-  const bell = (await main.getByRole("button", { name: "Subscribe" }).boundingBox())!;
-  expect(rss.x).toBeGreaterThanOrEqual(heading.x + heading.width);
-  expect(rss.y).toBeLessThan(heading.y + heading.height);
-  expect(bell.width).toBe(bell.height);
+  // RSS and Subscribe as round buttons beside the title, on a narrow phone too; the row's own pair is hidden.
+  for (const width of [360, 390]) {
+    await reader.setViewportSize({ width, height: 844 });
+    expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    const heading = (await main.getByRole("heading", { level: 1, name: "Changelog" }).boundingBox())!;
+    await expect(main.getByRole("link", { name: "RSS feed" })).toHaveCount(1);
+    const rss = (await main.getByRole("link", { name: "RSS feed" }).boundingBox())!;
+    const bell = (await main.getByRole("button", { name: "Subscribe" }).boundingBox())!;
+    expect(rss.x).toBeGreaterThanOrEqual(heading.x + heading.width);
+    expect(rss.y).toBeLessThan(heading.y + heading.height);
+    expect(bell.x + bell.width).toBeLessThanOrEqual(width);
+    // Both the size of Feedback's round buttons on a phone.
+    expect([rss.width, rss.height, bell.width, bell.height]).toEqual([40, 40, 40, 40]);
+  }
   await checkpoint(reader, "portal-changelog-fixed-phone");
   await reader.emulateMedia({ colorScheme: "dark" });
   await checkpoint(reader, "portal-changelog-fixed-phone-dark");

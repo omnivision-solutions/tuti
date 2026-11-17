@@ -11,9 +11,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
+import { cn } from "@/lib/utils";
 import { PASSWORD_RESET_MINUTES } from "@/lib/sign-in-link";
 import { emailPasswordReset, setNewPassword } from "@/server/password-reset";
 import { usePortalHref } from "@/components/portal-base";
+
+// On a portal these cards take its sign-in card's look (auth-form.tsx): centred, the larger title, 44px controls.
+const CARD = "portal:gap-6 portal:pt-8 portal:sm:pt-10";
+const HEADER = "portal:justify-items-center portal:gap-2 portal:px-6 portal:text-center portal:sm:px-10";
+const TITLE = "font-heading text-xl font-bold portal:text-2xl portal:font-[650] portal:tracking-[-0.022em] portal:sm:text-[1.625rem]";
 
 /**
  * "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work.
@@ -35,10 +41,10 @@ export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { faile
 
   if (sentTo) {
     return (
-      <Card className="mx-auto w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="font-heading text-xl font-bold">Check your email</CardTitle>
-          <CardDescription className="break-words">
+      <Card className={cn("mx-auto w-full max-w-sm portal:pb-8 portal:sm:pb-10", CARD)}>
+        <CardHeader className={HEADER}>
+          <CardTitle className={TITLE}>Check your email</CardTitle>
+          <CardDescription className="break-words portal:text-[0.9375rem]">
             If there&apos;s an account for {sentTo}, we&apos;ve sent it a link to set a new password. It works once, for
             the next {PASSWORD_RESET_MINUTES} minutes.
           </CardDescription>
@@ -55,22 +61,30 @@ export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { faile
           <AlertDescription>That link has expired or was already used. Ask for a new one.</AlertDescription>
         </Alert>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading text-xl font-bold">Forgot your password?</CardTitle>
-          <CardDescription>We&apos;ll email you a link to set a new one.</CardDescription>
+      <Card className={CARD}>
+        <CardHeader className={HEADER}>
+          <CardTitle className={TITLE}>Forgot your password?</CardTitle>
+          <CardDescription className="portal:text-[0.9375rem]">We&apos;ll email you a link to set a new one.</CardDescription>
         </CardHeader>
         <form {...keepingFields(submit)}>
-          <CardContent>
+          <CardContent className="portal:px-6 portal:sm:px-10">
             {portal && <input type="hidden" name="portal" value={portal} />}
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" required aria-invalid={error ? true : undefined} />
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                aria-invalid={error ? true : undefined}
+                className="portal:h-11 portal:rounded-lg portal:text-[0.9375rem]"
+              />
               {error && <FieldError>{error}</FieldError>}
             </Field>
           </CardContent>
-          <CardFooter className="mt-6 flex flex-col gap-3 portal:border-t-0 portal:pt-0">
-            <Button type="submit" disabled={pending} className="w-full">
+          <CardFooter className="mt-6 flex flex-col gap-3 portal:mt-4 portal:border-t-0 portal:bg-transparent portal:px-6 portal:pt-0 portal:pb-8 portal:sm:px-10 portal:sm:pb-10">
+            <Button type="submit" disabled={pending} className="w-full portal:h-11 portal:rounded-lg portal:text-[0.9375rem] portal:font-semibold">
               {pending ? "…" : "Email me a link"}
             </Button>
             <Link href={at(`${pages}/sign-in${next ? `?${new URLSearchParams({ next })}` : ""}`)} className="text-sm text-foreground underline underline-offset-4">
