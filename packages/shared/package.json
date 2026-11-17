@@ -22,7 +22,8 @@
     "./status-emails": "./src/status-emails.ts",
     "./dates": "./src/dates.ts",
     "./license": "./src/license.ts",
-    "./license-key": "./src/license-key.ts"
+    "./license-key": "./src/license-key.ts",
+    "./api-reference": "./src/api-reference/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
