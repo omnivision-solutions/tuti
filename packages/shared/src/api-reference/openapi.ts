@@ -351,6 +351,27 @@ function read(root: Obj): ApiDoc {
       return { type: "object" };
     }
 
+    // A reference among `allOf`'s parts is still a reference. Alone ("this type, nullable", as 3.0
+    // has to say it) it's read as one, keeping its name; one this schema is already inside is only
+    // named, as anywhere; the rest are folded in, and what's under them is inside them too.
+    const parts = list(node.allOf);
+    // (A schema that folds itself in adds nothing to itself.)
+    const folded = parts.flatMap((part) => (isObj(part) && typeof part.$ref === "string" && lookup(part.$ref)?.value !== node ? [part.$ref] : []));
+    const alone = parts.length === 1 && node.properties === undefined && node.type === undefined ? folded[0] : undefined;
+    const held = alone ?? folded.find((pointer) => place.stack.includes(pointer));
+    if (held !== undefined) {
+      const only = toSchema({ $ref: held }, place);
+      const description = str(node.description) || only.description;
+      return {
+        ...only,
+        ...(description ? { description } : {}),
+        ...(node.nullable === true ? { nullable: true } : {}),
+        ...(node.deprecated === true ? { deprecated: true } : {}),
+        ...(Object.hasOwn(node, "default") ? { default: node.default } : {}),
+      };
+    }
+    if (folded.length > 0) place = { ...place, stack: [...place.stack, ...folded] };
+
     const schema = flatten(node);
     const { types, nullable } = typesOf(schema);
     const { choices, nullable: nullChoice } = choicesOf(schema);
@@ -405,7 +426,12 @@ function read(root: Obj): ApiDoc {
   function sample(node: unknown, stack: Obj[]): unknown {
     const target = follow(node);
     if (!target) return isObj(node) ? {} : undefined;
-    if (stack.includes(target) || !spend()) return undefined;
+    // What it folds in with `allOf` it's inside too: a type's "this type, or null" field stops there.
+    const bases = list(target.allOf).flatMap((part): Obj[] => {
+      const base = follow(part);
+      return base ? [base] : [];
+    });
+    if (stack.includes(target) || bases.some((base) => base !== target && stack.includes(base)) || !spend()) return undefined;
     const schema = flatten(target);
     for (const key of ["example", "default", "const"]) if (Object.hasOwn(schema, key)) return schema[key];
     if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
@@ -413,7 +439,7 @@ function read(root: Obj): ApiDoc {
     const type = types[0];
     const value = list(schema.enum).find((entry) => entry !== null);
     if (value !== undefined) return value;
-    const inside = [...stack, target];
+    const inside = [...stack, target, ...bases];
     if (type === undefined) {
       const { choices } = choicesOf(schema);
       return choices.length > 0 ? sample(choices[0], inside) : undefined;

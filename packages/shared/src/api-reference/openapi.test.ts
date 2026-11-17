@@ -838,6 +838,40 @@ test("a named schema is spelled out where it's first met and two levels down, an
   expect(c).toMatchObject({ type: "C", ref: "C", properties: [{ name: "d", required: false, type: "D", ref: "D" }] });
 });
 
+test("a reference inside allOf is still a reference: named, and never spelled out inside itself", () => {
+  const { schema, example, doc } = schemaOf(ref("Category"), {
+    Category: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        // How 3.0 says "this type, or null".
+        parent: { allOf: [ref("Category")], nullable: true, description: "The one above." },
+        owner: { allOf: [ref("User")], nullable: true },
+        // Itself with more: folded in nowhere, since it's inside itself.
+        twin: { allOf: [ref("Category"), { properties: { extra: { type: "string" } } }] },
+      },
+    },
+    User: { type: "object", properties: { name: { type: "string" } } },
+    Tree: { allOf: [ref("Node"), { properties: { root: ref("Tree") } }] },
+    Node: { type: "object", properties: { next: { allOf: [ref("Node"), { description: "The next." }] } } },
+  });
+  const expected = [
+    { name: "id", required: false, type: "string" },
+    { name: "parent", required: false, type: "Category", ref: "Category", nullable: true, description: "The one above." },
+    { name: "owner", required: false, type: "User", ref: "User", nullable: true, properties: [{ name: "name", required: false, type: "string" }] },
+    { name: "twin", required: false, type: "Category", ref: "Category" },
+  ];
+  expect(schema.properties).toEqual(expected);
+  expect(doc.types[0]!.schema.properties).toEqual(expected);
+  expect(example).toEqual({ id: "string", owner: { name: "string" } });
+  // Folded in, a type's own fields are under it: Node's `next` is Node, named.
+  expect(doc.types[2]!.schema.properties).toEqual([
+    { name: "next", required: false, type: "Node", ref: "Node" },
+    { name: "root", required: false, type: "Tree", ref: "Tree" },
+  ]);
+  expect(doc.warnings).toEqual([]);
+});
+
 test("a spec whose schemas fan out without end is read in bounded time, with a warning", () => {
   const wide = (to: string) => ({ type: "object", properties: Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`f${index}`, ref(to)])) });
   const inline = (levels: number): object => (levels === 0 ? { type: "string" } : { type: "object", properties: { a: inline(levels - 1), b: inline(levels - 1) } });
