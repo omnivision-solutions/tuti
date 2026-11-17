@@ -64,6 +64,7 @@ import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 
 import { verificationPlugin, type VerificationFinding } from "@/components/verification-marks";
 import { useEditorSlot } from "@/components/use-editor-slot";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -834,6 +835,7 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label
     }),
   });
   const chain = () => editor.chain().focus();
+  const inserted = useRef(false);
 
   return (
     <div role="toolbar" aria-label={label} className={cn("flex flex-wrap items-center gap-0.5", className)}>
@@ -869,18 +871,16 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label
           {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
           {expanded && <>
             <Tool icon={TableIcon} label="Table" active={active.table} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
-            <details className={cn(
-              "docs-insert-menu [&_>_summary::-webkit-details-marker]:hidden relative text-[13px] [&_>_summary]:p-1.25 [&_>_summary]:whitespace-nowrap",
-              "[&_>_summary]:cursor-pointer [&_>_summary]:list-none [&_>_div]:absolute [&_>_div]:top-[100%] [&_>_div]:left-[0] [&_>_div]:w-37.5",
-              "[&_>_div]:p-1.25 [&_>_div]:border [&_>_div]:border-border [&_>_div]:rounded-[8px] [&_>_div]:bg-popover",
-              "[&_>_div]:shadow-[0_2px_8px_var(--docs-edge)] [&_button]:block [&_button]:p-1.5 [&_button]:w-full [&_button]:text-left",
-
-            )} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span className="max-sm:sr-only">Insert</span></summary><div>
-              <button type="button" onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>Table</button>
-              <button type="button" onClick={() => chain().setCodeBlock().run()}>Code block</button>
-              <button type="button" onClick={() => chain().setHorizontalRule().run()}>Divider</button>
-              <button type="button" onClick={() => onPrompt("video")}>Video</button>
-            </div></details>
+            <DropdownMenu onOpenChange={(open, details) => { inserted.current = !open && details.reason === "item-press"; }}>
+              <DropdownMenuTrigger className="cursor-pointer rounded-md p-1.25 text-[13px] whitespace-nowrap">+ <span className="max-sm:sr-only">Insert</span></DropdownMenuTrigger>
+              {/* After an insert the text keeps the cursor (each command focuses it); Escape goes back to the button. */}
+              <DropdownMenuContent className="w-auto min-w-37.5" finalFocus={() => !inserted.current}>
+                <DropdownMenuItem onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><TableIcon />Table</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => chain().setCodeBlock().run()}><SquareCodeIcon />Code block</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => chain().setHorizontalRule().run()}><MinusIcon />Divider</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onPrompt("video")}><VideoIcon />Video</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>}
         </>
       )}

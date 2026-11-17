@@ -512,6 +512,30 @@ test("article tool focus stays in the card when opened, Escape respects writing 
   await checkpoints(testInfo)(team, "docs-tools-keyboard-focus", { fullPage: false });
 });
 
+test("the toolbar's Insert menu opens over the article and inserts where the cursor is", async ({ browser }, testInfo) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/articles/invite-your-team", { body: "Owners send invites from Settings.\n\nMembers accept them by email." }, "PATCH");
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  const article = team.getByRole("textbox", { name: "Article", exact: true });
+  const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
+  await article.locator("p").first().click();
+  await team.keyboard.press("End");
+  const insert = formatting.getByRole("button", { name: "Insert" });
+  await insert.click();
+  await team.keyboard.press("Escape");
+  await expect(insert).toBeFocused();
+  await insert.click();
+  // In view without scrolling: a menu clipped by the toolbar is there for a click, but nobody sees it.
+  const divider = team.getByRole("menuitem", { name: "Divider", exact: true });
+  await expect(divider).toBeInViewport();
+  await checkpoints(testInfo)(team, "docs-insert-menu", { fullPage: false });
+  await divider.click();
+  await expect(article.locator("p:first-child + hr + p")).toHaveText("Members accept them by email.");
+  // The text keeps the cursor, so writing goes on from the new block.
+  await team.keyboard.type("Then ");
+  await expect(article).toContainText("Then ");
+});
+
 test("table and code context controls remain reachable on small laptops and phones", async ({ browser }, testInfo) => {
   const { team, slug } = await editor(browser);
   for (const width of [1100, 390]) {
@@ -532,15 +556,15 @@ test("table and code context controls remain reachable on small laptops and phon
     await expect.poll(() => article.evaluate(() => window.getSelection()?.toString())).toBe("Owners");
     await expect(team.getByRole("toolbar", { name: "Text selection", exact: true })).toBeVisible();
     await team.keyboard.press("ArrowRight");
-    await formatting.locator("summary").filter({ hasText: "Insert" }).click();
-    await formatting.locator(".docs-insert-menu").getByRole("button", { name: "Table", exact: true }).click();
+    await formatting.getByRole("button", { name: "Insert" }).click();
+    await team.getByRole("menuitem", { name: "Table", exact: true }).click();
     await expect(formatting.getByRole("group", { name: "Table", exact: true })).toBeVisible();
     await formatting.getByRole("button", { name: "Add row", exact: true }).click();
     await expect(article.locator("tr")).toHaveCount(4);
     await formatting.getByRole("button", { name: "Delete table", exact: true }).click();
     await article.click();
-    await formatting.locator("summary").filter({ hasText: "Insert" }).click();
-    await formatting.locator(".docs-insert-menu").getByRole("button", { name: "Code block", exact: true }).click();
+    await formatting.getByRole("button", { name: "Insert" }).click();
+    await team.getByRole("menuitem", { name: "Code block", exact: true }).click();
     await expect(formatting.getByRole("group", { name: "Code", exact: true })).toBeVisible();
     await formatting.getByRole("button", { name: "File name", exact: true }).click();
     await expect(team.getByRole("dialog", { name: "Name the code", exact: true })).toBeVisible();
