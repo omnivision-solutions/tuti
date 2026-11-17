@@ -12,7 +12,7 @@ export type ApiDoc = {
   /** Markdown. */
   description: string;
   /** Where requests go, the first one by default. GraphQL: its one endpoint, when known. */
-  servers: { url: string; description: string }[];
+  servers: ApiServer[];
   /** Every way of signing a request the spec declares; an operation names the ones it takes. */
   auth: ApiAuth[];
   /** In the spec's order: OpenAPI's tags (operations without one are in "Other"); GraphQL's Queries, Mutations and Subscriptions. */
@@ -22,6 +22,14 @@ export type ApiDoc = {
   types: ApiType[];
   /** What the reader left out or guessed: the pages are still built. */
   warnings: ApiWarning[];
+};
+
+export type ApiServer = {
+  /** As the spec has it: with `{name}` wherever a variable goes ("https://{region}.api.example.com"). */
+  url: string;
+  description: string;
+  /** OpenAPI's server variables: what fills each `{name}` in the URL, the default unless the reader picks another. */
+  variables?: Record<string, { default: string; enum?: string[]; description: string }>;
 };
 
 export type ApiAuth = {
@@ -37,7 +45,8 @@ export type ApiGroup = {
   /**
    * What the team's order and switches go by: its name in the spec, exactly (an OpenAPI tag is known
    * by its name, so no two share one and none changes when the spec is reordered); GraphQL's are
-   * "queries", "mutations" and "subscriptions". Never part of an address.
+   * "queries", "mutations" and "subscriptions". Operations with no tag are in a group named "Other":
+   * the spec's own tag of that name when it has one, so there's never a second. Never part of an address.
    */
   key: string;
   name: string;
@@ -50,7 +59,9 @@ export type ApiOperation = {
    * What it is across re-reads of the spec, so the team's choices about it stay: its method and its
    * path with each parameter's name left out ("POST /posts", "GET /users/{}": OpenAPI holds
    * `/users/{id}` and `/users/{userId}` to be one path, so renaming a parameter makes no new
-   * operation), or "mutation createPost". Not its slug, which follows its title.
+   * operation), or "mutation createPost". Not its slug, which follows its title. No two in a doc
+   * share one: a spec with both `GET /users/{id}` and `GET /users/{userId}` (not valid, but seen)
+   * keeps the names in the later one's key, with a warning.
    */
   key: string;
   /**
@@ -60,8 +71,10 @@ export type ApiOperation = {
    * operation or type proposing it gets a number instead.
    */
   slug: string;
-  /** Its group's key. */
+  /** Its group's key: the group it's listed in. OpenAPI: its first tag's. */
   group: string;
+  /** The keys of the other groups it's tagged with: it's off the help center when any of them is, or `group`. */
+  alsoIn?: string[];
   kind: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "TRACE" | "query" | "mutation" | "subscription";
   /** OpenAPI: the path with its parameters ("/posts/{number}"). GraphQL: the field's name. */
   path: string;
@@ -76,7 +89,7 @@ export type ApiOperation = {
    */
   auth: string[][];
   /** Where its requests go when the spec gives it, or its path, servers of its own; else the doc's. */
-  servers?: ApiDoc["servers"];
+  servers?: ApiServer[];
   /** OpenAPI: path, query, header and cookie parameters. GraphQL: the field's arguments. */
   params: ApiParam[];
   /** OpenAPI only: the request's body, in its first content type. */
