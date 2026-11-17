@@ -194,7 +194,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                 {/* Phones: no header row (a row is who they are, their company and when they were seen), so no sort links in
                     the tab order that can't be seen. */}
                 <thead className="text-left text-xs text-muted-foreground max-md:hidden">
-                  <tr className="[&>th]:px-3 [&>th]:pb-2.5 [&>th]:text-xs [&>th]:font-semibold [&>th]:tracking-[0.04em] [&>th]:uppercase">
+                  <tr className="[&>th]:px-3 [&>th]:pb-2 [&>th]:font-medium">
                     {sortHeading({ by: "name", label: "User" })}
                     {columns.map((name) => (
                       <th key={name} scope="col" className="hidden break-all md:table-cell">
