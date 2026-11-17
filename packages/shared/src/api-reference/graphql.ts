@@ -39,7 +39,7 @@ const MAX_LENGTH = 5 * 1024 * 1024;
 /** A named type is spelled out where it's first met and this many levels down. */
 const LEVELS = 2;
 /**
- * The most fields a doc holds, counting each wherever it's spelled out or selected: a few megabytes
+ * The most fields and enum values a doc holds, counting each wherever it's spelled out or selected: a few megabytes
  * of JSON. A schema whose types point at each other grows far past its own size when spelled out, so
  * one that would hold more is spelled out fewer levels down, with a warning.
  */
@@ -202,7 +202,10 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     const within = [...inside, type.name];
     const result: ApiSchema = { type: text, ref: type.name };
     if (type.description) result.description = type.description;
-    if (isEnumType(type)) result.enum = type.getValues().map((value) => value.name);
+    if (isEnumType(type)) {
+      count(type.getValues().length);
+      result.enum = type.getValues().map((value) => value.name);
+    }
     if (isObjectType(type) || isInterfaceType(type) || isInputObjectType(type)) count(Object.keys(type.getFields()).length);
     if (isObjectType(type) || isInterfaceType(type)) {
       result.properties = Object.values(type.getFields()).map((field) => {
@@ -249,10 +252,13 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     }
     if (isInputObjectType(type)) {
       if (inside.includes(type.name)) return undefined;
+      const within = [...inside, type.name];
       const all = Object.values(type.getFields());
-      const sent = type.isOneOf ? all.slice(0, 1) : all.filter(isRequiredInputField);
+      const sent = type.isOneOf ? all : all.filter(isRequiredInputField);
       count(sent.length);
-      return Object.fromEntries(sent.map((field) => [field.name, inputExample(field.type, [...inside, type.name])]));
+      const values = sent.map((field) => [field.name, inputExample(field.type, within)] as const);
+      // One that takes exactly one field gets the first that has a value.
+      return Object.fromEntries(type.isOneOf ? values.filter(([, value]) => value !== undefined).slice(0, 1) : values);
     }
     return leafExample(type);
   };

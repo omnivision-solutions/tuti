@@ -399,7 +399,7 @@ test("a federated service's file, which extends a Query it doesn't define, is re
 
 test("an input that takes exactly one field gets its first, and one that lists itself an empty list", () => {
   const odd = read(`
-    input By @oneOf { id: ID, slug: String }
+    input By @oneOf { not: By, id: ID, slug: String }
     input Filter { all: [Filter!]!, by: By! }
     type Query { find(filter: Filter!): Int }
   `);
@@ -418,6 +418,14 @@ test("a schema too large to spell out two levels down is spelled out fewer, with
   const t0 = large.types.find((one) => one.name === "T0")!.schema;
   expect(property(t0, "toT1")).toEqual({ name: "toT1", required: false, type: "T1", ref: "T1" });
   expect(doc.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toEqual([]);
+});
+
+test("an enum's values count towards a doc's size", () => {
+  const values = Array.from({ length: 300 }, (_, n) => `V${n}`).join(" ");
+  const fields = Array.from({ length: 300 }, (_, n) => `f${n}: Big`).join(" ");
+  const large = read(`type Query { t: T } type T { ${fields} } enum Big { ${values} }`);
+  expect(large.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toHaveLength(1);
+  expect(JSON.stringify(large).length).toBeLessThan(1024 * 1024);
 });
 
 test("a schema too large to show at all is an error", () => {
