@@ -149,6 +149,16 @@ test("on a license, the card says what's left of the license's emails for its mo
   expect(await billing()).toContain(`9,999 of the license's 10,000 emails left until ${until}`);
 });
 
+test("the credits table's dates read day first: when a grant was made, and when it expires", async () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  await prisma.creditGrant.create({
+    data: { projectId, source: "MANUAL", credits: 100, remaining: 100, createdAt: new Date("2026-11-17T12:00:00Z"), expiresAt: new Date("2031-01-05T12:00:00Z") },
+  });
+  const page = await billing();
+  expect(page).toContain("(17 November 2026)");
+  expect(page).toContain(">5 January 2031</td>");
+});
+
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
   await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });

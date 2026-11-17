@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 
 import { reportRange } from "@/lib/report-range";
 
-import { chartBars, countTrend, DailyChart, duration, niceMax, percent, ReportPane, shareTrend, timeTrend } from "./reports";
+import { chartBars, countTrend, DailyChart, duration, niceMax, percent, ReportPane, searchesSince, shareTrend, timeTrend } from "./reports";
 
 test("a chart's top line is 1, 2 or 5 times a power of ten, at or above the highest bar", () => {
   expect([0, 1, 2, 3, 7, 10, 11, 49, 51, 722].map(niceMax)).toEqual([1, 1, 2, 5, 10, 10, 20, 50, 100, 1000]);
@@ -108,4 +108,9 @@ test("the range picker's dates are the page's range's: worked out on its day, no
   const range = reportRange("30d", new Date("2025-01-15T23:59:59.900Z"));
   const html = renderToStaticMarkup(ReportPane({ title: "Help center", range, locked: { ranges: [], hint: "" }, upgrade: null, children: null })).replaceAll("\u2009", " ");
   expect(html).toContain("Date range: Past 30 days, 17 Dec 2024 – 15 Jan 2025");
+});
+
+test("the Searches tile says since when, day first", () => {
+  expect(searchesSince("2026-10-05")).toBe("Since 5 Oct");
+  expect(searchesSince(null)).toBeNull();
 });
