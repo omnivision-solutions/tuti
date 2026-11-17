@@ -174,12 +174,13 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const subscribe = project && (await changelogByEmail({ ...project, slug }, session, false, true));
   // Its form (not where a reader who gets it stands): in a popover from the header's Subscribe.
   const subscribable = !!subscribe && subscribe.type === ChangelogSubscribe;
-  const rss = () => (
+  // Beside the title on a phone, both are the size of Feedback's round buttons there.
+  const rss = (phone: boolean) => (
     <a
       href={at("/changelog/rss.xml")}
       aria-label="RSS feed"
       title="RSS feed"
-      className={buttonVariants({ variant: "outline", size: "icon", className: "rounded-full" })}
+      className={buttonVariants({ variant: "outline", size: phone ? "icon-lg" : "icon", className: "rounded-full" })}
     >
       <RssIcon aria-hidden />
     </a>
@@ -188,7 +189,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const subscribeButton = (round: boolean) => (
     <Popover>
       <PopoverTrigger
-        render={<Button size={round ? "icon" : "default"} aria-label={round ? "Subscribe" : undefined} className={round ? "rounded-full" : "font-semibold"} />}
+        render={<Button size={round ? "icon-lg" : "default"} aria-label={round ? "Subscribe" : undefined} className={round ? "rounded-full" : "font-semibold"} />}
       >
         <BellIcon aria-hidden />
         {!round && " Subscribe"}
@@ -242,13 +243,13 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
         }
         actions={
           <>
-            {rss()}
+            {rss(false)}
             {subscribable && subscribeButton(false)}
           </>
         }
         phoneActions={
           <>
-            {rss()}
+            {rss(true)}
             {subscribable && subscribeButton(true)}
           </>
         }
