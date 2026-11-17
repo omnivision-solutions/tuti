@@ -108,7 +108,7 @@ const fixture = {
         required: ["id", "email"],
         properties: {
           id: { type: "string", format: "uuid" },
-          email: { type: "string", format: "email", example: "ada@example.com" },
+          email: { type: "string", format: "email", example: "e2e-ada@example.com" },
           team: ref("Team"),
         },
       },
@@ -217,10 +217,46 @@ paths:
           description: Fine
         201: *ok
 `);
-  expect(doc.version).toBe("1");
+  // The version as the spec's text has it, not the number YAML reads.
+  expect(doc.version).toBe("1.0");
+  expect(read("openapi: 3.0.3\ninfo: { title: T, version: 1.10 }").version).toBe("1.10");
+  expect(read("openapi: 3.0.3\ninfo:\n  version: 2 # second\n").version).toBe("2");
+  expect(read('openapi: 3.0.3\ninfo: { version: "1.0.0" }').version).toBe("1.0.0");
+  expect(read('{"openapi": "3.0.3", "info": {"version": 1.5}}').version).toBe("1.5");
   expect(doc.operations[0]!.responses).toEqual([
     { status: "200", description: "Fine", contentType: null, schema: null },
     { status: "201", description: "Fine", contentType: null, schema: null },
+  ]);
+});
+
+test("YAML merge keys are read", () => {
+  const doc = read(`
+openapi: 3.0.3
+info: { title: Merged, version: "1" }
+paths:
+  /posts:
+    get:
+      summary: List posts
+      responses:
+        "200": &ok
+          description: Fine
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        "201":
+          <<: *ok
+          description: Made
+components:
+  schemas:
+    Base: &base
+      type: object
+      properties: { id: { type: string } }
+    Post:
+      <<: *base
+      description: A post
+`);
+  expect(doc.types[1]).toEqual({ name: "Post", slug: "post", kind: "object", schema: { type: "object", ref: "Post", description: "A post", properties: [{ name: "id", required: false, type: "string" }] } });
+  expect(doc.operations[0]!.responses.map((response) => [response.status, response.description, response.schema?.type, response.example])).toEqual([
+    ["200", "Fine", "Post", { id: "string" }],
+    ["201", "Made", "Post", { id: "string" }],
   ]);
 });
 
@@ -551,7 +587,7 @@ test("responses: each status, with the spec's example or one made from the schem
         number: 1,
         title: "string",
         status: "open",
-        author: { id: "00000000-0000-0000-0000-000000000000", email: "ada@example.com", team: { name: "string", owner: { plan: "string" } } },
+        author: { id: "00000000-0000-0000-0000-000000000000", email: "e2e-ada@example.com", team: { name: "string", owner: { plan: "string" } } },
         tags: ["string"],
         createdAt: "2026-01-01T00:00:00Z",
       },
@@ -563,7 +599,7 @@ test("responses: each status, with the spec's example or one made from the schem
   expect(operation(doc, "GET /health").responses).toEqual([{ status: "200", description: "Up.", contentType: "text/plain", schema: { type: "string" }, example: "string" }]);
   // A list that holds itself stops there.
   expect(operation(doc, "GET /posts/{}/comments").responses[0]!.example).toEqual([
-    { id: "string", body: "string", author: { id: "00000000-0000-0000-0000-000000000000", email: "ada@example.com", team: { name: "string", owner: { plan: "string" } } }, replies: [] },
+    { id: "string", body: "string", author: { id: "00000000-0000-0000-0000-000000000000", email: "e2e-ada@example.com", team: { name: "string", owner: { plan: "string" } } }, replies: [] },
   ]);
 
   const statuses = spec({
@@ -575,6 +611,8 @@ test("responses: each status, with the spec's example or one made from the schem
             default: { description: "d" },
             "2xx": { description: "any" },
             "404 Not Found": { description: "nf" },
+            "201 Created": { description: "a second 201" },
+            Default: { description: "a second default" },
             " 500": { description: "boom" },
             "20": { description: "short" },
             "2000": { description: "long" },
@@ -604,6 +642,8 @@ test("responses: each status, with the spec's example or one made from the schem
     "RESPONSE_SKIPPED @ GET /a › responses › 20",
     "RESPONSE_SKIPPED @ GET /a › responses › 2000",
     "STATUS_GUESSED @ GET /a › responses › 404 Not Found",
+    "RESPONSE_SKIPPED @ GET /a › responses › 201 Created",
+    "RESPONSE_SKIPPED @ GET /a › responses › Default",
     "STATUS_GUESSED @ GET /a › responses ›  500",
     "RESPONSE_SKIPPED @ GET /a › responses › ok",
   ]);
@@ -819,10 +859,28 @@ test("a schema with more fields than fit is cut short, however often it's used",
   expect(response.schema!.properties!.length).toBeLessThanOrEqual(4_000);
   expect(Object.keys(response.example as object).length).toBeLessThanOrEqual(4_000);
   expect(response.schema!.properties![0]).toEqual({ name: "f0", required: true, type: "any" });
+  expect(response.schema!.properties!.every((property) => property.required)).toBe(true);
   expect(JSON.stringify(doc).length).toBeLessThan(6_000_000);
   expect(codes(doc)).toContain("SCHEMA_TOO_LARGE @ schemas › Big");
   expect(codes(doc)).toContain("SCHEMA_TOO_LARGE @ GET /p19 › responses › 200");
 });
+
+test("a mixed-case default is default", () => {
+  const doc = spec({ paths: { "/a": { get: { summary: "A", responses: { Default: { description: "d" }, "2xx": { description: "ok" } } } } } });
+  expect(doc.operations[0]!.responses.map((response) => response.status)).toEqual(["default", "2XX"]);
+  expect(doc.warnings).toEqual([]);
+});
+
+test("many schemas that each fold in one wide schema stop the read early", () => {
+  const base = { type: "object", properties: Object.fromEntries(Array.from({ length: 50_000 }, (_, index) => [`f${index}`, {}])) };
+  const schemas = Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`S${index}`, { allOf: [ref("Base"), { properties: { own: {} } }] }]));
+  const text = JSON.stringify({ openapi: "3.0.0", paths: {}, components: { schemas: { Base: base, ...schemas } } });
+  expect(text.length).toBeLessThan(1_000_000);
+  expect(errorOf(text)).toMatch(/too large once its references are followed/);
+  // A few of them are read, each with the base's fields.
+  const few = spec({ components: { schemas: { Base: { type: "object", required: ["id"], properties: { id: {} } }, A: { allOf: [ref("Base")] }, B: { allOf: [ref("Base"), ref("A")] } } } });
+  expect(few.types.map((type) => type.schema.properties)).toEqual(Array.from({ length: 3 }, () => [{ name: "id", required: true, type: "any" }]));
+}, 30_000);
 
 test("after many large types, an operation's own schemas are still read", () => {
   const schemas = Object.fromEntries(

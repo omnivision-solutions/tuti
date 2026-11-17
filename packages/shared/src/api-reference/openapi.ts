@@ -1,4 +1,4 @@
-import { parse as parseYaml } from "yaml";
+import { isScalar, parseDocument } from "yaml";
 import type { ApiAuth, ApiDoc, ApiGroup, ApiOperation, ApiParam, ApiResponse, ApiSchema, ApiServer, ApiType, ApiWarning } from "./types";
 
 /** The most a spec's text may be, in bytes. */
@@ -25,7 +25,7 @@ const MESSAGES = {
   OUTSIDE_REF:
     'A reference points outside the spec\'s file, which isn\'t followed: a schema there shows as "object", and anything else is left out.',
   STATUS_GUESSED: "A response's key isn't a status code: the number it starts with was used.",
-  RESPONSE_SKIPPED: "A response's key isn't a status code, so the response was left out.",
+  RESPONSE_SKIPPED: "A response's key isn't a status code, or is one the operation already has, so the response was left out.",
   NO_TITLE: "An operation has no summary or operationId: its method and path are its title.",
   DUPLICATE_SLUG: "Two pages would share an address: the later one got a number.",
   DUPLICATE_OPERATION: "Two paths differ only in a parameter's name, which makes them one operation: each is kept apart by its parameters' names.",
@@ -131,8 +131,15 @@ function parse(text: string): { value: unknown } | { error: string } {
     // Not JSON: YAML reads it next.
   }
   try {
-    const value: unknown = parseYaml(text, { logLevel: "error" });
-    return { value: value === undefined ? null : JSON.parse(JSON.stringify(value)) };
+    // Merge keys (`<<: *base`) as the tools specs are written for read them.
+    const document = parseDocument(text, { logLevel: "error", merge: true });
+    if (document.errors[0]) throw document.errors[0];
+    const read: unknown = document.toJS();
+    const value: unknown = read === undefined ? null : JSON.parse(JSON.stringify(read));
+    // An unquoted `version: 1.10` is the number 1.1 to YAML: the version is what the spec's text says.
+    const version: unknown = document.getIn(["info", "version"], true);
+    if (isObj(value) && isObj(value.info) && typeof value.info.version === "number" && isScalar(version) && version.source) value.info.version = version.source;
+    return { value };
   } catch (error) {
     const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "").slice(0, 200) : "";
     if (error instanceof RangeError || /call stack/i.test(reason)) return { error: "This file is nested too deeply to read." };
@@ -246,6 +253,9 @@ function read(root: Obj): ApiDoc {
     const add = (part: Obj | null) => {
       if (!part || seen.has(part)) return;
       seen.add(part);
+      // Folding in a wide schema is work and memory like spelling it out, so it counts the same.
+      docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
+      if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
       parts.push(part);
       for (const inner of list(part.allOf)) add(follow(inner));
     };
@@ -288,6 +298,14 @@ function read(root: Obj): ApiDoc {
 
   /** The type a schema says it is, without "null", else what its keywords imply; and whether it may be null. */
   function typesOf(schema: Obj): { types: string[]; nullable: boolean } {
+    const known = typed.get(schema) ?? typesIn(schema);
+    typed.set(schema, known);
+    return known;
+  }
+  // Kept per schema, as its fields are: a long `enum` or `required` is gone through once, not on every use.
+  const typed = new WeakMap<Obj, { types: string[]; nullable: boolean }>();
+  const requiredIn = new WeakMap<unknown[], Set<unknown>>();
+  function typesIn(schema: Obj): { types: string[]; nullable: boolean } {
     const said = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((type) => typeof type === "string");
     const types = said.filter((type) => type !== "null");
     const nullable = schema.nullable === true || said.includes("null") || list(schema.enum).includes(null);
@@ -354,7 +372,9 @@ function read(root: Obj): ApiDoc {
     const values = Object.hasOwn(schema, "const") ? [schema.const] : list(schema.enum);
     if (values.length > 0) out.enum = values;
     if (isObj(schema.properties)) {
-      const required = new Set(list(schema.required));
+      const names = list(schema.required);
+      const required = requiredIn.get(names) ?? new Set(names);
+      requiredIn.set(names, required);
       out.properties = [];
       for (const [name, property] of fieldsOf(schema.properties)) {
         // The fields there's no room for are left out, not listed as "object" one by one.
@@ -573,13 +593,16 @@ function read(root: Obj): ApiDoc {
       };
 
       const responses: ApiResponse[] = [];
+      const statuses = new Set<string>();
       for (const [code, entry] of entries(operation.responses)) {
         const exact = /^([1-5]\d\d|[1-5]XX|default)$/i.test(code);
-        const status = exact ? (code === "default" ? code : code.toUpperCase()) : /^\s*([1-5]\d\d)(?!\d)/.exec(code)?.[1];
-        if (status === undefined) {
+        const status = exact ? (/^default$/i.test(code) ? "default" : code.toUpperCase()) : /^\s*([1-5]\d\d)(?!\d)/.exec(code)?.[1];
+        // No two of an operation's responses share a status: "404 Not Found" beside "404" is left out.
+        if (status === undefined || statuses.has(status)) {
           warn("RESPONSE_SKIPPED", `${key} › responses › ${code}`);
           continue;
         }
+        statuses.add(status);
         if (!exact) warn("STATUS_GUESSED", `${key} › responses › ${code}`);
         const where = `${key} › responses › ${status}`;
         const response = follow(entry, where);
