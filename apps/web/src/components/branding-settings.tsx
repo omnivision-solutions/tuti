@@ -14,6 +14,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
@@ -188,24 +189,29 @@ export function BrandingSettings({
   );
 }
 
-/** A font for the portal, or the page's own: a native select, so the form sends it and its changes bubble. */
+const FONT_ITEMS = [{ value: null, label: "Inter (default)" }, ...PORTAL_FONTS.map((font) => ({ value: font.id, label: font.name }))];
+
+/** A font for the portal, or the page's own (sent empty). */
 function FontSelect({ id, name, label, font }: { id: string; name: string; label: string; font: PortalFont | null }) {
+  const [value, setValue] = useState(font);
+  // The select's own field in the form: it says when it changed, for the preview and "Save changes".
+  const field = useRef<HTMLInputElement>(null);
+  useFieldChanged(field, value);
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <select
-        id={id}
-        name={name}
-        defaultValue={font ?? ""}
-        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <option value="">Inter (default)</option>
-        {PORTAL_FONTS.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
+      <FieldLabel id={`${id}-label`}>{label}</FieldLabel>
+      <Select name={name} items={FONT_ITEMS} value={value} onValueChange={(next) => setValue(next as PortalFont | null)} inputRef={field}>
+        <SelectTrigger className="w-full" aria-labelledby={`${id}-label`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {FONT_ITEMS.map((item) => (
+            <SelectItem key={item.value ?? ""} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </Field>
   );
 }
@@ -472,7 +478,7 @@ const untilDate = (date: Date) => date.toLocaleDateString("en-US", { month: "lon
 
 /**
  * "Powered by tuti" in the footer: on, unless the project has a licence (or the add-on on its plan).
- * Without one, unticking it opens a dialog instead: why the badge matters, and where to buy a licence
+ * Without one, switching it off opens a dialog instead: why the badge matters, and where to buy a licence
  * (and Check now), or where plans are sold, the add-on on Billing.
  */
 function PoweredByField({
@@ -522,26 +528,22 @@ function PoweredByField({
 
   return (
     <Field>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          ref={box}
-          type="checkbox"
-          name="poweredBy"
-          checked={shown}
-          aria-describedby={descriptionId}
-          onChange={(event) => {
-            if (!event.target.checked && !licensedUntil && !plan?.addOn) {
-              setMessage(null);
-              setOpen(true);
-              return;
-            }
-            setShown(event.target.checked);
-          }}
-          className="size-4 accent-primary"
-        />
-        Show &quot;Powered by tuti&quot; in the footer
-      </label>
-      {/* Live: ticking the box back on with the add-on says it's still billed, and where it's removed. */}
+      <SwitchRow
+        ref={box}
+        name="poweredBy"
+        label={'Show "Powered by tuti" in the footer'}
+        checked={shown}
+        aria-describedby={descriptionId}
+        onChange={(event) => {
+          if (!event.target.checked && !licensedUntil && !plan?.addOn) {
+            setMessage(null);
+            setOpen(true);
+            return;
+          }
+          setShown(event.target.checked);
+        }}
+      />
+      {/* Live: switching it back on with the add-on says it's still billed, and where it's removed. */}
       <FieldDescription id={descriptionId} aria-live="polite">
         {plan?.addOn
           ? shown

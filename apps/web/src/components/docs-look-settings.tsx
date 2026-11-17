@@ -9,8 +9,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { type ContentActions, DOCS_HEADING, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
 
-/** A setting that's on or off: its name, what it does, and a switch, in a row. */
-export function SwitchRow({ name, label, description, defaultChecked }: { name: string; label: string; description?: string; defaultChecked: boolean }) {
+/** A setting that's on or off: its name, what it does, and a switch, in a row. More props go to the switch. */
+export function SwitchRow({
+  name,
+  label,
+  description,
+  ...props
+}: { name: string; label: string; description?: string } & Omit<React.ComponentProps<typeof Switch>, "id" | "name" | "className">) {
   const id = useId();
   return (
     <div className="flex items-start justify-between gap-4">
@@ -20,7 +25,7 @@ export function SwitchRow({ name, label, description, defaultChecked }: { name: 
         </label>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
-      <Switch id={id} name={name} defaultChecked={defaultChecked} className="mt-0.5" />
+      <Switch id={id} name={name} className="mt-0.5" {...props} />
     </div>
   );
 }

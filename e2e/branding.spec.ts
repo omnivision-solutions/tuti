@@ -75,7 +75,8 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await card.getByText("Dark", { exact: true }).click();
   await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
   // A font for headings, from the ones built into Tuti.
-  await card.getByLabel("Heading font").selectOption({ label: "Playfair Display" });
+  await card.getByLabel("Heading font").click();
+  await owner.getByRole("option", { name: "Playfair Display" }).click();
   await expect
     .poll(() => preview.getByRole("heading", { level: 1 }).first().evaluate((h) => getComputedStyle(h).fontFamily))
     // Built in from a file of Tuti's own (src/fonts), so its family is named after it.
