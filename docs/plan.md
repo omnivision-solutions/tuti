@@ -924,7 +924,7 @@ Each model setting was tied to one step of one feature (Autopilot's decide, doub
 
 ## Later
 
-- [ ] Remove `support` and `code_changes_redecide` from `project.aiModels` once no released code reads them, first copying again any saved through the previous release while R1 (AI models by role) was deploying: the same copy as its migration, where the role has no pick of its own
+- [ ] Remove `support` and `code_changes_redecide` from `project.aiModels` once no released code reads them (R1, AI models by role). Not copied again: a role put back on its default has no pick, like one never picked, so a second copy would undo that choice; a pick saved through the previous release while R1 was deploying is picked again by hand
 - [ ] Link the questions passed to the team that the release before `docs_question.conversationId` passed on while the new one was deploying (its migration links those before it): the same backfill again, for rows still without one
 - [ ] Drop `project.supportEmail`, `supportEmailPending`, `supportEmailTokenHash` and `docs_question.escalatedTo` once no released code reads them (unused since "Ask a person" became a conversation, 2026-11-03)
 - [ ] A proper parrot illustration (Phase 3.5 leftover)
