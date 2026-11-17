@@ -1,6 +1,29 @@
 import { prisma } from "@tuti/db";
-import { projectModels } from "@tuti/jobs";
-import { AI_ROLE_NAMES, type AiModelListing, type AiRole, listModels, log, modelMaxPrice, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "@tuti/shared";
+import {
+  AI_GROUP_NAMES,
+  AI_LEVELS,
+  AI_ROLE_NAMES,
+  type AiGroup,
+  aiLevelRows,
+  type AiLevel,
+  type AiModelListing,
+  type AiRole,
+  groupOf,
+  listModels,
+  log,
+  modelMaxPrice,
+  offeredLevels,
+  planAllowsLevel,
+  levelNeeded,
+  projectLevels,
+  projectModels,
+  roleCanBeOff,
+  roleDefaultModel,
+  roleModel,
+  roleNeedsTools,
+  usedLevel,
+  withinModelCap,
+} from "@tuti/shared";
 import { z } from "zod";
 
 import { defineOperation, OperationError } from "./define";
@@ -10,20 +33,32 @@ import { defineOperation, OperationError } from "./define";
  * the project picked from the endpoint's models. A role is a kind of work, not a step (AI_ROLES): Autopilot's are
  * code_changes_decide (Decides), code_changes_check (Checks, `off` to skip its checks) and code_changes itself (Writes,
  * and Verify); the Inbox's are support_draft and support_summary.
+ *
+ * Each group of roles runs on a level (AI_GROUPS, R2): Balanced is the server's models, Affordable and Best the server's
+ * rows for them, Custom the models picked here. A level the plan doesn't include, or the server no longer offers, is
+ * kept and not used: the group runs on Balanced (`used`).
  */
 
-export type AiModels = Record<AiRole, { model: string | null; default: string }>;
+export type AiModels = Record<AiRole, { model: string | null; default: string; used: string }> & {
+  /** Each group's level: the one saved, the one its work runs on, and those this plan may pick on this server. */
+  levels: Record<AiGroup, { level: AiLevel; used: AiLevel; available: AiLevel[] }>;
+};
 
 export async function aiModels(projectId: string): Promise<AiModels> {
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiModels: true } });
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
   const picked = projectModels(project.aiModels);
-  return Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, { model: picked[role] ?? null, default: roleDefaultModel(role) }])) as AiModels;
+  const saved = projectLevels(project.aiLevels);
+  const available = offeredLevels().filter((level) => planAllowsLevel(project.plan, level));
+  return {
+    ...Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, { model: picked[role] ?? null, default: roleDefaultModel(role), used: roleModel(project, role) }])),
+    levels: Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, { level: saved[group], used: usedLevel(project, group), available }])),
+  } as AiModels;
 }
 
 export const getAiModels = defineOperation({
   name: "aiModels.get",
   summary:
-    "Get the model each AI role uses (answers, escalations, support_draft and support_summary: the Inbox's drafted replies and summaries, changelog, and Autopilot's three: code_changes_decide deciding, code_changes_check checking its own work, code_changes writing, and Verify): the one the project picked (null for the server's default), and the default",
+    "Get the model each AI role uses (answers, escalations, support_draft and support_summary: the Inbox's drafted replies and summaries, changelog, and Autopilot's three: code_changes_decide deciding, code_changes_check checking its own work, code_changes writing, and Verify): the one the project picked (null for the server's default), the default, and the one its work runs on (`used`). `levels` has each group's level (answers, support, changelog, code_changes): the one saved, the one `used` (balanced when the plan doesn't include the saved one or the server no longer offers it), and those `available`",
   method: "GET",
   path: "/ai-models",
   scope: "read",
@@ -37,14 +72,17 @@ const modelId = z.string().trim().max(200, "Model ids are under 200 characters")
 export const updateAiModels = defineOperation({
   name: "aiModels.update",
   summary:
-    "Pick the model an AI role uses for this project: a model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default; \"off\" for code_changes_check skips Autopilot's checks. Autopilot's roles take only models with tool calls. The server may cap a model's price (AI_MODEL_MAX_PRICE). Roles left out keep theirs",
+    "Pick the model an AI role uses for this project: a model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default; \"off\" for code_changes_check skips Autopilot's checks. Autopilot's roles take only models with tool calls. The server may cap a model's price (AI_MODEL_MAX_PRICE). Roles left out keep theirs. Picking a model puts the role's group on the custom level, which needs a plan with it (402); \"off\" and \"\" work on every plan. `levels` sets a group's level (affordable, balanced, best or custom): 402 where the plan doesn't include it, 400 where the server doesn't offer it or its models cost more than the server allows",
   method: "PATCH",
   path: "/ai-models",
   scope: "write",
   access: "admin",
-  input: z.object(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, modelId])) as Record<AiRole, typeof modelId>),
+  input: z.object({
+    ...(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, modelId])) as Record<AiRole, typeof modelId>),
+    levels: z.object(Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, z.enum(AI_LEVELS).optional()])) as Record<AiGroup, z.ZodOptional<z.ZodEnum<{ [L in AiLevel]: L }>>>).optional(),
+  }),
   example: { answers: "anthropic/claude-sonnet-5.5", changelog: "" },
-  run: async ({ projectId }, input) => {
+  run: async ({ projectId }, { levels: sent = {}, ...input }) => {
     const picked = Object.entries(input).filter((entry): entry is [AiRole, string] => entry[1] !== undefined);
     const chosen = picked.filter(([, model]) => model !== "");
     for (const [pick, id] of chosen) {
@@ -52,7 +90,23 @@ export const updateAiModels = defineOperation({
         throw new OperationError(400, "invalid_input", "Only Autopilot's checks can be off");
       }
     }
-    if (chosen.some(([, id]) => id !== "off")) {
+    // A model picked puts its group on Custom; a level sent for the group wins.
+    const levels: Partial<Record<AiGroup, AiLevel>> = { ...Object.fromEntries(chosen.filter(([, id]) => id !== "off").map(([role]) => [groupOf(role), "custom"])), ...sent };
+    const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+    for (const level of new Set(Object.values(levels))) {
+      if (!planAllowsLevel(plan, level)) {
+        throw new OperationError(402, "plan_required", `${levelNeeded(level)} See Settings → Billing.`);
+      }
+      if (!offeredLevels().includes(level)) {
+        throw new OperationError(400, "level_unavailable", `This server doesn't offer the ${level} level`);
+      }
+    }
+    // The models a level sent would run: checked against the server's price cap like a model picked.
+    const rows = aiLevelRows();
+    const levelModels = Object.entries(levels).flatMap(([group, level]) =>
+      level === "affordable" || level === "best" ? AI_ROLE_NAMES.filter((role) => groupOf(role) === group).flatMap((role) => (rows[level]?.[role] ? [[level, rows[level][role]] as const] : [])) : [],
+    );
+    if (chosen.some(([, id]) => id !== "off") || (modelMaxPrice() !== null && levelModels.length > 0)) {
       let listed: Map<string, AiModelListing>;
       try {
         listed = new Map((await listModels()).map((model) => [model.id, model]));
@@ -73,11 +127,18 @@ export const updateAiModels = defineOperation({
           throw new OperationError(400, "model_without_tools", `“${id}” can't call tools, which Autopilot's docs agent needs`);
         }
       }
+      for (const [level, id] of levelModels) {
+        const model = listed.get(id);
+        // ponytail: checked when the level is saved, like a picked model; a cap lowered later isn't applied to saved levels.
+        if (model && !withinModelCap(model)) {
+          throw new OperationError(400, "level_unavailable", `The ${level} level uses “${id}”, which costs more than this server allows`);
+        }
+      }
     }
     // Merged in the database, so two people picking different features at once both keep theirs.
     const set = JSON.stringify(Object.fromEntries(chosen));
     const unset = picked.filter(([, model]) => model === "").map(([feature]) => feature);
-    await prisma.$executeRaw`UPDATE "project" SET "aiModels" = ("aiModels" || ${set}::jsonb) - ${unset}::text[] WHERE "id" = ${projectId}`;
+    await prisma.$executeRaw`UPDATE "project" SET "aiModels" = ("aiModels" || ${set}::jsonb) - ${unset}::text[], "aiLevels" = "aiLevels" || ${JSON.stringify(levels)}::jsonb WHERE "id" = ${projectId}`;
     return aiModels(projectId);
   },
 });

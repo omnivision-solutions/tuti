@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { AI_ROLE_NAMES, aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planFor, planIncludes, roleCanBeOff, roleNeedsTools, withinModelCap } from "@tuti/shared";
+import { AI_ROLE_NAMES, aiEnabled, creditsEnabled, creditsPerUsageDollar, levelNeeded, listModels, log, modelMaxPrice, planFor, planIncludes, roleCanBeOff, roleNeedsTools, withinModelCap } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AiModelsSettings } from "@/components/ai-models-settings";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -35,6 +36,19 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
       title="AI models"
       description={`Which model writes for each AI feature, from the models this server offers. Fast is the default; a bigger model can write better and costs more (estimates for a typical use).${cap !== null ? ` This server allows models up to $${cap} per million output tokens.` : ""}`}
     >
+      {/* Picking a model is the Custom level (docs/plan.md, R2): on a plan without it, picks are kept and the work runs on its level. */}
+      {!planIncludes(project.plan, "aiTuning") && (
+        <Alert>
+          <AlertDescription>
+            <p>
+              {levelNeeded("custom")} Models picked here are kept and not used until then. Autopilot&apos;s checks can still be switched off.{" "}
+              <Link href={`/app/${slug}/settings/billing`} className="underline underline-offset-4">
+                See Billing
+              </Link>
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
       <SettingsCard>
         <SettingBlock>
           <AiModelsSettings

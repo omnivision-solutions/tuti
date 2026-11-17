@@ -11,7 +11,7 @@ import { z } from "zod";
  */
 
 /** What a plan may include (planIncludes). Each needs code behind it, so the list lives here; the file says which plan has which. */
-export const PLAN_FEATURES = ["customDomain", "sitePath", "privatePortal", "codeChanges", "emailDomain", "launcherIcon", "reporting", "aiTuning"] as const;
+export const PLAN_FEATURES = ["customDomain", "sitePath", "privatePortal", "codeChanges", "emailDomain", "launcherIcon", "reporting", "aiLevels", "aiTuning"] as const;
 
 const count = z.number().int().min(0);
 const days = z.number().int().min(1);

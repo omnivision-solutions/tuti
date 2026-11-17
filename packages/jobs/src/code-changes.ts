@@ -12,6 +12,7 @@ import {
   log,
   planIncludes,
   planNeeded,
+  roleModel,
   toVectorLiteral,
   tunedSettings,
   withCodeChangesSettings,
@@ -19,7 +20,7 @@ import {
 import { z } from "zod";
 
 import { DECISION_DIFF_CHARS, GATE, gateResult, namedPosts, POST_QUESTION, type PostCandidate, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
-import { aiFor, projectModels } from "./ai-usage";
+import { aiFor } from "./ai-usage";
 import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
@@ -88,7 +89,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       url: true,
       title: true,
       state: true,
-      project: { select: { slug: true, analyseCodeChanges: true, plan: true, codeChangesTuning: true, aiModels: true } },
+      project: { select: { slug: true, analyseCodeChanges: true, plan: true, codeChangesTuning: true, aiModels: true, aiLevels: true } },
     },
   });
   if (!change) {
@@ -167,14 +168,13 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull } });
   }
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
-  // it picked for Autopilot's roles (Settings → AI models; Decides and Checks here, Writes is `ai`): every step below
+  // its level gives Autopilot's roles (roleModel; Decides and Checks here, Writes is `ai`): every step below
   // reads them (codeChangesSettings()).
   const tuning = tunedSettings(change.project.codeChangesTuning, change.project.plan);
-  const picked = projectModels(change.project.aiModels);
   const settings = {
     ...tuning.settings,
-    decide: { ...tuning.settings.decide, model: picked.code_changes_decide ?? tuning.settings.decide.model },
-    redecide: { ...tuning.settings.redecide, model: picked.code_changes_check ?? tuning.settings.redecide.model },
+    decide: { ...tuning.settings.decide, model: roleModel(change.project, "code_changes_decide") },
+    redecide: { ...tuning.settings.redecide, model: roleModel(change.project, "code_changes_check") },
   };
   return withCodeChangesSettings(settings, () => analysePullRequest(change, repository, ai, input, log, lastTry, { values: tuning.values, tuned: tuning.tuned }));
 }

@@ -146,6 +146,7 @@ const NEEDS: Record<PlanFeature, string> = {
   emailDomain: "Emailing from your own domain needs",
   launcherIcon: "Choosing the launcher's icon needs",
   reporting: "Reporting needs",
+  aiLevels: "Choosing an AI level needs",
   aiTuning: "Advanced tuning needs",
 };
 

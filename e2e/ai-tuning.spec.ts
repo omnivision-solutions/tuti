@@ -61,6 +61,8 @@ test("an owner sees a model for each role (Autopilot's three, the Inbox's two), 
   await expect(decides.getByText(/^About [\d.$]+ (credits? )?per merged pull request$/).first()).toBeVisible();
   await expect(owner.getByRole("radiogroup", { name: "Autopilot checks" }).getByRole("radio", { name: /^Off/ })).toBeVisible();
   await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
+  // Picking a model is the Custom level, which Free lacks: the page says picks are kept and not used.
+  await expect(owner.getByText(/Picking your own AI models needs the Business plan\. Models picked here are kept and not used until then\./)).toBeVisible();
 
   // Advanced tuning is a page of its own; on Free it's locked, with the way to Business.
   const tuningLink = owner.getByRole("link", { name: /^Advanced tuning/ });

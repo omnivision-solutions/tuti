@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
-import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
+import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -68,7 +68,7 @@ test("each feature uses the server's default for it, unless the project picked a
   expect(await answeredWith(other.id)).toBe("acme/tiny");
 
   await call(updateAiModels, as(), { answers: "" });
-  expect((await call(getAiModels, as(), {})).answers).toEqual({ model: null, default: "acme/tiny" });
+  expect((await call(getAiModels, as(), {})).answers).toEqual({ model: null, default: "acme/tiny", used: "acme/tiny" });
   expect(await answeredWith(project.id)).toBe("acme/tiny");
 });
 
@@ -106,7 +106,7 @@ test("under the server's cap only models priced at or under it can be picked; th
   vi.stubEnv("AI_MODEL_CHANGELOG", "anthropic/claude-sonnet-5.5");
   await call(updateAiModels, as(), { answers: "" });
   const models = await call(getAiModels, as(), {});
-  expect([models.answers.model, models.changelog]).toEqual([null, { model: null, default: "anthropic/claude-sonnet-5.5" }]);
+  expect([models.answers.model, models.changelog]).toEqual([null, { model: null, default: "anthropic/claude-sonnet-5.5", used: "anthropic/claude-sonnet-5.5" }]);
 });
 
 test("two people picking models for different features at once both keep theirs", async () => {
@@ -143,7 +143,8 @@ test("the migration: picks saved under the old names become their roles' (the In
 test("every role is listed with its default: the Inbox's two share the support feature's", async () => {
   vi.stubEnv("AI_MODEL_SUPPORT", "acme/tiny");
   const models = await call(getAiModels, as(), {});
-  expect(Object.keys(models).sort()).toEqual([...AI_ROLE_NAMES].sort());
+  // Each role, and the groups' levels beside them.
+  expect(Object.keys(models).sort()).toEqual([...AI_ROLE_NAMES, "levels"].sort());
   expect(models).toMatchObject({ support_draft: { model: null, default: "acme/tiny" }, support_summary: { model: null, default: "acme/tiny" } });
   expect((await call(updateAiModels, as(), { support_summary: "anthropic/claude-sonnet-5.5" })).support_draft.model).toBeNull();
 });
@@ -173,4 +174,61 @@ test("Autopilot's roles: Decides and Checks have their own picks (Off only for C
   form.set("code_changes_check", "");
   expect(await saveAiModels(project.slug, {}, form)).toEqual({});
   expect((await call(getAiModels, as(), {})).code_changes_check.model).toBeNull();
+});
+
+const onPlan = (plan: string) => prisma.project.update({ where: { id: project.id }, data: { plan } });
+
+test("levels: a group runs on its level's models; a plan picks levels with aiLevels and models with Custom's feature, and a level it loses is kept and not used", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const SONNET = "anthropic/claude-sonnet-5.5";
+
+  // The free plan runs on Balanced: no level, no model of its own. Autopilot's checks can still be switched off.
+  await onPlan("free");
+  await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 402, code: "plan_required", message: "Choosing an AI level needs the Pro plan. See Settings → Billing." });
+  await expect(call(updateAiModels, as(), { answers: SONNET })).rejects.toMatchObject({ status: 402, code: "plan_required", message: "Picking your own AI models needs the Business plan. See Settings → Billing." });
+  expect(await call(updateAiModels, as(), { code_changes_check: "off", answers: "" })).toMatchObject({ code_changes_check: { model: "off", used: "off" }, levels: { code_changes: { level: "balanced" } } });
+
+  // Pro picks a level, not its own models.
+  await onPlan("pro");
+  expect(await call(updateAiModels, as(), { levels: { answers: "best" } })).toMatchObject({
+    answers: { model: null, default: DEFAULT_AI_MODEL, used: SONNET },
+    changelog: { used: DEFAULT_AI_MODEL },
+    levels: { answers: { level: "best", used: "best", available: ["affordable", "balanced", "best"] }, changelog: { level: "balanced" } },
+  });
+  expect(await answeredWith(project.id)).toBe(SONNET);
+  await expect(call(updateAiModels, as(), { levels: { answers: "custom" } })).rejects.toMatchObject({ status: 402 });
+
+  // Business picks models: a pick puts its group on Custom.
+  await onPlan("business");
+  expect(await call(updateAiModels, as(), { answers: "acme/tiny" })).toMatchObject({ answers: { model: "acme/tiny", used: "acme/tiny" }, levels: { answers: { level: "custom", used: "custom" } } });
+  expect(await answeredWith(project.id)).toBe("acme/tiny");
+
+  // Back on Free, the pick and the level are kept and the work runs on Balanced.
+  await onPlan("free");
+  expect(await call(getAiModels, as(), {})).toMatchObject({ answers: { model: "acme/tiny", used: DEFAULT_AI_MODEL }, levels: { answers: { level: "custom", used: "balanced", available: ["balanced"] } } });
+  expect(await answeredWith(project.id)).toBe(DEFAULT_AI_MODEL);
+});
+
+test("levels: one the server doesn't offer, or whose models cost more than its cap, can't be saved", async () => {
+  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  // Best's row is Sonnet, $15 per million output tokens in the fake's list; Affordable's is Haiku, $5.
+  await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "The best level uses “anthropic/claude-sonnet-5.5”, which costs more than this server allows" });
+  expect((await call(updateAiModels, as(), { levels: { answers: "affordable" } })).levels.answers.level).toBe("affordable");
+  // A server that set its own models and has no levels file has only Balanced and Custom.
+  vi.stubEnv("AI_MODEL", "acme/tiny");
+  await expect(call(updateAiModels, as(), { levels: { support: "affordable" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "This server doesn't offer the affordable level" });
+  expect((await call(getAiModels, as(), {})).levels.answers).toEqual({ level: "affordable", used: "balanced", available: ["balanced", "custom"] });
+});
+
+test("the levels migration: a group with a model picked is on Custom; checks switched off alone leave Autopilot's group on Balanced", async () => {
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261117180000_ai_levels/migration.sql", import.meta.url), "utf8");
+  const migrated = async (aiModels: Record<string, string>) => {
+    await prisma.project.update({ where: { id: project.id }, data: { aiModels, aiLevels: {} } });
+    await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "project"')));
+    return (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiLevels: true } })).aiLevels;
+  };
+  expect(await migrated({ escalations: "acme/tiny", support_summary: "acme/tiny", code_changes_check: "off" })).toEqual({ answers: "custom", support: "custom" });
+  expect(await migrated({ changelog: "acme/tiny", code_changes_check: "acme/tiny" })).toEqual({ changelog: "custom", code_changes: "custom" });
+  expect(await migrated({ code_changes: "acme/tiny", code_changes_check: "off" })).toEqual({ code_changes: "custom" });
+  expect(await migrated({})).toEqual({});
 });

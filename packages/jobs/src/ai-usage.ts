@@ -1,18 +1,10 @@
 import { Prisma, prisma } from "@tuti/db";
-import { AI_ROLES, type Ai, type AiFeature, type AiRole, type AiUsage, creditsEnabled, creditsPerUsageDollar, log, type Meter, roleDefaultModel } from "@tuti/shared";
+import { AI_ROLES, type Ai, type AiFeature, type AiRole, type AiUsage, creditsEnabled, creditsPerUsageDollar, log, type Meter, roleModel } from "@tuti/shared";
 
 import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } from "./credits";
 
-/** A project's own model for each role it picked one for (Settings → AI models); the others use the default. */
-export function projectModels(value: unknown): Partial<Record<AiRole, string>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value).filter((entry): entry is [AiRole, string] => entry[0] in AI_ROLES && typeof entry[1] === "string" && entry[1] !== ""))
-    : {};
-}
-
 /**
- * The AI for a piece of work in `projectId`, by the role it's done in: the project's model for that role (or the
- * default), and a meter for its requests, recorded as the role's feature. With AI credits on, it throws OutOfCredits once the balance is 0 or
+ * The AI for a piece of work in `projectId`, by the role it's done in: the model its level gives that role (roleModel), and a meter for its requests, recorded as the role's feature. With AI credits on, it throws OutOfCredits once the balance is 0 or
  * below: checked here, once per piece of work, so what already started finishes (and a balance can end
  * a little below 0, which the next credits cover first).
  */
@@ -22,8 +14,8 @@ export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
     await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that AI credits are out failed", { projectId, error }));
     throw new OutOfCredits(projectId);
   }
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { aiModels: true } });
-  return { model: projectModels(project?.aiModels)[role] ?? roleDefaultModel(role), meter: meter(projectId, AI_ROLES[role].feature) };
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
+  return { model: roleModel(project ?? { plan: null, aiModels: {}, aiLevels: {} }, role), meter: meter(projectId, AI_ROLES[role].feature) };
 }
 
 /**

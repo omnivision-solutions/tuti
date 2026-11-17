@@ -104,7 +104,7 @@ test("out of AI credits: no draft, and summaries are refused saying so", async (
 test("drafts and summaries are two roles: each uses the model the project picked for it, and both are charged as support", async () => {
   const { project, team } = await setup();
   await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
-  await prisma.project.update({ where: { id: project.id }, data: { aiModels: { support_draft: "acme/drafter", support_summary: "acme/summariser" } } });
+  await prisma.project.update({ where: { id: project.id }, data: { aiLevels: { support: "custom" }, aiModels: { support_draft: "acme/drafter", support_summary: "acme/summariser" } } });
   await call(createConversation, team, { email: "e2e-sam@example.com", body: QUESTION });
   openai.setVector(QUESTION, along(1));
   model.reply(JSON.stringify({ answer: "From the Team page.", sources: ["s1"] }));

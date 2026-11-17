@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
-import { resetCodeChangesSettings } from "@tuti/shared";
+import { resetCodeChangesSettings, roleDefaultModel } from "@tuti/shared";
 import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -689,6 +689,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
       where: { id: project.id },
       data: {
         plan: "business",
+        aiLevels: { code_changes: "custom" },
         aiModels: { code_changes_decide: "acme/tiny", code_changes_check: "off" },
         codeChangesTuning: { "decide.rounds": 1, "decide.reasoning": "high", "propose.edit.maybe": 0.3 },
       },
@@ -738,18 +739,19 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     ]);
   });
 
-  test("after a downgrade off Business the values are kept but not used (its models still are); back on Business, they're used again", async () => {
+  test("after a downgrade off Business the values and its own models are kept but not used; back on Business, they're used again", async () => {
     vi.stubEnv("BILLING_CONFIG", billingFile());
     await prisma.project.update({
       where: { id: project.id },
-      data: { plan: "pro", aiModels: { code_changes_decide: "acme/tiny" }, codeChangesTuning: { "propose.edit.maybe": 0.3 } },
+      data: { plan: "pro", aiLevels: { code_changes: "custom" }, aiModels: { code_changes_decide: "acme/tiny" }, codeChangesTuning: { "propose.edit.maybe": 0.3 } },
     });
     pullRequest(61);
     model.decide(USERS);
     model.reply(EDIT_AT(0.35), undefined, '"merge-61"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     await merge(61);
-    expect(agentRequests(61).map((request) => request.model)).toEqual(["acme/tiny"]);
+    // Its own models are the Custom level, which Pro lacks: Decides runs on the server's.
+    expect(agentRequests(61).map((request) => request.model)).toEqual([roleDefaultModel("code_changes_decide")]);
     expect((await actions(61)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
     expect((await settled(61)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.5 }, tuned: [] });
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 61 }, select: { id: true } });
@@ -762,6 +764,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     model.reply(PROPOSALS, undefined, '"proposals"');
     model.reply(EDIT, undefined, '"problem"');
     await merge(62);
+    expect(agentRequests(62)[0]!.model).toBe("acme/tiny");
     expect((await actions(62)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE", "ARTICLE_EDIT"]);
     expect((await settled(62)).settings).toMatchObject({ tuned: ["propose.edit.maybe"] });
   });
@@ -787,7 +790,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
   // Each value is read by the step that uses it, inside the project's settings: these fail if a step reads the server's.
   const business = (codeChangesTuning: Record<string, number>, aiModels: Record<string, string> = {}) => {
     vi.stubEnv("BILLING_CONFIG", billingFile());
-    return prisma.project.update({ where: { id: project.id }, data: { plan: "business", codeChangesTuning, aiModels } });
+    return prisma.project.update({ where: { id: project.id }, data: { plan: "business", codeChangesTuning, aiModels, aiLevels: { code_changes: "custom" } } });
   };
   const NEW_AT = (probability: number) =>
     answer([], [{ title: "Use the dark theme", probability, collection: "settings", after: null, reason: "Nothing covers themes." }]);
