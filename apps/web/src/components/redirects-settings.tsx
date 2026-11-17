@@ -108,6 +108,7 @@ function RedirectRow({ projectSlug, redirect }: { projectSlug: string; redirect:
             <Button
               variant="destructive"
               disabled={pending}
+              focusableWhenDisabled
               onClick={() =>
                 startTransition(async () => {
                   const result = await removeRedirect(projectSlug, redirect.id);

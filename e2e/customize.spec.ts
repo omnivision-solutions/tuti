@@ -208,9 +208,12 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   });
   await confirm.getByRole("button", { name: "Delete redirect" }).click();
   await expect(confirm.getByRole("button", { name: "Cancel" })).toBeDisabled();
-  await expect(confirm.getByRole("button", { name: "Delete redirect" })).toBeDisabled();
+  // The button keeps focus (disabled, still focusable), and Escape doesn't start closing the question.
+  await expect(confirm.getByRole("button", { name: "Delete redirect" })).toHaveAttribute("aria-disabled", "true");
+  await expect(confirm.getByRole("button", { name: "Delete redirect" })).toBeFocused();
   await owner.keyboard.press("Escape");
-  await expect(confirm).toBeVisible();
+  await expect(confirm).toHaveAttribute("data-open");
+  await expect(confirm).not.toHaveAttribute("data-closed");
   release();
   await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByText("Redirect deleted")).toBeVisible();
@@ -314,7 +317,6 @@ test("custom code typed before the page's scripts ran is still a change to save"
   await owner.getByLabel("Custom HTML").fill('<p id="early">Typed early</p>');
   await checkpoint(owner, "customize-custom-code-typed-early");
   release();
-  await owner.unrouteAll({ behavior: "wait" });
   // Once the page runs, Save changes sees it differs from what's saved.
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
