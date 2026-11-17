@@ -1,0 +1,895 @@
+import { expect, test } from "vitest";
+import { stringify } from "yaml";
+import { readOpenApi } from "./openapi";
+import type { ApiDoc, ApiSchema } from "./types";
+
+const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+const json = (schema: unknown, more: object = {}) => ({ content: { "application/json": { schema, ...more } } });
+
+/** A feedback tool's API: the size and habits of a spec a team would upload. */
+const fixture = {
+  openapi: "3.1.0",
+  info: { title: "Acme Feedback API", version: "2026-11-01", description: "Posts, comments and **votes**." },
+  servers: [
+    { url: "https://api.acme.example/v1", description: "Production" },
+    { url: "https://{region}.acme.example/v1", variables: { region: { default: "eu", enum: ["eu", "us"], description: "Where the data is." }, odd: 5 } },
+  ],
+  tags: [
+    { name: "Posts", description: "Ideas and bugs people send." },
+    { name: "Comments" },
+    { name: "Unused", description: "No operation has it." },
+  ],
+  security: [{ bearer: [] }],
+  paths: {
+    "/posts": {
+      get: {
+        tags: ["Posts"],
+        summary: "List posts",
+        operationId: "listPosts",
+        parameters: [
+          { name: "status", in: "query", description: "Only posts in this status.", schema: ref("Status") },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 }, example: 50 },
+          { $ref: "#/components/parameters/Cursor" },
+        ],
+        responses: {
+          "200": json({ type: "object", required: ["data"], properties: { data: { type: "array", items: ref("Post") }, next: { type: ["string", "null"] } } }),
+          default: { $ref: "#/components/responses/Error" },
+        },
+      },
+      post: {
+        tags: ["Posts", "Comments"],
+        summary: "Create a post",
+        description: "Adds a post to a board.",
+        security: [{ bearer: [] }, { apiKey: [], workspace: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": { schema: { type: "object" } },
+            "application/json": { schema: ref("NewPost"), examples: { bug: { value: { title: "Export fails", board: "bugs" } } } },
+          },
+        },
+        responses: {
+          "201": { description: "The post.", ...json(ref("Post")) },
+          "400 - Bad Request": { $ref: "#/components/responses/Error" },
+          "422": { description: "Not valid.", ...json(ref("Error"), { example: { message: "title is required" } }) },
+        },
+      },
+    },
+    "/posts/{number}": {
+      parameters: [
+        { name: "number", in: "path", required: true, description: "The path's.", schema: { type: "integer" } },
+        { name: "X-Trace", in: "header", schema: { type: "string" } },
+      ],
+      get: {
+        tags: ["Posts"],
+        operationId: "posts_get",
+        parameters: [{ name: "number", in: "path", required: true, description: "The post's number.", schema: { type: "integer", minimum: 1 } }],
+        responses: { "200": json(ref("Post")), "404": { description: "No such post." } },
+      },
+      delete: {
+        tags: ["Posts"],
+        summary: "Delete a post",
+        deprecated: true,
+        servers: [{ url: "https://admin.acme.example" }],
+        responses: { "204": { description: "Gone." } },
+      },
+    },
+    "/posts/{number}/comments": {
+      get: {
+        tags: ["Comments"],
+        summary: "List comments",
+        parameters: [{ name: "number", in: "path", required: true, schema: { type: "integer" } }],
+        responses: { "200": json({ type: "array", items: ref("Comment") }) },
+      },
+      post: {
+        tags: ["Comments"],
+        summary: "List comments",
+        parameters: [{ name: "number", in: "path", required: true, schema: { type: "integer" } }],
+        requestBody: json({ type: "object", required: ["body"], properties: { body: { type: "string", minLength: 1, maxLength: 5000 } } }),
+        responses: { "201": json(ref("Comment")) },
+      },
+    },
+    "/health": {
+      get: { security: [], responses: { "200": { description: "Up.", content: { "text/plain": { schema: { type: "string" } } } } } },
+    },
+  },
+  components: {
+    securitySchemes: {
+      bearer: { type: "http", scheme: "bearer", description: "A project's API key." },
+      apiKey: { type: "apiKey", in: "header", name: "X-Api-Key" },
+      workspace: { type: "apiKey", in: "query", name: "workspace" },
+    },
+    parameters: { Cursor: { name: "cursor", in: "query", description: "Where the last page ended.", schema: { type: "string" } } },
+    responses: { Error: { description: "What went wrong.", ...json(ref("Error")) } },
+    schemas: {
+      Status: { type: "string", enum: ["open", "planned", "done"], default: "open" },
+      User: {
+        type: "object",
+        required: ["id", "email"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          email: { type: "string", format: "email", example: "ada@example.com" },
+          team: ref("Team"),
+        },
+      },
+      Team: { type: "object", properties: { name: { type: "string" }, owner: ref("Account") } },
+      Account: { type: "object", properties: { plan: { type: "string" } } },
+      Post: {
+        type: "object",
+        description: "An idea or a bug.",
+        required: ["number", "title", "status"],
+        properties: {
+          number: { type: "integer", minimum: 1 },
+          title: { type: "string", minLength: 3, maxLength: 200 },
+          status: ref("Status"),
+          author: { anyOf: [ref("User"), { type: "null" }] },
+          tags: { type: "array", items: { type: "string" }, maxItems: 10, uniqueItems: true },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      NewPost: {
+        allOf: [
+          { type: "object", required: ["title"], properties: { title: { type: "string", minLength: 3, maxLength: 200 }, body: { type: "string" } } },
+          { type: "object", required: ["board"], properties: { board: { type: "string", pattern: "^[a-z-]+$" } } },
+        ],
+      },
+      Comment: {
+        type: "object",
+        required: ["id", "body"],
+        properties: { id: { type: "string" }, body: { type: "string" }, author: ref("User"), replies: { type: "array", items: ref("Comment") } },
+      },
+      Error: { type: "object", required: ["message"], properties: { message: { type: "string" }, code: { type: "integer" } } },
+    },
+  },
+};
+
+function read(text: string): ApiDoc {
+  const result = readOpenApi(text);
+  if ("error" in result) throw new Error(result.error);
+  return result.doc;
+}
+/** A small spec around the parts a test is about. */
+const spec = (parts: object): ApiDoc => read(JSON.stringify({ openapi: "3.0.3", info: { title: "T", version: "1" }, ...parts }));
+const errorOf = (text: string) => {
+  const result = readOpenApi(text);
+  return "error" in result ? result.error : null;
+};
+/** One schema, read as `GET /x`'s 200 response. */
+function schemaOf(schema: unknown, schemas: object = {}): { schema: ApiSchema; example: unknown; doc: ApiDoc } {
+  const doc = spec({ paths: { "/x": { get: { summary: "X", responses: { "200": json(schema) } } } }, components: { schemas } });
+  const response = doc.operations[0]!.responses[0]!;
+  return { schema: response.schema!, example: response.example, doc };
+}
+const operation = (doc: ApiDoc, key: string) => doc.operations.find((one) => one.key === key)!;
+const codes = (doc: ApiDoc) => doc.warnings.map((warning) => `${warning.code} @ ${warning.where}`);
+
+test("a spec reads the same from JSON and from YAML", () => {
+  const doc = read(JSON.stringify(fixture));
+  expect(read(stringify(fixture))).toEqual(doc);
+  expect(JSON.parse(JSON.stringify(doc))).toEqual(doc);
+
+  expect(doc).toMatchObject({ format: "openapi", title: "Acme Feedback API", version: "2026-11-01", description: "Posts, comments and **votes**." });
+  expect(doc.servers).toEqual([
+    { url: "https://api.acme.example/v1", description: "Production" },
+    { url: "https://{region}.acme.example/v1", description: "", variables: { region: { default: "eu", enum: ["eu", "us"], description: "Where the data is." } } },
+  ]);
+  expect(doc.auth).toEqual([
+    { key: "bearer", kind: "bearer", name: "Authorization", description: "A project's API key." },
+    { key: "apiKey", kind: "header", name: "X-Api-Key", description: "" },
+    { key: "workspace", kind: "query", name: "workspace", description: "" },
+  ]);
+  expect(doc.operations.map((one) => [one.key, one.title, one.slug, one.group])).toEqual([
+    ["GET /posts", "List posts", "list-posts", "Posts"],
+    ["POST /posts", "Create a post", "create-a-post", "Posts"],
+    ["GET /posts/{}", "Posts get", "posts-get", "Posts"],
+    ["DELETE /posts/{}", "Delete a post", "delete-a-post", "Posts"],
+    ["GET /posts/{}/comments", "List comments", "list-comments", "Comments"],
+    ["POST /posts/{}/comments", "List comments", "list-comments-2", "Comments"],
+    ["GET /health", "GET /health", "get-health", "Other"],
+  ]);
+  expect(doc.types.map((type) => [type.name, type.slug, type.kind])).toEqual([
+    ["Status", "status", "enum"],
+    ["User", "user", "object"],
+    ["Team", "team", "object"],
+    ["Account", "account", "object"],
+    ["Post", "post", "object"],
+    ["NewPost", "newpost", "object"],
+    ["Comment", "comment", "object"],
+    ["Error", "error", "object"],
+  ]);
+  expect(codes(doc)).toEqual([
+    "STATUS_GUESSED @ POST /posts › responses › 400 - Bad Request",
+    "DUPLICATE_SLUG @ POST /posts/{number}/comments",
+    "NO_TITLE @ GET /health",
+  ]);
+});
+
+test("a YAML spec with comments and anchors", () => {
+  const doc = read(`
+openapi: 3.0.3   # the version
+info: { title: Tiny, version: 1.0 }
+paths:
+  /pets:
+    get:
+      summary: List pets
+      responses:
+        200: &ok
+          description: Fine
+        201: *ok
+`);
+  expect(doc.version).toBe("1");
+  expect(doc.operations[0]!.responses).toEqual([
+    { status: "200", description: "Fine", contentType: null, schema: null },
+    { status: "201", description: "Fine", contentType: null, schema: null },
+  ]);
+});
+
+test("text that isn't a spec is an error to act on", () => {
+  expect(errorOf("")).toBe("This file is empty.");
+  expect(errorOf("  \n")).toBe("This file is empty.");
+  expect(errorOf("hello")).toMatch(/isn't an OpenAPI spec/);
+  expect(errorOf("[1, 2]")).toMatch(/isn't an OpenAPI spec/);
+  expect(errorOf("null")).toMatch(/isn't an OpenAPI spec/);
+  expect(errorOf('{"paths": {}}')).toMatch(/isn't an OpenAPI spec/);
+  expect(errorOf('{"swagger": "2.0", "paths": {}}')).toMatch(/Swagger 2/);
+  expect(errorOf("openapi: 3\n")).toBeNull();
+  expect(errorOf("openapi: 3.0\npaths: {}")).toBeNull();
+  expect(errorOf('{"openapi": 3.1}')).toBeNull();
+  expect(errorOf('{"openapi": "30.0"}')).toMatch(/says it's OpenAPI 30.0/);
+  expect(errorOf('{"openapi": "4.0.0"}')).toBe("This spec says it's OpenAPI 4.0.0. An API reference reads OpenAPI 3.0 and 3.1.");
+  expect(errorOf("a: [1, 2")).toMatch(/^This file isn't valid JSON or YAML: /);
+  expect(errorOf("a: 1\na: 2")).toMatch(/^This file isn't valid JSON or YAML: /);
+  expect(errorOf(`{"openapi": "3.0.0", "x": "${"a".repeat(5 * 1024 * 1024)}"}`)).toMatch(/over 5 MB/);
+  expect(errorOf(`{"openapi": "3.0.0", "x": "${"é".repeat(3 * 1024 * 1024)}"}`)).toMatch(/over 5 MB/);
+});
+
+test("it never throws, and a spec's keys never reach Object's prototype", () => {
+  const deep = (open: string, close: string, levels: number) => open.repeat(levels) + close.repeat(levels);
+  const odd = [
+    "﻿",
+    "0",
+    "true",
+    '"openapi"',
+    "- openapi: 3.0.0",
+    "openapi: 3.0.0",
+    "openapi: 3.1.0\npaths: 5\ncomponents: []\ntags: x\nservers: {}\nsecurity: 1\ninfo: []",
+    '{"openapi": "3.0.0", "paths": {"/a": {"get": {"parameters": 1, "responses": [], "requestBody": "x", "tags": {}, "security": {}}}, "/b": null, "/c": {"get": null}}}',
+    '{"openapi": "3.0.0", "paths": {"/a": {"get": {"parameters": [null, 1, {}], "requestBody": {"content": {"a/b": null}}, "responses": {"200": {"content": {"a/b": 1}}}}}}}',
+    `{"openapi": "3.0.0", "x": ${deep("[", "]", 100_000)}}`,
+    `{"openapi": "3.0.0", "paths": {"/a": {"get": {"responses": {"200": {"content": {"a/b": {"schema": ${deep('{"items":', "}", 20_000)}}}}}}}}}`,
+    `openapi: 3.0.0\nx: ${deep("[", "]", 50_000)}`,
+    "openapi: 3.0.0\na: &a [*a]",
+    "openapi: 3.0.0\na: &a\n  b: *a",
+    `openapi: 3.0.0\na: &a [x, x, x, x, x, x, x, x, x]\n${"bcdefghi".split("").map((key, index) => `${key}: &${key} [${`*${"abcdefgh"[index]}, `.repeat(9)}]`).join("\n")}`,
+    '{"openapi": "3.0.0", "__proto__": {"polluted": 1}, "constructor": {"prototype": {"polluted": 1}}, "paths": {"__proto__": {"get": {}}, "/a": {"__proto__": {"polluted": 1}, "get": {"responses": {"__proto__": {}, "constructor": {}, "200": {"content": {"__proto__": {"polluted": 1}}}}}}}}',
+    "openapi: 3.0.0\n__proto__: { polluted: 1 }\npaths: { /a: { get: { __proto__: { polluted: 1 }, tags: [__proto__, constructor] } } }",
+    42 as unknown as string,
+    undefined as unknown as string,
+  ];
+  for (const text of odd) {
+    const result = readOpenApi(text);
+    expect("error" in result ? typeof result.error : typeof result.doc).toMatch(/string|object/);
+    if ("error" in result) expect(result.error).not.toBe("");
+  }
+  expect(({} as { polluted?: number }).polluted).toBeUndefined();
+
+  // Names from Object's prototype are ordinary names in a spec.
+  const { schema, example, doc } = schemaOf(
+    { type: "object", properties: { ["__proto__"]: { type: "string" }, constructor: ref("constructor"), toString: { $ref: "#/components/schemas/__proto__" }, missing: ref("hasOwnProperty") } },
+    { constructor: { type: "integer" }, ["__proto__"]: { type: "boolean" } },
+  );
+  expect(schema.properties!.map((property) => [property.name, property.type])).toEqual([
+    ["__proto__", "string"],
+    ["constructor", "constructor"],
+    ["toString", "__proto__"],
+    ["missing", "object"],
+  ]);
+  expect(Object.entries(example as object)).toEqual([
+    ["__proto__", "string"],
+    ["constructor", 0],
+    ["toString", true],
+    ["missing", {}],
+  ]);
+  expect(Object.getPrototypeOf(example)).toBe(Object.prototype);
+  expect(doc.types.map((type) => type.name)).toEqual(["constructor", "__proto__"]);
+  expect(codes(doc)).toEqual(["UNKNOWN_REF @ GET /x › responses › 200 › missing"]);
+  expect(({} as { polluted?: number }).polluted).toBeUndefined();
+});
+
+test("only references inside the spec are followed, and a cycle of them ends", () => {
+  const { schema, doc } = schemaOf(
+    {
+      type: "object",
+      properties: {
+        file: { $ref: "./other.yaml#/Thing" },
+        web: { $ref: "https://example.com/schema.json" },
+        gone: ref("Gone"),
+        whole: { $ref: "#" },
+        self: ref("Self"),
+        ping: ref("Ping"),
+        alias: ref("Alias"),
+        inner: { $ref: "#/components/schemas/Named/properties/a~1b" },
+      },
+    },
+    {
+      Self: { $ref: "#/components/schemas/Self" },
+      Ping: { $ref: "#/components/schemas/Pong" },
+      Pong: { $ref: "#/components/schemas/Ping" },
+      Alias: { $ref: "#/components/schemas/Named", description: "Named, by another name." },
+      Named: { type: "object", description: "A thing.", properties: { "a/b": { type: "integer" } } },
+    },
+  );
+  const fields = Object.fromEntries(schema.properties!.map(({ name, required, ...rest }) => [name, rest]));
+  expect(fields).toEqual({
+    file: { type: "object" },
+    web: { type: "object" },
+    gone: { type: "object" },
+    whole: { type: "object" },
+    self: { type: "Self", ref: "Self" },
+    ping: { type: "Ping", ref: "Ping" },
+    alias: { type: "Alias", ref: "Alias", description: "Named, by another name.", properties: [{ name: "a/b", required: false, type: "integer" }] },
+    inner: { type: "integer" },
+  });
+  expect(codes(doc)).toEqual([
+    "OUTSIDE_REF @ GET /x › responses › 200 › file",
+    "OUTSIDE_REF @ GET /x › responses › 200 › web",
+    "UNKNOWN_REF @ GET /x › responses › 200 › gone",
+    "UNKNOWN_REF @ GET /x › responses › 200 › whole",
+  ]);
+  for (const warning of doc.warnings) expect(warning.message).toBe(doc.warnings.find((one) => one.code === warning.code)!.message);
+
+  // Parameters, bodies, responses and path items too: a broken one is left out.
+  const broken = spec({
+    paths: {
+      "/a": { get: { summary: "A", parameters: [{ $ref: "#/components/parameters/Gone" }], requestBody: { $ref: "x.yaml" }, responses: { "200": { $ref: "#/nowhere" } } } },
+      "/b": { $ref: "#/components/pathItems/B" },
+      "/c": { $ref: "#/paths/~1c" },
+    },
+    components: { pathItems: { B: { get: { summary: "B", responses: {} } } }, schemas: { Loop: { allOf: [ref("Loop"), { properties: { a: { type: "string" } } }] } } },
+  });
+  expect(broken.operations.map((one) => [one.key, one.params, one.body, one.responses])).toEqual([
+    ["GET /a", [], null, []],
+    ["GET /b", [], null, []],
+  ]);
+  expect(codes(broken)).toEqual([
+    "UNKNOWN_REF @ GET /a › parameters › 1",
+    "OUTSIDE_REF @ GET /a › body",
+    "UNKNOWN_REF @ GET /a › responses › 200",
+    "UNKNOWN_REF @ /c",
+  ]);
+  expect(broken.types[0]!.schema).toEqual({ type: "object", ref: "Loop", properties: [{ name: "a", required: false, type: "string" }] });
+});
+
+test("groups are the spec's tags, then the tags only operations name, then Other", () => {
+  const get = (tags?: unknown) => ({ get: { summary: "S", tags, responses: {} } });
+  const doc = spec({
+    tags: [{ name: "Billing", description: "Money." }, { name: "Empty" }, { name: "Users", description: "People." }, { name: "Billing", description: "Again." }, "odd"],
+    paths: { "/a": get(["Late", "Users"]), "/b": get(["Users"]), "/c": get(), "/d": get(["Billing"]), "/e": get(["billing"]), "/f": get([]), "/g": get([7, ""]), "/h": get(["Users", "Second", "Users", "Billing"]) },
+  });
+  expect(doc.groups).toEqual([
+    { key: "Billing", name: "Billing", description: "Money." },
+    { key: "Users", name: "Users", description: "People." },
+    { key: "Late", name: "Late", description: "" },
+    { key: "billing", name: "billing", description: "" },
+    { key: "Second", name: "Second", description: "" },
+    { key: "Other", name: "Other", description: "" },
+  ]);
+  expect(doc.operations.map((one) => one.group)).toEqual(["Late", "Users", "Other", "Billing", "billing", "Other", "Other", "Users"]);
+  // Its first tag is where it's listed; the others are kept beside it.
+  expect(doc.operations.map((one) => one.alsoIn)).toEqual([["Users"], undefined, undefined, undefined, undefined, undefined, undefined, ["Second", "Billing"]]);
+  expect(doc.operations[1]).not.toHaveProperty("alsoIn");
+
+  // A tag named "Other" is where untagged operations go, in its own place.
+  const other = spec({ tags: [{ name: "Other", description: "The rest." }, { name: "Users" }], paths: { "/a": get(["Users"]), "/b": get() } });
+  expect(other.groups).toEqual([
+    { key: "Other", name: "Other", description: "The rest." },
+    { key: "Users", name: "Users", description: "" },
+  ]);
+});
+
+test("an operation's key, title and slug", () => {
+  const responses = {};
+  const doc = spec({
+    paths: {
+      "/users/{id}": { get: { summary: "  Get a user ", operationId: "getUser", responses }, put: { operationId: "users.updateOne", responses }, patch: { responses } },
+      "/users/{userId}": { get: { summary: "The same path", responses }, delete: { summary: "Get a user", responses } },
+      "/users/{id}/keys/{key}": { post: { summary: "Größe ändern!", responses }, head: { summary: "日本語", responses }, options: { operationId: "日本語", responses } },
+      "x-internal": { get: { responses } },
+    },
+    components: { schemas: { "Get a user": { type: "string" }, Money: { type: "integer" }, money: { type: "integer" } } },
+  });
+  expect(doc.operations.map((one) => [one.key, one.path, one.kind, one.title, one.slug])).toEqual([
+    ["GET /users/{id}", "/users/{id}", "GET", "Get a user", "get-a-user"],
+    ["PUT /users/{}", "/users/{id}", "PUT", "Users update one", "users-update-one"],
+    ["PATCH /users/{}", "/users/{id}", "PATCH", "PATCH /users/{id}", "patch-users-id"],
+    ["GET /users/{userId}", "/users/{userId}", "GET", "The same path", "the-same-path"],
+    ["DELETE /users/{}", "/users/{userId}", "DELETE", "Get a user", "get-a-user-2"],
+    ["POST /users/{}/keys/{}", "/users/{id}/keys/{key}", "POST", "Größe ändern!", "gro-e-andern"],
+    ["HEAD /users/{}/keys/{}", "/users/{id}/keys/{key}", "HEAD", "日本語", "head-users-id-keys-key"],
+    ["OPTIONS /users/{}/keys/{}", "/users/{id}/keys/{key}", "OPTIONS", "OPTIONS /users/{id}/keys/{key}", "options-users-id-keys-key"],
+  ]);
+  expect(doc.types.map((type) => type.slug)).toEqual(["get-a-user-3", "money", "money-2"]);
+  expect(codes(doc)).toEqual([
+    "DUPLICATE_OPERATION @ GET /users/{id}",
+    "NO_TITLE @ PATCH /users/{id}",
+    "DUPLICATE_OPERATION @ GET /users/{userId}",
+    "DUPLICATE_SLUG @ DELETE /users/{userId}",
+    "DUPLICATE_SLUG @ schemas › Get a user",
+    "DUPLICATE_SLUG @ schemas › money",
+  ]);
+});
+
+test("operations that would share a key each keep their parameters' names, whatever their order", () => {
+  const get = { get: { summary: "S", responses: {} } };
+  const post = { post: { summary: "S", responses: {} } };
+  const keys = (paths: object) => spec({ paths }).operations.map((one) => one.key).sort();
+  const expected = ["GET /users/{id}", "GET /users/{userId}", "POST /users/{}"];
+  expect(keys({ "/users/{id}": { ...get, ...post }, "/users/{userId}": get })).toEqual(expected);
+  expect(keys({ "/users/{userId}": get, "/users/{id}": { ...get, ...post } })).toEqual(expected);
+  expect(codes(spec({ paths: { "/users/{userId}": get, "/users/{id}": get } }))).toEqual([
+    "DUPLICATE_OPERATION @ GET /users/{userId}",
+    "DUPLICATE_OPERATION @ GET /users/{id}",
+    "DUPLICATE_SLUG @ GET /users/{id}",
+  ]);
+  // Never shared, even by a path that is another's key.
+  expect(keys({ "/a/{id}": get, "/a/{}": get, "/a/{x}": get })).toEqual(["GET /a/{id}", "GET /a/{x}", "GET /a/{}"]);
+});
+
+test("thousands of operations with one title each get the next number", () => {
+  const paths = Object.fromEntries(Array.from({ length: 20_000 }, (_, index) => [`/${index}`, { get: { summary: "Same" }, post: { summary: "Same 2" } }]));
+  const doc = spec({ paths, components: { schemas: { same: {}, _: {}, __: {} } } });
+  const slugs = [...doc.operations, ...doc.types].map((one) => one.slug);
+  expect(new Set(slugs).size).toBe(40_003);
+  expect(slugs.slice(0, 6)).toEqual(["same", "same-2", "same-3", "same-2-2", "same-4", "same-2-3"]);
+  expect(slugs.slice(-3)).toEqual(["same-20002", "type", "type-2"]);
+});
+
+test("parameters: the path's and the operation's, the operation's winning", () => {
+  const doc = read(JSON.stringify(fixture));
+  expect(operation(doc, "GET /posts/{}").params).toEqual([
+    { name: "number", in: "path", required: true, description: "The post's number.", schema: { type: "integer", constraints: "at least 1" } },
+    { name: "X-Trace", in: "header", required: false, description: "", schema: { type: "string" } },
+  ]);
+  expect(operation(doc, "GET /posts").params).toEqual([
+    {
+      name: "status",
+      in: "query",
+      required: false,
+      description: "Only posts in this status.",
+      schema: { type: "Status", ref: "Status", enum: ["open", "planned", "done"], default: "open" },
+    },
+    { name: "limit", in: "query", required: false, description: "", schema: { type: "integer", constraints: "1–100", default: 20 }, example: 50 },
+    { name: "cursor", in: "query", required: false, description: "Where the last page ended.", schema: { type: "string" } },
+  ]);
+
+  const odd = spec({
+    paths: {
+      "/a/{id}": {
+        get: {
+          summary: "A",
+          parameters: [
+            { name: "id", in: "path", schema: { type: "string" } },
+            { name: "id", in: "query", deprecated: true, schema: { type: "string", example: "from-schema" } },
+            { name: "filter", in: "query", required: true, content: { "application/json": { schema: { type: "object" } } }, examples: { one: { value: { a: 1 } } } },
+            { in: "query" },
+            { name: "body", in: "body" },
+          ],
+          responses: {},
+        },
+      },
+    },
+  });
+  expect(odd.operations[0]!.params).toEqual([
+    { name: "id", in: "path", required: true, description: "", schema: { type: "string" } },
+    { name: "id", in: "query", required: false, description: "", schema: { type: "string", deprecated: true }, example: "from-schema" },
+    { name: "filter", in: "query", required: true, description: "", schema: { type: "object" }, example: { a: 1 } },
+  ]);
+  expect(codes(odd)).toEqual(["INVALID_PARAMETER @ GET /a/{id} › parameters › 4", "INVALID_PARAMETER @ GET /a/{id} › parameters › body"]);
+});
+
+test("the body is in JSON when it can be, else its first content type", () => {
+  const doc = read(JSON.stringify(fixture));
+  expect(operation(doc, "POST /posts").body).toEqual({
+    required: true,
+    contentType: "application/json",
+    schema: {
+      type: "NewPost",
+      ref: "NewPost",
+      properties: [
+        { name: "title", required: true, type: "string", constraints: "3–200 characters" },
+        { name: "body", required: false, type: "string" },
+        { name: "board", required: true, type: "string", constraints: "matches ^[a-z-]+$" },
+      ],
+    },
+    example: { title: "Export fails", board: "bugs" },
+  });
+  expect(operation(doc, "POST /posts/{}/comments").body).toEqual({
+    required: false,
+    contentType: "application/json",
+    schema: { type: "object", properties: [{ name: "body", required: true, type: "string", constraints: "1–5000 characters" }] },
+    example: { body: "string" },
+  });
+  expect(operation(doc, "GET /posts").body).toBeNull();
+
+  const form = spec({
+    paths: {
+      "/a": { post: { summary: "A", requestBody: { $ref: "#/components/requestBodies/Upload" }, responses: {} }, put: { summary: "B", requestBody: { description: "Nothing." }, responses: {} } },
+    },
+    components: { requestBodies: { Upload: { content: { "text/csv": { schema: { type: "string", format: "binary" } }, "application/xml": {} } } } },
+  });
+  expect(form.operations[0]!.body).toEqual({ required: false, contentType: "text/csv", schema: { type: "string", format: "binary" }, example: "string" });
+  expect(form.operations[1]!.body).toBeNull();
+
+  const content = (types: string[]) => Object.fromEntries(types.map((type) => [type, { schema: { type: "string" } }]));
+  const spelled = spec({
+    paths: {
+      "/a": {
+        get: {
+          summary: "A",
+          responses: {
+            "200": { content: content(["text/plain", "Application/JSON; charset=utf-8"]) },
+            "400": { content: content(["text/plain", "application/problem+json", "application/json"]) },
+            "500": { content: content(["text/plain", "application/problem+json"]) },
+            "503": { content: content(["text/plain", "text/html"]) },
+          },
+        },
+      },
+    },
+  });
+  expect(spelled.operations[0]!.responses.map((response) => response.contentType)).toEqual(["Application/JSON; charset=utf-8", "application/json", "application/problem+json", "text/plain"]);
+});
+
+test("responses: each status, with the spec's example or one made from the schema", () => {
+  const doc = read(JSON.stringify(fixture));
+  expect(operation(doc, "POST /posts").responses.map((response) => [response.status, response.description, response.contentType, response.schema?.type, response.example])).toEqual([
+    [
+      "201",
+      "The post.",
+      "application/json",
+      "Post",
+      {
+        number: 1,
+        title: "string",
+        status: "open",
+        author: { id: "00000000-0000-0000-0000-000000000000", email: "ada@example.com", team: { name: "string", owner: { plan: "string" } } },
+        tags: ["string"],
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ],
+    ["422", "Not valid.", "application/json", "Error", { message: "title is required" }],
+    ["400", "What went wrong.", "application/json", "Error", { message: "string", code: 0 }],
+  ]);
+  expect(operation(doc, "GET /posts/{}").responses[1]).toEqual({ status: "404", description: "No such post.", contentType: null, schema: null });
+  expect(operation(doc, "GET /health").responses).toEqual([{ status: "200", description: "Up.", contentType: "text/plain", schema: { type: "string" }, example: "string" }]);
+  // A list that holds itself stops there.
+  expect(operation(doc, "GET /posts/{}/comments").responses[0]!.example).toEqual([
+    { id: "string", body: "string", author: { id: "00000000-0000-0000-0000-000000000000", email: "ada@example.com", team: { name: "string", owner: { plan: "string" } } }, replies: [] },
+  ]);
+
+  const statuses = spec({
+    paths: {
+      "/a": {
+        get: {
+          summary: "A",
+          responses: {
+            default: { description: "d" },
+            "2xx": { description: "any" },
+            "404 Not Found": { description: "nf" },
+            " 500": { description: "boom" },
+            "20": { description: "short" },
+            "2000": { description: "long" },
+            ok: { description: "word" },
+            "200": {
+              description: "ok",
+              content: { "text/plain": {}, "application/json": { schema: { type: "object", example: { from: "schema" } }, examples: { first: { $ref: "#/components/examples/First" }, second: { value: 2 } } } },
+            },
+            "201": json({ type: "object", example: { from: "schema" }, properties: { a: { type: "string" } } }),
+            "202": { content: { "application/json": {} } },
+          },
+        },
+      },
+    },
+    components: { examples: { First: { value: { from: "examples" } } } },
+  });
+  expect(statuses.operations[0]!.responses.map((response) => [response.status, response.description, response.example])).toEqual([
+    ["200", "ok", { from: "examples" }],
+    ["201", "", { from: "schema" }],
+    ["202", "", undefined],
+    ["default", "d", undefined],
+    ["2XX", "any", undefined],
+    ["404", "nf", undefined],
+    ["500", "boom", undefined],
+  ]);
+  expect(codes(statuses)).toEqual([
+    "RESPONSE_SKIPPED @ GET /a › responses › 20",
+    "RESPONSE_SKIPPED @ GET /a › responses › 2000",
+    "STATUS_GUESSED @ GET /a › responses › 404 Not Found",
+    "STATUS_GUESSED @ GET /a › responses ›  500",
+    "RESPONSE_SKIPPED @ GET /a › responses › ok",
+  ]);
+});
+
+test("how an operation is signed: its own security, else the spec's", () => {
+  const doc = read(JSON.stringify(fixture));
+  expect(operation(doc, "GET /posts").auth).toEqual([["bearer"]]);
+  expect(operation(doc, "POST /posts").auth).toEqual([["bearer"], ["apiKey", "workspace"]]);
+  expect(operation(doc, "GET /health").auth).toEqual([]);
+  expect(operation(doc, "DELETE /posts/{}")).toMatchObject({ deprecated: true, servers: [{ url: "https://admin.acme.example", description: "" }] });
+  expect(operation(doc, "GET /posts")).not.toHaveProperty("servers");
+  expect(operation(doc, "GET /posts").deprecated).toBe(false);
+
+  const schemes = spec({
+    security: [{ token: [] }],
+    paths: {
+      "/a": {
+        servers: [{ url: "https://path.example" }],
+        get: { summary: "A", responses: {} },
+        // Its one way is a scheme the reference doesn't show: left out, with a warning.
+        put: { summary: "C", security: [{ digest: [] }], responses: {} },
+        post: { summary: "B", security: [{}, { ghost: [] }, { tls: [], token: [] }, { oauth: ["read"] }], servers: [{ url: "https://own.example" }], responses: {} },
+      },
+    },
+    components: {
+      securitySchemes: {
+        token: { type: "http", scheme: "Bearer" },
+        login: { type: "http", scheme: "basic" },
+        digest: { type: "http", scheme: "digest" },
+        inQuery: { type: "apiKey", in: "query", name: "api_key" },
+        inCookie: { $ref: "#/components/securitySchemes/session" },
+        session: { type: "apiKey", in: "cookie", name: "sid", description: "The browser's." },
+        nameless: { type: "apiKey", in: "header" },
+        oauth: { type: "oauth2", flows: {} },
+        oidc: { type: "openIdConnect", openIdConnectUrl: "https://example.com/.well-known/openid-configuration" },
+        tls: { type: "mutualTLS" },
+      },
+    },
+  });
+  expect(schemes.auth.map((one) => [one.key, one.kind, one.name])).toEqual([
+    ["token", "bearer", "Authorization"],
+    ["login", "basic", "Authorization"],
+    ["inQuery", "query", "api_key"],
+    ["inCookie", "cookie", "sid"],
+    ["session", "cookie", "sid"],
+    ["oauth", "oauth2", "Authorization"],
+    ["oidc", "openIdConnect", "Authorization"],
+  ]);
+  expect(schemes.operations.map((one) => [one.auth, one.servers?.[0]?.url])).toEqual([
+    [[["token"]], "https://path.example"],
+    [[], "https://path.example"],
+    [[[], ["oauth"]], "https://own.example"],
+  ]);
+  expect(codes(schemes)).toEqual([
+    "UNSUPPORTED_AUTH @ securitySchemes › digest",
+    "UNSUPPORTED_AUTH @ securitySchemes › nameless",
+    "UNSUPPORTED_AUTH @ securitySchemes › tls",
+    "SECURITY_SKIPPED @ PUT /a › security",
+    "UNKNOWN_SECURITY @ POST /a › security › ghost",
+    "SECURITY_SKIPPED @ POST /a › security",
+  ]);
+});
+
+test("schemas read as types, limits in words", () => {
+  const { schema } = schemaOf(
+    {
+      type: "object",
+      required: ["name", "age"],
+      properties: {
+        name: { type: "string", minLength: 3, maxLength: 200, pattern: "^\\w+$", description: "Its **name**." },
+        age: { type: "integer", format: "int32", minimum: 0, exclusiveMinimum: true, maximum: 150 },
+        score: { type: "number", exclusiveMinimum: 0, exclusiveMaximum: 10, multipleOf: 0.5 },
+        code: { type: "string", minLength: 6, maxLength: 6 },
+        one: { type: "string", minLength: 1 },
+        tags: { type: "array", items: { type: "string" }, minItems: 1, uniqueItems: true },
+        posts: { type: "array", items: ref("Post"), maxItems: 50 },
+        grid: { type: "array", items: { type: "array", items: { type: "number" } } },
+        old3: { type: "string", nullable: true, deprecated: true },
+        new31: { type: ["integer", "null"], default: null },
+        either: { type: ["string", "integer"] },
+        level: { enum: [1, 2, null], default: 1 },
+        fixed: { const: "v1" },
+        labels: { type: "object", additionalProperties: { type: "string" }, maxProperties: 5 },
+        open: {},
+        yes: true,
+        id: { type: "string", readOnly: true },
+        password: { type: "string", writeOnly: true },
+        implied: { properties: { a: { type: "boolean" } } },
+        list: { items: { type: "string" } },
+      },
+    },
+    { Post: { type: "object", properties: { title: { type: "string" } } } },
+  );
+  const fields = Object.fromEntries(schema.properties!.map(({ name, ...rest }) => [name, rest]));
+  expect(fields).toEqual({
+    name: { required: true, type: "string", constraints: "3–200 characters, matches ^\\w+$", description: "Its **name**." },
+    age: { required: true, type: "integer", format: "int32", constraints: "at most 150, more than 0" },
+    score: { required: false, type: "number", constraints: "more than 0, less than 10, a multiple of 0.5" },
+    code: { required: false, type: "string", constraints: "exactly 6 characters" },
+    one: { required: false, type: "string", constraints: "at least 1 character" },
+    tags: { required: false, type: "array of string", items: { type: "string" }, constraints: "at least 1 item, no two items the same" },
+    posts: {
+      required: false,
+      type: "array of Post",
+      items: { type: "Post", ref: "Post", properties: [{ name: "title", required: false, type: "string" }] },
+      constraints: "at most 50 items",
+    },
+    grid: { required: false, type: "array of array of number", items: { type: "array of number", items: { type: "number" } } },
+    old3: { required: false, type: "string", nullable: true, deprecated: true },
+    new31: { required: false, type: "integer", nullable: true, default: null },
+    either: { required: false, type: "string or integer" },
+    level: { required: false, type: "number", nullable: true, enum: [1, 2, null], default: 1 },
+    fixed: { required: false, type: "string", enum: ["v1"] },
+    labels: { required: false, type: "map of string", constraints: "at most 5 fields" },
+    open: { required: false, type: "any" },
+    yes: { required: false, type: "any" },
+    id: { required: false, type: "string", constraints: "read-only" },
+    password: { required: false, type: "string", constraints: "write-only" },
+    implied: { required: false, type: "object", properties: [{ name: "a", required: false, type: "boolean" }] },
+    list: { required: false, type: "array of string", items: { type: "string" } },
+  });
+});
+
+test("allOf is one schema; oneOf and anyOf are choices; a choice of null is nullable", () => {
+  const schemas = {
+    Base: { type: "object", description: "The base.", required: ["id"], properties: { id: { type: "string" }, kind: { type: "string" } } },
+    Cat: { allOf: [ref("Base"), { required: ["kind"], properties: { kind: { type: "string", enum: ["cat"] }, lives: { type: "integer" } } }], description: "A cat." },
+    Dog: { allOf: [ref("Base"), { allOf: [{ properties: { barks: { type: "boolean" } } }] }] },
+    Pet: { oneOf: [ref("Cat"), ref("Dog")] },
+  };
+  const { schema, example, doc } = schemaOf(
+    {
+      type: "object",
+      properties: {
+        pet: ref("Pet"),
+        maybe: { anyOf: [ref("Dog"), { type: "null" }], description: "A dog, if any." },
+        mixed: { oneOf: [{ type: "string" }, { type: "integer" }, { type: "null" }] },
+      },
+    },
+    schemas,
+  );
+  const [pet, maybe, mixed] = schema.properties!;
+  expect(pet).toMatchObject({ type: "Pet", ref: "Pet", oneOf: [{ type: "Cat", ref: "Cat", description: "A cat." }, { type: "Dog", ref: "Dog", description: "The base." }] });
+  expect(pet!.oneOf![0]!.properties).toEqual([
+    { name: "id", required: true, type: "string" },
+    { name: "kind", required: true, type: "string", enum: ["cat"] },
+    { name: "lives", required: false, type: "integer" },
+  ]);
+  expect(pet!.oneOf![1]!.properties!.map((property) => property.name)).toEqual(["id", "kind", "barks"]);
+  expect(maybe).toMatchObject({ type: "Dog", ref: "Dog", nullable: true, description: "A dog, if any." });
+  expect(mixed).toEqual({ name: "mixed", required: false, type: "string or integer", nullable: true, oneOf: [{ type: "string" }, { type: "integer" }] });
+  expect(example).toEqual({ pet: { id: "string", kind: "cat", lives: 0 }, maybe: { id: "string", kind: "string", barks: true }, mixed: "string" });
+  expect(doc.types.map((type) => [type.name, type.kind, type.schema.type])).toEqual([
+    ["Base", "object", "object"],
+    ["Cat", "object", "object"],
+    ["Dog", "object", "object"],
+    ["Pet", "union", "Cat or Dog"],
+  ]);
+});
+
+test("a named schema is spelled out where it's first met and two levels down, and never inside itself", () => {
+  const doc = read(JSON.stringify(fixture));
+  const names = (schema: ApiSchema | undefined) => schema?.properties?.map((property) => property.name);
+  const field = (schema: ApiSchema | undefined, name: string) => schema?.properties?.find((property) => property.name === name);
+
+  // In an operation: Comment, its User and that User's Team; the Team's Account is only named.
+  const comment = operation(doc, "POST /posts/{}/comments").responses[0]!.schema!;
+  expect(comment).toMatchObject({ type: "Comment", ref: "Comment" });
+  expect(names(comment)).toEqual(["id", "body", "author", "replies"]);
+  const team = field(field(comment, "author"), "team");
+  expect(names(team)).toEqual(["name", "owner"]);
+  expect(field(team, "owner")).toEqual({ name: "owner", required: false, type: "Account", ref: "Account" });
+  // Itself, in itself: only named.
+  expect(field(comment, "replies")).toEqual({ name: "replies", required: false, type: "array of Comment", items: { type: "Comment", ref: "Comment" } });
+
+  // On its own page it's the first met: its kind of value as the type, and the same two levels.
+  const page = doc.types.find((type) => type.name === "Comment")!.schema;
+  expect(page).toMatchObject({ type: "object", ref: "Comment" });
+  expect(field(field(field(page, "author"), "team"), "owner")).toEqual({ name: "owner", required: false, type: "Account", ref: "Account" });
+  expect(field(page, "replies")!.items).toEqual({ type: "Comment", ref: "Comment" });
+  expect(doc.types.find((type) => type.name === "Status")!.schema).toEqual({ type: "string", ref: "Status", enum: ["open", "planned", "done"], default: "open" });
+
+  // An unnamed schema under a named one counts no level.
+  const { schema } = schemaOf(ref("A"), {
+    A: { type: "object", properties: { b: { type: "object", properties: { deep: { type: "array", items: ref("B") } } } } },
+    B: { type: "object", properties: { c: ref("C") } },
+    C: { type: "object", properties: { d: ref("D") } },
+    D: { type: "object", properties: { e: { type: "string" } } },
+  });
+  const c = field(field(field(schema, "b"), "deep")!.items, "c");
+  expect(c).toMatchObject({ type: "C", ref: "C", properties: [{ name: "d", required: false, type: "D", ref: "D" }] });
+});
+
+test("a spec whose schemas fan out without end is read in bounded time, with a warning", () => {
+  const wide = (to: string) => ({ type: "object", properties: Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`f${index}`, ref(to)])) });
+  const inline = (levels: number): object => (levels === 0 ? { type: "string" } : { type: "object", properties: { a: inline(levels - 1), b: inline(levels - 1) } });
+  const doc = spec({
+    paths: { "/a": { get: { summary: "Wide", responses: { "200": json(ref("A")), "201": json(inline(12)) } } } },
+    components: { schemas: { A: wide("B"), B: wide("C"), C: wide("D"), D: wide("A") } },
+  });
+  expect(JSON.stringify(doc).length).toBeLessThan(3_000_000);
+  expect(doc.operations[0]!.responses[0]!.schema!.properties).toHaveLength(60);
+  expect(codes(doc)).toEqual(["SCHEMA_TOO_LARGE @ GET /a › responses › 201"]);
+});
+
+test("a schema with more fields than fit is cut short, however often it's used", () => {
+  const names = Array.from({ length: 10_000 }, (_, index) => `f${index}`);
+  const big = { type: "object", required: names, properties: Object.fromEntries(names.map((name) => [name, {}])) };
+  const paths = Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`/p${index}`, { get: { summary: `P${index}`, responses: { "200": json(ref("Big")) } } }]));
+  const doc = spec({ paths, components: { schemas: { Big: big } } });
+  const response = doc.operations[19]!.responses[0]!;
+  expect(response.schema!.properties!.length).toBeLessThanOrEqual(4_000);
+  expect(Object.keys(response.example as object).length).toBeLessThanOrEqual(4_000);
+  expect(response.schema!.properties![0]).toEqual({ name: "f0", required: true, type: "any" });
+  expect(JSON.stringify(doc).length).toBeLessThan(6_000_000);
+  expect(codes(doc)).toContain("SCHEMA_TOO_LARGE @ schemas › Big");
+  expect(codes(doc)).toContain("SCHEMA_TOO_LARGE @ GET /p19 › responses › 200");
+});
+
+test("after many large types, an operation's own schemas are still read", () => {
+  const schemas = Object.fromEntries(
+    Array.from({ length: 150 }, (_, index) => [`S${index}`, { type: "object", properties: Object.fromEntries(Array.from({ length: 30 }, (_, field) => [`f${field}`, ref(`S${(index + 1) % 150}`)])) }]),
+  );
+  const doc = spec({
+    paths: { "/a": { get: { summary: "A", parameters: [{ name: "limit", in: "query", schema: { type: "integer" } }], responses: { "200": json({ type: "object", properties: { id: { type: "string" }, first: ref("S0") } }) } } } },
+    components: { schemas },
+  });
+  const [get] = doc.operations;
+  expect(get!.params[0]!.schema).toEqual({ type: "integer" });
+  expect(get!.responses[0]!.schema!.properties!.slice(0, 2)).toMatchObject([{ name: "id", type: "string" }, { name: "first", type: "S0", ref: "S0" }]);
+  expect(get!.responses[0]!.example).toMatchObject({ id: "string" });
+  expect(doc.types).toHaveLength(150);
+  // The last types, read once the doc's room is spent, still list their fields.
+  expect(doc.types[149]!.schema.properties).toHaveLength(30);
+  expect(doc.types[149]!.schema.properties![29]).toMatchObject({ name: "f29", type: "S0", ref: "S0" });
+});
+
+test("a spec that's too large once read is an error", () => {
+  const paths = Object.fromEntries(
+    Array.from({ length: 200 }, (_, index) => [`/p${index}`, { get: { summary: `P${index}`, responses: { "200": json({ type: "string" }, { examples: { one: { $ref: "#/components/examples/Big" } } }) } } }]),
+  );
+  expect(errorOf(JSON.stringify({ openapi: "3.0.0", paths, components: { examples: { Big: { value: "x".repeat(400_000) } } } }))).toMatch(/too large once its references are followed/);
+});
+
+test("servers: a relative address is kept as written, with a warning; none is none", () => {
+  const doc = spec({
+    servers: [{ url: "/v1" }, { url: "https://api.example.com" }, { url: "{scheme}://api.example.com", variables: { scheme: { default: "https" } } }, { url: "v2", description: "Beta" }, { description: "No address." }],
+    paths: { "/a": { get: { summary: "A", servers: [{ url: "/files" }], responses: {} } } },
+  });
+  expect(doc.servers).toEqual([
+    { url: "/v1", description: "" },
+    { url: "https://api.example.com", description: "" },
+    { url: "{scheme}://api.example.com", description: "", variables: { scheme: { default: "https", description: "" } } },
+    { url: "v2", description: "Beta" },
+  ]);
+  expect(doc.operations[0]!.servers).toEqual([{ url: "/files", description: "" }]);
+  expect(codes(doc)).toEqual(["RELATIVE_SERVER @ GET /a › servers › /files", "RELATIVE_SERVER @ servers › /v1", "RELATIVE_SERVER @ servers › v2"]);
+
+  const port = read("openapi: 3.0.0\nservers:\n  - url: https://api.example.com:{port}\n    variables:\n      port: { default: 8443, enum: [8443, 443] }\n");
+  expect(port.servers).toEqual([{ url: "https://api.example.com:{port}", description: "", variables: { port: { default: "8443", enum: ["8443", "443"], description: "" } } }]);
+
+  const none = spec({ paths: { "/a": { get: { summary: "A", responses: {} } } } });
+  expect(none.servers).toEqual([]);
+  expect(none.warnings).toEqual([]);
+  expect(none.operations[0]).not.toHaveProperty("servers");
+});
+
+test("many operations that each spell out one wide schema stop the read early", () => {
+  const wide = { type: "object", properties: Object.fromEntries(Array.from({ length: 150 }, (_, index) => [`f${index}`, { type: "string" }])) };
+  const paths = Object.fromEntries(Array.from({ length: 6_000 }, (_, index) => [`/${index}`, { get: { responses: { "200": { $ref: "#/components/responses/R" } } } }]));
+  const text = JSON.stringify({ openapi: "3.0.0", paths, components: { responses: { R: json(ref("S")) }, schemas: { S: wide } } });
+  expect(text.length).toBeLessThan(600_000);
+  expect(errorOf(text)).toMatch(/too large once its references are followed/);
+}, 30_000);
+
+test("what's left out is warned about", () => {
+  const doc = spec({
+    webhooks: { created: { post: { responses: {} } } },
+    paths: { "/a": { post: { summary: "A", callbacks: { done: {} }, responses: {} } }, "users/{id}": { get: { summary: "B", responses: {} } }, "x-internal": {} },
+  });
+  expect(doc.operations).toHaveLength(1);
+  expect(doc.warnings).toEqual([
+    { code: "CALLBACKS_SKIPPED", message: "An operation's callbacks were left out.", where: "POST /a" },
+    { code: "PATH_SKIPPED", message: "A path doesn't start with a slash, so it and its operations were left out.", where: "users/{id}" },
+    { code: "WEBHOOKS_SKIPPED", message: "The spec's webhooks were left out.", where: "webhooks" },
+  ]);
+  for (const warning of doc.warnings) expect(warning.code).toMatch(/^[A-Z]+(_[A-Z]+)*$/);
+});
