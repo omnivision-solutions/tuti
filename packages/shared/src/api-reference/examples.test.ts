@@ -127,10 +127,11 @@ describe("exampleRequest: where it goes", () => {
           param({ name: "limit", in: "query", schema: { type: "integer", default: 20 } }),
           param({ name: "filter", in: "query", schema: { type: "Filter" } }),
           param({ name: "page", in: "query", required: false, example: 2 }),
+          param({ name: "range", in: "query", example: { from: "2026-01-01", to: "2026-02-01" } }),
         ],
       }),
     );
-    expect(request.url).toBe("https://api.acme.test/v1/posts?q=a%26b%3Dc%20d&tag%5B%5D=x&tag%5B%5D=y%20z&limit=20&filter={filter}");
+    expect(request.url).toBe("https://api.acme.test/v1/posts?q=a%26b%3Dc%20d&tag%5B%5D=x&tag%5B%5D=y%20z&limit=20&filter={filter}&from=2026-01-01&to=2026-02-01");
   });
 
   it("sends required header parameters as headers", () => {

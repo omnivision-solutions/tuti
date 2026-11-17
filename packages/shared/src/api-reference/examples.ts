@@ -67,6 +67,9 @@ export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: Ex
       if (param.in !== "query") continue;
       if (value === undefined) query.push([param.name, text]);
       // An array is the parameter once per item, as OpenAPI sends one unless told otherwise.
+      // And an object is a parameter per field, under the field's name.
+      else if (typeof value === "object" && value !== null && !Array.isArray(value))
+        for (const [field, item] of Object.entries(value)) query.push([field, encodeURIComponent(asText(item))]);
       else for (const item of Array.isArray(value) ? value : [value]) query.push([param.name, encodeURIComponent(asText(item))]);
     }
     // Not on GET or HEAD: fetch, and so the console, refuses a body there.
