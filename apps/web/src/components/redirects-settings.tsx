@@ -92,11 +92,11 @@ function RedirectRow({ projectSlug, redirect }: { projectSlug: string; redirect:
           <code className="break-all">{redirect.to}</code>
         </span>
       </span>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <Button variant="ghost" size="sm" aria-label={`Delete the redirect from ${redirect.from}`} onClick={() => setOpen(true)}>
+      <AlertDialog open={open} onOpenChange={(next) => (next || !pending) && setOpen(next)}>
+        <Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete the redirect from ${redirect.from}`} onClick={() => setOpen(true)}>
           Delete
         </Button>
-        <AlertDialogContent>
+        <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this redirect?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -104,7 +104,7 @@ function RedirectRow({ projectSlug, redirect }: { projectSlug: string; redirect:
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
             <Button
               variant="destructive"
               disabled={pending}
