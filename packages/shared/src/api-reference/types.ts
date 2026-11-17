@@ -34,7 +34,7 @@ export type ApiAuth = {
 };
 
 export type ApiGroup = {
-  /** Its name as a slug: what the team's order and switches go by. */
+  /** Its name as a slug: what the team's order and switches go by. No two in a doc share one (the later gets a number). */
   key: string;
   name: string;
   /** Markdown. */
@@ -47,7 +47,11 @@ export type ApiOperation = {
    * "mutation createPost". Not its slug, which follows its title.
    */
   key: string;
-  /** Its page's address under the reference; no two in a doc share one. */
+  /**
+   * Its page's address under the reference, from its title; no operation or type in a doc shares
+   * one. A reader only proposes it: an operation the reference has seen before (by `key`) keeps the
+   * slug it first had, so rewording a summary moves no page.
+   */
   slug: string;
   /** Its group's key. */
   group: string;
