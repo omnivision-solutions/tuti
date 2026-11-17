@@ -23,7 +23,7 @@ import { ArticleHistory } from "@/components/article-history";
 import { ArticleVerify } from "@/components/article-verify";
 import { ArticleTools } from "@/components/article-tools";
 import { DocsMore, DocsPageHeader } from "@/components/docs-page-header";
-import { buttonVariants } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDay, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
@@ -340,10 +340,10 @@ export default async function ArticlePage(
                 )}
                 <DocsMore>
                   {article.publishedAt && listing !== "hidden" && listing !== "ai_only" && (
-                    <Link href={url} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                    <DropdownMenuItem render={<Link href={url} target="_blank" rel="noreferrer" />}>
                       <ExternalLinkIcon />
                       View on help center
-                    </Link>
+                    </DropdownMenuItem>
                   )}
                   {article.publishedAt !== null && (
                     <ArticleActions

@@ -70,7 +70,7 @@ test("the team writes an article's how-to as numbered steps, and a visitor follo
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
   // Unpublish is behind "More actions", with Delete.
   await team.getByRole("button", { name: "More actions" }).click();
-  await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await expect(team.getByRole("menuitem", { name: "Unpublish" })).toBeVisible();
   await team.keyboard.press("Escape");
 
   // On the portal: a list of numbered steps, each its title and body.

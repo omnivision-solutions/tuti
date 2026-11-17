@@ -1,58 +1,30 @@
 "use client";
 
-import { cn } from "cn";
 import { BookOpenIcon, EllipsisIcon, ExternalLinkIcon } from "lucide-react";
-import { createContext, type ReactNode, type RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, type RefObject, useCallback, useContext, useRef, useState } from "react";
 import { IconTooltip } from "@/components/icon-tooltip";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 import { PaneHeader } from "@/components/pane";
 
 const DocsMoreFocus = createContext<RefObject<HTMLButtonElement | null> | undefined>(undefined);
 export const useDocsMoreFocus = () => useContext(DocsMoreFocus);
 
-export function DocsMore({ children, className }: { children: ReactNode; className?: string }) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
+/** A Docs header's "More actions": the shared menu, kept mounted so its rows' dialogs outlive it closing (as ConversationMore). */
+export function DocsMore({ children, className, onOpenChange }: { children: ReactNode; className?: string; onOpenChange?: (open: boolean) => void }) {
   const toggle = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        toggle.current?.focus();
-        event.stopPropagation();
-      }
-    };
-    document.addEventListener("pointerdown", outside);
-    root.current?.addEventListener("keydown", escape);
-    const element = root.current;
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      element?.removeEventListener("keydown", escape);
-    };
-  }, [open]);
   return (
-    <div ref={root} className={cn("docs-more relative text-[13px]", className)}>
-      <IconTooltip label="More actions"><Button ref={toggle} type="button" variant="outline" size="icon-sm" aria-label="More actions" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <EllipsisIcon className="size-4" />
-      </Button></IconTooltip>
-      <div
-        hidden={!open}
-        className="docs-more-menu absolute right-[0] top-[100%] z-30 flex flex-col items-stretch w-55 p-1.25 border border-border rounded-[10px] bg-popover shadow-[0_10px_32px_color-mix(in_oklch,_var(--foreground)_14%,_transparent)] [&_>_*]:justify-start"
-        onClick={(event) => {
-          if ((event.target as Element).closest("a, button")) {
-            setOpen(false);
-            toggle.current?.focus();
-          }
-        }}
-      >
+    <DropdownMenu modal={false} onOpenChange={onOpenChange}>
+      <IconTooltip label="More actions">
+        <DropdownMenuTrigger render={<Button ref={toggle} type="button" variant="outline" size="icon-sm" aria-label="More actions" className={className} />}>
+          <EllipsisIcon className="size-4" />
+        </DropdownMenuTrigger>
+      </IconTooltip>
+      <DropdownMenuContent align="end" keepMounted className="w-auto min-w-44">
         <DocsMoreFocus.Provider value={toggle}>{children}</DocsMoreFocus.Provider>
-      </div>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -110,6 +82,9 @@ export function DocsPageHeader({
       pane.style.removeProperty("--docs-header-height");
     };
   }, []);
+  // The menu opens outside the pane, so the pane's width can't hide its "View on help center": it's there when the header's own is hidden.
+  const liveLink = useRef<HTMLAnchorElement>(null);
+  const [inMenu, setInMenu] = useState(true);
   return (
     // What it shows follows its page's pane (`@container/docs-page`), not the window: the tree's width counts. The pills get a
     // row of their own under the title, the description goes in a narrow pane, and so do the actions' words.
@@ -128,7 +103,7 @@ export function DocsPageHeader({
           <>
             <DocsBrowseButton />
             {helpCenter && (
-              <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", className: "docs-live-link @max-[44rem]/docs-page:hidden" })}>
+              <a ref={liveLink} href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", className: "docs-live-link @max-[44rem]/docs-page:hidden" })}>
                 <ExternalLinkIcon />
                 View on help center
               </a>
@@ -136,12 +111,12 @@ export function DocsPageHeader({
             {actions}
             {(more || helpCenter) && (
               // With only the help center in it, the menu is for phones.
-              <DocsMore className={more ? undefined : "@min-[44rem]/docs-page:hidden"}>
-                {helpCenter && (
-                  <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm", className: "@min-[44rem]/docs-page:hidden" })}>
+              <DocsMore className={more ? undefined : "@min-[44rem]/docs-page:hidden"} onOpenChange={(open) => open && setInMenu(!liveLink.current?.checkVisibility())}>
+                {helpCenter && inMenu && (
+                  <DropdownMenuItem render={<a href={helpCenter} target="_blank" rel="noreferrer" />}>
                     <ExternalLinkIcon />
                     View on help center
-                  </a>
+                  </DropdownMenuItem>
                 )}
                 {more}
               </DocsMore>

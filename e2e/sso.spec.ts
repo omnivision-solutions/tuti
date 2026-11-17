@@ -320,7 +320,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await expect(owner.getByText("Settings saved")).toBeVisible();
   // Unpublishing (behind "More actions") asks first; publishing again says who can read it.
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Unpublish" }).click();
+  await owner.getByRole("menuitem", { name: "Unpublish" }).click();
   const unpublishing = owner.getByRole("alertdialog", { name: "Unpublish “Pricing”?" });
   await expect(unpublishing).toContainText("Until you publish it again, readers can't open it and AI answers don't use it.");
   await checkpoint(owner, "team-docs-article-unpublish", { fullPage: false });

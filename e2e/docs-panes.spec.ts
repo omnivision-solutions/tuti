@@ -67,7 +67,7 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
     if ((await moreActions.getAttribute("aria-expanded")) !== "true") await moreActions.click();
     await expect(moreActions).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass();
-  await expect(header.getByRole("link", { name: "View on help center", exact: true })).toHaveText("View on help center");
+  await expect(team.getByRole("menuitem", { name: "View on help center", exact: true })).toHaveText("View on help center");
   await moreActions.click();
   await header.getByRole("button", { name: "Browse docs", exact: true }).click();
   const tree = team.getByRole("dialog", { name: "Docs navigation", exact: true });
