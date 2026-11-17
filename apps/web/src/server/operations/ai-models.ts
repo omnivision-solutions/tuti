@@ -63,13 +63,14 @@ function overCap(level: AiLevel, listed: Map<string, AiModelListing> | null): st
   return (listed && models.find((id) => !listed.has(id) || !withinModelCap(listed.get(id)!))) ?? null;
 }
 
-export async function aiModels(projectId: string): Promise<AiModels> {
+/** `known`: the endpoint's models where the caller has just listed them, so they aren't asked for twice. */
+export async function aiModels(projectId: string, known?: Map<string, AiModelListing>): Promise<AiModels> {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
   const picked = projectModels(project.aiModels);
   const saved = projectLevels(project);
   const mayPick = offeredLevels().filter((level) => planAllowsLevel(project.plan, level));
   // Under a price cap, a level with a model over it isn't offered. The endpoint is asked only then; if it can't be, those levels are left out.
-  const listed = modelMaxPrice() !== null && mayPick.some((level) => level === "affordable" || level === "best") ? await listedModels(projectId).catch(() => new Map<string, AiModelListing>()) : null;
+  const listed = modelMaxPrice() !== null && mayPick.some((level) => level === "affordable" || level === "best") ? (known ?? (await listedModels(projectId).catch(() => new Map<string, AiModelListing>()))) : null;
   const available = mayPick.filter((level) => overCap(level, listed) === null);
   return {
     ...Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, { model: picked[role] ?? null, default: roleDefaultModel(role), used: roleModel(project, role) }])),
@@ -126,8 +127,9 @@ export const updateAiModels = defineOperation({
     }
     // A level's models are checked against the server's price cap like a model picked.
     const rowLevels = [...new Set(Object.values(levels))].filter((level) => level === "affordable" || level === "best");
+    let known: Map<string, AiModelListing> | undefined;
     if (chosen.some(([, id]) => id !== "off") || (modelMaxPrice() !== null && rowLevels.length > 0)) {
-      const listed = await listedModels(projectId);
+      const listed = (known = await listedModels(projectId));
       for (const [pick, id] of chosen.filter(([, id]) => id !== "off")) {
         const model = listed.get(id);
         if (!model) {
@@ -153,6 +155,6 @@ export const updateAiModels = defineOperation({
     const set = JSON.stringify(Object.fromEntries(chosen));
     const unset = picked.filter(([, model]) => model === "").map(([feature]) => feature);
     await prisma.$executeRaw`UPDATE "project" SET "aiModels" = ("aiModels" || ${set}::jsonb) - ${unset}::text[], "aiLevels" = "aiLevels" || ${JSON.stringify(levels)}::jsonb WHERE "id" = ${projectId}`;
-    return aiModels(projectId);
+    return aiModels(projectId, known);
   },
 });

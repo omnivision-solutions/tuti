@@ -24,13 +24,12 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
     notFound();
   }
   const { project } = membership;
-  const [models, all] = await Promise.all([
-    aiModels(project.id),
-    listModels().catch((error: unknown) => {
-      log.warn("Listing the AI models failed", { projectId: project.id, error });
-      return [];
-    }),
-  ]);
+  const all = await listModels().catch((error: unknown) => {
+    log.warn("Listing the AI models failed", { projectId: project.id, error });
+    return [];
+  });
+  // The list just read also says which levels the server's price cap leaves (asked for once).
+  const models = await aiModels(project.id, new Map(all.map((model) => [model.id, model])));
   // Only suggestions: without them a model id can still be typed (and is checked when saved).
   const listed = all.filter(withinModelCap);
   const cap = modelMaxPrice();
