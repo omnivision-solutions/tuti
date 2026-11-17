@@ -34,7 +34,7 @@ const dayLabel = (day: string) => formatDay(new Date(`${day}T00:00:00Z`));
 export const searchesSince = (day: string | null) => (day ? `Since ${dayLabel(day)}` : null);
 
 const monthLabel = (day: string, month: "short" | "long") =>
-  new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { month, year: "numeric", timeZone: "UTC" });
+  new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { month, year: "numeric", timeZone: "UTC" });
 
 /**
  * A report page: a pane titled by the report, the date range picker in its header (the ranges the plan doesn't have, `locked`, shown but

@@ -476,6 +476,9 @@ export function ImageField({
 }
 
 
+/** The licence's line, and the start of the toast when a check finds one: one wording and one date for both. */
+const licensedLine = (until: Date) => `Licensed until ${formatDate(until)}.`;
+
 /**
  * "Powered by tuti" in the footer: on, unless the project has a licence (or the add-on on its plan).
  * Without one, switching it off opens a dialog instead: why the badge matters, and where to buy a licence
@@ -523,7 +526,7 @@ function PoweredByField({
     setLicensedUntil(outcome.licensedUntil);
     setShown(false);
     setOpen(false);
-    toast.success(`Licensed until ${formatDate(outcome.licensedUntil)}. Save your changes to hide the badge.`);
+    toast.success(`${licensedLine(outcome.licensedUntil)} Save your changes to hide the badge.`);
   };
 
   return (
@@ -550,7 +553,7 @@ function PoweredByField({
             ? <>The add-on is still on this project&apos;s plan: remove it in <Link href={plan.billingUrl}>Billing</Link>.</>
             : "Hidden with the add-on on this project's plan."
           : licensedUntil
-            ? `Licensed until ${formatDate(licensedUntil)}.`
+            ? licensedLine(licensedUntil)
             : plan
               ? "Hiding it is an add-on to a paid plan."
               : "Hiding it needs a licence for this project."}
