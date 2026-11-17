@@ -1289,6 +1289,9 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await expect(boardMenu.getByRole("menuitem")).toHaveCount(12);
   await expect(boardMenu.getByRole("menuitem").first()).toHaveText("All boards");
   await expect(boardMenu.getByRole("menuitem", { name: /^Integrations and the public API/ })).toHaveAttribute("aria-current", "page");
+  // The board you're on carries the status menu's check; the others don't.
+  await expect(boardMenu.getByRole("menuitem", { name: /^Integrations and the public API/ }).locator("svg.lucide-check")).toBeVisible();
+  await expect(boardMenu.getByRole("menuitem", { name: /^More ideas 4/ }).locator("svg.lucide-check")).toBeHidden();
   await checkpoint(visitor, "portal-board-switcher-phone", { fullPage: false });
   await boardMenu.getByRole("menuitem", { name: /^More ideas 4/ }).click();
   await visitor.waitForURL(/\/feedback\/more-4$/);

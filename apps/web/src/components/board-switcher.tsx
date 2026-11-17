@@ -2,7 +2,7 @@
 
 import { focusClearOfFade, SCROLLING_ROW, showMore, wheelSideways } from "@tuti/ui/scrolling-row";
 import { cn } from "cn";
-import { ChevronDownIcon, LayoutListIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, LayoutListIcon } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useEffect, useRef } from "react";
 
@@ -37,6 +37,7 @@ export function BoardSwitcher({
           <DropdownMenuItem key={board.href} render={<Link href={board.href} aria-current={board.current ? "page" : undefined} />}>
             {board.name}
             <span className="ml-auto pl-4 text-xs text-muted-foreground tabular-nums">{board.count}</span>
+            <CheckIcon aria-hidden className={board.current ? "text-primary" : "invisible"} />
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
