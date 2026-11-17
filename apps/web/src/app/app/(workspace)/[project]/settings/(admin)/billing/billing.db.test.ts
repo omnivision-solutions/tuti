@@ -4,6 +4,7 @@ import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPl
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
+import { formatDate } from "@/lib/format";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import BillingSettingsPage from "./page";
@@ -142,7 +143,7 @@ test("on a license, the card says what's left of the license's emails for its mo
   await prisma.project.update({ where: { id: projectId }, data: { plan: "pro" } });
   await grantLicenseCredits(license.id);
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
-  const until = creditsThrough!.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const until = formatDate(creditsThrough!);
   expect(await billing()).toContain(`10,000 of the license's 10,000 emails left until ${until}`);
   expect(await claimProjectEmail(projectId)).toBe(true);
   expect(await billing()).toContain(`9,999 of the license's 10,000 emails left until ${until}`);

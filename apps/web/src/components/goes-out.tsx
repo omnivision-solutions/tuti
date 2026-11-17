@@ -13,7 +13,7 @@ export function goesOutAt(at: Date, now = new Date(), past = false): string {
   }
   const days = Math.round((midnight(at) - midnight(now)) / 86_400_000);
   const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }).toLowerCase();
-  const day = days === 0 ? "today" : days === 1 ? "tomorrow" : days === -1 ? "yesterday" : `on ${at.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`;
+  const day = days === 0 ? "today" : days === 1 ? "tomorrow" : days === -1 ? "yesterday" : `on ${at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`;
   return `${day} at ${time}`;
 }
 

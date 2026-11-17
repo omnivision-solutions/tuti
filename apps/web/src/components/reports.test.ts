@@ -25,15 +25,15 @@ test("a chart has a bar a day up to a month, a week up to a quarter, then a mont
   expect([quarter.unit, quarter.bars.length, quarter.bars[0], quarter.bars.at(-1)]).toEqual([
     "week",
     13,
-    { label: "Aug 6", title: "Aug 6 – Aug 12", from: 0, to: 7 },
-    { label: "Oct 29", title: "Oct 29 – Nov 3", from: 84, to: 90 },
+    { label: "6 Aug", title: "6 Aug – 12 Aug", from: 0, to: 7 },
+    { label: "29 Oct", title: "29 Oct – 3 Nov", from: 84, to: 90 },
   ]);
   const year = chartBars(days(365, "2025-11-04"), "2026-12-01");
   expect([year.unit, year.bars.length, year.bars[0], year.bars.at(-1)]).toEqual([
     "month",
     13,
-    { label: "Nov 2025", title: "Nov 4 – Nov 30, 2025", from: 0, to: 27 },
-    { label: "Nov 2026", title: "Nov 1 – Nov 3, 2026", from: 362, to: 365 },
+    { label: "Nov 2025", title: "4 Nov – 30 Nov 2025", from: 0, to: 27 },
+    { label: "Nov 2026", title: "1 Nov – 3 Nov 2026", from: 362, to: 365 },
   ]);
   // A whole month in between is named as one.
   expect(year.bars[1]).toMatchObject({ label: "Dec 2025", title: "December 2025" });
@@ -77,11 +77,11 @@ test("a tile's line sums the range's days as its chart's bars do; a share's days
 
 test("a chart's last bar, when it holds today, is a period under way: marked so far", () => {
   const days = ["2026-11-01", "2026-11-02", "2026-11-03"];
-  expect(chartBars(days, "2026-11-03").bars.at(-1)).toEqual({ label: "Nov 3", title: "Nov 3 (so far)", from: 2, to: 3, soFar: true });
+  expect(chartBars(days, "2026-11-03").bars.at(-1)).toEqual({ label: "3 Nov", title: "3 Nov (so far)", from: 2, to: 3, soFar: true });
   expect(chartBars(days, "2026-11-04").bars.at(-1)?.soFar).toBeUndefined();
   // Past year's month, three days into it.
   const year = Array.from({ length: 365 }, (_, i) => new Date(Date.parse("2025-11-04T00:00:00Z") + i * 86_400_000).toISOString().slice(0, 10));
-  expect(chartBars(year, "2026-11-03").bars.at(-1)).toMatchObject({ title: "Nov 1 – Nov 3, 2026 (so far)", soFar: true });
+  expect(chartBars(year, "2026-11-03").bars.at(-1)).toMatchObject({ title: "1 Nov – 3 Nov 2026 (so far)", soFar: true });
   expect(chartBars(year, "2026-11-03").bars.filter((bar) => bar.soFar)).toHaveLength(1);
 });
 
@@ -95,11 +95,11 @@ test("a chart marks its bar for today so far, in its words and its look; a past 
   const chart = (today: string) =>
     renderToStaticMarkup(DailyChart({ title: "Article views", days: ["2026-11-02", "2026-11-03"], today, series: [{ label: "Article views", values: [4, 2] }] }));
   const under = chart("2026-11-03");
-  expect(under).toContain('aria-label="Nov 3 (so far): Article views 2"');
-  expect(under).toContain("Nov 3, so far");
+  expect(under).toContain('aria-label="3 Nov (so far): Article views 2"');
+  expect(under).toContain("3 Nov, so far");
   expect(under.match(/border-series-1/g)).toHaveLength(1);
   const past = chart("2026-11-04");
-  expect(past).toContain('aria-label="Nov 3: Article views 2"');
+  expect(past).toContain('aria-label="3 Nov: Article views 2"');
   expect(past).not.toContain("so far");
   expect(past).not.toContain("border-series-1");
 });
@@ -107,5 +107,5 @@ test("a chart marks its bar for today so far, in its words and its look; a past 
 test("the range picker's dates are the page's range's: worked out on its day, not on the clock as the heading renders", () => {
   const range = reportRange("30d", new Date("2025-01-15T23:59:59.900Z"));
   const html = renderToStaticMarkup(ReportPane({ title: "Help center", range, locked: { ranges: [], hint: "" }, upgrade: null, children: null })).replaceAll("\u2009", " ");
-  expect(html).toContain("Date range: Past 30 days, Dec 17, 2024 – Jan 15, 2025");
+  expect(html).toContain("Date range: Past 30 days, 17 Dec 2024 – 15 Jan 2025");
 });

@@ -11,6 +11,7 @@ import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-
 import { LeaveProjectButton, MemberActions } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { formatDay } from "@/lib/format";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { inviteNote } from "@/lib/verify-email";
 import { getMembership } from "@/server/membership";
@@ -141,7 +142,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
                     <ItemRow
                       key={invitation.id}
                       title={`${invitation.email ?? "Invite link"} · ${ROLE_LABELS[invitation.role]}`}
-                      meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                      meta={`Created by ${invitation.createdBy.name} · expires ${formatDay(invitation.expiresAt)}`}
                       actions={
                         canAssignRole(myRole, invitation.role) && (
                           <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
@@ -164,7 +165,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
             id: invitation.id,
             email: invitation.email!,
             title: `${invitation.email} · ${ROLE_LABELS[invitation.role]}`,
-            meta: `Imported ${invitation.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} by ${invitation.createdBy.name}`,
+            meta: `Imported ${formatDay(invitation.createdAt)} by ${invitation.createdBy.name}`,
             manageable: canAssignRole(myRole, invitation.role),
           }))}
         />

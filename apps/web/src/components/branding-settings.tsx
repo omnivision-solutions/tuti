@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatDate } from "@/lib/format";
 import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
@@ -474,7 +475,6 @@ export function ImageField({
   );
 }
 
-const untilDate = (date: Date) => date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 /**
  * "Powered by tuti" in the footer: on, unless the project has a licence (or the add-on on its plan).
@@ -523,7 +523,7 @@ function PoweredByField({
     setLicensedUntil(outcome.licensedUntil);
     setShown(false);
     setOpen(false);
-    toast.success(`Licensed until ${untilDate(outcome.licensedUntil)}. Save your changes to hide the badge.`);
+    toast.success(`Licensed until ${formatDate(outcome.licensedUntil)}. Save your changes to hide the badge.`);
   };
 
   return (
@@ -550,7 +550,7 @@ function PoweredByField({
             ? <>The add-on is still on this project&apos;s plan: remove it in <Link href={plan.billingUrl}>Billing</Link>.</>
             : "Hidden with the add-on on this project's plan."
           : licensedUntil
-            ? `Licensed until ${untilDate(licensedUntil)}.`
+            ? `Licensed until ${formatDate(licensedUntil)}.`
             : plan
               ? "Hiding it is an add-on to a paid plan."
               : "Hiding it needs a licence for this project."}
