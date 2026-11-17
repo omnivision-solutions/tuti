@@ -304,7 +304,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     if (isEnumType(type)) return type.getValues()[0]?.name ?? null;
     const name = getNamedType(type).name;
     // A copy: the doc is the caller's to change.
-    return name in SCALAR_EXAMPLES ? structuredClone(SCALAR_EXAMPLES[name]) : "string";
+    return Object.hasOwn(SCALAR_EXAMPLES, name) ? structuredClone(SCALAR_EXAMPLES[name]) : "string";
   };
 
   /**

@@ -519,3 +519,9 @@ test.each([
 test("a syntax error says where", () => {
   expect(readGraphql("type Query {\n  posts: [Post\n}")).toEqual({ error: expect.stringMatching(/\(line 3, column 1\)$/) });
 });
+
+test("a scalar named as something every object has is read like any other", () => {
+  const result = readGraphql("scalar constructor scalar toString type Query { made(by: constructor!): toString }");
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.operations[0]?.query?.variables).toEqual({ by: "string" });
+});
