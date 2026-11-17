@@ -213,6 +213,7 @@ test("levels: one the server doesn't offer, or whose models cost more than its c
   vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
   // Best's row is Sonnet, $15 per million output tokens in the fake's list; Affordable's is Haiku, $5.
   await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "The best level uses “anthropic/claude-sonnet-5.5”, which costs more than this server allows" });
+  expect((await call(getAiModels, as(), {})).levels.answers.available).toEqual(["affordable", "balanced", "custom"]);
   expect((await call(updateAiModels, as(), { levels: { answers: "affordable" } })).levels.answers.level).toBe("affordable");
   // A server that set its own models and has no levels file has only Balanced and Custom.
   vi.stubEnv("AI_MODEL", "acme/tiny");
@@ -220,15 +221,13 @@ test("levels: one the server doesn't offer, or whose models cost more than its c
   expect((await call(getAiModels, as(), {})).levels.answers).toEqual({ level: "affordable", used: "balanced", available: ["balanced", "custom"] });
 });
 
-test("the levels migration: a group with a model picked is on Custom; checks switched off alone leave Autopilot's group on Balanced", async () => {
-  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261117180000_ai_levels/migration.sql", import.meta.url), "utf8");
-  const migrated = async (aiModels: Record<string, string>) => {
-    await prisma.project.update({ where: { id: project.id }, data: { aiModels, aiLevels: {} } });
-    await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "project"')));
-    return (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiLevels: true } })).aiLevels;
-  };
-  expect(await migrated({ escalations: "acme/tiny", support_summary: "acme/tiny", code_changes_check: "off" })).toEqual({ answers: "custom", support: "custom" });
-  expect(await migrated({ changelog: "acme/tiny", code_changes_check: "acme/tiny" })).toEqual({ changelog: "custom", code_changes: "custom" });
-  expect(await migrated({ code_changes: "acme/tiny", code_changes_check: "off" })).toEqual({ code_changes: "custom" });
-  expect(await migrated({})).toEqual({});
+test("a model picked before levels, or through the release before them, keeps being used: its group counts as Custom until a level is saved", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { aiModels: { answers: "acme/tiny", code_changes_check: "off" } } });
+  expect(await call(getAiModels, as(), {})).toMatchObject({
+    answers: { used: "acme/tiny" },
+    levels: { answers: { level: "custom", used: "custom" }, code_changes: { level: "balanced" } },
+  });
+  expect(await answeredWith(project.id)).toBe("acme/tiny");
+  // Balanced is saved, so the pick is kept and no longer used.
+  expect(await call(updateAiModels, as(), { levels: { answers: "balanced" } })).toMatchObject({ answers: { model: "acme/tiny", used: DEFAULT_AI_MODEL }, levels: { answers: { level: "balanced" } } });
 });

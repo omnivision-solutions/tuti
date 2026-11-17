@@ -44,11 +44,33 @@ export type AiModels = Record<AiRole, { model: string | null; default: string; u
   levels: Record<AiGroup, { level: AiLevel; used: AiLevel; available: AiLevel[] }>;
 };
 
+/** The models the endpoint lists, by id; refused (502) when it can't be asked. */
+async function listedModels(projectId: string): Promise<Map<string, AiModelListing>> {
+  try {
+    return new Map((await listModels()).map((model) => [model.id, model]));
+  } catch (error) {
+    log.warn("Listing the AI models failed", { projectId, error });
+    throw new OperationError(502, "models_unavailable", "Couldn't check the models just now. Try again in a moment.");
+  }
+}
+
+/**
+ * The first model of `level`'s row that the server's price cap rules out (one the endpoint doesn't list has no price,
+ * so it's ruled out too, like a model picked), or null: no cap, no row, or all within it.
+ */
+function overCap(level: AiLevel, listed: Map<string, AiModelListing> | null): string | null {
+  const models = level === "affordable" || level === "best" ? Object.values(aiLevelRows()[level] ?? {}) : [];
+  return (listed && models.find((id) => !listed.has(id) || !withinModelCap(listed.get(id)!))) ?? null;
+}
+
 export async function aiModels(projectId: string): Promise<AiModels> {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
   const picked = projectModels(project.aiModels);
-  const saved = projectLevels(project.aiLevels);
-  const available = offeredLevels().filter((level) => planAllowsLevel(project.plan, level));
+  const saved = projectLevels(project);
+  const mayPick = offeredLevels().filter((level) => planAllowsLevel(project.plan, level));
+  // Under a price cap, a level with a model over it isn't offered. The endpoint is asked only then; if it can't be, those levels are left out.
+  const listed = modelMaxPrice() !== null && mayPick.some((level) => level === "affordable" || level === "best") ? await listedModels(projectId).catch(() => new Map<string, AiModelListing>()) : null;
+  const available = mayPick.filter((level) => overCap(level, listed) === null);
   return {
     ...Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, { model: picked[role] ?? null, default: roleDefaultModel(role), used: roleModel(project, role) }])),
     levels: Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, { level: saved[group], used: usedLevel(project, group), available }])),
@@ -101,19 +123,10 @@ export const updateAiModels = defineOperation({
         throw new OperationError(400, "level_unavailable", `This server doesn't offer the ${level} level`);
       }
     }
-    // The models a level sent would run: checked against the server's price cap like a model picked.
-    const rows = aiLevelRows();
-    const levelModels = Object.entries(levels).flatMap(([group, level]) =>
-      level === "affordable" || level === "best" ? AI_ROLE_NAMES.filter((role) => groupOf(role) === group).flatMap((role) => (rows[level]?.[role] ? [[level, rows[level][role]] as const] : [])) : [],
-    );
-    if (chosen.some(([, id]) => id !== "off") || (modelMaxPrice() !== null && levelModels.length > 0)) {
-      let listed: Map<string, AiModelListing>;
-      try {
-        listed = new Map((await listModels()).map((model) => [model.id, model]));
-      } catch (error) {
-        log.warn("Listing the AI models failed", { projectId, error });
-        throw new OperationError(502, "models_unavailable", "Couldn't check the models just now. Try again in a moment.");
-      }
+    // A level's models are checked against the server's price cap like a model picked.
+    const rowLevels = [...new Set(Object.values(levels))].filter((level) => level === "affordable" || level === "best");
+    if (chosen.some(([, id]) => id !== "off") || (modelMaxPrice() !== null && rowLevels.length > 0)) {
+      const listed = await listedModels(projectId);
       for (const [pick, id] of chosen.filter(([, id]) => id !== "off")) {
         const model = listed.get(id);
         if (!model) {
@@ -127,10 +140,10 @@ export const updateAiModels = defineOperation({
           throw new OperationError(400, "model_without_tools", `“${id}” can't call tools, which Autopilot's docs agent needs`);
         }
       }
-      for (const [level, id] of levelModels) {
-        const model = listed.get(id);
+      for (const level of rowLevels) {
         // ponytail: checked when the level is saved, like a picked model; a cap lowered later isn't applied to saved levels.
-        if (model && !withinModelCap(model)) {
+        const id = overCap(level, modelMaxPrice() === null ? null : listed);
+        if (id) {
           throw new OperationError(400, "level_unavailable", `The ${level} level uses “${id}”, which costs more than this server allows`);
         }
       }

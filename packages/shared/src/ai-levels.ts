@@ -88,17 +88,27 @@ export function projectModels(value: unknown): Partial<Record<AiRole, string>> {
   return Object.fromEntries(Object.entries(record(value)).filter((entry): entry is [AiRole, string] => entry[0] in AI_ROLES && typeof entry[1] === "string" && entry[1] !== ""));
 }
 
-/** The level each group was saved on (project.aiLevels); Balanced where none was. */
-export function projectLevels(value: unknown): Record<AiGroup, AiLevel> {
-  const saved = record(value);
-  return Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, (AI_LEVELS as readonly unknown[]).includes(saved[group]) ? saved[group] : "balanced"])) as Record<AiGroup, AiLevel>;
-}
-
 type Project = { plan: PlanKey; aiModels: unknown; aiLevels: unknown };
+
+/**
+ * The level each group is on: the one saved (project.aiLevels), else Custom where one of its roles has a model picked,
+ * else Balanced. Read from the picks, not copied by a migration, so a model picked before levels existed, or through the
+ * release before them while they deployed, keeps being used. "off" isn't a model: it holds on every level.
+ */
+export function projectLevels(project: Pick<Project, "aiModels" | "aiLevels">): Record<AiGroup, AiLevel> {
+  const saved = record(project.aiLevels);
+  const picked = projectModels(project.aiModels);
+  return Object.fromEntries(
+    AI_GROUP_NAMES.map((group) => [
+      group,
+      (AI_LEVELS as readonly unknown[]).includes(saved[group]) ? saved[group] : AI_GROUPS[group].some((role) => picked[role] && picked[role] !== "off") ? "custom" : "balanced",
+    ]),
+  ) as Record<AiGroup, AiLevel>;
+}
 
 /** The level a group runs on: the one saved, or Balanced when the plan doesn't include it or the server no longer offers it (the saved one is kept, not used). */
 export function usedLevel(project: Project, group: AiGroup): AiLevel {
-  const saved = projectLevels(project.aiLevels)[group];
+  const saved = projectLevels(project)[group];
   return planAllowsLevel(project.plan, saved) && offeredLevels().includes(saved) ? saved : "balanced";
 }
 

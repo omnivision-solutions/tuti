@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AI_ROLE_NAMES, aiEnabled, creditsEnabled, creditsPerUsageDollar, levelNeeded, listModels, log, modelMaxPrice, planFor, planIncludes, roleCanBeOff, roleNeedsTools, withinModelCap } from "@tuti/shared";
+import { AI_GROUP_NAMES, AI_ROLE_NAMES, type AiGroup, aiEnabled, creditsEnabled, creditsPerUsageDollar, levelNeeded, listModels, log, modelMaxPrice, planFor, planIncludes, roleCanBeOff, roleNeedsTools, withinModelCap } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,6 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { aiModels } from "@/server/operations/ai-models";
+
+/** What each group of roles is called here. */
+const GROUP: Record<AiGroup, string> = { answers: "AI answers", support: "The Inbox", changelog: "The changelog", code_changes: "Autopilot" };
 
 export const metadata: Metadata = { title: "AI models · Settings" };
 
@@ -31,6 +34,7 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
   // Only suggestions: without them a model id can still be typed (and is checked when saved).
   const listed = all.filter(withinModelCap);
   const cap = modelMaxPrice();
+  const onLevel = AI_GROUP_NAMES.filter((group) => models.levels[group].level === "affordable" || models.levels[group].level === "best");
   return (
     <SettingsPane
       title="AI models"
@@ -45,6 +49,19 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
               <Link href={`/app/${slug}/settings/billing`} className="underline underline-offset-4">
                 See Billing
               </Link>
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+      {/* A level (set through the API until each feature's page has it) decides the models, whatever is picked below. */}
+      {onLevel.length > 0 && (
+        <Alert>
+          <AlertDescription>
+            <p>
+              {onLevel
+                .map((group) => `${GROUP[group]} is on the ${models.levels[group].level} level${models.levels[group].used === "balanced" ? ", which isn't available here, so it runs on this server's default models" : ""}.`)
+                .join(" ")}{" "}
+              Picking a model below switches that feature to your own models, for every role it has.
             </p>
           </AlertDescription>
         </Alert>
