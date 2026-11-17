@@ -1,4 +1,4 @@
-import { buildSchema, graphqlSync, introspectionFromSchema } from "graphql";
+import { buildSchema, graphqlSync, introspectionFromSchema, parse, validate } from "graphql";
 import { expect, test } from "vitest";
 
 import { GRAPHQL_INTROSPECTION_QUERY, readGraphql } from "./graphql";
@@ -98,12 +98,19 @@ type Query {
   search(text: String!): [SearchResult!]!
   node(id: ID!): Node
   viewer: Viewer
+  recent(first: Int! = 5, status: PostStatus! = OPEN): [Post!]!
   version: String!
   allPosts: [Post!]! @deprecated(reason: "Use posts.")
 }
 
+type CreatePostPayload {
+  post: Post
+  query: Query!
+}
+
 type Mutation {
   createPost(input: CreatePostInput!): Post!
+  createPostRelay(input: CreatePostInput!): CreatePostPayload
   deletePost(id: ID!, at: DateTime): Boolean!
 }
 
@@ -164,9 +171,11 @@ test("one operation per root field", () => {
     "query search",
     "query node",
     "query viewer",
+    "query recent",
     "query version",
     "query allPosts",
     "mutation createPost",
+    "mutation createPostRelay",
     "mutation deletePost",
     "subscription postCreated",
   ]);
@@ -257,6 +266,26 @@ test("the query names the operation, takes a variable per argument (a value for 
   expect(operation("query version").query).toEqual({ text: "query Version {\n  version\n}", variables: {} });
 });
 
+test("every query is one the schema accepts, with a value for each variable it must have", () => {
+  const schema = buildSchema(SDL);
+  for (const one of doc.operations) {
+    expect(validate(schema, parse(one.query!.text)), one.key).toEqual([]);
+    for (const param of one.params) {
+      if (param.schema.type.endsWith("!")) expect(one.query!.variables, one.key).toHaveProperty(param.name);
+    }
+  }
+  // A non-null argument with a default is sent as its default.
+  expect(operation("query recent").query!.variables).toEqual({ first: 5, status: "OPEN" });
+});
+
+test("a root type a field returns is named without a page to point at", () => {
+  const payload = type("CreatePostPayload").schema;
+  expect(property(payload, "query")).toEqual({ name: "query", required: true, type: "Query!" });
+  const refs = new Set<string>();
+  JSON.stringify(doc, (key, value) => (key === "ref" && refs.add(value as string), value as unknown));
+  expect([...refs].filter((ref) => !doc.types.some((one) => one.name === ref))).toEqual([]);
+});
+
 test("a union or interface selects __typename, and a selection is never empty", () => {
   expect(operation("query search").query!.text).toBe(
     "query Search($text: String!) {\n  search(text: $text) {\n    __typename\n  }\n}",
@@ -324,6 +353,7 @@ test("types are every named type but the roots and the built-in ones", () => {
     ["Board", "object", "board"],
     ["Comment", "object", "comment"],
     ["CreatePostInput", "input", "create-post-input"],
+    ["CreatePostPayload", "object", "create-post-payload"],
     ["DateTime", "scalar", "date-time"],
     ["Node", "interface", "node-2"],
     ["Post", "object", "post-2"],

@@ -21,7 +21,6 @@ import {
   type DefinitionNode,
   type GraphQLArgument,
   type GraphQLInputField,
-  type GraphQLNamedType,
   type GraphQLSchema,
   type GraphQLType,
 } from "graphql";
@@ -30,8 +29,9 @@ import type { ApiDoc, ApiOperation, ApiProperty, ApiSchema, ApiType, ApiWarning 
 
 /**
  * What to POST to a GraphQL endpoint (`{ query }`) for a response `readGraphql` reads. It asks only
- * for what every server answers: a schema's own description and deprecated arguments are newer than
- * many servers, which refuse the whole query over a field they don't know.
+ * for what every server answers: a schema's own description, deprecated arguments and whether an
+ * input takes exactly one field (`@oneOf`) are newer than many servers, which refuse the whole query
+ * over a field they don't know. A schema file has them all.
  */
 export const GRAPHQL_INTROSPECTION_QUERY = getIntrospectionQuery();
 
@@ -165,6 +165,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       where: "",
     });
   }
+  const roots = { query: schema.getQueryType(), mutation: schema.getMutationType(), subscription: schema.getSubscriptionType() };
+  const rootTypes = new Set<GraphQLType>(Object.values(roots).filter((type) => type != null));
   let fields = 0;
   const count = (more: number) => {
     fields += more;
@@ -194,7 +196,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     const text = String(type);
     if (isNonNullType(type)) return { ...schemaOf(type.ofType, inside), type: text };
     if (isListType(type)) return { type: text, items: schemaOf(type.ofType, inside) };
-    if (isSpecifiedScalarType(type)) return { type: text };
+    // A root type has no page: its fields are the operations.
+    if (isSpecifiedScalarType(type) || rootTypes.has(type)) return { type: text };
     if (inside.length > levels || inside.includes(type.name)) return { type: text, ref: type.name };
     const within = [...inside, type.name];
     const result: ApiSchema = { type: text, ref: type.name };
@@ -306,15 +309,9 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     warnings,
   };
 
-  const rootTypes = new Set<GraphQLNamedType>();
   for (const root of ROOTS) {
-    const rootType = {
-      query: schema.getQueryType(),
-      mutation: schema.getMutationType(),
-      subscription: schema.getSubscriptionType(),
-    }[root.kind];
+    const rootType = roots[root.kind];
     if (!rootType) continue;
-    rootTypes.add(rootType);
     const fields = Object.values(rootType.getFields());
     if (fields.length === 0) continue;
     doc.groups.push({ key: root.key, name: root.name, description: rootType.description ?? "" });
@@ -327,8 +324,9 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
         if (value !== undefined) paramSchema.default = value;
         if (arg.deprecationReason != null) paramSchema.deprecated = true;
         const example = inputExample(arg.type, []);
-        // Only what the field needs is sent: a made-up cursor or filter fails, and unset ones take their defaults.
-        if (isRequiredArgument(arg)) variables[arg.name] = example;
+        // Only what the field needs is sent: a made-up cursor or filter fails, and unset ones take their
+        // defaults. A non-null variable must be given, so one with a default is sent as that.
+        if (isNonNullType(arg.type)) variables[arg.name] = value !== undefined ? value : example;
         return {
           name: arg.name,
           in: "argument" as const,
