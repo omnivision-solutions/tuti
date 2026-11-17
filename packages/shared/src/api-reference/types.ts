@@ -34,7 +34,11 @@ export type ApiAuth = {
 };
 
 export type ApiGroup = {
-  /** Its name as a slug: what the team's order and switches go by. No two in a doc share one (the later gets a number). */
+  /**
+   * What the team's order and switches go by: its name in the spec, exactly (an OpenAPI tag is known
+   * by its name, so no two share one and none changes when the spec is reordered); GraphQL's are
+   * "queries", "mutations" and "subscriptions". Never part of an address.
+   */
   key: string;
   name: string;
   /** Markdown. */
@@ -43,14 +47,17 @@ export type ApiGroup = {
 
 export type ApiOperation = {
   /**
-   * What it is across re-reads of the spec, so the team's choices about it stay: "POST /posts",
-   * "mutation createPost". Not its slug, which follows its title.
+   * What it is across re-reads of the spec, so the team's choices about it stay: its method and its
+   * path with each parameter's name left out ("POST /posts", "GET /users/{}": OpenAPI holds
+   * `/users/{id}` and `/users/{userId}` to be one path, so renaming a parameter makes no new
+   * operation), or "mutation createPost". Not its slug, which follows its title.
    */
   key: string;
   /**
    * Its page's address under the reference, from its title; no operation or type in a doc shares
    * one. A reader only proposes it: an operation the reference has seen before (by `key`) keeps the
-   * slug it first had, so rewording a summary moves no page.
+   * slug it first had, so rewording a summary moves no page; a slug so kept is taken, and another
+   * operation or type proposing it gets a number instead.
    */
   slug: string;
   /** Its group's key. */
@@ -63,8 +70,13 @@ export type ApiOperation = {
   /** Markdown. */
   description: string;
   deprecated: boolean;
-  /** The keys of the ways it can be signed (any one of them); none: it needs no signing. */
-  auth: string[];
+  /**
+   * The ways it can be signed, any one of them; each is the keys of the `ApiAuth`s it needs
+   * together (usually one). None: it needs no signing.
+   */
+  auth: string[][];
+  /** Where its requests go when the spec gives it, or its path, servers of its own; else the doc's. */
+  servers?: ApiDoc["servers"];
   /** OpenAPI: path, query, header and cookie parameters. GraphQL: the field's arguments. */
   params: ApiParam[];
   /** OpenAPI only: the request's body, in its first content type. */
@@ -111,7 +123,8 @@ export type ApiSchema = {
   format?: string;
   /** Limits in words: "3–200 characters", "at least 1". */
   constraints?: string;
-  enum?: string[];
+  /** The values it may be, as the spec has them (1 isn't "1"). GraphQL: the enum's names. */
+  enum?: unknown[];
   default?: unknown;
   /** An object's fields, in the spec's order. */
   properties?: ApiProperty[];
