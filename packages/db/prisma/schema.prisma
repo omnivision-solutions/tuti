@@ -431,6 +431,7 @@ model Project {
   articleChunks           ArticleChunk[]
   collections             Collection[]
   docsTabs                DocsTab[]
+  apiReferences           ApiReference[]
   readerGroups            ReaderGroup[]
   docsRedirects           DocsRedirect[]
   portalReaders           PortalReader[]
@@ -2009,6 +2010,7 @@ model DocsTab {
 
   project           Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collections       Collection[]
+  apiReferences     ApiReference[]
   redirects         DocsRedirect[]
   landingArticle    Article?       @relation("DocsTabLanding", fields: [landingArticleId], references: [id], onDelete: SetNull)
   landingCollection Collection?    @relation("DocsTabLanding", fields: [landingCollectionId], references: [id], onDelete: SetNull)
@@ -2029,6 +2031,86 @@ enum DocsLanding {
   FIRST
   /// The article or collection the team picked (landingArticleId or landingCollectionId).
   PAGE
+}
+
+/// An API reference in the docs (docs/plan.md, API reference in Docs): a team's spec, read into
+/// pages at /docs/<slug> and /docs/<slug>/<operation>. Listed in its tab after the collections, and
+/// read by whoever may read that tab: it has no access of its own.
+model ApiReference {
+  id             String                @id @default(cuid())
+  projectId      String
+  /// The tab it's in, like a top-level collection's: null only while the docs have no tabs.
+  tabId          String?
+  /// From the name when it's added, and kept when it's renamed; no tab, collection or (live) article
+  /// in the project has it, so /docs/<slug> is one page.
+  slug           String
+  name           String
+  /// References in a tab are listed by this, then by name; new ones go last.
+  order          Int                   @default(0)
+  format         ApiReferenceFormat
+  /// Where the spec is read from. With URL, `sourceUrl`; with GITHUB, `repoId` (GitHub's id of a
+  /// repository the project added), `path` and `ref` (a branch).
+  source         ApiReferenceSource    @default(UPLOAD)
+  sourceUrl      String?
+  repoId         Int?
+  path           String?
+  ref            String?
+  /// Where requests go when the spec's servers have no host.
+  baseUrl        String?
+  /// The spec's text as given: for Download, and to read again when a reader improves.
+  spec           String
+  /// What the spec read into (`ApiDoc` in @tuti/shared/api-reference), with the slugs the pages keep.
+  /// Large: lists never select it, or `spec`.
+  doc            Json
+  /// The team's choices, kept across reads (`ApiReferenceState`): slugs, what's hidden, what's new, the groups' order.
+  state          Json
+  /// For lists: how many operations `doc` has, how many of them are on the help center, and how many are new (`state.unseen`).
+  operationCount Int                   @default(0)
+  shownCount     Int                   @default(0)
+  unseenCount    Int                   @default(0)
+  treeStyle      ApiReferenceTreeStyle @default(FOLDERS)
+  /// Null: a draft, on the help center nowhere.
+  publishedAt    DateTime?
+  /// When the spec was last read, and when that last changed `doc`.
+  syncedAt       DateTime              @default(now())
+  changedAt      DateTime              @default(now())
+  /// Why the last sync kept the pages as they were (it failed, or read no operations); null once one works.
+  syncError      String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// tabs.delete moves it to another tab first; SetNull only keeps a delete that skipped that from failing.
+  tab     DocsTab? @relation(fields: [tabId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, slug])
+  @@index([tabId])
+  @@map("api_reference")
+}
+
+enum ApiReferenceFormat {
+  OPENAPI
+  GRAPHQL
+}
+
+/// Where an API reference's spec lives.
+enum ApiReferenceSource {
+  /// A file the team uploaded, replaced by hand.
+  UPLOAD
+  /// An address, fetched every 6 hours and on Sync now.
+  URL
+  /// A file in a repository the project added on GitHub.
+  GITHUB
+}
+
+/// How an API reference sits in the docs' tree.
+enum ApiReferenceTreeStyle {
+  /// Each group a folder with its operations in it.
+  FOLDERS
+  /// Each group a heading over its operations.
+  HEADINGS
+  /// One entry: the operations are listed on its page.
+  ENTRY
 }
 
 /// A slug a tab, collection or article had, so /docs/<slug> keeps working after it's renamed: it

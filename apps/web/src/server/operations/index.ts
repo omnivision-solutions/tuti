@@ -57,6 +57,7 @@ import {
   reorderTab,
   updateTab,
 } from "./docs";
+import { createApiReference, deleteApiReference, getApiReference, listApiReferences, replaceApiReference, updateApiReference } from "./api-references";
 import { markChangelogSeen } from "./changelog-seen";
 import { updateEmailPreferences } from "./email-preferences";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
@@ -153,6 +154,12 @@ const all = [
   updateTab,
   reorderTab,
   deleteTab,
+  listApiReferences,
+  getApiReference,
+  createApiReference,
+  updateApiReference,
+  replaceApiReference,
+  deleteApiReference,
   listGroups,
   createGroup,
   updateGroup,
