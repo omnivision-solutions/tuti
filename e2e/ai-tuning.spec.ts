@@ -94,6 +94,11 @@ test("an owner sees a model for each role (Autopilot's three, the Inbox's two), 
   await expect(tuningLink).not.toContainText("Available on Business");
   // Business has the level, and its own models: the page says what picking one does.
   await expect(owner.getByText("AI answers is on the best level. Picking a model below switches that feature to your own models, for every role it has.")).toBeVisible();
+  await expect(owner.getByRole("radiogroup", { name: "AI answers" })).toHaveAccessibleDescription(/AI answers is on the best level/);
+  // Put back on Balanced with a model still picked, the pick isn't used, and the page says that too.
+  await query(`UPDATE project SET "aiLevels" = '{"answers":"balanced"}', "aiModels" = '{"answers":"anthropic/claude-sonnet-5.5"}' WHERE slug = $1`, [slug]);
+  await owner.reload();
+  await expect(owner.getByText("AI answers is on the balanced level, so the models picked below aren't used.", { exact: false })).toBeVisible();
   await tuningLink.click();
   await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
   const fix = owner.getByRole("spinbutton", { name: "Fix an article from" });
