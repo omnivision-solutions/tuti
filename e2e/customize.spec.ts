@@ -347,7 +347,7 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
   await checkpoint(owner, "customize-branding-scrolled", { fullPage: false });
   // A field reached from below (Shift+Tab) shows under the title bar, not behind it.
   await settings.evaluate((pane) => pane.scrollTo(0, pane.scrollHeight));
-  await owner.getByRole("checkbox").last().focus();
+  await owner.getByRole("switch").last().focus();
   const darkLogo = owner.getByRole("button", { name: "Upload logo for dark mode" });
   for (let presses = 0; presses < 10 && !(await darkLogo.evaluate((button) => button === document.activeElement)); presses++) {
     await owner.keyboard.press("Shift+Tab");
@@ -414,7 +414,7 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
     if (width === 800) {
       await checkpoint(owner, "customize-branding-tablet-scrolled", { fullPage: false });
       // Each field reached from below (Shift+Tab) shows under the section title.
-      await owner.getByRole("checkbox").last().focus();
+      await owner.getByRole("switch").last().focus();
       const bars = (await titleBar.boundingBox())!;
       for (let presses = 0; presses < 10 && !(await darkLogo.evaluate((button) => button === document.activeElement)); presses++) {
         await owner.keyboard.press("Shift+Tab");
