@@ -127,7 +127,8 @@ function parse(text: string): { schema: GraphQLSchema } | { error: string } {
   }
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    // Without the byte-order mark some editors put first: JSON doesn't take one.
+    json = JSON.parse(text.trimStart());
   } catch (error) {
     return { error: `The introspection result isn't valid JSON: ${message(error)}` };
   }

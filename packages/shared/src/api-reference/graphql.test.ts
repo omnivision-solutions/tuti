@@ -134,6 +134,9 @@ test("a schema file and its introspection result read as the same doc", () => {
   const introspection = introspectionFromSchema(buildSchema(SDL), { schemaDescription: true, inputValueDeprecation: true });
   expect(read(JSON.stringify(introspection))).toEqual(doc);
   expect(read(JSON.stringify({ data: introspection }))).toEqual(doc);
+  // A file saved with a byte-order mark first, as some editors do.
+  expect(read(`\uFEFF${JSON.stringify(introspection)}`)).toEqual(doc);
+  expect(read(`\uFEFF${SDL}`)).toEqual(doc);
 });
 
 test("what the introspection query asks for is enough to read", () => {
