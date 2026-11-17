@@ -221,7 +221,7 @@ test("the response is the returned type, with an example of what the query bring
   expect(operation("query version").responses[0]).toMatchObject({ schema: { type: "String!" }, example: "string" });
 });
 
-test("the query names the operation, takes a variable per argument and selects two levels of fields", () => {
+test("the query names the operation, takes a variable per argument (a value for each required one) and selects two levels of fields", () => {
   // comments needs an argument and oldTitle is deprecated: neither is selected.
   expect(operation("mutation createPost").query).toEqual({
     text: `mutation CreatePost($input: CreatePostInput!) {
@@ -247,11 +247,12 @@ test("the query names the operation, takes a variable per argument and selects t
   });
   expect(operation("query posts").query).toMatchObject({
     text: expect.stringContaining("query Posts($filter: PostFilter, $first: Int, $after: ID) {\n  posts(filter: $filter, first: $first, after: $after) {\n"),
-    variables: { filter: {}, first: 1, after: "1" },
+    // Optional arguments are left unset, so they take their defaults.
+    variables: {},
   });
   expect(operation("mutation deletePost").query).toEqual({
     text: "mutation DeletePost($id: ID!, $at: DateTime) {\n  deletePost(id: $id, at: $at)\n}",
-    variables: { id: "1", at: "2026-01-01T00:00:00Z" },
+    variables: { id: "1" },
   });
   expect(operation("query version").query).toEqual({ text: "query Version {\n  version\n}", variables: {} });
 });
@@ -358,6 +359,41 @@ test("a field's arguments outside the roots are a warning", () => {
 
 test("a schema using directives it doesn't declare is read", () => {
   expect(read('type Query { me: User } type User @key(fields: "id") { id: ID! }').operations).toHaveLength(1);
+});
+
+test("a federated service's file, which extends a Query it doesn't define, is read", () => {
+  const federated = read('extend type Query { me: User } extend type Query { users: [User] } type User @key(fields: "id") { id: ID! }');
+  expect(federated.operations.map((one) => one.key)).toEqual(["query me", "query users"]);
+  expect(read("type Query { a: Int } extend type Query { b: Int }").operations).toHaveLength(2);
+});
+
+test("an input that takes exactly one field gets its first, and one that lists itself an empty list", () => {
+  const odd = read(`
+    input By @oneOf { id: ID, slug: String }
+    input Filter { all: [Filter!]!, by: By! }
+    type Query { find(filter: Filter!): Int }
+  `);
+  expect(odd.operations[0]!.query!.variables).toEqual({ filter: { all: [], by: { id: "1" } } });
+});
+
+test("a schema too large to spell out two levels down is spelled out fewer, with a warning", () => {
+  // 30 types of 30 fields, each field another of the types: two levels down is 30 × 30 × 30 fields a type.
+  const names = Array.from({ length: 30 }, (_, n) => `T${n}`);
+  const large = read(
+    `type Query { ${names.map((name) => `f${name}: ${name}`).join(" ")} }
+    ${names.map((name) => `type ${name} { id: ID ${names.map((other) => `to${other}: ${other}`).join(" ")} }`).join("\n")}`,
+  );
+  expect(large.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toHaveLength(1);
+  expect(JSON.stringify(large).length).toBeLessThan(8 * 1024 * 1024);
+  const t0 = large.types.find((one) => one.name === "T0")!.schema;
+  expect(property(t0, "toT1")).toEqual({ name: "toT1", required: false, type: "T1", ref: "T1" });
+  expect(doc.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toEqual([]);
+});
+
+test("a schema too large to show at all is an error", () => {
+  const fields = Array.from({ length: 400 }, (_, n) => `f${n}: Int`).join(" ");
+  const roots = Array.from({ length: 400 }, (_, n) => `r${n}: Big`).join(" ");
+  expect(readGraphql(`type Query { ${roots} } type Big { ${fields} }`)).toEqual({ error: expect.stringContaining("too large") });
 });
 
 test.each([

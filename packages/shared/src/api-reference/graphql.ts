@@ -1,6 +1,6 @@
 import {
+  buildASTSchema,
   buildClientSchema,
-  buildSchema,
   getIntrospectionQuery,
   getNamedType,
   isAbstractType,
@@ -15,7 +15,10 @@ import {
   isRequiredInputField,
   isSpecifiedScalarType,
   isUnionType,
+  Kind,
+  parse as parseSdl,
   valueFromASTUntyped,
+  type DefinitionNode,
   type GraphQLArgument,
   type GraphQLInputField,
   type GraphQLNamedType,
@@ -33,12 +36,15 @@ import type { ApiDoc, ApiOperation, ApiProperty, ApiSchema, ApiType, ApiWarning 
 export const GRAPHQL_INTROSPECTION_QUERY = getIntrospectionQuery();
 
 const MAX_LENGTH = 5 * 1024 * 1024;
-/**
- * A named type is spelled out where it's first met and this many levels down. The doc grows fast with
- * it on a very large schema (one with thousands of types reads into a doc near a hundred times its
- * size): lower it, or spell types out on their own pages only, if those need to be stored.
- */
+/** A named type is spelled out where it's first met and this many levels down. */
 const LEVELS = 2;
+/**
+ * The most fields a doc holds, counting each wherever it's spelled out or selected: a few megabytes
+ * of JSON. A schema whose types point at each other grows far past its own size when spelled out, so
+ * one that would hold more is spelled out fewer levels down, with a warning.
+ */
+const MAX_FIELDS = 50_000;
+const TOO_LARGE = Symbol("too large");
 
 const ROOTS = [
   { kind: "query", key: "queries", name: "Queries" },
@@ -74,11 +80,18 @@ export function readGraphql(text: string, options: { endpoint?: string } = {}): 
     if (text.length > MAX_LENGTH) return { error: "The schema is over 5 MB, the most that can be read." };
     const parsed = parse(text);
     if ("error" in parsed) return parsed;
-    const doc = toDoc(parsed.schema, options.endpoint);
-    if (doc.operations.length === 0) {
-      return { error: "The schema has no queries, mutations or subscriptions to show." };
+    for (let levels = LEVELS; levels >= 0; levels--) {
+      try {
+        const doc = toDoc(parsed.schema, options.endpoint, levels);
+        if (doc.operations.length === 0) {
+          return { error: "The schema has no queries, mutations or subscriptions to show." };
+        }
+        return { doc };
+      } catch (error) {
+        if (error !== TOO_LARGE) throw error;
+      }
     }
-    return { doc };
+    return { error: "The schema is too large to show: its queries and types have too many fields between them." };
   } catch (error) {
     // A schema is built lazily, so one that's broken deep inside (or nested too deeply) fails here.
     return { error: `The schema couldn't be read: ${message(error)}` };
@@ -94,8 +107,16 @@ function message(error: unknown) {
 function parse(text: string): { schema: GraphQLSchema } | { error: string } {
   if (!text.trimStart().startsWith("{")) {
     try {
+      const ast = parseSdl(text);
+      const defined = new Set(ast.definitions.map((one) => (one.kind === Kind.OBJECT_TYPE_DEFINITION ? one.name.value : "")));
+      // A federated service's file extends a Query it doesn't define: the first such extension is the definition.
+      const definitions = ast.definitions.map((one): DefinitionNode => {
+        if (one.kind !== Kind.OBJECT_TYPE_EXTENSION || defined.has(one.name.value)) return one;
+        defined.add(one.name.value);
+        return { ...one, kind: Kind.OBJECT_TYPE_DEFINITION };
+      });
       // Valid enough to read is enough: schemas in the wild use directives they don't declare (federation's).
-      return { schema: buildSchema(text, { assumeValidSDL: true }) };
+      return { schema: buildASTSchema({ ...ast, definitions }, { assumeValidSDL: true }) };
     } catch (error) {
       return { error: `This isn't a GraphQL schema file or an introspection result: ${message(error)}` };
     }
@@ -135,8 +156,20 @@ function slugOf(name: string) {
   );
 }
 
-function toDoc(schema: GraphQLSchema, endpoint: string | undefined): ApiDoc {
+function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: number): ApiDoc {
   const warnings: ApiWarning[] = [];
+  if (levels < LEVELS) {
+    warnings.push({
+      code: "TYPES_SHORTENED",
+      message: "The schema is large, so a type's fields are spelled out fewer levels down; each type's own page has them.",
+      where: "",
+    });
+  }
+  let fields = 0;
+  const count = (more: number) => {
+    fields += more;
+    if (fields > MAX_FIELDS) throw TOO_LARGE;
+  };
   const slugs = new Set<string>();
   const slugFor = (name: string, where: string) => {
     const base = slugOf(name);
@@ -162,11 +195,12 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined): ApiDoc {
     if (isNonNullType(type)) return { ...schemaOf(type.ofType, inside), type: text };
     if (isListType(type)) return { type: text, items: schemaOf(type.ofType, inside) };
     if (isSpecifiedScalarType(type)) return { type: text };
-    if (inside.length > LEVELS || inside.includes(type.name)) return { type: text, ref: type.name };
+    if (inside.length > levels || inside.includes(type.name)) return { type: text, ref: type.name };
     const within = [...inside, type.name];
     const result: ApiSchema = { type: text, ref: type.name };
     if (type.description) result.description = type.description;
     if (isEnumType(type)) result.enum = type.getValues().map((value) => value.name);
+    if (isObjectType(type) || isInterfaceType(type) || isInputObjectType(type)) count(Object.keys(type.getFields()).length);
     if (isObjectType(type) || isInterfaceType(type)) {
       result.properties = Object.values(type.getFields()).map((field) => {
         const property: ApiProperty = {
@@ -200,19 +234,22 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined): ApiDoc {
     return result;
   };
 
-  /** A value to send for an input type: an input object's required fields only. */
+  /**
+   * A value to send for an input type: an input object's required fields only (a `@oneOf` one's
+   * first field: it takes exactly one). Nothing (undefined) for a type inside itself.
+   */
   const inputExample = (type: GraphQLType, inside: string[]): unknown => {
     if (isNonNullType(type)) return inputExample(type.ofType, inside);
-    if (isListType(type)) return [inputExample(type.ofType, inside)];
-    if (isEnumType(type)) return type.getValues()[0]?.name ?? null;
+    if (isListType(type)) {
+      const item = inputExample(type.ofType, inside);
+      return item === undefined ? [] : [item];
+    }
     if (isInputObjectType(type)) {
-      // Only a broken schema requires a type inside itself.
-      if (inside.includes(type.name)) return null;
-      return Object.fromEntries(
-        Object.values(type.getFields())
-          .filter(isRequiredInputField)
-          .map((field) => [field.name, inputExample(field.type, [...inside, type.name])]),
-      );
+      if (inside.includes(type.name)) return undefined;
+      const all = Object.values(type.getFields());
+      const sent = type.isOneOf ? all.slice(0, 1) : all.filter(isRequiredInputField);
+      count(sent.length);
+      return Object.fromEntries(sent.map((field) => [field.name, inputExample(field.type, [...inside, type.name])]));
     }
     return leafExample(type);
   };
@@ -240,6 +277,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined): ApiDoc {
       example.__typename = schema.getPossibleTypes(type)[0]?.name ?? type.name;
     }
     if (isObjectType(type) || isInterfaceType(type)) {
+      count(Object.keys(type.getFields()).length);
       for (const field of Object.values(type.getFields())) {
         if (field.deprecationReason != null || field.args.some(isRequiredArgument)) continue;
         if (!deeper && !isLeafType(getNamedType(field.type))) continue;
@@ -288,14 +326,16 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined): ApiDoc {
         const value = defaultOf(arg);
         if (value !== undefined) paramSchema.default = value;
         if (arg.deprecationReason != null) paramSchema.deprecated = true;
-        variables[arg.name] = inputExample(arg.type, []);
+        const example = inputExample(arg.type, []);
+        // Only what the field needs is sent: a made-up cursor or filter fails, and unset ones take their defaults.
+        if (isRequiredArgument(arg)) variables[arg.name] = example;
         return {
           name: arg.name,
           in: "argument" as const,
           required: isRequiredArgument(arg),
           description: arg.description ?? "",
           schema: paramSchema,
-          example: variables[arg.name],
+          example,
         };
       });
       const selection = select(field.type, "  ", true);
