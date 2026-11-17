@@ -48,10 +48,12 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog", { name: "New collection" });
-  // Cancel closes it and adds nothing.
+  // Cancel closes it and adds nothing, whatever was typed.
+  await dialog.getByLabel("Name").fill("Discarded");
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
-  await expect(team.getByText("No articles yet")).toBeVisible();
+  await expect(team.getByText("Collection added")).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Discarded" })).toHaveCount(0);
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Getting started");
