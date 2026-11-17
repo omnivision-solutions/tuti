@@ -223,6 +223,8 @@ paths:
   expect(read("openapi: 3.0.3\ninfo:\n  version: 2 # second\n").version).toBe("2");
   expect(read('openapi: 3.0.3\ninfo: { version: "1.0.0" }').version).toBe("1.0.0");
   expect(read('{"openapi": "3.0.3", "info": {"version": 1.5}}').version).toBe("1.5");
+  expect(read("openapi: 3.0.3\ninfo:\n  version:\n").version).toBeNull();
+  expect(read('{"openapi": "3.0.3", "info": {"version": {"major": 1}}}').version).toBeNull();
   expect(doc.operations[0]!.responses).toEqual([
     { status: "200", description: "Fine", contentType: null, schema: null },
     { status: "201", description: "Fine", contentType: null, schema: null },
@@ -992,6 +994,22 @@ test("a very long allOf counts as its length each time it's used", () => {
   expect(schema.properties).toEqual([{ name: "f0", required: false, type: "Wide", ref: "Wide" }]);
   expect(codes(doc)).toContain("SCHEMA_TOO_LARGE @ GET /x › responses › 200");
 });
+
+test("an allOf part that can't be followed is warned about", () => {
+  const { schema, doc } = schemaOf({ allOf: [{ $ref: "common.yaml#/components/schemas/Error" }, ref("Missing"), { properties: { x: { type: "string" } } }] });
+  expect(schema).toEqual({ type: "object", properties: [{ name: "x", required: false, type: "string" }] });
+  expect(codes(doc)).toEqual(["OUTSIDE_REF @ GET /x › responses › 200", "UNKNOWN_REF @ GET /x › responses › 200"]);
+});
+
+test("a long list of choices, used by thousands of fields, is gone through once", () => {
+  const big = { oneOf: Array.from({ length: 50_000 }, () => ({})) };
+  const many = { type: "object", properties: Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`f${index}`, ref("Big")])) };
+  const paths = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [`/${index}`, { get: { summary: `S${index}`, responses: { "200": json(ref("A")) } } }]));
+  const chain = (to: string) => ({ type: "object", properties: { next: ref(to) } });
+  const result = readOpenApi(JSON.stringify({ openapi: "3.0.0", paths, components: { schemas: { Big: big, D: many, A: chain("B"), B: chain("C"), C: chain("D") } } }));
+  // Whether it reads or is too large, it gets there without scanning the list for every field of every response.
+  expect("doc" in result ? result.doc.operations.length : result.error).toBeTruthy();
+}, 30_000);
 
 test("after many large types, an operation's own schemas are still read", () => {
   const schemas = Object.fromEntries(

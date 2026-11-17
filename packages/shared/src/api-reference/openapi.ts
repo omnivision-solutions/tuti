@@ -95,6 +95,16 @@ function unique(base: string, used: Map<string, number>): string {
   return value;
 }
 
+/** Worked out once per object in the spec, however often it's used: a long list is slow to go through each time. */
+function once<T>(work: (value: Obj) => T): (value: Obj) => T {
+  const kept = new WeakMap<Obj, { result: T }>();
+  return (value) => {
+    const known = kept.get(value) ?? { result: work(value) };
+    kept.set(value, known);
+    return known.result;
+  };
+}
+
 function range(min: unknown, max: unknown, one = "", many = ""): string | null {
   const unit = (n: number) => (one ? ` ${n === 1 ? one : many}` : "");
   const low = typeof min === "number" ? min : null;
@@ -248,7 +258,7 @@ function read(root: Obj): ApiDoc {
   }
 
   /** A schema with its `allOf` parts folded in: fields together (a later part's wins), the rest from whichever says it first. */
-  function flatten(schema: Obj): Obj {
+  function flatten(schema: Obj, where?: string): Obj {
     if (!Array.isArray(schema.allOf)) return schema;
     const done = flattened.get(schema);
     if (done) return done;
@@ -261,7 +271,7 @@ function read(root: Obj): ApiDoc {
       docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
       if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
       parts.push(part);
-      for (const inner of list(part.allOf)) add(follow(inner));
+      for (const inner of list(part.allOf)) add(follow(inner, where));
     };
     add(schema);
     const merged = new Map<string, unknown>();
@@ -307,13 +317,10 @@ function read(root: Obj): ApiDoc {
   const spent = () => rootNodes >= 2 * (docNodes <= DOC_NODES ? ROOT_NODES : ROOT_NODES_AFTER);
 
   /** The type a schema says it is, without "null", else what its keywords imply; and whether it may be null. */
-  function typesOf(schema: Obj): { types: string[]; nullable: boolean } {
-    const known = typed.get(schema) ?? typesIn(schema);
-    typed.set(schema, known);
-    return known;
-  }
-  // Kept per schema, as its fields are: a long `enum` or `required` is gone through once, not on every use.
-  const typed = new WeakMap<Obj, { types: string[]; nullable: boolean }>();
+  // Kept per schema, as its fields are: a long `enum`, `required` or `oneOf` is gone through once, not on every use.
+  const typesOf = once(typesIn);
+  const choicesOf = once(choicesIn);
+  const firstOf = once((schema) => list(schema.enum).find((value) => value !== null));
   const requiredIn = new WeakMap<unknown[], Set<unknown>>();
   function typesIn(schema: Obj): { types: string[]; nullable: boolean } {
     const said = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((type) => typeof type === "string");
@@ -322,13 +329,13 @@ function read(root: Obj): ApiDoc {
     if (types.length > 0) return { types, nullable };
     if (isObj(schema.properties) || isObj(schema.additionalProperties)) return { types: ["object"], nullable };
     if (schema.items !== undefined) return { types: ["array"], nullable };
-    const first = list(schema.enum).find((value) => value !== null) ?? own(schema, "const");
+    const first = firstOf(schema) ?? own(schema, "const");
     if (["string", "number", "boolean"].includes(typeof first)) return { types: [typeof first], nullable };
     return { types: [], nullable };
   }
 
   /** `oneOf` and `anyOf` without their "null" choices. */
-  function choicesOf(schema: Obj): { choices: unknown[]; nullable: boolean } {
+  function choicesIn(schema: Obj): { choices: unknown[]; nullable: boolean } {
     const all = [...list(schema.oneOf), ...list(schema.anyOf)];
     const choices = all.filter((choice) => !(isObj(choice) && choice.type === "null"));
     return { choices, nullable: choices.length < all.length };
@@ -394,7 +401,7 @@ function read(root: Obj): ApiDoc {
     }
     if (folded.length > 0) place = { ...place, folding: [...place.folding, node] };
 
-    const schema = flatten(node);
+    const schema = flatten(node, place.where);
     const { types, nullable } = typesOf(schema);
     const { choices, nullable: nullChoice } = choicesOf(schema);
     const out: ApiSchema = { type: "any" };
@@ -460,7 +467,7 @@ function read(root: Obj): ApiDoc {
     if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
     const { types } = typesOf(schema);
     const type = types[0];
-    const value = list(schema.enum).find((entry) => entry !== null);
+    const value = firstOf(schema);
     if (value !== undefined) return value;
     const inside = [...stack, target];
     if (type === undefined) {
@@ -505,7 +512,7 @@ function read(root: Obj): ApiDoc {
   /** The spec's example for a parameter, body or response, else one made from its schema. */
   function exampleOf(holder: Obj, make: boolean): unknown {
     if (Object.hasOwn(holder, "example")) return holder.example;
-    const first = follow(Object.values(isObj(holder.examples) ? holder.examples : {})[0]);
+    const first = follow(fieldsOf(holder.examples)[0]?.[1]);
     if (first && Object.hasOwn(first, "value")) return first.value;
     const schema = follow(holder.schema);
     if (schema && Object.hasOwn(schema, "example")) return schema.example;
@@ -515,14 +522,14 @@ function read(root: Obj): ApiDoc {
   }
 
   /** A body's or response's content in the type the pages show: JSON when it's there, else the first. */
-  function contentOf(holder: Obj): { contentType: string; media: Obj } | null {
+  const contentOf = once((holder): { contentType: string; media: Obj } | null => {
     const types = entries(holder.content);
     // However it's written: "application/json; charset=utf-8", then "application/problem+json".
     const named = types.map(([type]) => (type.split(";")[0] ?? "").trim().toLowerCase());
     const json = named.indexOf("application/json");
     const [contentType, media] = types[json === -1 ? Math.max(0, named.findIndex((type) => type.endsWith("+json"))) : json] ?? [];
     return contentType === undefined ? null : { contentType, media: isObj(media) ? media : {} };
-  }
+  });
 
   // Ways of signing.
   const auth: ApiAuth[] = [];
@@ -657,12 +664,14 @@ function read(root: Obj): ApiDoc {
         const response = follow(entry, where);
         if (!response) continue;
         const shown = contentOf(response);
+        // The schema before its example: reading it is what warns about what's left out.
+        const schema = shown && shown.media.schema !== undefined ? schemaAt(shown.media.schema, where) : null;
         const example = shown ? exampleOf(shown.media, true) : undefined;
         responses.push({
           status,
           description: str(response.description),
           contentType: shown?.contentType ?? null,
-          schema: shown && shown.media.schema !== undefined ? schemaAt(shown.media.schema, where) : null,
+          schema,
           ...(example === undefined ? {} : { example }),
         });
       }
@@ -671,7 +680,9 @@ function read(root: Obj): ApiDoc {
       // that needs nothing. A way that needs a scheme the reference doesn't have is left out whole:
       // without that scheme it wouldn't sign.
       const needs: string[][] = [];
-      for (const requirement of list(Array.isArray(operation.security) ? operation.security : root.security)) {
+      const security = list(Array.isArray(operation.security) ? operation.security : root.security);
+      charge(security.length); // The spec's own list is gone through for every operation without one.
+      for (const requirement of security) {
         if (!isObj(requirement)) continue;
         const names = Object.keys(requirement);
         for (const name of names) if (own(schemes, name) === undefined) warn("UNKNOWN_SECURITY", `${key} › security › ${name}`);
@@ -714,10 +725,11 @@ function read(root: Obj): ApiDoc {
     if (type.slug !== (slugify(type.name) || "type")) warn("DUPLICATE_SLUG", `schemas › ${type.name}`);
   }
 
+  const version = own(root.info, "version");
   return {
     format: "openapi",
     title: str(own(root.info, "title")),
-    version: own(root.info, "version") === undefined ? null : String(own(root.info, "version")),
+    version: typeof version === "string" || typeof version === "number" ? String(version) : null,
     description: str(own(root.info, "description")),
     servers: serversOf(root.servers, "servers"),
     auth,
