@@ -45,6 +45,14 @@ type Obj = Record<string, unknown>;
 
 /** What may be said about an `allOf` reference and still leave it that reference: all of it is carried over or only words. */
 const WORDS = new Set(["description", "nullable", "deprecated", "default", "title", "example"]);
+/** What `constraints` puts into words, and `type`: beside a reference they're carried over or say nothing new. */
+const LIMITS = new Set(
+  "type minimum maximum exclusiveMinimum exclusiveMaximum multipleOf minLength maxLength pattern minItems maxItems uniqueItems minProperties maxProperties readOnly writeOnly".split(" "),
+);
+/** A doc holds one warning per place, up to this many: past it there's nothing a team would read. */
+const WARNINGS_MOST = 10_000;
+/** The most a YAML file may be once its aliases are filled in, in characters: one anchor can stand in a hundred places. */
+const YAML_SIZE = 4 * OPENAPI_MAX_BYTES;
 const onlyWords = (schema: Obj, also?: string) => Object.keys(schema).every((key) => WORDS.has(key) || key === also || key.startsWith("x-"));
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 const PARAM_PLACES = new Set(["path", "query", "header", "cookie"]);
@@ -149,6 +157,7 @@ function parse(text: string): { value: unknown } | { error: string } {
     const document = parseDocument(text, { logLevel: "error", merge: true });
     if (document.errors[0]) throw document.errors[0];
     const read: unknown = document.toJS();
+    if (sizeOf(read, YAML_SIZE) > YAML_SIZE) return { error: "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors." };
     const value: unknown = read === undefined ? null : JSON.parse(JSON.stringify(read));
     // An unquoted `version: 1.10` is the number 1.1 to YAML: the version is what the spec's text says.
     const version: unknown = document.getIn(["info", "version"], true);
@@ -213,7 +222,7 @@ function read(root: Obj): ApiDoc {
   const warned = new Set<string>();
   /** One warning per place and kind, however many times a named schema is gone through. */
   function warn(code: keyof typeof MESSAGES, where: string) {
-    if (warned.has(`${code} ${where}`)) return;
+    if (warned.has(`${code} ${where}`) || warnings.length >= WARNINGS_MOST) return;
     warned.add(`${code} ${where}`);
     warnings.push({ code, message: MESSAGES[code], where });
   }
@@ -384,10 +393,15 @@ function read(root: Obj): ApiDoc {
     const inside = folded.find((pointer) => place.stack.includes(pointer)) ?? (place.folding.includes(node) ? folded[0] : undefined);
     const held = inside ?? alone;
     if (held !== undefined) {
-      if (alone === undefined) warn("ADDS_TO_ITSELF", place.where);
+      // Left out: fields and the like in a part of their own, or beside the reference.
+      const kept = (part: unknown) => isObj(part) && (typeof part.$ref === "string" || words.includes(part));
+      if (!parts.every(kept) || !Object.keys(node).every((key) => key === "allOf" || WORDS.has(key) || LIMITS.has(key) || key.startsWith("x-"))) {
+        warn("ADDS_TO_ITSELF", place.where);
+      }
       const name = lookup(held)?.name;
       const only = inside === undefined ? toSchema({ $ref: held }, place) : name === undefined ? { type: "object" } : { type: name, ref: name };
-      const said = (key: string) => words.find((part) => Object.hasOwn(part, key))?.[key];
+      // The schema's own words first, whatever else it has, then those in a part of their own.
+      const said = (key: string) => [node, ...words].find((part) => Object.hasOwn(part, key))?.[key];
       const description = str(said("description")) || only.description;
       const limits = constraints(node);
       return {
@@ -685,6 +699,7 @@ function read(root: Obj): ApiDoc {
       for (const requirement of security) {
         if (!isObj(requirement)) continue;
         const names = Object.keys(requirement);
+        charge(names.length);
         for (const name of names) if (own(schemes, name) === undefined) warn("UNKNOWN_SECURITY", `${key} › security › ${name}`);
         if (names.every((name) => signed.has(name))) needs.push(names);
         else if (names.every((name) => own(schemes, name) !== undefined)) warn("SECURITY_SKIPPED", `${key} › security`);

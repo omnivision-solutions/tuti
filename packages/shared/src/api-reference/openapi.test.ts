@@ -876,6 +876,24 @@ test("a reference inside allOf is still a reference: named, and never spelled ou
   expect(codes(doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Category › twin"]);
 });
 
+test("a field that is its own type keeps its own words, whatever else is beside the reference", () => {
+  const { doc } = schemaOf(ref("Node"), {
+    Node: {
+      type: "object",
+      properties: {
+        parent: { allOf: [ref("Node")], readOnly: true, type: "object", nullable: true, deprecated: true, default: null, description: "The one above." },
+        more: { allOf: [ref("Node")], properties: { extra: { type: "string" } }, description: "With more." },
+      },
+    },
+  });
+  expect(doc.types[0]!.schema.properties).toEqual([
+    { name: "parent", required: false, type: "Node", ref: "Node", description: "The one above.", nullable: true, deprecated: true, constraints: "read-only", default: null },
+    { name: "more", required: false, type: "Node", ref: "Node", description: "With more." },
+  ]);
+  // Only what's really left out is warned about.
+  expect(codes(doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Node › more"]);
+});
+
 test("types that share an allOf base are spelled out inside each other", () => {
   const { schema, example, doc } = schemaOf(ref("Pet"), {
     Resource: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
@@ -1020,6 +1038,15 @@ test("a long list of choices, used by thousands of fields, is gone through once"
   expect(scans).toBe(1);
 });
 
+test("a YAML file that's too large once its aliases are filled in is an error", () => {
+  const aliases = Array.from({ length: 90 }, (_, index) => `  a${index}: *big`).join("\n");
+  const text = `openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses:\n${aliases}\n`;
+  expect(text.length).toBeLessThan(400_000);
+  expect(errorOf(text)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
+  // A few uses of an anchor are what anchors are for.
+  expect(errorOf(`openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses: [*big, *big, *big]\n`)).toBeNull();
+});
+
 test("the spec's own security list counts for every operation that has none of its own", () => {
   const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`/${index}`, { get: { summary: `S${index}` } }]));
   const securitySchemes = { bearer: { type: "http", scheme: "bearer" } };
@@ -1028,6 +1055,13 @@ test("the spec's own security list counts for every operation that has none of i
   const short = spec({ security: [{ bearer: [] }, {}], paths: paths(1_500), components: { securitySchemes } });
   expect(short.operations).toHaveLength(1_500);
   expect(short.operations[1_499]!.auth).toEqual([["bearer"], []]);
+
+  // Each name in a requirement counts too, and the warnings about them stop at a number a team could read.
+  const names = { openapi: "3.0.0", security: [Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`s${index}`, []]))], paths: paths(600) };
+  expect(errorOf(JSON.stringify(names))).toMatch(/too large once its references are followed/);
+  const fewer = spec({ security: [Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`s${index}`, []]))], paths: paths(20) });
+  expect(fewer.operations).toHaveLength(20);
+  expect(fewer.warnings).toHaveLength(10_000);
 });
 
 test("after many large types, an operation's own schemas are still read", () => {
