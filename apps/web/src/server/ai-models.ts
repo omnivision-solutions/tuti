@@ -1,15 +1,15 @@
 "use server";
 
-import { AI_FEATURES, AUTOPILOT_STEPS } from "@tuti/shared";
+import { AI_ROLE_NAMES } from "@tuti/shared";
 
 import type { FormState } from "./form-state";
 import { updateAiModels } from "./operations/ai-models";
 import { asAdmin, call } from "./operations/run";
 
-/** Saves Settings → AI models (see aiModels.update): each feature's model id sent, empty for the default; a feature not sent keeps its model. */
+/** Saves Settings → AI models (see aiModels.update): each role's model id sent, empty for the default; a role not sent keeps its model. */
 export async function saveAiModels(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const input = Object.fromEntries(
-    [...AI_FEATURES, ...AUTOPILOT_STEPS].flatMap((feature) => {
+    AI_ROLE_NAMES.flatMap((feature) => {
       const field = formData.get(feature);
       return typeof field === "string" ? [[feature, field]] : [];
     }),

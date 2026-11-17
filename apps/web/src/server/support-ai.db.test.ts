@@ -10,7 +10,7 @@ import { createArticle, publishArticle, unpublishArticle } from "./operations/do
 import { call } from "./operations/run";
 import { suggestReply, summarizeConversation } from "./operations/support-ai";
 
-/** The support inbox's AI (docs/plan.md, Support inbox, item 12): a reply drafted from the docs, and summaries, as the `support` feature. */
+/** The support inbox's AI (docs/plan.md, Support inbox, item 12): a reply drafted from the docs, and summaries: two roles, both metered as the `support` feature. */
 
 let openai: OpenAIFake;
 let model: ModelFake;
@@ -99,6 +99,21 @@ test("out of AI credits: no draft, and summaries are refused saying so", async (
   expect(await call(suggestReply, team, { number: 1 })).toEqual({ status: "unavailable", draft: null });
   await expect(call(summarizeConversation, team, { number: 1 })).rejects.toMatchObject({ status: 402, message: "This project is out of AI credits" });
   expect(model.requests).toEqual([]);
+});
+
+test("drafts and summaries are two roles: each uses the model the project picked for it, and both are charged as support", async () => {
+  const { project, team } = await setup();
+  await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
+  await prisma.project.update({ where: { id: project.id }, data: { aiModels: { support_draft: "acme/drafter", support_summary: "acme/summariser" } } });
+  await call(createConversation, team, { email: "e2e-sam@example.com", body: QUESTION });
+  openai.setVector(QUESTION, along(1));
+  model.reply(JSON.stringify({ answer: "From the Team page.", sources: ["s1"] }));
+  expect((await call(suggestReply, team, { number: 1 })).status).toBe("suggested");
+  model.reply("They asked how to add a colleague.");
+  await call(summarizeConversation, team, { number: 1 });
+
+  expect(model.requests.map((request) => request.model)).toEqual(["acme/drafter", "acme/summariser"]);
+  expect(await prisma.aiUsage.findMany({ where: { projectId: project.id }, select: { feature: true } })).toEqual([{ feature: "support" }, { feature: "support" }]);
 });
 
 test("a summary is added as the AI's note: only the team sees it, and the status doesn't move", async () => {

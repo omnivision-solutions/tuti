@@ -1,8 +1,10 @@
+import type { AiRole } from "@tuti/shared";
+
 /** A model the AI endpoint lists, with its prices in dollars per token (null when it has none). */
 export type ListedModel = { id: string; name: string; input: number | null; output: number | null; tools: boolean };
 
 export type Tier = "fast" | "balanced" | "best";
-/** What a row's choice is: a tier, a custom id, or (Autopilot's double-check) off. */
+/** What a row's choice is: a tier, a custom id, or (Autopilot's checks) off. */
 export type Choice = Tier | "custom" | "off";
 export const TIER_NAMES: Record<Tier, string> = { fast: "Fast", balanced: "Balanced", best: "Best" };
 
@@ -13,28 +15,29 @@ const TIER_MODELS: Record<Exclude<Tier, "fast">, string> = {
 };
 
 /**
- * Roughly what one use of each feature reads and writes, in tokens, to price it. Autopilot's three steps are its docs
- * agent's: deciding (rounds of tool calls, each sending the conversation so far), the double-check (the same, again,
- * only when it proposes a new article) and writing (the edits and drafts, with the same tools, the summary and reasons).
+ * Roughly what one use of each role reads and writes, in tokens, to price it. Autopilot's three are its docs agent's:
+ * deciding (rounds of tool calls, each sending the conversation so far), checking (the same, again, only when it
+ * proposes a new article) and writing (the edits and drafts, with the same tools, the summary and reasons).
  * ponytail: typical sizes, not this project's own; average its AI usage records if estimates drift.
  */
-const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: string }> = {
+const TYPICAL_TOKENS: Record<AiRole, { input: number; output: number; per: string }> = {
   answers: { input: 6000, output: 500, per: "answer" },
   escalations: { input: 3000, output: 300, per: "summary" },
-  support: { input: 6000, output: 500, per: "reply" },
+  support_draft: { input: 6000, output: 500, per: "reply" },
+  support_summary: { input: 3000, output: 300, per: "summary" },
   changelog: { input: 4000, output: 800, per: "draft" },
   code_changes_decide: { input: 150_000, output: 4_000, per: "merged pull request" },
-  code_changes_redecide: { input: 150_000, output: 4_000, per: "double-check (only when it proposes a new article)" },
+  code_changes_check: { input: 150_000, output: 4_000, per: "check (only when it proposes a new article)" },
   code_changes: { input: 60_000, output: 5_000, per: "merged pull request" },
 };
 
 const priced = (model: ListedModel | null | undefined): model is ListedModel & { input: number; output: number } =>
   Boolean(model) && model!.input !== null && model!.output !== null;
 
-/** What one use of `feature` (or Autopilot step) costs with `model`, in dollars, or null without prices. */
-export function costPerUse(feature: string, model: ListedModel | undefined): { dollars: number; per: string } | null {
-  const typical = TYPICAL_TOKENS[feature];
-  if (!typical || !priced(model)) {
+/** What one use of `role` costs with `model`, in dollars, or null without prices. */
+export function costPerUse(role: AiRole, model: ListedModel | undefined): { dollars: number; per: string } | null {
+  const typical = TYPICAL_TOKENS[role];
+  if (!priced(model)) {
     return null;
   }
   return { dollars: typical.input * model.input + typical.output * model.output, per: typical.per };

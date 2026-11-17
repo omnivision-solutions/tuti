@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
+import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
 import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -82,8 +82,8 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
   // Going back to the default needs no list, nor does turning the double-check off.
   await call(updateAiModels, as(), { changelog: "" });
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: {} });
-  await call(updateAiModels, as(), { code_changes_redecide: "off" });
-  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: { code_changes_redecide: "off" } });
+  await call(updateAiModels, as(), { code_changes_check: "off" });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: { code_changes_check: "off" } });
 });
 
 test("under the server's cap only models priced at or under it can be picked; the default needs no check", async () => {
@@ -123,17 +123,25 @@ test("the settings form saves only what it sends: a feature it leaves out keeps 
   expect([models.answers.model, models.changelog.model]).toEqual(["acme/tiny", "anthropic/claude-sonnet-5.5"]);
 });
 
-test("Autopilot's steps: Decides and Double-checks have their own picks (Off only for the double-check); each step takes only models with tool calls", async () => {
+test("every role is listed with its default: the Inbox's two share the support feature's", async () => {
+  vi.stubEnv("AI_MODEL_SUPPORT", "acme/tiny");
+  const models = await call(getAiModels, as(), {});
+  expect(Object.keys(models).sort()).toEqual([...AI_ROLE_NAMES].sort());
+  expect(models).toMatchObject({ support_draft: { model: null, default: "acme/tiny" }, support_summary: { model: null, default: "acme/tiny" } });
+  expect((await call(updateAiModels, as(), { support_summary: "anthropic/claude-sonnet-5.5" })).support_draft.model).toBeNull();
+});
+
+test("Autopilot's roles: Decides and Checks have their own picks (Off only for Checks); each role takes only models with tool calls", async () => {
   expect(await call(getAiModels, as(), {})).toMatchObject({
     code_changes_decide: { model: null, default: "anthropic/claude-haiku-5.5" },
-    code_changes_redecide: { model: null, default: "anthropic/claude-sonnet-5.5" },
+    code_changes_check: { model: null, default: "anthropic/claude-sonnet-5.5" },
   });
-  expect(await call(updateAiModels, as(), { code_changes_decide: "acme/tiny", code_changes_redecide: "off" })).toMatchObject({
+  expect(await call(updateAiModels, as(), { code_changes_decide: "acme/tiny", code_changes_check: "off" })).toMatchObject({
     code_changes_decide: { model: "acme/tiny" },
-    code_changes_redecide: { model: "off" },
+    code_changes_check: { model: "off" },
   });
-  await expect(call(updateAiModels, as(), { code_changes_decide: "off" })).rejects.toMatchObject({ status: 400, message: "Only Autopilot's double-check can be off" });
-  for (const pick of ["code_changes_decide", "code_changes_redecide", "code_changes"]) {
+  await expect(call(updateAiModels, as(), { code_changes_decide: "off" })).rejects.toMatchObject({ status: 400, message: "Only Autopilot's checks can be off" });
+  for (const pick of ["code_changes_decide", "code_changes_check", "code_changes"]) {
     await expect(call(updateAiModels, as(), { [pick]: "acme/no-tools" })).rejects.toMatchObject({
       status: 400,
       code: "model_without_tools",
@@ -145,7 +153,7 @@ test("Autopilot's steps: Decides and Double-checks have their own picks (Off onl
   // The form sends the steps too.
   actAs(owner);
   const form = new FormData();
-  form.set("code_changes_redecide", "");
+  form.set("code_changes_check", "");
   expect(await saveAiModels(project.slug, {}, form)).toEqual({});
-  expect((await call(getAiModels, as(), {})).code_changes_redecide.model).toBeNull();
+  expect((await call(getAiModels, as(), {})).code_changes_check.model).toBeNull();
 });

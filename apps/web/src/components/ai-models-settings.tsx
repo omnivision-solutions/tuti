@@ -1,5 +1,6 @@
 "use client";
 
+import type { AiRole } from "@tuti/shared";
 import { type ReactNode, useActionState, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,51 +14,51 @@ import { saveAiModels } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
 import type { AiModels } from "@/server/operations/ai-models";
 
-type Pick = keyof AiModels;
-
-/** Each row: its title, what its model does, and (Autopilot's steps) that it's an agent, so only models with tool calls. */
-const ROWS: { pick: Pick; title: string; does: string; agent?: true; off?: true }[] = [
-  { pick: "answers", title: AI_FEATURE_NAMES.answers!, does: "Answers to questions in your docs, on the portal and in the widget." },
-  { pick: "escalations", title: AI_FEATURE_NAMES.escalations!, does: "The summary sent with a question passed to your team." },
-  { pick: "support", title: AI_FEATURE_NAMES.support!, does: "Replies drafted from your docs and summaries of conversations, in your Inbox." },
-  { pick: "changelog", title: AI_FEATURE_NAMES.changelog!, does: "Draft with AI and Edit with AI on changelog entries." },
-  {
-    pick: "code_changes_decide",
+/** Each role's row, in the page's order: its title and what its model does. Every role has one (the type says so). */
+const ROW_OF: Record<AiRole, { title: string; does: string }> = {
+  answers: { title: AI_FEATURE_NAMES.answers!, does: "Answers to questions in your docs, on the portal and in the widget." },
+  escalations: { title: AI_FEATURE_NAMES.escalations!, does: "The summary sent with a question passed to your team." },
+  support_draft: { title: "Inbox drafts", does: "Replies drafted from your docs, in your Inbox." },
+  support_summary: { title: "Inbox summaries", does: "Summaries of conversations, in your Inbox." },
+  changelog: { title: AI_FEATURE_NAMES.changelog!, does: "Draft with AI and Edit with AI on changelog entries." },
+  code_changes_decide: {
     title: "Autopilot decides",
     does: "Reads each merged pull request, its code and your help center, and decides which articles to fix and which new ones you need.",
-    agent: true,
   },
-  {
-    pick: "code_changes_redecide",
-    title: "Autopilot double-checks",
-    does: "When it proposes a new article, decides again from scratch, so fewer duplicates are written. Off skips it.",
-    agent: true,
-    off: true,
+  code_changes_check: {
+    title: "Autopilot checks",
+    does: "A second opinion on Autopilot's own work. When it proposes a new article, it decides again from scratch, so fewer duplicates are written. Off skips it.",
   },
-  {
-    pick: "code_changes",
+  code_changes: {
     title: "Autopilot writes",
     does: "Writes each fix and new article, the summary, the changelog line and updates on posts. Verify uses it too.",
-    agent: true,
   },
-];
+};
+const ROLES = Object.keys(ROW_OF) as AiRole[];
+/** A row: its role's words, and (from the page, as AI_ROLES says) whether it's an agent's, so only models with tool calls, and whether it can be off. */
+type Row = { pick: AiRole; title: string; does: string; agent: boolean; off: boolean };
 
 /** A price in dollars per token, per million tokens. */
 const perMillion = (dollars: number) => `$${Number((dollars * 1e6).toFixed(4))}`;
 
 /**
- * Settings → AI models: for each feature, Fast (the server's default), Balanced or Best, each with its model
+ * Settings → AI models: for each role, Fast (the server's default), Balanced or Best, each with its model
  * and what one use costs, or a custom model id from the endpoint's list (see aiModels.update).
  */
 export function AiModelsSettings({
   projectSlug,
   models,
+  agents,
+  offable,
   listed,
   creditsPerDollar,
   children,
 }: {
   projectSlug: string;
   models: AiModels;
+  /** The roles that are an agent's (only models with tool calls), and those a project may switch off. */
+  agents: AiRole[];
+  offable: AiRole[];
   /** The endpoint's models, to pick from; empty when the list couldn't be read. */
   listed: ListedModel[];
   /** Where AI is paid with credits, how many a dollar of it costs, to price each choice in them. */
@@ -66,7 +67,8 @@ export function AiModelsSettings({
   children?: ReactNode;
 }) {
   // What this page last saw saved: only fields changed since are sent, so a page opened earlier can't undo another admin's pick.
-  const saved = useRef(Object.fromEntries(ROWS.map(({ pick }) => [pick, models[pick].model ?? ""])));
+  const rows: Row[] = ROLES.map((pick) => ({ pick, ...ROW_OF[pick], agent: agents.includes(pick), off: offable.includes(pick) }));
+  const saved = useRef(Object.fromEntries(ROLES.map((pick) => [pick, models[pick].model ?? ""])));
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const changed = new FormData();
     for (const [feature, value] of Object.entries(saved.current)) {
@@ -96,7 +98,7 @@ export function AiModelsSettings({
     <div className="flex flex-col gap-6">
       <form {...keepingFields(action)}>
         <FieldGroup>
-          {ROWS.map((row) => (
+          {rows.map((row) => (
             <FeatureModel key={row.pick} row={row} model={models[row.pick]} listed={row.agent ? listed.filter((model) => model.tools) : listed} creditsPerDollar={creditsPerDollar} />
           ))}
           <datalist id="ai-models">{options(listed)}</datalist>
@@ -115,7 +117,7 @@ export function AiModelsSettings({
 }
 
 /**
- * One row's choice: its tiers as cards, Off where it can be (Autopilot's double-check), then Custom model with a box for
+ * One row's choice: its tiers as cards, Off where it can be (Autopilot's checks), then Custom model with a box for
  * the id. Its field holds the id ("" for Fast).
  */
 function FeatureModel({
@@ -124,8 +126,8 @@ function FeatureModel({
   listed,
   creditsPerDollar,
 }: {
-  row: (typeof ROWS)[number];
-  model: AiModels[Pick];
+  row: Row;
+  model: AiModels[AiRole];
   listed: ListedModel[];
   creditsPerDollar: number | null;
 }) {
@@ -168,7 +170,7 @@ function FeatureModel({
               <input type="radio" name={name} className="accent-primary" checked={choice === "off"} onChange={() => setChoice("off")} />
               Off
             </span>
-            <span className="text-xs text-muted-foreground">No double-check: cheaper, more duplicates</span>
+            <span className="text-xs text-muted-foreground">No check: cheaper, more duplicates</span>
           </label>
         )}
         <label className={card}>

@@ -915,6 +915,13 @@ Decided (2026-11-06):
 
 - [x] Private posts: the visibility on posts and boards (additive), the board's choice and the post's on the team's pages, `visibility` on `posts.create` (the team's only) and `posts.update`, enforced everywhere a post reaches someone off the team, with a test for each
 
+## AI models by role (asked 2026-11-17)
+
+Each model setting was tied to one step of one feature (Autopilot's decide, double-check and write), so every step added or removed meant a setting, a row on Settings → AI models and a variable added or removed with it. A project picks a model for a **role** instead: a kind of work within a feature. Code asks for a role, never a model, so steps can change without the settings changing.
+
+- [x] R1. Roles (`AI_ROLES` in `@tuti/shared`): each has the feature its requests are metered as, whether it's an agent's (only models with tool calls) and whether a project may switch it off. Autopilot's three are Decides (`code_changes_decide`: reads a lot and judges, at volume), Writes (`code_changes`: the text, Verify's too) and Checks (`code_changes_check`, was `code_changes_redecide`: a second opinion on another step's work, today the new-article double-check; Off skips it). The Inbox's one pick becomes two: drafted replies (`support_draft`) and summaries (`support_summary`), both still metered as support. Settings → AI models, the API (`aiModels.get`, `aiModels.update`) and `aiFor` all go by role; picks saved under the old names aren't read (no project had any). The server's variables keep their names until R2.
+- [ ] R2. Levels: a project picks one level for all its roles (such as Affordable, Balanced, Best) or Custom, which shows a model per role as now. Which model each level gives each role comes from one file per server, with built-in defaults, like the plans' file. Every plan sees the page; only plans that include it can change it.
+
 ## Later
 
 - [ ] Link the questions passed to the team that the release before `docs_question.conversationId` passed on while the new one was deploying (its migration links those before it): the same backfill again, for rows still without one
