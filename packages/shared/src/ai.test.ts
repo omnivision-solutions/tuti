@@ -2,7 +2,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { resetCodeChangesSettings } from "./code-changes-settings";
-import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, withinModelCap } from "./ai";
+import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
 
 let model: ModelFake;
@@ -58,6 +58,18 @@ test("OpenRouter's own fields (data policy, cost) go only through OpenRouter: an
   await complete({ system: "s", user: "u", ...ai });
   expect(body(1)).toMatchObject({ provider: { data_collection: "deny" }, usage: { include: true } });
   fetch.mockRestore();
+});
+
+test("roles: each is a feature's kind of work, with that feature's default unless it's Autopilot's Decides or Checks; only Autopilot's take tools, only Checks can be off", () => {
+  expect(AI_ROLE_NAMES.filter(roleNeedsTools)).toEqual(["code_changes_decide", "code_changes_check", "code_changes"]);
+  expect(AI_ROLE_NAMES.filter(roleCanBeOff)).toEqual(["code_changes_check"]);
+  expect([AI_ROLES.support_draft.feature, AI_ROLES.support_summary.feature]).toEqual(["support", "support"]);
+  vi.stubEnv("AI_MODEL_SUPPORT", "acme/inbox");
+  vi.stubEnv("CODE_CHANGES_DECIDE_MODEL", "acme/decider");
+  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "acme/checker");
+  vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
+  resetCodeChangesSettings();
+  expect(AI_ROLE_NAMES.map(roleDefaultModel)).toEqual([DEFAULT_AI_MODEL, DEFAULT_AI_MODEL, "acme/inbox", "acme/inbox", DEFAULT_AI_MODEL, "acme/decider", "acme/checker", "acme/writer"]);
 });
 
 test("each feature's default model: its own setting, else AI_MODEL, else Tuti's (for code changes, Autopilot's write model)", () => {

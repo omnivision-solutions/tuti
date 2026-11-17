@@ -46,18 +46,20 @@ async function query(sql: string, values: unknown[]) {
 }
 
 // On Tuti's cloud, which sells plans: Advanced tuning is on Business.
-test("an owner sees Autopilot's three steps, finds Advanced tuning locked until Business, then changes values on its page and resets them", async ({ browser }, testInfo) => {
+test("an owner sees a model for each role (Autopilot's three, the Inbox's two), finds Advanced tuning locked until Business, then changes values on its page and resets them", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
 
-  // Autopilot's steps, each with its own choice: Decides, Double-checks (which can be off), Writes.
+  // Each role has its own choice: the Inbox's drafts and summaries, and Autopilot's Decides, Checks (which can be off) and Writes.
   await owner.goto(`/app/${slug}/settings/ai-models`);
+  await expect(owner.getByRole("radiogroup", { name: "Inbox drafts" })).toBeVisible();
+  await expect(owner.getByRole("radiogroup", { name: "Inbox summaries" })).toBeVisible();
   const decides = owner.getByRole("radiogroup", { name: "Autopilot decides" });
   await expect(decides.getByRole("radio", { name: /^Fast/ })).toBeChecked();
   await expect(decides.getByText(/^About [\d.$]+ (credits? )?per merged pull request$/).first()).toBeVisible();
-  await expect(owner.getByRole("radiogroup", { name: "Autopilot double-checks" }).getByRole("radio", { name: /^Off/ })).toBeVisible();
+  await expect(owner.getByRole("radiogroup", { name: "Autopilot checks" }).getByRole("radio", { name: /^Off/ })).toBeVisible();
   await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
 
   // Advanced tuning is a page of its own; on Free it's locked, with the way to Business.

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planFor, planIncludes, withinModelCap } from "@tuti/shared";
+import { AI_ROLE_NAMES, aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planFor, planIncludes, roleCanBeOff, roleNeedsTools, withinModelCap } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -12,7 +12,7 @@ import { aiModels } from "@/server/operations/ai-models";
 
 export const metadata: Metadata = { title: "AI models · Settings" };
 
-/** Settings → AI models: which model writes for each AI feature and each of Autopilot's steps, and the way to Autopilot's Advanced tuning (only where the server has AI). */
+/** Settings → AI models: which model works in each AI role (Autopilot's three included), and the way to Autopilot's Advanced tuning (only where the server has AI). */
 export default async function AiModelsSettingsPage(props: PageProps<"/app/[project]/settings/ai-models">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
@@ -37,7 +37,13 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
     >
       <SettingsCard>
         <SettingBlock>
-          <AiModelsSettings projectSlug={slug} models={models} listed={listed} creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}>
+          <AiModelsSettings
+            projectSlug={slug}
+            models={models}
+            agents={AI_ROLE_NAMES.filter(roleNeedsTools)}
+            offable={AI_ROLE_NAMES.filter(roleCanBeOff)}
+            listed={listed}
+            creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}>
             {/* Its own page, which saves its own way (one Save each). */}
             <Link
               href={`/app/${slug}/settings/ai-models/tuning`}

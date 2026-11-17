@@ -77,7 +77,7 @@ export const suggestReply = defineOperation({
     }
     let ai;
     try {
-      ai = await aiFor(projectId, "support");
+      ai = await aiFor(projectId, "support_draft");
     } catch (error) {
       if (error instanceof OutOfCredits) {
         return { status: "unavailable" as const, draft: null };
@@ -139,7 +139,7 @@ export const summarizeConversation = defineOperation({
     ).reverse();
     let ai;
     try {
-      ai = await aiFor(projectId, "support");
+      ai = await aiFor(projectId, "support_summary");
     } catch (error) {
       if (error instanceof OutOfCredits) {
         throw new OperationError(402, "out_of_credits", "This project is out of AI credits");

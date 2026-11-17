@@ -70,16 +70,43 @@ export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 /**
- * The docs agent's own steps a project can pick a model for (with Autopilot's agent pipeline): deciding and the
- * double-check (`off` skips it). Their requests are Autopilot's (code_changes); its own pick is the Writes step's.
+ * A role is one kind of work a model does for a feature, and what a project picks a model for (Settings → AI models).
+ * Code asks for a role, never a model: a feature's steps can be added, removed or reordered without a new setting,
+ * as long as each names the role it works in. `feature` is what its requests are metered as; `tools`: an agent's
+ * role, so only models with tool calls; `off`: a role a project may switch off.
+ * Autopilot has three: code_changes_decide (Decides: reads a lot and judges, at volume), code_changes (Writes: the text,
+ * Verify's too) and code_changes_check (Checks: a second opinion on another step's work, today the new-article
+ * double-check). The Inbox has two: drafting a reply, and summarising a conversation.
  */
-export const AUTOPILOT_STEPS = ["code_changes_decide", "code_changes_redecide"] as const;
-export type AutopilotStep = (typeof AUTOPILOT_STEPS)[number];
+export const AI_ROLES = {
+  answers: { feature: "answers" },
+  escalations: { feature: "escalations" },
+  support_draft: { feature: "support" },
+  support_summary: { feature: "support" },
+  changelog: { feature: "changelog" },
+  code_changes_decide: { feature: "code_changes", tools: true },
+  code_changes_check: { feature: "code_changes", tools: true, off: true },
+  code_changes: { feature: "code_changes", tools: true },
+} as const satisfies Record<string, { feature: AiFeature; tools?: true; off?: true }>;
+export type AiRole = keyof typeof AI_ROLES;
+export const AI_ROLE_NAMES = Object.keys(AI_ROLES) as AiRole[];
 
-/** A step's model for every project: the server's CODE_CHANGES_DECIDE_MODEL or CODE_CHANGES_REDECIDE_MODEL. */
-export function stepDefaultModel(step: AutopilotStep): string {
-  const { decide, redecide } = serverCodeChangesSettings();
-  return step === "code_changes_decide" ? decide.model : redecide.model;
+/** Whether a role's model must take tool calls, and whether a project may switch the role off. */
+export const roleNeedsTools = (role: AiRole) => "tools" in AI_ROLES[role];
+export const roleCanBeOff = (role: AiRole) => "off" in AI_ROLES[role];
+
+/**
+ * A role's model for every project: Autopilot's Decides and Checks are the server's CODE_CHANGES_DECIDE_MODEL and
+ * CODE_CHANGES_REDECIDE_MODEL; any other is its feature's (defaultModel).
+ */
+export function roleDefaultModel(role: AiRole): string {
+  if (role === "code_changes_decide") {
+    return serverCodeChangesSettings().decide.model;
+  }
+  if (role === "code_changes_check") {
+    return serverCodeChangesSettings().redecide.model;
+  }
+  return defaultModel(AI_ROLES[role].feature);
 }
 
 /**

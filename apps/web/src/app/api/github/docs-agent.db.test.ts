@@ -689,7 +689,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
       where: { id: project.id },
       data: {
         plan: "business",
-        aiModels: { code_changes_decide: "acme/tiny", code_changes_redecide: "off" },
+        aiModels: { code_changes_decide: "acme/tiny", code_changes_check: "off" },
         codeChangesTuning: { "decide.rounds": 1, "decide.reasoning": "high", "propose.edit.maybe": 0.3 },
       },
     });
@@ -820,7 +820,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
 
   test("a new article from the project's threshold (propose.newArticle.maybe) is kept", async () => {
     // 0.25: past the project's 0.2, under the server's 0.3; the double-check off, so the agent's own answer is used.
-    await business({ "propose.newArticle.maybe": 0.2 }, { code_changes_redecide: "off" });
+    await business({ "propose.newArticle.maybe": 0.2 }, { code_changes_check: "off" });
     pullRequest(66);
     model.decide(USERS);
     model.reply(NEW_AT(0.25), undefined, '"merge-66"');
@@ -835,7 +835,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
 
   test("the double-check runs from the project's trigger (redecide.whenNewArticle), on its picked model", async () => {
     // 0.15: past the project's 0.1, under the server's 0.2.
-    await business({ "redecide.whenNewArticle": 0.1 }, { code_changes_redecide: "acme/tiny" });
+    await business({ "redecide.whenNewArticle": 0.1 }, { code_changes_check: "acme/tiny" });
     pullRequest(67);
     model.decide(USERS);
     model.reply(NEW_AT(0.15), undefined, '"merge-67"');

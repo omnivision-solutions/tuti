@@ -166,14 +166,15 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   } else {
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull } });
   }
-  // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the docs
-  // agent's models it picked (Settings → AI models): every step below reads them (codeChangesSettings()).
+  // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
+  // it picked for Autopilot's roles (Settings → AI models; Decides and Checks here, Writes is `ai`): every step below
+  // reads them (codeChangesSettings()).
   const tuning = tunedSettings(change.project.codeChangesTuning, change.project.plan);
   const picked = projectModels(change.project.aiModels);
   const settings = {
     ...tuning.settings,
     decide: { ...tuning.settings.decide, model: picked.code_changes_decide ?? tuning.settings.decide.model },
-    redecide: { ...tuning.settings.redecide, model: picked.code_changes_redecide ?? tuning.settings.redecide.model },
+    redecide: { ...tuning.settings.redecide, model: picked.code_changes_check ?? tuning.settings.redecide.model },
   };
   return withCodeChangesSettings(settings, () => analysePullRequest(change, repository, ai, input, log, lastTry, { values: tuning.values, tuned: tuning.tuned }));
 }
