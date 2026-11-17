@@ -540,7 +540,8 @@ the list picks none to approve at once.
   - **Sign-in**: one card (max-w-sm, the width and offset of every sign-in page) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
     "Vote, comment and follow ideas. We'll email you as they move forward and when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and
-    "Team member? Sign in with Tuti".
+    "Team member? Sign in with Tuti". "Forgot your password?" there is the same card: its centred title and 44px
+    field and button (the `portal:` classes in `password-reset-forms.tsx`); on the app it keeps the app's sign-in look.
   - **Account** (`/account`): the page header ("Account", "Signed in as <address>"), then a section list beside the
     sections, one page: Profile, Emails, Your posts and Your votes with their counts, the current one a neutral fill as
     the board rail's (`AccountSections`; each jumps to its section, `#profile`…, and the one scrolled to is marked). On

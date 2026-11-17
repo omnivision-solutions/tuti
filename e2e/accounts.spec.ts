@@ -276,10 +276,12 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   // Signed out, they type their idea in New idea's box first, then sign in to post it.
   const title = "Can I pay with crypto?";
   const vera = await newPerson(browser, portalUrl(slug));
-  // The portal's Forgot your password card: no line inside it either.
+  // The portal's Forgot your password card: the sign-in card's look (44px controls), no line inside it either.
   await vera.goto("/forgot-password");
-  await expect(vera.getByRole("button", { name: "Email me a link" })).toBeVisible();
+  await expect(vera.getByRole("button", { name: "Email me a link" })).toHaveCSS("height", "44px");
+  await expect(vera.getByLabel("Email")).toHaveCSS("height", "44px");
   await expect(vera.locator('[data-slot="card-footer"]')).toHaveCSS("border-top-width", "0px");
+  await checkpoint(vera, "portal-forgot-password-card");
   await vera.goto("/feedback/feature-requests");
   await vera.getByRole("button", { name: "New post" }).click();
   const box = vera.getByRole("dialog", { name: "Share an idea" }).locator("form");
