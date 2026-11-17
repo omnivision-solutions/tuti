@@ -243,12 +243,14 @@ describe("the team's choices", () => {
 describe("a new spec", () => {
   test("pages keep their addresses, and what it adds is new and on the help center while nothing is hidden", async () => {
     await add();
-    const first = await stored();
+    // Read and changed long ago, so the times below don't depend on the clock's ticks.
+    const longAgo = new Date("2026-01-01T00:00:00Z");
+    await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { syncedAt: longAgo, changedAt: longAgo } });
     // The same spec again: read, and nothing changed.
     await call(replaceApiReference, as(), { slug: "api-reference", spec: POSTS });
     const same = await stored();
-    expect(same.changedAt).toEqual(first.changedAt);
-    expect(same.syncedAt.getTime()).toBeGreaterThanOrEqual(first.syncedAt.getTime());
+    expect(same.changedAt).toEqual(longAgo);
+    expect(same.syncedAt).not.toEqual(longAgo);
 
     const next = spec({
       // A new one proposing the address "list-posts", before the one that has it; that one reworded.
@@ -261,7 +263,7 @@ describe("a new spec", () => {
     expect(await get()).toMatchObject({ version: "2", types: [{ name: "Post", slug: "post" }] });
     const replaced = await stored();
     expect(replaced.spec).toBe(next);
-    expect(replaced.changedAt.getTime()).toBeGreaterThan(first.changedAt.getTime());
+    expect(replaced.changedAt).not.toEqual(longAgo);
 
     // Looked at: nothing is new. An operation that comes back has its address again.
     expect(await call(updateApiReference, as(), { slug: "api-reference", seen: true })).toMatchObject({ counts: { new: 0 } });
