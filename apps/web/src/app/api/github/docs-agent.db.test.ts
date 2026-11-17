@@ -769,6 +769,18 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     expect((await settled(62)).settings).toMatchObject({ tuned: ["propose.edit.maybe"] });
   });
 
+  test("Autopilot's level decides its models: on Best, with no model picked, Decides runs on Best's", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "pro", aiLevels: { code_changes: "best" } } });
+    pullRequest(64);
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.35), undefined, '"merge-64"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(64);
+    expect(roleDefaultModel("code_changes_decide")).not.toBe("anthropic/claude-sonnet-5.5");
+    expect(agentRequests(64).map((request) => request.model)).toEqual(["anthropic/claude-sonnet-5.5"]);
+  });
+
   test("a value past a range the server narrowed since is used at its end", async () => {
     // The server's likely for edits is 0.6 now: a "from" past it would make every kept fix likely.
     vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_LIKELY", "0.6");

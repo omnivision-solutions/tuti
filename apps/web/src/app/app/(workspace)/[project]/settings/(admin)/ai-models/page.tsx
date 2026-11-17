@@ -41,10 +41,10 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
     >
       {/* Picking a model is the Custom level (docs/plan.md, R2): on a plan without it, picks are kept and the work runs on its level. */}
       {!planIncludes(project.plan, "aiTuning") && (
-        <Alert>
+        <Alert id="ai-models-plan">
           <AlertDescription>
             <p>
-              {levelNeeded("custom")} Models picked here are kept and not used until then. Autopilot&apos;s checks can still be switched off.{" "}
+              {levelNeeded("custom")} Models picked earlier are kept and not used until then. Autopilot&apos;s checks can still be switched off.{" "}
               <Link href={`/app/${slug}/settings/billing`} className="underline underline-offset-4">
                 See Billing
               </Link>
@@ -73,7 +73,8 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
             agents={AI_ROLE_NAMES.filter(roleNeedsTools)}
             offable={AI_ROLE_NAMES.filter(roleCanBeOff)}
             listed={listed}
-            creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}>
+            creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}
+            describedBy={planIncludes(project.plan, "aiTuning") ? undefined : "ai-models-plan"}>
             {/* Its own page, which saves its own way (one Save each). */}
             <Link
               href={`/app/${slug}/settings/ai-models/tuning`}

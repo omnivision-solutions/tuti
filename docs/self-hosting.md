@@ -138,6 +138,12 @@ only an OpenAI key in `OPENAI_API_KEY` keeps embeddings on OpenAI and chat off. 
 endpoint must serve `AI_MODEL` (or Tuti's default), and the server logs at start-up which model it
 doesn't list. Autopilot and Verify stay off there: they need OpenRouter's Decisions API.
 
+**AI levels.** A project runs each feature's AI on a level: Balanced is your server's models (`AI_MODEL`
+and the variables beside it), Custom is models the project picks. Affordable and Best need a row of
+models each: point `AI_LEVELS_CONFIG` at a JSON file like `packages/shared/ai-levels.example.json`, on the
+web app and the worker alike (mount the same file into both). Without a file, Tuti's own rows are used,
+unless you set a model variable: then only Balanced and Custom are offered. An invalid file stops start-up.
+
 ### Autopilot's settings
 
 Optional, on the web app and the worker alike: how Autopilot decides what a merged pull request

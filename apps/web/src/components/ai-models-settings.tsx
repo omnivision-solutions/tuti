@@ -52,6 +52,7 @@ export function AiModelsSettings({
   offable,
   listed,
   creditsPerDollar,
+  describedBy,
   children,
 }: {
   projectSlug: string;
@@ -63,6 +64,8 @@ export function AiModelsSettings({
   listed: ListedModel[];
   /** Where AI is paid with credits, how many a dollar of it costs, to price each choice in them. */
   creditsPerDollar: number | null;
+  /** The id of the notice saying the plan doesn't include picking models, read out with each row's choices. */
+  describedBy?: string;
   /** Shown under Autopilot's rows, after Save: the way to its Advanced tuning. */
   children?: ReactNode;
 }) {
@@ -99,7 +102,7 @@ export function AiModelsSettings({
       <form {...keepingFields(action)}>
         <FieldGroup>
           {rows.map((row) => (
-            <FeatureModel key={row.pick} row={row} model={models[row.pick]} listed={row.agent ? listed.filter((model) => model.tools) : listed} creditsPerDollar={creditsPerDollar} />
+            <FeatureModel key={row.pick} row={row} model={models[row.pick]} listed={row.agent ? listed.filter((model) => model.tools) : listed} creditsPerDollar={creditsPerDollar} describedBy={describedBy} />
           ))}
           <datalist id="ai-models">{options(listed)}</datalist>
           <datalist id="ai-models-tools">{options(listed.filter((model) => model.tools))}</datalist>
@@ -125,11 +128,13 @@ function FeatureModel({
   model,
   listed,
   creditsPerDollar,
+  describedBy,
 }: {
   row: Row;
   model: AiModels[AiRole];
   listed: ListedModel[];
   creditsPerDollar: number | null;
+  describedBy?: string;
 }) {
   const tiers = tiersFor(model.default, listed);
   const [choice, setChoice] = useState<Choice>(choiceOf(model.model, tiers));
@@ -153,7 +158,7 @@ function FeatureModel({
         {does}
         {agent && " Only models that can use tools are offered."}
       </FieldDescription>
-      <div role="radiogroup" aria-label={title} className="grid gap-2 sm:grid-cols-2">
+      <div role="radiogroup" aria-label={title} aria-describedby={describedBy} className="grid gap-2 sm:grid-cols-2">
         {tiers.map((option) => (
           <label key={option.tier} className={card}>
             <span className="flex items-center gap-2 font-medium">
