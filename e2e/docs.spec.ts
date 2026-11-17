@@ -93,6 +93,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("Collection added")).toBeVisible();
   // The tree keeps the collection and its icon reachable beside the overview and collection page.
   await expect(teamTree.getByRole("link", { name: "Getting started", exact: true }).locator("svg.lucide-rocket")).toBeVisible();
+  // By now a save the Cancel above had started would have come back: the tree has no trace of what was typed then.
+  await expect(teamTree.getByRole("link", { name: "Discarded" })).toHaveCount(0);
   const treeAtHome = await teamTree.boundingBox();
   await checkpoint(team, "team-docs");
   await teamTree.getByRole("link", { name: "Getting started", exact: true }).click();
