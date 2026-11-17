@@ -39,11 +39,15 @@ const MAX_LENGTH = 5 * 1024 * 1024;
 /** A named type is spelled out where it's first met and this many levels down. */
 const LEVELS = 2;
 /**
- * The most fields and enum values a doc holds, counting each wherever it's spelled out or selected: a few megabytes
- * of JSON. A schema whose types point at each other grows far past its own size when spelled out, so
- * one that would hold more is spelled out fewer levels down, with a warning.
+ * The most a doc holds, in characters of its JSON. A schema whose types point at each other grows
+ * far past its own size when spelled out, so one that would hold more is spelled out fewer levels
+ * down, with a warning. It's reckoned as the doc is built (every field, enum value, member, argument
+ * and operation wherever it's copied, with its name, description and default), so that one far past
+ * it is given up before it's built, and measured on the doc once built.
  */
-const MAX_FIELDS = 50_000;
+const MAX_SIZE = 5_000_000;
+/** What a field is reckoned at besides its own text: about what its JSON takes. */
+const FIELD_SIZE = 100;
 const TOO_LARGE = Symbol("too large");
 
 const ROOTS = [
@@ -86,12 +90,12 @@ export function readGraphql(text: string, options: { endpoint?: string } = {}): 
         if (doc.operations.length === 0) {
           return { error: "The schema has no queries, mutations or subscriptions to show." };
         }
-        return { doc };
+        if (JSON.stringify(doc).length <= MAX_SIZE) return { doc };
       } catch (error) {
         if (error !== TOO_LARGE) throw error;
       }
     }
-    return { error: "The schema is too large to show: its queries and types have too many fields between them." };
+    return { error: "The schema is too large to show: its reference would be over 5 MB. Leave out what readers don't need." };
   } catch (error) {
     // A schema is built lazily, so one that's broken deep inside (or nested too deeply) fails here.
     return { error: `The schema couldn't be read: ${message(error)}` };
@@ -167,11 +171,19 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
   }
   const roots = { query: schema.getQueryType(), mutation: schema.getMutationType(), subscription: schema.getSubscriptionType() };
   const rootTypes = new Set<GraphQLType>(Object.values(roots).filter((type) => type != null));
-  let fields = 0;
-  const count = (more: number) => {
-    fields += more;
-    if (fields > MAX_FIELDS) throw TOO_LARGE;
+  let size = 0;
+  const count = (items: number, text = 0) => {
+    size += items * FIELD_SIZE + text;
+    // The reckoning runs high (up to twice what the JSON comes to), and the doc as built is measured anyway.
+    if (size > 2 * MAX_SIZE) throw TOO_LARGE;
   };
+  /** Counts what's about to be copied into the doc: fields, arguments, enum values or a union's members. */
+  const weigh = (items: readonly { name: string; description?: string | null; type?: GraphQLType }[]) => {
+    let text = 0;
+    for (const item of items) text += 3 * item.name.length + (item.description?.length ?? 0) + 2 * String(item.type ?? "").length;
+    count(items.length, text);
+  };
+  const weighDefault = (value: unknown) => count(0, JSON.stringify(value)?.length ?? 0);
   const slugs = new Set<string>();
   const slugFor = (name: string, where: string) => {
     const base = slugOf(name);
@@ -201,12 +213,15 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     if (inside.length > levels || inside.includes(type.name)) return { type: text, ref: type.name };
     const within = [...inside, type.name];
     const result: ApiSchema = { type: text, ref: type.name };
-    if (type.description) result.description = type.description;
+    if (type.description) {
+      count(0, type.description.length);
+      result.description = type.description;
+    }
     if (isEnumType(type)) {
-      count(type.getValues().length);
+      weigh(type.getValues());
       result.enum = type.getValues().map((value) => value.name);
     }
-    if (isObjectType(type) || isInterfaceType(type) || isInputObjectType(type)) count(Object.keys(type.getFields()).length);
+    if (isObjectType(type) || isInterfaceType(type) || isInputObjectType(type)) weigh(Object.values(type.getFields()));
     if (isObjectType(type) || isInterfaceType(type)) {
       result.properties = Object.values(type.getFields()).map((field) => {
         const property: ApiProperty = {
@@ -214,7 +229,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
           name: field.name,
           required: isNonNullType(field.type),
         };
-        // The field's own words, not its type's.
+        // The field's own words, not its type's (which weren't copied after all).
+        count(0, -(property.description?.length ?? 0));
         delete property.description;
         if (field.description) property.description = field.description;
         if (field.deprecationReason != null) property.deprecated = true;
@@ -228,21 +244,30 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
           name: field.name,
           required: isRequiredInputField(field),
         };
+        count(0, -(property.description?.length ?? 0));
         delete property.description;
         if (field.description) property.description = field.description;
         if (field.deprecationReason != null) property.deprecated = true;
         const value = defaultOf(field);
-        if (value !== undefined) property.default = value;
+        if (value !== undefined) {
+          weighDefault(value);
+          property.default = value;
+        }
         return property;
       });
     }
-    if (isAbstractType(type)) result.oneOf = schema.getPossibleTypes(type).map((member) => schemaOf(member, within));
+    if (isAbstractType(type)) {
+      const members = schema.getPossibleTypes(type);
+      // Counted here, since a member that's only named counts nothing itself.
+      weigh(members);
+      result.oneOf = members.map((member) => schemaOf(member, within));
+    }
     return result;
   };
 
   /**
-   * A value to send for an input type: an input object's required fields only (a `@oneOf` one's
-   * first field: it takes exactly one). Nothing (undefined) for a type inside itself.
+   * A value to send for an input type: an input object's required fields only. Nothing (undefined)
+   * for a type inside itself, and so for an input that requires one.
    */
   const inputExample = (type: GraphQLType, inside: string[]): unknown => {
     if (isNonNullType(type)) return inputExample(type.ofType, inside);
@@ -250,22 +275,36 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       const item = inputExample(type.ofType, inside);
       return item === undefined ? [] : [item];
     }
-    if (isInputObjectType(type)) {
-      if (inside.includes(type.name)) return undefined;
-      const within = [...inside, type.name];
-      const all = Object.values(type.getFields());
-      const sent = type.isOneOf ? all : all.filter(isRequiredInputField);
-      count(sent.length);
-      const values = sent.map((field) => [field.name, inputExample(field.type, within)] as const);
-      // One that takes exactly one field gets the first that has a value.
-      return Object.fromEntries(type.isOneOf ? values.filter(([, value]) => value !== undefined).slice(0, 1) : values);
-    }
-    return leafExample(type);
+    if (!isInputObjectType(type)) return leafExample(type);
+    if (inside.includes(type.name)) return undefined;
+    count(1);
+    const within = [...inside, type.name];
+    const all = Object.values(type.getFields());
+    /** The first field a value can be made for, alone. */
+    const one = () => {
+      for (const field of all) {
+        const value = inputExample(field.type, within);
+        if (value === undefined) continue;
+        weigh([field]);
+        return { [field.name]: value };
+      }
+      return undefined;
+    };
+    // `@oneOf`: it takes exactly one field.
+    if (type.isOneOf) return one();
+    const required = all.filter(isRequiredInputField);
+    weigh(required);
+    const values = required.map((field) => [field.name, inputExample(field.type, within)] as const);
+    if (values.some(([, value]) => value === undefined)) return undefined;
+    // With nothing required it gets its first field: an empty one is refused when it takes exactly
+    // one, which an endpoint's introspection doesn't always say.
+    return values.length > 0 ? Object.fromEntries(values) : (one() ?? {});
   };
   const leafExample = (type: GraphQLType) => {
     if (isEnumType(type)) return type.getValues()[0]?.name ?? null;
     const name = getNamedType(type).name;
-    return name in SCALAR_EXAMPLES ? SCALAR_EXAMPLES[name] : "string";
+    // A copy: the doc is the caller's to change.
+    return name in SCALAR_EXAMPLES ? structuredClone(SCALAR_EXAMPLES[name]) : "string";
   };
 
   /**
@@ -286,8 +325,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       example.__typename = schema.getPossibleTypes(type)[0]?.name ?? type.name;
     }
     if (isObjectType(type) || isInterfaceType(type)) {
-      count(Object.keys(type.getFields()).length);
       for (const field of Object.values(type.getFields())) {
+        count(1, 3 * field.name.length);
         if (field.deprecationReason != null || field.args.some(isRequiredArgument)) continue;
         if (!deeper && !isLeafType(getNamedType(field.type))) continue;
         const inner = select(field.type, `${indent}  `, false);
@@ -323,11 +362,17 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     doc.groups.push({ key: root.key, name: root.name, description: rootType.description ?? "" });
     for (const field of fields) {
       const key = `${root.kind} ${field.name}`;
+      // Its name is in its key, slug, path, title and query.
+      count(4, 6 * field.name.length + (field.description?.length ?? 0));
+      weigh(field.args);
       const variables: Record<string, unknown> = {};
       const params = field.args.map((arg) => {
         const paramSchema = schemaOf(arg.type, []);
         const value = defaultOf(arg);
-        if (value !== undefined) paramSchema.default = value;
+        if (value !== undefined) {
+          weighDefault(value);
+          paramSchema.default = value;
+        }
         if (arg.deprecationReason != null) paramSchema.deprecated = true;
         const example = inputExample(arg.type, []);
         // Only what the field needs is sent: a made-up cursor or filter fails, and unset ones take their

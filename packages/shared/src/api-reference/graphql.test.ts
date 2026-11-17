@@ -203,7 +203,8 @@ test("arguments are parameters, required when non-null without a default", () =>
       required: false,
       description: "",
       schema: expect.objectContaining({ type: "PostFilter", ref: "PostFilter" }),
-      example: {},
+      // Nothing in it is required, so its first field.
+      example: { status: "OPEN" },
     },
     { name: "first", in: "argument", required: false, description: "", schema: { type: "Int", default: 20 }, example: 1 },
     { name: "after", in: "argument", required: false, description: "", schema: { type: "ID" }, example: "1" },
@@ -414,9 +415,10 @@ test("a schema too large to spell out two levels down is spelled out fewer, with
     ${names.map((name) => `type ${name} { id: ID ${names.map((other) => `to${other}: ${other}`).join(" ")} }`).join("\n")}`,
   );
   expect(large.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toHaveLength(1);
-  expect(JSON.stringify(large).length).toBeLessThan(8 * 1024 * 1024);
+  expect(JSON.stringify(large).length).toBeLessThanOrEqual(5_000_000);
+  // Two levels down from T0, a type is now only named (or the one before it is).
   const t0 = large.types.find((one) => one.name === "T0")!.schema;
-  expect(property(t0, "toT1")).toEqual({ name: "toT1", required: false, type: "T1", ref: "T1" });
+  expect(property(t0, "toT1").properties?.find((one) => one.name === "toT2")?.properties).toBeUndefined();
   expect(doc.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toEqual([]);
 });
 
@@ -427,6 +429,63 @@ test("an enum's values count towards a doc's size", () => {
   expect(large.warnings.filter((warning) => warning.code === "TYPES_SHORTENED")).toHaveLength(1);
   expect(JSON.stringify(large).length).toBeLessThan(1024 * 1024);
 });
+
+test("an input with nothing required gets its first field, as one read from an endpoint that takes exactly one needs", () => {
+  const sdl = "input By @oneOf { id: ID, slug: String } type Query { find(by: By!): Int }";
+  const answer = graphqlSync({ schema: buildSchema(sdl), source: GRAPHQL_INTROSPECTION_QUERY });
+  expect(read(JSON.stringify(answer)).operations[0]!.query!.variables).toEqual({ by: { id: "1" } });
+  expect(read("input Empty { _: Int = 1 } input None { all: [None!] } type Query { a(e: Empty!, n: None!): Int }").operations[0]!.query!.variables).toEqual({
+    e: { _: 1 },
+    n: { all: [] },
+  });
+});
+
+test("an input that takes exactly one field skips a branch that can't be made", () => {
+  const recursive = read(`
+    input Choice @oneOf { next: Wrapper, id: ID }
+    input Wrapper { choice: Choice! }
+    type Query { pick(choice: Choice!): Int }
+  `);
+  expect(recursive.operations[0]!.query!.variables).toEqual({ choice: { id: "1" } });
+});
+
+test("an example is the caller's own: changing it leaves the next doc's alone", () => {
+  const sdl = "scalar JSON type Query { settings(value: JSON!): JSON }";
+  const first = read(sdl).operations[0]!;
+  (first.query!.variables.value as Record<string, unknown>).changed = true;
+  (first.responses[0]!.example as Record<string, unknown>).changed = true;
+  const second = read(sdl).operations[0]!;
+  expect(second.query!.variables).toEqual({ value: {} });
+  expect(second.responses[0]!.example).toEqual({});
+});
+
+const many = (length: number, one: (n: number) => string) => Array.from({ length }, (_, n) => one(n)).join(" ");
+
+test.each([
+  [
+    "a wide union many root fields return",
+    `type Query { ${many(400, (n) => `r${n}: Wide`)} } union Wide = ${Array.from({ length: 400 }, (_, n) => `M${n}`).join(" | ")} ${many(400, (n) => `type M${n} { id: ID }`)}`,
+  ],
+  [
+    "a long description on a type many root fields return",
+    `type Query { ${many(200, (n) => `r${n}: Described`)} } """${"words ".repeat(20_000)}""" type Described { id: ID }`,
+  ],
+  ["more root fields than a doc holds", `type Query { ${many(30_000, (n) => `r${n}: Int`)} }`],
+  ["more arguments than a doc holds", `type Query { one(${many(60_000, (n) => `a${n}: Int`)}): Int }`],
+  [
+    "a long default on an input many root fields take",
+    `type Query { ${many(200, (n) => `r${n}(a: Long): Int`)} } input Long { a: String = "${"x".repeat(50_000)}" }`,
+  ],
+])("%s is too large to show", (_name, sdl) => {
+  expect(readGraphql(sdl)).toEqual({ error: expect.stringContaining("too large") });
+  // Schemas this size take a second or two to parse: more on a busy machine.
+}, 30_000);
+
+test("a doc is measured once built, whatever was reckoned on the way", () => {
+  // A scalar's page is reckoned at nothing, and 100,000 of them come to more than a doc holds.
+  const result = readGraphql(`type Query { ok: Boolean } ${many(100_000, (n) => `scalar S${n}`)}`);
+  expect(result).toEqual({ error: expect.stringContaining("too large") });
+}, 30_000);
 
 test("a schema too large to show at all is an error", () => {
   const fields = Array.from({ length: 400 }, (_, n) => `f${n}: Int`).join(" ");
