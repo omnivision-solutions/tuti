@@ -60,8 +60,8 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
             <p>
               {onLevel
                 .map((group) => `${GROUP[group]} is on the ${models.levels[group].level} level${models.levels[group].used === "balanced" ? ", which isn't available here, so it runs on this server's default models" : ""}.`)
-                .join(" ")}{" "}
-              Picking a model below switches that feature to your own models, for every role it has.
+                .join(" ")}
+              {planIncludes(project.plan, "aiTuning") && " Picking a model below switches that feature to your own models, for every role it has."}
             </p>
           </AlertDescription>
         </Alert>

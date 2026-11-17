@@ -63,6 +63,10 @@ test("an owner sees a model for each role (Autopilot's three, the Inbox's two), 
   await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
   // Picking a model is the Custom level, which Free lacks: the page says picks are kept and not used.
   await expect(owner.getByText(/Picking your own AI models needs the Business plan\. Models picked here are kept and not used until then\./)).toBeVisible();
+  // A level (set through the API for now) that Free lacks is kept and not used, and the page says so.
+  await query(`UPDATE project SET "aiLevels" = '{"answers":"best"}' WHERE slug = $1`, [slug]);
+  await owner.reload();
+  await expect(owner.getByText("AI answers is on the best level, which isn't available here, so it runs on this server's default models.")).toBeVisible();
 
   // Advanced tuning is a page of its own; on Free it's locked, with the way to Business.
   const tuningLink = owner.getByRole("link", { name: /^Advanced tuning/ });
@@ -87,6 +91,8 @@ test("an owner sees a model for each role (Autopilot's three, the Inbox's two), 
   // On Business: the owner lowers "Fix an article from", within the server's range, and sees it changed from the server's.
   await owner.goto(`/app/${slug}/settings/ai-models`);
   await expect(tuningLink).not.toContainText("Available on Business");
+  // Business has the level, and its own models: the page says what picking one does.
+  await expect(owner.getByText("AI answers is on the best level. Picking a model below switches that feature to your own models, for every role it has.")).toBeVisible();
   await tuningLink.click();
   await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
   const fix = owner.getByRole("spinbutton", { name: "Fix an article from" });

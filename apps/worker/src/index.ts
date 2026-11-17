@@ -1,5 +1,5 @@
 import { codeChange, handlers } from "@tuti/jobs";
-import { assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
+import { aiLevelRows, assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
 
@@ -13,6 +13,8 @@ assertSesSettings();
 checkCodeChangesSettings();
 // An invalid billing file stops start-up, rather than selling the wrong thing.
 billingConfig();
+// So does an invalid levels file (AI_LEVELS_CONFIG), rather than failing every AI request later.
+aiLevelRows();
 // Not awaited: a slow or wrong AI provider is logged, never holds up the start (AI is optional).
 void checkAiProvider();
 
