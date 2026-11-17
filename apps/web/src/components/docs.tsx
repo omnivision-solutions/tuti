@@ -1149,12 +1149,12 @@ export function CollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto p-5 sm:max-w-md sm:p-6">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-semibold">New collection</DialogTitle>
+        </DialogHeader>
         <form {...keepingFields(action)}>
-          <DialogHeader>
-            <DialogTitle>New collection</DialogTitle>
-          </DialogHeader>
-          <FieldGroup className="my-4">
+          <FieldGroup>
             <CollectionFields id="new" error={state.error} />
             {parents.length > 0 && <ParentField id="collection" parents={parents} value={parent} onValueChange={setParent} />}
             {tabItems.length > 0 && (
@@ -1185,12 +1185,15 @@ export function CollectionDialog({
                 shows: access.shows[parent ?? tab ?? ""] ?? "hide",
               }}
             />
+            <DialogFooter className="-mx-5 -mb-5 mt-1 bg-transparent px-5 pt-4 pb-5 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-6">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? "Creating…" : "Create collection"}
+              </Button>
+            </DialogFooter>
           </FieldGroup>
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              Add collection
-            </Button>
-          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
