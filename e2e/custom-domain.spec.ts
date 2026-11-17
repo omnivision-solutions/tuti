@@ -19,6 +19,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
 
   await owner.goto(`/app/${slug}/settings/domain`);
   // Settings → Domain: three ways to go live; they pick a domain of their own.
+  await expect(owner.getByRole("heading", { level: 2, name: "How do you want to go live?" })).toBeVisible();
   await expect(owner.getByRole("radio", { name: /Tuti address/ })).toHaveAttribute("aria-checked", "true");
   await owner.getByRole("radio", { name: /Custom domain/ }).click();
   await owner.getByRole("textbox", { name: "Custom domain" }).fill(domain);
