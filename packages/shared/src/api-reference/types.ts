@@ -60,8 +60,8 @@ export type ApiOperation = {
    * path with each parameter's name left out ("POST /posts", "GET /users/{}": OpenAPI holds
    * `/users/{id}` and `/users/{userId}` to be one path, so renaming a parameter makes no new
    * operation), or "mutation createPost". Not its slug, which follows its title. No two in a doc
-   * share one: a spec with both `GET /users/{id}` and `GET /users/{userId}` (not valid, but seen)
-   * keeps the names in the later one's key, with a warning.
+   * share one: in a spec with both `GET /users/{id}` and `GET /users/{userId}` (not valid, but seen)
+   * each keeps its names in its key, whatever their order, with a warning.
    */
   key: string;
   /**
@@ -151,7 +151,7 @@ export type ApiProperty = ApiSchema & { name: string; required: boolean };
 
 export type ApiType = {
   name: string;
-  /** Its page's address under the reference; no type or operation in a doc shares one. */
+  /** Its page's address under the reference; no type or operation in a doc shares one. Kept across re-reads by the type's name, as an operation's is by its key. */
   slug: string;
   kind: "object" | "input" | "enum" | "scalar" | "union" | "interface";
   schema: ApiSchema;
