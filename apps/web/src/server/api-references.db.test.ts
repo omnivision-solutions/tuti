@@ -111,12 +111,15 @@ describe("adding and reading", () => {
     await expect(add("Broken", "{ nope")).rejects.toMatchObject(refused);
     await expect(add("Package", JSON.stringify({ name: "package" }))).rejects.toMatchObject({ ...refused, message: expect.stringContaining("isn't an OpenAPI spec") });
     await expect(add("Empty", spec({}))).rejects.toMatchObject({ ...refused, message: "This spec has no operations to show." });
-    await expect(add("Null", POSTS.replace("List posts", "List\\u0000posts"))).rejects.toMatchObject({ ...refused, message: expect.stringContaining("null character") });
+    // What PostgreSQL can't store: a null character, half of a surrogate pair (an emoji, a whole pair, is fine: below).
+    for (const escape of ["\\u0000", "\\ud83d", "\\ude00"]) {
+      await expect(add("Unstorable", POSTS.replace("List posts", `List${escape}posts`))).rejects.toMatchObject({ ...refused, message: expect.stringContaining("can't be stored") });
+    }
     await expect(add("Big", "x".repeat(5 * 1024 * 1024 + 1))).rejects.toMatchObject({ ...refused, message: expect.stringContaining("5 MB") });
     expect(await prisma.apiReference.count({ where: { projectId: project.id } })).toBe(0);
     // The six characters "\u0000" as text are no null character.
-    expect(await add("Escaped", POSTS.replace("List posts", "Names have no \\\\u0000"))).toMatchObject({ slug: "escaped" });
-    expect((await get("escaped")).operations[0]!.title).toBe("Names have no \\u0000");
+    expect(await add("Escaped", POSTS.replace("List posts", "Names have no \\\\u0000 \\ud83d\\ude00"))).toMatchObject({ slug: "escaped" });
+    expect((await get("escaped")).operations[0]!.title).toBe("Names have no \\u0000 😀");
   });
 
   test("another project's reference isn't found", async () => {

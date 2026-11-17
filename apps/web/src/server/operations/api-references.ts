@@ -36,18 +36,24 @@ function read(text: string): ApiDoc {
   }
   // As it's stored (no undefined values), so a doc read again compares equal to the stored one.
   const doc = JSON.parse(JSON.stringify(result.doc)) as ApiDoc;
-  // PostgreSQL stores no null character, in text or JSON.
-  if (text.includes("\0") || hasNull(doc)) {
-    throw new OperationError(400, "invalid_input", "This spec has a null character (\\u0000), which can't be stored. Remove it and try again.");
+  if (UNSTORABLE.test(text) || unstorable(doc)) {
+    throw new OperationError(
+      400,
+      "invalid_input",
+      "This spec has a character that can't be stored: a null character (\\u0000) or half of a surrogate pair (\\ud800–\\udfff). Remove it and try again.",
+    );
   }
   return doc;
 }
 
-/** Whether a string anywhere in `value` (JSON; a key too) has a null character. */
-function hasNull(value: unknown): boolean {
-  if (typeof value === "string") return value.includes("\0");
+/** What PostgreSQL stores in neither text nor JSON: a null character, or a surrogate without its other half. */
+const UNSTORABLE = /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** Whether a string anywhere in `value` (JSON; a key too) has one. */
+function unstorable(value: unknown): boolean {
+  if (typeof value === "string") return UNSTORABLE.test(value);
   if (typeof value !== "object" || value === null) return false;
-  return Array.isArray(value) ? value.some(hasNull) : Object.entries(value).some(([key, inner]) => key.includes("\0") || hasNull(inner));
+  return Array.isArray(value) ? value.some(unstorable) : Object.entries(value).some(([key, inner]) => UNSTORABLE.test(key) || unstorable(inner));
 }
 
 /** The columns lists read, kept beside the state they count. */
