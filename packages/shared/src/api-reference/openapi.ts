@@ -205,15 +205,18 @@ export function readOpenApi(text: string): { doc: ApiDoc } | { error: string } {
   }
 }
 
-/** About how many characters a value is as JSON; stops counting once past `limit`. */
-function sizeOf(value: unknown, limit: number): number {
+/** About how many characters a value is as JSON; stops counting once past `limit`. Throws on a value that holds itself (a YAML alias can). */
+function sizeOf(value: unknown, limit: number, above = new Set<object>()): number {
   if (typeof value === "string") return value.length + 2;
   if (typeof value !== "object" || value === null) return 8;
+  if (above.has(value)) throw new Error("an alias holds itself");
+  above.add(value);
   let size = 2;
   for (const [key, inner] of Object.entries(value)) {
-    size += key.length + 4 + sizeOf(inner, limit - size);
+    size += key.length + 4 + sizeOf(inner, limit - size, above);
     if (size > limit) break;
   }
+  above.delete(value);
   return size;
 }
 
@@ -598,7 +601,10 @@ function read(root: Obj): ApiDoc {
   const sharing = new Map<string, number>();
   for (const [path, value] of entries(root.paths)) {
     if (!path.startsWith("/")) continue;
-    for (const [method, operation] of entries(follow(value))) {
+    // A path item many paths point at is gone through for each of them: that counts.
+    const methods = fieldsOf(follow(value));
+    charge(methods.length);
+    for (const [method, operation] of methods) {
       if (METHODS.has(method) && isObj(operation)) sharing.set(nameless(method.toUpperCase(), path), (sharing.get(nameless(method.toUpperCase(), path)) ?? 0) + 1);
     }
   }
@@ -613,7 +619,7 @@ function read(root: Obj): ApiDoc {
     }
     const item = follow(value, path);
     if (!item) continue;
-    for (const [method, operation] of Object.entries(item)) {
+    for (const [method, operation] of fieldsOf(item)) {
       if (!METHODS.has(method) || !isObj(operation)) continue;
       const kind = method.toUpperCase() as ApiOperation["kind"];
       // Its place in the spec, for warnings.
@@ -622,6 +628,8 @@ function read(root: Obj): ApiDoc {
       const id = unique(shared ? key : nameless(kind, path), seen);
       if (shared) warn("DUPLICATE_OPERATION", key);
       if (operation.callbacks !== undefined) warn("CALLBACKS_SKIPPED", key);
+      // An operation's lists count too, schemas or not: a shared path item's are read for every path that points at it.
+      charge(1 + list(item.parameters).length + list(operation.parameters).length + list(operation.tags).length + list(operation.servers ?? item.servers).length);
 
       const title = str(operation.summary).trim() || inWords(str(operation.operationId)) || key;
       if (!str(operation.summary).trim() && !str(operation.operationId)) warn("NO_TITLE", key);
@@ -664,7 +672,8 @@ function read(root: Obj): ApiDoc {
 
       const responses: ApiResponse[] = [];
       const statuses = new Set<string>();
-      for (const [code, entry] of entries(operation.responses)) {
+      for (const [code, entry] of fieldsOf(operation.responses)) {
+        charge(1);
         const exact = /^([1-5]\d\d|[1-5]XX|default)$/i.test(code);
         const status = exact ? (/^default$/i.test(code) ? "default" : code.toUpperCase()) : /^\s*([1-5]\d\d)(?!\d)/.exec(code)?.[1];
         // No two of an operation's responses share a status: "404 Not Found" beside "404" is left out.

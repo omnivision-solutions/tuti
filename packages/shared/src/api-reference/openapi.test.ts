@@ -1043,9 +1043,26 @@ test("a YAML file that's too large once its aliases are filled in is an error", 
   const text = `openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses:\n${aliases}\n`;
   expect(text.length).toBeLessThan(400_000);
   expect(errorOf(text)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
+  // An anchor that holds itself isn't a file to read, and that's what the error says.
+  expect(errorOf("openapi: 3.0.0\na: &a\n  b: *a\n")).toBe("This file isn't valid JSON or YAML: an alias holds itself");
   // A few uses of an anchor are what anchors are for.
   expect(errorOf(`openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses: [*big, *big, *big]\n`)).toBeNull();
 });
+
+test("a path item that many paths point at counts for each of them", () => {
+  const item = (params: number, statuses: number) => ({
+    parameters: Array.from({ length: params }, (_, index) => ({ name: `p${index}`, in: "query" })),
+    get: { summary: "S", tags: ["T"], responses: Object.fromEntries(Array.from({ length: statuses }, (_, index) => [String(200 + index), { description: "d" }])) },
+  });
+  const pointing = (count: number, shared: object) =>
+    JSON.stringify({ openapi: "3.1.0", paths: Object.fromEntries(Array.from({ length: count }, (_, index) => [`/${index}`, { $ref: "#/components/pathItems/Shared" }])), components: { pathItems: { Shared: shared } } });
+  // Parameters without a schema, and responses without content, are values like any other.
+  expect(errorOf(pointing(400, item(3_000, 1)))).toMatch(/too large once its references are followed/);
+  expect(errorOf(pointing(4_000, item(0, 300)))).toMatch(/too large once its references are followed/);
+  const few = read(pointing(50, item(20, 3)));
+  expect(few.operations).toHaveLength(50);
+  expect(few.operations[49]).toMatchObject({ key: "GET /49", group: "T", params: { length: 20 }, responses: { length: 3 } });
+}, 30_000);
 
 test("the spec's own security list counts for every operation that has none of its own", () => {
   const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`/${index}`, { get: { summary: `S${index}` } }]));
