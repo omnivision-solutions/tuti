@@ -186,6 +186,9 @@ test("levels: a group runs on its level's models; a plan picks levels with aiLev
   await onPlan("free");
   await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 402, code: "plan_required", message: "Choosing an AI level needs the Pro plan. See Settings → Billing." });
   await expect(call(updateAiModels, as(), { answers: SONNET })).rejects.toMatchObject({ status: 402, code: "plan_required", message: "Picking your own AI models needs the Business plan. See Settings → Billing." });
+  // Not even with a level the plan has sent beside it.
+  await expect(call(updateAiModels, as(), { answers: SONNET, levels: { answers: "balanced" } })).rejects.toMatchObject({ status: 402, code: "plan_required" });
+  expect((await call(getAiModels, as(), {})).answers.model).toBeNull();
   expect(await call(updateAiModels, as(), { code_changes_check: "off", answers: "" })).toMatchObject({ code_changes_check: { model: "off", used: "off" }, levels: { code_changes: { level: "balanced" } } });
 
   // Pro picks a level, not its own models.

@@ -115,7 +115,8 @@ export const updateAiModels = defineOperation({
     // A model picked puts its group on Custom; a level sent for the group wins.
     const levels: Partial<Record<AiGroup, AiLevel>> = { ...Object.fromEntries(chosen.filter(([, id]) => id !== "off").map(([role]) => [groupOf(role), "custom"])), ...sent };
     const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
-    for (const level of new Set(Object.values(levels))) {
+    // A model picked needs Custom's plan whatever level is sent with it: a pick is never saved where it can't be used.
+    for (const level of new Set([...Object.values(levels), ...(chosen.some(([, id]) => id !== "off") ? (["custom"] as const) : [])])) {
       if (!planAllowsLevel(plan, level)) {
         throw new OperationError(402, "plan_required", `${levelNeeded(level)} See Settings → Billing.`);
       }

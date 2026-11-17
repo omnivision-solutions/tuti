@@ -15,7 +15,9 @@ const levelsFile = (rows: unknown) => {
 };
 
 beforeEach(() => {
-  for (const name of ["BILLING_CONFIG", "AI_LEVELS_CONFIG", "AI_MODEL", "AI_MODEL_ANSWERS", "CODE_CHANGES_WRITE_MODEL"]) {
+  // Every variable that sets a server's own models (ownModels), so the built-in rows hold whatever the machine has set.
+  const models = ["AI_MODEL", ...["ANSWERS", "ESCALATIONS", "SUPPORT", "CHANGELOG", "CODE_CHANGES"].map((feature) => `AI_MODEL_${feature}`), "CODE_CHANGES_DECIDE_MODEL", "CODE_CHANGES_REDECIDE_MODEL", "CODE_CHANGES_WRITE_MODEL"];
+  for (const name of ["BILLING_CONFIG", "AI_LEVELS_CONFIG", ...models]) {
     vi.stubEnv(name, "");
   }
 });
