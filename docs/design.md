@@ -850,7 +850,8 @@ widths, in light and dark (in development only).
   button.
 - A control's parts read at 3:1 or more on what's under them, in light and dark: a switch's
   off track and its thumb, a progress bar's empty track (outlined, so one at 0 is seen to be empty).
-  A menu item that's locked (a plan's) keeps its text, with a lock, not faded.
+  A setting or menu item the plan doesn't include looks like any other: no lock, no badge, not faded.
+  Its accessible description names the plan it needs, and choosing it opens the upgrade prompt.
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense
