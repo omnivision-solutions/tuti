@@ -1,5 +1,5 @@
 import { buildSchema, graphqlSync, introspectionFromSchema, parse, validate } from "graphql";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { GRAPHQL_INTROSPECTION_QUERY, readGraphql } from "./graphql";
 import type { ApiDoc, ApiSchema } from "./types";
@@ -476,9 +476,49 @@ test.each([
     "a long default on an input many root fields take",
     `type Query { ${many(200, (n) => `r${n}(a: Long): Int`)} } input Long { a: String = "${"x".repeat(50_000)}" }`,
   ],
+  [
+    "a deeply nested list many root fields return",
+    `type Query { ${many(300, (n) => `r${n}: ${"[".repeat(500)}Int${"]".repeat(500)}`)} }`,
+  ],
+  [
+    "a deeply nested list many root fields take",
+    `type Query { ${many(300, (n) => `r${n}(a: ${"[".repeat(500)}Int${"]".repeat(500)}): Int`)} }`,
+  ],
+  [
+    "a deeply nested list on a type many root fields return",
+    `type Query { ${many(3_000, (n) => `r${n}: Deep`)} } type Deep { a: ${"[".repeat(500)}Int${"]".repeat(500)} }`,
+  ],
 ])("%s is too large to show", (_name, sdl) => {
   expect(readGraphql(sdl)).toEqual({ error: expect.stringContaining("too large") });
   // Schemas this size take a second or two to parse: more on a busy machine.
+}, 30_000);
+
+test("a deeply nested list is given up before it's built", () => {
+  // Spelled out, each of these is 250,000 characters of type text: all of them would be 75 million.
+  const sdl = `type Query { ${many(300, (n) => `r${n}: ${"[".repeat(500)}Int${"]".repeat(500)}`)} }`;
+  // A doc that's built is measured, so one never measured was given up on the way.
+  const measured = vi.spyOn(JSON, "stringify");
+  const result = readGraphql(sdl);
+  const times = measured.mock.calls.length;
+  measured.mockRestore();
+  expect(result).toEqual({ error: expect.stringContaining("too large") });
+  expect(times).toBe(0);
+  // One such list alone is read.
+  expect(read(`type Query { one: ${"[".repeat(50)}Int${"]".repeat(50)} }`).operations[0]!.responses[0]!.schema!.type).toHaveLength(103);
+}, 30_000);
+
+test("many names of one slug each get the next number, without trying the ones before it again", () => {
+  const sdl = `type Query { ${many(500, (n) => `a${"_".repeat(n + 1)}: Int`)} }`;
+  const looked = vi.spyOn(Set.prototype, "has");
+  const result = readGraphql(sdl);
+  const times = looked.mock.calls.length;
+  looked.mockRestore();
+  if ("error" in result) throw new Error(result.error);
+  const slugs = result.doc.operations.map((one) => one.slug);
+  expect(slugs.slice(0, 3)).toEqual(["a", "a-2", "a-3"]);
+  expect(new Set(slugs).size).toBe(500);
+  // Counting up from 2 for each of them is 125,000 looks.
+  expect(times).toBeLessThan(10_000);
 }, 30_000);
 
 test("a doc is measured once built, whatever was reckoned on the way", () => {

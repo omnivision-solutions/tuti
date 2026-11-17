@@ -185,10 +185,14 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
   };
   const weighDefault = (value: unknown) => count(0, JSON.stringify(value)?.length ?? 0);
   const slugs = new Set<string>();
+  /** The next number to try for a slug that's taken, so many names of one slug aren't each counted up from 2. */
+  const numbers = new Map<string, number>();
   const slugFor = (name: string, where: string) => {
     const base = slugOf(name);
     let slug = base;
-    for (let n = 2; slugs.has(slug); n++) slug = `${base}-${n}`;
+    let n = numbers.get(base) ?? 2;
+    for (; slugs.has(slug); n++) slug = `${base}-${n}`;
+    numbers.set(base, n);
     if (slug !== base) {
       warnings.push({
         code: "DUPLICATE_SLUG",
@@ -205,9 +209,17 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
 
   /** A type as the pages show it; `inside` holds the named types this one is being spelled out in. */
   const schemaOf = (type: GraphQLType, inside: string[]): ApiSchema => {
-    const text = String(type);
-    if (isNonNullType(type)) return { ...schemaOf(type.ofType, inside), type: text };
-    if (isListType(type)) return { type: text, items: schemaOf(type.ofType, inside) };
+    // Every list and non-null around a type is a node with the whole text of what's in it. It's
+    // reckoned here, where it's made, and made from the text inside it (not written out again at
+    // each level), so a type wrapped a thousand deep is given up before it's a million characters.
+    if (isNonNullType(type) || isListType(type)) {
+      const inner = schemaOf(type.ofType, inside);
+      const wrapped = isListType(type) ? `[${inner.type}]` : `${inner.type}!`;
+      count(0, wrapped.length + 20);
+      return isListType(type) ? { type: wrapped, items: inner } : { ...inner, type: wrapped };
+    }
+    const text = type.name;
+    count(0, text.length + 20);
     // A root type has no page: its fields are the operations.
     if (isSpecifiedScalarType(type) || rootTypes.has(type)) return { type: text };
     if (inside.length > levels || inside.includes(type.name)) return { type: text, ref: type.name };
@@ -272,6 +284,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
   const inputExample = (type: GraphQLType, inside: string[]): unknown => {
     if (isNonNullType(type)) return inputExample(type.ofType, inside);
     if (isListType(type)) {
+      count(0, 2);
       const item = inputExample(type.ofType, inside);
       return item === undefined ? [] : [item];
     }
@@ -284,6 +297,8 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     const one = () => {
       for (const field of all) {
         const value = inputExample(field.type, within);
+        // Looked at, if not copied: an input of many fields that can't be made is still work.
+        count(1);
         if (value === undefined) continue;
         weigh([field]);
         return { [field.name]: value };
@@ -314,6 +329,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
   const select = (type: GraphQLType, indent: string, deeper: boolean): { text: string; example: unknown } => {
     if (isNonNullType(type)) return select(type.ofType, indent, deeper);
     if (isListType(type)) {
+      count(0, 2);
       const item = select(type.ofType, indent, deeper);
       return { text: item.text, example: [item.example] };
     }
