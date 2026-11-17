@@ -1,0 +1,388 @@
+import { buildSchema, graphqlSync, introspectionFromSchema } from "graphql";
+import { expect, test } from "vitest";
+
+import { GRAPHQL_INTROSPECTION_QUERY, readGraphql } from "./graphql";
+import type { ApiDoc, ApiSchema } from "./types";
+
+const SDL = `
+"""
+The Acme feedback API.
+"""
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+scalar DateTime
+
+enum PostStatus {
+  OPEN
+  PLANNED
+  DONE
+}
+
+interface Node {
+  id: ID!
+}
+
+"A person who posts or comments."
+type User implements Node {
+  id: ID!
+  name: String!
+  email: String
+  posts(first: Int = 10): [Post!]!
+  manager: User
+}
+
+"An idea on a board."
+type Post implements Node {
+  id: ID!
+  "Its headline."
+  title: String!
+  status: PostStatus!
+  votes: Int!
+  score: Float
+  createdAt: DateTime!
+  author: User!
+  comments(first: Int!): [Comment!]!
+  oldTitle: String @deprecated(reason: "Use title.")
+  board: Board
+}
+
+type Comment implements Node {
+  id: ID!
+  body: String!
+  author: User!
+  replies: [Comment!]!
+}
+
+type Board {
+  name: String!
+  owner: User!
+}
+
+union SearchResult = Post | User
+
+"What a new post needs."
+input CreatePostInput {
+  title: String!
+  body: String
+  status: PostStatus = OPEN
+  tags: [String!]
+  author: AuthorInput!
+}
+
+input AuthorInput {
+  email: String!
+  name: String
+}
+
+input PostFilter {
+  status: PostStatus
+  and: [PostFilter!]
+}
+
+type Viewer {
+  account: Account!
+}
+
+type Account {
+  owner: User!
+}
+
+type Query {
+  "Every post, newest first."
+  posts(filter: PostFilter, first: Int = 20, after: ID): [Post!]!
+  post(id: ID!): Post
+  search(text: String!): [SearchResult!]!
+  node(id: ID!): Node
+  viewer: Viewer
+  version: String!
+  allPosts: [Post!]! @deprecated(reason: "Use posts.")
+}
+
+type Mutation {
+  createPost(input: CreatePostInput!): Post!
+  deletePost(id: ID!, at: DateTime): Boolean!
+}
+
+type Subscription {
+  postCreated: Post!
+}
+`;
+
+function read(text: string, options?: { endpoint?: string }): ApiDoc {
+  const result = readGraphql(text, options);
+  if ("error" in result) throw new Error(result.error);
+  return result.doc;
+}
+
+const doc = read(SDL);
+const operation = (key: string) => doc.operations.find((one) => one.key === key)!;
+const type = (name: string) => doc.types.find((one) => one.name === name)!;
+const property = (schema: ApiSchema | undefined, name: string) => schema!.properties!.find((one) => one.name === name)!;
+
+test("a schema file and its introspection result read as the same doc", () => {
+  const introspection = introspectionFromSchema(buildSchema(SDL), { schemaDescription: true, inputValueDeprecation: true });
+  expect(read(JSON.stringify(introspection))).toEqual(doc);
+  expect(read(JSON.stringify({ data: introspection }))).toEqual(doc);
+});
+
+test("what the introspection query asks for is enough to read", () => {
+  const answer = graphqlSync({ schema: buildSchema(SDL), source: GRAPHQL_INTROSPECTION_QUERY });
+  const fromEndpoint = read(JSON.stringify(answer));
+  expect(fromEndpoint.operations.map((one) => [one.key, one.query])).toEqual(doc.operations.map((one) => [one.key, one.query]));
+  expect(fromEndpoint.types.map((one) => one.name)).toEqual(doc.types.map((one) => one.name));
+});
+
+test("the doc's own fields: no title or version, the schema's description, the endpoint as its server", () => {
+  expect(doc).toMatchObject({ format: "graphql", title: "", version: null, description: "The Acme feedback API.", servers: [], auth: [] });
+  expect(read(SDL, { endpoint: "https://api.example.com/graphql" }).servers).toEqual([
+    { url: "https://api.example.com/graphql", description: "" },
+  ]);
+  expect(read("type Query { ok: Boolean }").description).toBe("");
+});
+
+test("groups are the root types the schema has", () => {
+  expect(doc.groups).toEqual([
+    { key: "queries", name: "Queries", description: "" },
+    { key: "mutations", name: "Mutations", description: "" },
+    { key: "subscriptions", name: "Subscriptions", description: "" },
+  ]);
+  expect(read("type Query { ok: Boolean }").groups.map((group) => group.key)).toEqual(["queries"]);
+  // Root types named something else are still the roots, and aren't listed as types.
+  const renamed = read("schema { query: Root } type Root { ok: Boolean } type Query { id: ID }");
+  expect(renamed.operations.map((one) => one.key)).toEqual(["query ok"]);
+  expect(renamed.types.map((one) => one.name)).toEqual(["Query"]);
+});
+
+test("one operation per root field", () => {
+  expect(doc.operations.map((one) => one.key)).toEqual([
+    "query posts",
+    "query post",
+    "query search",
+    "query node",
+    "query viewer",
+    "query version",
+    "query allPosts",
+    "mutation createPost",
+    "mutation deletePost",
+    "subscription postCreated",
+  ]);
+  expect(operation("query posts")).toMatchObject({
+    slug: "posts",
+    group: "queries",
+    kind: "query",
+    path: "posts",
+    title: "posts",
+    description: "Every post, newest first.",
+    deprecated: false,
+    auth: [],
+    body: null,
+  });
+  expect(operation("mutation createPost")).toMatchObject({ slug: "create-post", group: "mutations", kind: "mutation" });
+  expect(operation("subscription postCreated")).toMatchObject({ group: "subscriptions", kind: "subscription" });
+  expect(operation("query allPosts").deprecated).toBe(true);
+});
+
+test("arguments are parameters, required when non-null without a default", () => {
+  expect(operation("query posts").params).toEqual([
+    {
+      name: "filter",
+      in: "argument",
+      required: false,
+      description: "",
+      schema: expect.objectContaining({ type: "PostFilter", ref: "PostFilter" }),
+      example: {},
+    },
+    { name: "first", in: "argument", required: false, description: "", schema: { type: "Int", default: 20 }, example: 1 },
+    { name: "after", in: "argument", required: false, description: "", schema: { type: "ID" }, example: "1" },
+  ]);
+  expect(operation("query post").params[0]).toMatchObject({ name: "id", required: true, schema: { type: "ID!" } });
+});
+
+test("the response is the returned type, with an example of what the query brings back", () => {
+  const [response, ...rest] = operation("query post").responses;
+  expect(rest).toEqual([]);
+  expect(response).toMatchObject({ status: "data", schema: { type: "Post", ref: "Post", description: "An idea on a board." } });
+  expect(response!.example).toEqual({
+    id: "1",
+    title: "string",
+    status: "OPEN",
+    votes: 1,
+    score: 1.5,
+    createdAt: "2026-01-01T00:00:00Z",
+    author: { id: "1", name: "string", email: "string" },
+    board: { name: "string" },
+  });
+  expect(operation("query posts").responses[0]!.schema).toMatchObject({ type: "[Post!]!", items: { type: "Post!", ref: "Post" } });
+  expect(operation("query posts").responses[0]!.example).toEqual([response!.example]);
+  expect(operation("query version").responses[0]).toMatchObject({ schema: { type: "String!" }, example: "string" });
+});
+
+test("the query names the operation, takes a variable per argument and selects two levels of fields", () => {
+  // comments needs an argument and oldTitle is deprecated: neither is selected.
+  expect(operation("mutation createPost").query).toEqual({
+    text: `mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
+    id
+    title
+    status
+    votes
+    score
+    createdAt
+    author {
+      id
+      name
+      email
+    }
+    board {
+      name
+    }
+  }
+}`,
+    // Required input fields only.
+    variables: { input: { title: "string", author: { email: "string" } } },
+  });
+  expect(operation("query posts").query).toMatchObject({
+    text: expect.stringContaining("query Posts($filter: PostFilter, $first: Int, $after: ID) {\n  posts(filter: $filter, first: $first, after: $after) {\n"),
+    variables: { filter: {}, first: 1, after: "1" },
+  });
+  expect(operation("mutation deletePost").query).toEqual({
+    text: "mutation DeletePost($id: ID!, $at: DateTime) {\n  deletePost(id: $id, at: $at)\n}",
+    variables: { id: "1", at: "2026-01-01T00:00:00Z" },
+  });
+  expect(operation("query version").query).toEqual({ text: "query Version {\n  version\n}", variables: {} });
+});
+
+test("a union or interface selects __typename, and a selection is never empty", () => {
+  expect(operation("query search").query!.text).toBe(
+    "query Search($text: String!) {\n  search(text: $text) {\n    __typename\n  }\n}",
+  );
+  expect(operation("query search").responses[0]!.example).toEqual([{ __typename: "Post" }]);
+  expect(operation("query node").query!.text).toBe("query Node($id: ID!) {\n  node(id: $id) {\n    __typename\n    id\n  }\n}");
+  // Viewer has no scalars, and its account has none either.
+  expect(operation("query viewer").query!.text).toBe(
+    "query Viewer {\n  viewer {\n    account {\n      __typename\n    }\n  }\n}",
+  );
+  expect(operation("query viewer").responses[0]!.example).toEqual({ account: { __typename: "Account" } });
+});
+
+test("types read as GraphQL writes them, with fields, enums, unions and interfaces", () => {
+  const post = operation("query post").responses[0]!.schema!;
+  expect(property(post, "title")).toEqual({ name: "title", required: true, type: "String!", description: "Its headline." });
+  expect(property(post, "score")).toEqual({ name: "score", required: false, type: "Float" });
+  expect(property(post, "status")).toEqual({ name: "status", required: true, type: "PostStatus!", ref: "PostStatus", enum: ["OPEN", "PLANNED", "DONE"] });
+  expect(property(post, "oldTitle")).toMatchObject({ deprecated: true });
+  expect(property(post, "comments")).toMatchObject({ type: "[Comment!]!", items: { type: "Comment!", ref: "Comment" } });
+  expect(property(post, "createdAt")).toEqual({ name: "createdAt", required: true, type: "DateTime!", ref: "DateTime" });
+
+  const input = operation("mutation createPost").params[0]!.schema;
+  expect(input).toMatchObject({ type: "CreatePostInput!", ref: "CreatePostInput", description: "What a new post needs." });
+  expect(input.properties!.map((one) => [one.name, one.required])).toEqual([
+    ["title", true],
+    ["body", false],
+    ["status", false],
+    ["tags", false],
+    ["author", true],
+  ]);
+  expect(property(input, "status").default).toBe("OPEN");
+
+  expect(type("SearchResult").schema.oneOf!.map((one) => one.ref)).toEqual(["Post", "User"]);
+  expect(type("Node").schema).toMatchObject({ properties: [{ name: "id", type: "ID!" }] });
+  expect(type("Node").schema.oneOf!.map((one) => one.ref)).toEqual(["User", "Post", "Comment"]);
+});
+
+test("a named type is spelled out two levels down, then only named", () => {
+  // Viewer › Account › User are spelled out; what User's fields return is only named.
+  const viewer = operation("query viewer").responses[0]!.schema!;
+  const owner = property(property(viewer, "account"), "owner");
+  expect(owner.properties!.map((one) => one.name)).toEqual(["id", "name", "email", "posts", "manager"]);
+  expect(property(owner, "posts")).toEqual({ name: "posts", required: true, type: "[Post!]!", items: { type: "Post!", ref: "Post" } });
+});
+
+test("a type that contains itself is only named there", () => {
+  const user = type("User").schema;
+  expect(property(user, "manager")).toEqual({ name: "manager", required: false, type: "User", ref: "User" });
+  // Post › author › posts comes back to Post.
+  expect(property(property(type("Post").schema, "author"), "posts").items).toEqual({ type: "Post!", ref: "Post" });
+  expect(property(type("PostFilter").schema, "and")).toEqual({
+    name: "and",
+    required: false,
+    type: "[PostFilter!]",
+    items: { type: "PostFilter!", ref: "PostFilter" },
+  });
+  expect(property(type("Comment").schema, "replies").items).toEqual({ type: "Comment!", ref: "Comment" });
+});
+
+test("types are every named type but the roots and the built-in ones", () => {
+  expect(doc.types.map((one) => [one.name, one.kind, one.slug])).toEqual([
+    ["Account", "object", "account"],
+    ["AuthorInput", "input", "author-input"],
+    ["Board", "object", "board"],
+    ["Comment", "object", "comment"],
+    ["CreatePostInput", "input", "create-post-input"],
+    ["DateTime", "scalar", "date-time"],
+    ["Node", "interface", "node-2"],
+    ["Post", "object", "post-2"],
+    ["PostFilter", "input", "post-filter"],
+    ["PostStatus", "enum", "post-status"],
+    ["SearchResult", "union", "search-result"],
+    ["User", "object", "user"],
+    ["Viewer", "object", "viewer-2"],
+  ]);
+  expect(type("PostStatus").schema).toEqual({ type: "PostStatus", ref: "PostStatus", enum: ["OPEN", "PLANNED", "DONE"] });
+  expect(type("DateTime").schema).toEqual({ type: "DateTime", ref: "DateTime" });
+});
+
+test("no two pages share a slug: the later gets a number, with a warning", () => {
+  const slugs = [...doc.operations, ...doc.types].map((one) => one.slug);
+  expect(new Set(slugs).size).toBe(slugs.length);
+  expect(doc.warnings.filter((warning) => warning.code === "DUPLICATE_SLUG").map((warning) => warning.where)).toEqual([
+    "type Node",
+    "type Post",
+    "type Viewer",
+  ]);
+  // A number that's taken too is skipped.
+  const taken = read("type Query { post: Post post_2: Int } type Post { id: ID }");
+  expect([...taken.operations, ...taken.types].map((one) => one.slug)).toEqual(["post", "post-2", "post-3"]);
+});
+
+test("a field's arguments outside the roots are a warning", () => {
+  expect(doc.warnings.filter((warning) => warning.code === "FIELD_ARGUMENTS").map((warning) => warning.where)).toEqual([
+    "Post › comments",
+    "User › posts",
+  ]);
+});
+
+test("a schema using directives it doesn't declare is read", () => {
+  expect(read('type Query { me: User } type User @key(fields: "id") { id: ID! }').operations).toHaveLength(1);
+});
+
+test.each([
+  ["nothing", "", "empty"],
+  ["spaces", "  \n ", "empty"],
+  ["prose", "Hello, this is our API.", "isn't a GraphQL schema file"],
+  ["a query, not a schema", "query { posts { id } }", "no queries"],
+  ["types without a root", "type Post { id: ID }", "no queries"],
+  ["a type that isn't defined", "type Query { post: Post }", "Unknown type"],
+  ["broken JSON", '{ "data": ', "isn't valid JSON"],
+  ["JSON that isn't an introspection result", '{ "openapi": "3.1.0" }', "no __schema"],
+  ["JSON null data", '{ "data": null }', "no __schema"],
+  ["an endpoint's refusal", '{ "errors": [{ "message": "Introspection is disabled" }] }', "Introspection is disabled"],
+  ["an introspection result without types", '{ "__schema": {} }', "couldn't be read"],
+  ["an introspection result of the wrong shape", '{ "__schema": { "types": [{ "kind": "OBJECT", "name": "Query", "fields": 3 }], "queryType": { "name": "Query" } } }', "couldn't be read"],
+  ["a type whose field has no type", '{ "__schema": { "types": [{ "kind": "OBJECT", "name": "Query", "fields": [{ "name": "a", "args": [] }], "interfaces": [] }], "queryType": { "name": "Query" } } }', "couldn't be read"],
+  ["a type nested too deeply", `type Query { a: ${"[".repeat(50_000)}Int${"]".repeat(50_000)} }`, ""],
+  ["over 5 MB", `type Query { ok: Boolean }${" ".repeat(5 * 1024 * 1024)}`, "over 5 MB"],
+  ["not text", 42 as unknown as string, "empty"],
+  ["not text at all", null as unknown as string, "empty"],
+])("%s is an error, never a throw", (_name, text, expected) => {
+  const result = readGraphql(text);
+  expect(result).toEqual({ error: expect.stringContaining(expected) });
+});
+
+test("a syntax error says where", () => {
+  expect(readGraphql("type Query {\n  posts: [Post\n}")).toEqual({ error: expect.stringMatching(/\(line 3, column 1\)$/) });
+});
