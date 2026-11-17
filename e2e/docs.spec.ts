@@ -615,6 +615,23 @@ test("the team reviews article history, changes visibility and restores a delete
   await expect(visitor.getByText(original, { exact: true })).toBeVisible();
   await expect(visitor.getByText(/Members can ask them/)).toHaveCount(0);
 
+  // Closing either of the pill's dialogs without acting puts the focus back on the pill.
+  const pill = team.getByRole("button", { name: "Manage unpublished changes" });
+  for (const [row, role, close] of [
+    ["Review changes", "dialog", "escape"],
+    ["Discard changes", "alertdialog", "escape"],
+    ["Discard changes", "alertdialog", "cancel"],
+  ] as const) {
+    await pill.click();
+    await team.getByRole("menuitem", { name: row, exact: true }).click();
+    const opened = team.getByRole(role);
+    await expect(opened).toBeVisible();
+    if (close === "cancel") await opened.getByRole("button", { name: "Cancel", exact: true }).click();
+    else await team.keyboard.press("Escape");
+    await expect(opened).toBeHidden();
+    await expect(pill).toBeFocused();
+  }
+
   // Reviewed against the published version, then published.
   await team.getByRole("button", { name: "Manage unpublished changes" }).click();
   await team.getByRole("menuitem", { name: "Review changes", exact: true }).click();

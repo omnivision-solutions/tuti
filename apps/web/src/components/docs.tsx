@@ -626,13 +626,11 @@ export function ArticleChanges({
   );
 
   const [discarding, setDiscarding] = useState(false);
-  // The compact one's dialogs open from its menu, closed by then: the focus goes back to its pill.
-  const toggle = useRef<HTMLButtonElement>(null);
   const dialogs = (
     <>
       <AlertDialog open={discarding} onOpenChange={setDiscarding}>
         {!compact && <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>}
-        <AlertDialogContent closeDisabled={pending} finalFocus={compact ? toggle : undefined}>
+        <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard changes?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -649,7 +647,7 @@ export function ArticleChanges({
       </AlertDialog>
       <Dialog open={reviewing} onOpenChange={setReviewing}>
         {!compact && <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>}
-        <DialogContent className="sm:max-w-2xl" finalFocus={compact ? toggle : undefined}>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Review changes</DialogTitle>
             <DialogDescription>Against the published version: paragraphs taken out are struck through, new ones are highlighted.</DialogDescription>
@@ -669,7 +667,6 @@ export function ArticleChanges({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          ref={toggle}
           aria-label="Manage unpublished changes"
           className="text-xs text-highlight-foreground cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-highlight rounded-full max-sm:gap-1 max-sm:px-2"
         >
