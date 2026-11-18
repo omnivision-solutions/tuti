@@ -168,7 +168,9 @@ function inline(text: string, allowedLinks: Set<string>): JSONContent[] {
       nodes.push(marks ? { type: "text", text: clean, marks } : { type: "text", text: clean });
     }
   };
-  const pattern = /\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*/g;
+  // Each part has a length limit, so a reply of nothing but "[" or "**" is read in linear time.
+  // (An address as long as a link may be: isSafeLink's 2,048.)
+  const pattern = /\[([^\]]{1,1000})\]\(([^)\s]{1,2048})\)|\*\*([^*]{1,2000})\*\*/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     push(text.slice(last, match.index));
@@ -182,4 +184,122 @@ function inline(text: string, allowedLinks: Set<string>): JSONContent[] {
   }
   push(text.slice(last));
   return nodes;
+}
+
+/** Blocks that hold text only, wherever they sit (a list's item, a table's cell, a step): what a passage can be. */
+const TEXT_BLOCKS = new Set(["paragraph", "heading", "detailsSummary", "stepTitle"]);
+const PASSAGE_MARKS = new Set(["bold", "link", "code"]);
+const isCode = (node: JSONContent) => (node.marks ?? []).some((mark) => mark.type === "code");
+/** A text block's content as Markdown, without what its block adds (a heading's #, an item's marker). */
+const passageText = (content: JSONContent[]) => toMarkdown({ type: "doc", content: [{ type: "paragraph", content }] }).trim();
+
+/** A text block's content as its characters with their marks (spaces aside: Markdown moves those out of bold). */
+const marked = (content: JSONContent[]) => content.flatMap((node) => [...(node.text ?? "")].map((char) => (char.trim() ? char + JSON.stringify(node.marks ?? []) : char))).join("\u0000");
+
+/** The passage's own link marks by address: a stored link carries more than its address (target, rel), and a replacement keeps them. */
+const ownLinks = (content: JSONContent[]) =>
+  new Map(content.flatMap((node) => (node.marks ?? []).filter((mark) => mark.type === "link" && typeof mark.attrs?.href === "string").map((mark) => [mark.attrs!.href as string, mark] as const)));
+
+/**
+ * The passages in these blocks: each text block whose text can be replaced by itself (replacePassage), as the Markdown
+ * the model is shown and quotes back. Only text in bold, links and `code`: a block with anything else (italics, a line
+ * break) isn't one, and nor is a code block (it holds no text block). And only a block that comes back as it is when
+ * replaced with its own text, so every passage listed can be replaced: one the reply's reader (inline) can't read back
+ * isn't listed (a bold link or linked code, as it keeps one mark per run of text; a link whose address or text Markdown
+ * has to escape; a backtick outside code).
+ * ponytail: those are left to the note at the end; teach the reader nesting and escapes if they're missed.
+ */
+export function passagesIn(blocks: JSONContent[]): { text: string; node: JSONContent }[] {
+  const found: { text: string; node: JSONContent }[] = [];
+  const visit = (node: JSONContent) => {
+    if (!TEXT_BLOCKS.has(node.type ?? "")) {
+      node.content?.forEach(visit);
+      return;
+    }
+    const content = node.content ?? [];
+    const text = content.every((child) => child.type === "text" && (child.marks ?? []).every((mark) => PASSAGE_MARKS.has(mark.type))) ? passageText(content) : "";
+    const back = text && rewritten(node, text);
+    if (back && marked(back.content!) === marked(content)) {
+      found.push({ text, node });
+    }
+  };
+  blocks.forEach(visit);
+  return found;
+}
+
+/** `node` with `target` (that very object, anywhere under it) as `next`; everything else the same objects. */
+function swap(node: JSONContent, target: JSONContent, next: JSONContent): JSONContent {
+  if (node === target) {
+    return next;
+  }
+  const content = node.content?.map((child) => swap(child, target, next));
+  return content?.some((child, i) => child !== node.content![i]) ? { ...node, content } : node;
+}
+
+/** What notesToDoc reads as a block's start: a heading, a quote, a list's item. Escaped ("1\. Use…"), it's text. */
+const BLOCK_MARKER = /^(#{1,6}(\s|$)|>|([-*•+]|\d+[.)])(\s|$)|([-*_])\5{2,}$)/;
+
+/** How many links to each address these text nodes hold (nodes side by side with one address are one link). */
+function linkRuns(content: JSONContent[]): Map<string, number> {
+  const runs = new Map<string, number>();
+  let last: unknown;
+  for (const node of content) {
+    const href: unknown = node.marks?.find((mark) => mark.type === "link")?.attrs?.href;
+    if (typeof href === "string" && href !== last) {
+      runs.set(href, (runs.get(href) ?? 0) + 1);
+    }
+    last = href;
+  }
+  return runs;
+}
+
+/** A text block with `replace` as its content (see replacePassage), or null when it can't be used. */
+function rewritten(target: JSONContent, replace: string): JSONContent | null {
+  let rest = replace.trim();
+  // One line, and no block of its own: a marker at its start (notesToDoc's) would be stored as text ("2. 1. Open…").
+  // Nor an image's placeholder: the image stays where it is, and the placeholder would be stored as text.
+  if (rest === "" || /[\n\r]/.test(rest) || BLOCK_MARKER.test(rest) || /\{\{media \d+\}\}/.test(rest.replace(/\\(.)/g, "$1"))) {
+    return null;
+  }
+  const links = new Set([...factsIn([target]).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
+  const content: JSONContent[] = [];
+  // Text outside the passage's own code can't hold a backtick: it would be code made up, or changed.
+  const text = (value: string) => {
+    content.push(...inline(value, links));
+    return !value.includes("`");
+  };
+  for (const code of (target.content ?? []).filter(isCode)) {
+    const span = passageText([code]);
+    const at = rest.indexOf(span);
+    if (at === -1 || !text(rest.slice(0, at))) {
+      return null;
+    }
+    content.push(code);
+    rest = rest.slice(at + span.length);
+  }
+  // Each link the passage had, as often as it had it: one of two to the same address made plain text is a link lost.
+  if (!text(rest) || content.length === 0) {
+    return null;
+  }
+  // A link the passage had comes back as the mark it was, every attribute: the reader makes one with the address alone.
+  const own = ownLinks(target.content ?? []);
+  const kept = content.map((node) => (node.marks?.some((mark) => mark.type === "link") ? { ...node, marks: node.marks.map((mark) => (mark.type === "link" && own.get(mark.attrs?.href as string)) || mark) } : node));
+  const next = { ...target, content: kept };
+  const has = linkRuns(content);
+  return [...linkRuns(target.content ?? [])].every(([href, count]) => (has.get(href) ?? 0) >= count) ? next : null;
+}
+
+/**
+ * These blocks with one passage's text replaced: the block whose text is exactly `find` (see passagesIn) gets
+ * `replace` as its content, and keeps its type and attributes; every other node is the object it was. Null when it
+ * can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is empty, more than one line or
+ * starts like a block of its own (a heading's #, a list's marker); it loses a link the passage had (one of two to the
+ * same address counts); or its `code` isn't the passage's own, each once, in order and exactly as it was
+ * (code is never written here, only kept: those nodes come back as they were). The rest is read like any reply (inline):
+ * text, **bold** and the links the passage had.
+ */
+export function replacePassage(blocks: JSONContent[], find: string, replace: string): JSONContent[] | null {
+  const matches = passagesIn(blocks).filter((passage) => passage.text === find.trim());
+  const next = matches.length === 1 ? rewritten(matches[0]!.node, replace) : null;
+  return next && blocks.map((block) => swap(block, matches[0]!.node, next));
 }

@@ -227,6 +227,101 @@ test("an edit to a section with a screenshot is made in place: the text beside i
   expect(content).toEqual({ type: "doc", content: [paragraph("The app has a light theme and a dark one."), image, paragraph("Pick it in Settings.")] });
 });
 
+describe("a correction beside a table or code is made where the old text stands", () => {
+  const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
+  const cell = (text: string) => ({ type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null }, content: [paragraph(text)] });
+  const table = { type: "table", content: [{ type: "tableRow", content: [cell("Theme"), cell("Where")] }, { type: "tableRow", content: [cell("Light"), cell("Settings")] }] };
+  const code = { type: "codeBlock", attrs: { language: "bash", filename: null }, content: [{ type: "text", text: "acme theme light" }] };
+  const contentOf = async (table: "article" | "articleChanges") =>
+    table === "article"
+      ? (await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { content: true } })).content
+      : (await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { content: true } })).content;
+  /** The article with `beside` after its first paragraph, and a pull request whose writer replaces that paragraph. */
+  const correcting = async (number: number, beside: object, more: object = {}) => {
+    const before = { type: "doc", content: [paragraph("The app has a light theme."), beside, paragraph("Pick it in Settings.")] };
+    await prisma.article.update({ where: { id: article.id }, data: { content: before } });
+    pullRequest(number);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It says the app only has a light theme." }]), undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(
+      JSON.stringify({
+        reason: "It says there's only a light theme.",
+        overview: "It names Dark beside Light.",
+        passages: [{ section: 1, find: "The app has a light theme.", replace: "The app has a light theme and a dark one." }],
+        ...more,
+      }),
+      undefined,
+      '"problem"',
+    );
+    expect(await merge(number)).toBe(200);
+    const stored = await contentOf("article");
+    const edit = await prisma.codeChangeAction.findFirstOrThrow({
+      where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" },
+      select: { id: true, status: true, waitReason: true, payload: true },
+    });
+    return { stored: stored as { content: object[] }, edit };
+  };
+
+  test("beside a table: the paragraph changes, the table is as it was; no section for the end, so it doesn't wait for that; Dismiss takes it out", async () => {
+    // Sure enough to go out by itself: nothing about it makes it wait.
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    const { stored, edit } = await correcting(32, table);
+    // The writer saw the section as one it can't rewrite, with the texts it may replace.
+    const writer = model.requests.find((request) => request.user.includes('"problem"'))!;
+    const shown = (JSON.parse(writer.user) as { article: { sections: object[] } }).article.sections;
+    expect(shown).toEqual([
+      expect.objectContaining({ editable: false, passages: ["The app has a light theme.", "Theme", "Where", "Light", "Settings", "Pick it in Settings."] }),
+    ]);
+    expect(writer.system).toContain('"find" is the passage exactly as listed');
+
+    expect(await contentOf("articleChanges")).toEqual({ type: "doc", content: [paragraph("The app has a light theme and a dark one."), stored.content[1], stored.content[2]] });
+    expect(stored.content[1]).toMatchObject({ type: "table" });
+    expect((edit.payload as { added?: boolean }).added).toBeUndefined();
+    expect(edit).toMatchObject({ status: "SCHEDULED", waitReason: null });
+
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    expect(review).toMatchObject({ changesReaders: true, teammateEdit: false });
+    expect(review.actions[0]).toMatchObject({ id: edit.id, status: "scheduled" });
+    await call(dismissCodeChangeAction, team(), { id: edit.id });
+    // Its newest text is the old one again, table and all; nothing was published meanwhile.
+    const changes = await prisma.articleChanges.findUnique({ where: { articleId: article.id }, select: { content: true } });
+    expect(changes?.content ?? stored).toEqual(stored);
+    expect(await contentOf("article")).toEqual(stored);
+  });
+
+  test("beside a code block: the same, the code as it was; Approve publishes it and Undo puts the old text back", async () => {
+    const { stored, edit } = await correcting(33, code);
+    const after = { type: "doc", content: [paragraph("The app has a light theme and a dark one."), stored.content[1], stored.content[2]] };
+    expect(stored.content[1]).toMatchObject({ type: "codeBlock", content: [{ type: "text", text: "acme theme light" }] });
+    expect(await contentOf("articleChanges")).toEqual(after);
+
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    expect(await call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "published" })).toMatchObject({ status: "applied", published: true });
+    expect(await contentOf("article")).toEqual(after);
+    await call(undoCodeChangeAction, team(), { id: edit.id });
+    expect(await contentOf("article")).toEqual(stored);
+  });
+
+  test("a passage that isn't in the article as quoted: no edit is proposed, the article untouched", async () => {
+    await prisma.article.update({ where: { id: article.id }, data: { content: { type: "doc", content: [paragraph("The app has a light theme."), table] } } });
+    pullRequest(34);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It says the app only has a light theme." }]), undefined, '"merge-34"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ reason: "It says there's only a light theme.", passages: [{ section: 1, find: "The app has a light theme", replace: "The app has two themes." }] }), undefined, '"problem"');
+    expect(await merge(34)).toBe(200);
+    expect((await actions(34)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
+    expect(await prisma.articleChanges.count({ where: { articleId: article.id } })).toBe(0);
+  });
+
+  test("with a section for the end as well, it still waits for a person", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    const { edit } = await correcting(35, code, { add: "## The command line\n\nThe command takes dark too." });
+    expect(edit).toMatchObject({ status: "PENDING", waitReason: "Its article gets a section at the end", payload: expect.objectContaining({ added: true }) as unknown });
+  });
+});
+
 describe("the double-check", () => {
   const NEW = { title: "Use the dark theme", collection: "settings", after: "appearance", reason: "Nothing covers themes." };
 

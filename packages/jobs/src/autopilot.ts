@@ -137,7 +137,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     return "Its pull request was analysed again";
   }
   const payload = (action.payload ?? {}) as { comment?: string; added?: boolean };
-  // A section put at the end is new material, or a note about a section Autopilot can't edit: a person reads it first.
+  // A section put at the end is new material, or a note about something Autopilot can't change where it stands (code): a person reads it first.
   if (action.kind === "ARTICLE_EDIT" && payload.added) {
     return "Its article gets a section at the end";
   }
