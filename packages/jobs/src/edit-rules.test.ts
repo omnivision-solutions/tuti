@@ -1,8 +1,10 @@
+import type { Doc } from "@tuti/content";
+import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
 import { APPENDED_FAILS, appendedAtEnd, changelogWords, editScope, headingOverLittle, leftContradictions, renamed, ruleChecks, sizeOf, SMALL_WORDS } from "./edit-rules";
-import { CHECK_UNCLEAR, checkFailed, checksOn, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
+import { CHECK_UNCLEAR, checkedEdit, checkFailed, checksOn, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
 import { CHECK_SYSTEM } from "./verify";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -296,4 +298,23 @@ test("an edit that moves or copies text the article had is neither a rename nor 
   expect(renamed(BOTH, "Open **Look and feel** and pick a theme.\n\nFonts are in **Customize** too.", DIFF)).toBeNull();
   // The same rename, one for one where they stand, is still one.
   expect(renamed(BOTH, "Open **Look and feel** and pick a theme.\n\nFonts are in **Look and feel** too.", DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
+});
+
+test("the check stores an edit's scope from the pull request's diff only when that diff is all of the change: a cut one makes no rename", async () => {
+  // Checks off: nothing is reviewed or asked, and the scope is stored all the same.
+  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+  resetCodeChangesSettings();
+  const paragraph = (label: string): Doc => ({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "Open " }, { type: "text", text: label, marks: [{ type: "bold" }] }, { type: "text", text: " to send invites." }] }],
+  });
+  const written = { writtenOn: paragraph("Team"), doc: paragraph("Members"), reason: "The tab is Members now.", payload: { problem: "wrong" as const, title: "Invite", body: "", before: "", overview: "", overviewOf: [] }, reply: "" };
+  const pr = { title: "Members", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files: [], diff: "--- src/tabs.tsx (modified, +1 -1)\n-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>" };
+  const review = { projectId: "p1", context: {} as never };
+  const scope = async (diffComplete?: boolean) => ((await checkedEdit(async () => written, { ...pr, diffComplete }, review))!.payload as { check: { scope: string } }).check.scope;
+  expect(await scope(true)).toBe("rename");
+  expect(await scope(false)).not.toBe("rename");
+  // A read from before the flag (unset) isn't known to be all of it.
+  expect(await scope(undefined)).not.toBe("rename");
+  resetCodeChangesSettings();
 });
