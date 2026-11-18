@@ -80,16 +80,23 @@ export async function asPreviousRelease(slug: string, number: number) {
   }
 }
 
-/** Sets a pull request's (`number`) state, as if its job were queued or under way (`ANALYSING`), done (`READY`) or failed (`FAILED`, saying why: `reason`), now. */
-export async function setPullRequestState(slug: string, number: number, state: "ANALYSING" | "READY" | "FAILED", reason = "") {
+/**
+ * Sets a pull request's (`number`) state, as if its job were queued or under way (`ANALYSING`), done (`READY`) or failed
+ * (`FAILED`, saying why: `reason`), now; with `retryInMinutes`, as if the provider didn't answer and it's tried again
+ * then. Returns its code change's id.
+ */
+export async function setPullRequestState(slug: string, number: number, state: "ANALYSING" | "READY" | "FAILED", reason = "", retryInMinutes: number | null = null) {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();
   try {
-    const { rowCount } = await client.query(
-      `UPDATE code_change c SET state = $3, reason = $4, "updatedAt" = now() AT TIME ZONE 'UTC' FROM project p WHERE p.id = c."projectId" AND p.slug = $1 AND c.number = $2`,
-      [slug, number, state, reason],
+    const { rows } = await client.query<{ id: string }>(
+      `UPDATE code_change c SET state = $3, reason = $4, "updatedAt" = now() AT TIME ZONE 'UTC',
+         "retryAt" = (now() AT TIME ZONE 'UTC') + make_interval(mins => $5::int)
+       FROM project p WHERE p.id = c."projectId" AND p.slug = $1 AND c.number = $2 RETURNING c.id`,
+      [slug, number, state, reason, retryInMinutes],
     );
-    expect(rowCount).toBe(1);
+    expect(rows).toHaveLength(1);
+    return rows[0]!.id;
   } finally {
     await client.end();
   }

@@ -209,6 +209,7 @@ const changeSelect = {
   mergedAt: true,
   state: true,
   reason: true,
+  retryAt: true,
   summary: true,
   settings: true,
   _count: { select: { actions: { where: { ...inReview, status: { in: ["PENDING", "STALE"] } } } } },
@@ -234,6 +235,8 @@ const changeView = (change: ChangeRow) => ({
   state: STATES[change.state],
   /** Why there's nothing to do, or where it failed. */
   reason: change.reason && (RENAMED_REASONS[change.reason] ?? change.reason),
+  /** Failed because the AI provider didn't answer: when it's analysed again by itself (null: it isn't). */
+  retryAt: change.state === "FAILED" && change.retryAt ? change.retryAt.toISOString() : null,
   summary: change.summary,
   /** Proposals waiting for the team. */
   waiting: change._count.actions,
@@ -1130,7 +1133,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, retryAt: true, retries: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -1142,10 +1145,11 @@ export const analyseCodeChange = defineOperation({
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
     // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done. Claimed, so two asking
-    // at once queue it once: already being analysed (while a run could still be going), nothing more is queued.
+    // at once queue it once: already being analysed (while a run could still be going), nothing more is queued. A retry
+    // waiting (the provider didn't answer) is dropped, and this analysis gets retries of its own.
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
-      data: { state: "ANALYSING", reason: "" },
+      data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0 },
     });
     if (count === 0) {
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
@@ -1159,7 +1163,9 @@ export const analyseCodeChange = defineOperation({
         const stopped = change.state === "ANALYSING";
         await prisma.codeChange.updateMany({
           where: { id: change.id, state: "ANALYSING" },
-          data: stopped ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." } : { state: change.state, reason: change.reason },
+          data: stopped
+            ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." }
+            : { state: change.state, reason: change.reason, retryAt: change.retryAt, retries: change.retries },
         });
       }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");

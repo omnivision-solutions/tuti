@@ -2540,6 +2540,11 @@ model CodeChange {
   decider   String?
   /// The Advanced tuning values the analysis ran with ({ values: by path, tuned: the paths the project changed }); null before them.
   settings  Json?
+  /// An analysis the AI provider didn't answer is tried again by itself at `retryAt` (null: not to be), as it was asked
+  /// (`retryPastGate`: "Analyse anyway"); `retries` is how many times it has been since a person last asked.
+  retryAt       DateTime?
+  retries       Int             @default(0)
+  retryPastGate Boolean         @default(false)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
@@ -2550,6 +2555,7 @@ model CodeChange {
 
   @@unique([projectId, repoId, number])
   @@index([projectId, createdAt])
+  @@index([retryAt])
   @@map("code_change")
 }
 

@@ -12,6 +12,7 @@ import {
   log,
   planIncludes,
   planNeeded,
+  providerDidNotAnswer,
   roleModel,
   toVectorLiteral,
   tunedSettings,
@@ -24,7 +25,7 @@ import { aiFor } from "./ai-usage";
 import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
-import { OutOfCredits } from "./credits";
+import { aiPaused, OutOfCredits } from "./credits";
 import { type ArticlePlace, type Ask, writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { askingWithTools, decideDocs } from "./docs-agent";
 import { closeTools, type ToolContext } from "./docs-agent-tools";
@@ -113,7 +114,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       const updates = await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } });
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
-        data: { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again." },
+        data: { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
       await prisma.codeChange.deleteMany({ where: { ...waiting, actions: { none: {} } } });
@@ -121,12 +122,12 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     return { skipped: true };
   }
   if (!codeChangesEnabled()) {
-    await prisma.codeChange.updateMany({ where: waiting, data: { state: "FAILED", reason: "AI isn't set up on this server." } });
+    await prisma.codeChange.updateMany({ where: waiting, data: { state: "FAILED", reason: "AI isn't set up on this server.", retryAt: null } });
     return { skipped: true };
   }
   // On a plan without code changes since it merged: kept, paused until the plan is back and the team resumes it.
   if (!planIncludes(change.project.plan, "codeChanges")) {
-    await prisma.codeChange.updateMany({ where: waiting, data: { state: "PAUSED", reason: planNeeded("codeChanges") } });
+    await prisma.codeChange.updateMany({ where: waiting, data: { state: "PAUSED", reason: planNeeded("codeChanges"), retryAt: null } });
     return { skipped: true, paused: true };
   }
   // Still one of the project's repositories, on the installation it's connected to now.
@@ -135,7 +136,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     select: { fullName: true, connection: { select: { projectId: true, installationId: true } } },
   });
   if (repository?.connection.projectId !== change.projectId) {
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The repository isn't in this project any more." } });
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The repository isn't in this project any more.", retryAt: null } });
     return { skipped: true };
   }
   // Out of AI credits: nothing is read or asked, and it waits for the team to resume it (not retried).
@@ -144,7 +145,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     ai = await aiFor(change.projectId, "code_changes");
   } catch (error) {
     if (error instanceof OutOfCredits) {
-      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of AI credits." } });
+      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of AI credits.", retryAt: null } });
       log.info(`Code change ${change.id}: paused, out of AI credits`);
       return { skipped: true, paused: true };
     }
@@ -159,13 +160,15 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     const claimable = process.env.JOBS_DRIVER === "inline" ? (["PAUSED", "FAILED"] as const) : (["PAUSED", "FAILED", "ANALYSING"] as const);
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, state: { in: [...claimable] } },
-      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull },
+      // A person asked ("Resume all"): its retries start again.
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, retries: 0 },
     });
     if (count === 0) {
       return { skipped: true };
     }
   } else {
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull } });
+    // Any analysis that starts is the one a retry waited for: none is left waiting.
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null } });
   }
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
   // its level gives Autopilot's roles (roleModel; Decides and Checks here, Writes is `ai`): every step below
@@ -209,7 +212,7 @@ async function analysePullRequest(
     if ("unavailable" in code) {
       log.info(`Code change ${change.id}: the docs agent works without the repository (${code.unavailable})`);
     }
-    failure = "The AI provider didn't answer.";
+    failure = NO_ANSWER;
     const outcome = await analyse(
       { id: change.id, projectId: change.projectId, slug: change.project.slug, pullRequest: { repo: change.repo, number: change.number, url: change.url, title: pr.title } },
       pr,
@@ -221,12 +224,102 @@ async function analysePullRequest(
     return { files: pr.files.length, read, ...outcome };
   } catch (error) {
     // Retried (Hatchet): still analysing while tries are left, saying where it stopped; failed after the last (inline at once).
-    const reason = deadline.aborted ? `The analysis took over ${limits.timeoutMinutes} minutes.` : failure;
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: lastTry ? "FAILED" : "ANALYSING", reason } });
+    let reason = deadline.aborted ? `The analysis took over ${limits.timeoutMinutes} minutes.` : failure;
+    // Failed because the provider didn't answer: tried again by itself later, a few times (the analysis's own time
+    // limit isn't: a slow analysis would only take as long again, and be paid for again).
+    const unanswered = lastTry && failure === NO_ANSWER && !deadline.aborted && providerDidNotAnswer(error);
+    const retryAt = unanswered ? await nextRetry(change.id) : null;
+    if (unanswered && !retryAt) {
+      reason = `${NO_ANSWER} ${GAVE_UP}`;
+    }
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: lastTry ? "FAILED" : "ANALYSING", reason, retryAt, retryPastGate: input.pastGate } });
     // Its title isn't release notes: it leaves the draft's text (staying in the entry) until an analysis writes its line.
     await dropFailedLine(change.projectId, change.url);
     throw error;
   }
+}
+
+const NO_ANSWER = "The AI provider didn't answer.";
+
+/**
+ * When an analysis the provider didn't answer is tried again by itself: after an hour, six hours, then a day. Each run
+ * already has Hatchet's retries for a hiccup (about a quarter of an hour in all); these ride out an outage of a day,
+ * and stop before a pull request's edits come too late to matter.
+ */
+export const RETRY_AFTER_MINUTES = [60, 6 * 60, 24 * 60];
+
+/** Said after the provider's last failure to answer, once every retry was used. */
+export const GAVE_UP = `Autopilot tried again ${RETRY_AFTER_MINUTES.length} times, then gave up.`;
+
+/** When the code change is tried again, after the retries it had since a person asked; null once there are none left. */
+async function nextRetry(id: string): Promise<Date | null> {
+  const { retries } = await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { retries: true } });
+  const minutes = RETRY_AFTER_MINUTES[retries];
+  return minutes === undefined ? null : new Date(Date.now() + minutes * 60_000);
+}
+
+/** How many due code changes one sweep looks at, so a long outage's backlog goes out over a few sweeps. */
+const RETRIES_PER_SWEEP = 50;
+
+/** How long a retry waiting for AI credits waits before a sweep looks at it again. */
+const CREDITS_WAIT_MINUTES = 60;
+
+/**
+ * Queues the analyses whose retry is due (the `code-change-retries` job), each as "Analyse again" would: claimed as
+ * analysing first, so a sweep and a person (or two sweeps) start it once, and the retry counted. Where Autopilot is off
+ * now, or the plan doesn't include it, the retry is dropped (the team analyses it again once it's back); where the
+ * project is out of AI credits, it waits until there are some, looked at again an hour later (so it isn't loaded every
+ * sweep), and is counted then. The run itself checks the rest (the repository) as for any analysis. The worker runs it
+ * every 10 minutes; jobs inline, the web server does (instrumentation.ts).
+ */
+export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
+  // The oldest due first; each one looked at leaves the due ones (queued, dropped or put off), so the next sweep gets the next.
+  const due = await prisma.codeChange.findMany({
+    where: { state: "FAILED", retryAt: { lte: now } },
+    orderBy: { retryAt: "asc" },
+    take: RETRIES_PER_SWEEP,
+    select: { id: true, projectId: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true, plan: true } } },
+  });
+  let queued = 0;
+  let dropped = 0;
+  let waiting = 0;
+  const paused = new Map<string, boolean>();
+  for (const change of due) {
+    // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
+    const still = { id: change.id, state: "FAILED" as const, retryAt: change.retryAt };
+    if (!codeChangesEnabled() || !change.project.analyseCodeChanges || !planIncludes(change.project.plan, "codeChanges")) {
+      dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null } })).count;
+      continue;
+    }
+    if (!paused.has(change.projectId)) {
+      paused.set(change.projectId, await aiPaused(change.projectId));
+    }
+    if (paused.get(change.projectId)) {
+      waiting += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: new Date(now.getTime() + CREDITS_WAIT_MINUTES * 60_000) } })).count;
+      continue;
+    }
+    const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 } } });
+    if (count === 0) {
+      continue;
+    }
+    queued++;
+    try {
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.retryPastGate, resume: false });
+    } catch (error) {
+      // Inline, the analysis itself failed (the code change says where, and when it's tried next). On Hatchet, queueing
+      // did: put back as it was, and the rest left for the next sweep (they'd fail the same way).
+      if (process.env.JOBS_DRIVER !== "inline") {
+        queued--;
+        await prisma.codeChange.updateMany({
+          where: { id: change.id, state: "ANALYSING" },
+          data: { state: "FAILED", reason: change.reason, retryAt: change.retryAt, retries: change.retries },
+        });
+        log.error("Queueing a code change's retry failed", { error, codeChangeId: change.id });
+        break;
+      }
+    }
+  }
+  return { due: due.length, queued, dropped, waiting };
 }
 
 /** A few posts to decide on, so the decisions stay cheap. */

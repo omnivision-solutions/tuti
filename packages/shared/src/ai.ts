@@ -1,7 +1,7 @@
 import { CODE_CHANGES_SETTINGS, codeChangesSettings, serverCodeChangesSettings } from "./code-changes-settings";
 import { embed, EMBEDDING_MODEL, embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
-import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
+import { aiSetup, askProvider, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, ProviderDidNotAnswer, requestFailed, throughOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
@@ -137,7 +137,12 @@ export async function complete({
   timeoutMs?: number;
 } & Ai): Promise<string> {
   const apiKey = chatKey();
-  const response = await fetch(`${baseUrl()}/chat/completions`, {
+  const { response, json } = await askProvider<{
+    model?: unknown;
+    choices?: { message?: { content?: unknown } }[];
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
+    error?: { message?: string };
+  }>(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -152,14 +157,8 @@ export async function complete({
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = (await response.json().catch(() => null)) as {
-    model?: unknown;
-    choices?: { message?: { content?: unknown } }[];
-    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
-    error?: { message?: string };
-  } | null;
   if (!response.ok) {
-    throw new Error(`AI request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
+    throw requestFailed("AI request failed", response.status, json?.error?.message ?? "no details");
   }
   // Answered, so paid for, whatever the reply says.
   await meter({
@@ -174,6 +173,11 @@ export async function complete({
     throw new Error("The AI reply had no text");
   }
   return content;
+}
+
+/** Whether `error`, thrown by complete, chat, decide or embed, means the AI provider didn't answer (ProviderDidNotAnswer). */
+export function providerDidNotAnswer(error: unknown): boolean {
+  return error instanceof ProviderDidNotAnswer;
 }
 
 /**
@@ -359,20 +363,19 @@ export async function decide(
   { timeoutMs = 30_000, meter }: { timeoutMs?: number; meter: Meter },
 ): Promise<Record<string, DecisionAnswer>> {
   const apiKey = chatKey();
-  const response = await fetch(new URL("../alpha/decisions", `${baseUrl()}/`), {
+  const { response, json } = await askProvider<{
+    model?: unknown;
+    answers?: Record<string, unknown>;
+    usage?: { input_tokens?: unknown; output_tokens?: unknown } & Parameters<typeof replyCost>[0];
+    error?: { message?: string };
+  }>(new URL("../alpha/decisions", `${baseUrl()}/`), {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: decisionModel(), state, questions, provider: PROVIDER }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = (await response.json().catch(() => null)) as {
-    model?: unknown;
-    answers?: Record<string, unknown>;
-    usage?: { input_tokens?: unknown; output_tokens?: unknown } & Parameters<typeof replyCost>[0];
-    error?: { message?: string };
-  } | null;
   if (!response.ok) {
-    throw new Error(`Decision request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
+    throw requestFailed("Decision request failed", response.status, json?.error?.message ?? "no details");
   }
   await meter({
     kind: "decision",

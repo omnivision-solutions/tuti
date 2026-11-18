@@ -1,4 +1,4 @@
-import { chatEndpoint, throughOpenRouter } from "./provider";
+import { askProvider, chatEndpoint, requestFailed, throughOpenRouter } from "./provider";
 import { answeredBy, type Meter, replyCost, tokens } from "./usage";
 
 /**
@@ -49,7 +49,12 @@ export async function chat({
   if (!endpoint.apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
   }
-  const response = await fetch(`${endpoint.baseUrl}/chat/completions`, {
+  const { response, json } = await askProvider<{
+    model?: unknown;
+    choices?: { message?: { content?: unknown; tool_calls?: unknown; reasoning_details?: unknown } }[];
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
+    error?: { message?: string };
+  }>(`${endpoint.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -68,14 +73,8 @@ export async function chat({
     }),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
   });
-  const json = (await response.json().catch(() => null)) as {
-    model?: unknown;
-    choices?: { message?: { content?: unknown; tool_calls?: unknown; reasoning_details?: unknown } }[];
-    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
-    error?: { message?: string };
-  } | null;
   if (!response.ok) {
-    throw new Error(`AI request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
+    throw requestFailed("AI request failed", response.status, json?.error?.message ?? "no details");
   }
   // Answered, so paid for, whatever the reply says.
   await meter({

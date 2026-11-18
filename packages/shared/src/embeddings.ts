@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { embeddingsEndpoint, throughOpenRouter } from "./provider";
+import { askProvider, embeddingsEndpoint, requestFailed, throughOpenRouter } from "./provider";
 
 /**
  * OpenAI's text embeddings, for duplicate detection and docs search, through the AI provider (./provider).
@@ -63,7 +63,10 @@ export async function embed(texts: string[], signal?: AbortSignal): Promise<numb
   if (!endpoint.apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
   }
-  const response = await fetch(`${endpoint.baseUrl}/embeddings`, {
+  const { response, json } = await askProvider<{
+    data?: { index: number; embedding: number[] }[];
+    error?: { message?: string };
+  }>(`${endpoint.baseUrl}/embeddings`, {
     method: "POST",
     headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
     // Through OpenRouter, only providers that neither train on the text nor keep it, as for every other request (OpenAI's API refuses the field).
@@ -71,12 +74,8 @@ export async function embed(texts: string[], signal?: AbortSignal): Promise<numb
     signal,
   });
   // Not JSON (a proxy's error page, say): the status still says what went wrong.
-  const json = (await response.json().catch(() => null)) as {
-    data?: { index: number; embedding: number[] }[];
-    error?: { message?: string };
-  } | null;
   if (!response.ok || !json?.data) {
-    throw new Error(`Embeddings failed (${response.status}): ${json?.error?.message ?? "no data"}`);
+    throw requestFailed("Embeddings failed", response.status, json?.error?.message ?? "no data");
   }
   return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
