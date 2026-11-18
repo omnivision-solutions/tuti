@@ -78,6 +78,11 @@ test("a project made with a license on the account that's on no project gets tha
   // The license is taken: the next project is on its own.
   const second = await newProject();
   expect(await prisma.planLicense.count({ where: { projectId: second.id } })).toBe(0);
+  // One left unassigned while there's a project it could go on (second) stays put: Licenses offers that project.
+  const spare = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: randomUUID(), plan: "appsumo-2", userId: owner.id, claimedAt: new Date() } });
+  const third = await newProject();
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: spare.id } })).toMatchObject({ projectId: null });
+  expect(await prisma.planLicense.count({ where: { projectId: third.id } })).toBe(0);
 });
 
 test("an account's first project starts a trial of the trial's plan, with its credits until it ends; its next project doesn't", async () => {

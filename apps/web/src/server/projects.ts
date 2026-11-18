@@ -63,10 +63,14 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
         },
         select: { id: true },
       });
-      // A license on the account that's on no project yet (redeemed before there was one: Licenses' "Create a project")
-      // goes on this one, in place of a trial. Locked, so assigning it elsewhere meanwhile waits and then finds it taken.
+      // A license on the account with no project it could go on (what Licenses' "Create a project" is for: redeemed
+      // before there was one) goes on this one, in place of a trial. One unassigned while there's a project to move it
+      // to stays put. Locked, so assigning it elsewhere meanwhile waits and then finds it taken.
       const [idle] = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM plan_license WHERE "userId" = ${session.user.id} AND "projectId" IS NULL AND "revokedAt" IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM team_member tm WHERE tm."userId" = ${session.user.id} AND tm.role IN ('OWNER', 'ADMIN') AND tm."projectId" <> ${id}
+              AND NOT EXISTS (SELECT 1 FROM plan_license other WHERE other."projectId" = tm."projectId"))
         ORDER BY "claimedAt", id LIMIT 1 FOR UPDATE`;
       if (idle) {
         licensed = idle.id;
