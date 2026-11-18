@@ -381,47 +381,49 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 
   // The other features' models are still on Settings → AI models, a row per role: Fast (the default) or Balanced,
   // each with its model and what a use costs with it (Best is only offered where the endpoint lists its model),
-  // or a custom model id. The changelog's isn't there any more.
+  // or a custom model id. The changelog's isn't there any more, nor are AI answers' (on Settings → AI answers).
   await team.goto(`/app/${slug}/settings/ai-models`);
   // Settings' menu names the page as its heading does.
   await expect(team.getByRole("link", { name: "AI models", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(team.getByRole("radiogroup", { name: "AI answers" })).toBeVisible();
+  await expect(team.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
   await expect(team.getByRole("radiogroup", { name: "Changelog drafts and edits" })).toHaveCount(0);
+  await expect(team.getByRole("radiogroup", { name: "AI answers" })).toHaveCount(0);
+  await expect(team.getByRole("radiogroup", { name: "Ask a person (summaries)" })).toHaveCount(0);
   // Nor is its level (Best, above) said here.
   await expect(team.getByText(/The changelog is on the/)).toHaveCount(0);
-  const summaryModels = team.getByRole("radiogroup", { name: "Ask a person (summaries)" });
-  await expect(summaryModels.getByRole("radio", { name: /^Fast/ })).toBeChecked();
-  await expect(summaryModels.getByRole("radio")).toHaveCount(3); // Fast, Balanced, Custom model
-  await expect(summaryModels.getByText("Anthropic: Claude Sonnet 5.5")).toBeVisible();
-  await expect(summaryModels.getByText(/^About [\d.$]+ (credits? )?per summary$/).first()).toBeVisible();
-  await summaryModels.getByRole("radio", { name: /^Custom model/ }).check();
-  const summaryModel = team.getByLabel("Ask a person (summaries): model id");
+  const decideModels = team.getByRole("radiogroup", { name: "Autopilot decides" });
+  await expect(decideModels.getByRole("radio", { name: /^Fast/ })).toBeChecked();
+  await expect(decideModels.getByRole("radio")).toHaveCount(3); // Fast, Balanced, Custom model
+  await expect(decideModels.getByText("Anthropic: Claude Sonnet 5.5")).toBeVisible();
+  await expect(decideModels.getByText(/^About [\d.$]+ (credits? )?per merged pull request$/).first()).toBeVisible();
+  await decideModels.getByRole("radio", { name: /^Custom model/ }).check();
+  const decideModel = team.getByLabel("Autopilot decides: model id");
   // An empty custom id, or one of spaces only, isn't sent (it would save as the default).
-  await expect(summaryModel).toHaveAttribute("required", "");
-  await summaryModel.fill("   ");
-  expect(await summaryModel.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
-  await summaryModel.fill("acme/imaginary");
+  await expect(decideModel).toHaveAttribute("required", "");
+  await decideModel.fill("   ");
+  expect(await decideModel.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
+  await decideModel.fill("acme/imaginary");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("There's no model “acme/imaginary”")).toBeVisible();
   // The server caps what a model may cost, so one without a price can't be picked.
   await expect(team.getByText("This server allows models up to $15 per million output tokens.")).toBeVisible();
-  await summaryModel.fill("acme/no-price");
+  await decideModel.fill("acme/no-price");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("“acme/no-price” has no price; this server allows models up to $15")).toBeVisible();
   // Another tab, open since before the pick: saving its own change leaves the pick alone.
   const other = await team.context().newPage();
   await other.goto(`/app/${slug}/settings/ai-models`);
-  await summaryModels.getByRole("radio", { name: /^Balanced/ }).check();
+  await decideModels.getByRole("radio", { name: /^Balanced/ }).check();
   await checkpoint(team, "team-settings-ai-models");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("AI models saved")).toBeVisible();
-  await other.getByRole("radiogroup", { name: "AI answers" }).getByRole("radio", { name: /^Custom model/ }).check();
-  await other.getByLabel("AI answers: model id").fill("acme/tiny");
+  await other.getByRole("radiogroup", { name: "Autopilot writes" }).getByRole("radio", { name: /^Custom model/ }).check();
+  await other.getByLabel("Autopilot writes: model id").fill("acme/tiny");
   await other.getByRole("button", { name: "Save" }).click();
   await expect(other.getByText("AI models saved")).toBeVisible();
   await other.reload();
-  await expect(other.getByRole("radiogroup", { name: "Ask a person (summaries)" }).getByRole("radio", { name: /^Balanced/ })).toBeChecked();
-  await expect(other.getByLabel("AI answers: model id")).toHaveValue("acme/tiny");
+  await expect(other.getByRole("radiogroup", { name: "Autopilot decides" }).getByRole("radio", { name: /^Balanced/ })).toBeChecked();
+  await expect(other.getByLabel("Autopilot writes: model id")).toHaveValue("acme/tiny");
   await other.close();
 
   // The next AI draft follows the instructions and examples, written by the level's model.
