@@ -311,7 +311,7 @@ test("the check stores an edit's scope from the pull request's diff only when th
   const written = { writtenOn: paragraph("Team"), doc: paragraph("Members"), reason: "The tab is Members now.", payload: { problem: "wrong" as const, title: "Invite", body: "", before: "", overview: "", overviewOf: [] }, reply: "" };
   const pr = { title: "Members", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files: [], diff: "--- src/tabs.tsx (modified, +1 -1)\n-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>" };
   const review = { projectId: "p1", context: {} as never };
-  const scope = async (diffComplete?: boolean) => ((await checkedEdit(async () => written, { ...pr, diffComplete }, review))!.payload as { check: { scope: string } }).check.scope;
+  const scope = async (diffComplete?: boolean) => ((await checkedEdit(async () => written, { ...pr, diffComplete }, review))!.payload as unknown as { check: { scope: string } }).check.scope;
   expect(await scope(true)).toBe("rename");
   expect(await scope(false)).not.toBe("rename");
   // A read from before the flag (unset) isn't known to be all of it.
