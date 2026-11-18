@@ -482,8 +482,9 @@ async function entriesOf(reference: { baseUrl: string | null; doc: unknown; stat
         path: operation.path,
         title: operation.title,
         description,
-        // What search matches besides its title: its method, path, description and parameters' names.
-        words: [operation.kind, operation.path, description, ...operation.params.map((param) => param.name)].join("\n"),
+        // What search matches besides its title: its method, path (as written, and as words: Postgres reads "/users/{id}"
+        // as one token, which "users" wouldn't match), description and parameters' names.
+        words: [operation.kind, operation.path, operation.path.split(/[^\p{L}\p{N}]+/u).join(" "), description, ...operation.params.map((param) => param.name)].join("\n"),
         text,
         hash: contentHash(text),
       };
