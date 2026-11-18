@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef, useState, useTransition } from "reac
 import { toast } from "sonner";
 
 import { useDocsMoreFocus } from "@/components/docs-page-header";
+import { FilterPills } from "@/components/filter-pills";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,11 +52,38 @@ const METHOD_COLOURS: Record<string, string> = {
 
 const SAVE_FAILED = { error: "Couldn't save that. Try again." };
 
+/** The row of tabs under the page's header: Endpoints (with how many) and Settings. */
+export function ApiReferenceTabs({ projectSlug, slug, endpoints }: { projectSlug: string; slug: string; endpoints: number }) {
+  const base = `/app/${projectSlug}/docs/references/${slug}`;
+  return (
+    <FilterPills
+      label="API reference"
+      items={[
+        { title: "Endpoints", href: base, count: endpoints },
+        { title: "Settings", href: `${base}/settings` },
+      ]}
+    />
+  );
+}
+
 /**
  * The header's button that reads the spec again. An uploaded file's is "Upload new version": pick the file, and the toast
  * says what it added and removed. A URL's or a repository's is read from where it lives ("Sync now"), with those sources.
  */
-export function ApiReferenceSync({ projectSlug, slug, source, maxBytes }: { projectSlug: string; slug: string; source: string; maxBytes: number }) {
+export function ApiReferenceSync({
+  projectSlug,
+  slug,
+  source,
+  maxBytes,
+  inHeader = true,
+}: {
+  projectSlug: string;
+  slug: string;
+  source: string;
+  maxBytes: number;
+  /** In the page's header its words go in a narrow pane; elsewhere (Settings' Source) they stay. */
+  inHeader?: boolean;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
   if (source !== "upload") {
@@ -91,9 +119,9 @@ export function ApiReferenceSync({ projectSlug, slug, source, maxBytes }: { proj
           if (file) upload(file);
         }}
       />
-      <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={() => input.current?.click()} className="@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0">
+      <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={() => input.current?.click()} className={cn(inHeader && "@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0")}>
         <UploadIcon />
-        <span className="@max-[44rem]/docs-page:sr-only">Upload new version</span>
+        <span className={cn(inHeader && "@max-[44rem]/docs-page:sr-only")}>Upload new version</span>
       </Button>
     </>
   );

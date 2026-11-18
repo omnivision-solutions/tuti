@@ -7,14 +7,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, test
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
-import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
+import { dismissAutopilotChecksNotice, saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { setVote } from "@/server/operations/more";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -496,6 +496,18 @@ test("Autopilot's settings: owners flip each switch on its own, and save the thr
     });
   }
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).autopilotHoldHours).toBe(12);
+});
+
+test("the notice that edits wait with Checks off: an owner or admin dismisses it for their project alone, a member can't", async () => {
+  const other = await createProject(owner);
+  const dismissed = async (id: string) => (await prisma.project.findUniqueOrThrow({ where: { id }, select: { autopilotChecksNoticeDismissed: true } })).autopilotChecksNoticeDismissed;
+  expect(await dismissed(project.id)).toBe(false);
+  actAs(await addMember(project.id, "MEMBER"));
+  expect(await dismissAutopilotChecksNotice(project.slug)).toEqual({ error: "Only project owners and admins can dismiss it" });
+  expect(await dismissed(project.id)).toBe(false);
+  actAs(await addMember(project.id, "ADMIN"));
+  expect(await dismissAutopilotChecksNotice(project.slug)).toEqual({});
+  expect([await dismissed(project.id), await dismissed(other.id)]).toEqual([true, false]);
 });
 
 test("a request that goes out by itself says how many people completing it emails, as one waiting does", async () => {

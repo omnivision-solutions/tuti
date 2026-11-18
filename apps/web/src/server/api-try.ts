@@ -149,9 +149,10 @@ export async function sendTry(request: Request, projectSlug: string, referenceSl
   if (!/^application\/json\s*(;|$)/i.test(request.headers.get("content-type") ?? "")) {
     return refuse(415, "Send the request as JSON");
   }
-  // Only what's on the help center, for whoever may read its tab, as its page.
+  // Only what's on the help center, for whoever may read its tab, as its page; and only while the team lets readers
+  // try requests (Settings' Try it): off, it's as if nothing could be tried, before any lookup or count.
   const page = await apiReferencePage(projectSlug, referenceSlug);
-  const operation = page?.kind === "reference" ? page.operations.find((o) => o.slug === operationSlug) : undefined;
+  const operation = page?.kind === "reference" && page.reference.tryIt ? page.operations.find((o) => o.slug === operationSlug) : undefined;
   if (page?.kind !== "reference" || !operation) {
     return refuse(404, "Not found");
   }

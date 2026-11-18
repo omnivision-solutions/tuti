@@ -124,21 +124,21 @@ export function NewCollectionButton({ parent }: { parent: string }) {
   return <Button variant="ghost" size="sm" disabled={workspace.depthOf(parent) >= MAX_COLLECTION_DEPTH} className="h-8 gap-1.5 px-0 text-xs text-muted-foreground [&_svg]:size-3.5" onClick={() => workspace.newCollection({ parent })}><FolderIcon />New collection</Button>;
 }
 
-/** A row's handle: dragging its row moves it, and its menu moves it up, down, or to another place (from the keyboard too). */
-function MoveMenu({
+/** A row's handle: dragging its row moves it, and its menu moves it up, down, or to another place (from the keyboard too). Settings' group order uses it too. */
+export function MoveMenu({
   id,
   name,
   disabled,
   up,
   down,
-  places,
+  places = [],
 }: {
   id: string;
   name: string;
   disabled: boolean;
   up?: () => void;
   down?: () => void;
-  places: Place[];
+  places?: Place[];
 }) {
   return (
     <DropdownMenu>

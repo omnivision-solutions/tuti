@@ -18,7 +18,9 @@ test("what one use costs, in dollars or credits", () => {
   // writing on Sonnet, 60,000 and 5,000 at $3 and $15 ($0.255); the double-check only when it runs.
   expect(costLabel(costPerUse("code_changes_decide", listed[0]), null)).toBe("About $0.17 per merged pull request");
   expect(costLabel(costPerUse("code_changes", listed[1]), null)).toBe("About $0.26 per merged pull request");
-  expect(costLabel(costPerUse("code_changes_check", listed[1]), null)).toBe("About $0.51 per check (only when it proposes a new article)");
+  expect(costLabel(costPerUse("code_changes_check", listed[1]), null)).toBe("About $0.51 per double-check of a new article");
+  // Checks' review of one edit, where the server checks them: 70,000 read and 3,000 written on Sonnet ($0.255).
+  expect(costLabel(costPerUse("edit_review", listed[1]), 100)).toBe("About 26 credits per edit reviewed");
   expect(costPerUse("answers", { id: "x", name: "x", input: null, output: null, tools: true })).toBeNull();
   expect(costLabel(null, null)).toBeNull();
 });

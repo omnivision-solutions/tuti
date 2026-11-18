@@ -295,6 +295,7 @@ const matrix: Matrix = {
     markApiReferenceSeen: { allowed: "MEMBER", call: (slug) => apiReferences.markApiReferenceSeen(slug, "matrix-api", ["GET /posts"]) },
     setApiReferencePublished: { allowed: "MEMBER", call: (slug) => apiReferences.setApiReferencePublished(slug, "matrix-api", false) },
     replaceApiReferenceSpec: { allowed: "MEMBER", call: (slug) => apiReferences.replaceApiReferenceSpec(slug, "matrix-api", form({ spec: MATRIX_SPEC.replace("List posts", "Every post") })) },
+    saveApiReferenceSettings: { allowed: "MEMBER", call: (slug) => apiReferences.saveApiReferenceSettings(slug, "matrix-api", { name: "Renamed API", baseUrl: "https://api.example.com", tryIt: false }) },
     deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },
   },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
@@ -382,6 +383,7 @@ const matrix: Matrix = {
     setCodeChangeAnalysis: { allowed: "OWNER", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
     setAutoApplyLinks: { allowed: "OWNER", call: (slug) => github.setAutoApplyLinks(slug, true) },
     setAutopilotSwitch: { allowed: "OWNER", call: (slug) => github.setAutopilotSwitch(slug, "complete", true) },
+    dismissAutopilotChecksNotice: { allowed: "ADMIN", call: (slug) => github.dismissAutopilotChecksNotice(slug) },
     saveAutopilotRecipients: {
       allowed: "OWNER",
       call: (slug) => {

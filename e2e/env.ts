@@ -28,6 +28,8 @@ export const APP_PORTAL_SLUG = "e2e-app-portal";
 export const APP_PORTAL_OWNER = "e2e-app-portal-owner@example.com";
 /** The project whose widget the cloud's team app shows (APP_WIDGET_PROJECT). */
 export const APP_WIDGET_SLUG = "e2e-app-widget";
+/** The one project whose article edits Autopilot checks (AUTOPILOT_CHECKS_PROJECTS): its settings journey makes it. */
+export const CHECKS_SLUG = "e2e-autopilot-checks";
 /** Support email in journeys: projects' addresses are on this domain, and journeys sign received mail with this secret. */
 export const SUPPORT_EMAIL_DOMAIN = "tuti.email.example";
 export const INBOUND_SECRET = "e2e-inbound-secret";
@@ -50,7 +52,7 @@ export const serverEnv = {
   OPENAI_BASE_URL: "",
   AI_MODEL: "",
   AI_LEVELS_CONFIG: "",
-  AUTOPILOT_CHECKS_PROJECTS: "",
+  AUTOPILOT_CHECKS_PROJECTS: CHECKS_SLUG,
   AI_MODEL_ANSWERS: "",
   AI_MODEL_ESCALATIONS: "",
   AI_MODEL_SUPPORT: "",

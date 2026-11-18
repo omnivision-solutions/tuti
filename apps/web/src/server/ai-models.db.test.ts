@@ -8,7 +8,7 @@ import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@t
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
-import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
+import { aiModelSetting, checksNotice, checksSwitch } from "@/lib/ai-model-setting";
 import { saveAiModel } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
@@ -316,7 +316,7 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
   const shown = async () => {
     const setting = await aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
     // The switch is on exactly when the line above it names a model for Checks.
-    expect(checksSwitch(setting)).toEqual({ on: !setting.summary.includes("Checks Off") });
+    expect(checksSwitch(setting)).toMatchObject({ on: !setting.summary.includes("Checks Off") });
     return { summary: setting.summary, used: setting.used, checks: setting.roles[1]!.model, runsOn: (await call(getAiModels, as(), {})).code_changes_check.used };
   };
   actAs(owner);
@@ -373,16 +373,26 @@ test("the Checks switch on a server whose own checks are off: none where they wo
   const balanced = await setting();
   expect(balanced.summary).toContain("Checks Off");
   expect(checksSwitch(balanced)).toBeNull();
+  // Where the server checks the project's edits, the notice that they wait still shows, offering no switch.
+  const autopilot = { plan: null, analyseCodeChanges: true, autopilotArticleEdits: true, autopilotChecksNoticeDismissed: false };
+  expect(checksNotice(project.slug, balanced, autopilot)).toBeNull();
+  vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+  expect(checksNotice(project.slug, balanced, autopilot)).toEqual({ switchable: false });
 
   // Best has a model for them: they run, so the switch is there and on; off holds, and on is Best's model again.
   expect(await saveAiModel(project.slug, { levels: { code_changes: "best" } })).toEqual({});
   const best = await setting();
   expect(best.summary).toContain("Checks Claude Sonnet 5.5");
-  expect(checksSwitch(best)).toEqual({ on: true });
+  expect(checksSwitch(best)).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
+  // On Best they run: no notice while Checks is on.
+  expect(checksNotice(project.slug, best, autopilot)).toBeNull();
   expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: false });
+  // Off, the switch still knows what they'd run on, so the page can price them.
+  expect(checksSwitch(await setting())).toEqual({ on: false, model: "anthropic/claude-sonnet-5.5" });
+  // Off with a switch to offer: the notice can switch Checks on.
+  expect(checksNotice(project.slug, await setting(), autopilot)).toEqual({ switchable: true });
   expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: true });
+  expect(checksSwitch(await setting())).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
 
   // Off saved, then back on Balanced, where on would run nothing either: no switch that could say "on" while they're off.
   expect(await saveAiModel(project.slug, { code_changes_check: "off", levels: { code_changes: "balanced" } })).toEqual({});
@@ -390,5 +400,5 @@ test("the Checks switch on a server whose own checks are off: none where they wo
 
   // Custom with a model picked for Checks: on, whatever the server's own is.
   expect(await saveAiModel(project.slug, { code_changes_check: "acme/tiny" })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: true });
+  expect(checksSwitch(await setting())).toEqual({ on: true, model: "acme/tiny" });
 });

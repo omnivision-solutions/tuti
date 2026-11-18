@@ -365,6 +365,18 @@ describe("which operations", () => {
     expect(fake.requests).toHaveLength(1);
   });
 
+  test("with Try it switched off in the reference's Settings, every operation is a 404, counted nowhere", async () => {
+    await call(updateApiReference, as(), { slug: "reference", tryIt: false });
+    const refused = await send(input(local()));
+    expect(refused).toEqual({ status: 404, json: { error: "Not found" } });
+    expect(fake.requests).toHaveLength(0);
+    expect(await prisma.apiTry.count({ where: { projectId: project.id } })).toBe(0);
+    // Back on: sent again.
+    await call(updateApiReference, as(), { slug: "reference", tryIt: true });
+    expect((await send(input(local()))).status).toBe(200);
+    expect(fake.requests).toHaveLength(1);
+  });
+
   test("only JSON: a form posted from another site can't make one", async () => {
     const response = await POST(
       new Request(`http://${project.slug}.localhost:3100/docs/reference/update-a-post/try`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify(input(local())) }),

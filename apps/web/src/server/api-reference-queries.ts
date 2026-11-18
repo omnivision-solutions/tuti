@@ -31,6 +31,7 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
       name: true,
       baseUrl: true,
       treeStyle: true,
+      tryIt: true,
       doc: true,
       state: true,
       tab: { select: { slug: true, ...levelSelect } },
@@ -60,7 +61,7 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
   return {
     kind: "reference" as const,
     projectId: row.projectId,
-    reference: { ...reference, baseUrl: row.baseUrl, treeStyle: row.treeStyle },
+    reference: { ...reference, baseUrl: row.baseUrl, treeStyle: row.treeStyle, tryIt: row.tryIt },
     tab,
     doc,
     groups,
