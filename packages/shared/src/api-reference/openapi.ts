@@ -24,7 +24,7 @@ const NAMED_LEVELS = 3;
 // bounds the doc, and nothing built from them (a warning's place, a type's words, a title) can
 // grow past it however often it's used:
 // - A name (a path, a parameter, schema, field, tag, scheme, status, operationId, content type,
-//   format, version, a server's address or variable) over its length is refused: names are what
+//   format, version, a reference, a server's address or variable) over its length is refused: names are what
 //   things are known by, so one cut short would be another name. No real spec has one this long.
 // - Text that's copied as written (descriptions, summaries, patterns, and the strings in defaults,
 //   enums and examples) is cut at its length, with a warning for the place.
@@ -302,6 +302,8 @@ function read(root: Obj): ApiDoc {
       if (where !== undefined) warn(code, where);
       return null;
     };
+    // A reference is read again wherever it's used, so it's as short as an address.
+    named(ref, "a reference", URL_MOST);
     if (!ref.startsWith("#")) return miss("OUTSIDE_REF");
     // A URI fragment holding a JSON Pointer: percent-decoded first, then split, then `~1` and `~0`
     // read in each part ("a%7E1b" is the key "a/b"). A stray "%" is read as written.
@@ -699,8 +701,9 @@ function read(root: Obj): ApiDoc {
 
   /** An operation's title and the slug it makes, once per operation: a path item many paths point at has one of each. */
   const titleOf = once((operation) => {
-    const title = cut(str(operation.summary), LINE_MOST).trim() || inWords(named(operation.operationId, "an operationId"));
-    return { title, slug: slugify(title) };
+    const summary = cut(str(operation.summary), LINE_MOST).trim();
+    const title = summary || inWords(named(operation.operationId, "an operationId"));
+    return { title, slug: slugify(title), untitled: !summary && !str(operation.operationId), long: str(operation.summary).length > LINE_MOST };
   });
   const slugs = new Map<string, number>();
   const seen = new Map<string, number>();
@@ -726,8 +729,8 @@ function read(root: Obj): ApiDoc {
 
       const titled = titleOf(operation);
       const title = titled.title || key;
-      if (str(operation.summary).length > LINE_MOST) warn("TEXT_CUT", key);
-      if (!str(operation.summary).trim() && !str(operation.operationId)) warn("NO_TITLE", key);
+      if (titled.long) warn("TEXT_CUT", key);
+      if (titled.untitled) warn("NO_TITLE", key);
       const proposed = titled.slug || slugify(key) || "operation";
       const slug = unique(proposed, slugs);
       if (slug !== proposed) warn("DUPLICATE_SLUG", key);

@@ -1130,6 +1130,17 @@ test("what many places share is made once: a long pattern, a list of servers, a 
   replaced.mockRestore();
   expect(joins).toBe(1);
   expect(titles).toBe(1);
+  // A summary is trimmed once for the operation, not for every path that points at it.
+  let trims = 0;
+  const trim = String.prototype.trim;
+  const trimmed = vi.spyOn(String.prototype, "trim").mockImplementation(function (this: string) {
+    if (String(this) === "  Padded  ") trims++;
+    return trim.call(this);
+  });
+  const padded = spec({ openapi: "3.1.0", paths, components: { pathItems: { Shared: { get: { summary: "  Padded  " } } } } });
+  trimmed.mockRestore();
+  expect(padded.operations.map((one) => one.title)).toEqual(Array.from({ length: 30 }, () => "Padded"));
+  expect(trims).toBe(1);
   const [first, second] = doc.operations;
   expect(second!.servers).toBe(first!.servers);
   expect(first!.servers![0]!.variables).toEqual({ v: { default: "a", enum: ["a", "b"], description: "" } });
@@ -1200,6 +1211,7 @@ test("a name longer than a name is refuses the spec, saying which", () => {
     ["a format", 256, (name) => ({ components: { schemas: { A: { type: "string", format: name } } } })],
     ["a version", 256, (name) => ({ info: { title: "T", version: name } })],
     ["a server's address", 2_000, (name) => ({ servers: [{ url: name.replace(/^n{8}/, "https://") }] })],
+    ["a reference", 2_000, (name) => ({ components: { schemas: { A: { type: "object", properties: { a: { $ref: name.replace(/^n{8}/, "https://") } } } } } })],
     ["a server variable's name", 256, (name) => ({ servers: [{ url: "https://{v}", variables: { [name]: { default: "a" } } }] })],
     ["a server variable's value", 256, (name) => ({ servers: [{ url: "https://{v}", variables: { v: { default: name } } }] })],
   ];
