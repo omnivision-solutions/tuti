@@ -339,6 +339,13 @@ type Proposal = {
   brief?: { found: string; facts: string[] } | { title: string; reason: string; place?: ArticlePlace };
 };
 
+/**
+ * Why a waiting edit the rewrite of waiting edits took out was dismissed (rewriteWaitingEdits, by nobody): its pull
+ * request is analysed again, and that analysis writes the article's edit again rather than counting it as decided.
+ */
+export const REWRITTEN = "Written again with the check";
+const rewrittenEdit = { status: "DISMISSED", dismissReason: REWRITTEN, decidedById: null } satisfies Prisma.CodeChangeActionWhereInput;
+
 /** Another edit changed one of the same sections of these articles while theirs were written: they're written again on top of it. */
 class EditConflict extends Error {
   constructor(readonly articleIds: string[]) {
@@ -680,7 +687,8 @@ async function finish(
     // Posts whose update loses this pull request's part: the rest of it is checked again below.
     const parted = (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
     await tx.codeChangeAction.deleteMany({ where: replaced });
-    const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
+    // Not an edit the rewrite of waiting edits took out (rewriteWaitingEdits): it's written again here.
+    const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id, NOT: rewrittenEdit }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
         (action) =>

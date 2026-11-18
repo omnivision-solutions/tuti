@@ -1,4 +1,7 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { diffBy } from "@tuti/content";
+
 /**
  * Rule checks on an article edit (docs/plan.md, E5): plain functions of the article's Markdown before and after the
  * edit (one also reads the pull request's diff), no model. Lifted from the private writing evaluation, where each was
@@ -177,6 +180,67 @@ export function leftContradictions(before: string, after: string, diff: string):
     }
   }
   return [...found.values()];
+}
+
+/** Labels, quoted words and `code` (where a path is written) in a text. */
+const namesIn = (text: string) => [...labelsIn(text), ...[...text.matchAll(/`([^`\n]{2,120})`/g)].map((m) => m[1]!.trim())];
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A name as a whole word or path, whatever its case: "Team" in `"Team"`, `>team<` or `/team/`, not in "Teams". */
+const wholeName = (name: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escaped(name)}(?![\\p{L}\\p{N}])`, "giu");
+const hasName = (text: string, name: string) => wholeName(name).test(text);
+
+/**
+ * A rename or a moved page (docs/plan.md, E6): the labels, quoted words and `code` paths the edit took out (`from`) and
+ * put in (`to`), when that's all it did (each sentence it changed reads as one it replaced, with those names masked, as
+ * a heading renamed does too), and the pull request's diff removed each old one and added each new one (any case). Null
+ * otherwise: one side missing, other words changed too, or a name the code change doesn't show.
+ */
+export function renamed(before: string, after: string, diff: string): { from: string[]; to: string[] } | null {
+  const edit = editOf(before, after);
+  const lower = (list: string[]) => new Set(list.map((name) => name.toLowerCase()));
+  const removed = namesIn(edit.removed.join("\n"));
+  const added = namesIn(edit.added.join("\n"));
+  const from = [...new Map(removed.filter((name) => !lower(added).has(name.toLowerCase())).map((name) => [name.toLowerCase(), name])).values()];
+  const to = [...new Map(added.filter((name) => !lower(removed).has(name.toLowerCase())).map((name) => [name.toLowerCase(), name])).values()];
+  if (from.length === 0 || to.length === 0) {
+    return null;
+  }
+  // Longest first, so a name inside another ("Team" in "Team settings") doesn't split it.
+  const mask = (sentences: string[], names: string[]) =>
+    sentences.map((sentence) => names.toSorted((a, b) => b.length - a.length).reduce((text, name) => text.replace(wholeName(name), "\u0000"), sentence)).toSorted();
+  if (!isDeepStrictEqual(mask(edit.removed, from), mask(edit.added, to))) {
+    return null;
+  }
+  const [removedCode, addedCode] = [diffSide(diff, "-"), diffSide(diff, "+")];
+  return from.every((name) => hasName(removedCode, name)) && to.every((name) => hasName(addedCode, name)) ? { from, to } : null;
+}
+
+/**
+ * The most a small correction writes, and the most it takes out, in words (its changed sentences, whole): about two
+ * sentences, the writing rules' "a changed behaviour is a sentence or two", well under SIZE_MAX_NET.
+ */
+export const SMALL_WORDS = 40;
+
+/**
+ * How big an edit is, for what may go out by itself (docs/plan.md, E6): a `rename` (or moved page, see renamed); a
+ * `correction`, small and in place: it replaces text (takes some out, not only adds), leaves every heading as it was
+ * (none added, renamed or taken out), appends nothing at the end, and writes and takes out at most SMALL_WORDS words
+ * within sizeOf's budget; or `larger`, everything else, which asks first.
+ */
+export function editScope(before: string, after: string, diff: string): "rename" | "correction" | "larger" {
+  if (renamed(before, after, diff)) {
+    return "rename";
+  }
+  const edit = editOf(before, after);
+  const headings = (markdown: string) => lines(markdown).filter(isHeading).join("\n");
+  const small =
+    edit.removed.length > 0 &&
+    headings(before) === headings(after) &&
+    appendedAtEnd(before, after) === null &&
+    !sizeOf(before, after).overBudget &&
+    words(edit.added.join(" ")).length <= SMALL_WORDS &&
+    words(edit.removed.join(" ")).length <= SMALL_WORDS;
+  return small ? "correction" : "larger";
 }
 
 /** Why an edit with a section appended at the end fails by itself (said to the writer, for its one rewrite). */

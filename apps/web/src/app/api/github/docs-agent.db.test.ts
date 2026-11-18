@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { enqueue, grantCredits } from "@tuti/jobs";
+import { autopilotSettingsSelect, enqueue, grantCredits, rewriteWaitingEdits, waitsBecause } from "@tuti/jobs";
 import { resetCodeChangesSettings, roleDefaultModel } from "@tuti/shared";
 import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -1389,6 +1389,84 @@ describe("the check before an edit is proposed (E5)", () => {
     await merge(87);
     expect(reviews()).toEqual([]);
     expect(await edit(87)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: Checks was off when it was written" });
+  });
+
+  test("an accepted edit that corrects a sentence in place goes out by itself after the hold (E6), its size kept with the check", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 0 } });
+    proposeEdit(90);
+    model.reply(ACCEPT, undefined, '"article_after"');
+    await merge(90);
+    expect(await edit(90)).toMatchObject({ status: "SCHEDULED", waitReason: null, check: expect.objectContaining({ pass: true, scope: "correction" }) as unknown });
+  });
+
+  test("an accepted edit that adds a paragraph instead asks first, saying it changes more than a label or a sentence", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 0 } });
+    proposeEdit(91, JSON.stringify({ reason: "No dark theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme.\n\nPick the dark one in **Settings**." } }));
+    model.reply(ACCEPT, undefined, '"article_after"');
+    await merge(91);
+    expect(await edit(91)).toMatchObject({
+      status: "PENDING",
+      waitReason: "It changes more than a label or a sentence, so it asks first",
+      check: expect.objectContaining({ pass: true, scope: "larger" }) as unknown,
+    });
+  });
+
+  test("the operator's rewrite writes waiting edits nobody changed again with the check, leaves a person's, and run twice changes nothing more", async () => {
+    // Two edits written before the check was on: PR #92's on Appearance, PR #93's on Fonts, which a person then changed.
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    const fonts = await prisma.article.create({
+      data: { projectId: project.id, slug: "fonts", title: "Fonts", body: "The app uses one font.", publishedAt: new Date(), collectionId: (await prisma.collection.findFirstOrThrow({ where: { projectId: project.id } })).id },
+    });
+    proposeEdit(92);
+    await merge(92);
+    pullRequest(93);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "fonts", problem: "wrong", probability: 0.8, reason: "It names one font." }]), undefined, '"merge-93"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ reason: "One font.", overview: "Two fonts.", sections: { "1": "The app uses two fonts." } }), undefined, '"problem"');
+    await merge(93);
+    await call(updateArticle, team(), { slug: "fonts", title: "Fonts, our way" });
+    const before = await edit(92);
+    const theirs = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 93 } , kind: "ARTICLE_EDIT" }, select: { id: true, status: true, payload: true } });
+    expect(before).toMatchObject({ status: "PENDING", check: undefined });
+
+    // Refused for a project the check isn't on for.
+    await expect(rewriteWaitingEdits(project.slug)).rejects.toThrow("The check isn't on");
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    // Waiting, it asks first now (written before the check).
+    expect(await waitsBecause({ ...(await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 92 }, kind: "ARTICLE_EDIT" } })) }, await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect }))).toBe(
+      "It was written before the check, so it asks first",
+    );
+    // PR #92 analysed again (its retry, queued at once): its edit written again and checked.
+    pullRequest(92);
+    model.decide(USERS);
+    model.reply(EDIT_AT, undefined, '"merge-92"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(REWRITE, undefined, '"problem"');
+    model.reply(ACCEPT, undefined, '"article_after"');
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 1, pullRequests: 1, queued: 1 });
+    const pr92 = await prisma.codeChangeAction.findMany({
+      where: { codeChange: { projectId: project.id, number: 92 }, kind: "ARTICLE_EDIT" },
+      orderBy: { createdAt: "asc" },
+      select: { status: true, dismissReason: true, decidedById: true, payload: true },
+    });
+    expect(pr92).toMatchObject([
+      { status: "DISMISSED", dismissReason: "Written again with the check", decidedById: null },
+      { status: "PENDING", payload: expect.objectContaining({ check: expect.objectContaining({ pass: true, scope: "correction" }) }) as unknown },
+    ]);
+    expect(await change(92)).toMatchObject({ state: "READY" });
+    // The article's changes are the new edit's alone, the old one taken out.
+    expect(await changes()).toBe("The app has a light theme and a dark one.");
+    // The person's article and its edit as they were.
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: theirs.id }, select: { id: true, status: true, payload: true } })).toEqual(theirs);
+    expect(await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: fonts.id }, select: { title: true, body: true } })).toEqual({ title: "Fonts, our way", body: "The app uses two fonts." });
+
+    // Again: nothing more to do, and nothing asked of the model.
+    const asked = model.requests.length;
+    const rows = await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id } }, orderBy: { id: "asc" } });
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, queued: 0 });
+    expect(model.requests.length).toBe(asked);
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id } }, orderBy: { id: "asc" } })).toEqual(rows);
   });
 
   test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {

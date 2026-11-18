@@ -1,9 +1,9 @@
 import type { Doc } from "@tuti/content";
-import { type CodeChangeActionKind, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
 import { autopilotDue, autopilotDueToken, handlers, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { billingFile, startModelFake, startWebhookReceiver } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
@@ -1434,4 +1434,82 @@ test("due, a post's update goes out as Autopilot's own: only the parts it applie
   expect(await statusOf(byHand!.action.id)).toMatchObject({ status: "APPLIED", decidedById: owner.id });
   expect((await statusOf(byHand!.action.id)).payload).not.toHaveProperty("auto");
   vi.restoreAllMocks();
+});
+
+describe("where the check is on, only an edit it passed that's a rename or a small correction goes out by itself (E6)", () => {
+  const PASSED = { pass: true, reasons: [], hints: [], verdict: "accept" };
+  /** An article's edit, as the analysis saved it with its check (`check`; none: written before the check). */
+  async function checkedEdit(check: Prisma.InputJsonObject | null, probability = 0.97) {
+    const edit = await articleEdit(probability);
+    await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { payload: { ...(edit.action.payload as object), ...(check && { check }) } } });
+    await scheduleByItself(project.id, edit.codeChangeId!);
+    return { ...edit, ...(await statusOf(edit.action.id)) };
+  }
+  beforeEach(() => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", `other,${project.slug}`);
+    onTestFinished(() => {
+      vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "");
+    });
+  });
+
+  test("a rename the check passed goes out after the hold, published by the runner when due; so does a small correction", async () => {
+    const before = Date.now();
+    const rename = await checkedEdit({ ...PASSED, scope: "rename" });
+    const correction = await checkedEdit({ ...PASSED, scope: "correction" });
+    for (const edit of [rename, correction]) {
+      expect(edit.status).toBe("SCHEDULED");
+      expect(edit.dueAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * HOUR);
+    }
+    await prisma.codeChangeAction.updateMany({ where: { id: { in: [rename.action.id, correction.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+    request.outside = true;
+    onTestFinished(() => {
+      request.outside = false;
+    });
+    expect(await runDueAutopilot()).toEqual({ applied: 2, waiting: 0 });
+    expect(await prisma.article.findUniqueOrThrow({ where: { id: rename.article.id }, select: { body: true } })).toEqual({ body: "Pick Light, Dark or System in Settings." });
+  });
+
+  test("a larger edit the check passed waits, saying it changes more than a label or a sentence", async () => {
+    expect(await checkedEdit({ ...PASSED, scope: "larger" })).toMatchObject({ status: "PENDING", waitReason: "It changes more than a label or a sentence, so it asks first" });
+  });
+
+  test("one the check failed, or couldn't check, waits with the check's reason; one written before the check (or before it was measured) asks first", async () => {
+    expect(await checkedEdit({ pass: false, reason: "The check failed it: Says it twice.", reasons: ["Says it twice."], hints: [], scope: "correction" })).toMatchObject({
+      status: "PENDING",
+      waitReason: "The check failed it: Says it twice.",
+    });
+    expect(await checkedEdit({ pass: false, reason: "It wasn't checked: the repository couldn't be read", reasons: [], hints: [], scope: "rename" })).toMatchObject({
+      status: "PENDING",
+      waitReason: "It wasn't checked: the repository couldn't be read",
+    });
+    expect(await checkedEdit(null)).toMatchObject({ status: "PENDING", waitReason: "It was written before the check, so it asks first" });
+    expect(await checkedEdit(PASSED)).toMatchObject({ status: "PENDING", waitReason: "It was written before the check, so it asks first" });
+  });
+
+  test("the rules of 2026-10-30 still hold: below how sure it must be, past the readers limit, or with the owner's switch off, a passed rename waits", async () => {
+    expect(await checkedEdit({ ...PASSED, scope: "rename" }, 0.9)).toMatchObject({ status: "PENDING", waitReason: "Less than 95% sure" });
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotMaxViews: 3 } });
+    const read = await articleEdit();
+    await prisma.articleViewDay.create({ data: { articleId: read.article.id, day: new Date(), views: 3 } });
+    await prisma.codeChangeAction.update({ where: { id: read.action.id }, data: { payload: { ...(read.action.payload as object), check: { ...PASSED, scope: "rename" } } } });
+    await scheduleByItself(project.id, read.codeChangeId!);
+    expect(await statusOf(read.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its article was read 3 times or more in 30 days" });
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: false } });
+    expect(await checkedEdit({ ...PASSED, scope: "rename" })).toMatchObject({ status: "PENDING", waitReason: "Autopilot asks first for these" });
+  });
+
+  test("a scheduled rename held back when due once the readers limit is passed", async () => {
+    const edit = await checkedEdit({ ...PASSED, scope: "rename" });
+    expect(edit.status).toBe("SCHEDULED");
+    await prisma.articleViewDay.create({ data: { articleId: edit.article.id, day: new Date(), views: 500 } });
+    await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+    expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+    expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its article was read 500 times or more in 30 days" });
+  });
+
+  test("a project the check isn't on for is as before: an edit with no check, or a larger one, goes out after the hold", async () => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    expect((await checkedEdit(null)).status).toBe("SCHEDULED");
+    expect((await checkedEdit({ ...PASSED, scope: "larger" })).status).toBe("SCHEDULED");
+  });
 });

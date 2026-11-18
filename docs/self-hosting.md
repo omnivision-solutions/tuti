@@ -207,6 +207,11 @@ the end of the article fails it by itself), then the project's Checks model revi
 repository and passes it only when it would publish it as written; a fail is written once more and
 checked again. An edit that still fails waits for a person, saying why; so does every edit of a project
 with Checks off, or out of AI credits when it's checked. The review is metered as Autopilot's usage.
+There, an edit goes out by itself (after the hold, with the owner's switches and limits) only when the check
+passed it and it's a rename or a moved page (the old and new words both in the pull request's diff) or a small
+correction in place; anything larger asks first, saying so. Edits written before the project was listed ask
+first too: `pnpm --filter @tuti/worker rewrite:waiting-edits <slug>`, run by hand with the worker's
+environment, writes those nobody changed again with the check.
 Unset, no project's edits are checked and Autopilot works as before.
 
 ## Scripts

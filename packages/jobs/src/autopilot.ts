@@ -4,7 +4,7 @@ import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { articleLimit, ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, scheduleArticle } from "./article-layers";
-import { CHECK_UNCLEAR } from "./edit-review";
+import { CHECK_BEFORE, CHECK_LARGER, CHECK_UNCLEAR, type EditCheck, checksOn } from "./edit-review";
 
 /**
  * Autopilot's hold (docs/plan.md, Autopilot A4): what it's sure of goes out by itself, drafts at once
@@ -14,6 +14,8 @@ import { CHECK_UNCLEAR } from "./edit-review";
 
 /** A project's Autopilot settings, as waitsBecause reads them. */
 export const autopilotSettingsSelect = {
+  /** Whether the check is on for it (checksOn), which decides which edits may go out by themselves (E6). */
+  slug: true,
   plan: true,
   analyseCodeChanges: true,
   autopilotDrafts: true,
@@ -126,9 +128,15 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   }
   // The check before an edit is proposed (E5), where it ran: one it didn't pass waits for a person, saying why. Before
   // the project's own switches, so the review shows what the check found.
-  const check = action.kind === "ARTICLE_EDIT" ? (action.payload as { check?: { pass?: unknown; reason?: unknown } } | null)?.check : undefined;
+  const check = action.kind === "ARTICLE_EDIT" ? (action.payload as { check?: Partial<Record<keyof EditCheck, unknown>> } | null)?.check : undefined;
   if (check && check.pass !== true) {
     return typeof check.reason === "string" && check.reason ? check.reason : CHECK_UNCLEAR;
+  }
+  // Where the check is on (E6), an edit goes out by itself only once it passed it and is small (below): one written
+  // before it (unchecked, or checked before its size was measured) asks first.
+  const checked = action.kind === "ARTICLE_EDIT" && checksOn(project.slug);
+  if (checked && !check?.scope) {
+    return CHECK_BEFORE;
   }
   const on: Partial<Record<CodeChangeActionKind, boolean>> = {
     NEW_ARTICLE: project.autopilotDrafts,
@@ -147,6 +155,10 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   // A section put at the end is new material, or a note about something Autopilot can't change where it stands (code): a person reads it first.
   if (action.kind === "ARTICLE_EDIT" && payload.added) {
     return "Its article gets a section at the end";
+  }
+  // Only a rename or moved page the code change shows, or a small correction in place: anything larger is read first.
+  if (checked && check?.scope !== "rename" && check?.scope !== "correction") {
+    return CHECK_LARGER;
   }
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {
     return "No progress update to post";
@@ -201,7 +213,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
  * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
  */
 const checksSay = (why: string) =>
-  /^(Autopilot is off|Autopilot asks first|It wasn't checked|The check |Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
+  /^(Autopilot is off|Autopilot asks first|It wasn't checked|It was written before the check|It changes more than|The check |Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
 
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>

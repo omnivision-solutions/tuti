@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
-import { APPENDED_FAILS, appendedAtEnd, changelogWords, headingOverLittle, leftContradictions, ruleChecks, sizeOf } from "./edit-rules";
+import { APPENDED_FAILS, appendedAtEnd, changelogWords, editScope, headingOverLittle, leftContradictions, renamed, ruleChecks, sizeOf, SMALL_WORDS } from "./edit-rules";
 import { CHECK_UNCLEAR, checkFailed, checksOn, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
 import { CHECK_SYSTEM } from "./verify";
 
@@ -189,4 +189,53 @@ test("Verify and the Checks review read screens and routes, not code comments; t
   // Pass means accept, and the rule checks are weighed, not copied.
   expect(REVIEW_SYSTEM).toContain('"verdict": "accept" | "touch_up" | "rewrite" | "dismiss"');
   expect(REVIEW_SYSTEM).toContain("each may or may not be a real problem");
+});
+
+// What may go out by itself (E6): a rename or moved page the code change shows, or a small correction in place.
+const DIFF = '--- a/src/nav.tsx\n+++ b/src/nav.tsx\n-  <Link href="/settings/appearance">Customize</Link>\n+  <Link href="/settings/look">Look and feel</Link>';
+const NAV = "## Themes\n\nOpen **Customize** and pick a theme.\n\n## Fonts\n\nFonts are in **Customize** too, at `/settings/appearance`.";
+
+test("a rename: the old label in the diff's removed lines and the new one in its added lines, nothing else changed", () => {
+  const after = NAV.replaceAll("**Customize**", "**Look and feel**");
+  expect(renamed(NAV, after, DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
+  expect(editScope(NAV, after, DIFF)).toBe("rename");
+  // A moved page: its path in `code`, as the diff has it.
+  expect(renamed(NAV, NAV.replace("`/settings/appearance`", "`/settings/look`"), DIFF)).toEqual({ from: ["/settings/appearance"], to: ["/settings/look"] });
+  // Case and markup as the code has them: "customize" in quotes, a label in bold.
+  const lower = '-  label: "customize",\n+  label: "look and feel",';
+  expect(renamed(NAV, after, lower)).not.toBeNull();
+  // A heading renamed with it is still a rename.
+  const titled = "## Customize\n\nOpen **Customize** to pick a theme.";
+  expect(renamed(titled, "## Look and feel\n\nOpen **Look and feel** to pick a theme.", DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
+});
+
+test("not a rename: one side missing from the diff, a label in a longer word, only one side in the edit, or other words changed too", () => {
+  const after = NAV.replaceAll("**Customize**", "**Look and feel**");
+  // The new label isn't in the added lines, or the old one isn't in the removed lines.
+  expect(renamed(NAV, after, '-  <Link>Customize</Link>\n+  <Link>Settings</Link>')).toBeNull();
+  expect(renamed(NAV, after, '-  <Link>Settings</Link>\n+  <Link>Look and feel</Link>')).toBeNull();
+  // "Customize" only inside "Customized", in the context lines, or in a file's name: not removed.
+  expect(renamed(NAV, after, '-  <p>Customized</p>\n+  <Link>Look and feel</Link>')).toBeNull();
+  expect(renamed(NAV, after, '--- a/Customize.tsx\n+++ b/Customize.tsx\n   <Link>Customize</Link>\n+  <Link>Look and feel</Link>')).toBeNull();
+  // A label taken out with none put in.
+  expect(renamed(NAV, NAV.replace("Open **Customize** and pick a theme.", "Pick a theme."), DIFF)).toBeNull();
+  // Renamed, and a sentence changed besides.
+  expect(renamed(NAV, after.replace("and pick a theme", "and pick one of three themes"), DIFF)).toBeNull();
+});
+
+test("a small correction: in place, no heading touched, nothing appended, at most a couple of sentences either way", () => {
+  const ARTICLE = "## Invites\n\nInvite links work for 3 days.\n\nSend a new one from **Team**.\n\n## Roles\n\nAdmins can invite people.";
+  expect(editScope(ARTICLE, ARTICLE.replace("work for 3 days", "work for 7 days"), "")).toBe("correction");
+  // Only adding text (a missing fact) isn't a correction in place.
+  expect(editScope(ARTICLE, ARTICLE.replace("Admins can invite people.", "Admins can invite people. Members can't."), "")).toBe("larger");
+  // A heading added, renamed or taken out.
+  expect(editScope(ARTICLE, ARTICLE.replace("Invite links work for 3 days.", "Invite links work for 7 days.\n\n### Expiry\n\nThey expire."), "")).toBe("larger");
+  expect(editScope(ARTICLE, ARTICLE.replace("## Roles", "## Who can invite").replace("Admins can", "Only admins can"), "")).toBe("larger");
+  // Text appended after the article's last line (a sentence before it corrected too).
+  expect(editScope(ARTICLE, `${ARTICLE.replace("3 days", "7 days")}\n\nOwners can too.`, "")).toBe("larger");
+  // Past the words a small correction writes.
+  const long = Array.from({ length: SMALL_WORDS + 1 }, (_, i) => `word${i}`).join(" ");
+  expect(editScope(ARTICLE, ARTICLE.replace("Invite links work for 3 days.", `${long}.`), "")).toBe("larger");
+  // Nothing taken out, or a rename the diff doesn't show and that rewrote more than a couple of sentences' words.
+  expect(editScope(ARTICLE, ARTICLE, "")).toBe("larger");
 });
