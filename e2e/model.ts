@@ -81,9 +81,10 @@ export async function nextDocsAgentAnswer(
   const answer = JSON.stringify({
     user_facing: summary ? 0.9 : 0.1,
     summary,
-    facts: [],
-    edits: edits.map((edit) => ({ problem: "wrong", reason: "It no longer says what the product does.", ...edit })),
-    new_articles: newArticles.map((article) => ({ collection: null, after: null, reason: "Nothing covers it yet.", ...article })),
+    // One fact, which every edit and new article is for (one naming none is dropped).
+    facts: [{ id: "f1", text: summary || "It works another way.", docs: "required" }],
+    edits: edits.map((edit) => ({ problem: "wrong", facts: ["f1"], reason: "It no longer says what the product does.", ...edit })),
+    new_articles: newArticles.map((article) => ({ facts: ["f1"], collection: null, after: null, reason: "Nothing covers it yet.", ...article })),
   });
   const { redecide } = readCodeChangesSettings(serverEnv).values;
   const doubleChecked = redecide.model !== "off" && newArticles.some((article) => article.probability >= redecide.whenNewArticle);

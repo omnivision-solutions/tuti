@@ -20,9 +20,9 @@ Decide, from what the code actually does (the description may be thin, partial o
 
 1. Do users notice this change? Internal changes (refactors, tests, CI, tooling, the repository's own docs, dependency updates, the marketing site) don't count. A bug fix users could have hit does.
 
-2. What would users need to know? Each fact in the users' words, with the screen's own labels. Decide for each whether the help center must say it (required: without it the docs are wrong, or users couldn't find or use the feature), could say it (optional: a screen that explains itself, a clearly labelled new control, a feature only the API has), or needn't (none: visual polish, layout, a fix to behaviour the docs already describe as intended, internal details).
+2. Which facts would a reader of the help center miss, or be misled about? List them: what a user can now do or no longer can, and what changed in what they see or must do. Each fact is one short sentence in the present tense, saying how the product works, in the users' words, with the screen's own labels. Decide for each whether the help center must say it (required: without it the docs are wrong, or users couldn't find or use the feature) or could say it (optional: a clearly labelled new control, a feature only the API has). Leave out what readers don't need: how it works inside, refactors, every state or option of a control, what a screen already says itself, visual polish, layout, a fix to behaviour the docs already describe as intended, and anything no article covers and no user would look up. A change with no fact left needs nothing from the help center: no edits and no new article.
 
-3. Which existing articles or drafts does the change make wrong (something they say is no longer true: an old label, default, option, or steps that no longer work), or leave missing something required or optional? A draft counts as an article. Only this change counts: text an earlier change had already made stale isn't yours to fix unless you touch the same passage. An article about something the change removed is obsolete.
+3. Which existing articles or drafts does the change make wrong (something they say is no longer true: an old label, default, option, or steps that no longer work), or leave missing something required or optional? A draft counts as an article. Only this change counts: text an earlier change had already made stale isn't yours to fix unless you touch the same passage. An article about something the change removed is obsolete. Each edit names the facts it's for, and only those are written into its article. Wrong text is corrected wherever it stands: every article that says it gets its edit, however many there are. A fact that's missing gets one home: the one article a reader would look in first. Don't name the same missing fact for a second article, not even as a mention or a pointer. A home is an article about the fact's task: when no article or draft is, the fact isn't an edit to the nearest one, it belongs in a new article (4). When you can't tell which (an article is near the task, not about it), name the fact for the edit and for the new article, each with its probability. An article that's both wrong and missing something is one edit, "wrong", with all its facts.
 
 4. Is a new article needed? Only for required or optional facts that have no home: no article or draft covers that task, and no new article already waiting (listed last) covers it either. If an existing article or draft is about the same task, it's an edit, however much there is to add; if the facts fit in a few sentences of an existing article, the edit is required and a new article optional. A waiting new article that names part of a task covers the whole task: don't propose a duplicate. One article per task users come looking for, not per pull request; options, settings and variations are sections, not articles. A new area or core workflow with no article anywhere needs its article even if each screen is clear. A small change (a rename, layout, polish, a bug fix) never needs a new article. A new article goes in the collection for the task it teaches. When the task belongs to a product area that no collection is about (a page, list or feature with its own name in the product, not an option or step within an area a collection covers), propose a new collection named for that area, with a Lucide icon, rather than a loosely related existing one (the area it connects to, where it's set up, or where its results show): readers look for an area by its name.
 
@@ -32,9 +32,9 @@ const REPLY_SHAPE = `reply with JSON only, in this shape:
 {
   "user_facing": <0..1: probability users notice>,
   "summary": "<one to three sentences: what changed for users, in their words>",
-  "facts": [{"text": "<what users need to know>", "docs": "required" | "optional" | "none"}],
-  "edits": [{"slug": "<an existing article's or draft's slug>", "problem": "wrong" | "missing" | "obsolete", "probability": <0..1>, "reason": "<one sentence>"}],
-  "new_articles": [{"title": "<title>", "probability": <0..1: that a new article is needed, given everything that exists>, "collection": "<an existing collection's slug>" | {"new": "<name>", "icon": "<lucide icon>"}, "after": "<slug of the article it follows in that collection, or null>", "reason": "<one sentence>"}]
+  "facts": [{"id": "f1", "text": "<one short sentence: what a user can do, sees or must do>", "docs": "required" | "optional"}],
+  "edits": [{"slug": "<an existing article's or draft's slug>", "problem": "wrong" | "missing" | "obsolete", "facts": ["<the id of each fact this edit is for: at least one>"], "probability": <0..1>, "reason": "<one sentence>"}],
+  "new_articles": [{"title": "<title>", "facts": ["<the id of each fact it's for: at least one>"], "probability": <0..1: that a new article is needed, given everything that exists>, "collection": "<an existing collection's slug>" | {"new": "<name>", "icon": "<lucide icon>"}, "after": "<slug of the article it follows in that collection, or null>", "reason": "<one sentence>"}]
 }
 Empty arrays when nothing applies.`;
 
@@ -192,11 +192,13 @@ export async function helpCenterOutline(projectId: string, codeChangeId?: string
 
 type Reply = {
   summary?: unknown;
-  edits?: { slug?: unknown; problem?: unknown; probability?: unknown; reason?: unknown }[];
-  new_articles?: { title?: unknown; probability?: unknown; collection?: unknown; after?: unknown; reason?: unknown }[];
+  facts?: unknown;
+  edits?: { slug?: unknown; problem?: unknown; facts?: unknown; probability?: unknown; reason?: unknown }[];
+  new_articles?: { title?: unknown; facts?: unknown; probability?: unknown; collection?: unknown; after?: unknown; reason?: unknown }[];
 };
 
-export type DocsEdit = { articleId: string; problem: "wrong" | "missing"; probability: number; reason: string };
+/** `facts`: what the edit is for, each in the agent's sentence: all its writer writes into the article. */
+export type DocsEdit = { articleId: string; problem: "wrong" | "missing"; facts: string[]; probability: number; reason: string };
 /** A new article the agent decided is needed, and where it goes (D5's place; none when it named no collection there is, or could be). */
 export type DocsNewArticle = { title: string; probability: number; reason: string; place?: ArticlePlace };
 /** What the agent's slugs are read against: the help center's collections and articles (and drafts). */
@@ -207,13 +209,50 @@ const probability = (value: unknown) => (typeof value === "number" && Number.isF
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
 /**
+ * One home for each fact that's missing (docs/plan.md, E3): of the "missing" edits that name it, the surest keeps it
+ * (the first listed, when as sure) and the others lose it; one left with no fact is dropped, so a fact isn't written
+ * into several articles. "Wrong" edits are all kept, with their facts: text the change made wrong is corrected
+ * wherever it stands.
+ */
+export function oneHome<Edit extends { problem: "wrong" | "missing"; facts: string[]; probability: number }>(edits: Edit[]): Edit[] {
+  const home = new Map<string, Edit>();
+  for (const edit of edits.filter((e) => e.problem === "missing")) {
+    for (const fact of edit.facts) {
+      if (edit.probability > (home.get(fact)?.probability ?? -1)) {
+        home.set(fact, edit);
+      }
+    }
+  }
+  return edits.flatMap((edit) => {
+    if (edit.problem === "wrong") {
+      return [edit];
+    }
+    const facts = edit.facts.filter((fact) => home.get(fact) === edit);
+    return facts.length > 0 ? [{ ...edit, facts }] : [];
+  });
+}
+
+/**
  * The agent's answer as proposals: each edit on an article or draft it names by slug (one that isn't in the help center,
  * deleted or sample content say, is dropped; so is one to a new article waiting for the team, whose text is fixed once
- * proposed), one per article (the surest), "obsolete" as "wrong"; each new article with a title. Items without a
+ * proposed), one per article (the surest, with the facts of every entry that names the article, "wrong" if any is), "obsolete" as "wrong"; each new article with a title. Items without a
  * probability, or an edit without a problem it knows, are dropped: they're the number and the verdict the team is shown.
+ * So is an edit or a new article that names none of the facts the answer lists (by their ids; an id it doesn't list is
+ * left out): only a fact a reader would miss becomes an edit, so an answer without facts proposes nothing. Each missing
+ * fact then keeps one home (oneHome).
  */
-function readDecision(reply: Reply, model: string, { articles, collections }: HelpCenterIds): DocsDecision {
+export function readDecision(reply: Reply, model: string, { articles, collections }: HelpCenterIds): DocsDecision {
   const bySlug = new Map(articles.map((a) => [a.slug, a.id]));
+  // The facts by their ids (the first, when two share one). Anything else there (no id, no text, not a list) is no fact.
+  const facts = new Map<string, string>();
+  for (const fact of Array.isArray(reply.facts) ? (reply.facts as ({ id?: unknown; text?: unknown } | null)[]) : []) {
+    const sentence = text(fact?.text, 500);
+    if (typeof fact?.id === "string" && sentence && !facts.has(fact.id)) {
+      facts.set(fact.id, sentence);
+    }
+  }
+  /** The facts an edit or a new article names, each once, in the order named. */
+  const factsOf = (named: unknown) => [...new Set((Array.isArray(named) ? named : []).flatMap((id) => (typeof id === "string" && facts.has(id) ? [facts.get(id)!] : [])))];
   const edits = new Map<string, DocsEdit>();
   for (const edit of Array.isArray(reply.edits) ? reply.edits : []) {
     if (typeof edit?.slug === "string" && edit.slug.startsWith(waitingSlug(""))) {
@@ -222,20 +261,31 @@ function readDecision(reply: Reply, model: string, { articles, collections }: He
     }
     const articleId = typeof edit?.slug === "string" ? bySlug.get(edit.slug) : undefined;
     const p = probability(edit?.probability);
-    const problem = edit?.problem === "missing" ? "missing" : edit?.problem === "wrong" || edit?.problem === "obsolete" ? "wrong" : null;
-    if (articleId && problem && p !== null && p > (edits.get(articleId)?.probability ?? -1)) {
-      edits.set(articleId, { articleId, problem, probability: p, reason: text(edit.reason, 500) });
+    const problem: DocsEdit["problem"] | null = edit?.problem === "missing" ? "missing" : edit?.problem === "wrong" || edit?.problem === "obsolete" ? "wrong" : null;
+    const its = factsOf(edit?.facts);
+    if (articleId && problem && p !== null && its.length === 0) {
+      log.info("Docs agent: an edit that names no fact it listed, dropped", { model, slug: edit.slug });
+      continue;
+    }
+    if (articleId && problem && p !== null) {
+      // An article named twice is one edit, the surest's, for the facts of both: neither's are lost. It's "wrong" when
+      // either says so, so its correction is written, and no other article's "missing" edit takes those facts' home.
+      const other = edits.get(articleId);
+      const surest = !other || p > other.probability ? { articleId, problem, probability: p, reason: text(edit.reason, 500) } : other;
+      const merged = other && (other.problem === "wrong" || problem === "wrong") ? "wrong" : surest.problem;
+      edits.set(articleId, { ...surest, problem: merged, facts: [...new Set([...(other?.facts ?? []), ...its])] });
     }
   }
   const newArticles = (Array.isArray(reply.new_articles) ? reply.new_articles : []).flatMap((n) => {
     const p = probability(n?.probability);
     const title = text(n?.title, 200);
-    if (!title || p === null) {
+    // Only for a fact with no home: one that names none is no new article.
+    if (!title || p === null || factsOf(n?.facts).length === 0) {
       return [];
     }
     return [{ title, probability: p, reason: text(n.reason, 500), ...placeOf(n.collection, n.after, { articles, collections }) }];
   });
-  return { summary: text(reply.summary, 1_000), edits: [...edits.values()], newArticles, model };
+  return { summary: text(reply.summary, 1_000), edits: oneHome([...edits.values()]), newArticles, model };
 }
 
 /**

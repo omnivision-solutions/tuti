@@ -115,8 +115,16 @@ const merge = async (number: number) => {
 };
 
 /** The agent's answer: what it decided (the reply shape it's told). */
-const answer = (edits: unknown[] = [], newArticles: unknown[] = []) =>
-  JSON.stringify({ user_facing: 0.9, summary: SUMMARY, facts: [{ text: "Settings has a Theme menu with Light and Dark", docs: "required" }], edits, new_articles: newArticles });
+const FACT = "Settings has a Theme menu with Light and Dark.";
+/** Each edit and new article is for the one fact, unless it names its own (`facts`, among `listed`). */
+const answer = (edits: object[] = [], newArticles: object[] = [], listed: { id: string; text: string }[] = [{ id: "f1", text: FACT }]) =>
+  JSON.stringify({
+    user_facing: 0.9,
+    summary: SUMMARY,
+    facts: listed.map((fact) => ({ ...fact, docs: "required" })),
+    edits: edits.map((edit) => ({ facts: ["f1"], ...edit })),
+    new_articles: newArticles.map((article) => ({ facts: ["f1"], ...article })),
+  });
 /** The agent's requests (its user message names the merge commit), in order. */
 const agentRequests = (number: number) => model.requests.filter((request) => request.user.includes(`"merge-${number}"`));
 const toolNames = (request: ModelRequest) => (request.tools ?? []).map((tool) => (tool as { function: { name: string } }).function.name);
@@ -666,6 +674,95 @@ describe("edits to drafts", () => {
     expect(model.requests.some((request) => request.user.includes('"problem"'))).toBe(false);
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } })).payload).toEqual(waiting.payload);
     expect((await actions(58)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
+  });
+});
+
+describe("the facts a reader would miss (E3)", () => {
+  const TEAM = "Invite your team";
+  const BILLING = "Plans and billing";
+  /** Two more articles beside "Change how the app looks", each one paragraph. */
+  const moreArticles = async (body: (title: string) => string) => {
+    const made = await Promise.all(
+      [
+        { slug: "team", title: TEAM },
+        { slug: "billing", title: BILLING },
+      ].map((a) => prisma.article.create({ data: { projectId: project.id, ...a, body: body(a.title), publishedAt: new Date() }, select: { id: true } })),
+    );
+    return { team: made[0]!.id, billing: made[1]!.id };
+  };
+  /** The writer's reply for the article titled so (its request names it), and that request once made. */
+  const writes = (title: string, text: string) => model.reply(JSON.stringify({ reason: `About ${title}.`, overview: "", sections: { "1": text } }), undefined, `"title": "${title}"`);
+  const writerFor = (title: string) => model.requests.find((request) => request.user.includes('"problem"') && request.user.includes(`"title": "${title}"`));
+  const factsFor = (title: string) => (JSON.parse(writerFor(title)!.user) as { facts: string[] }).facts;
+  const editedArticles = async (number: number) => (await actions(number)).filter((action) => action.kind === "ARTICLE_EDIT").map((action) => action.articleId);
+
+  test("a fact that's missing from three articles is written into one: its home, the surest", async () => {
+    const more = await moreArticles((title) => `${title}: how it works.`);
+    pullRequest(120);
+    model.decide(USERS);
+    model.reply(
+      answer([
+        { slug: "appearance", problem: "missing", probability: 0.7, reason: "It doesn't name the Theme menu." },
+        { slug: "team", problem: "missing", probability: 0.9, reason: "It could say each member picks a theme." },
+        { slug: "billing", problem: "missing", probability: 0.6, reason: "It could say themes are on every plan." },
+      ]),
+      undefined,
+      '"merge-120"',
+    );
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    writes(TEAM, "Invite your team: each member picks a theme in **Settings**.");
+    expect(await merge(120)).toBe(200);
+    expect(await editedArticles(120)).toEqual([more.team]);
+    expect(factsFor(TEAM)).toEqual([FACT]);
+    // The other two were never written (no request, so no reply was scripted for them).
+    expect(model.requests.filter((request) => request.user.includes('"problem"'))).toHaveLength(1);
+  });
+
+  test("a label renamed in three articles is corrected in all three, and each writer gets its own article's facts only", async () => {
+    const more = await moreArticles((title) => `${title}: open Appearance.`);
+    const RENAME = "Appearance is called Look and feel.";
+    pullRequest(121);
+    model.decide(USERS);
+    model.reply(
+      answer(
+        [
+          { slug: "appearance", problem: "wrong", facts: ["f1", "f2"], probability: 0.9, reason: "It says Appearance, and names no themes." },
+          { slug: "team", problem: "wrong", facts: ["f2"], probability: 0.8, reason: "It says Appearance." },
+          { slug: "billing", problem: "wrong", facts: ["f2"], probability: 0.7, reason: "It says Appearance." },
+        ],
+        [],
+        [
+          { id: "f1", text: FACT },
+          { id: "f2", text: RENAME },
+        ],
+      ),
+      undefined,
+      '"merge-121"',
+    );
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    writes("Change how the app looks", "The app has a light theme and a dark one: pick it in **Look and feel**.");
+    writes(TEAM, "Invite your team: open Look and feel.");
+    writes(BILLING, "Plans and billing: open Look and feel.");
+    expect(await merge(121)).toBe(200);
+    expect(await editedArticles(121)).toEqual([article.id, more.team, more.billing]);
+    expect(factsFor("Change how the app looks")).toEqual([FACT, RENAME]);
+    expect(factsFor(TEAM)).toEqual([RENAME]);
+    expect(factsFor(BILLING)).toEqual([RENAME]);
+    expect(writerFor(TEAM)!.system).toContain('Write only what "facts" lists: nothing else the pull request changed goes into this article.');
+  });
+
+  test("no fact a reader would miss: nothing is proposed, whatever edits the answer names, and it's nothing to do as the gate says", async () => {
+    pullRequest(122);
+    model.decide(INTERNAL);
+    model.reply(
+      answer([{ slug: "appearance", problem: "wrong", probability: 0.9, reason: "It names no fact." }], [{ title: "Use the dark theme", probability: 0.1, collection: null, after: null, reason: "Themes are new." }], []),
+      undefined,
+      '"merge-122"',
+    );
+    await merge(122);
+    expect(await change(122)).toMatchObject({ state: "NOTHING_TO_DO", reason: "Only the team sees this: refactoring, tests, CI or tooling.", summary: "" });
+    expect(await actions(122)).toEqual([]);
+    expect(model.requests.some((request) => request.user.includes('"problem"'))).toBe(false);
   });
 });
 
