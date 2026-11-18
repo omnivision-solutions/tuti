@@ -1,9 +1,10 @@
-import { storedArticle } from "@tuti/content";
+import { type Doc, storedArticle, toPlainText } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { ADD_RULE, articleNotes, EDIT_SYSTEM, NEW_SYSTEM, PASSAGES_RULE, WRITING_RULES } from "./code-change-docs";
+import { ADD_RULE, articleNotes, EDIT_SYSTEM, NEW_SYSTEM, PASSAGES_RULE, WAITING_RULE, WRITING_RULES } from "./code-change-docs";
 import { CHECK_SYSTEM } from "./verify";
 
+const toPlain = (doc: Doc | null) => (doc ? toPlainText(doc) : "");
 const text = (value: string) => [{ type: "text", text: value }];
 const item = (value: string) => ({ type: "listItem", content: [{ type: "paragraph", content: text(value) }] });
 
@@ -233,4 +234,31 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
   // Something missing whose place is a section that only takes passages still has a way in.
   expect(ADD_RULE).toContain("there's no editable section to add it to");
   expect(NEW_SYSTEM).not.toContain('"add"');
+  // Only the edit's writer gets waiting edits marked (E4); Verify reads the article as it is.
+  expect(EDIT_SYSTEM).toContain(WAITING_RULE);
+  expect(CHECK_SYSTEM).not.toContain(WAITING_RULE);
+});
+
+test("sections with waiting edits are marked with them; one held (a person changed its edit) is shown but can't be changed", () => {
+  const para = (value: string) => ({ type: "paragraph", content: text(value) });
+  const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: text(value) });
+  const table = { type: "table", content: [{ type: "tableRow", content: [{ type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null }, content: [para("Dark")] }] }] };
+  const doc: Doc = { type: "doc", content: [para("Pick a theme."), heading("Dark"), para("Dark is here."), heading("Table"), para("See below."), table] };
+  const { notes, edit } = articleNotes(doc, [
+    { by: ["PR #1", "PR #2"], held: false },
+    { by: ["PR #3"], held: true },
+    { by: ["PR #3"], held: true },
+  ]);
+  expect(notes).toEqual([
+    { number: 1, editable: true, text: "Pick a theme.", waiting: "PR #1, PR #2" },
+    { number: 2, editable: false, text: "## Dark\n\nDark is here.", edited_by_team: "PR #3" },
+    expect.objectContaining({ number: 3, editable: false, edited_by_team: "PR #3" }),
+  ]);
+  expect(notes[2]).not.toHaveProperty("passages");
+  // The waiting section is written as any other; a held one refuses the edit, whole or by a passage.
+  expect(toPlain(edit({ sections: { "1": "Pick Light or Dark." } }))).toContain("Pick Light or Dark.");
+  expect(edit({ sections: { "1": "Pick Light or Dark.", "2": "## Dark\n\nDark is out." } })).toBeNull();
+  expect(edit({ passages: [{ section: 3, find: "See below.", replace: "See the table." }] })).toBeNull();
+  // Without marks (Verify), the same table's passages are listed and may be replaced.
+  expect(articleNotes(doc).edit({ passages: [{ section: 3, find: "See below.", replace: "See the table." }] })).not.toBeNull();
 });

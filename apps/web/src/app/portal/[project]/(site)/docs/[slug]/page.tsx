@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { notFound, permanentRedirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 
 import { DocsArticle, DocsCollectionPage, docsPageListing, DocsTabPage } from "@/components/portal-docs";
+import { apiReferencePage } from "@/server/api-reference-queries";
 import { docsPage } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
@@ -27,12 +28,17 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
   return portalPageMetadata(project, { ...docsPageListing(page), path, markdown: page.kind === "article" });
 }
 
-/** /docs/<slug>: an article, a tab or a collection (one name each), or where one went since. */
+/** /docs/<slug>: an article, a tab or a collection (one name each), or where one went since; an API reference's goes to its first operation. */
 export default async function DocsSlugPage(props: PageProps<"/portal/[project]/docs/[slug]">) {
   const at = await portalLinks();
   const { project, slug } = await props.params;
   const page = await docsPage(project, slug);
   if (!page) {
+    // An API reference has no page of its own yet: its first operation's.
+    const first = (await apiReferencePage(project, slug))?.operations[0];
+    if (first) {
+      redirect(at(`/docs/${slug}/${first.slug}`));
+    }
     notFound();
   }
   if (page.kind === "redirect") {

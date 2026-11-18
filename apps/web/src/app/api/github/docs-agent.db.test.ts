@@ -766,6 +766,138 @@ describe("the facts a reader would miss (E3)", () => {
   });
 });
 
+describe("keeping waiting edits fresh (E4)", () => {
+  const paragraph = (value: string) => ({ type: "paragraph", content: [{ type: "text", text: value }] });
+  const FIRST = JSON.stringify({ reason: "It says there's only a light theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme and a dark one." } });
+  /**
+   * A pull request whose docs agent names the article, and whose writer replies `reply`; `onTop`: it lands on another
+   * edit waiting, so Verify after edits is asked (and says no).
+   */
+  const editing = async (number: number, reply: string, { onTop = false } = {}) => {
+    pullRequest(number);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It doesn't say how to switch." }]), undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(reply, undefined, '"problem"');
+    if (onTop) {
+      model.decide({ verify: 0.1 }, '"pull_requests_edits_waiting":2');
+    }
+    expect(await merge(number)).toBe(200);
+  };
+  const writerOf = (number: number) => {
+    const request = model.requests.find((one) => one.user.includes('"problem"') && one.user.includes(`"Dark mode ${number}"`))!;
+    return { system: request.system, sections: (JSON.parse(request.user) as { article: { sections: Record<string, unknown>[] } }).article.sections };
+  };
+  const editOf = (number: number) => prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" }, select: { id: true, status: true } });
+  const changes = async () => (await prisma.articleChanges.findUnique({ where: { articleId: article.id }, select: { body: true } }))?.body ?? null;
+  const live = async () => (await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body;
+  /** PR #71's edit waiting, and PR #72's written on the same section, knowing it. */
+  const stacked = async () => {
+    await editing(71, FIRST);
+    await editing(72, JSON.stringify({ reason: "It doesn't say where.", overview: "It names Dark and where to pick it.", sections: { "1": "The app has a light theme and a dark one: pick one in **Settings**." } }), { onTop: true });
+    return { first: await editOf(71), second: await editOf(72) };
+  };
+
+  test("a second pull request on the same section: its writer gets the waiting text marked with its pull request, and replaces it as one passage, its own revision on top", async () => {
+    const { first, second } = await stacked();
+    const writer = writerOf(72);
+    expect(writer.sections).toEqual([{ number: 1, editable: true, text: "The app has a light theme and a dark one.", waiting: "PR #71" }]);
+    expect(writer.system).toContain('A section marked "waiting" has earlier edits (named) in it that aren\'t published yet');
+    expect(await changes()).toBe("The app has a light theme and a dark one: pick one in Settings.");
+    // Each its own revision, tagged with its update, the second written on the first.
+    const tagged = await prisma.articleRevision.findMany({ where: { articleId: article.id, codeChangeActionId: { not: null } }, orderBy: { createdAt: "asc" }, select: { codeChangeActionId: true, body: true } });
+    expect(tagged).toEqual([
+      { codeChangeActionId: first.id, body: "The app has a light theme and a dark one." },
+      { codeChangeActionId: second.id, body: "The app has a light theme and a dark one: pick one in Settings." },
+    ]);
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: article.id })).actions.map((action) => action.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  test("Dismiss: the first can't be taken out from under the second (the conflict says so); the second can, leaving the first, and then the first", async () => {
+    const { first, second } = await stacked();
+    await expect(call(dismissCodeChangeAction, team(), { id: first.id })).rejects.toThrow("PR #72's edit changed the same section since: take it out first");
+    await call(dismissCodeChangeAction, team(), { id: second.id });
+    expect(await changes()).toBe("The app has a light theme and a dark one.");
+    expect(await editOf(71)).toMatchObject({ status: "PENDING" });
+    await call(dismissCodeChangeAction, team(), { id: first.id });
+    expect(await changes() ?? (await live())).toBe("The app has a light theme.");
+    expect(await live()).toBe("The app has a light theme.");
+  });
+
+  test("Approve publishes both; Undo takes out the second, then the first, as before", async () => {
+    const { first, second } = await stacked();
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    await call(applyCodeChangeAction, team(), { id: second.id, revision: review.revision!, reviewedAs: "published" });
+    expect(await live()).toBe("The app has a light theme and a dark one: pick one in Settings.");
+    await expect(call(undoCodeChangeAction, team(), { id: first.id })).rejects.toThrow("PR #72's edit changed the same section since");
+    await call(undoCodeChangeAction, team(), { id: second.id });
+    expect(await live()).toBe("The app has a light theme and a dark one.");
+    await call(undoCodeChangeAction, team(), { id: first.id });
+    expect(await live()).toBe("The app has a light theme.");
+  });
+
+  test("a waiting edit a person changed isn't built on: its section is shown as theirs, can't be changed, and the new edit waits beside it", async () => {
+    await editing(73, FIRST);
+    // A teammate reworded the waiting edit in its unpublished changes.
+    const theirs = "The app has a light theme and a dark one, under Appearance.";
+    await prisma.articleChanges.update({ where: { articleId: article.id }, data: { body: theirs, content: { type: "doc", content: [paragraph(theirs)] } } });
+    // A reply that changes their section anyway: refused, nothing proposed, their text as it was.
+    await editing(74, JSON.stringify({ reason: "It doesn't say where.", sections: { "1": "The app has a light theme and a dark one: pick one in Settings." } }));
+    expect(writerOf(74).sections).toEqual([{ number: 1, editable: false, text: theirs, edited_by_team: "PR #73" }]);
+    expect(await prisma.codeChangeAction.count({ where: { codeChange: { projectId: project.id, number: 74 }, kind: "ARTICLE_EDIT" } })).toBe(0);
+    expect(await changes()).toBe(theirs);
+    // One that leaves it, with a note at the end for a person: it lands beside it, and waits.
+    await editing(75, JSON.stringify({ reason: "It doesn't say it follows the device.", add: "## At night\n\nDark follows the device's setting." }), { onTop: true });
+    expect(await changes()).toBe(`${theirs}\nAt night\nDark follows the device's setting.`);
+    const [first, second] = [await editOf(73), await editOf(75)];
+    expect(second).toMatchObject({ status: "PENDING" });
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    expect(review.teammateEdit).toBe(true);
+    expect(review.actions.map((action) => action.id).sort()).toEqual([first.id, second.id].sort());
+    // Dismissing the new one leaves their text as it is.
+    await call(dismissCodeChangeAction, team(), { id: second.id });
+    expect(await changes()).toBe(theirs);
+  });
+
+  test("a person changes a waiting edit while the next one is written: it doesn't land over it, and is written again seeing it held", async () => {
+    const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: value }] });
+    const sectioned = { type: "doc", content: [heading("Light"), paragraph("The app has a light theme."), heading("Dark"), paragraph("Dark is coming.")] };
+    await prisma.article.update({ where: { id: article.id }, data: { content: sectioned, body: "Light\nThe app has a light theme.\nDark\nDark is coming." } });
+    await editing(80, JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": "## Light\n\nLight is the default.", "2": "## Dark\n\nDark is here." } }));
+    // While PR #81's writer answers (rewriting PR #80's Dark section), a teammate rewords PR #80's Light section.
+    const theirs = { type: "doc", content: [heading("Light"), paragraph("Light is the default theme."), heading("Dark"), paragraph("Dark is here.")] };
+    pullRequest(81);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It doesn't say where." }]), undefined, '"merge-81"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(
+      JSON.stringify({ reason: "It doesn't say where.", sections: { "2": "## Dark\n\nDark is here: pick it in Settings." } }),
+      () => prisma.articleChanges.update({ where: { articleId: article.id }, data: { content: theirs, body: "Light\nLight is the default theme.\nDark\nDark is here." } }),
+      '"problem"',
+    );
+    // Written again on the newest text: PR #80's sections are held, so it leaves them and adds a note for a person.
+    model.reply(JSON.stringify({ reason: "It doesn't say where.", add: "## Where to pick it\n\nPick Dark in Settings." }), undefined, '"problem"');
+    model.decide({ verify: 0.1 }, '"pull_requests_edits_waiting":2');
+    expect(await merge(81)).toBe(200);
+
+    const writers = model.requests.filter((one) => one.user.includes('"problem"') && one.user.includes('"Dark mode 81"'));
+    expect(writers).toHaveLength(2);
+    const marks = (request: (typeof writers)[number]) => (JSON.parse(request.user) as { article: { sections: Record<string, unknown>[] } }).article.sections.map((section) => section.edited_by_team ?? section.waiting);
+    expect(marks(writers[1]!)).toEqual(["PR #80", "PR #80"]);
+    expect((JSON.parse(writers[1]!.user) as { article: { sections: { editable: boolean }[] } }).article.sections.map((section) => section.editable)).toEqual([false, false]);
+    expect(await changes()).toBe("Light\nLight is the default theme.\nDark\nDark is here.\nWhere to pick it\nPick Dark in Settings.");
+  });
+
+  test("a first edit already published: the next is written on the article as readers see it, nothing marked", async () => {
+    await editing(76, FIRST);
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    await call(applyCodeChangeAction, team(), { id: (await editOf(76)).id, revision: review.revision!, reviewedAs: "published" });
+    await editing(77, JSON.stringify({ reason: "It doesn't say where.", sections: { "1": "The app has a light theme and a dark one: pick one in Settings." } }));
+    expect(writerOf(77).sections).toEqual([{ number: 1, editable: true, text: "The app has a light theme and a dark one." }]);
+    expect(await changes()).toBe("The app has a light theme and a dark one: pick one in Settings.");
+  });
+});
+
 describe("the gate and the agent", () => {
   test("nothing to do only when both find nothing", async () => {
     pullRequest(34);

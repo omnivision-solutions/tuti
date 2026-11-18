@@ -117,6 +117,11 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   await api(`/changelog/${entry.number}/publish`, { announce: true });
   const article = await api("/articles", { title: "Getting started", body: "Create a board, then share your portal.\n\n## Invite your team\n\nOpen Settings, then Team." });
   await api(`/articles/${article.slug}/publish`, {});
+  // An API reference's operation: a POST with a response that worked (its dot is the Completed status's green, the one green a portal keeps).
+  await api("/api-references", {
+    name: "Reference",
+    spec: "openapi: 3.1.0\ninfo: { title: Acme, version: '1' }\npaths:\n  /posts:\n    post:\n      summary: Create a post\n      responses:\n        '201': { description: Created }\n",
+  });
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();
   await client.query(`UPDATE project SET "supportInbox" = true WHERE slug = $1`, [slug]);
@@ -140,6 +145,7 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
     [reader, "/docs"],
     [reader, `/docs/${article.slug}`],
     [reader, "/docs?q=board"],
+    [reader, "/docs/reference/create-a-post"],
     [reader, "/account"],
     [reader, "/no-such-page"],
     [visitor, "/sign-in"],

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { changedSections, type Doc, fromPlainText, mergeSections, sameDoc, toPlainText } from "@tuti/content";
+import { changedSections, type Doc, fromPlainText, keyed, mergeSections, sameDoc, sameSection, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
 import { articleVersionsStored } from "@tuti/shared";
 
@@ -139,6 +139,31 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
 }
 
 /**
+ * The article's newest text (`now`) by section, in order, against the edits waiting in it (`edits`, as taggedEdits lists
+ * them): the edits that wrote each section (`by`, named), and whether it's `held`: one of those edits was changed by a
+ * person since, so a later edit leaves all of that edit's sections as they are (docs/plan.md, E4). An edit was changed
+ * by a person when a section it was the last to write doesn't read as it wrote it, or is gone. Sections are known by
+ * their headings, so one a person renamed is gone under its old name: then a section in none of the edits' texts (a
+ * person's, added or renamed since) is held too, for those edits. One whose base is gone (what it changed isn't known)
+ * names no section.
+ */
+export function waitingSections(now: Doc, edits: TaggedEdit[]): { by: string[]; held: boolean }[] {
+  const changed = edits.map((edit) => (edit.base ? changedSections(edit.base, edit.doc) : new Set<string>()));
+  const wrote = edits.map((edit) => new Map(keyed(edit.doc)));
+  const current = new Map(keyed(now));
+  const lastWrote = (i: number) => [...changed[i]!].filter((key) => changed.findLastIndex((keys) => keys.has(key)) === i);
+  const personChanged = edits.map((_, i) => lastWrote(i).some((key) => !sameSection(current.get(key), wrote[i]!.get(key))));
+  const lost = edits.filter((_, i) => personChanged[i] && lastWrote(i).some((key) => wrote[i]!.has(key) && !current.has(key)));
+  return [...current.keys()].map((key) => {
+    const persons = wrote.every((sections) => !sections.has(key)) ? lost : [];
+    return {
+      by: [...edits.filter((_, i) => changed[i]!.has(key)), ...persons].map(editName),
+      held: persons.length > 0 || edits.some((_, i) => personChanged[i] && changed[i]!.has(key)),
+    };
+  });
+}
+
+/**
  * Whether the article's unpublished changes hold more than its waiting edits: a teammate's edit (or anything that
  * can't be told apart from one). The published version with each waiting edit applied by section, in order, must
  * be its unpublished text exactly.
@@ -202,8 +227,9 @@ export function takeOut(edit: TaggedEdit, text: Doc, edits: TaggedEdit[]): { doc
 /**
  * Saves an edit (`doc`, written on `writtenOn`) into the article's unpublished changes as a revision tagged with its
  * update; a draft's into its text, as the team's saves on a draft are (only the team sees it). A newer text than it
- * was written on gets only its changed sections; when that one changed one of the same sections it's `conflict`
- * (written again from the newest). `gone`: the article was deleted. Call it with the project locked.
+ * was written on gets only its changed sections; when that one changed one of the same sections, or the edit changes
+ * one held for a person's change since (waitingSections), it's `conflict` (written again from the newest). `gone`: the
+ * article was deleted. Call it with the project locked.
  */
 export async function landEdit(
   tx: Prisma.TransactionClient,
@@ -224,6 +250,14 @@ export async function landEdit(
   const text = sameDoc(now, writtenOn) ? doc : mergeSections(writtenOn, doc, now);
   if (!text) {
     return "conflict";
+  }
+  // Written on an older text: never over a waiting edit a person changed since (E4). Written again, it sees it held.
+  if (!sameDoc(now, writtenOn)) {
+    const marks = waitingSections(now, await taggedEdits(articleId, IN_CHANGES, tx));
+    const held = new Set(keyed(now).flatMap(([key], i) => (marks[i]!.held ? [key] : [])));
+    if ([...changedSections(writtenOn, doc)].some((key) => held.has(key))) {
+      return "conflict";
+    }
   }
   // Based on a revision of the text it's applied to: recorded first when the newest isn't (an article saved before revisions).
   const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true, ...versionSelect } });
