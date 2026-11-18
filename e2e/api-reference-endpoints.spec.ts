@@ -131,6 +131,8 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await team.getByRole("menuitem", { name: "Unpublish" }).click();
   await expect(team.getByText("API reference unpublished")).toBeVisible();
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
+  // Nothing of a draft is on the help center: the count says what will be.
+  await expect(team.getByText("1 of 4 on the help center when published")).toBeVisible();
   await expect(team.getByRole("link", { name: "View on help center" })).toBeHidden();
 
   // Deleting goes back to Docs.

@@ -147,6 +147,7 @@ export function ApiReferenceEndpoints({
   projectSlug,
   slug,
   state,
+  published,
   groups,
   operations,
   unreadable,
@@ -155,6 +156,8 @@ export function ApiReferenceEndpoints({
   slug: string;
   /** Its Draft or Published badge. */
   state: ReactNode;
+  /** A draft has nothing on the help center yet: its count says what will be. */
+  published: boolean;
   /** In the team's order. */
   groups: Group[];
   operations: Operation[];
@@ -216,7 +219,7 @@ export function ApiReferenceEndpoints({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
         {state}
         <span>
-          {operations.filter(shown).length} of {operations.length} on the help center
+          {operations.filter(shown).length} of {operations.length} on the help center{!published && " when published"}
         </span>
         {unreadable > 0 && <span>{unreadable === 1 ? "1 thing couldn’t be read" : `${unreadable} things couldn’t be read`}</span>}
       </div>

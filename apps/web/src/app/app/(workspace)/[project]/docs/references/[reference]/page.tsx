@@ -50,6 +50,7 @@ export default async function ApiReferencePage(props: PageProps<"/app/[project]/
         projectSlug={slug}
         slug={reference.slug}
         state={<ArticleStateBadge state={reference.published ? "published" : "draft"} />}
+        published={reference.published}
         groups={reference.groups.map(({ key, name, description, onHelpCenter }) => ({ key, name, description, onHelpCenter }))}
         operations={reference.operations.map(({ key, slug: operation, title, kind, path, group, alsoIn, deprecated, hidden, new: isNew }) => ({ key, slug: operation, title, kind, path, group, alsoIn, deprecated, hidden, new: isNew }))}
         unreadable={reference.warnings.reduce((sum, warning) => sum + warning.count, 0)}
