@@ -213,8 +213,10 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(large.getByText("Showing the first 2 MB.")).toBeVisible();
   await expect(large.getByText("2.0 MB", { exact: true })).toBeVisible();
 
-  // A request still on its way when the console closes is still on its way when it opens again, and stops at 15 seconds.
+  // A request still on its way when the console closes is still on its way when it opens again, and stops at 15
+  // seconds (on the page's clock, run forward: no test waits for them).
   await reader.keyboard.press("Escape");
+  await reader.clock.install();
   await reader.goto("/docs/reference/wait-forever");
   await reader.getByRole("button", { name: "Try it" }).click();
   const waiting = reader.getByRole("dialog", { name: "Try it" });
@@ -223,8 +225,30 @@ test("a reader tries an operation with their key: from the browser, and through 
   await reader.keyboard.press("Escape");
   await reader.getByRole("button", { name: "Try it" }).click();
   await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
-  await expect(waiting.getByRole("region", { name: "Response" }).getByText("The API didn't answer within 15 seconds")).toBeVisible({ timeout: 20_000 });
+  await reader.clock.runFor(14_000);
+  await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
+  await reader.clock.runFor(1_000);
+  await expect(waiting.getByRole("region", { name: "Response" }).getByText("The API didn't answer within 15 seconds")).toBeVisible();
   await expect(waiting.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+
+  // Through Tuti, the request has a clock of its own from when it starts: Tuti gives the API its 15 seconds.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/get-a-post");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const slow = reader.getByRole("dialog", { name: "Try it" });
+  await pickServer(slow, `Legacy (${closed.origin}/v1)`);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await reader.route("**/docs/reference/get-a-post/try", async (route) => {
+    await held;
+    await route.fulfill({ json: { status: 200, statusText: "OK", headers: [], body: "{}", size: 2, cut: false, ms: 16_000 } });
+  });
+  await slow.getByRole("button", { name: "Send", exact: true }).click();
+  await reader.clock.runFor(16_000);
+  await expect(slow.getByRole("button", { name: "Sending…" })).toBeDisabled();
+  release();
+  await expect(slow.getByRole("region", { name: "Response" }).getByText("200 OK")).toBeVisible();
+  await reader.unroute("**/docs/reference/get-a-post/try");
 
   // On a phone, a sheet from the bottom that fits the width.
   await reader.goto("/docs/reference/create-a-post");

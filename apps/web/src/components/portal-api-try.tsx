@@ -128,8 +128,10 @@ function useForm({ doc, operation, base }: Props) {
   return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult, sending, setSending, latestRef };
 }
 
-/** How long a request from the browser may take, as through Tuti. */
+/** How long a request from the browser may take, as through Tuti; */
 const TIMEOUT_MS = 15_000;
+/** and one through Tuti, which gives the API 15 seconds itself: a little more, for the way there and back. */
+const TUTI_TIMEOUT_MS = 20_000;
 
 function Console({ reference, operationSlug, doc, operation, base, form }: Props & { form: ReturnType<typeof useForm> }) {
   const href = usePortalHref();
@@ -167,17 +169,25 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
     if (through) sendButton.current?.focus();
     // Emptied, so the answer's arrival is read out even when it's the same as the last.
     setResult(null);
-    const timer = setTimeout(() => stop.abort(new DOMException("Timed out", "TimeoutError")), TIMEOUT_MS);
-    const timedOut = () => stop.signal.reason instanceof DOMException && stop.signal.reason.name === "TimeoutError";
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    /** A clock of its own for one request: stopped by a newer send, or after `ms`. */
+    const limited = (ms: number) => {
+      const own = new AbortController();
+      stop.signal.addEventListener("abort", () => own.abort(stop.signal.reason));
+      timers.push(setTimeout(() => own.abort(new DOMException("Timed out", "TimeoutError")), ms));
+      return { signal: own.signal, timedOut: () => own.signal.reason instanceof DOMException && own.signal.reason.name === "TimeoutError" };
+    };
 
     async function throughTuti(via: "cors" | "cookies") {
+      // Its own clock, from when it starts: Tuti gives the API its 15 seconds, and says so itself when they run out.
+      const { signal, timedOut } = limited(TUTI_TIMEOUT_MS);
       let response: Response;
       try {
         response = await fetch(href(`/docs/${reference}/${operationSlug}/try`), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(input),
-          signal: stop.signal,
+          signal,
         });
       } catch {
         settle({ error: timedOut() ? "The API didn't answer within 15 seconds" : "Couldn't reach Tuti to send it. Check your connection and try again.", via });
@@ -201,6 +211,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         return;
       }
       const started = performance.now();
+      const { signal, timedOut } = limited(TIMEOUT_MS);
       let response: Response;
       try {
         // Nothing of the reader's own: no cookies of a site the API shares with the portal, no referrer.
@@ -210,10 +221,10 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           body: made.body,
           credentials: "omit",
           referrerPolicy: "no-referrer",
-          signal: stop.signal,
+          signal,
         });
       } catch (error) {
-        if (stop.signal.aborted) {
+        if (signal.aborted) {
           settle({ error: "The API didn't answer within 15 seconds", via: "browser" });
           return;
         }
@@ -249,7 +260,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         },
       });
     } finally {
-      clearTimeout(timer);
+      for (const timer of timers) clearTimeout(timer);
       if (latestRef.current.id === id) setSending(false);
     }
   }
