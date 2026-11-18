@@ -258,4 +258,10 @@ test("an edit that moves or copies text the article had is neither a rename nor 
   const moved = "## Fonts\n\nFonts are in **Look and feel** too, at `/settings/appearance`.\n\n## Themes\n\nOpen **Look and feel** and pick a theme.";
   expect(renamed(NAV, moved, DIFF)).toBeNull();
   expect(editScope(NAV, moved, DIFF)).toBe("larger");
+  // Two paragraphs that both carry the label, swapped while it's renamed; renamed in one place but left in another.
+  const BOTH = "Open **Customize** and pick a theme.\n\nFonts are in **Customize** too.";
+  expect(renamed(BOTH, "Fonts are in **Look and feel** too.\n\nOpen **Look and feel** and pick a theme.", DIFF)).toBeNull();
+  expect(renamed(BOTH, "Open **Look and feel** and pick a theme.\n\nFonts are in **Customize** too.", DIFF)).toBeNull();
+  // The same rename, one for one where they stand, is still one.
+  expect(renamed(BOTH, "Open **Look and feel** and pick a theme.\n\nFonts are in **Look and feel** too.", DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
 });

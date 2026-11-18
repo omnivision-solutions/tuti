@@ -1519,6 +1519,15 @@ describe("where the check is on, only an edit it passed that's a rename or a sma
     expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its article was read 500 times or more in 30 days" });
   });
 
+  test("a larger edit waiting, once its project leaves the list, says what holds it now when an unsure edit lands on its article", async () => {
+    const larger = await checkedEdit({ ...PASSED, scope: "larger" });
+    expect(larger.waitReason).toBe("It isn't a rename or a small correction in place, so it asks first");
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    const unsure = await landArticleEdit(project.id, larger.article.id, ++number, (doc) => doc, { probability: 0.7 });
+    await scheduleByItself(project.id, unsure.codeChangeId!);
+    expect(await statusOf(larger.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
+  });
+
   test("a project the check isn't on for is as before: an edit with no check, or a larger one, goes out after the hold", async () => {
     vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
     expect((await checkedEdit(null)).status).toBe("SCHEDULED");

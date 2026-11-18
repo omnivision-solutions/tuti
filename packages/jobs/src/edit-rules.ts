@@ -201,10 +201,10 @@ const hasName = (text: string, name: string) => wholeName(name).test(text);
 
 /**
  * A rename or a moved page (docs/plan.md, E6): the label, quoted word or `code` path the edit took out (`from`) and the
- * one it put in (`to`), when that's all it did (each sentence it changed reads as one it replaced, with those names masked, as
+ * one it put in (`to`), when that's all it did (the article reads the same, in the same order, with those names masked, as
  * a heading renamed does too), and the pull request's diff removed the old one and added the new one (any case). Null
- * otherwise: one side missing, more than one name either side, other words changed too, text moved or copied (see
- * inPlace), or a name the code change doesn't show.
+ * otherwise: one side missing, more than one name either side, other words changed too, text moved or copied, the old
+ * name left anywhere, or a name the code change doesn't show.
  */
 export function renamed(before: string, after: string, diff: string): { from: string[]; to: string[] } | null {
   const edit = editOf(before, after);
@@ -218,10 +218,10 @@ export function renamed(before: string, after: string, diff: string): { from: st
   if (from.length !== 1 || to.length !== 1) {
     return null;
   }
-  // Longest first, so a name inside another ("Team" in "Team settings") doesn't split it.
-  const mask = (sentences: string[], names: string[]) =>
-    sentences.map((sentence) => names.toSorted((a, b) => b.length - a.length).reduce((text, name) => text.replace(wholeName(name), "\u0000"), sentence)).toSorted();
-  if (!isDeepStrictEqual(mask(edit.removed, from), mask(edit.added, to)) || !inPlace(before, after)) {
+  // The whole article, in its order, the old name masked before and the new one after: anything else changed, moved
+  // (even sentences that each carry the name) or left with the old name isn't a rename.
+  const mask = (markdown: string, name: string) => lines(markdown).flatMap(sentences).map((sentence) => sentence.replace(wholeName(name), "\u0000"));
+  if (!isDeepStrictEqual(mask(before, from[0]!), mask(after, to[0]!))) {
     return null;
   }
   const [removedCode, addedCode] = [diffSide(diff, "-"), diffSide(diff, "+")];

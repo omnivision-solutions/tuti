@@ -4,7 +4,7 @@ import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { articleLimit, ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, scheduleArticle } from "./article-layers";
-import { CHECK_BEFORE, CHECK_LARGER, CHECK_UNCLEAR, type EditCheck, checksOn } from "./edit-review";
+import { CHECK_BEFORE, CHECK_LARGER, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_UNCLEAR, CHECKS_OFF, checkFailed, type EditCheck, checksOn } from "./edit-review";
 
 /**
  * Autopilot's hold (docs/plan.md, Autopilot A4): what it's sure of goes out by itself, drafts at once
@@ -212,8 +212,12 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
  * Whether a stored reason is one this check gives (or what holds an update back), so worked out again each time: not
  * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
  */
-const checksSay = (why: string) =>
-  /^(Autopilot is off|Autopilot asks first|It wasn't checked|It was written before the check|It changes more than|The check |Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
+export const checksSay = (why: string) =>
+  CHECK_REASONS.some((reason) => why.startsWith(reason)) ||
+  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
+
+/** The reasons the check (E5, E6) stores or gives, by their words: a failed check's by its start. */
+const CHECK_REASONS = [CHECKS_OFF, CHECK_UNCLEAR, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_BEFORE, CHECK_LARGER, checkFailed("")];
 
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>

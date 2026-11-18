@@ -192,3 +192,37 @@ test("a queued job whose claim a later one replaced (a person's “Analyse again
   expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).claim).toBe(theirs!.claim);
   expect(theirs!.claim).not.toBe(stale!.claim);
 });
+
+test("“Analyse again” waiting on a rewrite that marks its pull request, then failing to queue, leaves it marked for the sweep", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  const change = await pullRequest(12);
+  jobs.enqueue.mockRejectedValueOnce(new Error("Hatchet unreachable"));
+  // The rewrite holds the pull request's lock while it takes its edits out; the person's click comes meanwhile.
+  let asked: Promise<unknown> | undefined;
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${change.id} FOR UPDATE`;
+    asked = call(analyseCodeChange, team(), { id: change.id }).catch((error: unknown) => error);
+    // Until the person's call waits on the lock.
+    const waits = async () =>
+      (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE NOT l.granted AND a.datname = current_database()`)[0]!.n > 0;
+    for (let i = 0; i < 200 && !(await waits()); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await tx.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: REWRITING, retryAt: new Date(Date.now() + 3_600_000), rewriteDocsOnly: true } });
+  }, { timeout: 15_000 });
+  expect(await asked).toMatchObject({ message: expect.stringContaining("Couldn't analyse it") });
+  const after = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } });
+  expect(after).toMatchObject({ state: "FAILED", reason: REWRITING, rewriteDocsOnly: true });
+  expect(after.retryAt).not.toBeNull();
+});
+
+test("a stopped rewrite's “Analyse again” that fails to queue stays marked, its retry due", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  const change = await pullRequest(13);
+  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", rewriteDocsOnly: true, updatedAt: new Date(Date.now() - 31 * 60_000) } });
+  jobs.enqueue.mockRejectedValueOnce(new Error("Hatchet unreachable"));
+  await expect(call(analyseCodeChange, team(), { id: change.id })).rejects.toThrow("Couldn't analyse it");
+  const after = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } });
+  expect(after).toMatchObject({ state: "FAILED", rewriteDocsOnly: true });
+  expect(after.retryAt!.getTime()).toBeLessThanOrEqual(Date.now());
+});
