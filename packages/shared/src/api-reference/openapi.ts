@@ -92,6 +92,11 @@ const LIMITS = new Set(
 const WARNINGS_MOST = 10_000;
 /** The most a YAML file may be once its aliases are filled in, in characters: one anchor can stand in a hundred places. */
 const YAML_SIZE = 4 * OPENAPI_MAX_BYTES;
+/** The most anchors and aliases a YAML file may have: filling an alias in goes back over those before it, so their number squared is the work. */
+const YAML_ANCHORS = 10_000;
+
+/** The limits a read stops at. Tests pass smaller ones, to cross them with a small file. */
+export type OpenApiBounds = { values?: number; docSize?: number; yamlSize?: number; yamlAnchors?: number };
 /** The keywords of a schema the reader reads, besides its fields: what's kept when `allOf` parts are folded into one. */
 const KEYWORDS = [...new Set([...WORDS, ...LIMITS, "enum", "const", "examples", "format", "items", "additionalProperties", "oneOf", "anyOf"])];
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
@@ -186,7 +191,7 @@ function constraints(schema: Obj): string {
 }
 
 /** The text as data: JSON, else YAML, and then only what JSON can hold (no shared or looping aliases). */
-function parse(text: string): { value: unknown } | { error: string } {
+function parse(text: string, bounds: OpenApiBounds): { value: unknown } | { error: string } {
   try {
     return { value: JSON.parse(text) };
   } catch {
@@ -194,11 +199,15 @@ function parse(text: string): { value: unknown } | { error: string } {
   }
   try {
     // Merge keys (`<<: *base`) as the tools specs are written for read them.
-    const document = parseDocument(text, { logLevel: "error", merge: true });
+    // A key written twice is read as JSON reads it, the last one counting: checking each key against
+    // those before it would make a long map's time grow with its length squared.
+    const document = parseDocument(text, { logLevel: "error", merge: true, uniqueKeys: false });
     if (document.errors[0]) throw document.errors[0];
-    // Measured on the file as written, before any alias is filled in: then they all may be, however
-    // often one anchor is used (the library's own limit is a hundred uses, fewer than a spec's shared response has).
-    if (yamlSize(document.contents, new Map(), new Map()) > YAML_SIZE) {
+    // Measured and counted on the file as written, before any alias is filled in: then they all may
+    // be, however often one anchor is used (the library's own limit is a hundred uses, fewer than a
+    // spec's shared response has).
+    const counted = { anchors: 0, most: bounds.yamlAnchors ?? YAML_ANCHORS };
+    if (yamlSize(document.contents, new Map(), new Map(), counted) > (bounds.yamlSize ?? YAML_SIZE)) {
       return { error: "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors." };
     }
     const read: unknown = document.toJS({ maxAliasCount: -1 });
@@ -208,6 +217,7 @@ function parse(text: string): { value: unknown } | { error: string } {
     if (isObj(value) && isObj(value.info) && typeof value.info.version === "number" && isScalar(version) && version.source) value.info.version = version.source;
     return { value };
   } catch (error) {
+    if (!(error instanceof Error) && isObj(error) && typeof error.error === "string") return { error: error.error };
     const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "").slice(0, 200) : "";
     if (error instanceof RangeError || /call stack/i.test(reason)) return { error: "This file is nested too deeply to read." };
     return { error: `This file isn't valid JSON or YAML${reason ? `: ${reason}` : "."}` };
@@ -216,23 +226,28 @@ function parse(text: string): { value: unknown } | { error: string } {
 
 /**
  * About how many characters a YAML node is once its aliases are filled in: an alias counts as what
- * its anchor holds, worked out once per anchor. Throws on an anchor that holds itself.
+ * its anchor holds, worked out once per anchor. Throws on an anchor that holds itself, and, as an
+ * error to return, on more anchors and aliases than a file may have.
  */
-function yamlSize(node: unknown, anchors: Map<string, object>, sizes: Map<object, number>): number {
+function yamlSize(node: unknown, anchors: Map<string, object>, sizes: Map<object, number>, counted: { anchors: number; most: number }): number {
+  if (isAlias(node) || ((isScalar(node) || isCollection(node)) && node.anchor)) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- an error value for `readOpenApi` to return, as TOO_LARGE is
+    if (++counted.anchors > counted.most) throw { error: `This file has more than ${counted.most.toLocaleString("en")} YAML anchors and aliases. Use fewer of them.` };
+  }
   if (isAlias(node)) {
     const target = anchors.get(node.source);
     const size = target && sizes.get(target);
     if (target && size === undefined) throw new Error("an alias holds itself");
     return size ?? 2;
   }
-  if (isPair(node)) return 2 + yamlSize(node.key, anchors, sizes) + yamlSize(node.value, anchors, sizes);
+  if (isPair(node)) return 2 + yamlSize(node.key, anchors, sizes, counted) + yamlSize(node.value, anchors, sizes, counted);
   if (!isScalar(node) && !isCollection(node)) return 2;
   // Known by its anchor from here on, sized once it's whole: an alias to it met before then is inside it.
   if (node.anchor) anchors.set(node.anchor, node);
   let size = 2;
   // A number or the like is short; bytes (YAML 1.1's `!!binary`) come out as a number for each.
   if (isScalar(node)) size += typeof node.value === "string" ? node.value.length : ArrayBuffer.isView(node.value) ? node.value.byteLength * 16 : 30;
-  else for (const item of node.items) size += yamlSize(item, anchors, sizes);
+  else for (const item of node.items) size += yamlSize(item, anchors, sizes, counted);
   sizes.set(node, size);
   return size;
 }
@@ -244,14 +259,14 @@ function yamlSize(node: unknown, anchors: Map<string, object>, sizes: Map<object
  * Statuses and fields are in the spec's order except those named by a whole number ("200"), which
  * come first, lowest first: that's the order JavaScript keeps an object's keys in.
  */
-export function readOpenApi(text: string): { doc: ApiDoc } | { error: string } {
+export function readOpenApi(text: string, bounds: OpenApiBounds = {}): { doc: ApiDoc } | { error: string } {
   try {
     if (typeof text !== "string") return { error: "This file has no text to read." };
     if (text.length > OPENAPI_MAX_BYTES || new TextEncoder().encode(text).length > OPENAPI_MAX_BYTES) {
       return { error: "This file is over 5 MB, the most an API reference reads." };
     }
     if (text.trim() === "") return { error: "This file is empty." };
-    const parsed = parse(text.replace(/^﻿/, ""));
+    const parsed = parse(text.replace(/^\uFEFF/, ""), bounds);
     if ("error" in parsed) return parsed;
     const root = parsed.value;
     if (isObj(root) && root.swagger !== undefined) {
@@ -264,8 +279,9 @@ export function readOpenApi(text: string): { doc: ApiDoc } | { error: string } {
     if (!/^3(\.\d|$)/.test(String(root.openapi))) {
       return { error: `This spec says it's OpenAPI ${String(root.openapi).slice(0, 20)}. An API reference reads OpenAPI 3.0 and 3.1.` };
     }
-    const doc = read(root);
-    return sizeOf(doc, DOC_SIZE) > DOC_SIZE ? TOO_LARGE : { doc };
+    const doc = read(root, bounds.values ?? DOC_NODES_MOST);
+    const size = bounds.docSize ?? DOC_SIZE;
+    return sizeOf(doc, size) > size ? TOO_LARGE : { doc };
   } catch (error) {
     // A refusal thrown from inside the read: too large, or a name too long.
     if (isObj(error) && typeof error.error === "string") return { error: error.error };
@@ -285,7 +301,15 @@ function sizeOf(value: unknown, limit: number): number {
   return size;
 }
 
-function read(root: Obj): ApiDoc {
+function read(root: Obj, most: number): ApiDoc {
+  /** 3.1 and later: what's written beside a `$ref` applies with it. In 3.0 it's ignored (a description is still read). */
+  const besideApplies = !/^3(\.0|$)/.test(String(root.openapi));
+  /** A 3.1 schema with keywords beside its `$ref`, as the `allOf` of the two that it means; null without any. Once per schema. */
+  const apart = once((node): Obj | null => {
+    const { $ref, ...beside } = node;
+    return Object.keys(beside).length > 0 ? { allOf: [{ $ref }, beside] } : null;
+  });
+  const split = (node: unknown): unknown => (besideApplies && isObj(node) && typeof node.$ref === "string" ? (apart(node) ?? node) : node);
   const warnings: ApiWarning[] = [];
   const warned = new Set<string>();
   /** One warning per place and kind, however many times a named schema is gone through. */
@@ -371,24 +395,28 @@ function read(root: Obj): ApiDoc {
     const done = flattened.get(schema);
     if (done) return done;
     const seen = new Set<Obj>();
-    /** `base`: the type referenced at the top that the part came in with; null for the schema and what's written in it. */
-    const add = (part: Obj | null, base: Obj | null) => {
+    /** What each part was folded into, and whether by a reference: the schema itself has neither. */
+    const into = new Map<Obj, Obj>();
+    const referenced = new Set<Obj>();
+    const folds = new Map<Obj, Obj[]>();
+    const add = (part: Obj | null, parent: Obj | null, byReference: boolean) => {
       if (!part || seen.has(part)) return;
       seen.add(part);
-      bases.set(part, base);
+      if (parent) into.set(part, parent);
+      if (parent) folds.set(parent, [...(folds.get(parent) ?? []), part]);
+      if (byReference) referenced.add(part);
       // Folding in a wide schema is work and memory like spelling it out, so it counts the same.
       docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
-      if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
+      if (docNodes > most) throw TOO_LARGE;
       for (const inner of list(part.allOf)) {
-        const folded = follow(inner, where);
-        add(folded, base ?? (isObj(inner) && typeof inner.$ref === "string" ? folded : null));
+        const whole = split(inner);
+        add(follow(whole, where), part, whole === inner && isObj(inner) && typeof inner.$ref === "string");
       }
       after.push(part);
     };
     /** Each part after the parts it folds in, the schema itself last: the order they're laid down in. */
     const after: Obj[] = [];
-    const bases = new Map<Obj, Obj | null>();
-    add(schema, null);
+    add(schema, null, false);
     const merged = new Map<string, unknown>();
     const properties = new Map<string, unknown>();
     const required = new Set<unknown>();
@@ -405,11 +433,23 @@ function read(root: Obj): ApiDoc {
       for (const name of list(part.required)) required.add(name);
       for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
     }
-    // A base's example or default is of the base: where anything outside that base adds fields,
-    // in whatever order, it isn't of the whole, and the example is made from all the fields.
+    // An example or default written in the schema is the schema's. One that came in with a
+    // referenced type is that type's: it's kept only when nothing between that type and the schema
+    // adds fields, at any level and in any order. Otherwise it isn't of the whole, and the example
+    // is made from all the fields.
+    const addsFields = new Map<Obj, boolean>();
+    const adds = (part: Obj): boolean => {
+      const known = addsFields.get(part) ?? (fieldsOf(part.properties).length > 0 || (folds.get(part) ?? []).some(adds));
+      addsFields.set(part, known);
+      return known;
+    };
     for (const key of ["example", "examples", "default"]) {
-      const base = bases.get(said.get(key) ?? schema);
-      if (base && after.some((part) => bases.get(part) !== base && fieldsOf(part.properties).length > 0)) merged.delete(key);
+      let owner = said.get(key);
+      while (owner && owner !== schema && !referenced.has(owner)) owner = into.get(owner);
+      for (let part = owner; part && part !== schema; part = into.get(part)) {
+        const parent = into.get(part);
+        if (parent && (fieldsOf(parent.properties).length > 0 || (folds.get(parent) ?? []).some((other) => other !== part && adds(other)))) merged.delete(key);
+      }
     }
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
     merged.set("required", [...required]);
@@ -431,7 +471,7 @@ function read(root: Obj): ApiDoc {
   let rootNodes = 0;
   let docNodes = 0;
   const spend = () => {
-    if (++docNodes > DOC_NODES_MOST) throw TOO_LARGE;
+    if (++docNodes > most) throw TOO_LARGE;
     return ++rootNodes <= (docNodes <= DOC_NODES ? ROOT_NODES : ROOT_NODES_AFTER);
   };
   /** No room even to name another field: twice what may be spelled out, so the fields after a large one are still listed. */
@@ -439,7 +479,7 @@ function read(root: Obj): ApiDoc {
   const charge = (count: number) => {
     rootNodes += count;
     docNodes += count;
-    if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
+    if (docNodes > most) throw TOO_LARGE;
   };
   const spent = () => rootNodes >= 2 * (docNodes <= DOC_NODES ? ROOT_NODES : ROOT_NODES_AFTER);
 
@@ -487,6 +527,7 @@ function read(root: Obj): ApiDoc {
   function toSchema(node: unknown, place: Place): ApiSchema {
     // Counted before anything else: a schema that's `true`, or anything else that isn't one, is a value too.
     const within = spend();
+    node = split(node);
     if (!isObj(node)) return { type: "any" };
     if (typeof node.$ref === "string") {
       const found = lookup(node.$ref, place.where);
@@ -611,6 +652,7 @@ function read(root: Obj): ApiDoc {
   /** A value of the schema's shape, from its own examples where it has them; undefined when there's nothing to show. */
   function sample(node: unknown, stack: Obj[], where: string): unknown {
     const within = spend();
+    node = split(node);
     const target = follow(node);
     if (!target) return isObj(node) ? {} : undefined;
     // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.

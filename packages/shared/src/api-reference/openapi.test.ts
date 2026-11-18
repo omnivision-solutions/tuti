@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { stringify } from "yaml";
-import { readOpenApi } from "./openapi";
+import { type OpenApiBounds, readOpenApi } from "./openapi";
 import type { ApiDoc, ApiSchema } from "./types";
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -150,8 +150,9 @@ function read(text: string): ApiDoc {
 }
 /** A small spec around the parts a test is about. */
 const spec = (parts: object): ApiDoc => read(JSON.stringify({ openapi: "3.0.3", info: { title: "T", version: "1" }, ...parts }));
-const errorOf = (text: string) => {
-  const result = readOpenApi(text);
+/** The error a text is refused with, if it is. Tests of a limit pass a small one, so a small file crosses it. */
+const errorOf = (text: string, bounds?: OpenApiBounds) => {
+  const result = readOpenApi(text, bounds);
   return "error" in result ? result.error : null;
 };
 /** One schema, read as `GET /x`'s 200 response. */
@@ -276,7 +277,9 @@ test("text that isn't a spec is an error to act on", () => {
   expect(errorOf('{"openapi": "30.0"}')).toMatch(/says it's OpenAPI 30.0/);
   expect(errorOf('{"openapi": "4.0.0"}')).toBe("This spec says it's OpenAPI 4.0.0. An API reference reads OpenAPI 3.0 and 3.1.");
   expect(errorOf("a: [1, 2")).toMatch(/^This file isn't valid JSON or YAML: /);
-  expect(errorOf("a: 1\na: 2")).toMatch(/^This file isn't valid JSON or YAML: /);
+  // A key written twice is read as JSON reads it: the last one counts.
+  expect(errorOf("openapi: 4.0.0\nopenapi: 3.0.0\n")).toBeNull();
+  expect(errorOf('{"openapi": "4.0.0", "openapi": "3.0.0"}')).toBeNull();
   expect(errorOf(`{"openapi": "3.0.0", "x": "${"a".repeat(5 * 1024 * 1024)}"}`)).toMatch(/over 5 MB/);
   expect(errorOf(`{"openapi": "3.0.0", "x": "${"é".repeat(3 * 1024 * 1024)}"}`)).toMatch(/over 5 MB/);
 });
@@ -994,15 +997,14 @@ test("a mixed-case default is default", () => {
 });
 
 test("many schemas that each fold in one wide schema stop the read early", () => {
-  const base = { type: "object", properties: Object.fromEntries(Array.from({ length: 50_000 }, (_, index) => [`f${index}`, {}])) };
-  const schemas = Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`S${index}`, { allOf: [ref("Base"), { properties: { own: {} } }] }]));
+  const base = { type: "object", properties: Object.fromEntries(Array.from({ length: 500 }, (_, index) => [`f${index}`, {}])) };
+  const schemas = Object.fromEntries(Array.from({ length: 100 }, (_, index) => [`S${index}`, { allOf: [ref("Base"), { properties: { own: {} } }] }]));
   const text = JSON.stringify({ openapi: "3.0.0", paths: {}, components: { schemas: { Base: base, ...schemas } } });
-  expect(text.length).toBeLessThan(1_000_000);
-  expect(errorOf(text)).toMatch(/too large once its references are followed/);
+  expect(errorOf(text, { values: 20_000 })).toMatch(/too large once its references are followed/);
   // A few of them are read, each with the base's fields.
   const few = spec({ components: { schemas: { Base: { type: "object", required: ["id"], properties: { id: {} } }, A: { allOf: [ref("Base")] }, B: { allOf: [ref("Base"), ref("A")] } } } });
   expect(few.types.map((type) => type.schema.properties)).toEqual(Array.from({ length: 3 }, () => [{ name: "id", required: true, type: "any" }]));
-}, 30_000);
+});
 
 test("a very long allOf counts as its length each time it's used", () => {
   const wide = { allOf: Array.from({ length: 5_000 }, () => ref("Leaf")) };
@@ -1039,10 +1041,15 @@ test("a long list of choices, used by thousands of fields, is gone through once"
 });
 
 test("a YAML file that's too large once its aliases are filled in is an error", () => {
+  const tooLarge = "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.";
+  const small = { yamlSize: 20_000 };
   const aliases = Array.from({ length: 90 }, (_, index) => `  a${index}: *big`).join("\n");
-  const text = `openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses:\n${aliases}\n`;
-  expect(text.length).toBeLessThan(400_000);
-  expect(errorOf(text)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
+  const text = `openapi: 3.0.0\nx-big: &big "${"x".repeat(300)}"\nx-uses:\n${aliases}\n`;
+  expect(text.length).toBeLessThan(2_000);
+  expect(errorOf(text, small)).toBe(tooLarge);
+  // The same file is an ordinary one where the limit is the real one, and so is a few uses under the small one.
+  expect(errorOf(text)).toBeNull();
+  expect(errorOf(`openapi: 3.0.0\nx-big: &big "${"x".repeat(300)}"\nx-uses: [*big, *big, *big]\n`, small)).toBeNull();
   // An anchor that holds itself isn't a file to read, and that's what the error says.
   expect(errorOf("openapi: 3.0.0\na: &a\n  b: *a\n")).toBe("This file isn't valid JSON or YAML: an alias holds itself");
   // One small anchor used hundreds of times, as a value and merged in, is an ordinary spec.
@@ -1053,16 +1060,23 @@ test("a YAML file that's too large once its aliases are filled in is an error", 
   expect(many.types).toHaveLength(300);
   expect(many.types[299]!.schema).toEqual({ type: "object", ref: "M299", description: "D299", properties: [{ name: "id", required: false, type: "string" }] });
   // Many merges of a large anchor are measured before any is filled in.
-  const wide = Array.from({ length: 20_000 }, (_, index) => `k${index}: 1`).join(", ");
-  const merged = Array.from({ length: 200 }, (_, index) => `  m${index}: { <<: *wide }`).join("\n");
-  expect(errorOf(`openapi: 3.0.0\nx-wide: &wide { ${wide} }\nx-uses:\n${merged}\n`)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
+  const wide = Array.from({ length: 200 }, (_, index) => `k${index}: 1`).join(", ");
+  const merged = Array.from({ length: 50 }, (_, index) => `  m${index}: { <<: *wide }`).join("\n");
+  expect(errorOf(`openapi: 3.0.0\nx-wide: &wide { ${wide} }\nx-uses:\n${merged}\n`, small)).toBe(tooLarge);
   // Bytes count as what they become, not as a short value.
-  const bytes = Buffer.alloc(150_000, 7).toString("base64");
-  expect(errorOf(`%YAML 1.1\n---\nopenapi: 3.0.0\nx-b: &b !!binary ${bytes}\nx-uses: [${Array.from({ length: 20 }, () => "*b").join(", ")}]\n`)).toBe(
-    "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.",
-  );
-  // A few uses of an anchor are what anchors are for.
-  expect(errorOf(`openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses: [*big, *big, *big]\n`)).toBeNull();
+  const bytes = Buffer.alloc(150, 7).toString("base64");
+  expect(errorOf(`%YAML 1.1\n---\nopenapi: 3.0.0\nx-b: &b !!binary ${bytes}\nx-uses: [${Array.from({ length: 20 }, () => "*b").join(", ")}]\n`, small)).toBe(tooLarge);
+});
+
+test("a YAML file with more anchors and aliases than may be is an error, before any is filled in", () => {
+  // Filling an alias in goes back over the anchors and aliases before it, so it's their number that's bounded, not only their size.
+  const list = (count: number) => `openapi: 3.0.0\nx-a: &a ""\nx-uses:\n${"  - *a\n".repeat(count)}`;
+  expect(errorOf(list(10_000))).toBe("This file has more than 10,000 YAML anchors and aliases. Use fewer of them.");
+  expect(errorOf(list(100))).toBeNull();
+  // Anchors count as aliases do.
+  const anchors = `openapi: 3.0.0\nx-anchors:\n${Array.from({ length: 60 }, (_, index) => `  - &a${index} ${index}`).join("\n")}\n`;
+  expect(errorOf(anchors, { yamlAnchors: 50 })).toBe("This file has more than 50 YAML anchors and aliases. Use fewer of them.");
+  expect(errorOf(anchors, { yamlAnchors: 60 })).toBeNull();
 });
 
 test("a path item that many paths point at counts for each of them", () => {
@@ -1072,34 +1086,39 @@ test("a path item that many paths point at counts for each of them", () => {
   });
   const pointing = (count: number, shared: object) =>
     JSON.stringify({ openapi: "3.1.0", paths: Object.fromEntries(Array.from({ length: count }, (_, index) => [`/${index}`, { $ref: "#/components/pathItems/Shared" }])), components: { pathItems: { Shared: shared } } });
+  const small = { values: 20_000 };
+  const tooLarge = /too large once its references are followed/;
   // Parameters without a schema, and responses without content, are values like any other.
-  expect(errorOf(pointing(400, item(3_000, 1)))).toMatch(/too large once its references are followed/);
-  expect(errorOf(pointing(4_000, item(0, 300)))).toMatch(/too large once its references are followed/);
+  expect(errorOf(pointing(40, item(600, 1)), small)).toMatch(tooLarge);
+  expect(errorOf(pointing(100, item(0, 300)), small)).toMatch(tooLarge);
   // So are a shared item's other keys, and an operation's tags and servers: each alone is too much.
-  const keys = Object.fromEntries(Array.from({ length: 5_000 }, (_, index) => [`x-${index}`, 1]));
-  expect(errorOf(pointing(300, { ...keys, get: { summary: "S" } }))).toMatch(/too large once its references are followed/);
-  const tags = Array.from({ length: 3_000 }, (_, index) => `T${index}`);
-  expect(errorOf(pointing(400, { get: { summary: "S", tags } }))).toMatch(/too large once its references are followed/);
-  const servers = Array.from({ length: 3_000 }, (_, index) => ({ url: `https://s${index}.example.com` }));
-  expect(errorOf(pointing(400, { get: { summary: "S", servers } }))).toMatch(/too large once its references are followed/);
+  const keys = Object.fromEntries(Array.from({ length: 1_000 }, (_, index) => [`x-${index}`, 1]));
+  expect(errorOf(pointing(30, { ...keys, get: { summary: "S" } }), small)).toMatch(tooLarge);
+  const tags = Array.from({ length: 600 }, (_, index) => `T${index}`);
+  expect(errorOf(pointing(40, { get: { summary: "S", tags } }), small)).toMatch(tooLarge);
+  const servers = Array.from({ length: 600 }, (_, index) => ({ url: `https://s${index}.example.com` }));
+  expect(errorOf(pointing(40, { get: { summary: "S", servers } }), small)).toMatch(tooLarge);
+  // Each of them reads where the limit is the real one.
+  expect(errorOf(pointing(40, { get: { summary: "S", tags, servers } }))).toBeNull();
   const few = read(pointing(50, item(20, 3)));
   expect(few.operations).toHaveLength(50);
   expect(few.operations[49]).toMatchObject({ key: "GET /49", group: "T", params: { length: 20 }, responses: { length: 3 } });
-}, 30_000);
+});
 
 test("the spec's own security list counts for every operation that has none of its own", () => {
   const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`/${index}`, { get: { summary: `S${index}` } }]));
   const securitySchemes = { bearer: { type: "http", scheme: "bearer" } };
-  const long = { openapi: "3.0.0", security: Array.from({ length: 1_000 }, () => ({ bearer: [] })), paths: paths(1_500), components: { securitySchemes } };
-  expect(errorOf(JSON.stringify(long))).toMatch(/too large once its references are followed/);
-  const short = spec({ security: [{ bearer: [] }, {}], paths: paths(1_500), components: { securitySchemes } });
-  expect(short.operations).toHaveLength(1_500);
-  expect(short.operations[1_499]!.auth).toEqual([["bearer"], []]);
+  const small = { values: 20_000 };
+  const long = { openapi: "3.0.0", security: Array.from({ length: 200 }, () => ({ bearer: [] })), paths: paths(150), components: { securitySchemes } };
+  expect(errorOf(JSON.stringify(long), small)).toMatch(/too large once its references are followed/);
+  const short = spec({ security: [{ bearer: [] }, {}], paths: paths(150), components: { securitySchemes } });
+  expect(short.operations).toHaveLength(150);
+  expect(short.operations[149]!.auth).toEqual([["bearer"], []]);
 
   // Each name in a requirement counts too, and the warnings about them stop at a number a team could read.
-  const names = { openapi: "3.0.0", security: [Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`s${index}`, []]))], paths: paths(600) };
-  expect(errorOf(JSON.stringify(names))).toMatch(/too large once its references are followed/);
-  const fewer = spec({ security: [Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`s${index}`, []]))], paths: paths(20) });
+  const names = { openapi: "3.0.0", security: [Object.fromEntries(Array.from({ length: 500 }, (_, index) => [`s${index}`, []]))], paths: paths(60) };
+  expect(errorOf(JSON.stringify(names), small)).toMatch(/too large once its references are followed/);
+  const fewer = spec({ security: [Object.fromEntries(Array.from({ length: 600 }, (_, index) => [`s${index}`, []]))], paths: paths(20) });
   expect(fewer.operations).toHaveLength(20);
   expect(fewer.warnings).toHaveLength(10_000);
 });
@@ -1273,6 +1292,26 @@ test("one rule when parts are folded in: a later part's word counts, and a schem
   expect(reversed.doc.types.map((type) => type.name)).toEqual(["Animal", "Pet", "Cat", "Wrapped"]);
   const wrapped = schemaOf(ref("Pet"), { Animal: { type: "object", properties: { name: { type: "string" } } }, Pet: { allOf: [ref("Animal"), { example: { name: "Rex" } }] } });
   expect(wrapped.example).toEqual({ name: "Rex" });
+
+  // At any depth: Animal's example isn't Pet's, which adds a field, so it isn't Dog's either, which only adds words to Pet.
+  const levels = {
+    Animal: { type: "object", example: { kind: "cat" }, default: { kind: "cat" }, properties: { kind: { type: "string" } } },
+    Pet: { allOf: [ref("Animal"), { properties: { name: { type: "string" } } }] },
+    Dog: { allOf: [ref("Pet")], description: "A dog.", readOnly: true },
+    // An example of Pet's own is Pet's, and so Puppy's, which adds nothing to it; Kitten adds a field.
+    Owned: { allOf: [ref("Pet")], example: { kind: "dog", name: "Rex" } },
+    Puppy: { allOf: [ref("Owned"), { description: "A young one." }], readOnly: true },
+    Kitten: { allOf: [ref("Owned"), { properties: { lives: { type: "integer" } } }] },
+  };
+  const made = { kind: "string", name: "string" };
+  expect(schemaOf(ref("Pet"), levels).example).toEqual(made);
+  const worded = schemaOf(ref("Dog"), levels);
+  expect(worded.example).toEqual(made);
+  expect(worded.schema).not.toHaveProperty("default");
+  expect(worded.schema).toMatchObject({ type: "Dog", description: "A dog.", constraints: "read-only" });
+  expect(schemaOf(ref("Animal"), levels)).toMatchObject({ example: { kind: "cat" }, schema: { default: { kind: "cat" } } });
+  expect(schemaOf(ref("Puppy"), levels).example).toEqual({ kind: "dog", name: "Rex" });
+  expect(schemaOf(ref("Kitten"), levels).example).toEqual({ kind: "string", name: "string", lives: 0 });
   expect(based.doc.types[2]!.schema).toMatchObject({ type: "Pet", ref: "Same", default: { name: "Rex" }, description: "A pet by another name." });
 });
 
@@ -1303,6 +1342,63 @@ test("an allOf of one reference and thousands of parts of only words is gone thr
   expect(result.doc.types[1]!.schema).toEqual({ type: "A", ref: "B" });
   expect(result.doc.warnings).toEqual([]);
   expect(searches).toBeLessThan(5);
+});
+
+test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () => {
+  const schemas = {
+    User: { type: "object", description: "A person.", required: ["id"], properties: { id: { type: "string" }, name: { type: "string" } } },
+    Code: { type: "string", minLength: 1 },
+    Holder: {
+      type: "object",
+      properties: {
+        // Only words: still the type, with the field's own description.
+        owner: { $ref: "#/components/schemas/User", description: "Who owns it." },
+        // More than words: the two together.
+        admin: { $ref: "#/components/schemas/User", required: ["name"], properties: { role: { type: "string", enum: ["admin"] } }, example: { id: "1", name: "Ada", role: "admin" } },
+        short: { $ref: "#/components/schemas/Code", maxLength: 5, enum: ["a", "b"] },
+        // Itself with more: only named, and said so.
+        twin: { $ref: "#/components/schemas/Holder", properties: { extra: { type: "string" } } },
+      },
+    },
+  };
+  const parts = { paths: { "/x": { get: { summary: "X", responses: { "200": json(ref("Holder")) } } } }, components: { schemas } };
+  const user = [
+    { name: "id", required: true, type: "string" },
+    { name: "name", required: false, type: "string" },
+  ];
+
+  const later = read(JSON.stringify({ openapi: "3.1.0", info: { title: "T", version: "1" }, ...parts }));
+  const response = later.operations[0]!.responses[0]!;
+  expect(response.schema!.properties).toEqual([
+    { name: "owner", required: false, type: "User", ref: "User", description: "Who owns it.", properties: user },
+    {
+      name: "admin",
+      required: false,
+      type: "object",
+      description: "A person.",
+      properties: [
+        { name: "id", required: true, type: "string" },
+        { name: "name", required: true, type: "string" },
+        { name: "role", required: false, type: "string", enum: ["admin"] },
+      ],
+    },
+    { name: "short", required: false, type: "string", constraints: "1–5 characters", enum: ["a", "b"] },
+    { name: "twin", required: false, type: "Holder", ref: "Holder" },
+  ]);
+  expect(response.example).toEqual({ owner: { id: "string", name: "string" }, admin: { id: "1", name: "Ada", role: "admin" }, short: "a" });
+  expect(codes(later)).toEqual(["ADDS_TO_ITSELF @ schemas › Holder › twin"]);
+
+  // 3.0: a reference is only the reference, with the description beside it read as before.
+  const earlier = spec(parts);
+  const before = earlier.operations[0]!.responses[0]!;
+  expect(before.schema!.properties).toEqual([
+    { name: "owner", required: false, type: "User", ref: "User", description: "Who owns it.", properties: user },
+    { name: "admin", required: false, type: "User", ref: "User", description: "A person.", properties: user },
+    { name: "short", required: false, type: "Code", ref: "Code", constraints: "at least 1 character" },
+    { name: "twin", required: false, type: "Holder", ref: "Holder" },
+  ]);
+  expect(before.example).toEqual({ owner: { id: "string", name: "string" }, admin: { id: "string", name: "string" }, short: "string" });
+  expect(earlier.warnings).toEqual([]);
 });
 
 test("a schema or parameter with thousands of other keys has them listed once, not on every use", () => {
@@ -1521,11 +1617,11 @@ test("servers: a relative address is kept as written, with a warning; none is no
 
 test("many operations that each spell out one wide schema stop the read early", () => {
   const wide = { type: "object", properties: Object.fromEntries(Array.from({ length: 150 }, (_, index) => [`f${index}`, { type: "string" }])) };
-  const paths = Object.fromEntries(Array.from({ length: 6_000 }, (_, index) => [`/${index}`, { get: { responses: { "200": { $ref: "#/components/responses/R" } } } }]));
+  const paths = Object.fromEntries(Array.from({ length: 200 }, (_, index) => [`/${index}`, { get: { responses: { "200": { $ref: "#/components/responses/R" } } } }]));
   const text = JSON.stringify({ openapi: "3.0.0", paths, components: { responses: { R: json(ref("S")) }, schemas: { S: wide } } });
-  expect(text.length).toBeLessThan(600_000);
-  expect(errorOf(text)).toMatch(/too large once its references are followed/);
-}, 30_000);
+  expect(errorOf(text, { values: 20_000 })).toMatch(/too large once its references are followed/);
+  expect(errorOf(text)).toBeNull();
+});
 
 test("what's left out is warned about", () => {
   const doc = spec({
