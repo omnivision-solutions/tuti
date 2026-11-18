@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { notFound, permanentRedirect, redirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 
 import { DocsArticle, DocsCollectionPage, docsPageListing, DocsTabPage } from "@/components/portal-docs";
+import { ApiReferenceLanding, referenceListing } from "@/components/portal-api-operation";
 import { apiReferencePage } from "@/server/api-reference-queries";
 import { docsPage } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
@@ -15,31 +16,38 @@ import { portalPageMetadata } from "@/server/portal-metadata";
 export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">): Promise<Metadata> {
   const { project, slug } = await props.params;
   const page = await docsPage(project, slug);
-  if (!page || page.kind === "redirect") {
+  const path = `/docs/${slug}`;
+  if (!page) {
+    // An API reference's, else none.
+    const listing = await referenceListing(project, slug);
+    return listing ? portalPageMetadata(project, { ...listing, path }) : {};
+  }
+  if (page.kind === "redirect") {
     return {};
   }
-  const path = `/docs/${slug}`;
   if (page.kind === "tab") {
     if (page.tab.locked || page.landing.kind === "overview") {
       return portalPageMetadata(project, { title: `${page.tab.name} · Documentation`, path, noindex: page.tab.locked });
+    }
+    if (page.landing.kind === "reference") {
+      return portalPageMetadata(project, { ...((await referenceListing(project, page.landing.slug)) ?? { title: page.landing.name }), path });
     }
     return portalPageMetadata(project, { ...docsPageListing(page.landing), path });
   }
   return portalPageMetadata(project, { ...docsPageListing(page), path, markdown: page.kind === "article" });
 }
 
-/** /docs/<slug>: an article, a tab or a collection (one name each), or where one went since; an API reference's goes to its first operation. */
+/** /docs/<slug>: an article, a tab, a collection or an API reference (one name each), or where one went since. */
 export default async function DocsSlugPage(props: PageProps<"/portal/[project]/docs/[slug]">) {
   const at = await portalLinks();
   const { project, slug } = await props.params;
   const page = await docsPage(project, slug);
   if (!page) {
-    // An API reference has no page of its own yet: its first operation's.
-    const first = (await apiReferencePage(project, slug))?.operations[0];
-    if (first) {
-      redirect(at(`/docs/${slug}/${first.slug}`));
+    // An API reference's, else a 404.
+    if (!(await apiReferencePage(project, slug))) {
+      notFound();
     }
-    notFound();
+    return <ApiReferenceLanding project={project} slug={slug} />;
   }
   if (page.kind === "redirect") {
     permanentRedirect(at(page.path));

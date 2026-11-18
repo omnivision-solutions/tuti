@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText } from "@tuti/content";
+import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { prisma } from "@tuti/db";
 import { type ApiDoc, type ApiReferenceState, onHelpCenter } from "@tuti/shared/api-reference";
@@ -59,6 +59,7 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
   }
   return {
     kind: "reference" as const,
+    projectId: row.projectId,
     reference: { ...reference, baseUrl: row.baseUrl, treeStyle: row.treeStyle },
     tab,
     doc,
@@ -66,12 +67,6 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
     operations,
     /** For some readers only: never for search engines. */
     restricted: isRestricted,
-    /** Its tab's references on the help center, in order, itself among them: the tree lists them after the collections. */
-    references: await prisma.apiReference.findMany({
-      where: { projectId: row.projectId, tabId: row.tabId, publishedAt: { not: null }, shownCount: { gt: 0 } },
-      orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { slug: true, name: true },
-    }),
   };
 });
 
@@ -95,3 +90,23 @@ export const markdownDoc = cache(async (text: string): Promise<Doc> => {
   const content = await htmlToContent("article", marked.parse(text, { async: false, gfm: true }));
   return "error" in content ? fromPlainText(text) : content.doc;
 });
+
+/** A spec's Markdown as plain words, its first line only: a card's, a search listing's or llms.txt's description. */
+export async function firstLine(text: string | undefined): Promise<string> {
+  return text?.trim() ? (toPlainText(await markdownDoc(text)).split("\n").find((line) => line.trim()) ?? "").trim() : "";
+}
+
+/**
+ * The first line of each of these references' descriptions, by slug (llms.txt). Read from inside the stored doc, as lists
+ * never load a whole one.
+ */
+export async function referenceDescriptions(projectSlug: string, slugs: string[]): Promise<Map<string, string>> {
+  if (slugs.length === 0) {
+    return new Map();
+  }
+  const rows = await prisma.$queryRaw<{ slug: string; description: string | null }[]>`
+    SELECT r.slug, r.doc->>'description' AS description
+    FROM api_reference r JOIN project p ON p.id = r."projectId"
+    WHERE p.slug = ${projectSlug} AND r.slug = ANY(${slugs})`;
+  return new Map(await Promise.all(rows.map(async (row) => [row.slug, await firstLine(row.description ?? undefined)] as const)));
+}

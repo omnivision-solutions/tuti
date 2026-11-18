@@ -353,6 +353,7 @@ describe("readers", () => {
         },
       ],
       uncollected: [],
+      references: [],
       // No tabs: one page.
       tabs: [],
       home: null,

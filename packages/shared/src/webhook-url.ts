@@ -35,6 +35,9 @@ for (const [network, prefix] of [
   // NAT64: translated to IPv4, which may be private.
   ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
+  // 6to4 and Teredo: an IPv4 address carried inside, which may be private.
+  ["2002::", 16],
+  ["2001::", 32],
   ["fc00::", 7],
   ["fe80::", 10],
   ["ff00::", 8],

@@ -132,6 +132,7 @@ describe("collections", () => {
         { slug: "basics", name: "Basics", description: "", icon: null, articles: [{ slug: "getting-started", title: "Getting started" }], collections: [] },
       ],
       uncollected: [{ slug: "shortcuts", title: "Shortcuts" }],
+      references: [],
       tabs: [],
       home: null,
       signedIn: true,

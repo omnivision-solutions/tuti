@@ -4,8 +4,10 @@ import { prisma } from "@tuti/db";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
+import { Fragment } from "react";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
+import { ApiReferenceLanding } from "@/components/portal-api-operation";
 import { articleLinks } from "@/components/article-links";
 import { StillStuck, type SupportContact } from "@/components/docs-assistant";
 import { DocsHomeHeader, PopularArticles, PopularChips } from "@/components/docs-home";
@@ -126,7 +128,7 @@ export async function DocsSearchResults({ projectSlug, query }: { projectSlug: s
  */
 async function DocsOverview({ project, docs, tab }: { project: string; docs: DocsContents; tab: DocsTabView | null }) {
   const at = await portalLinks();
-  const { collections, uncollected } = tab ?? docs;
+  const { collections, uncollected, references } = tab ?? docs;
   // The docs' home (the first tab's overview, or all of the docs) has the team's heading.
   const home = !tab || tab.slug === docs.home;
   // The tab's own popular articles, not another tab's. Customize's preview shows them as its unsaved setting says, so it
@@ -151,7 +153,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
       ) : (
         <PortalPageHeader title={tab.name} />
       )}
-      {collections.length === 0 && uncollected.length === 0 && (
+      {collections.length === 0 && uncollected.length === 0 && references.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
       )}
       {collections.length > 0 && (
@@ -179,6 +181,21 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                     <ArticleCount count={articleCount(collection)} />
                   </div>
                 </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {references.length > 0 && (
+        <ul aria-label="API references" className="grid gap-4 sm:grid-cols-2">
+          {references.map((reference) => (
+            <li key={reference.slug}>
+              <Link
+                href={at(`/docs/${reference.slug}`)}
+                className="flex h-full flex-col gap-1 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md sm:px-6"
+              >
+                <h2 className="font-sans text-[1.0625rem] font-semibold break-words">{reference.name}</h2>
+                <p className="text-sm font-medium text-muted-foreground">API reference</p>
               </Link>
             </li>
           ))}
@@ -222,8 +239,8 @@ export function LockedMessage({ signedIn }: { signedIn: boolean }) {
 }
 
 /**
- * A tab's path (/docs for the first; `tab` null without tabs): its overview, or the article or
- * collection it shows in its place; a locked tab, its name and LockedMessage.
+ * A tab's path (/docs for the first; `tab` null without tabs): its overview, or the article,
+ * collection or API reference it shows in its place; a locked tab, its name and LockedMessage.
  */
 export function DocsTabPage({
   project,
@@ -253,6 +270,8 @@ export function DocsTabPage({
       return <DocsArticle project={project} slug={landing.slug} article={landing.article} path={path} />;
     case "collection":
       return <DocsCollectionPage page={landing} />;
+    case "reference":
+      return <ApiReferenceLanding project={project} slug={landing.slug} />;
     case "overview":
       // Its cards are the collections: no tree beside them.
       return (
@@ -561,6 +580,12 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
       {isLocked && <LockedMark />}
     </>
   );
+  const references =
+    extra ??
+    (tree.references.length > 0 &&
+      tree.references.map((reference) => (
+        <Fragment key={reference.slug}>{link(reference.slug, reference.name, <span className="min-w-0 break-words">{reference.name}</span>, "font-medium text-foreground")}</Fragment>
+      )));
   const articles = (list: DocsTree["uncollected"]) => list.map((article) => <li key={article.slug}>{link(article.slug, article.title, locked(article.title, article.locked))}</li>);
   const contents = (collection: DocsTreeCollection) => (
     <ul className="flex flex-col gap-0.5">
@@ -591,10 +616,10 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
           <div className="my-1 ml-[1.0625rem] pl-2.5">{contents(collection)}</div>
         </details>
       ))}
-      {/* The tab's API references, after its collections. */}
-      {extra && <div className={cn("flex flex-col gap-1", tree.collections.length > 0 && "mt-3 border-t pt-4")}>{extra}</div>}
+      {/* The tab's API references, after its collections: a link each, or (on a reference's pages) `extra`. */}
+      {references && <div className={cn("flex flex-col gap-1", tree.collections.length > 0 && "mt-3 border-t pt-4")}>{references}</div>}
       {tree.uncollected.length > 0 && (
-        <ul className={cn("flex flex-col gap-0.5", (tree.collections.length > 0 || extra) && "mt-4 border-t pt-4")}>{articles(tree.uncollected)}</ul>
+        <ul className={cn("flex flex-col gap-0.5", (tree.collections.length > 0 || references) && "mt-4 border-t pt-4")}>{articles(tree.uncollected)}</ul>
       )}
     </nav>
   );
@@ -629,13 +654,13 @@ export function DocsLayout({
   headings?: Heading[];
   /** An article's page with sections: in reading mode (ReadingModeToggle) the tree and "On this page" go. */
   reading?: boolean;
-  /** In the tree after the collections: the tab's API references (an operation's page). */
+  /** In the tree after the collections, in place of the tab's references: the reference's own part (its pages). */
   extra?: React.ReactNode;
   /** An operation's page: from desktop width the page takes the room "On this page" would, for its examples beside it. */
   wide?: boolean;
   children: React.ReactNode;
 }) {
-  const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0 || extra) ? tree : null;
+  const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0 || tree.references.length > 0 || extra) ? tree : null;
   // Without a tree (a tab's overview), the team's sidebar links alone, where it has some.
   const nav = shown ? <DocsTree tree={shown} current={current} extra={extra} /> : <DocsSidebarLinks />;
   const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);

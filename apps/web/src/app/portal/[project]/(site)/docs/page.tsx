@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { referenceListing } from "@/components/portal-api-operation";
 import { DocsLayout, docsPageListing, DocsSearchResults, DocsTabPage } from "@/components/portal-docs";
 import { DOCS_HEADING } from "@/lib/portal-look";
 import { docsHome, docsTree } from "@/server/docs-queries";
@@ -20,6 +21,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs"
   const { tab, landing } = await docsHome(project);
   if (tab?.locked) {
     return portalPageMetadata(project, { title: "Documentation", path: "/docs", noindex: true });
+  }
+  if (landing.kind === "reference") {
+    return portalPageMetadata(project, { ...((await referenceListing(project, landing.slug)) ?? { title: landing.name }), path: "/docs" });
   }
   if (landing.kind !== "overview") {
     return portalPageMetadata(project, { ...docsPageListing(landing), path: "/docs" });

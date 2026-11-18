@@ -78,7 +78,7 @@ let warnedBadIp = false;
  * only from TRUSTED_IP_HEADER, a header the proxy sets. Without it there's no
  * per-visitor limit: X-Forwarded-For and the like can be anything the visitor sends.
  */
-async function clientHash(requestHeaders: Headers): Promise<string | null> {
+export async function clientHash(requestHeaders: Headers): Promise<string | null> {
   const header = process.env.TRUSTED_IP_HEADER?.trim();
   if (!header) {
     if (!warnedNoIpHeader) {

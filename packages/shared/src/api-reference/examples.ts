@@ -1,4 +1,4 @@
-import type { ApiDoc, ApiOperation, ApiParam, ApiSchema } from "./types";
+import type { ApiDoc, ApiOperation, ApiParam, ApiSchema, ApiServer } from "./types";
 
 export type ExampleRequest = {
   method: string;
@@ -10,7 +10,7 @@ export type ExampleRequest = {
 const PLACEHOLDER_HOST = "https://api.example.com";
 
 /** Without the slashes at one end: a loop, as a pattern for it is slow on a long run of them. */
-function trimSlashes(text: string, at: "start" | "end"): string {
+export function trimSlashes(text: string, at: "start" | "end"): string {
   let from = 0;
   let to = text.length;
   if (at === "start") while (from < to && text[from] === "/") from++;
@@ -23,14 +23,30 @@ function trimSlashes(text: string, at: "start" | "end"): string {
  * placeholder's, as nothing here knows where the spec is served; "//host/v1" only lacks its scheme.
  */
 /** Whether a spec's server says which host it's on ("https://…", "//host/v1"), not only a path. */
-const hasHost = (server: string) => server.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(server);
+export const hasHost = (server: string) => server.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(server);
 
-function absolute(server: string, base: string): string {
+export function absolute(server: string, base: string): string {
   if (server.startsWith("//")) return `https:${server}`;
   if (hasHost(server)) return server;
   // "./v1" and "." are relative to where the spec is: the base's root here.
   const path = trimSlashes(server.startsWith("./") ? server.slice(2) : server === "." ? "" : server, "start");
   return path ? `${base}/${path}` : base;
+}
+
+/**
+ * A spec's server as the reference's page lists it, variables left as `{name}`: one with a host as it is, one
+ * without on `base` (the reference's `baseUrl`, its query kept after the path), else on the placeholder's host the
+ * examples use (`placeholder`). Without a server, the base or the placeholder alone.
+ */
+export function serverAddress(server: ApiServer | undefined, base?: string): { url: string; placeholder: boolean } {
+  const filled = server?.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => server.variables?.[name]?.default ?? placeholder);
+  if (server && filled !== undefined && hasHost(filled)) {
+    return { url: server.url.startsWith("//") ? `https:${server.url}` : server.url, placeholder: false };
+  }
+  const [, basePath = "", baseQuery = ""] = /^([^?#]*)\??([^#]*)/.exec(base ?? "") ?? [];
+  const root = basePath ? trimSlashes(basePath, "end") : PLACEHOLDER_HOST;
+  const url = server ? absolute(server.url, root) : root;
+  return { url: baseQuery ? `${url}?${baseQuery}` : url, placeholder: !basePath };
 }
 
 export type ExampleOptions = {
