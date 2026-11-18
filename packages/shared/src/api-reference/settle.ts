@@ -94,6 +94,8 @@ export function settle(previous: { doc: ApiDoc; state: ApiReferenceState } | nul
   const added = previous ? [...keys].filter((key) => !known.has(key)) : [];
   // Hidden as the team sees it: an operation of the doc before that's off. A kept key of something
   // that left the spec hides nothing they could show again, so it doesn't count.
+  // (So a hidden operation that's gone for a whole read and then returns under another key is new
+  // like any other: counting its kept key would hide every later addition with no way to stop it.)
   const hidesSomething = previous !== null && onHelpCenter(previous.doc, previous.state).operations.length < previous.doc.operations.length;
   const doc = { ...next, operations, types };
   const state: ApiReferenceState = {
