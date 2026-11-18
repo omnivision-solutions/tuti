@@ -1523,16 +1523,7 @@ describe("the check before an edit is proposed (E5)", () => {
       },
     ],
   ])("a rewrite that stopped after taking an edit out is finished by %s, its help center's part only", async (_by, finish) => {
-    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
-    proposeEdit(96);
-    await merge(96);
-    // As a run leaves it that stopped once it took the edit out and marked its pull request.
-    const old = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 96 }, kind: "ARTICLE_EDIT" }, select: { id: true, codeChangeId: true } });
-    await call(dismissCodeChangeAction, team(), { id: old.id });
-    await prisma.codeChangeAction.update({ where: { id: old.id }, data: { decidedById: null, dismissReason: REWRITTEN } });
-    await prisma.codeChange.update({ where: { id: old.codeChangeId! }, data: { state: "FAILED", reason: REWRITING, retryAt: new Date(Date.now() + 3_600_000) } });
-
-    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    await markedForRewrite(96);
     pullRequest(96);
     const decided = model.decisions.length;
     model.reply(EDIT_AT, undefined, '"merge-96"');
@@ -1546,6 +1537,51 @@ describe("the check before an edit is proposed (E5)", () => {
     ).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true, scope: "correction" } } }]);
     // Nothing left to do.
     expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, analysed: 0 });
+  });
+
+  /** PR #`number`'s edit, written before the check, as a rewrite that stopped once it took the edit out leaves it. */
+  const markedForRewrite = async (number: number) => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    proposeEdit(number);
+    await merge(number);
+    const old = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" }, select: { id: true, codeChangeId: true } });
+    await call(dismissCodeChangeAction, team(), { id: old.id });
+    await prisma.codeChangeAction.update({ where: { id: old.id }, data: { decidedById: null, dismissReason: REWRITTEN } });
+    await prisma.codeChange.update({ where: { id: old.codeChangeId! }, data: { state: "FAILED", reason: REWRITING, retryAt: new Date(Date.now() + 3_600_000) } });
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    return old.codeChangeId!;
+  };
+
+  test("a progress update of the pull request's, held back while its edits wait to be written again, goes back on the schedule after", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotProgress: true } });
+    const codeChangeId = await markedForRewrite(97);
+    const post = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+    const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } })).id;
+    const progress = await prisma.codeChangeAction.create({
+      data: { codeChangeId, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Dark is on its way." }, status: "SCHEDULED", dueAt: new Date(Date.now() - 1000) },
+    });
+    // Due meanwhile: held, as any update of a pull request being analysed again.
+    await runDueAutopilot();
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: progress.id }, select: { status: true, waitReason: true } })).toEqual({ status: "PENDING", waitReason: "Its pull request was analysed again" });
+    pullRequest(97);
+    model.reply(EDIT_AT, undefined, '"merge-97"');
+    model.reply(EDIT, undefined, '"problem"');
+    model.reply(ACCEPT, undefined, '"article_after"');
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, analysed: 1 });
+    // The same update (not decided again), going out by itself after a fresh hold.
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: progress.id }, select: { status: true, payload: true } })).toEqual({ status: "SCHEDULED", payload: { comment: "Dark is on its way." } });
+  });
+
+  test("a rewrite the AI provider didn't answer fails, saying so, and isn't tried again by itself (that would analyse the whole pull request)", async () => {
+    await markedForRewrite(98);
+    pullRequest(98);
+    model.fail(503);
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, analysed: 1 });
+    expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 98 }, select: { state: true, reason: true, retryAt: true } })).toEqual({
+      state: "FAILED",
+      reason: "The AI provider didn't answer.",
+      retryAt: null,
+    });
   });
 
   test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
