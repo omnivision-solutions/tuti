@@ -67,6 +67,38 @@ paths:
       responses: { "204": { description: Gone } }
 `;
 
+/** Its own reference ("Tags"): a way of signing the reference can't describe, and a body and a response that aren't objects. */
+const TAGS = `
+openapi: 3.1.0
+info: { title: Tags API, version: "1" }
+components:
+  securitySchemes:
+    key: { type: http, scheme: bearer }
+    mtls: { type: mutualTLS }
+paths:
+  /tags:
+    put:
+      tags: [Posts]
+      summary: Set the tags
+      security: [{ key: [], mtls: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: array, description: Every ${SECRET} tag, maxItems: 5, default: [bug], items: { type: string, enum: [bug, idea], maxLength: 20 } }
+      responses:
+        "200":
+          description: How it went
+          content:
+            text/plain:
+              schema: { type: string, description: The ${SECRET} outcome, enum: [saved, unchanged], default: saved }
+    get:
+      tags: [Posts]
+      summary: List the tags
+      security: [{ key: [], mtls: [] }, { key: [] }]
+      responses: { "200": { description: The tags } }
+`;
+const addTags = () => call(createApiReference, as(), { name: "Tags", spec: TAGS, tab: "api" });
+
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 
 /** Two tabs, Guides (first, with an article) and API, with the reference in API. */
@@ -179,6 +211,16 @@ describe("an operation's page", () => {
     const optional = await pageText("create-a-post");
     expect(optional).toContain('"Bearer token"');
     expect(optional).toContain(", or none");
+    // A way that needs a scheme the reference can't describe isn't named by the rest of it: the token alone isn't enough.
+    await addTags();
+    const partly = await pageText("set-the-tags", "tags");
+    expect(partly).toContain("/tags");
+    expect(partly).not.toContain("Authorization");
+    expect(partly).not.toContain("Bearer token");
+    // Another way that's all known is still shown, alone.
+    const either = await pageText("list-the-tags", "tags");
+    expect(either).toContain('"Bearer token"');
+    expect(either).not.toContain('" or "');
     // None listed: it needs none, or one the reference doesn't show, so the page says nothing either way.
     const unlisted = await pageText("purge");
     expect(unlisted).toContain("/admin/purge");
@@ -224,6 +266,21 @@ describe("an operation's page", () => {
     expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/create-a-post");
     await setTab("SIGNED_IN");
     await expect(redirectTarget(slugPage("reference"))).rejects.toThrow("Expected the action to redirect");
+  });
+});
+
+describe("a body or response that isn't an object", () => {
+  test("shows what its own schema says: an array's item type, limits and allowed values, a plain value's description, default and allowed values", async () => {
+    await addTags();
+    const text = await pageText("set-the-tags", "tags");
+    // The body: an array of strings, each one of two.
+    for (const shown of ["application/json · array of string · at most 5 items", `Every ${SECRET} tag`, '"Default: "', '[\\"bug\\"]', "Each item: ", "at most 20 characters", '"Each item one of"', '\\"idea\\"']) {
+      expect(text).toContain(shown);
+    }
+    // The response: a plain string, one of two.
+    for (const shown of ["text/plain · string", `The ${SECRET} outcome`, '"One of"', '\\"saved\\"', '\\"unchanged\\"']) {
+      expect(text).toContain(shown);
+    }
   });
 });
 

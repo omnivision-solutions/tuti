@@ -60,7 +60,11 @@ async function ReferenceTree({ page, current }: { page: Reference; current: stri
               aria-current={operation.slug === current ? "page" : undefined}
               className={cn(rest, "flex items-center justify-between gap-2 aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground")}
             >
-              <span className={cn("min-w-0 break-words", operation.deprecated && "line-through")}>{operation.title}</span>
+              <span className={cn("min-w-0 break-words", operation.deprecated && "line-through")}>
+                {operation.title}
+                {/* The line through it isn't read out. */}
+                {operation.deprecated && <span className="sr-only"> (deprecated)</span>}
+              </span>
               {/* GraphQL's groups already say which kind each is. */}
               {page.doc.format === "openapi" && <Method kind={operation.kind} />}
             </Link>
@@ -128,11 +132,15 @@ function authLabel(auth: ApiAuth): ReactNode {
 
 /**
  * How the operation is signed: any one of its ways, each the schemes it needs together, and "or none" when unsigned
- * is one of them. Nothing for an operation with no way listed: it needs none, or only one the reference doesn't show
- * (digest, mutual TLS), and the shape doesn't say which, so the page never says "none needed".
+ * is one of them. A way that needs a scheme the reference doesn't show (digest, mutual TLS) is left out whole: named
+ * by the rest of its schemes, it would read as if they were enough. Nothing for an operation with no way left: it needs
+ * none, or only ones that can't be described, and the shape doesn't say which, so the page never says "none needed".
  */
 function Signing({ operation, schemes }: { operation: ApiOperation; schemes: ApiAuth[] }) {
-  const ways = operation.auth.map((keys) => keys.flatMap((key) => schemes.find((scheme) => scheme.key === key) ?? [])).filter((way) => way.length > 0);
+  const ways = operation.auth
+    .filter((keys) => keys.length > 0)
+    .map((keys) => keys.map((key) => schemes.find((scheme) => scheme.key === key)))
+    .filter((way): way is ApiAuth[] => way.every((scheme) => scheme !== undefined));
   if (ways.length === 0) {
     return null;
   }
@@ -171,6 +179,67 @@ function inside(schema: ApiSchema): { properties: ApiProperty[] } | { oneOf: Api
   return null;
 }
 
+/** The values an array holds, when they're plain ones (no fields or shapes of their own): an array of arrays', the innermost. */
+function plainItems(schema: ApiSchema): ApiSchema | null {
+  let item = schema.items;
+  while (item?.items) {
+    item = item.items;
+  }
+  return item && !inside(item) ? item : null;
+}
+
+/** The values a schema may be. */
+function Allowed({ label, values }: { label: string; values: unknown[] | undefined }) {
+  return (
+    values &&
+    values.length > 0 && (
+      <p className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
+        {label}
+        {values.map((value, i) => (
+          <Value key={i}>{literal(value)}</Value>
+        ))}
+      </p>
+    )
+  );
+}
+
+/**
+ * What a schema says about its own value, under its name and type: its description, default and allowed values, and
+ * for an array of plain values what each item is held to. A field's, and a body's or response's own (one that's an
+ * array of strings or a plain value has nothing else to show).
+ */
+function Details({ schema, description }: { schema: ApiSchema; description?: string }) {
+  const item = plainItems(schema);
+  const limits = item && [item.format, item.nullable && "nullable", item.constraints].filter(Boolean).join(" · ");
+  return (
+    <>
+      <Markdown text={description || schema.description} className="gap-2 text-[0.9375rem] text-muted-foreground" />
+      {schema.default !== undefined && (
+        <p className="text-[0.8125rem] text-muted-foreground">
+          Default: <Value>{literal(schema.default)}</Value>
+        </p>
+      )}
+      <Allowed label="One of" values={schema.enum} />
+      {limits && <p className="text-[0.8125rem] text-muted-foreground">Each item: {limits}</p>}
+      <Markdown text={item?.description} className="gap-2 text-[0.9375rem] text-muted-foreground" />
+      <Allowed label="Each item one of" values={item?.enum} />
+    </>
+  );
+}
+
+/** A schema's type in words, with its format and limits. */
+const typeLine = (schema: ApiSchema) => [schema.type, schema.format, schema.nullable && "nullable", schema.constraints];
+
+/** A body's or a response's schema: what it says of itself, then its fields. */
+function Root({ schema }: { schema: ApiSchema }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Details schema={schema} />
+      <Fields schema={schema} />
+    </div>
+  );
+}
+
 /** A schema's fields, or its shapes each as a row. */
 function Fields({ schema }: { schema: ApiSchema }) {
   const within = inside(schema);
@@ -200,25 +269,12 @@ function Field({ name, required = false, description, schema }: { name: string; 
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <code className={cn("font-mono text-sm font-medium break-all", schema.deprecated && "line-through")}>{name}</code>
         <span className="text-[0.8125rem] break-words text-muted-foreground">
-          {[schema.type, schema.format, schema.nullable && "nullable", schema.constraints].filter(Boolean).join(" · ")}
+          {typeLine(schema).filter(Boolean).join(" · ")}
         </span>
         {required && <span className="text-xs font-medium text-highlight-foreground">required</span>}
         {schema.deprecated && <span className="text-xs font-medium text-muted-foreground">deprecated</span>}
       </div>
-      <Markdown text={description || schema.description} className="gap-2 text-[0.9375rem] text-muted-foreground" />
-      {schema.default !== undefined && (
-        <p className="text-[0.8125rem] text-muted-foreground">
-          Default: <Value>{literal(schema.default)}</Value>
-        </p>
-      )}
-      {schema.enum && schema.enum.length > 0 && (
-        <p className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
-          One of
-          {schema.enum.map((value, i) => (
-            <Value key={i}>{literal(value)}</Value>
-          ))}
-        </p>
-      )}
+      <Details schema={schema} description={description} />
       {within && (
         // Its own toggle only ([open]>summary>): a named group would follow any open field it's in.
         <details>
@@ -372,8 +428,8 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             );
           })}
           {operation.body && (
-            <Section title="Body" note={[operation.body.contentType, operation.body.schema.type, operation.body.required && "required"].filter(Boolean).join(" · ")}>
-              <Fields schema={operation.body.schema} />
+            <Section title="Body" note={[operation.body.contentType, ...typeLine(operation.body.schema), operation.body.required && "required"].filter(Boolean).join(" · ")}>
+              <Root schema={operation.body.schema} />
             </Section>
           )}
           {openapi && operation.responses.length > 0 && (
@@ -396,8 +452,8 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
                             {row}
                           </summary>
                           <div className="pb-3 pl-6.5">
-                            <p className="mb-2 text-[0.8125rem] text-muted-foreground">{[response.contentType, response.schema.type].filter(Boolean).join(" · ")}</p>
-                            <Fields schema={response.schema} />
+                            <p className="mb-2 text-[0.8125rem] text-muted-foreground">{[response.contentType, ...typeLine(response.schema)].filter(Boolean).join(" · ")}</p>
+                            <Root schema={response.schema} />
                           </div>
                         </details>
                       ) : (

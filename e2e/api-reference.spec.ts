@@ -106,7 +106,8 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   const tree = reader.getByRole("navigation", { name: "Docs", exact: true });
   await expect(tree.getByRole("link", { name: "Introduction" })).toBeVisible();
   await expect(tree.getByRole("link", { name: "List posts GET", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(tree.getByRole("link", { name: "Delete a post DELETE", exact: true })).toBeVisible();
+  // A deprecated one says so in its name: the line through it isn't read out.
+  await expect(tree.getByRole("link", { name: "Delete a post (deprecated) DELETE", exact: true })).toBeVisible();
   await expect(tree.getByText("Purge everything")).toHaveCount(0);
   await tree.getByRole("link", { name: "Create a post POST", exact: true }).click();
 
@@ -168,7 +169,7 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   await checkpoint(reader, "operation-python-and-400", { fullPage: false });
 
   // A deprecated operation says so, and its path's parameter is marked.
-  await tree.getByRole("link", { name: "Delete a post DELETE", exact: true }).click();
+  await tree.getByRole("link", { name: "Delete a post (deprecated) DELETE", exact: true }).click();
   const deleting = reader.getByRole("article", { name: "Delete a post" });
   await expect(deleting.getByText("Deprecated", { exact: true })).toBeVisible();
   await expect(deleting.getByText("{number}", { exact: true })).toBeVisible();
