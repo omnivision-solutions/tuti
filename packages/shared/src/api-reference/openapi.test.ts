@@ -531,6 +531,32 @@ test("parameters: the path's and the operation's, the operation's winning", () =
   expect(codes(odd)).toEqual(["INVALID_PARAMETER @ GET /a/{id} › parameters › 4", "INVALID_PARAMETER @ GET /a/{id} › parameters › body"]);
 });
 
+test("a parameter's example is its own, its content's, or its schema's, written either way", () => {
+  const doc = spec({
+    openapi: "3.1.0",
+    paths: {
+      "/a": {
+        get: {
+          summary: "A",
+          parameters: [
+            { name: "limit", in: "query", schema: { type: "integer", examples: [20, 50] } },
+            { name: "page", in: "query", schema: { type: "integer", example: 2, examples: [3] } },
+            { name: "own", in: "query", example: 7, schema: { type: "integer", examples: [20] } },
+            { name: "none", in: "query", schema: { type: "integer", examples: [] } },
+          ],
+          responses: {},
+        },
+      },
+    },
+  });
+  expect(doc.operations[0]!.params.map((param) => [param.name, param.example])).toEqual([
+    ["limit", 20],
+    ["page", 2],
+    ["own", 7],
+    ["none", undefined],
+  ]);
+});
+
 test("the body is in JSON when it can be, else its first content type", () => {
   const doc = read(JSON.stringify(fixture));
   expect(operation(doc, "POST /posts").body).toEqual({
@@ -1344,6 +1370,14 @@ test("one rule when parts are folded in: a later part's word counts, and a schem
   expect(schemaOf(ref("Animal"), levels)).toMatchObject({ example: { kind: "cat" }, schema: { default: { kind: "cat" } } });
   expect(schemaOf(ref("Puppy"), levels).example).toEqual({ kind: "dog", name: "Rex" });
   expect(schemaOf(ref("Kitten"), levels).example).toEqual({ kind: "string", name: "string", lives: 0 });
+
+  // The schema's own example and default, written in a part before a base that has its own, are still the schema's.
+  const first = schemaOf(ref("Cat"), {
+    Pet: { type: "object", example: { name: "Rex" }, default: { name: "Rex" }, properties: { name: { type: "string" } } },
+    Cat: { allOf: [{ properties: { lives: { type: "integer" } }, example: { lives: 9, name: "Tom" }, default: { lives: 9 } }, ref("Pet")] },
+  });
+  expect(first.example).toEqual({ lives: 9, name: "Tom" });
+  expect(first.schema.default).toEqual({ lives: 9 });
   expect(based.doc.types[2]!.schema).toMatchObject({ type: "Pet", ref: "Same", default: { name: "Rex" }, description: "A pet by another name." });
 });
 

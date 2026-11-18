@@ -425,6 +425,8 @@ function read(root: Obj, most: number): ApiDoc {
     /** What each part was folded into, and whether by a reference: the schema itself has neither. */
     const into = new Map<Obj, Obj>();
     const referenced = new Set<Obj>();
+    /** The schema and the parts written in it, not come in with a reference. */
+    const written = new Set<Obj>();
     const folds = new Map<Obj, Obj[]>();
     const add = (part: Obj | null, parent: Obj | null, byReference: boolean) => {
       if (!part || seen.has(part)) return;
@@ -435,6 +437,7 @@ function read(root: Obj, most: number): ApiDoc {
       if (beside) beside.push(part);
       else if (parent) folds.set(parent, [part]);
       if (byReference) referenced.add(part);
+      else if (!parent || written.has(parent)) written.add(part);
       // Folding in a wide schema is work and memory like spelling it out, so it counts the same.
       docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
       if (docNodes > most) throw TOO_LARGE;
@@ -454,11 +457,13 @@ function read(root: Obj, most: number): ApiDoc {
     // one's, and a schema's own over all it folds in. Only the keywords the reader reads, so a part
     // with thousands of other keys costs what its fields do.
     const said = new Map<string, Obj>();
+    const own = new Map<string, unknown>();
     for (const part of after) {
       for (const key of KEYWORDS) {
         if (!Object.hasOwn(part, key)) continue;
         merged.set(key, part[key]);
         said.set(key, part);
+        if (written.has(part)) own.set(key, part[key]);
       }
       for (const name of list(part.required)) required.add(name);
       for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
@@ -476,6 +481,11 @@ function read(root: Obj, most: number): ApiDoc {
     for (const key of ["example", "examples", "default"]) {
       let owner = said.get(key);
       while (owner && owner !== schema && !referenced.has(owner)) owner = into.get(owner);
+      // The schema's own, where it has one, over a referenced type's, wherever among the parts each is written.
+      if (owner && owner !== schema && own.has(key)) {
+        merged.set(key, own.get(key));
+        continue;
+      }
       for (let part = owner; part && part !== schema; part = into.get(part)) {
         const parent = into.get(part);
         if (parent && (fieldsOf(parent.properties).length > 0 || (folds.get(parent) ?? []).some((other) => other !== part && adds(other)))) merged.delete(key);
@@ -760,6 +770,8 @@ function read(root: Obj, most: number): ApiDoc {
     const target = followSchema(holder.schema);
     const schema = target && flatten(target);
     if (schema && Object.hasOwn(schema, "example")) return data(schema.example, where);
+    // 3.1's way of writing one.
+    if (schema && Array.isArray(schema.examples) && schema.examples.length > 0) return data(schema.examples[0], where);
     if (!make || holder.schema === undefined) return undefined;
     rootNodes = 0;
     return sample(holder.schema, [], where);
