@@ -53,7 +53,7 @@ export function SettingBlock({ children, className }: { children: ReactNode; cla
 
 /**
  * A settings page (Settings', beside its section pane): a pane titled by the page, `description` a line under the
- * header, then its cards in one centred column. `back`: the page it's a part of (Advanced tuning's AI models).
+ * header, then its cards in one centred column. `back`: the page it's a part of (Advanced tuning's Autopilot).
  */
 export function SettingsPane({
   title,

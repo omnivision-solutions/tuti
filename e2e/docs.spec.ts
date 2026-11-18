@@ -1685,12 +1685,6 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(aiModel.getByRole("radio", { name: "Best" })).toBeChecked();
   await expect(team.getByText("Answers Claude Sonnet 5.5 · Summaries Claude Sonnet 5.5", { exact: true })).toBeVisible();
   await checkpoint(team, "team-ai-answers-settings");
-  // Its rows are gone from Settings → AI models.
-  await team.goto(`/app/${slug}/settings/ai-models`);
-  await expect(team.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
-  await expect(team.getByRole("radiogroup", { name: "AI answers" })).toHaveCount(0);
-  await expect(team.getByRole("radiogroup", { name: "Ask a person (summaries)" })).toHaveCount(0);
-  await expect(team.getByText(/AI answers is on the/)).toHaveCount(0);
 
   // A published article whose only section is close to the visitor's question.
   const question = "How do I add a colleague to my project?";

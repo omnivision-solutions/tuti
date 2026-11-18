@@ -84,9 +84,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // Linking by itself is on for a new project; its owner can turn it off.
   const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
   await expect(autoLinks).toBeChecked();
-  await expect(owner.getByText("Off, Autopilot makes no links.", { exact: false })).toBeVisible();
-  await autoLinks.click();
+  // Flipped from the keyboard, the switch keeps focus while it saves and after.
+  await autoLinks.focus();
+  await owner.keyboard.press("Space");
   await expect(owner.getByText("Autopilot doesn't link posts")).toBeVisible();
+  await expect(autoLinks).not.toBeChecked();
+  await expect(autoLinks).toBeFocused();
   // The page saves one way: switches and ticks as they change, the numbers (what always waits, and the hold) with its one Save.
   await expect(owner.getByRole("switch", { name: "Complete posts" })).not.toBeChecked();
   await owner.getByRole("switch", { name: "Complete posts" }).click();

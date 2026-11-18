@@ -1,4 +1,4 @@
-import { AI_GROUPS, AI_LEVELS, type AiGroup, type AiLevel, type AiRole, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, offeredLevels, planAllowsLevel, type PlanKey, roleNeedsTools, withinModelCap } from "@tuti/shared";
+import { AI_GROUPS, AI_LEVELS, aiLevelRows, type AiGroup, type AiLevel, type AiRole, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, offeredLevels, planAllowsLevel, type PlanKey, roleNeedsTools, withinModelCap } from "@tuti/shared";
 
 import type { ListedModel } from "@/lib/model-tiers";
 import { type UpgradePrompt, upgradePrompt } from "@/lib/upgrade-prompt";
@@ -22,8 +22,8 @@ export type AiModelSettingProps = {
   summary: string;
   /** Said when the saved level isn't the one in use. */
   notice: string | null;
-  /** Custom's rows: the model picked ("" for none) and the server's own, which it runs on until one is. */
-  roles: { role: AiRole; label: string; model: string; default: string; agent: boolean }[];
+  /** Custom's rows: the model picked ("" for none; "off" for a role switched off, shown as Off), the server's own, which Custom runs on until one is picked, and the one in use now. */
+  roles: { role: AiRole; label: string; model: string; default: string; used: string; agent: boolean }[];
   /** The endpoint's models a project may pick; empty when the list couldn't be read (an id can still be typed). */
   listed: ListedModel[];
   /** Where AI is paid with credits, how many a dollar of it costs, to price a pick in them. */
@@ -57,7 +57,7 @@ export async function aiModelSetting<G extends AiGroup>(project: { id: string; s
     })),
     summary: roles.map(({ role, label }) => `${label} ${name(models[role].used)}`).join(" · "),
     notice: saved === used ? null : `${LEVEL_NAMES[saved]} isn't available on this ${offered.includes(saved) ? "plan" : "server"}.`,
-    roles: roles.map(({ role, label }) => ({ role, label, model: models[role].model ?? "", default: models[role].default, agent: roleNeedsTools(role) })),
+    roles: roles.map(({ role, label }) => ({ role, label, model: models[role].model ?? "", default: models[role].default, used: models[role].used, agent: roleNeedsTools(role) })),
     listed: all.filter(withinModelCap),
     creditsPerDollar: creditsEnabled() ? creditsPerUsageDollar() : null,
   };
@@ -70,4 +70,21 @@ function levelUpgrade(level: AiLevel, projectSlug: string): UpgradePrompt {
   }
   const prompt = upgradePrompt("aiTuning", projectSlug, true);
   return { ...prompt, title: prompt.title.replace(/^Advanced tuning/, "Picking your own AI models") };
+}
+
+/**
+ * Settings → Autopilot's Checks switch, from the page's AI model setting, so the two agree: on when the checks run on a
+ * model now. Null where there's nothing to switch: the checks wouldn't run with the switch on either (the server's own
+ * model for them is off, and the level in use has none), so it never says "on" while they're off.
+ * ponytail: on such a server under Custom, switching off a model picked for Checks leaves no switch (on would run
+ * nothing: Off replaced the pick), and the model is picked again in its box; store Off apart from the pick if that matters.
+ */
+export function checksSwitch({ used, roles }: Pick<AiModelSettingProps, "used" | "roles">): { on: boolean } | null {
+  const checks = roles.find(({ role }) => role === "code_changes_check");
+  if (!checks) {
+    return null;
+  }
+  // What the checks run on with the switch on: the model in use, or, with Off saved, the level's (Custom's is the server's own until one is picked).
+  const whenOn = checks.model !== "off" ? checks.used : ((used === "affordable" || used === "best" ? aiLevelRows()[used]?.code_changes_check : undefined) ?? checks.default);
+  return whenOn === "off" ? null : { on: checks.used !== "off" };
 }

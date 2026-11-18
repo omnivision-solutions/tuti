@@ -18,8 +18,11 @@ import { saveAiModel } from "@/server/ai-models";
  * include looks like any other and opens the upgrade prompt, saving nothing.
  */
 export function AiModelSetting({ projectSlug, group, saved, used, levels, summary, notice, roles, listed, creditsPerDollar }: AiModelSettingProps) {
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [shown, setShown] = useOptimistic(used);
+  // A level being saved: the segments take no second choice until it's over. A role's model being saved doesn't hold
+  // them (leaving its box to click a level starts that save): saves run in order, so the level chosen after it wins.
+  const [choosing, setChoosing] = useState(false);
   // The last prompt opened stays while the dialog closes.
   const [prompt, setPrompt] = useState<UpgradePrompt | null>(null);
   const [upgrading, setUpgrading] = useState(false);
@@ -39,6 +42,9 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
         } else if (level) {
           toast.error(result.error);
         }
+        if (level) {
+          setChoosing(false);
+        }
         resolve(result.error);
       }),
     );
@@ -56,9 +62,9 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
               aria-checked={shown === level}
               aria-describedby={upgrade ? `${id}-${level}` : undefined}
               // Not `disabled` while it saves: the segment just chosen would lose focus.
-              aria-disabled={pending || undefined}
+              aria-disabled={choosing || undefined}
               onClick={() => {
-                if (pending) {
+                if (choosing) {
                   return;
                 }
                 if (upgrade) {
@@ -66,7 +72,8 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
                   setUpgrading(true);
                 } else if (level !== saved) {
                   // The one in use but not the one saved (Balanced, standing in for a level the plan lacks) can be chosen too.
-                  save({ levels: { [group]: level } }, level);
+                  setChoosing(true);
+                  void save({ levels: { [group]: level } }, level);
                 }
               }}
               className={cn(
@@ -96,9 +103,17 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
           )}
           {shown === "custom" && (
             <div className="flex flex-col gap-3 border-l pl-4">
-              {roles.map((role) => (
-                <RoleModel key={role.role} {...role} listed={role.agent ? listed.filter((model) => model.tools) : listed} creditsPerDollar={creditsPerDollar} onPick={(model) => save({ [role.role]: model })} />
-              ))}
+              {roles.map((role) =>
+                // Switched off (Autopilot's Checks, by its switch on the page): said, with no model to pick until it's on again.
+                role.model === "off" ? (
+                  <p key={role.role} className="flex gap-4">
+                    <span className="w-24 shrink-0 font-medium">{role.label}</span>
+                    <span className="text-muted-foreground">Off</span>
+                  </p>
+                ) : (
+                  <RoleModel key={role.role} {...role} listed={role.agent ? listed.filter((model) => model.tools) : listed} creditsPerDollar={creditsPerDollar} onPick={(model) => save({ [role.role]: model })} />
+                ),
+              )}
             </div>
           )}
         </div>

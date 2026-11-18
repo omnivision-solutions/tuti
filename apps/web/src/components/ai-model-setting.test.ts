@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement as h } from "react";
 import { createRoot } from "react-dom/client";
+import { toast } from "sonner";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { AiModelSettingProps } from "@/lib/ai-model-setting";
@@ -25,8 +26,8 @@ const props: AiModelSettingProps = {
   summary: "Drafts Claude Haiku 5.5 · Summaries Claude Haiku 5.5",
   notice: null,
   roles: [
-    { role: "support_draft", label: "Drafts", model: "", default: "anthropic/claude-haiku-5.5", agent: false },
-    { role: "support_summary", label: "Summaries", model: "acme/tiny", default: "anthropic/claude-haiku-5.5", agent: false },
+    { role: "support_draft", label: "Drafts", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: false },
+    { role: "support_summary", label: "Summaries", model: "acme/tiny", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: false },
   ],
   listed: [{ id: "acme/tiny", name: "Acme: Tiny", input: 1e-7, output: 4e-7, tools: true }],
   creditsPerDollar: null,
@@ -40,12 +41,21 @@ async function render(changes: Partial<AiModelSettingProps> = {}) {
   return { root, radio, checked: () => [...root.querySelectorAll('[role="radio"][aria-checked="true"]')].map((button) => button.textContent) };
 }
 
+const type = (input: HTMLInputElement, value: string) =>
+  act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+const leave = (input: HTMLInputElement) => act(async () => input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+
 afterEach(() => {
+  vi.restoreAllMocks();
   saveAiModel.mockClear();
   document.body.replaceChildren();
 });
 
 test("the level in use is the one selected, with each role's model in a line; choosing another saves it at once", async () => {
+  const confirmed = vi.spyOn(toast, "success");
   const { root, radio, checked } = await render();
   expect([...root.querySelectorAll('[role="radio"]')].map((button) => button.textContent)).toEqual(["Affordable", "Balanced", "Best", "Custom"]);
   expect(checked()).toEqual(["Balanced"]);
@@ -64,7 +74,10 @@ test("the level in use is the one selected, with each role's model in a line; ch
   expect([radio("Best").disabled, radio("Best").getAttribute("aria-disabled"), document.activeElement === radio("Best")]).toEqual([false, "true", true]);
   await act(async () => radio("Affordable").click());
   expect(saveAiModel).toHaveBeenCalledTimes(1);
+  // Nothing is confirmed until it's saved; then it is, once, in a toast like every setting that saves by itself.
+  expect(confirmed).not.toHaveBeenCalled();
   await act(async () => saved({}));
+  expect(confirmed.mock.calls).toEqual([["AI model saved"]]);
   expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
 });
 
@@ -90,12 +103,6 @@ test("Custom lists a model for each role; one picked from the list saves at once
   const [drafts, summaries] = [...root.querySelectorAll("input")];
   expect([root.querySelector(`label[for="${drafts!.id}"]`)?.textContent, drafts!.value, drafts!.placeholder]).toEqual(["Drafts", "", "anthropic/claude-haiku-5.5"]);
   expect(summaries!.value).toBe("acme/tiny");
-  const type = (input: HTMLInputElement, value: string) =>
-    act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  const leave = (input: HTMLInputElement) => act(async () => input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
   // Leaving a box unchanged saves nothing.
   await leave(summaries!);
   expect(saveAiModel).not.toHaveBeenCalled();
@@ -157,4 +164,43 @@ test("a save that throws is over like one refused: the control takes choices aga
   expect(checked()).toEqual(["Balanced"]);
   await act(async () => radio("Best").click());
   expect(saveAiModel).toHaveBeenCalledTimes(2);
+});
+
+test("a level chosen while a typed model is still saving isn't ignored: it's saved after the model, so the level wins", async () => {
+  const { root, radio, checked } = await render({ saved: "custom", used: "custom", levels: props.levels.map((level) => ({ ...level, upgrade: null })) });
+  const [drafts] = [...root.querySelectorAll("input")];
+  let saved!: (result: { error?: string }) => void;
+  saveAiModel.mockImplementationOnce(() => new Promise((resolve) => (saved = resolve)));
+  // Leaving the box to click a level is what saves the id typed: the click comes while that save is on its way.
+  await type(drafts!, "acme/other");
+  await leave(drafts!);
+  expect(saveAiModel).toHaveBeenCalledTimes(1);
+  expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
+  await act(async () => radio("Best").click());
+  expect(saveAiModel.mock.calls).toEqual([
+    ["acme", { support_draft: "acme/other" }],
+    ["acme", { levels: { support: "best" } }],
+  ]);
+  expect(checked()).toEqual(["Best"]);
+  await act(async () => saved({}));
+  expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
+});
+
+test("a role switched off (Autopilot's Checks) is said to be off under Custom, with no model to pick", async () => {
+  const { root } = await render({
+    group: "code_changes",
+    saved: "custom",
+    used: "custom",
+    levels: props.levels.map((level) => ({ ...level, upgrade: null })),
+    summary: "Decides Claude Haiku 5.5 · Checks Off · Writes Claude Haiku 5.5",
+    roles: [
+      { role: "code_changes_decide", label: "Decides", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+      { role: "code_changes_check", label: "Checks", model: "off", default: "anthropic/claude-sonnet-5.5", used: "off", agent: true },
+      { role: "code_changes", label: "Writes", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+    ],
+  });
+  const boxes = [...root.querySelectorAll("input")];
+  expect(boxes.map((input) => root.querySelector(`label[for="${input.id}"]`)?.textContent)).toEqual(["Decides", "Writes"]);
+  expect(boxes.map((input) => input.value)).toEqual(["", ""]);
+  expect([...root.querySelectorAll("p")].map((line) => line.textContent)).toContain("ChecksOff");
 });

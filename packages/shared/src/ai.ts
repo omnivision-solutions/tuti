@@ -70,7 +70,7 @@ export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 /**
- * A role is one kind of work a model does for a feature, and what a project picks a model for (Settings → AI models).
+ * A role is one kind of work a model does for a feature, and what a project picks a model for (each feature's page under Settings → AI).
  * Code asks for a role, never a model: a feature's steps can be added, removed or reordered without a new setting,
  * as long as each names the role it works in. `feature` is what its requests are metered as; `tools`: an agent's
  * role, so only models with tool calls; `off`: a role a project may switch off.
