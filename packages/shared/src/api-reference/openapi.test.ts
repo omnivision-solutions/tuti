@@ -667,6 +667,44 @@ test("an object that only lists its choices is one of them", () => {
   expect(required.example).toEqual({});
 });
 
+test("a made-up example keeps to the schema's limits", () => {
+  const { example } = schemaOf({
+    type: "object",
+    properties: {
+      password: { type: "string", minLength: 8 },
+      code: { type: "string", minLength: 2, maxLength: 3 },
+      initial: { type: "string", maxLength: 1 },
+      long: { type: "string", minLength: 1_000_000 },
+      plain: { type: "string" },
+      positive: { type: "integer", exclusiveMinimum: 0 },
+      positive30: { type: "integer", minimum: 0, exclusiveMinimum: true },
+      negative: { type: "integer", maximum: -1 },
+      under: { type: "number", exclusiveMaximum: 0 },
+      between: { type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1 },
+      from: { type: "integer", minimum: 5, maximum: 10 },
+      fraction: { type: "integer", minimum: 1.5 },
+      any: { type: "number", minimum: -5, maximum: 5 },
+      impossible: { type: "integer", minimum: 5, maximum: 1 },
+    },
+  });
+  expect(example).toEqual({
+    password: "stringst",
+    code: "str",
+    initial: "s",
+    long: "string".repeat(34).slice(0, 200),
+    plain: "string",
+    positive: 1,
+    positive30: 1,
+    negative: -1,
+    under: -1,
+    between: 0.5,
+    from: 5,
+    fraction: 2,
+    any: 0,
+    impossible: 0,
+  });
+});
+
 test("the body is in JSON when it can be, else its first content type", () => {
   const doc = read(JSON.stringify(fixture));
   expect(operation(doc, "POST /posts").body).toEqual({

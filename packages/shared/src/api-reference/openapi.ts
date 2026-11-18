@@ -168,6 +168,26 @@ function range(min: unknown, max: unknown, one = "", many = ""): string | null {
   return null;
 }
 
+/** A number the schema's limits allow, 0 when they do; for an example. */
+function numberWithin(schema: Obj, whole: boolean): number {
+  const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+  // 3.0 says `exclusiveMinimum: true` beside `minimum`; 3.1 gives the limit itself.
+  const low = number(schema.exclusiveMinimum) ?? number(schema.minimum);
+  const high = number(schema.exclusiveMaximum) ?? number(schema.maximum);
+  const above = schema.exclusiveMinimum === true || typeof schema.exclusiveMinimum === "number";
+  const below = schema.exclusiveMaximum === true || typeof schema.exclusiveMaximum === "number";
+  const fits = (value: number) => (low === undefined || (above ? value > low : value >= low)) && (high === undefined || (below ? value < high : value <= high));
+  const candidates = [
+    0,
+    low === undefined ? undefined : whole ? Math.ceil(low) : low,
+    low === undefined ? undefined : Math.floor(low) + 1,
+    high === undefined ? undefined : whole ? Math.floor(high) : high,
+    high === undefined ? undefined : Math.ceil(high) - 1,
+    low === undefined || high === undefined || whole ? undefined : (low + high) / 2,
+  ];
+  return candidates.find((value) => value !== undefined && fits(value)) ?? 0;
+}
+
 /** A schema's limits in words: "3–200 characters, matches ^[a-z]+$". */
 function constraints(schema: Obj): string {
   // 3.0 says `exclusiveMinimum: true` beside `minimum`; 3.1 gives the limit itself.
@@ -796,9 +816,14 @@ function read(root: Obj, most: number): ApiDoc {
         url: "https://example.com",
         uuid: "00000000-0000-0000-0000-000000000000",
       };
-      return own(formats, str(schema.format)) ?? "string";
+      const known = own(formats, str(schema.format));
+      if (known !== undefined) return known;
+      // As long as the schema says a value is: a request copied from the page shouldn't be refused for its length.
+      const least = typeof schema.minLength === "number" ? Math.min(Math.max(0, Math.ceil(schema.minLength)), 200) : 0;
+      const most = typeof schema.maxLength === "number" ? Math.max(0, Math.floor(schema.maxLength)) : Infinity;
+      return "string".repeat(Math.ceil(Math.max(least, 6) / 6)).slice(0, Math.min(most, Math.max(least, 6)));
     }
-    if (type === "integer" || type === "number") return typeof schema.minimum === "number" ? schema.minimum : 0;
+    if (type === "integer" || type === "number") return numberWithin(schema, type === "integer");
     if (type === "boolean") return true;
     return type === "null" ? null : undefined;
   }
