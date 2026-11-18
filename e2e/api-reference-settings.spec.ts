@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { expect, test } from "./fixtures";
@@ -31,6 +33,14 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   await api("/api-references", { name: "API reference", spec: SPEC });
+  // A base address saved before https was required: the API refuses one now.
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`UPDATE api_reference SET "baseUrl" = 'http://api.acme.example' FROM project WHERE project.id = api_reference."projectId" AND project.slug = $1`, [slug]);
+  } finally {
+    await client.end();
+  }
   await team.setViewportSize({ width: 1280, height: 900 });
 
   // Settings is the second tab under the header.
@@ -64,31 +74,41 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   };
   await shoot("settings", 1280, 1400);
 
-  // Renamed and moved, in one Save: its Settings are at the new address, with nothing left at the old one.
+  // Renamed and moved, in one Save (the old http base address, left alone, doesn't hold it up): its Settings are at the
+  // new address, with nothing left at the old one.
   await team.getByRole("textbox", { name: "Name", exact: true }).fill("Acme API");
   await team.getByRole("textbox", { name: "Address", exact: true }).fill("acme-api");
   await expect(team.getByText("2 unsaved changes")).toBeVisible();
   await team.getByRole("button", { name: "Save" }).click();
   await team.waitForURL(`**/docs/references/acme-api/settings`);
   await expect(team.getByRole("heading", { name: "Acme API", level: 1 })).toBeVisible();
+  await expect(team.getByRole("textbox", { name: "Base address", exact: true })).toHaveValue("http://api.acme.example");
   // The redirect to the new address is the save working, not failing.
   await expect(team.getByText("Settings saved")).toBeVisible();
   await expect(team.getByText("Couldn't save that")).toBeHidden();
   await expect(team.getByText("unsaved change")).toBeHidden();
 
-  // The base address: https only.
+  // A teammate renames it meanwhile: once another save refreshes the page, the name shows theirs, not as a change of
+  // ours, and the next Save doesn't put ours back.
+  await api("/api-references/acme-api", { name: "Acme public API" }, "PATCH");
+  await team.getByRole("radio", { name: /^Groups as headings/ }).check();
+  await expect(team.getByText("Groups as headings saved")).toBeVisible();
+  await expect(team.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Acme public API");
+  await expect(team.getByText("unsaved change")).toBeHidden();
+
+  // The base address: https only, once it's changed.
   const base = team.getByRole("textbox", { name: "Base address", exact: true });
-  await base.fill("http://api.acme.example");
+  await expect(base).toHaveValue("http://api.acme.example");
+  await base.fill("http://api.acme.example/v2");
   await team.getByRole("button", { name: "Save" }).click();
   expect(await base.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
   await base.fill("https://api.acme.example");
   await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("Settings saved")).toBeVisible();
   await expect(team.getByText("unsaved change")).toBeHidden();
-
-  // The tree's style saves as it's picked.
-  await team.getByRole("radio", { name: /^Groups as headings/ }).check();
-  await expect(team.getByText("Groups as headings saved")).toBeVisible();
+  await expect.poll(async () => ((await api("/api-references/acme-api", undefined, "GET")) as unknown as { name: string; baseUrl: string })).toMatchObject({
+    name: "Acme public API",
+    baseUrl: "https://api.acme.example",
+  });
 
   // Admin to the top with the keyboard, a step at a time; its handle keeps the focus.
   const admin = team.getByRole("button", { name: "Move Admin", exact: true });

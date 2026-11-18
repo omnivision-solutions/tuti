@@ -60,10 +60,13 @@ export function ApiReferenceSettings({
       return SAVE_FAILED;
     });
 
-  // The fields Save sends: only the ones that differ from what's saved, so a teammate's other change isn't undone.
+  // What's typed in each field, over what's saved: one left alone shows what the page has now (a teammate's change
+  // too, once another save refreshes it), and Save sends only the ones typed in that differ, never one left alone.
   const saved = { name: reference.name, slug: reference.slug, baseUrl: reference.baseUrl ?? "" };
-  const [draft, setDraft] = useState(saved);
-  const changed = (Object.keys(saved) as (keyof typeof saved)[]).filter((field) => draft[field].trim() !== saved[field]);
+  const [edits, setEdits] = useState<Partial<typeof saved>>({});
+  const draft = { ...saved, ...edits };
+  const edit = (field: keyof typeof saved, value: string) => setEdits((now) => ({ ...now, [field]: value }));
+  const changed = (Object.keys(edits) as (keyof typeof saved)[]).filter((field) => draft[field].trim() !== saved[field]);
   const [saving, startSaving] = useTransition();
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -72,14 +75,20 @@ export function ApiReferenceSettings({
       ...(changed.includes("slug") && { newSlug: draft.slug }),
       ...(changed.includes("baseUrl") && { baseUrl: draft.baseUrl.trim() || null }),
     };
+    const sent = { ...edits };
     startSaving(async () => {
       const result = await save(changes).catch((redirect: unknown) => {
         // Saved at a new address: the router goes to its Settings.
         toast.success("Settings saved");
         throw redirect;
       });
-      if (result.error) toast.error(result.error);
-      else toast.success("Settings saved");
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Settings saved");
+      // Saved: the page has them now. One typed in again while it saved stays.
+      setEdits((now) => Object.fromEntries(Object.entries(now).filter(([field, value]) => sent[field as keyof typeof saved] !== value)));
     });
   };
   const actionsHost = useEditorSlot("api-reference-actions");
@@ -134,7 +143,7 @@ export function ApiReferenceSettings({
               <FieldGroup className={field}>
                 <Field>
                   <FieldLabel htmlFor="reference-name">Name</FieldLabel>
-                  <Input id="reference-name" value={draft.name} required maxLength={80} autoComplete="off" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+                  <Input id="reference-name" value={draft.name} required maxLength={80} autoComplete="off" onChange={(event) => edit("name", event.target.value)} />
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="reference-slug">Address</FieldLabel>
@@ -153,7 +162,7 @@ export function ApiReferenceSettings({
                       title="Lowercase letters, digits and hyphens"
                       aria-describedby="reference-slug-description"
                       className="min-w-32 flex-1 font-mono"
-                      onChange={(event) => setDraft({ ...draft, slug: event.target.value })}
+                      onChange={(event) => edit("slug", event.target.value)}
                     />
                   </div>
                   <FieldDescription id="reference-slug-description">Its pages move to the new address. Links to the old one stop working.</FieldDescription>
@@ -179,7 +188,7 @@ export function ApiReferenceSettings({
                   maxLength={2000}
                   autoComplete="off"
                   aria-describedby="reference-base-url-description"
-                  onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
+                  onChange={(event) => edit("baseUrl", event.target.value)}
                 />
                 <FieldDescription id="reference-base-url-description">Requests in the examples and in Try it go here when the spec’s servers have no host.</FieldDescription>
               </Field>
