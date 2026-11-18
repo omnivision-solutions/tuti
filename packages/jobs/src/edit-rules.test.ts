@@ -43,6 +43,11 @@ test("text after the article's old last line is appended at the end; the last pa
   const bolted = "## Light theme\n\nPick **Light** in **Settings**.\n\nClick **Save**.\n\n## Dark theme\n\nPick **Dark** in **Settings**.\n\nClick **Save**.";
   expect(appendedAtEnd(one, bolted)).toMatchObject({ heading: "Dark theme" });
   expect(ruleChecks(one, bolted, { diff: "", added: false }).fails).toBe(APPENDED_FAILS);
+  // Nor does one whose new section ends like the line before the old last line.
+  const note = "## Light theme\n\n1. Pick **Light** in **Appearance**.\n\n2. Click **Save**.\n\nThe theme changes right away.";
+  const noted = "## Light theme\n\n1. Pick **Light** in **Settings**.\n\n2. Click **Save**.\n\nThe theme changes right away.\n\n## Dark theme\n\n1. Pick **Dark** in **Settings**.\n\n2. Click **Save**.";
+  expect(appendedAtEnd(note, noted)).toMatchObject({ heading: "Dark theme" });
+  expect(ruleChecks(note, noted, { diff: "", added: false }).fails).toBe(APPENDED_FAILS);
   // Lines it had, only moved to the end, aren't an addition.
   expect(appendedAtEnd("One.\n\nTwo.\n\nThree.", "Two.\n\nThree.\n\nOne.")).toBeNull();
 });

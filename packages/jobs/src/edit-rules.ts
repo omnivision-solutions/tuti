@@ -67,24 +67,17 @@ export function changelogWords(before: string, after: string): { word: string; s
 export function appendedAtEnd(before: string, after: string): { lines: string[]; heading: string | null; subsection: boolean } | null {
   const was = lines(before);
   const is = lines(after);
-  // Where the old article ended, in the new one: after the last line it kept from everything before its last line (a
-  // line diff, so a line repeated earlier doesn't mislead), the first copy of its last line. None there: that line was
-  // rewritten in place, and nothing was appended. What follows that copy was.
+  // Where the old article ended, in the new one: the first copy of its last line with everything else it kept before
+  // it (as many of its other lines kept, by a line diff, as in the whole new text). A line repeated earlier, or a
+  // copy of one at the end of what was added, doesn't mislead it. None: that line was rewritten in place, and nothing
+  // was appended. What follows that copy was.
   const last = was.at(-1);
   if (last === undefined) {
     return null;
   }
-  let at = -1;
-  let kept = -1;
-  for (const line of diffBy(was.slice(0, -1), is, (text) => text)) {
-    if (line.kind !== "removed") {
-      at++;
-      if (line.kind === "same") {
-        kept = at;
-      }
-    }
-  }
-  const end = is.indexOf(last, kept + 1);
+  const kept = (upTo: number) => diffBy(was.slice(0, -1), is.slice(0, upTo), (text) => text).filter((line) => line.kind === "same").length;
+  const all = kept(is.length);
+  const end = is.findIndex((line, i) => line === last && kept(i) === all);
   if (end === -1 || end === is.length - 1) {
     return null;
   }
