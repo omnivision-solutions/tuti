@@ -347,7 +347,9 @@ function rewritten(target: JSONContent, replace: string): JSONContent | null {
  */
 function rewrittenCode(target: JSONContent, replace: string): JSONContent | null {
   const block = /^(`{3,})[^\n`]*\n([\s\S]*)\n\1[ \t]*$/.exec(replace.replace(/\r\n?/g, "\n").trim());
-  return block?.[2]?.trim() ? { ...target, content: [{ type: "text", text: block[2] }] } : null;
+  // A line inside that would close the fence makes it more than one block (two blocks and text between, say): refused.
+  const closes = block && new RegExp(`^ {0,3}${block[1]}\`*[ \\t]*$`, "m").test(block[2]!);
+  return block?.[2]?.trim() && !closes ? { ...target, content: [{ type: "text", text: block[2] }] } : null;
 }
 
 /**

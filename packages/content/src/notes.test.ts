@@ -260,7 +260,7 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(next[1]).toEqual({ type: "codeBlock", attrs: { language: "bash", filename: "export.sh" }, content: [text("npm run download\nls out")] });
     expect(next[0]).toBe(blocks[0]);
     // Not fenced, or blank inside: refused.
-    for (const refused of ["npm run download", "```bash\n\n```", "```bash\nnpm run download"]) {
+    for (const refused of ["npm run download", "```bash\n\n```", "```bash\nnpm run download", "```bash\nnpm run export\n```\n\nThen:\n\n```bash\nnpm run upload\n```"]) {
       expect(replacePassage(blocks, find, refused)).toBeNull();
     }
   });
