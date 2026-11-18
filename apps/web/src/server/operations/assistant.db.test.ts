@@ -87,6 +87,9 @@ test("a tone sent to the API is folded into the instructions saved, and none is 
   // The same tone sent again doesn't stack, whichever line breaks it's sent with.
   expect(await update({ tone: "Brief\r\n\r\nFriendly" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
   expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
+  // Nor over instructions stored with CRLF line breaks.
+  await storeTone("", "Brief\r\n\r\nCall it Acme.");
+  expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nCall it Acme." });
   // Alone, where the previous release left a tone: it takes that tone's place, as it did then.
   await storeTone("Cheerful", "Call it Acme.");
   expect(await update({ tone: "Formal" })).toMatchObject({ tone: "", instructions: "Formal\n\nCall it Acme." });

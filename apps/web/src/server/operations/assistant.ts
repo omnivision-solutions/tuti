@@ -157,7 +157,7 @@ export const updateAssistantSettings = defineOperation({
       await prisma.$transaction(async (tx) => {
         const [row] = await tx.$queryRaw<{ instructions: string }[]>`
           SELECT "assistantInstructions" AS instructions FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
-        await save(tx, row?.instructions);
+        await save(tx, lf(row?.instructions));
       });
     } else {
       await save(prisma, lf(input.instructions));
