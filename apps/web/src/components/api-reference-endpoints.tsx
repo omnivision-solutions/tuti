@@ -205,7 +205,8 @@ export function ApiReferenceEndpoints({
   };
 
   const addedHidden = operations.filter((operation) => fresh.get(operation.key) && !shown(operation));
-  const words = query.trim().toLowerCase();
+  // Only while its box is there: a new version with fewer operations takes the box away.
+  const words = operations.length > 20 ? query.trim().toLowerCase() : "";
   const matches = (operation: Operation) => !words || operation.path.toLowerCase().includes(words) || operation.title.toLowerCase().includes(words);
 
   return (
@@ -230,7 +231,8 @@ export function ApiReferenceEndpoints({
       {words && !operations.some(matches) && <p className="text-sm text-muted-foreground">No endpoints match “{query.trim()}”.</p>}
       {groups.map((group) => {
         const rows = operations.filter((operation) => operation.group === group.key && matches(operation));
-        if (rows.length === 0) return null;
+        // Without rows of its own it's still a group with a switch: one that's only an operation's second tag takes that operation off too.
+        if (rows.length === 0 && (words || !operations.some((operation) => operation.alsoIn.includes(group.key)))) return null;
         const description = group.description.trim().split("\n")[0];
         return (
           <section key={group.key} aria-label={group.name}>
@@ -241,7 +243,7 @@ export function ApiReferenceEndpoints({
               </div>
               <Switch aria-label={`${group.name}: on the help center`} checked={groupOn(group)} onChange={(event) => change("group", group.key, event.currentTarget.checked)} />
             </div>
-            <ul>
+            <ul hidden={rows.length === 0}>
               {rows.map((operation) => (
                 <li key={operation.key} id={`endpoint-${operation.slug}`} className="flex items-center gap-3 border-b py-2.5 last:border-b-0">
                   {/* A narrow pane: the method and path on one line, the title under them, the switch at the right. */}
@@ -259,6 +261,8 @@ export function ApiReferenceEndpoints({
                     aria-label={`${operation.title} (${operation.kind} ${operation.path}): on the help center`}
                     checked={ownOn(operation)}
                     disabled={inOffGroup(operation)}
+                    aria-description={inOffGroup(operation) ? "Off the help center while its group is off" : undefined}
+                    title={inOffGroup(operation) ? "Off the help center while its group is off" : undefined}
                     onChange={(event) => change("operation", operation.key, event.currentTarget.checked)}
                   />
                 </li>
