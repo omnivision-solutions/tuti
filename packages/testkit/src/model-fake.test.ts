@@ -53,6 +53,25 @@ test("a scripted step answers with tool calls; each request's messages (tool res
   model.done();
 });
 
+test("a standing reply answers each request it matches that no step takes, is never reported unused, and goes with done()", async () => {
+  const ask = async (content: string) =>
+    (
+      await chat({
+        model: "acme/tiny",
+        messages: [
+          { role: "system", content: "You review." },
+          { role: "user", content },
+        ],
+      })
+    ).choices?.[0]?.message.content;
+  model.otherwise("accept", "review");
+  model.reply("scripted", undefined, "review");
+  expect([await ask("review 1"), await ask("review 2"), await ask("review 3")]).toEqual(["scripted", "accept", "accept"]);
+  model.done();
+  expect(await ask("review 4")).toBeUndefined();
+  expect(() => model.done()).toThrow("a request with no reply scripted: review 4");
+});
+
 test("an unused tool-call step is reported", () => {
   model.toolCalls([{ name: "list_files", arguments: "{}" }]);
   expect(() => model.done()).toThrow("an unused step: tool calls list_files");

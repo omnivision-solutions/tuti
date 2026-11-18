@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Doc, toPlainText } from "@tuti/content";
-import { type TeamRole, prisma } from "@tuti/db";
+import { type Prisma, type TeamRole, prisma } from "@tuti/db";
 import { vi } from "vitest";
 import { docOf, landEdit, lockProject } from "@tuti/jobs";
 
@@ -71,17 +71,21 @@ export async function redirectTarget(action: Promise<unknown>): Promise<string> 
 /** A reader group's conditions for the people whose `groups` property (an SSO token's `groups`) has `name`. */
 export const inGroupNamed = (name: string) => [{ property: "groups", op: "is" as const, value: name }];
 
+/** What the check saves on an edit it passed that is a small correction in place (E5, E6): it may go out by itself. */
+export const PASSED_CHECK = { pass: true, reasons: [], hints: [], verdict: "accept", scope: "correction" };
+
 /**
  * A pull request's (number `number`) edit to an article, as the analysis saves it: `edit` maps the article's newest
  * text (its unpublished changes, or the published version) to the edit's, and it's saved into the unpublished changes
- * as a revision tagged with its update (landEdit). Returns the update.
+ * as a revision tagged with its update (landEdit), with the check's result (`check`: by default passed, a small
+ * correction, so it may go out by itself; null for none, as an edit saved before the check). Returns the update.
  */
 export async function landArticleEdit(
   projectId: string,
   articleId: string,
   number: number,
   edit: (doc: Doc) => Doc,
-  { probability = 0.9, reason = `PR ${number}'s edit` } = {},
+  { probability = 0.9, reason = `PR ${number}'s edit`, check = PASSED_CHECK as Prisma.InputJsonObject | null } = {},
 ) {
   const change = await prisma.codeChange.upsert({
     where: { projectId_repoId_number: { projectId, repoId: 1, number } },
@@ -100,7 +104,7 @@ export async function landArticleEdit(
       articleId,
       probability,
       reason,
-      payload: { problem: "wrong", title: "", before: toPlainText(writtenOn), body: toPlainText(doc), overview: `${reason}, with ${waiting.length} before it`, overviewOf: waiting.map((one) => one.id) },
+      payload: { problem: "wrong", title: "", before: toPlainText(writtenOn), body: toPlainText(doc), overview: `${reason}, with ${waiting.length} before it`, overviewOf: waiting.map((one) => one.id), ...(check && { check }) },
     },
   });
   const landed = await prisma.$transaction(async (tx) => {

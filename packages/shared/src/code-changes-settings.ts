@@ -114,7 +114,7 @@ export const CODE_CHANGES_SETTINGS = {
   redecide: {
     model: model(
       "anthropic/claude-sonnet-5.5",
-      "The double-check's model: when the docs agent proposes a new article (see `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE`), it decides the pull request again from scratch, with the same tools, and its answer is used. `off` skips the double-check",
+      "The double-check's model: when the docs agent proposes a new article (see `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE`), it decides the pull request again from scratch, with the same tools, and its answer is used; it's also Checks' model on the Balanced level, which reviews every article edit. `off` skips both, and every article edit then asks first, except on a level whose `AI_LEVELS_CONFIG` row or Custom setting gives Checks its own model",
       undefined,
       "a model id, or off",
     ),

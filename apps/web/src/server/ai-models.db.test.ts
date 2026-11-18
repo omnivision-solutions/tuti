@@ -5,10 +5,14 @@ import { join } from "node:path";
 import { prisma } from "@tuti/db";
 import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL, resetCodeChangesSettings } from "@tuti/shared";
 import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
+import { Children, isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import AutopilotSettingsPage from "@/app/app/(workspace)/[project]/settings/(admin)/autopilot/page";
+
 import { SIGNED_OUT } from "@/lib/read-access";
-import { aiModelSetting, checksNotice, checksSwitch } from "@/lib/ai-model-setting";
+import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
+import { CHECKS_UNAVAILABLE } from "@/lib/autopilot-words";
 import { saveAiModel } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
@@ -41,6 +45,13 @@ afterEach(() => {
   resetCodeChangesSettings();
   model.done();
 });
+
+/** Whether Settings → Autopilot, as the page returns it (nothing rendered), has this text. */
+async function pageSays(text: string) {
+  const has = (node: ReactNode): boolean =>
+    node === text || (isValidElement<{ children?: ReactNode }>(node) && Children.toArray(node.props.children).some(has));
+  return has(await AutopilotSettingsPage({ params: Promise.resolve({ project: project.slug }) } as PageProps<"/app/[project]/settings/autopilot">));
+}
 
 const QUESTION = "How do I add a colleague?";
 const as = (projectId = project.id) => ({ actor: { kind: "user" as const, userId: owner.id }, projectId });
@@ -369,28 +380,22 @@ test("the Checks switch on a server whose own checks are off: none where they wo
   const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
   actAs(owner);
 
-  // Balanced is the server's own: no checks, said in the line, and no switch that could only claim otherwise.
+  // Balanced is the server's own: no checks, said in the line, and no switch that could only claim otherwise. The page
+  // says every article edit waits, and how to get Checks.
   const balanced = await setting();
   expect(balanced.summary).toContain("Checks Off");
   expect(checksSwitch(balanced)).toBeNull();
-  // Where the server checks the project's edits, the notice that they wait still shows, offering no switch.
-  const autopilot = { plan: null, analyseCodeChanges: true, autopilotArticleEdits: true, autopilotChecksNoticeDismissed: false };
-  expect(checksNotice(project.slug, balanced, autopilot)).toBeNull();
-  vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
-  expect(checksNotice(project.slug, balanced, autopilot)).toEqual({ switchable: false });
+  expect(await pageSays(CHECKS_UNAVAILABLE)).toBe(true);
 
   // Best has a model for them: they run, so the switch is there and on; off holds, and on is Best's model again.
   expect(await saveAiModel(project.slug, { levels: { code_changes: "best" } })).toEqual({});
   const best = await setting();
   expect(best.summary).toContain("Checks Claude Sonnet 5.5");
   expect(checksSwitch(best)).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
-  // On Best they run: no notice while Checks is on.
-  expect(checksNotice(project.slug, best, autopilot)).toBeNull();
+  expect(await pageSays(CHECKS_UNAVAILABLE)).toBe(false);
   expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
   // Off, the switch still knows what they'd run on, so the page can price them.
   expect(checksSwitch(await setting())).toEqual({ on: false, model: "anthropic/claude-sonnet-5.5" });
-  // Off with a switch to offer: the notice can switch Checks on.
-  expect(checksNotice(project.slug, await setting(), autopilot)).toEqual({ switchable: true });
   expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
   expect(checksSwitch(await setting())).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
 

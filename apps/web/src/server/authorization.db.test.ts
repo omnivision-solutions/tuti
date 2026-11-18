@@ -386,7 +386,6 @@ const matrix: Matrix = {
     setCodeChangeAnalysis: { allowed: "OWNER", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
     setAutoApplyLinks: { allowed: "OWNER", call: (slug) => github.setAutoApplyLinks(slug, true) },
     setAutopilotSwitch: { allowed: "OWNER", call: (slug) => github.setAutopilotSwitch(slug, "complete", true) },
-    dismissAutopilotChecksNotice: { allowed: "ADMIN", call: (slug) => github.dismissAutopilotChecksNotice(slug) },
     saveAutopilotRecipients: {
       allowed: "OWNER",
       call: (slug) => {

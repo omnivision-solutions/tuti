@@ -51,6 +51,8 @@ export type FakePullRequest = {
   /** Commit messages, oldest first. */
   commits?: string[];
   files?: { filename: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
+  /** Its merge commit's archive is there too (`/tarball/merge-<number>`), holding its files' contents; without it, only a `repository` snapshot's commit has one. */
+  archived?: boolean;
 };
 
 export type FakeRepository = {
@@ -223,8 +225,10 @@ export async function startGithubFake(): Promise<GithubFake> {
       }
       const codeloadPath = /^\/_codeload\/([^/]+\/[^/]+)\/tar\.gz\/([^/]+)$/.exec(url.pathname);
       if (req.method === "GET" && codeloadPath) {
-        const snapshot = repositories.get(codeloadPath[1]!);
-        if (snapshot?.commit !== decodeURIComponent(codeloadPath[2]!)) {
+        const commit = decodeURIComponent(codeloadPath[2]!);
+        const merged = [...pulls.entries()].find(([key, pr]) => key.startsWith(`${codeloadPath[1]}#`) && pr.archived && `merge-${pr.number}` === commit)?.[1];
+        const snapshot = merged ? { commit, files: Object.fromEntries((merged.files ?? []).map((file) => [file.filename, file.content ?? ""])) } : repositories.get(codeloadPath[1]!);
+        if (snapshot?.commit !== commit) {
           return send(404, { message: "Not Found" });
         }
         return res.writeHead(200, { "content-type": "application/x-gzip" }).end(tarball(`${codeloadPath[1]!.replace("/", "-")}-${snapshot.commit}`, snapshot));

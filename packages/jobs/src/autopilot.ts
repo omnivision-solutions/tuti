@@ -4,7 +4,7 @@ import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { articleLimit, ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, scheduleArticle } from "./article-layers";
-import { CHECK_BEFORE, CHECK_LARGER, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_UNCLEAR, CHECKS_OFF, checkFailed, type EditCheck, checksOn } from "./edit-review";
+import { CHECK_BEFORE, CHECK_LARGER, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_UNCLEAR, CHECKS_OFF, checkFailed, type EditCheck } from "./edit-review";
 
 /**
  * Autopilot's hold (docs/plan.md, Autopilot A4): what it's sure of goes out by itself, drafts at once
@@ -14,8 +14,6 @@ import { CHECK_BEFORE, CHECK_LARGER, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHEC
 
 /** A project's Autopilot settings, as waitsBecause reads them. */
 export const autopilotSettingsSelect = {
-  /** Whether the check is on for it (checksOn), which decides which edits may go out by themselves (E6). */
-  slug: true,
   plan: true,
   analyseCodeChanges: true,
   autopilotDrafts: true,
@@ -132,10 +130,9 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (check && check.pass !== true) {
     return typeof check.reason === "string" && check.reason ? check.reason : CHECK_UNCLEAR;
   }
-  // Where the check is on (E6), an edit goes out by itself only once it passed it and is small (below): one written
-  // before it (unchecked, or checked before its size was measured) asks first.
-  const checked = action.kind === "ARTICLE_EDIT" && checksOn(project.slug);
-  if (checked && !check?.scope) {
+  // An edit goes out by itself only once the check passed it and it's small (E6, below): one saved before the check
+  // (unchecked, or checked before its size was measured) asks first.
+  if (action.kind === "ARTICLE_EDIT" && !check?.scope) {
     return CHECK_BEFORE;
   }
   const on: Partial<Record<CodeChangeActionKind, boolean>> = {
@@ -157,7 +154,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     return "Its article gets a section at the end";
   }
   // Only a rename or moved page the code change shows, or a small correction in place: anything larger is read first.
-  if (checked && check?.scope !== "rename" && check?.scope !== "correction") {
+  if (action.kind === "ARTICLE_EDIT" && check?.scope !== "rename" && check?.scope !== "correction") {
     return CHECK_LARGER;
   }
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {

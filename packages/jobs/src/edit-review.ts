@@ -14,18 +14,8 @@ import type { PullRequestRead } from "./pull-request";
  * The check before an article edit is proposed (docs/plan.md, E5): the rule checks in code (edit-rules.ts), then the
  * Checks role reviews the edit against the repository, with the same tools as the analysis. A fail gets one rewrite,
  * checked again; an edit that still fails, or wasn't reviewed (Checks off, out of AI credits, a reply that can't be
- * read), is saved with the reason and waits for a person (waitsBecause reads `payload.check`). Only for the projects
- * the server switches it on for (checksOn): elsewhere nothing here runs.
+ * read), is saved with the reason and waits for a person (waitsBecause reads `payload.check`).
  */
-
-/**
- * The projects the check runs for: AUTOPILOT_CHECKS_PROJECTS, their slugs separated by commas, or `*` for every project.
- * Unset, no project's edits are checked.
- */
-export function checksOn(slug: string): boolean {
-  const listed = (process.env.AUTOPILOT_CHECKS_PROJECTS ?? "").split(",").map((part) => part.trim().toLowerCase());
-  return listed.includes("*") || listed.includes(slug.toLowerCase());
-}
 
 /** The reasons an edit waits, as the review screen shows them (waitsBecause); checksSay knows them by their first words. */
 export const CHECKS_OFF = "It wasn't checked: Checks was off when it was written";
@@ -33,7 +23,7 @@ export const CHECK_UNCLEAR = "The check didn't answer clearly";
 export const CHECK_NO_CREDITS = "It wasn't checked: AI credits ran out when it was written";
 /** Why an edit the check couldn't look at the code for waits: the analysis couldn't read the repository. */
 export const CHECK_NO_REPOSITORY = "It wasn't checked: the repository couldn't be read";
-/** Why an edit written before the check (or before it measured an edit's size) waits where the check is on (E6). */
+/** Why an edit saved with no check, or checked before it measured an edit's size, waits: only one from before the check (E6). */
 export const CHECK_BEFORE = "It was written before the check, so it asks first";
 /** Why an edit the check passed waits all the same: only a rename, a moved page or a small correction goes out by itself (E6). */
 export const CHECK_LARGER = "It isn't a rename or a small correction in place, so it asks first";
