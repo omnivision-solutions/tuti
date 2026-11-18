@@ -557,6 +557,43 @@ test("a parameter's example is its own, its content's, or its schema's, written 
   ]);
 });
 
+test("a path's own operations beside its $ref are read with the ones it points at", () => {
+  const doc = spec({
+    paths: {
+      "/a": { $ref: "#/components/pathItems/Shared", post: { summary: "Create", responses: {} }, parameters: [{ name: "own", in: "query" }] },
+      "/b": { $ref: "#/components/pathItems/Shared" },
+      "/c": { $ref: "#/components/pathItems/Gone", get: { summary: "Still here", responses: {} } },
+    },
+    components: { pathItems: { Shared: { get: { summary: "List", responses: {} }, post: { summary: "Shared create", responses: {} }, parameters: [{ name: "shared", in: "query" }] } } },
+  });
+  expect(doc.operations.map((one) => [one.key, one.title, one.params.map((param) => param.name)])).toEqual([
+    ["GET /a", "List", ["own"]],
+    ["POST /a", "Create", ["own"]],
+    ["GET /b", "List", ["shared"]],
+    ["POST /b", "Shared create", ["shared"]],
+    ["GET /c", "Still here", []],
+  ]);
+  expect(codes(doc)).toEqual(["DUPLICATE_SLUG @ GET /b", "UNKNOWN_REF @ /c"]);
+});
+
+test("an object that only lists its choices is one of them", () => {
+  const { schema, example, doc } = schemaOf(ref("Pet"), {
+    Cat: { type: "object", properties: { lives: { type: "integer" } } },
+    Dog: { type: "object", properties: { barks: { type: "boolean" } } },
+    Pet: { type: "object", oneOf: [ref("Cat"), ref("Dog")], discriminator: { propertyName: "kind" } },
+    // With fields of its own it's an object that also has choices.
+    Tagged: { type: "object", properties: { kind: { type: "string" } }, oneOf: [ref("Cat"), ref("Dog")] },
+  });
+  expect(schema).toMatchObject({ type: "Pet", ref: "Pet", oneOf: [{ type: "Cat" }, { type: "Dog" }] });
+  expect(example).toEqual({ lives: 0 });
+  expect(doc.types.map((type) => [type.name, type.kind, type.schema.type])).toEqual([
+    ["Cat", "object", "object"],
+    ["Dog", "object", "object"],
+    ["Pet", "union", "Cat or Dog"],
+    ["Tagged", "object", "object"],
+  ]);
+});
+
 test("the body is in JSON when it can be, else its first content type", () => {
   const doc = read(JSON.stringify(fixture));
   expect(operation(doc, "POST /posts").body).toEqual({

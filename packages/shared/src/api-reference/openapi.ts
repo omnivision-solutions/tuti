@@ -689,7 +689,9 @@ function read(root: Obj, most: number): ApiDoc {
     if (schema.items !== undefined && types.includes("array")) out.items = toSchema(schema.items, { ...place, where: under(place.where, "items") });
     if (choices.length > 0) out.oneOf = choices.slice(0, ROOT_NODES).map((choice, index) => toSchema(choice, { ...place, where: under(place.where, `option ${index + 1}`) }));
 
-    const names = types.map((type) => {
+    // An object that only lists its choices is one of them: it's named by them, as a `oneOf` with no type is.
+    const kinds = out.oneOf && !out.properties && !isObj(schema.additionalProperties) ? types.filter((type) => type !== "object") : types;
+    const names = kinds.map((type) => {
       if (type === "array" && out.items) return `array of ${out.items.type}`;
       // ponytail: a map's values are only named in its type; give ApiSchema a field for them if pages need their fields.
       if (type === "object" && !out.properties && isObj(schema.additionalProperties)) {
@@ -728,6 +730,8 @@ function read(root: Obj, most: number): ApiDoc {
       const { choices } = choicesOf(schema);
       return choices.length > 0 ? sample(choices[0], inside, where) : undefined;
     }
+    // An object that only lists its choices is the first of them.
+    if (type === "object" && fieldsOf(schema.properties).length === 0 && choicesOf(schema).choices.length > 0) return sample(choicesOf(schema).choices[0], inside, where);
     if (type === "object") {
       const made: [string, unknown][] = [];
       for (const [name, property] of fieldsOf(schema.properties)) {
@@ -813,7 +817,7 @@ function read(root: Obj, most: number): ApiDoc {
   // Named types first: they're where a schema too deep to spell out elsewhere is read in full.
   const types: (Omit<ApiType, "slug"> & { slug?: string })[] = entries(own(root.components, "schemas")).map(([name, value]) => {
     const schema = { ...schemaAt(value, `schemas › ${named(name, "a schema's name")}`, isObj(value) ? [value] : [], 1), ref: name };
-    const kind = schema.enum ? "enum" : schema.properties || schema.type === "object" ? "object" : schema.oneOf ? "union" : "scalar";
+    const kind = schema.enum ? "enum" : schema.properties ? "object" : schema.oneOf ? "union" : schema.type === "object" ? "object" : "scalar";
     return { name, kind, schema };
   });
 
@@ -842,6 +846,21 @@ function read(root: Obj, most: number): ApiDoc {
         return { url: named(server.url, "a server's address", URL_MOST), description: text(server.description, where), ...(variables.length > 0 ? { variables: Object.fromEntries(variables) } : {}) };
       });
 
+  /** A path's item: the one its `$ref` points at, with what's written beside the reference over it. Made once per path. */
+  function itemOf(value: unknown, where?: string): Obj | null {
+    if (!isObj(value) || typeof value.$ref !== "string") return isObj(value) ? value : null;
+    const known = items.get(value);
+    if (known !== undefined) return known;
+    const shared = follow(value, where);
+    const own = fieldsOf(value).filter(([key]) => key !== "$ref");
+    // Copying the shared item's fields for this path counts, as going through them does.
+    if (own.length > 0) charge(fieldsOf(shared).length);
+    const item = own.length === 0 ? shared : { ...shared, ...Object.fromEntries(own) };
+    if (where !== undefined) items.set(value, item);
+    return item;
+  }
+  const items = new WeakMap<Obj, Obj | null>();
+
   // What an operation is known by: its method and path without its parameters' names, which aren't
   // part of what a path is. Operations that would share that each keep their names, whatever their order.
   const nameless = (kind: string, path: string) => `${kind} ${path.replace(/\{[^{}/]*\}/g, "{}")}`;
@@ -850,7 +869,7 @@ function read(root: Obj, most: number): ApiDoc {
     named(path, "a path", PATH_MOST);
     if (!path.startsWith("/")) continue;
     // A path item many paths point at is gone through for each of them: that counts.
-    const methods = fieldsOf(follow(value));
+    const methods = fieldsOf(itemOf(value));
     charge(methods.length);
     for (const [method, operation] of methods) {
       if (METHODS.has(method) && isObj(operation)) sharing.set(nameless(method.toUpperCase(), path), (sharing.get(nameless(method.toUpperCase(), path)) ?? 0) + 1);
@@ -871,7 +890,7 @@ function read(root: Obj, most: number): ApiDoc {
       if (!path.startsWith("x-")) warn("PATH_SKIPPED", path);
       continue;
     }
-    const item = follow(value, path);
+    const item = itemOf(value, path);
     if (!item) continue;
     for (const [method, operation] of fieldsOf(item)) {
       if (!METHODS.has(method) || !isObj(operation)) continue;
