@@ -1323,4 +1323,9 @@ test("what the review ticks as it opens follows the server's likely cutoffs", ()
   resetCodeChangesSettings();
   expect(likelyToApply(update)).toBe(false);
   expect(likelyToApply({ ...update, probability: 0.9 })).toBe(true);
+  // An article edit the check didn't pass is never likely, however sure; one it passed, or one it never saw, is as before.
+  const edit = { kind: "ARTICLE_EDIT" as const, probability: 0.99, payload: { problem: "wrong" } };
+  expect(likelyToApply(edit)).toBe(true);
+  expect(likelyToApply({ ...edit, payload: { problem: "wrong", check: { pass: true } } })).toBe(true);
+  expect(likelyToApply({ ...edit, payload: { problem: "wrong", check: { pass: false, reason: "The check failed it: …" } } })).toBe(false);
 });

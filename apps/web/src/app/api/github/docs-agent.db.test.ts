@@ -1283,6 +1283,17 @@ describe("the check before an edit is proposed (E5)", () => {
     vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", `other, ${project.slug}`);
   });
 
+  test("without the repository the edit isn't reviewed (every claim would come back unverified): it waits, unrewritten, saying why", async () => {
+    pullRequest(89, false);
+    model.decide(USERS);
+    model.reply(EDIT_AT, undefined, '"merge-89"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(89);
+    expect(reviews()).toEqual([]);
+    expect(await edit(89)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: the repository couldn't be read", check: { pass: false, reason: "It wasn't checked: the repository couldn't be read" } });
+  });
+
   test("a project it isn't switched on for is unchanged: nothing is reviewed, and the edit lands as today", async () => {
     vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
     proposeEdit(80);

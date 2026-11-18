@@ -31,6 +31,8 @@ export function checksOn(slug: string): boolean {
 export const CHECKS_OFF = "It wasn't checked: Checks was off when it was written";
 export const CHECK_UNCLEAR = "The check didn't answer clearly";
 export const CHECK_NO_CREDITS = "It wasn't checked: AI credits ran out when it was written";
+/** Why an edit the check couldn't look at the code for waits: the analysis couldn't read the repository. */
+export const CHECK_NO_REPOSITORY = "It wasn't checked: the repository couldn't be read";
 /** The review's own reason, one short line. */
 export const checkFailed = (reason: string) => {
   const line = reason.replace(/\s+/g, " ").trim();
@@ -193,6 +195,10 @@ async function checkOnce(written: Written, pr: PullRequestRead, { projectId, con
   const rules = ruleChecks(before, after, { diff: pr.diff, added: written.payload.added === true });
   if (rules.fails) {
     return { pass: false, reason: checkFailed(rules.fails), reasons: [rules.fails], hints: rules.hints, rewrite: true };
+  }
+  // Without the repository every claim would come back unverified: no review (nor rewrite) can pass it.
+  if ("unavailable" in context.repository) {
+    return { pass: false, reason: CHECK_NO_REPOSITORY, reasons: [], hints: rules.hints, rewrite: false };
   }
   let meter;
   try {
