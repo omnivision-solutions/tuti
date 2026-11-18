@@ -220,11 +220,12 @@ function Field({ name, required = false, description, schema }: { name: string; 
         </p>
       )}
       {within && (
-        <details className="group/fields">
+        // Its own toggle only ([open]>summary>): a named group would follow any open field it's in.
+        <details>
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
-            <span className="group-open/fields:hidden">Show</span>
-            <span className="hidden group-open/fields:inline">Hide</span> {count} {what}
-            <ChevronRightIcon aria-hidden className="size-3.5 transition-transform group-open/fields:rotate-90" />
+            <span className="[[open]>summary>&]:hidden">Show</span>
+            <span className="hidden [[open]>summary>&]:inline">Hide</span> {count} {what}
+            <ChevronRightIcon aria-hidden className="size-3.5 transition-transform [[open]>summary>&]:rotate-90" />
           </summary>
           <div className="mt-2 ml-1 border-l border-divider pl-4">
             <Fields schema={schema} />

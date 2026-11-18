@@ -18,7 +18,11 @@ components:
       properties:
         number: { type: integer }
         title: { type: string }
-        author: { type: object, properties: { name: { type: string, description: Their display name. } } }
+        author:
+          type: object
+          properties:
+            name: { type: string, description: Their display name. }
+            team: { type: object, properties: { name: { type: string, description: The team's name. } } }
 security: [{ key: [] }]
 paths:
   /posts:
@@ -128,8 +132,16 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   await expect(responses.getByText("author", { exact: true })).toBeHidden();
   await responses.getByText("The new post").click();
   await expect(responses.getByText("author", { exact: true })).toBeVisible();
-  await responses.locator("summary").filter({ hasText: "1 property" }).click();
+  await responses.locator("summary").filter({ hasText: "2 properties" }).click();
   await expect(responses.getByText("Their display name.")).toBeVisible();
+  await expect(responses.locator("summary").filter({ hasText: "2 properties" })).toHaveText(/^Hide\s+2 properties/, { useInnerText: true });
+  // A field inside it is still closed, and says so.
+  const inner = responses.locator("summary").filter({ hasText: "1 property" });
+  await expect(inner).toHaveText(/^Show\s+1 property/, { useInnerText: true });
+  await expect(responses.getByText("The team's name.")).toBeHidden();
+  await inner.click();
+  await expect(inner).toHaveText(/^Hide\s+1 property/, { useInnerText: true });
+  await expect(responses.getByText("The team's name.")).toBeVisible();
 
   // Beside it: the request as cURL, then Python; Copy copies the one shown.
   const request = reader.getByRole("region", { name: "Request example" });
