@@ -187,7 +187,12 @@ export function repoPathRefusal(path: string): string | null {
  * `projectId` added is read, whatever is asked: the project's own row says which installation, and under what name.
  * The same limits as a URL's: 5 MB, read as a stream and stopped there, and 15 seconds for all of it.
  */
-export async function fetchGithubSpec(projectId: string, source: { repoId: number; path: string; ref?: string | null }): Promise<{ text: string; ref: string } | { error: string }> {
+export async function fetchGithubSpec(
+  projectId: string,
+  source: { repoId: number; path: string; ref?: string | null },
+  /** Tests only: the read's deadline, ended when they say (it's SPEC_FETCH_TIMEOUT_MS from now). */
+  { signal: deadline }: { signal?: AbortSignal } = {},
+): Promise<{ text: string; ref: string } | { error: string }> {
   const refused = repoPathRefusal(source.path);
   if (refused) {
     return { error: refused };
@@ -201,7 +206,7 @@ export async function fetchGithubSpec(projectId: string, source: { repoId: numbe
   }
   const { fullName } = repo;
   // One limit for all of it: the token, the default branch, the file, and the reads saying what's missing.
-  const signal = AbortSignal.timeout(SPEC_FETCH_TIMEOUT_MS);
+  const signal = deadline ?? AbortSignal.timeout(SPEC_FETCH_TIMEOUT_MS);
   try {
     const api = await installationApi(repo.connection.installationId, signal);
     // ponytail: the default branch costs a read of its own; only when none is given (adding one without a branch).
@@ -232,7 +237,8 @@ export async function fetchGithubSpec(projectId: string, source: { repoId: numbe
     if (name === "TimeoutError" || cause?.name === "TimeoutError" || signal.aborted) {
       return { error: `GitHub didn't answer within ${SPEC_FETCH_TIMEOUT_MS / 1000} seconds.` };
     }
-    if (String((error as Error).message).startsWith("GitHub refused an installation token")) {
+    // The installation gone or suspended; GitHub's own trouble (a 503, a rate limit) is the message below, not this.
+    if ([401, 403, 404].includes((error as { status?: number }).status ?? 0)) {
       return { error: "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations." };
     }
     return { error: "Couldn't read the file from GitHub. Try again later." };
@@ -458,6 +464,8 @@ export async function syncMergedApiReferences(
 ): Promise<{ synced: number; failed: number }> {
   const references = await prisma.apiReference.findMany({
     where: { projectId, source: "GITHUB", repoId, ref: base },
+    // Oldest first: the same order each time.
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, sourceUrl: true, repoId: true, path: true, ref: true, syncTriedAt: true },
   });
   let [synced, failed] = [0, 0];

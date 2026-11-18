@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { GITHUB_NOT_ADDED, SPEC_FILE_TOO_LARGE, syncApiReference as syncReferenceNow, syncApiReferences, SYNC_EVERY_MS } from "@tuti/jobs";
+import { fetchGithubSpec, GITHUB_NOT_ADDED, SPEC_FILE_TOO_LARGE, syncApiReference as syncReferenceNow, syncApiReferences, SYNC_EVERY_MS } from "@tuti/jobs";
 import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -43,7 +43,10 @@ beforeEach(async () => {
   github.repository(repo.fullName, { commit: `c-${installationId}`, files: { "docs/openapi.json": POSTS } });
   github.repository(other.fullName, { commit: `o-${installationId}`, branch: "trunk", files: { "spec.json": spec({ "GET /other": "Other" }) } });
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  github.answerTokens(null);
+});
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 
@@ -121,9 +124,51 @@ describe("added from GitHub", () => {
     await expect(add()).rejects.toMatchObject({ status: 400, message: SPEC_FILE_TOO_LARGE });
   });
 
-  test("an installation GitHub won't give a token for says so", async () => {
+  test("an installation GitHub won't give a token for says so; GitHub's own trouble says try again", async () => {
+    const reconnect = "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations.";
+    const later = "Couldn't read the file from GitHub. Try again later.";
+    // Refused (401: the app's key isn't GitHub's), gone (404) or suspended (403): connect again.
     vi.stubEnv("GITHUB_APP_ID", "1");
-    await expect(add()).rejects.toMatchObject({ status: 400, message: "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations." });
+    await expect(add()).rejects.toMatchObject({ status: 400, message: reconnect });
+    vi.stubEnv("GITHUB_APP_ID", github.env.GITHUB_APP_ID!);
+    for (const status of [403, 404]) {
+      github.answerTokens(status);
+      await expect(add()).rejects.toMatchObject({ status: 400, message: reconnect });
+    }
+    // An outage or a rate limit: connecting again wouldn't help.
+    for (const status of [429, 503]) {
+      github.answerTokens(status);
+      await expect(add()).rejects.toMatchObject({ status: 400, message: later });
+    }
+    // Nor a file GitHub fails to send.
+    github.answerTokens(null);
+    github.repository(repo.fullName, { commit: "failing", files: { "docs/openapi.json": POSTS }, failing: ["docs/openapi.json"] });
+    await expect(add()).rejects.toMatchObject({ status: 400, message: later });
+  });
+
+  test("a read GitHub doesn't finish by its deadline says so", async () => {
+    // The deadline ends once GitHub has the file's request, which it holds until the read has given up.
+    const deadline = new AbortController();
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    github.repository(repo.fullName, {
+      commit: "slow",
+      files: { "docs/openapi.json": POSTS },
+      during: () => {
+        deadline.abort();
+        return released;
+      },
+    });
+    expect(await fetchGithubSpec(project.id, { repoId: repo.id, path: "docs/openapi.json", ref: "main" }, { signal: deadline.signal })).toEqual({
+      error: "GitHub didn't answer within 15 seconds.",
+    });
+    release();
+  });
+
+  test("a repository id no repository can have is refused", async () => {
+    await expect(add({ repoId: 2_147_483_648 })).rejects.toMatchObject({ status: 400, message: "That isn't a repository's id" });
   });
 });
 
@@ -271,6 +316,15 @@ describe("a pull request merging", () => {
     });
     await merge("main", ["docs/openapi.json"]);
     expect(await stored()).toMatchObject({ spec: MORE });
+  });
+
+  test("a reference whose sync fails on a merge stops none of the others", async () => {
+    await call(createApiReference, as(), { name: "Second", github: { repoId: repo.id, path: "docs/openapi.json" } });
+    // The first's stored doc can't be read over (as a write that fails would): its sync throws.
+    await prisma.apiReference.update({ where: { id: (await stored()).id }, data: { doc: {} } });
+    commit({ "docs/openapi.json": MORE });
+    await merge("main", ["docs/openapi.json"]);
+    expect(await prisma.apiReference.findUniqueOrThrow({ where: { projectId_slug: { projectId: project.id, slug: "second" } } })).toMatchObject({ spec: MORE });
   });
 
   test("a merge that breaks the file says so on the reference's page", async () => {

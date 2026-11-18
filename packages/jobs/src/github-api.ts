@@ -45,12 +45,15 @@ export async function installationApi(installationId: number, signal?: AbortSign
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${appJwt()}`, "user-agent": "Tuti" },
   });
   if (!response.ok) {
-    throw new Error(`GitHub refused an installation token (${response.status})`);
+    // Its status says why: 401, 403 or 404 that the installation is gone or suspended; anything else, GitHub's trouble.
+    throw Object.assign(new Error(`GitHub refused an installation token (${response.status})`), { status: response.status });
   }
   const { token } = (await response.json()) as { token: string };
   const headers = { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" };
   const request = async (url: string, notFoundIsNull = false, init: RequestInit = {}) => {
-    const res = await fetch(url, { ...init, signal: init.signal ?? signal, headers: { ...headers, ...init.headers } });
+    // A request's own signal ends it too, never in place of the installation's.
+    const ends = init.signal && signal ? AbortSignal.any([init.signal, signal]) : (init.signal ?? signal);
+    const res = await fetch(url, { ...init, signal: ends, headers: { ...headers, ...init.headers } });
     if (notFoundIsNull && res.status === 404) {
       return null;
     }

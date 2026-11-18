@@ -42,7 +42,8 @@ const baseUrl = z
 const sourceUrl = z.string().trim().min(1, "Enter the spec's address").max(2000, "Keep the address to 2,000 characters");
 
 /** A file in a repository the project added on GitHub: GitHub's id for the repository, the file's path, and a branch. */
-const repoId = z.number().int().positive();
+// Stored as a 32-bit Int: a larger one is no repository's.
+const repoId = z.number().int().positive().max(2_147_483_647, "That isn't a repository's id");
 const repoPath = z
   .string()
   .trim()
