@@ -202,19 +202,27 @@ test("“Analyse again” waiting on a rewrite that marks its pull request, then
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${change.id} FOR UPDATE`;
     asked = call(analyseCodeChange, team(), { id: change.id }).catch((error: unknown) => error);
-    // Until the person's call waits on the lock.
+    // Until the person's call waits on the lock: a backend of this test's database, not this query's, waiting. Up to 15s;
+    // never seen, the race wasn't set up and the test says so.
     const waits = async () =>
-      (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE NOT l.granted AND a.datname = current_database()`)[0]!.n > 0;
-    for (let i = 0; i < 200 && !(await waits()); i++) {
+      (
+        await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+          WHERE NOT l.granted AND a.datname = current_database() AND a.pid <> pg_backend_pid()`
+      )[0]!.n > 0;
+    let seen = false;
+    for (let i = 0; i < 600 && !(seen = await waits()); i++) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
+    if (!seen) {
+      throw new Error("The person's call never waited on the lock: the race wasn't set up");
+    }
     await tx.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: REWRITING, retryAt: new Date(Date.now() + 3_600_000), rewriteDocsOnly: true } });
-  }, { timeout: 15_000 });
+  }, { timeout: 30_000 });
   expect(await asked).toMatchObject({ message: expect.stringContaining("Couldn't analyse it") });
   const after = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } });
   expect(after).toMatchObject({ state: "FAILED", reason: REWRITING, rewriteDocsOnly: true });
   expect(after.retryAt).not.toBeNull();
-});
+}, 40_000);
 
 test("a stopped rewrite's “Analyse again” that fails to queue stays marked, its retry due", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");

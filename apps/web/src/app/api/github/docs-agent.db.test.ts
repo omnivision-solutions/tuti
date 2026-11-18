@@ -1807,6 +1807,52 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await rewritten(132)).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true, scope: "correction" } } }]);
   });
 
+  test("“Analyse again” of a pull request being written again, analysis switched off before its job runs: marked again, and written again once it's back on", async () => {
+    const codeChangeId = await markedForRewrite(133);
+    // The person's claim, as "Analyse again" makes it (the marker cleared), their job queued; analysis switched off before it runs.
+    const claim = "e2e-analyse-again";
+    await prisma.codeChange.update({ where: { id: codeChangeId }, data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, rewriteDocsOnly: false, claim } });
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+    await enqueue("codeChange", { codeChangeId, force: true, pastGate: false, resume: false, claim });
+    // Its edit taken out isn't written again yet: marked as the rewrite leaves it, for its next run (no retry).
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: codeChangeId }, select: { state: true, reason: true, retryAt: true, rewriteDocsOnly: true } })).toEqual({
+      state: "FAILED",
+      reason: REWRITING,
+      retryAt: null,
+      rewriteDocsOnly: true,
+    });
+    // Back on: the next run writes its edit again, its help center's part only.
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
+    rewriteReplies(133);
+    const decided = model.decisions.length;
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, analysed: 1 });
+    expect(model.decisions.length).toBe(decided);
+    expect(await change(133)).toMatchObject({ state: "READY", reason: "" });
+    expect(await rewritten(133)).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true, scope: "correction" } } }]);
+  });
+
+  test("a rewrite leaves its pull request's part of a post's update as it was: going out at its time, another pull request's part waiting beside it", async () => {
+    const codeChangeId = await markedForRewrite(134);
+    const { repoId, repo } = await prisma.codeChange.findUniqueOrThrow({ where: { id: codeChangeId }, select: { repoId: true, repo: true } });
+    const other = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId, repo, number: 135, url: `https://github.com/${repo}/pull/135`, title: "Fonts", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const post = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+    const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } })).id;
+    await prisma.codeChangeAction.create({
+      data: { codeChangeId, kind: "MOVES_FORWARD", postId, probability: 0.97, payload: { comment: "Dark is on its way." }, status: "SCHEDULED", dueAt: new Date(Date.now() + 3_600_000) },
+    });
+    // The other pull request's part waits for a person (not sure enough).
+    await prisma.codeChangeAction.create({ data: { codeChangeId: other.id, kind: "MOVES_FORWARD", postId, probability: 0.2, payload: { comment: "Fonts too." }, waitReason: "Not sure enough" } });
+    const parts = () => prisma.codeChangeAction.findMany({ where: { postId }, orderBy: { id: "asc" }, select: { id: true, status: true, dueAt: true, waitReason: true, decidedById: true, payload: true } });
+    const before = await parts();
+    rewriteReplies(134);
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, analysed: 1 });
+    expect(await change(134)).toMatchObject({ state: "READY", reason: "" });
+    expect(await rewritten(134)).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true, scope: "correction" } } }]);
+    expect(await parts()).toEqual(before);
+  });
+
   test("a person's “Analyse again” while the rewrite takes its edit out waits for it, then is the one analysis, a whole one", async () => {
     vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
     proposeEdit(107);

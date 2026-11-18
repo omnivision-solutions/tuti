@@ -121,9 +121,11 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
         // One being written again (its edits taken out): marked as before, for the rewrite's next run once Autopilot is on
-        // again, not the sweep's (no retry).
-        data: change.rewriteDocsOnly
-          ? { state: "FAILED", reason: REWRITING, retryAt: null }
+        // again, not the sweep's (no retry). Also one a person's "Analyse again" cleared the marker of: its edit taken out
+        // isn't written again yet, and the rewrite's next run wouldn't find it otherwise.
+        data:
+          change.rewriteDocsOnly || (await rewriteLeft(change.id))
+            ? { state: "FAILED", reason: REWRITING, retryAt: null, rewriteDocsOnly: true }
           : { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
@@ -399,6 +401,17 @@ export async function releaseStoppedRewrites(now: Date) {
   });
 }
 const rewrittenEdit = { status: "DISMISSED", dismissReason: REWRITTEN, decidedById: null } satisfies Prisma.CodeChangeActionWhereInput;
+
+/** Whether the pull request has an edit the rewrite of waiting edits took out that no analysis has written again yet. */
+async function rewriteLeft(codeChangeId: string): Promise<boolean> {
+  const out = await prisma.codeChangeAction.findMany({ where: { codeChangeId, kind: "ARTICLE_EDIT", ...rewrittenEdit }, select: { articleId: true } });
+  for (const { articleId } of out) {
+    if ((await prisma.codeChangeAction.count({ where: { codeChangeId, kind: "ARTICLE_EDIT", articleId, NOT: rewrittenEdit } })) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** Another edit changed one of the same sections of these articles while theirs were written: they're written again on top of it. */
 class EditConflict extends Error {
@@ -763,8 +776,9 @@ async function finish(
       OR: [{ status: { in: ["STALE" as const, "SCHEDULED" as const] } }, { status: "PENDING" as const, decidedById: null }],
       ...(docsOnly && { kind: { in: ["ARTICLE_EDIT" as const, "NEW_ARTICLE" as const] } }),
     };
-    // Posts whose update loses this pull request's part: the rest of it is checked again below.
-    const parted = (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
+    // Posts whose update loses this pull request's part: the rest of it is checked again below. None in the rewrite of
+    // waiting edits: its posts' parts stay.
+    const parted = docsOnly ? [] : (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
     await tx.codeChangeAction.deleteMany({ where: replaced });
     // Not an edit the rewrite of waiting edits took out (rewriteWaitingEdits): it's written again here.
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id, NOT: rewrittenEdit }, select: { kind: true, postId: true, articleId: true } });
