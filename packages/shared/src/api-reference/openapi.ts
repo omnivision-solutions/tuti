@@ -83,7 +83,7 @@ const MESSAGES = {
 type Obj = Record<string, unknown>;
 
 /** What may be said about an `allOf` reference and still leave it that reference: all of it is carried over or only words. */
-const WORDS = new Set(["description", "nullable", "deprecated", "default", "title", "example"]);
+const WORDS = new Set(["description", "nullable", "deprecated", "default", "title", "example", "examples", "$comment"]);
 /** What `constraints` puts into words, and `type`: beside a reference they're carried over or say nothing new. */
 const LIMITS = new Set(
   "type minimum maximum exclusiveMinimum exclusiveMaximum multipleOf minLength maxLength pattern minItems maxItems uniqueItems minProperties maxProperties readOnly writeOnly".split(" "),
@@ -419,7 +419,10 @@ function read(root: Obj, most: number): ApiDoc {
       if (!part || seen.has(part)) return;
       seen.add(part);
       if (parent) into.set(part, parent);
-      if (parent) folds.set(parent, [...(folds.get(parent) ?? []), part]);
+      // Added to the list there is, not to a copy of it: a long `allOf`'s parts would be copied once for each.
+      const beside = parent && folds.get(parent);
+      if (beside) beside.push(part);
+      else if (parent) folds.set(parent, [part]);
       if (byReference) referenced.add(part);
       // Folding in a wide schema is work and memory like spelling it out, so it counts the same.
       docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
@@ -537,6 +540,16 @@ function read(root: Obj, most: number): ApiDoc {
     return { choices, nullable: choices.length < all.length };
   }
 
+  /** An `allOf`'s parts, a 3.1 part with keywords beside its reference as the two of them it means. */
+  const partsOf = (schema: Obj): unknown[] =>
+    list(schema.allOf).flatMap((part) => {
+      const whole = split(part);
+      return whole === part ? [part] : list((whole as Obj).allOf);
+    });
+  /** In 3.1, the description written beside a reference to a parameter, response or scheme is the one that counts. */
+  const describedBy = (entry: unknown, target: Obj): unknown =>
+    besideApplies && isObj(entry) && typeof entry.$ref === "string" && typeof entry.description === "string" ? entry.description : target.description;
+
   /** `stack`: the references it's inside. `folding`: the schemas above it that fold others in with `allOf`. */
   type Place = { where: string; root: string; stack: Obj[]; named: number; folding: Obj[] };
 
@@ -575,11 +588,7 @@ function read(root: Obj, most: number): ApiDoc {
     // keeping its name. One this schema is already inside (a type's field that is the type and
     // more) is only named, as anywhere; so is a schema met again under itself. Any other is folded
     // in: a base two types share isn't either inside the other.
-    // (A 3.1 part with keywords beside its reference is the two of them.)
-    const parts = list(node.allOf).flatMap((part) => {
-      const whole = split(part);
-      return whole === part ? [part] : list((whole as Obj).allOf);
-    });
+    const parts = partsOf(node);
     charge(parts.length);
     // (A schema that folds itself in adds nothing to itself.)
     const folded = parts.flatMap((part) => {
@@ -676,7 +685,7 @@ function read(root: Obj, most: number): ApiDoc {
     if (!target) return isObj(node) ? {} : undefined;
     // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.
     charge(list(target.allOf).length);
-    const bases = list(target.allOf).flatMap((part): Obj[] => {
+    const bases = partsOf(target).flatMap((part): Obj[] => {
       const base = followSchema(part);
       return base ? [base] : [];
     });
@@ -769,7 +778,7 @@ function read(root: Obj, most: number): ApiDoc {
             ? scheme.type
             : null;
     if (!kind) warn("UNSUPPORTED_AUTH", where);
-    else auth.push({ key, kind, name: scheme.type === "apiKey" ? named(scheme.name, "a security scheme's header, query or cookie name") : "Authorization", description: text(scheme.description, where) });
+    else auth.push({ key, kind, name: scheme.type === "apiKey" ? named(scheme.name, "a security scheme's header, query or cookie name") : "Authorization", description: text(describedBy(value, scheme), where) });
   }
   const signed = new Set(auth.map((scheme) => scheme.key));
 
@@ -878,7 +887,7 @@ function read(root: Obj, most: number): ApiDoc {
           name,
           in: place,
           required: place === "path" || param.required === true,
-          description: text(param.description, where),
+          description: text(describedBy(entry, param), where),
           schema,
           ...(example === undefined ? {} : { example }),
         });
@@ -916,7 +925,7 @@ function read(root: Obj, most: number): ApiDoc {
         const example = shown ? exampleOf(shown.media, true, where) : undefined;
         responses.push({
           status,
-          description: text(response.description, where),
+          description: text(describedBy(entry, response), where),
           contentType: shown?.contentType ?? null,
           schema,
           ...(example === undefined ? {} : { example }),

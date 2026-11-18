@@ -1454,6 +1454,50 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
   expect(any!.example).toEqual({ name: "Any" });
   expect(fewer!.schema!.properties!.map((property) => property.name)).toEqual(["id", "since"]);
 
+  // `examples` and `$comment` are words too: the field is still the type. And a field that folds in the type it's inside, with words, stops there.
+  const worded = (openapi: string) =>
+    read(
+      JSON.stringify({
+        openapi,
+        paths: {
+          "/x": {
+            get: {
+              summary: "X",
+              parameters: [{ $ref: "#/components/parameters/Page", description: "Which page here." }],
+              responses: { "200": json(ref("Node")), "404": { $ref: "#/components/responses/NotFound", description: "No such post." } },
+            },
+          },
+        },
+        components: {
+          parameters: { Page: { name: "page", in: "query", description: "Which page.", schema: { type: "integer" } } },
+          responses: { NotFound: { description: "Not found." } },
+          schemas: {
+            User: { type: "object", properties: { id: { type: "string" } } },
+            Node: {
+              type: "object",
+              properties: {
+                owner: { $ref: "#/components/schemas/User", description: "Owner.", examples: [{ id: "u1" }], $comment: "Kept." },
+                parent: { allOf: [{ $ref: "#/components/schemas/Node", description: "Its parent." }] },
+              },
+            },
+          },
+        },
+      }),
+    ).operations[0]!;
+  const words31 = worded("3.1.0");
+  expect(words31.responses[0]!.schema!.properties).toEqual([
+    { name: "owner", required: false, type: "User", ref: "User", description: "Owner.", properties: [{ name: "id", required: false, type: "string" }] },
+    { name: "parent", required: false, type: "Node", ref: "Node", description: "Its parent." },
+  ]);
+  expect(words31.responses[0]!.example).toEqual({ owner: { id: "u1" } });
+  // The description beside a reference to a parameter or a response is the one shown.
+  expect(words31.params[0]!.description).toBe("Which page here.");
+  expect(words31.responses[1]!.description).toBe("No such post.");
+  const words30 = worded("3.0.3");
+  expect(words30.responses[0]!.example).toEqual({ owner: { id: "string" } });
+  expect(words30.params[0]!.description).toBe("Which page.");
+  expect(words30.responses[1]!.description).toBe("Not found.");
+
   // 3.0: a reference is only the reference, with the description beside it read as before.
   const earlier = spec(parts);
   const before = earlier.operations[0]!.responses[0]!;
@@ -1465,6 +1509,22 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
   ]);
   expect(before.example).toEqual({ owner: { id: "string", name: "string" }, admin: { id: "string", name: "string" }, short: "string" });
   expect(earlier.warnings).toEqual([]);
+});
+
+test("a long allOf of parts written one by one is listed once, not copied for each part", () => {
+  const text = JSON.stringify({ openapi: "3.0.0", components: { schemas: { A: { allOf: Array.from({ length: 1_500 }, (_, index) => (index === 0 ? { type: "object", properties: { id: { type: "string" } } } : {})) } } } });
+  // How often a long list is put into a map: a copy of the parts so far for each part would be a thousand of them.
+  let copies = 0;
+  const set = Map.prototype.set;
+  const spy = vi.spyOn(Map.prototype, "set").mockImplementation(function (this: Map<unknown, unknown>, key: unknown, value: unknown) {
+    if (Array.isArray(value) && value.length >= 500) copies++;
+    return set.call(this, key, value);
+  });
+  const result = readOpenApi(text);
+  spy.mockRestore();
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.types[0]!.schema).toEqual({ type: "object", ref: "A", properties: [{ name: "id", required: false, type: "string" }] });
+  expect(copies).toBeLessThan(5);
 });
 
 test("a schema or parameter with thousands of other keys has them listed once, not on every use", () => {
