@@ -154,7 +154,7 @@ ${WRITING_RULES}
 ${ADD_RULE}
 
 Reply with JSON only: {"reason": "<one sentence for the team: what's wrong or missing>", "overview": "<one or two sentences for the team: what the article says now that it didn't, with this edit and the ones already waiting (listed) together, such as: It says invite links work for 7 days, and to send a new one from Team.>", "sections": {"<number>": "<the section's new text>"}, "passages": [{"section": <number>, "find": "<a passage, exactly as listed>", "replace": "<its new text, or empty to take it out>"}, {"section": <number>, "after": "<a passage, exactly as listed>", "insert": "<new text>"}], "add": "<a new section for the end, starting with a ## heading, or empty>"}
-Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links.`;
+Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links. In "passages", also *italics*, <br> and code, as the passage has them.`;
 
 /**
  * An edit to the article on top of its newest text (`writtenOn`), or null if the model's version can't be used

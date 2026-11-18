@@ -328,7 +328,8 @@ function rewritten(target: JSONContent, replace: string): JSONContent | null {
     rest = rest.slice(at + span.length);
   }
   // Each link the passage had, as often as it had it: one of two to the same address made plain text is a link lost.
-  if (!text(rest) || content.every((node) => node.type === "hardBreak")) {
+  // A line break at either end isn't written back (toMarkdown drops one at the end): the block couldn't be found again.
+  if (!text(rest) || content[0]?.type === "hardBreak" || content.at(-1)?.type === "hardBreak") {
     return null;
   }
   // A link the passage had comes back as the mark it was, every attribute: the reader makes one with the address alone.

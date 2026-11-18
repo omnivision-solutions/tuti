@@ -248,6 +248,8 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
     expect(prompt).toContain(ADD_RULE);
     expect(prompt).toContain(PASSAGES_RULE);
     expect(prompt).toContain('"passages": [{"section": <number>, "find"');
+    // The format line doesn't contradict what a passage keeps.
+    expect(prompt).toContain('In "passages", also *italics*, <br> and code, as the passage has them.');
   }
   // A correction is made where the old text stands (E1): code, italics and something gone are changed or taken out by
   // passages, so the note at the end is only for what nothing can change (a person's section, text that's no passage),

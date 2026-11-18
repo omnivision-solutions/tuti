@@ -237,6 +237,9 @@ describe("passages: a block's text replaced where it stands", () => {
     // A line break dropped is a change like any other; an escaped <br> is text, never a break.
     expect(replacePassage(block, find, "Exports are *never* emailed.")![0]).toEqual(para(text("Exports are "), text("never", italic), text(" emailed.")));
     expect(replacePassage(block, find, "Use \\<br> tags.")![0]).toEqual(para(text("Use <br> tags.")));
+    // A break at either end is refused: Markdown doesn't write one at the end, so the block couldn't be found again.
+    expect(replacePassage(block, find, "Exports are *never* emailed.<br>")).toBeNull();
+    expect(replacePassage(block, find, "<br>Exports are *never* emailed.")).toBeNull();
     // Still one line: a real line feed is refused, as before.
     expect(replacePassage(block, find, "Exports are *never* emailed.\nFind them in **Files**.")).toBeNull();
     // A break at the end isn't written back by Markdown, and bold italics keep one mark per run: neither is listed.
