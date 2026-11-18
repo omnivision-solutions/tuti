@@ -149,6 +149,17 @@ export async function setAutopilotSwitch(projectSlug: string, name: keyof typeof
   return {};
 }
 
+/** Settings → Autopilot (owners and admins): Dismiss on the notice that, with Checks off, article edits no longer go out by themselves. For the project, for good. */
+export async function dismissAutopilotChecksNotice(projectSlug: string): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can dismiss it" };
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotChecksNoticeDismissed: true } });
+  refresh();
+  return {};
+}
+
 /**
  * Settings → Autopilot (owners): what always waits for someone (how sure, how many people a post
  * reaches, how often an article is read), and the hold. (Its switches save as they're flipped.)

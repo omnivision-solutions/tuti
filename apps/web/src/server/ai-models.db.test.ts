@@ -316,7 +316,7 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
   const shown = async () => {
     const setting = await aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
     // The switch is on exactly when the line above it names a model for Checks.
-    expect(checksSwitch(setting)).toEqual({ on: !setting.summary.includes("Checks Off") });
+    expect(checksSwitch(setting)).toMatchObject({ on: !setting.summary.includes("Checks Off") });
     return { summary: setting.summary, used: setting.used, checks: setting.roles[1]!.model, runsOn: (await call(getAiModels, as(), {})).code_changes_check.used };
   };
   actAs(owner);
@@ -378,11 +378,12 @@ test("the Checks switch on a server whose own checks are off: none where they wo
   expect(await saveAiModel(project.slug, { levels: { code_changes: "best" } })).toEqual({});
   const best = await setting();
   expect(best.summary).toContain("Checks Claude Sonnet 5.5");
-  expect(checksSwitch(best)).toEqual({ on: true });
+  expect(checksSwitch(best)).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
   expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: false });
+  // Off, the switch still knows what they'd run on, so the page can price them.
+  expect(checksSwitch(await setting())).toEqual({ on: false, model: "anthropic/claude-sonnet-5.5" });
   expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: true });
+  expect(checksSwitch(await setting())).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
 
   // Off saved, then back on Balanced, where on would run nothing either: no switch that could say "on" while they're off.
   expect(await saveAiModel(project.slug, { code_changes_check: "off", levels: { code_changes: "balanced" } })).toEqual({});
@@ -390,5 +391,5 @@ test("the Checks switch on a server whose own checks are off: none where they wo
 
   // Custom with a model picked for Checks: on, whatever the server's own is.
   expect(await saveAiModel(project.slug, { code_changes_check: "acme/tiny" })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: true });
+  expect(checksSwitch(await setting())).toEqual({ on: true, model: "acme/tiny" });
 });

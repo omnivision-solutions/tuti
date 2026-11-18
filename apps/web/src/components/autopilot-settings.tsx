@@ -6,6 +6,7 @@ import { useActionState, useEffect, useId, useOptimistic, useRef, useState, useS
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,7 @@ import { keepingFields } from "@/lib/forms";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { saveAiModel } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
-import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails, setAutopilotSwitch } from "@/server/github";
+import { dismissAutopilotChecksNotice, saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails, setAutopilotSwitch } from "@/server/github";
 
 export type AutopilotSwitchValues = Record<(typeof SWITCHES)[number][0], boolean>;
 
@@ -37,9 +38,10 @@ const SWITCHES = [
 /**
  * Settings → Autopilot → Checks (owners and admins, like the AI model above it): off saves "off" as the role's model,
  * on clears it, so the level's model (or Custom's) checks again. What's shown is what the page read once it's saved,
- * the same the AI model setting shows, so the two can't disagree.
+ * the same the AI model setting shows, so the two can't disagree. `reviews`: the server checks this project's article
+ * edits (docs/plan.md, E5), so the switch says what it does and what off costs, with the review's price when known.
  */
-export function AutopilotChecksSwitch({ projectSlug, on }: { projectSlug: string; on: boolean }) {
+export function AutopilotChecksSwitch({ projectSlug, on, reviews }: { projectSlug: string; on: boolean; reviews?: { price: string | null } }) {
   const [, startTransition] = useTransition();
   const [checked, setChecked] = useOptimistic(on);
   const ref = useRef<HTMLInputElement>(null);
@@ -53,10 +55,23 @@ export function AutopilotChecksSwitch({ projectSlug, on }: { projectSlug: string
     was.current = on;
   }, [on]);
   return (
-    <SettingRow label="Checks" htmlFor="autopilot-checks" inline>
+    <SettingRow
+      label="Checks"
+      htmlFor="autopilot-checks"
+      inline
+      description={
+        reviews && (
+          <>
+            Reviews every article edit and double-checks new articles. Off, every edit waits for your team.{" "}
+            {reviews.price && <span className="block">{reviews.price}</span>}
+          </>
+        )
+      }
+    >
       <Switch
         ref={ref}
         id="autopilot-checks"
+        aria-describedby={reviews && "autopilot-checks-description"}
         checked={checked}
         // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
         onChange={(event) => {
@@ -73,6 +88,45 @@ export function AutopilotChecksSwitch({ projectSlug, on }: { projectSlug: string
         }}
       />
     </SettingRow>
+  );
+}
+
+/**
+ * Settings → Autopilot, at the top for owners and admins where the server checks the project's article edits and
+ * Checks is off: those edits no longer go out by themselves. Switch Checks on, or Dismiss it for the project; either
+ * way the notice goes and focus moves to the Checks switch, which keeps saying what off means.
+ */
+export function AutopilotChecksNotice({ projectSlug }: { projectSlug: string }) {
+  const [pending, startTransition] = useTransition();
+  const act = (action: () => Promise<{ error?: string }>, done: string) => {
+    if (pending) {
+      return;
+    }
+    startTransition(async () => {
+      const result = await action().catch(() => ({ error: "Couldn't save. Try again." }));
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(done);
+      document.getElementById("autopilot-checks")?.focus();
+    });
+  };
+  return (
+    <Alert role="status">
+      <AlertDescription className="flex flex-col gap-2">
+        <div>Article edits no longer go out by themselves while Checks is off: each one waits for your team.</div>
+        <div className="flex flex-wrap gap-2">
+          {/* Not disabled while it runs, which would drop keyboard focus. */}
+          <Button size="sm" variant="outline" aria-disabled={pending || undefined} onClick={() => act(() => saveAiModel(projectSlug, { code_changes_check: "" }), "Checks: on")}>
+            Switch Checks on
+          </Button>
+          <Button size="sm" variant="ghost" aria-disabled={pending || undefined} onClick={() => act(() => dismissAutopilotChecksNotice(projectSlug), "Dismissed")}>
+            Dismiss
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
