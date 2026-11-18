@@ -705,6 +705,13 @@ describe("a tab holding a reference", () => {
     expect(two).toContain('"href":"/docs/webhooks"');
   });
 
+  test("llms.txt without tabs lists the references under a heading of their own", async () => {
+    await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
+    const portal = `http://${project.slug}.localhost:3100`;
+    const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(text).toContain(`## API references\n\n- [Reference](${portal}/docs/reference)\n`);
+  });
+
   test("the docs without tabs holding one reference alone: /docs shows it", async () => {
     await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
     await prisma.article.deleteMany({ where: { projectId: project.id } });
@@ -760,6 +767,16 @@ paths:
     for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
       expect(xml).toContain(`<loc>${portal}${path}</loc>`);
     }
+    // A tab, and /docs for the first's, date from their references' last change too.
+    const later = new Date("2030-01-01T00:00:00.000Z");
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "regions" } }, data: { updatedAt: later } });
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "guides" });
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "webhooks" } }, data: { updatedAt: later } });
+    const dated = await (await sitemap(new Request("http://x"), route)).text();
+    for (const path of ["/docs", "/docs/api", "/docs/regions", "/docs/webhooks"]) {
+      expect(dated).toContain(`<loc>${portal}${path}</loc><lastmod>${later.toISOString()}</lastmod>`);
+    }
+    expect(dated).not.toContain(`<loc>${portal}/docs/reference</loc><lastmod>${later.toISOString()}</lastmod>`);
     await setTab("SIGNED_IN");
     expect(await (await llms(new Request("http://x"), route)).text()).not.toContain("/docs/reference");
     const hidden = await (await sitemap(new Request("http://x"), route)).text();

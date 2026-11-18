@@ -109,7 +109,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
           ...(tab.uncollected.length > 0 ? [heading(3, "More articles"), articleLinks(tab.uncollected)] : []),
         ])
       : [
-          ...referenceLinks(references),
+          // Under a heading of their own: llms.txt's links are the lists under one.
+          ...(references.length > 0 ? [heading(2, "API references"), ...referenceLinks(references)] : []),
           ...collections.flatMap((collection) => collectionBlocks(collection, 2)),
           ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Docs"), articleLinks(uncollected)] : []),
         ]),
