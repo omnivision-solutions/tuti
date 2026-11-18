@@ -1045,6 +1045,17 @@ test("a YAML file that's too large once its aliases are filled in is an error", 
   expect(errorOf(text)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
   // An anchor that holds itself isn't a file to read, and that's what the error says.
   expect(errorOf("openapi: 3.0.0\na: &a\n  b: *a\n")).toBe("This file isn't valid JSON or YAML: an alias holds itself");
+  // One small anchor used hundreds of times, as a value and merged in, is an ordinary spec.
+  const uses = Array.from({ length: 300 }, (_, index) => `        "${200 + index}": *ok`).join("\n");
+  const merges = Array.from({ length: 300 }, (_, index) => `    M${index}:\n      <<: *base\n      description: D${index}`).join("\n");
+  const many = read(`openapi: 3.0.0\nx-ok: &ok { description: Fine }\nx-base: &base { type: object, properties: { id: { type: string } } }\npaths:\n  /a:\n    get:\n      summary: A\n      responses:\n${uses}\ncomponents:\n  schemas:\n${merges}\n`);
+  expect(many.operations[0]!.responses).toHaveLength(300);
+  expect(many.types).toHaveLength(300);
+  expect(many.types[299]!.schema).toEqual({ type: "object", ref: "M299", description: "D299", properties: [{ name: "id", required: false, type: "string" }] });
+  // Many merges of a large anchor are measured before any is filled in.
+  const wide = Array.from({ length: 20_000 }, (_, index) => `k${index}: 1`).join(", ");
+  const merged = Array.from({ length: 200 }, (_, index) => `  m${index}: { <<: *wide }`).join("\n");
+  expect(errorOf(`openapi: 3.0.0\nx-wide: &wide { ${wide} }\nx-uses:\n${merged}\n`)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
   // A few uses of an anchor are what anchors are for.
   expect(errorOf(`openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses: [*big, *big, *big]\n`)).toBeNull();
 });
@@ -1235,6 +1246,17 @@ test("one rule when parts are folded in: a later part's word counts, and a schem
   // Dog's example, the nearest one said: Pet's is under it.
   expect(pup.example).toEqual({ kind: "dog", barks: true });
   expect(pup.doc.types.map((type) => type.schema.description)).toEqual(["A pet.", "A dog.", "A pup."]);
+
+  // A base's example or default isn't of a type that adds fields to it: that one's is made from all its fields.
+  const based = schemaOf(ref("Cat"), {
+    Pet: { type: "object", example: { name: "Rex" }, default: { name: "Rex" }, properties: { name: { type: "string" } } },
+    Cat: { allOf: [ref("Pet"), { required: ["lives"], properties: { lives: { type: "integer" } } }] },
+    // With nothing added, it's still the base's.
+    Same: { allOf: [ref("Pet")], description: "A pet by another name." },
+  });
+  expect(based.example).toEqual({ name: "string", lives: 0 });
+  expect(based.schema).not.toHaveProperty("default");
+  expect(based.doc.types[2]!.schema).toMatchObject({ type: "Pet", ref: "Same", default: { name: "Rex" }, description: "A pet by another name." });
 });
 
 test("a schema of fields that are only true counts like any other", () => {

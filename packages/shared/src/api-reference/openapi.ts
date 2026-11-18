@@ -1,4 +1,4 @@
-import { isScalar, parseDocument } from "yaml";
+import { isAlias, isCollection, isPair, isScalar, parseDocument } from "yaml";
 import type { ApiAuth, ApiDoc, ApiGroup, ApiOperation, ApiParam, ApiResponse, ApiSchema, ApiServer, ApiType, ApiWarning } from "./types";
 
 /** The most a spec's text may be, in bytes. */
@@ -196,8 +196,12 @@ function parse(text: string): { value: unknown } | { error: string } {
     // Merge keys (`<<: *base`) as the tools specs are written for read them.
     const document = parseDocument(text, { logLevel: "error", merge: true });
     if (document.errors[0]) throw document.errors[0];
-    const read: unknown = document.toJS();
-    if (sizeOf(read, YAML_SIZE) > YAML_SIZE) return { error: "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors." };
+    // Measured on the file as written, before any alias is filled in: then they all may be, however
+    // often one anchor is used (the library's own limit is a hundred uses, fewer than a spec's shared response has).
+    if (yamlSize(document.contents, new Map(), new Map()) > YAML_SIZE) {
+      return { error: "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors." };
+    }
+    const read: unknown = document.toJS({ maxAliasCount: -1 });
     const value: unknown = read === undefined ? null : JSON.parse(JSON.stringify(read));
     // An unquoted `version: 1.10` is the number 1.1 to YAML: the version is what the spec's text says.
     const version: unknown = document.getIn(["info", "version"], true);
@@ -208,6 +212,28 @@ function parse(text: string): { value: unknown } | { error: string } {
     if (error instanceof RangeError || /call stack/i.test(reason)) return { error: "This file is nested too deeply to read." };
     return { error: `This file isn't valid JSON or YAML${reason ? `: ${reason}` : "."}` };
   }
+}
+
+/**
+ * About how many characters a YAML node is once its aliases are filled in: an alias counts as what
+ * its anchor holds, worked out once per anchor. Throws on an anchor that holds itself.
+ */
+function yamlSize(node: unknown, anchors: Map<string, object>, sizes: Map<object, number>): number {
+  if (isAlias(node)) {
+    const target = anchors.get(node.source);
+    const size = target && sizes.get(target);
+    if (target && size === undefined) throw new Error("an alias holds itself");
+    return size ?? 2;
+  }
+  if (isPair(node)) return 2 + yamlSize(node.key, anchors, sizes) + yamlSize(node.value, anchors, sizes);
+  if (!isScalar(node) && !isCollection(node)) return 2;
+  // Known by its anchor from here on, sized once it's whole: an alias to it met before then is inside it.
+  if (node.anchor) anchors.set(node.anchor, node);
+  let size = 2;
+  if (isScalar(node)) size += typeof node.value === "string" ? node.value.length : 6;
+  else for (const item of node.items) size += yamlSize(item, anchors, sizes);
+  sizes.set(node, size);
+  return size;
 }
 
 /**
@@ -246,18 +272,15 @@ export function readOpenApi(text: string): { doc: ApiDoc } | { error: string } {
   }
 }
 
-/** About how many characters a value is as JSON; stops counting once past `limit`. Throws on a value that holds itself (a YAML alias can). */
-function sizeOf(value: unknown, limit: number, above = new Set<object>()): number {
+/** About how many characters a value is as JSON; stops counting once past `limit`. */
+function sizeOf(value: unknown, limit: number): number {
   if (typeof value === "string") return value.length + 2;
   if (typeof value !== "object" || value === null) return 8;
-  if (above.has(value)) throw new Error("an alias holds itself");
-  above.add(value);
   let size = 2;
   for (const [key, inner] of Object.entries(value)) {
-    size += key.length + 4 + sizeOf(inner, limit - size, above);
+    size += key.length + 4 + sizeOf(inner, limit - size);
     if (size > limit) break;
   }
-  above.delete(value);
   return size;
 }
 
@@ -366,6 +389,8 @@ function read(root: Obj): ApiDoc {
     // one's, and a schema's own over all it folds in. Only the keywords the reader reads, so a part
     // with thousands of other keys costs what its fields do.
     for (const part of after) {
+      // An example or a default is of the fields so far: a part that adds fields leaves it behind, unless it has its own.
+      if (fieldsOf(part.properties).length > 0) for (const key of ["example", "examples", "default"]) merged.delete(key);
       for (const key of KEYWORDS) if (Object.hasOwn(part, key)) merged.set(key, part[key]);
       for (const name of list(part.required)) required.add(name);
       for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
