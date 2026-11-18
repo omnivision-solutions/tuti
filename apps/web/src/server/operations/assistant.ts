@@ -132,6 +132,7 @@ export const updateAssistantSettings = defineOperation({
   run: async ({ projectId }, input) => {
     // Instructions sent are the whole of them (a read gives the stored tone folded in, so written back it adds nothing).
     // A tone sent alone takes the stored tone's place, before the stored instructions.
+    // ponytail: read, then written, without a lock: an update between the two is overwritten. A transaction with a row lock if settings are ever saved by many at once; the field goes next release.
     let instructions = input.instructions;
     if (input.tone !== undefined) {
       instructions = foldTone(
