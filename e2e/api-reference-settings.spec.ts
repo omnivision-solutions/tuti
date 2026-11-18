@@ -71,6 +71,9 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   await team.getByRole("button", { name: "Save" }).click();
   await team.waitForURL(`**/docs/references/acme-api/settings`);
   await expect(team.getByRole("heading", { name: "Acme API", level: 1 })).toBeVisible();
+  // The redirect to the new address is the save working, not failing.
+  await expect(team.getByText("Settings saved")).toBeVisible();
+  await expect(team.getByText("Couldn't save that")).toBeHidden();
   await expect(team.getByText("unsaved change")).toBeHidden();
 
   // The base address: https only.

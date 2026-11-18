@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { unstable_rethrow } from "next/navigation";
 import { type DragEvent, type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -52,7 +53,12 @@ export function ApiReferenceSettings({
   warnings: { code: string; message: string; count: number; where: string[] }[];
   maxBytes: number;
 }) {
-  const save = (changes: Changes) => saveApiReferenceSettings(projectSlug, reference.slug, changes).catch(() => SAVE_FAILED);
+  // A new address's redirect comes back as a rejection for the router to follow, not a failure.
+  const save = (changes: Changes) =>
+    saveApiReferenceSettings(projectSlug, reference.slug, changes).catch((error: unknown) => {
+      unstable_rethrow(error);
+      return SAVE_FAILED;
+    });
 
   // The fields Save sends: only the ones that differ from what's saved, so a teammate's other change isn't undone.
   const saved = { name: reference.name, slug: reference.slug, baseUrl: reference.baseUrl ?? "" };
@@ -67,9 +73,12 @@ export function ApiReferenceSettings({
       ...(changed.includes("baseUrl") && { baseUrl: draft.baseUrl.trim() || null }),
     };
     startSaving(async () => {
-      // A new address goes to Settings there, so a save that changes it may not come back.
-      const result = await save(changes);
-      if (result?.error) toast.error(result.error);
+      const result = await save(changes).catch((redirect: unknown) => {
+        // Saved at a new address: the router goes to its Settings.
+        toast.success("Settings saved");
+        throw redirect;
+      });
+      if (result.error) toast.error(result.error);
       else toast.success("Settings saved");
     });
   };
@@ -84,7 +93,7 @@ export function ApiReferenceSettings({
     show();
     startChange(async () => {
       const result = await save(changes);
-      if (result?.error) toast.error(result.error);
+      if (result.error) toast.error(result.error);
       else toast.success(done);
       settle();
     });
@@ -164,7 +173,8 @@ export function ApiReferenceSettings({
                   type="url"
                   value={draft.baseUrl}
                   placeholder="https://api.example.com"
-                  pattern="https://.+"
+                  // Checked once changed: an address saved before https was required doesn't hold up the other fields.
+                  pattern={changed.includes("baseUrl") ? "https://.+" : undefined}
                   title="An address that starts with https://"
                   maxLength={2000}
                   autoComplete="off"
