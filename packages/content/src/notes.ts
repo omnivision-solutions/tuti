@@ -374,8 +374,8 @@ function passageAt(blocks: JSONContent[], find: string) {
  * the last). (A section's heading goes only with the rest of its section: articleNotes.) Null when it can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is more than
  * one line (a line break is <br>) or starts like a block of its own (a heading's #, a list's marker); it loses a link
  * the passage had (one of two to the same address counts); or it hasn't the passage's code spans, as many and in order
- * (their code may change; none is made up); a code block's isn't a fenced block; or what's taken out isn't one of these
- * blocks or a list's item (a table's cell, a step's title). The rest is read like any reply (inline):
+ * (their code may change; none is made up); a code block's isn't a fenced block; or what's taken out has a link, or isn't
+ * one of these blocks or a list's item (a table's cell, a step's title). The rest is read like any reply (inline):
  * text, **bold**, *italics* and the links the passage had.
  */
 export function replacePassage(blocks: JSONContent[], find: string, replace: string): JSONContent[] | null {
@@ -384,7 +384,8 @@ export function replacePassage(blocks: JSONContent[], find: string, replace: str
     return null;
   }
   if (replace.trim() === "") {
-    const at = unitOf(blocks, node);
+    // Never one with a link: a link is what an edit must keep (factsIn), here as anywhere.
+    const at = factsIn([node]).size > 0 ? null : unitOf(blocks, node);
     if (!at?.list) {
       return at && blocks.filter((block) => block !== at.unit);
     }

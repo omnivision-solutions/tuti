@@ -264,6 +264,10 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(replacePassage(section, "Each plan has seats.", "")).toEqual([section[0], section[2], section[3], section[4], section[5]]);
     expect(replacePassage(section, "```bash\nnpm run export\n```", " ")).toEqual([section[0], section[1], section[2], section[4], section[5]]);
     expect(replacePassage(section, "Open **Billing**.", "")![5]).toEqual({ ...list, content: [list.content![1]] });
+    // One with a link isn't: the link would be lost, which no edit may do.
+    const linked = [para(text("See "), text("Billing", { type: "link", attrs: { href: "https://example.com/billing" } }), text(".")), para(text("More."))];
+    expect(replacePassage(linked, "See [Billing](https://example.com/billing).", "")).toBeNull();
+    expect(replacePassage(linked, "More.", "")).toEqual([linked[0]]);
     // Its list's last item takes the list with it.
     const one = [para(text("Plans:")), { type: "bulletList", content: [{ type: "listItem", content: [para(text("Free"))] }] }];
     expect(replacePassage(one, "Free", "")).toEqual([one[0]]);
