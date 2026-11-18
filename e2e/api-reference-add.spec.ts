@@ -32,8 +32,6 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await api("/tabs", { name: "Developers" });
   await api("/tabs", { name: "Scratch" });
   await team.setViewportSize({ width: 1280, height: 900 });
-  // Without live updates: a tab is deleted below while the dialog is open, and the page mustn't hear of it before Add does.
-  await team.route("**/api/live*", (route) => route.abort());
   // On the second tab's page: the tree shows that tab.
   await team.goto(`/app/${slug}/docs/tabs/developers`);
   const tree = team.getByRole("navigation", { name: "Docs", exact: true });
@@ -115,6 +113,10 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await tab.click();
   await expect(team.getByRole("option", { name: "Scratch" })).toHaveCount(0);
   await team.getByRole("option", { name: "Developers" }).click();
+  // That refresh (a live update is one too) keeps what the dialog has: the file chosen and the name typed.
+  await expect(dialog.getByRole("button", { name: /openapi\.yaml/ })).toBeVisible();
+  await expect(dialog.getByLabel("Name")).toHaveValue("Nothing yet");
+  await expect(add).toBeEnabled();
 
   const name = dialog.getByLabel("Name");
   await name.evaluate((input) => input.removeAttribute("maxlength"));
@@ -122,7 +124,7 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await add.click();
   await expect(name).toBeFocused();
   await expect(name).toHaveAttribute("aria-invalid", "true");
-  await expect(name).toHaveAccessibleDescription(/80/);
+  await expect(name).toHaveAccessibleDescription("Keep the name to 80 characters");
   await expect(dialog.getByText("There's no tab “scratch”")).toHaveCount(0);
   await expect(tab).not.toHaveAttribute("aria-invalid", "true");
   await expect(dialog.getByRole("button", { name: /openapi\.yaml/ })).toHaveAccessibleDescription("OpenAPI 3.0 or 3.1 (JSON or YAML), or a GraphQL schema");
@@ -144,9 +146,11 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await expect(dialog.getByLabel("Name")).toHaveValue("Public API");
   await checkpoint(team, "api-reference-dialog", { fullPage: false });
   await add.click();
-  // On to its page. Until that page is built (the plan's next step) this address is a full load of "not found", which
-  // takes the "API reference added" toast with it: the address is what's checked.
+  // Added: on to its page, with its row in the tree as the page shown.
+  await expect(team.getByText("API reference added")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs/references/public-api`);
+  await expect(team.getByRole("heading", { name: "Public API", level: 1 })).toBeVisible();
+  await expect(tree.getByRole("link", { name: "Public API" })).toHaveAttribute("aria-current", "page");
 
   // The spec is kept as it was written, line breaks and all.
   const added = (await api("/api-references/public-api?spec=true", undefined, "GET")) as { slug: string; spec?: string };
@@ -167,6 +171,11 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await expect(listed.getByRole("link", { name: "Public API" })).toHaveAttribute("href", `/app/${slug}/docs/references/public-api`);
   await expect(content.getByText("Nothing in this tab yet")).toHaveCount(0);
   await checkpoint(team, "api-reference-in-the-tree", { fullPage: false });
+  // The tab's page opens it.
+  await listed.getByRole("link", { name: "Public API" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/references/public-api`);
+  await expect(team.getByRole("heading", { name: "Public API", level: 1 })).toBeVisible();
+  await team.goto(`/app/${slug}/docs/tabs/developers`);
   // Unpublished, it's a draft there.
   await api("/api-references/public-api", { published: false }, "PATCH");
   await team.reload();
@@ -177,4 +186,35 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await team.goto(`/app/${slug}/docs`);
   await expect(tree.getByRole("button", { name: "Add to your docs" })).toBeVisible();
   await expect(tree.getByRole("link", { name: "Public API" })).toHaveCount(0);
+});
+
+test("the docs' only tab is deleted while Add API reference is open: the reason is said under the file, and Add again adds it", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/tabs", { name: "Guides" });
+  await team.goto(`/app/${slug}/docs`);
+  await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("button", { name: "Add to your docs" }).click();
+  await team.getByRole("menuitem", { name: "API reference" }).click();
+  const dialog = team.getByRole("dialog", { name: "Add API reference" });
+  await dialog.getByLabel("Spec file").setInputFiles(file("openapi.yaml", SPEC));
+  await expect(dialog.getByLabel("Name")).toHaveValue("Acme API");
+  await expect(dialog.getByRole("combobox", { name: "Tab" })).toContainText("Guides");
+
+  // A teammate deletes the tab: the docs have none now.
+  await api("/tabs/guides", undefined, "DELETE");
+  await dialog.getByRole("button", { name: "Add reference" }).click();
+  // The page refreshes after the refusal and the Tab field goes with the tab: the reason is under the file, with focus.
+  const chosen = dialog.getByRole("button", { name: /openapi\.yaml/ });
+  await expect(chosen).toHaveAccessibleDescription("There's no tab “guides”");
+  await expect(chosen).toBeFocused();
+  await expect(dialog.getByRole("combobox", { name: "Tab" })).toHaveCount(0);
+  await expect(dialog.getByLabel("Name")).toHaveValue("Acme API");
+
+  // Without a tab to name, it's added.
+  await dialog.getByRole("button", { name: "Add reference" }).click();
+  await expect(team.getByText("API reference added")).toBeVisible();
+  await team.waitForURL(`**/app/${slug}/docs/references/acme-api`);
+  await expect(team.getByRole("heading", { name: "Acme API", level: 1 })).toBeVisible();
 });

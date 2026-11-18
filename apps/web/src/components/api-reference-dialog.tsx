@@ -127,22 +127,24 @@ export function ApiReferenceDialog({
   const [spec, setSpec] = useState<Spec | null>(null);
   // What's wrong, and the field it's about: shown under it.
   const [error, setError] = useState<{ field: keyof typeof FOCUS; message: string }>();
-  const about = (field: keyof typeof FOCUS) => (error?.field === field ? error.message : undefined);
+  const tabItems = tabs.map((tab) => ({ value: tab.slug, label: tab.name }));
+  // Without tabs there's no Tab field: what's wrong with the tab (the last one, deleted since the dialog opened; the
+  // page refreshes after a refusal, and it's gone then) is said under the file.
+  const shown = error?.field === "tab" && tabItems.length === 0 ? "spec" : error?.field;
+  const about = (field: keyof typeof FOCUS) => (shown === field ? error?.message : undefined);
   // How many adds the server refused: after each, focus goes to the field the reason is about, once it's shown
   // (the field is described by it).
   const [refused, setRefused] = useState(0);
   useEffect(() => {
-    if (refused > 0 && error) {
-      document.getElementById(FOCUS[error.field])?.focus();
+    if (refused > 0 && shown) {
+      document.getElementById(FOCUS[shown])?.focus();
     }
-    // Only as a refusal arrives: its reason is set with it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refused]);
+    // As a refusal arrives (its reason is set with it), and again if its field goes and the reason moves.
+  }, [refused, shown]);
   // Its name: the spec's until the team types one.
   const [name, setName] = useState("");
   // A ref: a file chosen before the team typed is still being read when they do.
   const named = useRef(false);
-  const tabItems = tabs.map((tab) => ({ value: tab.slug, label: tab.name }));
   const [picked, setTab] = useState<string | null>(defaultTab ?? tabItems[0]?.value ?? null);
   // A tab deleted while the dialog is open leaves the list (the page follows live): the first one, then.
   const tab = tabItems.some((item) => item.value === picked) ? picked : (tabItems[0]?.value ?? null);

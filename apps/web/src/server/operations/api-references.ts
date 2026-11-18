@@ -17,7 +17,7 @@ import { customDocsSlug, customSlug, tabFor } from "./docs";
  */
 
 const slug = z.string().trim().min(1).max(80);
-const name = z.string().trim().min(1, "Name is required").max(80);
+const name = z.string().trim().min(1, "Name is required").max(80, "Keep the name to 80 characters");
 const spec = z.string().max(OPENAPI_MAX_BYTES, SPEC_TOO_LARGE);
 const keys = z.array(z.string().max(2000)).max(10_000);
 const TREE_STYLES = ["folders", "headings", "entry"] as const;

@@ -136,7 +136,9 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("menuitem", { name: "Unpublish" }).click();
   await expect(team.getByText("API reference unpublished")).toBeVisible();
-  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
+  // On its page, and on its row in the tree.
+  await expect(team.locator('[data-slot="badge"]').getByText("Draft", { exact: true })).toBeVisible();
+  await expect(team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "API reference Draft" })).toBeVisible();
   // Nothing of a draft is on the help center: the count says what will be.
   await expect(team.getByText("1 of 4 on the help center when published")).toBeVisible();
   await expect(team.getByRole("link", { name: "View on help center" })).toBeHidden();

@@ -24,7 +24,7 @@ test("a refused add names the field it's about: the name, the tab, or the spec",
   actAs(owner);
 
   expect(await addApiReference(project.slug, form({ name: "  ", spec: SPEC }))).toEqual({ error: "Name is required", field: "name" });
-  expect(await addApiReference(project.slug, form({ name: "n".repeat(81), spec: SPEC }))).toMatchObject({ field: "name" });
+  expect(await addApiReference(project.slug, form({ name: "n".repeat(81), spec: SPEC }))).toEqual({ error: "Keep the name to 80 characters", field: "name" });
   // A tab deleted since the dialog opened.
   expect(await addApiReference(project.slug, form({ name: "API", spec: SPEC, tab: "gone" }))).toEqual({ error: "There's no tab “gone”", field: "tab" });
   expect(await addApiReference(project.slug, form({ name: "API", spec: "hello there", tab: "guides" }))).toMatchObject({ field: "spec" });

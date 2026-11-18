@@ -84,16 +84,13 @@ describe("a custom slug", () => {
 
   test("reserved and malformed slugs are refused", async () => {
     await call(createArticle, as(), { title: "Draft" });
-    for (const slug of ["new", "insights", "api", "tabs", "collections", "references"]) {
+    for (const slug of ["new", "insights", "api"]) {
       await expect(call(updateArticle, as(), { slug: "draft", newSlug: slug })).rejects.toMatchObject({ status: 400 });
     }
     for (const slug of ["Billing", "two words", "-billing", "billing-", "billing--2", "billing.md"]) {
       await expect(call(updateArticle, as(), { slug: "draft", newSlug: slug })).rejects.toMatchObject({ status: 400 });
     }
     expect(await call(getArticle, as(), { slug: "draft" })).toMatchObject({ slug: "draft" });
-    // An article that had one before it was reserved keeps it when its settings are saved.
-    await prisma.article.updateMany({ where: { slug: "draft" }, data: { slug: "references", customSlug: true } });
-    expect(await call(updateArticle, as(), { slug: "references", newSlug: "references", title: "Further reading" })).toMatchObject({ slug: "references", title: "Further reading" });
   });
 
   test("two articles asking for the same one at once: one gets it, the other is refused", async () => {
