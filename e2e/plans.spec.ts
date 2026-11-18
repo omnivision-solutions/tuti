@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { expect, test } from "./fixtures";
 
 import { seedArticles } from "./articles";
@@ -216,6 +218,24 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
   await owner.goto(`/app/${slug}/settings/access`);
   await expect(access).toContainText("Public");
+  // A portal made private while its plan had that (as before a downgrade) says what happens to it now, and can go public.
+  const database = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await database.connect();
+  try {
+    await database.query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+  } finally {
+    await database.end();
+  }
+  await owner.reload();
+  await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveText(
+    "A private portal and reader groups need the Business plan. Without it, a private portal and content for reader groups are your team's only. Your settings are kept. See Billing",
+  );
+  await checkpoint(owner, "settings-access-private-free-plan");
+  await access.click();
+  await owner.getByRole("option", { name: "Public" }).click();
+  await expect(owner.getByText("Portal is now public")).toBeVisible();
+  await expect(upgrade).toBeHidden();
+  await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveCount(0);
   // Groups, in Users, says so too.
   await owner.goto(`/app/${slug}/settings/groups`);
   await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveText(
