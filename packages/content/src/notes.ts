@@ -81,8 +81,8 @@ export function readNotes(
   return { title: cleanTitle.length >= 3 && cleanTitle.length <= 120 ? cleanTitle : null, doc };
 }
 
-/** The markdown subset the prompt asks for: headings, "- " and numbered lists, paragraphs; anything else is text. */
-function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent[]): Doc {
+/** The markdown subset the prompt asks for: headings, "- " and numbered lists, paragraphs; anything else is text. `italic`: *italics* too. */
+function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent[], italic = false): Doc {
   const content: JSONContent[] = [];
   const unused = new Set(media);
   let paragraph: string[] = [];
@@ -92,7 +92,7 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
   let same = true;
   let blank = false;
   const flushParagraph = () => {
-    const text = inline(paragraph.join(" "), allowedLinks);
+    const text = inline(paragraph.join(" "), allowedLinks, italic);
     if (text.length > 0) {
       content.push({ type: "paragraph", content: text });
     }
@@ -123,12 +123,12 @@ function notesToDoc(notes: string, allowedLinks: Set<string>, media: JSONContent
         content.push(embed);
       }
     } else if (heading) {
-      const text = inline((heading[2] ?? "").replace(/#+$/, "").trim(), allowedLinks);
+      const text = inline((heading[2] ?? "").replace(/#+$/, "").trim(), allowedLinks, italic);
       if (text.length > 0) {
         content.push({ type: "heading", attrs: { level: heading[1]!.length <= 2 ? 2 : 3 }, content: text });
       }
     } else if (item) {
-      const text = inline(item[2] ?? "", allowedLinks);
+      const text = inline(item[2] ?? "", allowedLinks, italic);
       if (text.length > 0) {
         // "1." steps are numbered, from the first one's number. A list of the other kind starts a new one, and so does a
         // number that doesn't go on from the last: the next one goes on, and so does the same one on the very next line
@@ -398,18 +398,19 @@ export function replacePassage(blocks: JSONContent[], find: string, replace: str
 
 /**
  * These blocks with `insert` added after one passage (found as replacePassage finds it): read like any reply (readNotes:
- * paragraphs, lists, bold, the links these blocks have), after the passage's block when it's one of these, or as more
+ * paragraphs, lists, bold, italics, the links these blocks have), after the passage's block when it's one of these, or as more
  * items of its list after a list's item. Null when it can't be used: the passage isn't found exactly once or has no
- * place (see unitOf); `insert` reads as nothing, has a heading (it would start a section), an image's placeholder, or
+ * place (see unitOf); `insert` reads as nothing, has code (a backtick), a heading (it would start a section), an image's placeholder, or
  * after a list's item is anything but one list.
  */
 export function insertAfterPassage(blocks: JSONContent[], after: string, insert: string): JSONContent[] | null {
   const node = passageAt(blocks, after);
   const at = node && unitOf(blocks, node);
-  if (!at || /\{\{media \d+\}\}/.test(insert.replace(/\\(.)/g, "$1"))) {
+  // No code: none is made up here, as in a replacement (its backticks would be dropped, and the code shown as text).
+  if (!at || insert.includes("`") || /\{\{media \d+\}\}/.test(insert.replace(/\\(.)/g, "$1"))) {
     return null;
   }
-  const added = readNotes(JSON.stringify({ notes: insert }), linksOf(blocks))?.doc.content ?? [];
+  const added = notesToDoc(insert, linksOf(blocks), [], true).content ?? [];
   if (added.length === 0 || added.some((block) => block.type === "heading")) {
     return null;
   }

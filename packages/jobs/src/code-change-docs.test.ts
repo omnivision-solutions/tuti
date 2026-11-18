@@ -249,17 +249,19 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
     expect(prompt).toContain(PASSAGES_RULE);
     expect(prompt).toContain('"passages": [{"section": <number>, "find"');
   }
-  // A correction is made where the old text stands: the section for the end is never its way out (E1), not even for
-  // code, text that's no passage, or something gone, which passages now change or take out.
-  expect(ADD_RULE).toContain('Never use "add" to correct anything: change what\'s wrong where it stands.');
-  expect(ADD_RULE).not.toMatch(/what's wrong is in code|a passage describes something that's gone|so a person can fix it there/);
+  // A correction is made where the old text stands (E1): code, italics and something gone are changed or taken out by
+  // passages, so the note at the end is only for what nothing can change (a person's section, text that's no passage),
+  // so the team still hears of it.
+  expect(ADD_RULE).toContain('Never use "add" to correct anything you can change where it stands: change it there.');
+  expect(ADD_RULE).toContain('a statement is wrong where nothing can be changed (in a section marked "edited_by_team", or text that\'s neither in an editable section nor among the passages)');
+  expect(ADD_RULE).not.toMatch(/what's wrong is in code|a passage describes something that's gone/);
   // Its heading is a new one: one the article has already is refused (edit), so the rule can't ask for it.
-  expect(ADD_RULE).toContain("starting with a ## heading that isn't one the article already has");
+  expect(ADD_RULE).toContain("it starts with a ## heading that isn't one the article already has");
   // A passage for something that's gone is taken out, never turned into something else.
   expect(PASSAGES_RULE).toContain("When what a passage describes is gone, take it out; don't reuse it for something else.");
   // Something missing goes after a passage of the section it belongs in; the end only takes what belongs in no section.
   expect(PASSAGES_RULE).toContain('To add after one, "after" is the passage exactly as listed and "insert" the new text');
-  expect(ADD_RULE).toContain("it belongs in none of its sections");
+  expect(ADD_RULE).toContain("it belongs in none of its sections")
   expect(NEW_SYSTEM).not.toContain('"add"');
   // Only the edit's writer gets waiting edits marked (E4); Verify reads the article as it is.
   expect(EDIT_SYSTEM).toContain(WAITING_RULE);

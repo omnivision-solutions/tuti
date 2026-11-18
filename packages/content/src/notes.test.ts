@@ -284,6 +284,8 @@ describe("passages: a block's text replaced where it stands", () => {
     const next = insertAfterPassage(section, "Each plan has seats.", "Seats can be added at any time.\n\nSee **Billing**.")!;
     expect(next.slice(0, 4)).toEqual([section[0], section[1], para(text("Seats can be added at any time.")), para(text("See "), text("Billing", { type: "bold" }), text("."))]);
     expect(next.slice(4)).toEqual(section.slice(2));
+    // Italics, as in a passage.
+    expect(insertAfterPassage(section, "Each plan has seats.", "Seats are *per project*.")![2]).toEqual(para(text("Seats are "), text("per project", { type: "italic" }), text(".")));
     // After a heading, and after a code block.
     expect(insertAfterPassage(section, "Plans", "Pick one.")!.slice(0, 2)).toEqual([section[0], para(text("Pick one."))]);
     expect(insertAfterPassage(section, "```bash\nnpm run export\n```", "It writes a CSV file.")![4]).toEqual(para(text("It writes a CSV file.")));
@@ -309,6 +311,8 @@ describe("passages: a block's text replaced where it stands", () => {
       ["Each plan has seats.", "{{media 1}}"],
       ["Open **Billing**.", "Pick a plan."],
       ["Open **Billing**.", "- Pick a plan.\n\nThen pay."],
+      // Code: none is made up (its backticks would be dropped, the code shown as text).
+      ["Each plan has seats.", "Run `npm run seats` to list them."],
     ]) {
       expect(insertAfterPassage(section, after!, insert!)).toBeNull();
     }
