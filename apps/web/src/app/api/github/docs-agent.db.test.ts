@@ -195,6 +195,38 @@ test("a merged pull request: the agent reads the code and the article, and its e
   expect(closed.calls).toBe(1);
 });
 
+test("an edit to a section with a screenshot is made in place: the text beside it changes, the image stays as it was", async () => {
+  const image = { type: "image", attrs: { mediaId: "c".repeat(24), width: "50", align: "left", alt: "The Theme menu", w: 640, h: 480 } };
+  const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
+  await prisma.article.update({
+    where: { id: article.id },
+    data: { content: { type: "doc", content: [paragraph("The app has a light theme."), image, paragraph("Pick it in Settings.")] } },
+  });
+  pullRequest(31);
+  model.decide(USERS);
+  model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It says the app only has a light theme." }]), undefined, '"merge-31"');
+  model.reply(PROPOSALS, undefined, '"proposals"');
+  model.reply(
+    JSON.stringify({
+      reason: "It says there's only a light theme.",
+      overview: "It names Dark beside Light.",
+      sections: { "1": "The app has a light theme and a dark one.\n\n{{media 1}}\n\nPick it in Settings." },
+    }),
+    undefined,
+    '"problem"',
+  );
+  expect(await merge(31)).toBe(200);
+
+  // The writer saw the section as editable, its image a placeholder, and was told what the placeholder is.
+  const writer = model.requests.find((request) => request.user.includes('"problem"'))!;
+  expect(writer.user).toContain('"editable": true');
+  expect(writer.user).toContain("{{media 1}}");
+  expect(writer.system).toContain("Each {{media N}} line stands for an image: keep it where it is.");
+  expect(await actions(31)).toContainEqual(expect.objectContaining({ kind: "ARTICLE_EDIT", articleId: article.id }));
+  const { content } = await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { content: true } });
+  expect(content).toEqual({ type: "doc", content: [paragraph("The app has a light theme and a dark one."), image, paragraph("Pick it in Settings.")] });
+});
+
 describe("the double-check", () => {
   const NEW = { title: "Use the dark theme", collection: "settings", after: "appearance", reason: "Nothing covers themes." };
 

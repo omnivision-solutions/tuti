@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { expect, test } from "./fixtures";
 
 import { seedArticles } from "./articles";
@@ -194,15 +196,46 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
   await checkpoint(owner, "customize-address-free-plan");
 
-  // A private portal and reader groups are on Business.
+  // A private portal and reader groups are on Business: Private looks like any other option and says what it needs.
   await owner.goto(`/app/${slug}/settings/access`);
+  await expect(owner.getByText("A private portal and reader groups need the Business plan.")).toBeHidden();
+  const access = owner.getByRole("combobox", { name: "Portal access" });
+  await access.click();
+  const makePrivate = owner.getByRole("option", { name: "Private" });
+  await expect(makePrivate).toBeEnabled();
+  await expect(makePrivate).toHaveAccessibleDescription("A private portal and reader groups need the Business plan.");
+  // Choosing it opens the upgrade prompt, and the portal stays public.
+  await makePrivate.click();
+  const upgrade = owner.getByRole("dialog", { name: "A private portal and reader groups need the Business plan." });
+  await expect(upgrade.getByRole("link", { name: "See plans" })).toBeVisible();
+  await checkpoint(owner, "settings-access-upgrade-prompt");
+  await upgrade.getByRole("button", { name: "Not now" }).click();
+  await expect(upgrade).toBeHidden();
+  await expect(access).toContainText("Public");
+  await access.click();
+  await makePrivate.click();
+  await upgrade.getByRole("link", { name: "See plans" }).click();
+  await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
+  await owner.goto(`/app/${slug}/settings/access`);
+  await expect(access).toContainText("Public");
+  // A portal made private while its plan had that (as before a downgrade) says what happens to it now, and can go public.
+  const database = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await database.connect();
+  try {
+    await database.query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+  } finally {
+    await database.end();
+  }
+  await owner.reload();
   await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveText(
     "A private portal and reader groups need the Business plan. Without it, a private portal and content for reader groups are your team's only. Your settings are kept. See Billing",
   );
-  await owner.getByRole("combobox", { name: "Portal access" }).click();
-  await owner.getByRole("option", { name: "Private" }).click();
-  await expect(owner.getByText("A private portal and reader groups need the Business plan. See Settings → Billing.", { exact: true })).toBeVisible();
-  await checkpoint(owner, "settings-access-free-plan");
+  await checkpoint(owner, "settings-access-private-free-plan");
+  await access.click();
+  await owner.getByRole("option", { name: "Public" }).click();
+  await expect(owner.getByText("Portal is now public")).toBeVisible();
+  await expect(upgrade).toBeHidden();
+  await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveCount(0);
   // Groups, in Users, says so too.
   await owner.goto(`/app/${slug}/settings/groups`);
   await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toHaveText(

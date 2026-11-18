@@ -156,6 +156,11 @@ export function planNeeded(feature: PlanFeature): string {
   return plan ? `${NEEDS[feature]} the ${plan.name} plan.` : `${NEEDS[feature]} a plan this server doesn't sell.`;
 }
 
+/** What a project is told where no plan to upgrade to is on offer (the upgrade prompt on a server that sells none): "A custom domain isn't on this plan." */
+export function planLacks(feature: PlanFeature): string {
+  return `${NEEDS[feature].replace(/ needs$/, " isn't").replace(/ need$/, " aren't")} on this plan.`;
+}
+
 /** The plans for sale after `plan` in the billing file (cheapest first): the ones to upgrade to. None without plans. */
 export function plansAbove(plan: PlanKey): BillingPlan[] {
   const config = billingConfig();

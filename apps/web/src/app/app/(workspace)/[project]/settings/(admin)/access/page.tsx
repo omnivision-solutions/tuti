@@ -7,6 +7,7 @@ import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getAdminProject } from "@/server/membership";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 
@@ -23,17 +24,23 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
     portalAccess(project.id),
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
   ]);
+  const included = planIncludes(plan, "privatePortal");
 
   return (
     <SettingsPane title="Access" description="Who can see your portal, its docs and changelog, and the widget.">
-      {!planIncludes(plan, "privatePortal") && (
+      {/* A portal made private on a plan that had it: what happens to it now. Making it private opens the upgrade prompt instead. */}
+      {!included && access === "private" && (
         <PlanNotice feature="privatePortal" projectSlug={project.slug} admin>
           Without it, a private portal and content for reader groups are your team&apos;s only. Your settings are kept.
         </PlanNotice>
       )}
       <SettingsCard>
         <SettingBlock>
-          <PortalAccessSelect projectSlug={project.slug} access={access} />
+          <PortalAccessSelect
+            projectSlug={project.slug}
+            access={access}
+            upgrade={included || access === "private" ? undefined : upgradePrompt("privatePortal", project.slug, true)}
+          />
           {access === "private" && <PortalReaders projectSlug={project.slug} readers={await portalReaders(project.id)} />}
         </SettingBlock>
       </SettingsCard>
