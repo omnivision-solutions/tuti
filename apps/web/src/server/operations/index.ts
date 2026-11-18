@@ -58,6 +58,7 @@ import {
   updateTab,
 } from "./docs";
 import { createApiReference, deleteApiReference, getApiReference, listApiReferences, replaceApiReference, syncApiReference, updateApiReference } from "./api-references";
+import { listGithubRepositories } from "./github";
 import { markChangelogSeen } from "./changelog-seen";
 import { updateEmailPreferences } from "./email-preferences";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
@@ -161,6 +162,7 @@ const all = [
   replaceApiReference,
   syncApiReference,
   deleteApiReference,
+  listGithubRepositories,
   listGroups,
   createGroup,
   updateGroup,

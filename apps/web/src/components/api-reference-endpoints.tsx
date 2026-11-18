@@ -81,7 +81,7 @@ const toastChanges = (result: { added?: number; removed?: number; changed?: bool
 const HEADER_SYNC = "api-reference-sync-now";
 
 /**
- * "Sync now": a URL's reference read again. A failed read says why in a toast, and the page's banner keeps saying it.
+ * "Sync now": a URL's or a repository's reference read again. A failed read says why in a toast, and the page's banner keeps saying it.
  * The banner's (`compact`) goes once a sync works: focus moves to the header's first, so it isn't lost. In the header
  * its words go in a narrow pane; elsewhere (the banner, Settings' Source) they stay.
  */
@@ -116,7 +116,7 @@ export function SyncNow({ projectSlug, slug, compact, inHeader }: { projectSlug:
 
 /**
  * The header's button that reads the spec again. An uploaded file's is "Upload new version": pick the file, and the toast
- * says what it added and removed. A URL's is "Sync now", read from where it lives; a repository's comes with that source.
+ * says what it added and removed. A URL's or a repository's is "Sync now", read from where it lives.
  */
 export function ApiReferenceSync({
   projectSlug,
@@ -134,7 +134,7 @@ export function ApiReferenceSync({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
-  if (source === "url") {
+  if (source === "url" || source === "github") {
     return <SyncNow projectSlug={projectSlug} slug={slug} inHeader={inHeader} />;
   }
   if (source !== "upload") {

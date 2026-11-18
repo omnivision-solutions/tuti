@@ -259,6 +259,8 @@ export function DocsWorkspace({
   parents,
   deleted,
   portal,
+  admin,
+  github,
   children,
 }: {
   projectSlug: string;
@@ -274,6 +276,10 @@ export function DocsWorkspace({
   /** How many articles were deleted lately (they can be restored from the Docs home). */
   deleted: number;
   portal: string;
+  /** An owner or admin: Settings' links (GitHub's, to add a repository) are for them. */
+  admin: boolean;
+  /** Whether this server has a GitHub App: without one, nothing is read from GitHub. */
+  github: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -823,7 +829,7 @@ export function DocsWorkspace({
           defaultTab={adding.tab}
         />
       )}
-      {addingReference && <ApiReferenceDialog projectSlug={projectSlug} tabs={tabs} defaultTab={addingReference.tab} onClose={() => setAddingReference(null)} />}
+      {addingReference && <ApiReferenceDialog projectSlug={projectSlug} tabs={tabs} defaultTab={addingReference.tab} admin={admin} github={github} onClose={() => setAddingReference(null)} />}
     </DocsWorkspaceContext>
   );
 }

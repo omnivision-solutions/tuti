@@ -65,6 +65,9 @@ const branch = z
   // Nor ".." (git refuses it), which would move the branch's lookup elsewhere on GitHub's API.
   .refine((ref) => !ref.includes(".."), "That isn't a branch's name");
 
+/** A file on GitHub, as adding a reference from one takes it (`ref` left out: the repository's default branch). */
+export const githubSource = z.object({ repoId, path: repoPath, ref: branch.optional() });
+
 /** The spec as a doc to store; one that can't be read, or has nothing to show, is refused with the reader's sentence. */
 function read(text: string, from?: string): ApiDoc {
   const result = readStorable(text, from);
@@ -283,13 +286,13 @@ export const getApiReference = defineOperation({
 export const createApiReference = defineOperation({
   name: "apiReferences.create",
   summary:
-    "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it), or a file in a repository the project added on GitHub (`github`: GitHub's id for the repository, `repoId`; the file's `path` in it; and a branch, `ref`, left out for the repository's default branch; 5 MB at most, read again when a pull request into the branch that changes the file merges, every 6 hours and on apiReferences.sync). Each is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL or GitHub, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
+    "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it), or a file in a repository the project added on GitHub (`github`: GitHub's id for the repository, `repoId`, as githubRepositories.list gives it; the file's `path` in it; and a branch, `ref`, left out for the repository's default branch; 5 MB at most, read again when a pull request into the branch that changes the file merges, every 6 hours and on apiReferences.sync). Each is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL or GitHub, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
   method: "POST",
   path: "/api-references",
   scope: "write",
   access: "team",
   input: z
-    .object({ name, spec: spec.optional(), url: sourceUrl.optional(), github: z.object({ repoId, path: repoPath, ref: branch.optional() }).optional(), tab: slug.optional() })
+    .object({ name, spec: spec.optional(), url: sourceUrl.optional(), github: githubSource.optional(), tab: slug.optional() })
     .refine(
       (input) => [input.spec, input.url, input.github].filter((given) => given !== undefined).length === 1,
       "Give one of the spec's text (spec), its address (url) or its file on GitHub (github)",

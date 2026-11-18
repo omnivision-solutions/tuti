@@ -375,14 +375,20 @@ export async function deleteCollection(projectSlug: string, slug: string): Promi
 export async function addApiReference(
   projectSlug: string,
   formData: FormData,
-): Promise<FormState & { field?: "name" | "spec" | "url" | "tab"; slug?: string }> {
+): Promise<FormState & { field?: "name" | "spec" | "url" | "github" | "tab"; slug?: string }> {
   let slug: string | undefined;
   const spec = formData.get("spec");
   const url = formData.get("url");
+  const repoId = formData.get("repoId");
+  const ref = String(formData.get("ref") ?? "");
   const input = {
     name: String(formData.get("name") ?? ""),
-    // A spec's text (a file), or the address it's read from.
-    ...(typeof url === "string" ? { url } : { spec: spec === null ? "" : typeof spec === "string" ? spec : await spec.text() }),
+    // A spec's text (a file), the address it's read from, or its file on GitHub.
+    ...(typeof url === "string"
+      ? { url }
+      : typeof repoId === "string"
+        ? { github: { repoId: Number(repoId), path: String(formData.get("path") ?? ""), ...(ref && { ref }) } }
+        : { spec: spec === null ? "" : typeof spec === "string" ? spec : await spec.text() }),
     tab: String(formData.get("tab") ?? "") || undefined,
   };
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -396,7 +402,7 @@ export async function addApiReference(
   // what can't be fetched, read or has nothing to show.
   const checked = createApiReference.input.safeParse(input);
   const named = checked.success ? undefined : checked.error.issues[0]?.path[0];
-  const source = "url" in input ? "url" : "spec";
+  const source = "url" in input ? "url" : "github" in input ? "github" : "spec";
   const field = named === "name" || named === "tab" ? named : checked.success && result.error === `There's no tab “${input.tab}”` ? "tab" : source;
   return { ...result, field };
 }

@@ -299,6 +299,19 @@ const matrix: Matrix = {
     syncApiReferenceNow: { allowed: "MEMBER", call: (slug) => apiReferences.syncApiReferenceNow(slug, "matrix-url-api") },
     previewApiReferenceUrl: { allowed: "MEMBER", call: (slug) => apiReferences.previewApiReferenceUrl(slug, `${site.origin}/matrix-openapi.json`) },
     changeApiReferenceUrl: { allowed: "MEMBER", call: (slug) => apiReferences.changeApiReferenceUrl(slug, "matrix-url-api", `${site.origin}/matrix-openapi-2.json`) },
+    listApiReferenceRepositories: { allowed: "MEMBER", call: (slug) => apiReferences.listApiReferenceRepositories(slug) },
+    // The repository is the fixture's: another project's team naming it from their own project is refused.
+    previewApiReferenceGithub: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => withEnv(githubFake.env, () => apiReferences.previewApiReferenceGithub(slug, { repoId: f.specRepoId, path: "openapi.json" })),
+    },
+    // The repository too: another project's team naming it for their own reference is refused.
+    changeApiReferenceGithub: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => withEnv(githubFake.env, () => apiReferences.changeApiReferenceGithub(slug, "matrix-github-api", { repoId: f.specRepoId, path: "openapi-2.json", ref: "main" })),
+    },
     deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },
   },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
@@ -972,9 +985,21 @@ async function createFixture(own: "domain" | "site" = "domain") {
       createdById: users.OWNER.id,
       repositories: [{ id: githubRepoId, fullName: `acme/app-${githubRepoId}` }],
       // One included already, for Verify to read.
-      included: { create: { repoId: 90_000 + githubRepoId, fullName: `acme/docs-${githubRepoId}` } },
+      // And one an API reference is read from.
+      included: {
+        create: [
+          { repoId: 90_000 + githubRepoId, fullName: `acme/docs-${githubRepoId}` },
+          { repoId: 95_000 + githubRepoId, fullName: `acme/spec-${githubRepoId}` },
+        ],
+      },
     },
   });
+  // An API reference read from a file in that repository (GitHub, the fake), to change to another file.
+  githubFake.repository(`acme/spec-${githubRepoId}`, { commit: `matrix-${githubRepoId}`, files: { "openapi.json": MATRIX_SPEC, "openapi-2.json": MATRIX_SPEC } });
+  await withEnv(githubFake.env, () =>
+    call(createApiReference, { actor: { kind: "user", userId: users.OWNER.id }, projectId }, { name: "Matrix GitHub API", github: { repoId: 95_000 + githubRepoId, path: "openapi.json" } }),
+  );
+  await prisma.apiReferenceFetch.deleteMany({ where: { userId: users.OWNER.id } });
   // A merged pull request's code change, with a link to apply and a proposal to dismiss.
   const codeChange = await prisma.codeChange.create({
     data: {
@@ -1019,6 +1044,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     scheduledActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "SCHEDULED")!.id,
     stoppableActionId: codeChange.actions.find((action) => action.kind === "ARTICLE_EDIT")!.id,
     githubRepoId,
+    specRepoId: 95_000 + githubRepoId,
     redirectId: redirect.id,
     linkId: link.id,
     webhookId: webhook.id,

@@ -1,28 +1,30 @@
 "use client";
 
 import { cn } from "cn";
-import { FileUpIcon, LinkIcon, UploadIcon } from "lucide-react";
+import { FileUpIcon, GitBranchIcon, LinkIcon, UploadIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SPEC_TOO_LARGE } from "@/lib/api-reference";
-import { previewApiReferenceUrl } from "@/server/api-references";
+import { listApiReferenceRepositories, previewApiReferenceGithub, previewApiReferenceUrl } from "@/server/api-references";
 import { addApiReference } from "@/server/docs";
 
 /** Where focus goes when the server refuses an add, by the field its reason is about and shown under. */
-const FOCUS = { spec: "api-reference-file-button", url: "api-reference-url", name: "api-reference-name", tab: "api-reference-tab" } as const;
+const FOCUS = { spec: "api-reference-file-button", url: "api-reference-url", github: "api-reference-path", name: "api-reference-name", tab: "api-reference-tab" } as const;
 
-/** A spec as a source gives it: its text (a file) or its address (a URL), and the name it suggests for the reference. */
-type Spec = { text: string; suggests: string } | { url: string; suggests: string };
+/** A spec as a source gives it: its text (a file), its address (a URL) or its file on GitHub, and the name it suggests for the reference. */
+type Spec = { text: string; suggests: string } | { url: string; suggests: string } | { github: { repoId: number; path: string; ref: string }; suggests: string };
 
 /** Where a spec can live, in the chooser's order. */
 const SOURCES = [
+  { value: "github", label: "From GitHub", description: "A file in a repository you added. Read again when a pull request merges", icon: GitBranchIcon },
   { value: "url", label: "From a URL", description: "An OpenAPI spec or GraphQL schema. Fetched every 6 hours", icon: LinkIcon },
   { value: "upload", label: "Upload a file", description: "OpenAPI (JSON or YAML) or a GraphQL schema file", icon: UploadIcon },
 ] as const;
@@ -133,6 +135,198 @@ function UrlSource({
 }
 
 /**
+ * The spec in a repository the project added on GitHub: one picked from its repositories, a path and a branch (left
+ * empty, the repository's default one, filled in once Fetch has read it). "Fetch" reads the file on the server as adding
+ * it will, and suggests its name; an edit asks for Fetch again. A project with no repository links an admin to where
+ * they're added, and tells anyone else to ask one.
+ */
+function GithubSource({
+  projectSlug,
+  admin,
+  error,
+  onChange,
+  onReading,
+}: {
+  projectSlug: string;
+  /** Settings' GitHub page is an admin's: anyone else is told to ask one. */
+  admin: boolean;
+  error?: string;
+  onChange: (spec: Spec | null, error?: string) => void;
+  onReading: (by: 1 | -1) => void;
+}) {
+  const [repositories, setRepositories] = useState<{ id: number; fullName: string }[] | null>(null);
+  const [listError, setListError] = useState<string>();
+  const [picked, setPicked] = useState<string | null>(null);
+  const [path, setPath] = useState("");
+  const [ref, setRef] = useState("");
+  const [pending, startTransition] = useTransition();
+  // What was read, as `key` writes it: an edit to any field asks again.
+  const [fetched, setFetched] = useState<string | null>(null);
+  // The latest Fetch, and the file one is on its way for, as UrlSource's.
+  const latest = useRef(0);
+  const asking = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      latest.current++;
+    },
+    [],
+  );
+  // The repositories, read once as the panel opens; counted as a read, so tests know when they're in.
+  useEffect(() => {
+    let open = true;
+    onReading(1);
+    listApiReferenceRepositories(projectSlug)
+      .catch(() => ({ error: "Couldn't list the repositories. Try again.", repositories: undefined }))
+      .then((result) => {
+        if (open) {
+          setRepositories(result.repositories ?? []);
+          setListError(result.error);
+        }
+        onReading(-1);
+      });
+    return () => {
+      open = false;
+    };
+    // Once: the dialog's callbacks are new each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const repository = repositories?.find((repo) => String(repo.id) === picked) ?? repositories?.[0];
+  const key = (branch: string) => `${repository?.id}\n${path.trim()}\n${branch}`;
+  const edited = () => {
+    latest.current++;
+    asking.current = null;
+    if (fetched !== null) {
+      setFetched(null);
+      onChange(null);
+    }
+  };
+  const fetchIt = () => {
+    const file = { repoId: repository?.id ?? 0, path: path.trim(), ref: ref.trim() };
+    const asked = key(file.ref);
+    if (!repository || !file.path || asking.current === asked) {
+      return;
+    }
+    asking.current = asked;
+    const turn = ++latest.current;
+    onReading(1);
+    startTransition(async () => {
+      const result = await previewApiReferenceGithub(projectSlug, file).catch(() => ({ error: "Couldn't read that file. Try again.", suggests: undefined, ref: undefined }));
+      if (asking.current === asked) {
+        asking.current = null;
+      }
+      onReading(-1);
+      if (turn !== latest.current) {
+        return;
+      }
+      if (result.error || result.suggests === undefined || result.ref === undefined) {
+        onChange(null, result.error ?? "Couldn't read that file. Try again.");
+      } else {
+        // The branch it read: the default one, when none was given.
+        setRef(result.ref);
+        setFetched(key(result.ref));
+        onChange({ github: { ...file, ref: result.ref }, suggests: result.suggests });
+      }
+    });
+  };
+  const onEnter = (event: KeyboardEvent) => {
+    // Enter reads the file rather than adding a reference not read yet.
+    if (event.key === "Enter" && fetched === null) {
+      event.preventDefault();
+      fetchIt();
+    }
+  };
+  if (repositories === null) {
+    return <p className="text-sm text-muted-foreground">Loading repositories…</p>;
+  }
+  if (repositories.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed px-4 py-3 text-sm">
+        <p>{listError ?? (admin ? "This project has no GitHub repositories yet. Add one in Settings, then come back." : "This project has no GitHub repositories yet. Ask an admin to connect a GitHub repository.")}</p>
+        {!listError && admin && (
+          <Link href={`/app/${projectSlug}/settings/integrations/github`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Add a repository
+          </Link>
+        )}
+      </div>
+    );
+  }
+  const repoItems = repositories.map((repo) => ({ value: String(repo.id), label: repo.fullName }));
+  return (
+    <>
+      <Field>
+        <FieldLabel id="api-reference-repository-label">Repository</FieldLabel>
+        <Select
+          items={repoItems}
+          value={String(repository!.id)}
+          onValueChange={(value) => {
+            setPicked(value as string);
+            edited();
+          }}
+        >
+          <SelectTrigger id="api-reference-repository" className="w-full" aria-labelledby="api-reference-repository-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {repoItems.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field data-invalid={error ? true : undefined}>
+        <FieldLabel htmlFor={FOCUS.github}>File in the repository</FieldLabel>
+        <div className="flex gap-2">
+          <Input
+            id={FOCUS.github}
+            value={path}
+            placeholder="openapi.yaml"
+            maxLength={1000}
+            className="font-mono"
+            spellCheck={false}
+            autoCapitalize="off"
+            onChange={(event) => {
+              setPath(event.target.value);
+              edited();
+            }}
+            onKeyDown={onEnter}
+            aria-invalid={error ? true : undefined}
+            aria-describedby="api-reference-path-note"
+          />
+          <Button type="button" variant="outline" disabled={pending || !path.trim()} focusableWhenDisabled onClick={fetchIt}>
+            {pending ? "Fetching…" : "Fetch"}
+          </Button>
+        </div>
+        {error ? (
+          <FieldError id="api-reference-path-note">{error}</FieldError>
+        ) : (
+          <FieldDescription id="api-reference-path-note" aria-live="polite">
+            {fetched ? "Read. It’s read again when a pull request into this branch merges." : "Fetch reads it and suggests a name."}
+          </FieldDescription>
+        )}
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="api-reference-branch">Branch</FieldLabel>
+        <Input
+          id="api-reference-branch"
+          value={ref}
+          placeholder="Default branch"
+          maxLength={255}
+          spellCheck={false}
+          autoCapitalize="off"
+          onChange={(event) => {
+            setRef(event.target.value);
+            edited();
+          }}
+          onKeyDown={onEnter}
+        />
+      </Field>
+    </>
+  );
+}
+
+/**
  * The spec from a file: picked or dropped, read here as text. The readers load when a file is chosen
  * (they're large), and say at once what the server would: a file that's too large or isn't a spec.
  */
@@ -238,16 +432,22 @@ function UploadSource({ error, onChange, onReading }: { error?: string; onChange
 
 /**
  * Adds an API reference to tab `defaultTab` (see apiReferences.create): the dialog the docs' "+" menus
- * open. Its spec comes from a source, picked above: an address (UrlSource) or a file (UploadSource).
- * Another (a repository) is one more panel giving its spec the same way, and one more choice.
+ * open. Its spec comes from a source, picked above: a file on GitHub (GithubSource), an address (UrlSource) or a file
+ * (UploadSource), each a panel giving its spec the same way.
  */
 export function ApiReferenceDialog({
   projectSlug,
   tabs,
   defaultTab,
+  admin,
+  github,
   onClose,
 }: {
   projectSlug: string;
+  /** An owner or admin: GitHub's panel links them to Settings to add a repository. */
+  admin: boolean;
+  /** Whether this server has a GitHub App: without one, "From GitHub" isn't offered (nothing could be added to read). */
+  github: boolean;
   /** The tabs it can go in. */
   tabs: { slug: string; name: string }[];
   defaultTab?: string;
@@ -262,7 +462,7 @@ export function ApiReferenceDialog({
   const tabItems = tabs.map((tab) => ({ value: tab.slug, label: tab.name }));
   // Without tabs there's no Tab field: what's wrong with the tab (the last one, deleted since the dialog opened; the
   // page is refreshed after that refusal, and it's gone then) is said under the file.
-  const shown = error?.field === "tab" && tabItems.length === 0 ? (source === "url" ? "url" : "spec") : error?.field;
+  const shown = error?.field === "tab" && tabItems.length === 0 ? (source === "upload" ? "spec" : source) : error?.field;
   const about = (field: keyof typeof FOCUS) => (shown === field ? error?.message : undefined);
   // How many adds the server refused: after each, focus goes to the field the reason is about, once it's shown
   // (the field is described by it).
@@ -290,7 +490,7 @@ export function ApiReferenceDialog({
   const tab = tabItems.some((item) => item.value === picked) ? picked : (tabItems[0]?.value ?? null);
 
   /** A source's spec, or what's wrong with it, said under its field. */
-  const chosen = (field: "spec" | "url") => (next: Spec | null, problem?: string) => {
+  const chosen = (field: "spec" | "url" | "github") => (next: Spec | null, problem?: string) => {
     setSpec(next);
     // A new spec answers what was wrong with the last one; what's wrong with the name or the tab stays.
     setError((was) => (problem ? { field, message: problem } : was?.field === field ? undefined : was));
@@ -313,6 +513,10 @@ export function ApiReferenceDialog({
     const formData = new FormData(event.currentTarget);
     if ("url" in spec) {
       formData.set("url", spec.url);
+    } else if ("github" in spec) {
+      formData.set("repoId", String(spec.github.repoId));
+      formData.set("path", spec.github.path);
+      formData.set("ref", spec.github.ref);
     } else {
       // As a file: a form's text has its line breaks rewritten on the way (to CRLF), and the spec is kept as it was written.
       formData.set("spec", new Blob([spec.text]));
@@ -325,7 +529,7 @@ export function ApiReferenceDialog({
         toast.success("API reference added");
         router.push(`/app/${projectSlug}/docs/references/${result.slug}`);
       } else if (result.error) {
-        setError({ field: result.field ?? ("url" in spec ? "url" : "spec"), message: result.error });
+        setError({ field: result.field ?? ("url" in spec ? "url" : "github" in spec ? "github" : "spec"), message: result.error });
         setRefused((count) => count + 1);
         // The tab is gone: the page's tabs are read again, so the dialog offers the ones there are.
         if (result.field === "tab") {
@@ -346,7 +550,7 @@ export function ApiReferenceDialog({
           <FieldGroup>
             {/* Native radios: arrow keys move between them. */}
             <div role="radiogroup" aria-label="Where the spec is" className="flex flex-col gap-2">
-              {SOURCES.map(({ value, label, description, icon: Icon }) => (
+              {SOURCES.filter((choice) => github || choice.value !== "github").map(({ value, label, description, icon: Icon }) => (
                 <label
                   key={value}
                   className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-muted has-checked:border-primary has-checked:bg-soft has-focus-visible:ring-2 has-focus-visible:ring-ring/50"
@@ -362,7 +566,7 @@ export function ApiReferenceDialog({
                       setSource(value);
                       // Each panel starts empty: what the other read isn't this one's.
                       setSpec(null);
-                      setError((was) => (was?.field === "spec" || was?.field === "url" ? undefined : was));
+                      setError((was) => (was?.field === "spec" || was?.field === "url" || was?.field === "github" ? undefined : was));
                     }}
                   />
                   <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
@@ -375,7 +579,9 @@ export function ApiReferenceDialog({
                 </label>
               ))}
             </div>
-            {source === "url" ? (
+            {source === "github" ? (
+              <GithubSource key="github" projectSlug={projectSlug} admin={admin} error={about("github")} onChange={chosen("github")} onReading={reading} />
+            ) : source === "url" ? (
               <UrlSource key="url" projectSlug={projectSlug} error={about("url")} onChange={chosen("url")} onReading={reading} />
             ) : (
               <UploadSource key="upload" error={about("spec")} onChange={chosen("spec")} onReading={reading} />
