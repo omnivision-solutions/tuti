@@ -1,8 +1,8 @@
-import type { Doc } from "@tuti/content";
+import { type Doc, toMarkdown } from "@tuti/content";
 import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
+import { articleNotes, EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
 import { APPENDED_FAILS, appendedAtEnd, changelogWords, editScope, headingOverLittle, leftContradictions, renamed, ruleChecks, sizeOf, SMALL_WORDS } from "./edit-rules";
 import { CHECK_UNCLEAR, checkedEdit, checkFailed, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
 import { CHECK_SYSTEM } from "./verify";
@@ -250,6 +250,30 @@ test("a small correction: in place, no heading touched, nothing appended, at mos
   expect(editScope(ARTICLE, ARTICLE.replace("Invite links work for 3 days.", `${long}.`), "")).toBe("larger");
   // Nothing taken out, or a rename the diff doesn't show and that rewrote more than a couple of sentences' words.
   expect(editScope(ARTICLE, ARTICLE, "")).toBe("larger");
+});
+
+test("edits by passage are measured like any other: code or a sentence changed, or one taken out, is a correction; text added after a passage is larger and, at the end, only a hint", () => {
+  const text = (value: string) => [{ type: "text", text: value }];
+  const doc: Doc = {
+    type: "doc",
+    content: [
+      { type: "heading", attrs: { level: 2 }, content: text("Export") },
+      { type: "paragraph", content: text("Run this from the project's folder.") },
+      { type: "codeBlock", attrs: { language: "bash" }, content: text("npm run export") },
+      { type: "paragraph", content: text("Exports are emailed to you.") },
+    ],
+  };
+  const { edit } = articleNotes(doc);
+  const measure = (passages: object[]) => {
+    const [before, after] = [toMarkdown(doc), toMarkdown(edit({ passages })!)];
+    return { scope: editScope(before, after, ""), fails: ruleChecks(before, after, { diff: "", added: false }).fails };
+  };
+  const block = "```bash\nnpm run export\n```";
+  expect(measure([{ section: 1, find: block, replace: "```bash\nnpm run download\n```" }])).toEqual({ scope: "correction", fails: null });
+  expect(measure([{ section: 1, find: "Exports are emailed to you.", replace: "" }])).toEqual({ scope: "correction", fails: null });
+  expect(measure([{ section: 1, find: "Exports are emailed to you.", replace: "Exports are saved in **Files**." }])).toEqual({ scope: "correction", fails: null });
+  expect(measure([{ section: 1, after: "Run this from the project's folder.", insert: "You need Node 20." }])).toEqual({ scope: "larger", fails: null });
+  expect(measure([{ section: 1, after: "Exports are emailed to you.", insert: "They're CSV files." }])).toEqual({ scope: "larger", fails: null });
 });
 
 test("without all of the change (a file left out or cut short), no edit is a rename: the name's other side may be in what's missing", () => {

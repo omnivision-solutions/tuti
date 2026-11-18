@@ -1,4 +1,4 @@
-import { blocksToNotes, type Doc, droppedFacts, factsIn, parseDoc, passagesIn, readNotes, replacePassage, toPlainText } from "@tuti/content";
+import { blocksToNotes, type Doc, droppedFacts, factsIn, insertAfterPassage, parseDoc, passagesIn, readNotes, replacePassage, toPlainText } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { collectionName } from "@tuti/shared";
 
@@ -92,7 +92,7 @@ export type Ask = (system: string, user: string, maxTokens: number) => Promise<s
 
 /**
  * Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't rewritten
- * whole: its passages are replaced one by one instead (replacePassage). An image goes as its {{media N}} line and comes
+ * whole: its passages are replaced, taken out or added after one by one instead (replacePassage, insertAfterPassage). An image goes as its {{media N}} line and comes
  * back as the node it was (blocksToNotes, readNotes).
  */
 const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak", "image"]);
@@ -123,17 +123,17 @@ When you change an article that exists:
 
 /**
  * How a section is changed, for the writers that edit an article: an editable one whole, as Markdown; one with a table,
- * code or anything else Markdown can't carry back by its passages, each replaced where it stands (articleNotes).
+ * code or anything else Markdown can't carry back by its passages, each replaced, taken out or added after where it
+ * stands (articleNotes).
  */
-export const PASSAGES_RULE = `A section marked editable is changed by giving its whole new text in "sections". A section that isn't has a table, code or something else that must stay exactly as it is: it lists its "passages" (its paragraphs, headings, list items and table cells), and you change one by giving it in "passages": "find" is the passage exactly as listed, "replace" is its new text, on one line, with **bold**, the links it had and each \`code\` it had exactly as it was. Nothing else in such a section can be changed, and a passage can't be taken out or split in two. When what a passage describes is gone, don't reuse the passage for something else: leave it, and say so in "add".`;
+export const PASSAGES_RULE = `A section marked editable is changed by giving its whole new text in "sections". A section that isn't has a table, code or something else that must stay as it is: it lists its "passages" (its paragraphs, headings, list items, table cells and code blocks), and you change it by them, in "passages". To change one, "find" is the passage exactly as listed and "replace" its new text: on one line, with **bold**, *italics*, <br> for a line break, the links it had, and as many \`code\` spans as it had, in the same order (what's in one may change); a code block's "replace" is the whole block, fences included. To take one out (a paragraph, a list item or a code block), "replace" is ""; a heading goes only with everything else in its section, when what the whole section describes is gone. To add after one, "after" is the passage exactly as listed and "insert" the new text: paragraphs, or "- " items after a list item, with no heading. Nothing else in such a section can be changed, and a passage can't be split in two. When what a passage describes is gone, take it out; don't reuse it for something else.`;
 
 /**
- * When the section for the end ("add") may be used, for the writers that have it. Text beside tables and code is
- * corrected in place (PASSAGES_RULE); code itself, and text that's no passage (in italics, say), can't be changed yet,
- * so a statement that's wrong there still gets a short note, rather than nothing. An edit with a section for the end
- * never goes out by itself (waitsBecause), so the note is read by a person before readers see it.
+ * When the section for the end ("add") may be used, for the writers that have it: only for what the article doesn't
+ * cover at all and belongs in none of its sections. Never for a correction: every section can be changed where it
+ * stands (PASSAGES_RULE). An edit with a section for the end never goes out by itself (waitsBecause).
  */
-export const ADD_RULE = `Leave "add" empty, with two exceptions. One: there's something the article doesn't cover at all and there's no editable section to add it to (a section that isn't editable only takes passages, so nothing can be added there). Two: what's wrong is in code (a code block, or \`code\` in a sentence), or in text of a section that isn't editable and isn't among its passages, or a passage describes something that's gone (a passage can't be taken out); then say what's right in a sentence or two of plain text (no table), under a new heading that says what the note corrects, never a heading the article already has and never a section's number, so a person can fix it there (the one case where the old statement stays: you can't change it, and an edit with "add" is never published without a person reading it). Never use "add" to correct a sentence you can change where it stands. It starts with a heading even when it's short.`;
+export const ADD_RULE = `Leave "add" empty unless the article doesn't cover something at all and it belongs in none of its sections; then "add" is a new section for the end, starting with a ## heading that isn't one the article already has. Never use "add" to correct anything: change what's wrong where it stands. Text that's neither in an editable section nor among the passages can't be changed: leave it, and say so in "reason".`;
 
 /**
  * How the edit's writer treats edits still waiting in the article (docs/plan.md, E4): their text is rewritten with the
@@ -152,7 +152,7 @@ ${WRITING_RULES}
 
 ${ADD_RULE}
 
-Reply with JSON only: {"reason": "<one sentence for the team: what's wrong or missing>", "overview": "<one or two sentences for the team: what the article says now that it didn't, with this edit and the ones already waiting (listed) together, such as: It says invite links work for 7 days, and to send a new one from Team.>", "sections": {"<number>": "<the section's new text>"}, "passages": [{"section": <number>, "find": "<a passage, exactly as listed>", "replace": "<its new text>"}], "add": "<a new section for the end, starting with a ## heading, or empty>"}
+Reply with JSON only: {"reason": "<one sentence for the team: what's wrong or missing>", "overview": "<one or two sentences for the team: what the article says now that it didn't, with this edit and the ones already waiting (listed) together, such as: It says invite links work for 7 days, and to send a new one from Team.>", "sections": {"<number>": "<the section's new text>"}, "passages": [{"section": <number>, "find": "<a passage, exactly as listed>", "replace": "<its new text, or empty to take it out>"}, {"section": <number>, "after": "<a passage, exactly as listed>", "insert": "<new text>"}], "add": "<a new section for the end, starting with a ## heading, or empty>"}
 Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links.`;
 
 /**
@@ -257,7 +257,8 @@ const titles = (blocks: Block[]) => blocks.filter((block) => block.type === "hea
  * An article's text as the model reads it: numbered sections (`notes`), each marked editable when it has only what
  * the model can write back, and otherwise listing its `passages` (the text blocks that can be replaced one by one,
  * those found once: a repeated one can't be named); and `edit`, which applies a reply's `sections` (number → new
- * text), `passages` (a section's passage → its new text, the nodes around it untouched) and `add` (a new last section)
+ * text), `passages` (a section's passage → its new text, or taken out, or new text added after it; the nodes around it
+ * untouched) and `add` (a new last section)
  * to it: the new document, or null when it can't be used (a section losing a link, or not keeping its images, each once
  * and in their order; a passage refused, see replacePassage; a heading renamed to a title another heading has; not a valid article; or
  * nothing changed). `marks` (waitingSections, by section in order) marks the sections edits wait in: `waiting`, named,
@@ -312,11 +313,17 @@ export function articleNotes(doc: Doc, marks: { by: string[]; held: boolean }[] 
       return null;
     }
     for (const passage of (reply.passages ?? []) as unknown[]) {
-      const { section, find, replace } = (passage ?? {}) as { section?: unknown; find?: unknown; replace?: unknown };
+      const { section, find, replace, after, insert } = (passage ?? {}) as { section?: unknown; find?: unknown; replace?: unknown; after?: unknown; insert?: unknown };
       // A section's number, as a number or its digits (as "sections" names them): nothing else is made into one.
       const index = (typeof section === "number" && Number.isInteger(section)) || (typeof section === "string" && /^\d+$/.test(section)) ? Number(section) - 1 : -1;
-      // Only in a section that lists passages: an editable one is rewritten whole.
-      const replaced = next[index] && !notes[index]!.editable && !held(index) && typeof find === "string" && typeof replace === "string" ? replacePassage(next[index], find, replace) : null;
+      // Only in a section that lists passages: an editable one is rewritten whole. One thing each: a replacement or an addition.
+      const blocks = next[index] && !notes[index]!.editable && !held(index) ? next[index] : null;
+      const replaced =
+        blocks && typeof find === "string" && typeof replace === "string" && after === undefined && insert === undefined
+          ? replacePassage(blocks, find, replace)
+          : blocks && typeof after === "string" && typeof insert === "string" && find === undefined && replace === undefined
+            ? insertAfterPassage(blocks, after, insert)
+            : null;
       if (!replaced) {
         return null;
       }
@@ -342,8 +349,9 @@ export function articleNotes(doc: Doc, marks: { by: string[]; held: boolean }[] 
         return change > 0 ? count(before, title) > 0 || count(after, title) > 1 : change < 0 && count(before, title) > 1;
       });
     });
-    // And a section that opened with its heading still does: without it, or with text put before it, its text would join the section above.
-    if (moved || next.some((section, i) => parts[i]![0]?.type === "heading" && section[0]?.type !== "heading")) {
+    // And a section that opened with its heading still does: without it, or with text put before it, its text would join
+    // the section above. A section taken out whole (every passage of it, heading too) is gone, which is fine.
+    if (moved || next.some((section, i) => parts[i]![0]?.type === "heading" && section.length > 0 && section[0]?.type !== "heading")) {
       return null;
     }
     const checked = parseDoc("article", content);

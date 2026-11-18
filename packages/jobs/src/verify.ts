@@ -146,7 +146,7 @@ ${WRITING_RULES}
 
 ${ADD_RULE}
 
-Reply with JSON only: {"statements": [{"statement": "<what the article says, short>", "source": "<the exact sentence quoted from the article, without Markdown formatting>", "verdict": "current" | "outdated" | "unclear", "evidence": ["<path>"], "note": "<one sentence for the team: what the code says>"}], "reason": "<one sentence for the team: what's out of date, or empty>", "sections": {"<number>": "<the section's new text>"}, "passages": [{"section": <number>, "find": "<a passage, exactly as listed>", "replace": "<its new text>"}], "add": "<a new section for the end, starting with a ## heading, or empty>"}
+Reply with JSON only: {"statements": [{"statement": "<what the article says, short>", "source": "<the exact sentence quoted from the article, without Markdown formatting>", "verdict": "current" | "outdated" | "unclear", "evidence": ["<path>"], "note": "<one sentence for the team: what the code says>"}], "reason": "<one sentence for the team: what's out of date, or empty>", "sections": {"<number>": "<the section's new text>"}, "passages": [{"section": <number>, "find": "<a passage, exactly as listed>", "replace": "<its new text, or empty to take it out>"}, {"section": <number>, "after": "<a passage, exactly as listed>", "insert": "<new text>"}], "add": "<a new section for the end, starting with a ## heading, or empty>"}
 Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links.`;
 
 const VERDICTS = new Set<string>(["current", "outdated", "unclear"]);

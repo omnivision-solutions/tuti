@@ -337,6 +337,18 @@ describe("a correction beside a table or code is made where the old text stands"
     expect(await prisma.articleChanges.count({ where: { articleId: article.id } })).toBe(0);
   });
 
+  test("the code itself is changed where it stands, and a paragraph taken out: no section for the end, so it doesn't wait for that", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    const { stored, edit } = await correcting(36, code, {
+      passages: [
+        { section: 1, find: "```bash\nacme theme light\n```", replace: "```bash\nacme theme dark\n```" },
+        { section: 1, find: "Pick it in Settings.", replace: "" },
+      ],
+    });
+    expect(await contentOf("articleChanges")).toEqual({ type: "doc", content: [stored.content[0], { ...stored.content[1], content: [{ type: "text", text: "acme theme dark" }] }] });
+    expect(edit).toMatchObject({ status: "SCHEDULED", waitReason: null });
+  });
+
   test("with a section for the end as well, it still waits for a person", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
     const { edit } = await correcting(35, code, { add: "## The command line\n\nThe command takes dark too." });
