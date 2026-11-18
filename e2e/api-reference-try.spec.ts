@@ -19,13 +19,15 @@ test.afterAll(async () => {
   await Promise.all([open.close(), closed.close()]);
 });
 
-const spec = () => `
+/** `site`: the portal's own origin, where a server of the spec's is too (an API on the same site as its help center). */
+const spec = (site = "https://site.example") => `
 openapi: 3.1.0
 info: { title: Acme API, version: "1" }
 servers:
   - { url: "${open.origin}/v1", description: Production }
   - { url: "${closed.origin}/v1", description: Legacy }
   - { url: "https://api.unverified.example/v1", description: Elsewhere }
+  - { url: "${site}/fake/v1", description: Same site }
 components:
   securitySchemes:
     key: { type: http, scheme: bearer }
@@ -97,7 +99,7 @@ test("a reader tries an operation with their key: from the browser, and through 
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/api-references", { name: "Reference", spec: spec() });
+  await api("/api-references", { name: "Reference", spec: spec(portalUrl(slug)) });
 
   // Not newPerson: the headers it adds to every request (Playwright's extraHTTPHeaders) make the browser ask the API
   // first about every request, as a reader's browser wouldn't for a plain POST.
@@ -126,6 +128,21 @@ test("a reader tries an operation with their key: from the browser, and through 
   expect(open.requests.at(-1)!.headers.referer).toBeUndefined();
   await checkpoint(reader, "console-desktop", { fullPage: false });
 
+  // An API on the portal's own site: a browser would send the reader's cookies for it (their session there), but the
+  // console sends none. (Routed here: the portal has no such API.)
+  await reader.context().addCookies([{ name: "session", value: "theirs", url: portalUrl(slug) }]);
+  let sameSiteCookie: string | null | undefined;
+  await reader.route(`${portalUrl(slug)}/fake/**`, async (route) => {
+    sameSiteCookie = await route.request().headerValue("cookie");
+    await route.fulfill({ status: 201, json: { ok: true } });
+  });
+  await pickServer(panel, `Same site (${portalUrl(slug)}/fake/v1)`);
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(response.getByText("201 Created")).toBeVisible();
+  expect(sameSiteCookie).toBeNull();
+  // Off again: while any route is on, Playwright handles the browser's preflights itself, which later steps rely on.
+  await reader.unroute(`${portalUrl(slug)}/fake/**`);
+
   // An API that doesn't let browsers call it. A POST isn't sent again by itself (the API may have run it): the reader
   // sends it through Tuti, which says so.
   await pickServer(panel, `Legacy (${closed.origin}/v1)`);
@@ -149,6 +166,11 @@ test("a reader tries an operation with their key: from the browser, and through 
   await panel.getByRole("button", { name: "Copy as cURL" }).click();
   await expect.poll(() => reader.evaluate(() => navigator.clipboard.readText())).toContain(`curl '${closed.origin}/v1/posts?board=ideas'`);
   expect(await reader.evaluate(() => navigator.clipboard.readText())).toContain("Authorization: Bearer sk_test_123");
+  await expect(reader.getByText("Copied", { exact: true })).toBeVisible();
+  // Where there's no clipboard (a portal over plain http): it says so, rather than nothing.
+  await reader.evaluate(() => Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true }));
+  await panel.getByRole("button", { name: "Copy as cURL" }).click();
+  await expect(reader.getByText("Couldn't copy it. Your browser may not allow it here.")).toBeVisible();
 
   // Closed and opened again: the key, what was typed and the last answer are still there.
   await panel.getByRole("textbox", { name: "Body" }).fill('{"title": "Edited"}');

@@ -18,6 +18,7 @@ import {
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { copyText } from "@/components/copy-button";
 import { usePortalHref } from "@/components/portal-base";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,7 +146,6 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
   const shown = tryParams(doc, operation);
   const [keys, setKeys] = useKeys(reference);
   const sendButton = useRef<HTMLButtonElement>(null);
-  const [copied, setCopied] = useState(false);
   const chosen = servers.find((s) => s.url === server)!;
   const answer = useRef<HTMLDivElement>(null);
   // Below the fields, often out of sight (a phone's sheet): brought into view, focus left on Send.
@@ -270,12 +270,8 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
     }
   }
 
-  async function copy() {
-    if ("error" in made) return;
-    await navigator.clipboard.writeText(curlCommand({ method: made.method, url: made.url.href, headers: Object.fromEntries(made.headers), body: made.body }));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  // Says so either way, as the app's other copy buttons do: a clipboard can be off (a portal over plain http, a permission denied).
+  const copy = () => "url" in made && copyText(curlCommand({ method: made.method, url: made.url.href, headers: Object.fromEntries(made.headers), body: made.body }));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -377,7 +373,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-divider px-4 py-3">
         <Button variant="outline" disabled={"error" in made} onClick={() => void copy()}>
-          {copied ? "Copied" : "Copy as cURL"}
+          Copy as cURL
         </Button>
         <Button ref={sendButton} disabled={sending} focusableWhenDisabled onClick={() => void send()}>
           {sending ? "Sending…" : "Send"}
