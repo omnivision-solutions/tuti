@@ -268,21 +268,23 @@ export const updateApiReference = defineOperation({
         if (choosing) {
           const doc = row.doc as unknown as ApiDoc;
           const state = row.state as unknown as ApiReferenceState;
-          const known = (given: string[] | undefined, has: string[], what: string) => {
-            const unknown = (given ?? []).find((key) => !has.includes(key));
+          // Sets, not lists: each list may hold thousands of keys, and this runs with the project locked.
+          const known = (given: string[] | undefined, has: Set<string>, what: string) => {
+            const unknown = (given ?? []).find((key) => !has.has(key));
             if (unknown !== undefined) {
               throw new OperationError(400, "invalid_input", `This reference has no ${what} “${unknown.slice(0, 200)}”`);
             }
             return given ?? [];
           };
-          const operations = doc.operations.map((operation) => operation.key);
-          const groups = doc.groups.map((group) => group.key);
+          const operations = new Set(doc.operations.map((operation) => operation.key));
+          const groups = new Set(doc.groups.map((group) => group.key));
           const [hide, show] = [known(input.hide, operations, "operation"), known(input.show, operations, "operation")];
           const [hideGroups, showGroups] = [known(input.hideGroups, groups, "group"), known(input.showGroups, groups, "group")];
+          const [shown, shownGroups] = [new Set(show), new Set(showGroups)];
           const next: ApiReferenceState = {
             ...state,
-            hiddenOperations: [...new Set([...state.hiddenOperations.filter((key) => !show.includes(key)), ...hide])],
-            hiddenGroups: [...new Set([...state.hiddenGroups.filter((key) => !showGroups.includes(key)), ...hideGroups])],
+            hiddenOperations: [...new Set([...state.hiddenOperations.filter((key) => !shown.has(key)), ...hide])],
+            hiddenGroups: [...new Set([...state.hiddenGroups.filter((key) => !shownGroups.has(key)), ...hideGroups])],
             unseen: input.seen ? [] : state.unseen,
             groupOrder: [...new Set([...known(input.groupOrder, groups, "group"), ...state.groupOrder])],
           };
