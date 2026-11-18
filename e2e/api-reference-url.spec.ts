@@ -97,14 +97,21 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   await dialog.getByRole("button", { name: "Fetch" }).click();
   await started;
   await expect(dialog.locator("form")).toHaveAttribute("data-reading");
-  // Enter again for the same address, as a held-down key repeats it, while it's on its way: no second fetch. (One
-  // would be a read of its own, held as the first is, so the form couldn't settle without it being counted.)
+  // Enter again for the same address, as a held-down key repeats it, while it's on its way: no second fetch. (Each fetch
+  // is a read of its own, held as the first is, so the form can't settle until every one sent has been counted.)
   await dialog.getByLabel("Spec URL").press("Enter");
+  await dialog.getByLabel("Spec URL").press("Enter");
+  // Edited and typed back to the same address, Enter does fetch again: the edit dropped the first one's answer.
+  await dialog.getByLabel("Spec URL").press("End");
+  await dialog.getByLabel("Spec URL").press("x");
+  await dialog.getByLabel("Spec URL").press("Backspace");
+  await expect(dialog.getByLabel("Spec URL")).toHaveValue(`${siteUrl()}${path}`);
   await dialog.getByLabel("Spec URL").press("Enter");
   await dialog.getByText("Upload a file", { exact: true }).click();
   release();
   await staysEmpty();
-  expect(actions - before).toBe(1);
+  // The first, and the one after the edit: none for the repeated Enters (that'd be four), and not only the first (one).
+  expect(actions - before).toBe(2);
   await team.unroute("**/*", holdFetch);
   await dialog.getByText("From a URL", { exact: true }).click();
 
