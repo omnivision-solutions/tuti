@@ -169,7 +169,8 @@ function inline(text: string, allowedLinks: Set<string>): JSONContent[] {
     }
   };
   // Each part has a length limit, so a reply of nothing but "[" or "**" is read in linear time.
-  const pattern = /\[([^\]]{1,1000})\]\(([^)\s]{1,2000})\)|\*\*([^*]{1,2000})\*\*/g;
+  // (An address as long as a link may be: isSafeLink's 2,048.)
+  const pattern = /\[([^\]]{1,1000})\]\(([^)\s]{1,2048})\)|\*\*([^*]{1,2000})\*\*/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     push(text.slice(last, match.index));
@@ -236,7 +237,7 @@ function swap(node: JSONContent, target: JSONContent, next: JSONContent): JSONCo
 }
 
 /** What notesToDoc reads as a block's start: a heading, a quote, a list's item. Escaped ("1\. Use…"), it's text. */
-const BLOCK_MARKER = /^(#{1,6}(\s|$)|>|[-*•+]\s|\d+[.)]\s)/;
+const BLOCK_MARKER = /^(#{1,6}(\s|$)|>|([-*•+]|\d+[.)])(\s|$)|([-*_])\5{2,}$)/;
 
 /** How many links to each address these text nodes hold (nodes side by side with one address are one link). */
 function linkRuns(content: JSONContent[]): Map<string, number> {
@@ -257,7 +258,7 @@ function rewritten(target: JSONContent, replace: string): JSONContent | null {
   let rest = replace.trim();
   // One line, and no block of its own: a marker at its start (notesToDoc's) would be stored as text ("2. 1. Open…").
   // Nor an image's placeholder: the image stays where it is, and the placeholder would be stored as text.
-  if (rest === "" || /[\n\r]/.test(rest) || BLOCK_MARKER.test(rest) || /\{\{media \d+\}\}/.test(rest)) {
+  if (rest === "" || /[\n\r]/.test(rest) || BLOCK_MARKER.test(rest) || /\{\{media \d+\}\}/.test(rest.replace(/\\(.)/g, "$1"))) {
     return null;
   }
   const links = new Set([...factsIn([target]).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));

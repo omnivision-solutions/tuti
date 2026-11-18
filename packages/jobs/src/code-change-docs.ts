@@ -272,7 +272,8 @@ export function articleNotes(doc: Doc) {
       const { section, find, replace } = (passage ?? {}) as { section?: unknown; find?: unknown; replace?: unknown };
       // A section's number, as a number or its digits (as "sections" names them): nothing else is made into one.
       const index = (typeof section === "number" && Number.isInteger(section)) || (typeof section === "string" && /^\d+$/.test(section)) ? Number(section) - 1 : -1;
-      const replaced = next[index] && typeof find === "string" && typeof replace === "string" ? replacePassage(next[index], find, replace) : null;
+      // Only in a section that lists passages: an editable one is rewritten whole.
+      const replaced = next[index] && !notes[index]!.editable && typeof find === "string" && typeof replace === "string" ? replacePassage(next[index], find, replace) : null;
       if (!replaced) {
         return null;
       }

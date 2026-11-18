@@ -172,8 +172,18 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(next[0]!.content).toEqual([{ type: "text", text: "See " }, { type: "text", text: "Plans", marks: [link] }, { type: "text", text: " for seats and prices." }]);
   });
 
+  test("links and bold are read with a length limit on each part: an address as long as a link may be is still a link, and what's over a limit is text", () => {
+    const long = `https://example.com/?q=${"a".repeat(2048 - "https://example.com/?q=".length)}`;
+    const read = (notes: string) => readNotes(JSON.stringify({ notes }), new Set([long]), [])!.doc.content;
+    expect(read(`See [Billing](${long}).`)![0]!.content![1]).toEqual({ type: "text", text: "Billing", marks: [{ type: "link", attrs: { href: long } }] });
+    // Over a limit, or nothing but brackets: read as the text it is, no link made.
+    expect(JSON.stringify(read(`See [${"b".repeat(1001)}](${long}).`))).not.toContain('"link"');
+    expect(JSON.stringify(read("[".repeat(5000)))).not.toContain('"link"');
+  });
+
   test("a replacement with an image's placeholder is refused: the image stays where it is, and the placeholder would be stored as text", () => {
     expect(replacePassage(section, "Each plan has seats.", "Each plan has seats. {{media 1}}")).toBeNull();
+    expect(replacePassage(section, "Each plan has seats.", "Each plan has seats. \\{\\{media 1\\}\\}")).toBeNull();
     expect(replacePassage(section, "Each plan has seats.", "Each plan has five seats.")).not.toBeNull();
   });
 
@@ -181,6 +191,9 @@ describe("passages: a block's text replaced where it stands", () => {
     // A list's item would read "2. 1. Open Plans.", a heading would show its hashes.
     expect(replacePassage(section, "Open **Billing**.", "1. Open **Plans**.")).toBeNull();
     expect(replacePassage(section, "Plans", "## Export to CSV")).toBeNull();
+    // A divider, and a marker with nothing after it, are blocks too.
+    expect(replacePassage(section, "Plans", "---")).toBeNull();
+    expect(replacePassage(section, "Plans", "1.")).toBeNull();
     for (const refused of ["- Each plan has a price.", "* Each plan has a price.", "+ Each plan has a price.", "2) Each plan has a price.", "> Each plan has a price.", "# Plans"]) {
       expect(replacePassage(section, "Each plan has seats.", refused)).toBeNull();
     }
