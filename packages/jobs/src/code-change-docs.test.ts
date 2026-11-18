@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
-import { articleNotes } from "./code-change-docs";
+import { ADD_RULE, articleNotes, EDIT_SYSTEM, NEW_SYSTEM, WRITING_RULES } from "./code-change-docs";
+import { CHECK_SYSTEM } from "./verify";
 
 const text = (value: string) => [{ type: "text", text: value }];
 const item = (value: string) => ({ type: "listItem", content: [{ type: "paragraph", content: text(value) }] });
@@ -102,4 +103,15 @@ test("a section with a table or code beside its image still isn't edited", () =>
     content: [para("Run it."), image("a".repeat(24), "The terminal"), { type: "codeBlock", content: text("npm run export") }],
   });
   expect(notes[0]!.editable).toBe(false);
+});
+
+test("the three writers (an edit, a new article, Verify's fix) share one set of writing rules, and the two with a section for the end share when it may be used", () => {
+  for (const prompt of [EDIT_SYSTEM, NEW_SYSTEM, CHECK_SYSTEM]) {
+    expect(prompt).toContain(WRITING_RULES);
+    expect(prompt).not.toMatch(/as little as you can/);
+  }
+  for (const prompt of [EDIT_SYSTEM, CHECK_SYSTEM]) {
+    expect(prompt).toContain(ADD_RULE);
+  }
+  expect(NEW_SYSTEM).not.toContain('"add"');
 });
