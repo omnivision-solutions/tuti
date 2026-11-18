@@ -4,19 +4,23 @@ import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
+import { AiModelSetting } from "@/components/ai-model-setting";
+import { AdvancedTuningLink, AutopilotChecksSwitch, AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
 import { autopilotRecordText } from "@/lib/autopilot-words";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
 
 export const metadata: Metadata = { title: "Autopilot · Settings" };
 
 /**
- * Settings → AI → Autopilot: whether it reads merged pull requests (and what's sent where), what it does
- * by itself, and how it's doing. Owners change it; admins see it. Only where the server has AI.
+ * Settings → AI → Autopilot: its AI model (Decides, Checks, Writes), whether Checks run and the way to Advanced tuning,
+ * which owners and admins change; then whether it reads merged pull requests (and what's sent where), what it does by itself, and how it's
+ * doing, which owners change and admins see. Only where the server has AI.
  */
 export default async function AutopilotSettingsPage(props: PageProps<"/app/[project]/settings/autopilot">) {
   const { project: slug } = await props.params;
@@ -25,7 +29,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     notFound();
   }
   const owner = membership.role === "OWNER";
-  const [team, project, github, record] = await Promise.all([
+  const [model, team, project, github, record] = await Promise.all([
+    aiModelSetting(membership.project, "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" }),
     prisma.teamMember.findMany({
       where: { projectId: membership.project.id, role: { not: "OWNER" } },
       orderBy: { createdAt: "asc" },
@@ -51,6 +56,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     prisma.githubInstallation.findUnique({ where: { projectId: membership.project.id }, select: { projectId: true } }),
     autopilotRecord(membership.project.id),
   ]);
+  const checks = checksSwitch(model);
   return (
     <SettingsPane
       title="Autopilot"
@@ -69,31 +75,43 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         </>
       }
     >
-      {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings.</p>}
+      {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings. Admins can change its AI model and Checks.</p>}
       {!planIncludes(project.plan, "codeChanges") && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin>
           Merged pull requests still go into the changelog&apos;s running draft.
         </PlanNotice>
       )}
       <SettingsCard>
-        <SettingBlock>
-          <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} provider={aiProvider()} owner={owner} />
-        </SettingBlock>
+        {/* Without the switch (this server runs no checks), a saved Off is Custom's empty box, where a model can be picked, not a row that only the switch could change. */}
+        <AiModelSetting {...model} roles={checks ? model.roles : model.roles.map((role) => (role.model === "off" ? { ...role, model: "" } : role))} />
+        {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} />}
+        <AdvancedTuningLink href={`/app/${slug}/settings/ai-models/tuning`} upgrade={planIncludes(project.plan, "aiTuning") ? null : upgradePrompt("aiTuning", slug, true)} />
       </SettingsCard>
+      <div className="flex flex-col gap-2">
+        <SettingsCard>
+          <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />
+        </SettingsCard>
+        {/* What leaves, said where it's switched on (docs/plan.md: the team knows what's sent where). The page's, not a hint of the switch's. */}
+        <p className="text-sm text-muted-foreground">
+          Sent to {aiProvider()}: each merged pull request&apos;s title, description, commits and diff, the repository files Autopilot reads at its merge commit
+          and your help center&apos;s articles and drafts (to find what to fix), and the files Verify reads when it checks an article. Lockfiles, generated
+          files and files that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
+        </p>
+      </div>
       {project.analyseCodeChanges && (
         <SettingsCard title="What it does by itself">
-          <SettingBlock className="gap-6">
-            <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} provider={aiProvider()} owner={owner} />
-            <AutopilotSwitches
-              projectSlug={slug}
-              owner={owner}
-              settings={{
-                drafts: project.autopilotDrafts,
-                articleEdits: project.autopilotArticleEdits,
-                progress: project.autopilotProgress,
-                complete: project.autopilotComplete,
-              }}
-            />
+          <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} owner={owner} />
+          <AutopilotSwitches
+            projectSlug={slug}
+            owner={owner}
+            settings={{
+              drafts: project.autopilotDrafts,
+              articleEdits: project.autopilotArticleEdits,
+              progress: project.autopilotProgress,
+              complete: project.autopilotComplete,
+            }}
+          />
+          <SettingBlock>
             <AutopilotSettingsForm
               projectSlug={slug}
               owner={owner}

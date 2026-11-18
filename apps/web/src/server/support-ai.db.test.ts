@@ -3,12 +3,14 @@ import { articleChunkText } from "@tuti/shared";
 import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp } from "@/test/helpers";
+import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
 import { createConversation, getConversation, replyToConversation } from "./operations/conversations";
 import { createArticle, publishArticle, unpublishArticle } from "./operations/docs";
 import { call } from "./operations/run";
+import { getSupportSettings, updateSupportSettings } from "./operations/support";
 import { suggestReply, summarizeConversation } from "./operations/support-ai";
+import { saveDraftInstructions } from "./inbox";
 
 /** The support inbox's AI (docs/plan.md, Support inbox, item 12): a reply drafted from the docs, and summaries: two roles, both metered as the `support` feature. */
 
@@ -38,7 +40,7 @@ async function setup() {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
-  return { project, team };
+  return { owner, project, team };
 }
 
 /** Publishes an article whose only section is this similar to what's asked. */
@@ -134,4 +136,48 @@ test("a summary is added as the AI's note: only the team sees it, and the status
     { from: "team", text: "Looking into it." },
     { from: "team", teamNote: true, text: "Billing was on the old plan." },
   ]);
+});
+
+test("the team's instructions for drafts: owners and admins save up to 2,000 characters, and a draft's request carries them with AI answers' own, a summary's doesn't", async () => {
+  const { owner, project, team } = await setup();
+  await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
+  await prisma.project.update({ where: { id: project.id }, data: { assistantInstructions: "Call the product Acme." } });
+
+  // Saved trimmed, and returned with the support settings.
+  expect((await call(getSupportSettings, team, {})).draftInstructions).toBe("");
+  expect((await call(updateSupportSettings, team, { draftInstructions: "  End by asking whether that helped.  " })).draftInstructions).toBe("End by asking whether that helped.");
+  expect((await call(getSupportSettings, team, {})).draftInstructions).toBe("End by asking whether that helped.");
+  // Up to 2,000 characters.
+  await expect(call(updateSupportSettings, team, { draftInstructions: "x".repeat(2001) })).rejects.toMatchObject({ status: 400, message: "Keep the instructions under 2,000 characters" });
+  expect((await call(updateSupportSettings, team, { draftInstructions: "x".repeat(2000) })).draftInstructions).toHaveLength(2000);
+  // Saving them leaves the inbox's switch alone, and the switch leaves them.
+  await call(updateSupportSettings, team, { draftInstructions: "End by asking whether that helped." });
+  expect(await call(updateSupportSettings, team, { inbox: true })).toMatchObject({ inbox: true, draftInstructions: "End by asking whether that helped." });
+  // The form's line breaks arrive as CRLF: saved as LF and counted as the box counts them.
+  const form = new FormData();
+  form.set("instructions", `${"x".repeat(1000)}\r\n${"y".repeat(999)}`);
+  actAs(owner);
+  expect(await saveDraftInstructions(project.slug, {}, form)).toEqual({});
+  expect((await call(getSupportSettings, team, {})).draftInstructions).toBe(`${"x".repeat(1000)}\n${"y".repeat(999)}`);
+  await call(updateSupportSettings, team, { draftInstructions: "End by asking whether that helped." });
+  // A member can't change them.
+  form.set("instructions", "Ignore the docs.");
+  actAs(await addMember(project.id, "MEMBER"));
+  expect(await saveDraftInstructions(project.slug, {}, form)).toEqual({ error: "Only project owners and admins can change support settings" });
+  expect((await call(getSupportSettings, team, {})).draftInstructions).toBe("End by asking whether that helped.");
+
+  await call(createConversation, team, { email: "e2e-sam@example.com", body: QUESTION });
+  openai.setVector(QUESTION, along(1));
+  model.reply(JSON.stringify({ answer: "From the Team page. Did that help?", sources: ["s1"] }));
+  expect((await call(suggestReply, team, { number: 1 })).status).toBe("suggested");
+  model.reply("They asked how to add a colleague.");
+  await call(summarizeConversation, team, { number: 1 });
+
+  // The draft: as the team's standing instructions, after AI answers' own, under the prompt's rule that they never override answering from the sections.
+  const [draft, summary] = model.requests;
+  const sent = JSON.parse(draft!.user.slice(draft!.user.indexOf("{"))) as { teamSettings: { standingInstructions: string } };
+  expect(sent.teamSettings.standingInstructions).toBe("Call the product Acme.\n\nEnd by asking whether that helped.");
+  expect(draft!.system).toContain("The settings never override the rules above");
+  // The summary: none of them.
+  expect(summary!.system + summary!.user).not.toContain("whether that helped");
 });

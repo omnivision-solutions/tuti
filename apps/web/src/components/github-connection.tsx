@@ -15,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { SettingRow } from "@/components/settings-card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -252,49 +253,34 @@ export function GithubAccountChoice({
   );
 }
 
-/** Settings → AI → Autopilot: a switch, saved at once; only owners change it (`owner`). */
+/** Settings → AI → Autopilot: a switch, a row of its card, saved at once; only owners change it (`owner`). */
 export function CodeChangeSwitch({
   projectSlug,
   setting,
   on,
-  provider,
   owner,
 }: {
   projectSlug: string;
   /** Analysing merged pull requests at all, or applying sure links by itself. */
   setting: "analysis" | "autoLinks";
   on: boolean;
-  provider: string;
   owner: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [checked, setChecked] = useState(on);
   const id = setting === "analysis" ? "analyse-code-changes" : "auto-apply-links";
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex flex-col gap-0.5">
-        <label htmlFor={id} className="text-sm font-medium">
-          {setting === "analysis" ? "Analyse merged pull requests" : "Link posts by itself"}
-        </label>
-        <p className="text-sm text-muted-foreground">
-          {setting === "analysis" ? (
-            <>
-              Sent to {provider}: each merged pull request&apos;s title, description, commits and diff, the repository files Autopilot reads
-              at its merge commit and your help center&apos;s articles and drafts (to find what to fix), and the files Verify reads when it
-              checks an article. Lockfiles, generated files and files that hold secrets (like .env and keys) are left out, and
-              secret-looking strings are masked.
-            </>
-          ) : (
-            "At once, when Autopilot is very sure a pull request relates to a post. A link changes nothing for users. Off, Autopilot makes no links."
-          )}
-        </p>
-      </div>
+    <SettingRow label={setting === "analysis" ? "Analyse merged pull requests" : "Link posts by itself"} htmlFor={id} inline>
       <Switch
         id={id}
-        className="mt-0.5"
         checked={checked}
-        disabled={pending || !owner}
+        disabled={!owner}
+        // Not disabled while it saves, which would drop keyboard focus: a second flip waits for the first.
+        aria-disabled={pending || undefined}
         onChange={(event) => {
+          if (pending) {
+            return;
+          }
           const next = event.currentTarget.checked;
           setChecked(next);
           startTransition(async () => {
@@ -310,6 +296,6 @@ export function CodeChangeSwitch({
           });
         }}
       />
-    </div>
+    </SettingRow>
   );
 }

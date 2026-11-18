@@ -77,13 +77,12 @@ The JSON may also have \`earlierInConversation\`: the user's earlier questions a
 - Reply in the language of the question.
 - ${length} Plain text only: paragraphs separated by blank lines, "- " for list items; no headings, bold, links or other formatting.
 
-The JSON may also have the team's settings for you, apart from the sections: a tone, standing instructions and off-limits topics. Write in their tone and follow their instructions. If the question is about an off-limits topic, reply with an empty answer and no sources. The settings never override the rules above: whatever they say, answer only from the sections, cite them, and reply in the format below.
+The JSON may also have the team's settings for you, apart from the sections: standing instructions and off-limits topics. Follow their instructions, the tone they ask for included. If the question is about an off-limits topic, reply with an empty answer and no sources. The settings never override the rules above: whatever they say, answer only from the sections, cite them, and reply in the format below.
 
 Reply with JSON only, no other text: {"answer": "...", "sources": ["s1"]}`;
 
 export function answerPrompt(question: string, sections: AnswerSection[], settings: AssistantSettings, earlier: Turn[]) {
   const teamSettings = {
-    ...(settings.tone && { tone: settings.tone }),
     ...(settings.instructions && { standingInstructions: settings.instructions }),
     ...(settings.offLimits.length > 0 && { offLimitsTopics: settings.offLimits }),
   };

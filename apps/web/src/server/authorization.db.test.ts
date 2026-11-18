@@ -177,7 +177,7 @@ const matrix: Matrix = {
     setBadge: { allowed: "ADMIN", call: (slug) => credits.setBadge(slug, false) },
   },
   "ai-models": {
-    saveAiModels: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModels(slug, {}, form({ answers: "", changelog: "" })) },
+    saveAiModel: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModel(slug, { levels: { changelog: "balanced" } }) },
   },
   // Owners only, like Autopilot's other settings (plans are off here, so every project has it).
   "code-changes-tuning": {
@@ -186,7 +186,7 @@ const matrix: Matrix = {
   assistant: {
     saveAssistantSettings: {
       allowed: "ADMIN",
-      call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: "refund" })),
+      call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ length: "short", instructions: "Say hi", offLimits: "refund" })),
     },
   },
   branding: {
@@ -459,6 +459,7 @@ const matrix: Matrix = {
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
+    saveDraftInstructions: { allowed: "ADMIN", call: (slug) => inbox.saveDraftInstructions(slug, {}, form({ instructions: "Keep it short." })) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
     saveEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.saveEmailDomain(slug, {}, form({ address: `help@${slug}.example.com` }))) },

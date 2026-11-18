@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { aiEnabled, TUNING, TUNING_KEYS } from "@tuti/shared";
+import { aiEnabled, codeChangesEnabled, TUNING, TUNING_KEYS } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CodeChangesTuningSettings } from "@/components/code-changes-tuning";
@@ -9,11 +9,11 @@ import { timeAgo } from "@/lib/format";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
 
-export const metadata: Metadata = { title: "Tuning · AI models · Settings" };
+export const metadata: Metadata = { title: "Tuning · Autopilot · Settings" };
 
 /**
- * Settings → AI models → Advanced tuning: Autopilot's values for this project (owners change them, on Business; admins
- * see them). A page of its own, so Settings → AI models and this each save one way.
+ * Settings → Autopilot → Advanced tuning: Autopilot's values for this project (owners change them, on Business; admins
+ * see them). A page of its own, so Settings → Autopilot and this each save one way.
  */
 export default async function CodeChangesTuningPage(props: PageProps<"/app/[project]/settings/ai-models/tuning">) {
   const { project: slug } = await props.params;
@@ -24,7 +24,8 @@ export default async function CodeChangesTuningPage(props: PageProps<"/app/[proj
   const tuning = await codeChangesTuning(membership.project.id);
   const kept = Object.values(tuning.values).some((value) => value.saved !== null);
   return (
-    <SettingsPane title="Advanced tuning" back={{ href: `/app/${slug}/settings/ai-models`, label: "AI models" }}>
+    // Back to Autopilot's settings; where the server has AI but can't run Autopilot (that page isn't there), to the first of the AI pages.
+    <SettingsPane title="Advanced tuning" back={codeChangesEnabled() ? { href: `/app/${slug}/settings/autopilot`, label: "Autopilot" } : { href: `/app/${slug}/settings/ai-answers`, label: "AI answers" }}>
       <CodeChangesTuningSettings
         projectSlug={slug}
         tuning={tuning}

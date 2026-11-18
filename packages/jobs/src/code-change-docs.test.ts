@@ -226,3 +226,14 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
   expect(ADD_RULE).toContain("there's no editable section to add it to");
   expect(NEW_SYSTEM).not.toContain('"add"');
 });
+
+test("the three writers (an edit, a new article, Verify's fix) share one set of writing rules, and the two with a section for the end share when it may be used", () => {
+  for (const prompt of [EDIT_SYSTEM, NEW_SYSTEM, CHECK_SYSTEM]) {
+    expect(prompt).toContain(WRITING_RULES);
+    expect(prompt).not.toMatch(/as little as you can/);
+  }
+  for (const prompt of [EDIT_SYSTEM, CHECK_SYSTEM]) {
+    expect(prompt).toContain(ADD_RULE);
+  }
+  expect(NEW_SYSTEM).not.toContain('"add"');
+});

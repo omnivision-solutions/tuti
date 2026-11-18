@@ -1,4 +1,4 @@
-import { BoxesIcon, CodeXmlIcon, CpuIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
+import { BoxesIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
@@ -41,15 +41,15 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
     },
     {
       title: "AI",
-      // How it answers can be set before the server has AI (as it could in Customize); which models, only with it.
+      // How it answers can be set before the server has AI (as it could in Customize); the rest, only with it.
       pages: [
         { title: "AI answers", href: at("ai-answers"), icon: <SparklesIcon aria-hidden /> },
         ...(aiEnabled()
           ? [
-              { title: "Writing style", href: at("writing-style"), icon: <PenLineIcon aria-hidden /> },
+              { title: "Inbox", href: at("inbox-ai"), icon: <MessagesSquareIcon aria-hidden /> },
+              { title: "Changelog", href: at("changelog"), icon: <PenLineIcon aria-hidden /> },
               // Analysing merged pull requests needs AI too (codeChangesEnabled).
               ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot"), icon: <GitPullRequestArrowIcon aria-hidden /> }] : []),
-              { title: "AI models", href: at("ai-models"), icon: <CpuIcon aria-hidden /> },
             ]
           : []),
       ],

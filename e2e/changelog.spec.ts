@@ -333,18 +333,18 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("No drafts")).toBeVisible();
   await expect(team.getByRole("button", { name: "Writing style" })).toHaveCount(0);
 
-  // The team's writing style (Settings → AI → Writing style): tone notes, and the published entry as an example.
+  // The changelog's AI settings (Settings → AI → Changelog): instructions, and the published entry as an example.
   const tone = `Friendly, short sentences, no jargon (${slug}).`;
   await team.goto(`/app/${slug}/settings`);
-  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Writing style" }).click();
-  await team.waitForURL(`**/app/${slug}/settings/writing-style`);
-  await team.getByLabel("Tone").fill(tone);
+  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Changelog" }).click();
+  await team.waitForURL(`**/app/${slug}/settings/changelog`);
+  await expect(team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Changelog" })).toHaveAttribute("aria-current", "page");
+  await team.getByLabel("Instructions").fill(tone);
   await team.getByRole("checkbox", { name: "Dark mode is here" }).check();
-  await checkpoint(team, "team-settings-writing-style");
   // While it saves, the fields are locked (an edit then wouldn't be saved).
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
-  const saving = `**/app/${slug}/settings/writing-style`;
+  const saving = `**/app/${slug}/settings/changelog`;
   await team.route(saving, async (route) => {
     if (route.request().method() !== "POST") {
       return route.fallback();
@@ -354,57 +354,32 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     await route.fulfill({ response });
   });
   await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByLabel("Tone")).toBeDisabled();
+  await expect(team.getByLabel("Instructions")).toBeDisabled();
   releaseSave();
-  await expect(team.getByText("Style saved")).toBeVisible();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
   await team.unroute(saving);
   // Saved, not just left in the form: it's there after a reload.
   await team.reload();
-  await expect(team.getByLabel("Tone")).toHaveValue(tone);
+  await expect(team.getByLabel("Instructions")).toHaveValue(tone);
   await expect(team.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
 
-  // The team picks a bigger model for changelog drafts (Settings → AI models): Fast (the default) or Balanced,
-  // each with its model and what a draft costs with it (Best is only offered where the endpoint lists its model),
-  // or a custom model id.
-  await team.goto(`/app/${slug}/settings/ai-models`);
-  // Settings' menu names the page as its heading does.
-  await expect(team.getByRole("link", { name: "AI models", exact: true })).toHaveAttribute("aria-current", "page");
-  const changelogModels = team.getByRole("radiogroup", { name: "Changelog drafts and edits" });
-  await expect(changelogModels.getByRole("radio", { name: /^Fast/ })).toBeChecked();
-  await expect(changelogModels.getByRole("radio")).toHaveCount(3); // Fast, Balanced, Custom model
-  await expect(changelogModels.getByText("Anthropic: Claude Sonnet 5.5")).toBeVisible();
-  await expect(changelogModels.getByText(/^About [\d.$]+ (credits? )?per draft$/).first()).toBeVisible();
-  await changelogModels.getByRole("radio", { name: /^Custom model/ }).check();
-  const changelogModel = team.getByLabel("Changelog drafts and edits: model id");
-  // An empty custom id, or one of spaces only, isn't sent (it would save as the default).
-  await expect(changelogModel).toHaveAttribute("required", "");
-  await changelogModel.fill("   ");
-  expect(await changelogModel.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
-  await changelogModel.fill("acme/imaginary");
-  await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("There's no model “acme/imaginary”")).toBeVisible();
-  // The server caps what a model may cost, so one without a price can't be picked.
-  await expect(team.getByText("This server allows models up to $15 per million output tokens.")).toBeVisible();
-  await changelogModel.fill("acme/no-price");
-  await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("“acme/no-price” has no price; this server allows models up to $15")).toBeVisible();
-  // Another tab, open since before the pick: saving its own change leaves the pick alone.
-  const other = await team.context().newPage();
-  await other.goto(`/app/${slug}/settings/ai-models`);
-  await changelogModels.getByRole("radio", { name: /^Balanced/ }).check();
-  await checkpoint(team, "team-settings-ai-models");
-  await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("AI models saved")).toBeVisible();
-  await other.getByRole("radiogroup", { name: "AI answers" }).getByRole("radio", { name: /^Custom model/ }).check();
-  await other.getByLabel("AI answers: model id").fill("acme/tiny");
-  await other.getByRole("button", { name: "Save" }).click();
-  await expect(other.getByText("AI models saved")).toBeVisible();
-  await other.reload();
-  await expect(other.getByRole("radiogroup", { name: "Changelog drafts and edits" }).getByRole("radio", { name: /^Balanced/ })).toBeChecked();
-  await expect(other.getByLabel("AI answers: model id")).toHaveValue("acme/tiny");
-  await other.close();
+  // The AI model, on the same page: a level, saved as it's chosen, with the model drafts run on under its label.
+  // (A server without plans has every level; changelog-settings.spec.ts has the plans.)
+  const aiModel = team.getByRole("radiogroup", { name: "AI model" });
+  await expect(aiModel.getByRole("radio")).toHaveText(["Affordable", "Balanced", "Best", "Custom"]);
+  await expect(aiModel.getByRole("radio", { name: "Balanced" })).toBeChecked();
+  await expect(team.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
+  await aiModel.getByRole("radio", { name: "Best" }).click();
+  await expect(team.getByText("AI model saved")).toBeVisible();
+  await expect(aiModel.getByRole("radio", { name: "Best" })).toBeChecked();
+  await expect(team.getByText("Drafts Claude Sonnet 5.5", { exact: true })).toBeVisible();
+  await checkpoint(team, "team-settings-changelog");
+  // Where the page was: its old address still opens it.
+  await team.goto(`/app/${slug}/settings/writing-style`);
+  await team.waitForURL(`**/app/${slug}/settings/changelog`);
+  await expect(team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" })).toBeChecked();
 
-  // The next AI draft follows the style, written by that model.
+  // The next AI draft follows the instructions and examples, written by the level's model.
   await team.goto(`/app/${slug}/changelog`);
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Faster search");

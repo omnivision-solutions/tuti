@@ -106,7 +106,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <PullRequestChip projectSlug={slug} pr={change} byline />
-            {/* Which values, said in full; owners and admins can open them (Settings → AI models). */}
+            {/* Which values, said in full; owners and admins can open them (Settings → Autopilot → Advanced tuning). */}
             {change.tuned.length > 0 && (
               <span className="text-xs text-muted-foreground">
                 {membership.role === "MEMBER" ? (
