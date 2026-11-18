@@ -58,6 +58,8 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   const locked = owner.getByRole("button", { name: "Advanced tuning" });
   await expect(locked).toHaveAccessibleDescription("Advanced tuning needs the Business plan.");
   await expect(owner.getByText("Available on Business")).toHaveCount(0);
+  // The card's last row: its bottom corners are the card's, so its hover and focus fill stays inside.
+  expect(await locked.evaluate((row) => getComputedStyle(row).borderBottomLeftRadius)).not.toBe("0px");
   await locked.click();
   const prompt = owner.getByRole("dialog", { name: "Advanced tuning needs the Business plan." });
   await expect(prompt.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);

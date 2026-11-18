@@ -88,12 +88,13 @@ export function AdvancedTuningLink({ href, upgrade }: { href: string; upgrade: U
   }
   return (
     <>
-      <button type="button" aria-describedby={id} aria-haspopup="dialog" onClick={() => setOpen(true)} className={row}>
-        {content}
-      </button>
+      {/* Before the button, so the button is still the card's last row (its bottom corners rounded). */}
       <span id={id} hidden>
         {upgrade.title}
       </span>
+      <button type="button" aria-describedby={id} aria-haspopup="dialog" onClick={() => setOpen(true)} className={row}>
+        {content}
+      </button>
       <UpgradeDialog prompt={upgrade} open={open} onOpenChange={setOpen} />
     </>
   );
