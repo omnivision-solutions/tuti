@@ -1773,6 +1773,40 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await change(106)).toMatchObject({ state: "READY" });
   });
 
+  test("analysis switched off after the rewrite took an edit out, before it was analysed: kept marked, and written again once it's back on", async () => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    proposeEdit(132);
+    await merge(132);
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    const codeChangeId = (await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 132 }, select: { id: true } })).id;
+    // The owner switches "analyse pull requests" off as the take-out's transaction ends.
+    type Run = (tx: Prisma.TransactionClient) => Promise<unknown>;
+    const transaction = prisma.$transaction.bind(prisma) as unknown as (fn: Run) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (fn: Run) => {
+      const result = await transaction(fn);
+      await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+      return result;
+    }) as never);
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 1, pullRequests: 1, analysed: 1 });
+    // Still marked, failed, with no retry: the sweep doesn't run it, and the rewrite refuses while analysis is off.
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: codeChangeId }, select: { state: true, reason: true, retryAt: true, rewriteDocsOnly: true } })).toEqual({
+      state: "FAILED",
+      reason: REWRITING,
+      retryAt: null,
+      rewriteDocsOnly: true,
+    });
+    expect(await sweep(new Date(Date.now() + 2 * 3_600_000))).toMatchObject({ queued: 0 });
+    await expect(rewriteWaitingEdits(project.slug)).rejects.toThrow("Autopilot is off for");
+    // Back on: the next run writes its edit again, its help center's part only.
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
+    rewriteReplies(132);
+    const decided = model.decisions.length;
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, analysed: 1 });
+    expect(model.decisions.length).toBe(decided);
+    expect(await change(132)).toMatchObject({ state: "READY", reason: "" });
+    expect(await rewritten(132)).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true, scope: "correction" } } }]);
+  });
+
   test("a person's “Analyse again” while the rewrite takes its edit out waits for it, then is the one analysis, a whole one", async () => {
     vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
     proposeEdit(107);

@@ -25,7 +25,8 @@ import { lockProject } from "./running-draft";
  * one), while its analysis is still ready, each is taken out of its article by section, as Dismiss does (one that
  * can't be stays as it is), and dismissed by nobody saying REWRITTEN; the article's other edits go out by themselves
  * again if they qualify; and the pull request is marked to be written again (failed, saying REWRITING, its retry an hour
- * away). Then each pull request so marked (this run's, and any a run that stopped left: failed, paused, or analysing in
+ * away). Then each pull request so marked (this run's, any whose analysis was switched off before it ran (failed, no
+ * retry, for the run after it's back on), and any a run that stopped left: failed, paused, or analysing in
  * its process for over REWRITE_STALE_MS; not one a queued job holds, see releaseStoppedRewrites) is analysed here, one
  * at a time, the oldest merged first, so each is written knowing the edits of those merged before
  * it: claimed first, so the retries' sweep (which takes over the ones left if this stops) and this never both run one.

@@ -230,6 +230,19 @@ test("not a rename: one side missing from the diff, a label in a longer word, on
   expect(renamed(NAV, after.replace("and pick a theme", "and pick one of three themes"), DIFF)).toBeNull();
 });
 
+test("not a rename: both labels on lines the diff changed for something else (kept on both sides)", () => {
+  const before = "Open **Team** to send invites.";
+  const after = "Open **Members** to send invites.";
+  const icons = '-  <Tab>Team</Tab>\n-  <Tab>Members</Tab>\n+  <Tab icon="users">Team</Tab>\n+  <Tab icon="list">Members</Tab>';
+  expect(renamed(before, after, icons)).toBeNull();
+  expect(editScope(before, after, icons)).not.toBe("rename");
+  // Either name on its other side, whatever its case, isn't one either.
+  expect(renamed(before, after, "-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>\n+  <p>team</p>")).toBeNull();
+  expect(renamed(before, after, "-  <Tab>Team</Tab>\n-  <p>members</p>\n+  <Tab>Members</Tab>")).toBeNull();
+  // A longer word holding a name on the other side doesn't count.
+  expect(renamed(before, after, "-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>\n+  <p>Teams</p>")).toEqual({ from: ["Team"], to: ["Members"] });
+});
+
 test("a small correction: in place, no heading touched, nothing appended, at most a couple of sentences either way", () => {
   const ARTICLE = "## Invites\n\nInvite links work for 3 days.\n\nSend a new one from **Team**.\n\n## Roles\n\nAdmins can invite people.";
   expect(editScope(ARTICLE, ARTICLE.replace("work for 3 days", "work for 7 days"), "")).toBe("correction");

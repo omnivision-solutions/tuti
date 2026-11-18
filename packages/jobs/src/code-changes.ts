@@ -120,7 +120,11 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       const updates = await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } });
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
-        data: { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
+        // One being written again (its edits taken out): marked as before, for the rewrite's next run once Autopilot is on
+        // again, not the sweep's (no retry).
+        data: change.rewriteDocsOnly
+          ? { state: "FAILED", reason: REWRITING, retryAt: null }
+          : { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
       await prisma.codeChange.deleteMany({ where: { ...waiting, actions: { none: {} } } });

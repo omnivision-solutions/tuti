@@ -202,9 +202,10 @@ const hasName = (text: string, name: string) => wholeName(name).test(text);
 /**
  * A rename or a moved page (docs/plan.md, E6): the label, quoted word or `code` path the edit took out (`from`) and the
  * one it put in (`to`), when that's all it did (the article reads the same, in the same order, with those names masked, as
- * a heading renamed does too), and the pull request's diff removed the old one and added the new one (any case). Null
- * otherwise: one side missing, more than one name either side, other words changed too, text moved or copied, the old
- * name left anywhere, or a name the code change doesn't show.
+ * a heading renamed does too), and the pull request's diff removed the old one and added the new one (any case), and
+ * neither is on its other side too (kept or moved, not renamed). Null otherwise: one side missing, more than one name
+ * either side, other words changed too, text moved or copied, the old name left anywhere, or a name the code change
+ * doesn't show as renamed.
  */
 export function renamed(before: string, after: string, diff: string): { from: string[]; to: string[] } | null {
   const edit = editOf(before, after);
@@ -225,7 +226,9 @@ export function renamed(before: string, after: string, diff: string): { from: st
     return null;
   }
   const [removedCode, addedCode] = [diffSide(diff, "-"), diffSide(diff, "+")];
-  return from.every((name) => hasName(removedCode, name)) && to.every((name) => hasName(addedCode, name)) ? { from, to } : null;
+  // A name on both sides of the diff was kept or moved there, not renamed (labels on lines changed for something else).
+  const [was, is] = [from[0]!, to[0]!];
+  return hasName(removedCode, was) && !hasName(addedCode, was) && hasName(addedCode, is) && !hasName(removedCode, is) ? { from, to } : null;
 }
 
 /**
