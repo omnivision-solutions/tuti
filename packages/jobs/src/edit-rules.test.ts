@@ -38,6 +38,11 @@ test("text after the article's old last line is appended at the end; the last pa
   const applied = steps.replace(/Click \*\*Save\*\*\.$/, "Click **Apply**.");
   expect(appendedAtEnd(steps, applied)).toBeNull();
   expect(ruleChecks(steps, applied, { diff: "", added: false }).fails).toBeNull();
+  // A line fixed in place and a section bolted on at the end that ends with the old last line: still appended.
+  const one = "## Light theme\n\nPick **Light** in **Appearance**.\n\nClick **Save**.";
+  const bolted = "## Light theme\n\nPick **Light** in **Settings**.\n\nClick **Save**.\n\n## Dark theme\n\nPick **Dark** in **Settings**.\n\nClick **Save**.";
+  expect(appendedAtEnd(one, bolted)).toMatchObject({ heading: "Dark theme" });
+  expect(ruleChecks(one, bolted, { diff: "", added: false }).fails).toBe(APPENDED_FAILS);
   // Lines it had, only moved to the end, aren't an addition.
   expect(appendedAtEnd("One.\n\nTwo.\n\nThree.", "Two.\n\nThree.\n\nOne.")).toBeNull();
 });
