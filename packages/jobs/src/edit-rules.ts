@@ -1,3 +1,4 @@
+import { diffBy } from "@tuti/content";
 /**
  * Rule checks on an article edit (docs/plan.md, E5): plain functions of the article's Markdown before and after the
  * edit (one also reads the pull request's diff), no model. Lifted from the private writing evaluation, where each was
@@ -66,12 +67,14 @@ export function changelogWords(before: string, after: string): { word: string; s
 export function appendedAtEnd(before: string, after: string): { lines: string[]; heading: string | null; subsection: boolean } | null {
   const was = lines(before);
   const is = lines(after);
-  const last = was.at(-1);
-  const at = last === undefined ? -1 : is.lastIndexOf(last);
-  if (at === -1 || at === is.length - 1) {
+  // From the line diff, not a search for the old last line (which may be repeated earlier): only lines added after
+  // the old last line, itself kept, are appended. One rewritten in place isn't.
+  const diff = diffBy(was, is, (line) => line);
+  const kept = diff.findLastIndex((line) => line.kind !== "added");
+  if (kept === -1 || diff[kept]!.kind !== "same" || kept === diff.length - 1) {
     return null;
   }
-  const tail = is.slice(at + 1);
+  const tail = diff.slice(kept + 1).map((line) => line.item);
   const wasSet = new Set(was);
   if (tail.every((line) => wasSet.has(line))) {
     return null;

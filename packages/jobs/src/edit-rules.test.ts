@@ -32,6 +32,12 @@ test("text after the article's old last line is appended at the end; the last pa
   expect(appendedAtEnd("One.\n\nTwo.", "One.\n\nTwo.\n\n### More\n\nThree.")).toMatchObject({ heading: "More" });
   expect(appendedAtEnd(ARTICLE, ARTICLE.replace("The app uses one font.", "The app uses one font, or the system's."))).toBeNull();
   expect(appendedAtEnd(ARTICLE, ARTICLE.replace("The app has a light theme.", "The app has a light theme and a dark one."))).toBeNull();
+  // A last line repeated earlier, rewritten in place in the last section: nothing appended (the sections after the
+  // earlier copy are the article's own).
+  const steps = "## Light theme\n\nPick **Light** in **Appearance**.\n\nClick **Save**.\n\n## Dark theme\n\nPick **Dark** in **Appearance**.\n\nClick **Save**.";
+  const applied = steps.replace(/Click \*\*Save\*\*\.$/, "Click **Apply**.");
+  expect(appendedAtEnd(steps, applied)).toBeNull();
+  expect(ruleChecks(steps, applied, { diff: "", added: false }).fails).toBeNull();
   // Lines it had, only moved to the end, aren't an addition.
   expect(appendedAtEnd("One.\n\nTwo.\n\nThree.", "Two.\n\nThree.\n\nOne.")).toBeNull();
 });
