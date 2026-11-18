@@ -142,20 +142,25 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
  * The article's newest text (`now`) by section, in order, against the edits waiting in it (`edits`, as taggedEdits lists
  * them): the edits that wrote each section (`by`, named), and whether it's `held`: one of those edits was changed by a
  * person since, so a later edit leaves all of that edit's sections as they are (docs/plan.md, E4). An edit was changed
- * by a person when a section it was the last to write doesn't read as it wrote it. One whose base is gone (what it
- * changed isn't known) names no section.
+ * by a person when a section it was the last to write doesn't read as it wrote it, or is gone. Sections are known by
+ * their headings, so one a person renamed is gone under its old name: then a section in none of the edits' texts (a
+ * person's, added or renamed since) is held too, for those edits. One whose base is gone (what it changed isn't known)
+ * names no section.
  */
 export function waitingSections(now: Doc, edits: TaggedEdit[]): { by: string[]; held: boolean }[] {
   const changed = edits.map((edit) => (edit.base ? changedSections(edit.base, edit.doc) : new Set<string>()));
+  const wrote = edits.map((edit) => new Map(keyed(edit.doc)));
   const current = new Map(keyed(now));
-  const personChanged = edits.map((edit, i) => {
-    const wrote = new Map(keyed(edit.doc));
-    return [...changed[i]!].some((key) => changed.findLastIndex((keys) => keys.has(key)) === i && !sameSection(current.get(key), wrote.get(key)));
+  const lastWrote = (i: number) => [...changed[i]!].filter((key) => changed.findLastIndex((keys) => keys.has(key)) === i);
+  const personChanged = edits.map((_, i) => lastWrote(i).some((key) => !sameSection(current.get(key), wrote[i]!.get(key))));
+  const lost = edits.filter((_, i) => personChanged[i] && lastWrote(i).some((key) => wrote[i]!.has(key) && !current.has(key)));
+  return [...current.keys()].map((key) => {
+    const persons = wrote.every((sections) => !sections.has(key)) ? lost : [];
+    return {
+      by: [...edits.filter((_, i) => changed[i]!.has(key)), ...persons].map(editName),
+      held: persons.length > 0 || edits.some((_, i) => personChanged[i] && changed[i]!.has(key)),
+    };
   });
-  return [...current.keys()].map((key) => ({
-    by: edits.filter((_, i) => changed[i]!.has(key)).map(editName),
-    held: edits.some((_, i) => personChanged[i] && changed[i]!.has(key)),
-  }));
 }
 
 /**

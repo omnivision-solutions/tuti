@@ -81,3 +81,15 @@ test("waiting edits by section: who wrote each, and held once a person changed a
   ]);
   expect(waitingSections(doc(A, B, C), [edit(3, null, doc(A, B, C))])).toEqual([0, 1, 2].map(() => ({ by: [], held: false })));
 });
+
+test("a person renamed the heading of a waiting edit's section: the renamed section is held, with the rest of that edit", () => {
+  const one: TaggedEdit = { revisionId: "r1", actionId: "a1", number: 1, createdAt: new Date(0), base: doc(A, B, C), doc: doc(A, ["Dark", "Dark is here."], C) };
+  expect(waitingSections(doc(A, ["Dark mode", "Dark is here."], C), [one])).toEqual([
+    { by: [], held: false },
+    { by: ["PR #1"], held: true },
+    { by: [], held: false },
+  ]);
+  // Taken out by the edit itself, a section isn't missing: nothing held.
+  const out: TaggedEdit = { ...one, doc: doc(A, C) };
+  expect(waitingSections(doc(A, C), [out]).map((section) => section.held)).toEqual([false, false]);
+});

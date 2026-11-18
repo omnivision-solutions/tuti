@@ -1,5 +1,5 @@
 import { blocksToNotes, type Doc, droppedFacts, factsIn, parseDoc, passagesIn, readNotes, replacePassage, toPlainText } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { collectionName } from "@tuti/shared";
 
 import { docOf, editsInChanges, sections, waitingSections } from "./article-layers";
@@ -162,10 +162,17 @@ export async function writeArticleEdit(
   found: string,
   facts: string[],
 ): Promise<{ reason: string; payload: ArticleEditPayload; writtenOn: Doc; doc: Doc } | null> {
-  const article = await prisma.article.findUnique({
-    where: { id: articleId },
-    select: { title: true, body: true, content: true, changes: { select: { title: true, body: true, content: true } } },
-  });
+  // The article and the edits waiting in it as of one moment (E4): an edit landing between two reads would look like a person's change.
+  const [article, inChanges] = await prisma.$transaction(
+    async (tx) => [
+      await tx.article.findUnique({
+        where: { id: articleId },
+        select: { title: true, body: true, content: true, changes: { select: { title: true, body: true, content: true } } },
+      }),
+      await editsInChanges(articleId, tx),
+    ],
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
   if (!article) {
     return null;
   }
@@ -176,7 +183,7 @@ export async function writeArticleEdit(
   });
   const doc = docOf(article.changes ?? article);
   // Written knowing the edits waiting in it, marked by section (E4).
-  const { notes, edit } = articleNotes(doc, waitingSections(doc, await editsInChanges(articleId)));
+  const { notes, edit } = articleNotes(doc, waitingSections(doc, inChanges));
   const reply = await ask(
     EDIT_SYSTEM,
     JSON.stringify(
