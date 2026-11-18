@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { AiModelSettingProps } from "@/lib/ai-model-setting";
 
-const saveAiModel = vi.hoisted(() => vi.fn(async () => ({})));
+const saveAiModel = vi.hoisted(() => vi.fn(async (): Promise<{ error?: string }> => ({})));
 vi.mock("@/server/ai-models", () => ({ saveAiModel }));
 
 const { AiModelSetting } = await import("./ai-model-setting");
@@ -55,8 +55,17 @@ test("the level in use is the one selected, with each role's model in a line; ch
   // The one already saved isn't saved again.
   await act(async () => radio("Balanced").click());
   expect(saveAiModel).not.toHaveBeenCalled();
+  // While it saves, the segments stay focusable (the one chosen keeps focus) and take no second choice.
+  let saved!: (result: { error?: string }) => void;
+  saveAiModel.mockImplementationOnce(() => new Promise((resolve) => (saved = resolve)));
+  radio("Best").focus();
   await act(async () => radio("Best").click());
   expect(saveAiModel).toHaveBeenCalledWith("acme", { levels: { support: "best" } });
+  expect([radio("Best").disabled, radio("Best").getAttribute("aria-disabled"), document.activeElement === radio("Best")]).toEqual([false, "true", true]);
+  await act(async () => radio("Affordable").click());
+  expect(saveAiModel).toHaveBeenCalledTimes(1);
+  await act(async () => saved({}));
+  expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
 });
 
 test("a level the plan doesn't include looks like the others, names its plan to a screen reader, and opens the upgrade prompt without saving", async () => {
@@ -102,6 +111,14 @@ test("Custom lists a model for each role; one picked from the list saves at once
   await type(summaries!, "");
   await leave(summaries!);
   expect(saveAiModel).toHaveBeenLastCalledWith("acme", { support_summary: "" });
+  // One the server refused is sent again when asked again.
+  saveAiModel.mockResolvedValueOnce({ error: "Couldn't check the models just now. Try again in a moment." });
+  await type(summaries!, "acme/later");
+  await leave(summaries!);
+  const calls = saveAiModel.mock.calls.length;
+  await act(async () => summaries!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  expect(saveAiModel).toHaveBeenCalledTimes(calls + 1);
+  expect(saveAiModel).toHaveBeenLastCalledWith("acme", { support_summary: "acme/later" });
 });
 
 test("a saved level that isn't in use: the one in use is selected, a line says so, and choosing the one in use saves it", async () => {

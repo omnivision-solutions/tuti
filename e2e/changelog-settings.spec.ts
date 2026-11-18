@@ -33,6 +33,13 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await expect(aiModel.getByRole("radio")).toHaveText(["Affordable", "Balanced", "Best", "Custom"]);
   await expect(level("Balanced")).toBeChecked();
   await expect(owner.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
+  // On a phone the four levels fit the card, two a row.
+  await owner.setViewportSize({ width: 360, height: 740 });
+  const [card, last] = await Promise.all([aiModel.boundingBox(), level("Custom").boundingBox()]);
+  expect(last!.x + last!.width).toBeLessThanOrEqual(card!.x + card!.width);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await checkpoint(owner, "team-settings-changelog-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // To a screen reader a level the plan lacks says which plan it needs.
   await expect(level("Best")).toHaveAccessibleDescription("Choosing an AI level needs the Pro plan.");
   await expect(level("Custom")).toHaveAccessibleDescription("Picking your own AI models needs the Business plan.");
