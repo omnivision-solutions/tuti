@@ -21,6 +21,9 @@ import {
   type DefinitionNode,
   type GraphQLArgument,
   type GraphQLInputField,
+  type GraphQLInputObjectType,
+  type GraphQLInterfaceType,
+  type GraphQLObjectType,
   type GraphQLSchema,
   type GraphQLType,
 } from "graphql";
@@ -53,11 +56,35 @@ const LEVELS = 2;
  *    build is given up at twice the bound. A copy the reckoning misses is off by one bounded piece
  *    per counted piece, not by the size of the schema.
  * 3. The doc as built is measured, so none over the bound is returned.
+ *
+ * And why reading takes no more work than that: whatever depends only on a type or a field and
+ * isn't itself written out (which of a type's fields can be selected, which of an input's are
+ * required) is worked out once for it and remembered (`once`), so the work is in line with the
+ * schema's size plus the size of what's written, which is bounded above.
  */
 const MAX_SIZE = 5_000_000;
 /** What a field is reckoned at besides its own text: about what its JSON takes. */
 const FIELD_SIZE = 100;
 const TOO_LARGE = Symbol("too large");
+/** `make`, run once for each key (a type or a field) and remembered for as long as the schema is. */
+function once<Key extends object, Value>(make: (key: Key) => Value) {
+  const made = new WeakMap<Key, Value>();
+  return (key: Key) => {
+    if (!made.has(key)) made.set(key, make(key));
+    return made.get(key) as Value;
+  };
+}
+/** The fields of a returned type a query can select: not deprecated, needing no arguments. `leaves`: those that are scalars and enums. */
+const selectable = once((type: GraphQLObjectType | GraphQLInterfaceType) => {
+  const all = Object.values(type.getFields()).filter((field) => field.deprecationReason == null && !field.args.some(isRequiredArgument));
+  return { all, leaves: all.filter((field) => isLeafType(getNamedType(field.type))) };
+});
+/** An input's fields, and those a value must have. */
+const inputFields = once((type: GraphQLInputObjectType) => {
+  const all = Object.values(type.getFields());
+  return { all, required: all.filter(isRequiredInputField) };
+});
+
 /** The longest name of a type, field, argument or enum value: GraphQL sets none, and no real schema comes near. */
 const MAX_NAME = 256;
 /** The most lists and non-nulls around a type. */
@@ -367,26 +394,28 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     return result;
   };
 
+  /** The inputs a value is being made inside of, by name. */
+  const making = new Set<string>();
   /**
    * A value to send for an input type: an input object's required fields only. Nothing (undefined)
    * for a type inside itself, and so for an input that requires one.
    */
-  const inputExample = (type: GraphQLType, inside: string[]): unknown => {
-    if (isNonNullType(type)) return inputExample(type.ofType, inside);
+  const inputExample = (type: GraphQLType): unknown => {
+    if (isNonNullType(type)) return inputExample(type.ofType);
     if (isListType(type)) {
       count(0, 2);
-      const item = inputExample(type.ofType, inside);
+      const item = inputExample(type.ofType);
       return item === undefined ? [] : [item];
     }
     if (!isInputObjectType(type)) return leafExample(type);
-    if (inside.includes(type.name)) return undefined;
+    if (making.has(type.name)) return undefined;
     count(1);
-    const within = [...inside, type.name];
-    const all = Object.values(type.getFields());
+    making.add(type.name);
+    const { all, required } = inputFields(type);
     /** The first field a value can be made for, alone. */
     const one = () => {
       for (const field of all) {
-        const value = inputExample(field.type, within);
+        const value = inputExample(field.type);
         // Looked at, if not copied: an input of many fields that can't be made is still work.
         count(1);
         if (value === undefined) continue;
@@ -395,15 +424,19 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       }
       return undefined;
     };
-    // `@oneOf`: it takes exactly one field.
-    if (type.isOneOf) return one();
-    const required = all.filter(isRequiredInputField);
-    weigh(required);
-    const values = required.map((field) => [field.name, inputExample(field.type, within)] as const);
-    if (values.some(([, value]) => value === undefined)) return undefined;
-    // With nothing required it gets its first field: an empty one is refused when it takes exactly
-    // one, which an endpoint's introspection doesn't always say.
-    return values.length > 0 ? Object.fromEntries(values) : (one() ?? {});
+    let result: unknown;
+    if (type.isOneOf) {
+      // `@oneOf`: it takes exactly one field.
+      result = one();
+    } else {
+      weigh(required);
+      const values = required.map((field) => [field.name, inputExample(field.type)] as const);
+      // With nothing required it gets its first field: an empty one is refused when it takes exactly
+      // one, which an endpoint's introspection doesn't always say.
+      if (values.every(([, value]) => value !== undefined)) result = values.length > 0 ? Object.fromEntries(values) : (one() ?? {});
+    }
+    making.delete(type.name);
+    return result;
   };
   const leafExample = (type: GraphQLType) => {
     if (isEnumType(type)) {
@@ -437,10 +470,9 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
       example.__typename = member;
     }
     if (isObjectType(type) || isInterfaceType(type)) {
-      for (const field of Object.values(type.getFields())) {
+      // Only the fields that are written are gone through: which those are is the type's, not this use's.
+      for (const field of deeper ? selectable(type).all : selectable(type).leaves) {
         count(1, 3 * field.name.length);
-        if (field.deprecationReason != null || field.args.some(isRequiredArgument)) continue;
-        if (!deeper && !isLeafType(getNamedType(field.type))) continue;
         const inner = select(field.type, `${indent}  `, false);
         lines.push(field.name + inner.text);
         example[field.name] = inner.example;
@@ -484,7 +516,7 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
         const value = defaultOf(arg, `${key} › ${arg.name}`);
         if (value !== undefined) paramSchema.default = value;
         if (arg.deprecationReason != null) paramSchema.deprecated = true;
-        const example = inputExample(arg.type, []);
+        const example = inputExample(arg.type);
         // Only what the field needs is sent: a made-up cursor or filter fails, and unset ones take their
         // defaults. A non-null variable must be given, so one with a default is sent as that.
         if (isNonNullType(arg.type)) variables[arg.name] = value !== undefined ? value : example;

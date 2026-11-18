@@ -592,6 +592,48 @@ test("a default too long to show is read once, however many operations take it",
   expect(times).toBeLessThanOrEqual(3);
 }, 30_000);
 
+/** How many times `method` runs over an array of `length` items while `run` does. */
+function calls<Result>(method: "some" | "filter", length: number, run: () => Result) {
+  const real = Array.prototype[method] as (...args: unknown[]) => unknown;
+  let times = 0;
+  const spy = vi.spyOn(Array.prototype, method).mockImplementation(function (this: unknown[], ...args: unknown[]) {
+    if (this.length === length) times++;
+    return real.apply(this, args) as never;
+  });
+  try {
+    return { result: run(), times };
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+test("a returned field's arguments are looked through once, not once for each operation returning its type", () => {
+  // 2,000 arguments, none of them written anywhere, on a field of a type 500 root fields return.
+  const sdl = `type T { id: ID f(${many(2_000, (n) => `a${n}: Int`)}): Int } type Query { ${many(500, (n) => `r${n}: T`)} }`;
+  const { result, times } = calls("some", 2_000, () => readGraphql(sdl));
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.operations).toHaveLength(500);
+  expect(result.doc.operations[499]!.query!.text).toBe("query R499 {\n  r499 {\n    id\n    f\n  }\n}");
+  expect(times).toBeLessThanOrEqual(1);
+}, 30_000);
+
+test("an input's fields are gone through once, not once for each operation taking it", () => {
+  // 2,000 optional fields on an input that 500 root fields take inside another.
+  const sdl = `input B { ${many(2_000, (n) => `f${n}: Int`)} } input A { b: B! } type Query { ${many(500, (n) => `r${n}(a: A!): Int`)} }`;
+  const { result, times } = calls("filter", 2_000, () => readGraphql(sdl));
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.operations[499]!.query!.variables).toEqual({ a: { b: { f0: 1 } } });
+  expect(times).toBeLessThanOrEqual(1);
+}, 30_000);
+
+test("an input required through a chain of others is made all the way down", () => {
+  const sdl = `type Query { r(i: I0!): Int } ${many(300, (n) => `input I${n} { next: I${n + 1}! }`)} input I300 { id: ID! }`;
+  let value = read(sdl).operations[0]!.query!.variables.i as Record<string, unknown>;
+  let depth = 0;
+  for (; value.next; depth++) value = value.next as Record<string, unknown>;
+  expect([depth, value]).toEqual([300, { id: "1" }]);
+});
+
 test("many names of one slug each get the next number, without trying the ones before it again", () => {
   const sdl = `type Query { ${many(250, (n) => `a${"_".repeat(n + 1)}: Int`)} }`;
   const looked = vi.spyOn(Set.prototype, "has");
