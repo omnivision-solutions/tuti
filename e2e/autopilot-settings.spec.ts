@@ -132,9 +132,9 @@ test("where the server checks a project's article edits, the Checks switch says 
 
   // On: what it does, what off means and a review's price (Balanced checks on Sonnet), read out with the switch. No notice.
   const checks = owner.getByRole("switch", { name: "Checks", exact: true });
-  const notice = owner.getByRole("status").filter({ hasText: "Article edits no longer go out by themselves while Checks is off: each one waits for your team." });
+  const notice = owner.getByRole("status").filter({ hasText: "Article edits written while Checks is off don't go out by themselves: each one waits for your team." });
   await expect(checks).toBeChecked();
-  await expect(checks).toHaveAccessibleDescription("Reviews every article edit and double-checks new articles. Off, every edit waits for your team. About 26 credits per edit reviewed");
+  await expect(checks).toHaveAccessibleDescription("Reviews every article edit and double-checks new articles. Off, edits written from then on wait for your team. About 26 credits per edit reviewed");
   await expect(notice).toHaveCount(0);
 
   // Off from the keyboard: the notice is at the top of the page, and the switch keeps focus and its price.

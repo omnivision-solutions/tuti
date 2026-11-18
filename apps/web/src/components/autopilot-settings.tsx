@@ -62,7 +62,7 @@ export function AutopilotChecksSwitch({ projectSlug, on, reviews }: { projectSlu
       description={
         reviews && (
           <>
-            Reviews every article edit and double-checks new articles. Off, every edit waits for your team.{" "}
+            Reviews every article edit and double-checks new articles. Off, edits written from then on wait for your team.{" "}
             {reviews.price && <span className="block">{reviews.price}</span>}
           </>
         )
@@ -115,7 +115,7 @@ export function AutopilotChecksNotice({ projectSlug }: { projectSlug: string }) 
   return (
     <Alert role="status">
       <AlertDescription className="flex flex-col gap-2">
-        <div>Article edits no longer go out by themselves while Checks is off: each one waits for your team.</div>
+        <div>Article edits written while Checks is off don't go out by themselves: each one waits for your team.</div>
         <div className="flex flex-wrap gap-2">
           {/* Not disabled while it runs, which would drop keyboard focus. */}
           <Button size="sm" variant="outline" aria-disabled={pending || undefined} onClick={() => act(() => saveAiModel(projectSlug, { code_changes_check: "" }), "Checks: on")}>
