@@ -484,8 +484,8 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
               {/* Only where there's somewhere to send it: never GraphQL (yet), nor servers without a host and no base address. */}
               {tryable(page.doc, operation, page.reference.baseUrl) && (
                 <TryIt
-                  // One per operation: following the tree to another starts its console afresh (its fields, answer and
-                  // request on its way are the one before's otherwise, as the page stays mounted).
+                  // One per operation. Next.js already mounts each operation's page afresh (it keys a page by its route's
+                  // params); this keeps a console's fields, answer and request on its way to its own operation should that change.
                   key={`${page.reference.slug}/${operation.slug}`}
                   reference={page.reference.slug}
                   operationSlug={operation.slug}

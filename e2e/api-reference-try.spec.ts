@@ -70,6 +70,12 @@ paths:
       summary: A large answer
       parameters: [{ name: size, in: query, schema: { type: integer }, example: 2500000 }]
       responses: { "201": { description: Text } }
+  /ping:
+    get:
+      tags: [Posts]
+      summary: Ping
+      security: []
+      responses: { "201": { description: Pong } }
   /me:
     get:
       tags: [Posts]
@@ -276,6 +282,33 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(slow.getByRole("region", { name: "Response" }).getByText("200 OK")).toBeVisible();
   await reader.unroute("**/docs/reference/get-a-post/try");
   await reader.clock.resume();
+
+  // Leaving an operation stops what its console was sending: a request the API never answers, held, isn't sent
+  // through Tuti when it fails after the reader has moved on.
+  await reader.goto("/docs/reference/ping");
+  let releasePing!: () => void;
+  const pingHeld = new Promise<void>((resolve) => (releasePing = resolve));
+  let pingReached!: () => void;
+  const atPing = new Promise<void>((resolve) => (pingReached = resolve));
+  let pingStopped = false;
+  const tries: string[] = [];
+  reader.on("request", (request) => request.url().endsWith("/try") && tries.push(request.url()));
+  reader.on("requestfailed", (request) => request.url().endsWith("/v1/ping") && (pingStopped = true));
+  await reader.route(`${open.origin}/v1/ping`, async (route) => {
+    pingReached();
+    await pingHeld;
+    await route.abort("failed").catch(() => {});
+  });
+  await reader.getByRole("button", { name: "Try it" }).click();
+  await reader.getByRole("dialog", { name: "Try it" }).getByRole("button", { name: "Send", exact: true }).click();
+  await atPing;
+  await reader.keyboard.press("Escape");
+  await reader.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Get a post GET", exact: true }).click();
+  await expect(reader.getByRole("heading", { name: "Get a post", level: 1 })).toBeVisible();
+  // The page let it go as it left: the browser cancelled it.
+  await expect.poll(() => pingStopped).toBe(true);
+  releasePing();
+  expect(tries).toEqual([]);
 
   // On a phone, a sheet from the bottom that fits the width.
   await reader.goto("/docs/reference/create-a-post");
