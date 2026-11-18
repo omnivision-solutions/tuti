@@ -263,7 +263,7 @@ export function ApiReferenceEndpoints({
                     {operation.deprecated && <Badge variant="outline">Deprecated</Badge>}
                     {fresh.has(operation.key) && <Badge variant="highlight">New</Badge>}
                     {offGroupOf(operation) && (
-                      <span id={`endpoint-${operation.slug}-off`} className="basis-full text-xs text-muted-foreground">
+                      <span id={`off-endpoint-${operation.slug}`} className="basis-full text-xs text-muted-foreground">
                         Off while {offGroupOf(operation)?.name} is off
                       </span>
                     )}
@@ -274,7 +274,7 @@ export function ApiReferenceEndpoints({
                     aria-label={`${operation.title} (${operation.kind} ${operation.path}): on the help center`}
                     checked={ownOn(operation)}
                     aria-disabled={inOffGroup(operation) || undefined}
-                    aria-describedby={inOffGroup(operation) ? `endpoint-${operation.slug}-off` : undefined}
+                    aria-describedby={inOffGroup(operation) ? `off-endpoint-${operation.slug}` : undefined}
                     className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     onChange={(event) => !inOffGroup(operation) && change("operation", operation.key, event.currentTarget.checked)}
                   />
