@@ -24,6 +24,8 @@ async function render(saved: string[], max = 20) {
     type,
     button: (name: string) => [...root.querySelectorAll("button")].find((button) => (button.getAttribute("aria-label") ?? button.textContent) === name)!,
     chips: () => [...root.querySelectorAll("li")].map((chip) => chip.textContent),
+    // What a screen reader is told happened.
+    status: () => root.querySelector('[role="status"]')!.textContent,
     // What the form sends: a field per topic, and the box.
     sent: () => new FormData(root).getAll("offLimits"),
   };
@@ -32,7 +34,7 @@ async function render(saved: string[], max = 20) {
 afterEach(() => document.body.replaceChildren());
 
 test("saved topics are chips, each a field of the form; Add and Enter add one, trimmed, and never twice", async () => {
-  const { box, type, button, chips, sent } = await render(["refund"]);
+  const { box, type, button, chips, sent, status } = await render(["refund"]);
   expect(chips()).toEqual(["refund"]);
   await type("  legal advice ");
   await act(async () => button("Add").click());
@@ -52,9 +54,12 @@ test("saved topics are chips, each a field of the form; Add and Enter add one, t
   await act(async () => void box.dispatchEvent(enter));
   expect(enter.defaultPrevented).toBe(true);
   expect(chips()).toEqual(["refund", "legal advice", "pricing"]);
-  // One already there, or nothing, adds nothing.
+  expect(status()).toBe("Added pricing");
+  // One already there, or nothing, adds nothing; one already there stays in the box and is said to be.
   await type("refund");
   await act(async () => button("Add").click());
+  expect(box.value).toBe("refund");
+  expect(status()).toBe("refund is already there");
   await type("   ");
   await act(async () => button("Add").click());
   expect(chips()).toEqual(["refund", "legal advice", "pricing"]);
@@ -65,11 +70,12 @@ test("saved topics are chips, each a field of the form; Add and Enter add one, t
 });
 
 test("each chip's button is named for its topic and removes it, with focus moved to the box", async () => {
-  const { box, button, chips, sent } = await render(["refund", "legal advice"]);
+  const { box, button, chips, sent, status } = await render(["refund", "legal advice"]);
   expect(button("Remove refund").type).toBe("button");
   await act(async () => button("Remove refund").click());
   expect(chips()).toEqual(["legal advice"]);
   expect(document.activeElement).toBe(box);
+  expect(status()).toBe("Removed refund");
   expect(sent()).toEqual(["legal advice", ""]);
   await act(async () => button("Remove legal advice").click());
   expect(chips()).toEqual([]);

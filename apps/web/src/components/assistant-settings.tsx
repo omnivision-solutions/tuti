@@ -82,10 +82,18 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
   const [draft, setDraft] = useState("");
   const box = useRef<HTMLInputElement>(null);
   const full = topics.length >= max;
+  // What just happened to the chips, read out by a screen reader: the box alone doesn't say.
+  const [status, setStatus] = useState("");
   const add = () => {
     const topic = draft.trim();
-    if (topic && !full && !topics.includes(topic)) {
+    if (topic && topics.includes(topic)) {
+      // Left in the box, so it shows that nothing was added.
+      setStatus(`${topic} is already there`);
+      return;
+    }
+    if (topic && !full) {
       setTopics([...topics, topic]);
+      setStatus(`Added ${topic}`);
     }
     setDraft("");
   };
@@ -103,6 +111,7 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
                 className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 onClick={() => {
                   setTopics(topics.filter((other) => other !== topic));
+                  setStatus(`Removed ${topic}`);
                   // Its button is gone: focus goes to the box, not to the top of the page.
                   box.current?.focus();
                 }}
@@ -138,6 +147,9 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
           Add
         </Button>
       </div>
+      <span role="status" className="sr-only">
+        {status}
+      </span>
     </div>
   );
 }
