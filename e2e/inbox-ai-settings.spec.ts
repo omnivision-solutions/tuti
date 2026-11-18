@@ -56,8 +56,12 @@ test("an owner sets the Inbox's AI model and instructions for drafts, and a repl
   await expect(instructions).toHaveValue("");
   await expect(instructions).toHaveAttribute("placeholder", "Keep replies short and friendly. End by asking whether that helped.");
   await instructions.fill(`End by asking whether that helped ${slug}.`);
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  // Saved from the keyboard: focus stays on Save and the box keeps what was typed.
+  await owner.keyboard.press("Tab");
+  await owner.keyboard.press("Enter");
   await expect(owner.getByText("Instructions saved")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Save", exact: true })).toBeFocused();
+  await expect(instructions).toHaveValue(`End by asking whether that helped ${slug}.`);
   await checkpoint(owner, "team-settings-inbox-ai");
   await owner.reload();
   await expect(instructions).toHaveValue(`End by asking whether that helped ${slug}.`);

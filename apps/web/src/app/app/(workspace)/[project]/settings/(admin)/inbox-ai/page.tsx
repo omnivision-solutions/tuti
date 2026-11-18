@@ -32,7 +32,7 @@ export default async function InboxAiSettingsPage(props: PageProps<"/app/[projec
         <AiModelSetting {...model} />
         {answersEnabled() && (
           <SettingBlock>
-            {/* A fresh form when what's saved changes (trimmed, say). */}
+            {/* Not keyed on what's saved: a new form after a save would take focus off its button. */}
             <DraftInstructionsForm projectSlug={slug} instructions={supportDraftInstructions} />
           </SettingBlock>
         )}
