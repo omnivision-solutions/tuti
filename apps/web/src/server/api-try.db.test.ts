@@ -392,8 +392,10 @@ describe("GraphQL", () => {
     vi.stubEnv("TRY_IT_ALLOW_LOCALHOST", "true");
     // A schema file names no endpoint: the reference's base address is it.
     await call(createApiReference, as(), { name: "Graph", spec: "type Query { post(number: Int!): Post }\ntype Subscription { posted: Post }\ntype Post { title: String }", tab: "api" });
-    await call(updateApiReference, as(), { slug: "graph", baseUrl: `${fake.origin}/graphql` });
+    await setBase(`${fake.origin}/graphql`);
   });
+  /** Settings takes only https; these are what a reference's base could be before that, or a local fake. */
+  const setBase = (baseUrl: string) => prisma.apiReference.updateMany({ where: { projectId: project.id, slug: "graph" }, data: { baseUrl } });
   const graphql = (body: unknown, rest: Partial<TryInput> = {}) => input(`${fake.origin}/graphql`, { path: {}, body: JSON.stringify(body), ...rest });
   const sendGraphql = (body: TryInput, options: { operation?: string; headers?: Record<string, string> } = {}) => send(body, { reference: "graph", operation: "post", ...options });
 
@@ -422,17 +424,20 @@ describe("GraphQL", () => {
       expect((await sendGraphql(refused)).status).toBe(400);
     }
     expect((await sendGraphql(graphql({ query: "subscription { posted { title } }" }), { operation: "posted" })).status).toBe(400);
+    // Try it switched off: a 404, as for OpenAPI's.
+    await call(updateApiReference, as(), { slug: "graph", tryIt: false });
+    expect(await sendGraphql(graphql({ query: "{ post(number: 1) { title } }" }))).toEqual({ status: 404, json: { error: "Not found" } });
     expect(fake.requests).toHaveLength(0);
   });
 
   test("the proxy's limits hold for it: the project's sites, https, size and rate", async () => {
-    await call(updateApiReference, as(), { slug: "graph", baseUrl: "https://api.other.com/graphql" });
+    await setBase("https://api.other.com/graphql");
     expect(await sendGraphql(graphql({ query: "{ a }" }, { server: "https://api.other.com/graphql" }))).toMatchObject({ status: 403, json: { error: expect.stringContaining("api.other.com isn't one") } });
-    await call(updateApiReference, as(), { slug: "graph", baseUrl: "http://api.acme.com/graphql" });
+    await setBase("http://api.acme.com/graphql");
     expect((await sendGraphql(graphql({ query: "{ a }" }, { server: "http://api.acme.com/graphql" }))).status).toBe(403);
-    await call(updateApiReference, as(), { slug: "graph", baseUrl: "https://internal.acme.com/graphql" });
+    await setBase("https://internal.acme.com/graphql");
     expect(await sendGraphql(graphql({ query: "{ a }" }, { server: "https://internal.acme.com/graphql" }))).toMatchObject({ status: 403, json: { error: "Tuti sends requests only to public addresses" } });
-    await call(updateApiReference, as(), { slug: "graph", baseUrl: `${fake.origin}/graphql` });
+    await setBase(`${fake.origin}/graphql`);
     expect(await sendGraphql(graphql({ query: "x".repeat(1_000_001) }))).toMatchObject({ status: 413, json: { error: "The body is over 1 MB" } });
     vi.stubEnv("TRUSTED_IP_HEADER", "x-test-ip");
     const reader = { "x-test-ip": "203.0.113.50" };

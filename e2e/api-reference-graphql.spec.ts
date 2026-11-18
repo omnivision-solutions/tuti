@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { checkpoints } from "./checkpoint";
+import { query as sql } from "./db";
 import { APP_URL, portalUrl } from "./env";
 import { expect, test } from "./fixtures";
 import { apiFor, createProject, signUp } from "./helpers";
@@ -67,8 +68,8 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   await api("/api-references", { name: "Reference", spec: SCHEMA });
-  // A schema file names no endpoint: the team's base address is it.
-  await api("/api-references/reference", { baseUrl: endpoint }, "PATCH");
+  // A schema file names no endpoint: the team's base address is it. Settings takes only https, which a local fake isn't.
+  await sql(`UPDATE api_reference SET "baseUrl" = $2 FROM project WHERE project.id = api_reference."projectId" AND project.slug = $1`, [slug, endpoint]);
 
   const reader = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
   await reader.setViewportSize({ width: 1440, height: 900 });
@@ -151,4 +152,10 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   await expect(panel.getByRole("textbox", { name: "Query" })).toHaveValue(/mutation CreatePost/);
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(reader, "console-phone", { fullPage: false });
+
+  // Try it switched off for the reference: no console on GraphQL's pages either.
+  await api("/api-references/reference", { tryIt: false }, "PATCH");
+  await reader.goto("/docs/reference/post");
+  await expect(reader.getByRole("heading", { name: "post", level: 1 })).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Try it" })).toHaveCount(0);
 });

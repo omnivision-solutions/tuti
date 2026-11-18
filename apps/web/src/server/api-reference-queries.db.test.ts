@@ -402,7 +402,7 @@ describe("the tree", () => {
 });
 
 describe("a GraphQL reference", () => {
-  test("has the plain page: the field's arguments, and the query to send in the examples", async () => {
+  test("its page: the field's arguments, the type it returns, and the query to send in the examples", async () => {
     await call(createApiReference, as(), {
       name: "Graph",
       spec: `type Query {\n  "A ${SECRET} by its id."\n  post(id: ID!): Post\n}\ntype Post {\n  id: ID!\n  title: String\n}\n`,
@@ -413,11 +413,13 @@ describe("a GraphQL reference", () => {
     const text = await pageText("post", "graph");
     const metadata = await generateMetadata(params("post", "graph"));
     expect(metadata).toMatchObject({ title: "post · Graph" });
-    for (const shown of [`A ${SECRET} by its id.`, "Arguments", '"children":"id"', "ID!", "query", "curl ", "post(id: $id)"]) {
+    for (const shown of [`A ${SECRET} by its id.`, "Arguments", '"children":"id"', "ID!", "query", "curl ", "post(id: $id)", "post(id): Post", '"aria-label":"Returns"']) {
       expect(text).toContain(shown);
     }
-    // No method beside its name in the tree, no signing line and no status rows: those are OpenAPI's.
-    for (const absent of ['"aria-label":"Responses"', "Authorization", "text-status-planned"]) {
+    // Its kind beside its name in the tree and in the method box, in the help center's fixed hue for reading (A13).
+    expect(text).toContain("text-status-planned");
+    // No signing line and no status rows: those are OpenAPI's.
+    for (const absent of ['"aria-label":"Responses"', "Authorization"]) {
       expect(text).not.toContain(absent);
     }
   });

@@ -154,6 +154,9 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
   const sendButton = useRef<HTMLButtonElement>(null);
   const chosen = servers.find((s) => s.url === server)!;
   const answer = useRef<HTMLDivElement>(null);
+  // Once per answer, not on every keystroke in the query: a body can be 2 MB.
+  const isGraphql = !!graphql;
+  const errors = useMemo(() => (isGraphql && result && "answer" in result ? graphqlErrors(result.answer) : []), [isGraphql, result]);
   // Below the fields, often out of sight (a phone's sheet): brought into view, focus left on Send.
   useEffect(() => {
     if (result) answer.current?.scrollIntoView({ block: "nearest" });
@@ -387,11 +390,11 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         )}
         {/* Always there, so a screen reader reads the answer's one line as it arrives (not its body). */}
         <p aria-live="polite" className="sr-only">
-          {result && summary(result, !!graphql)}
+          {result && summary(result, errors.length)}
         </p>
         {result && (
           <div ref={answer}>
-            <Answer result={result} onThrough={(why) => void send(why)} sending={sending} graphql={!!graphql} />
+            <Answer result={result} onThrough={(why) => void send(why)} sending={sending} errors={errors} />
           </div>
         )}
       </div>
@@ -473,9 +476,8 @@ const UNREAD = {
 };
 
 /** The answer in a line, for screen readers (with GraphQL's errors counted). */
-function summary(result: Result, graphql: boolean) {
+function summary(result: Result, errors: number) {
   if ("unread" in result) return UNREAD[result.unread];
-  const errors = graphql && "answer" in result ? graphqlErrors(result.answer).length : 0;
   const what =
     "error" in result
       ? result.error
@@ -484,7 +486,8 @@ function summary(result: Result, graphql: boolean) {
 }
 
 /** The answer: its status, time and size, its headers (closed), and its body. Or why it wasn't sent. */
-function Answer({ result, onThrough, sending, graphql }: { result: Result; onThrough: (why: "cors" | "redirect") => void; sending: boolean; graphql: boolean }) {
+/** `errors`: a GraphQL answer's error messages. */
+function Answer({ result, onThrough, sending, errors }: { result: Result; onThrough: (why: "cors" | "redirect") => void; sending: boolean; errors: string[] }) {
   if ("unread" in result) {
     return (
       <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
@@ -499,7 +502,6 @@ function Answer({ result, onThrough, sending, graphql }: { result: Result; onThr
     );
   }
   const through = throughLine(result);
-  const errors = graphql && "answer" in result ? graphqlErrors(result.answer) : [];
   return (
     <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
       <h3 className="text-sm font-semibold">Response</h3>
