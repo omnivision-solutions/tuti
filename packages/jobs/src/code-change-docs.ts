@@ -104,7 +104,7 @@ const writable = (node: Block): boolean =>
  * Verify's fix), so they can't drift apart.
  */
 export const WRITING_RULES = `Writing rules, for everything you write into an article:
-- Say how the product works, never how it changed. Don't write "now", "no longer", "has moved", "used to", "new", "recently" or "as of"; a label on the screen keeps its own words.
+- Say how the product works, never how it changed: no "now", "no longer", "has moved", "used to", "recently" or "as of", and no "new" for something the product gained. What a reader makes can be new (a new project), and a label on the screen keeps its own words.
 - Edit in place: change the sentence that's wrong, where it stands. Add a paragraph or section only for something the article doesn't cover at all, and put it where a reader would look for it, not at the end by default. Never leave the old statement beside the corrected one.
 - Fix every mention: when a label, path or name changed, replace it everywhere it appears in the sections you may edit.
 - Length follows the change: a renamed label is a word-for-word replacement; a changed behaviour is a sentence or two; only a whole capability the article lacks earns a paragraph or steps. A short edit that says the one thing a reader needs beats a complete one.
