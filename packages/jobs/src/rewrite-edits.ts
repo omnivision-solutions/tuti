@@ -2,13 +2,13 @@ import { isDeepStrictEqual } from "node:util";
 
 import { toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
+import { codeChangesEnabled, log, planIncludes, roleModel } from "@tuti/shared";
 
 import { docOf, editsInChanges, hasTeammateEdit, recordRevision, scheduleArticle, takeOut, versions } from "./article-layers";
 import { autopilotSettingsSelect } from "./autopilot";
 import { codeChange, releaseStoppedRewrites, REWRITING, REWRITTEN } from "./code-changes";
 import { aiPaused } from "./credits";
-import { checksOn } from "./edit-review";
+import { CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_UNCLEAR, CHECKS_OFF, checksOn } from "./edit-review";
 import { lockProject } from "./running-draft";
 
 /**
@@ -17,7 +17,8 @@ import { lockProject } from "./running-draft";
  * itself; refused for a project the check isn't on for, or where Autopilot is off.
  *
  * Which: an edit waiting (or going out by itself) in a published article's unpublished changes, written before the
- * check measured it (no `check.scope`), that nobody stopped, whose pull request's analysis is ready, on an article with no
+ * check measured it (no `check.scope`) or that it didn't check (UNCHECKED: Checks off, no credits or repository, a
+ * review it couldn't read), that nobody stopped, whose pull request's analysis is ready, on an article with no
  * person's unpublished change (hasTeammateEdit: one anywhere in it leaves all its edits as they are). Each pull
  * request's together, the newest merged first (an edit on top comes out before the one under it): under the project's
  * lock and the pull request's (a person's "Analyse again" meanwhile waits for it, then is the only analysis, a whole
@@ -33,14 +34,14 @@ import { lockProject } from "./running-draft";
  * person's "Analyse again" (a whole analysis) clears: paused for credits and resumed, or retried after the AI provider
  * didn't answer (as any analysis, by the sweep), it's still docs-only. It writes its edits again (one of its edits left
  * in an article keeps a new one off it) and tells the team as any analysis does (each person's in one email). Refused,
- * before anything is taken out, while the project is out of AI credits. Run again, it finds the rewritten edits
- * measured and nothing marked, so it does nothing more.
+ * before anything is taken out, while the project is out of AI credits or has Checks off. Run again, it finds the
+ * rewritten edits measured and nothing marked, so it does nothing more (but writes again one that came back unchecked).
  */
 export async function rewriteWaitingEdits(slug: string, now = new Date()): Promise<{ edits: number; pullRequests: number; analysed: number }> {
   if (!checksOn(slug)) {
     throw new Error(`The check isn't on for ${slug}: list it in AUTOPILOT_CHECKS_PROJECTS first`);
   }
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ...autopilotSettingsSelect } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, aiModels: true, aiLevels: true, ...autopilotSettingsSelect } });
   if (!project) {
     throw new Error(`There's no project ${slug}`);
   }
@@ -50,6 +51,9 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
   // Nothing taken out that its analysis couldn't write again now.
   if (await aiPaused(project.id)) {
     throw new Error(`${slug} is out of AI credits: nothing was taken out. Run it again once it has some`);
+  }
+  if (roleModel(project, "code_changes_check") === "off") {
+    throw new Error(`Checks is off for ${slug}: nothing was taken out. Switch it on in Autopilot's settings first`);
   }
   const waiting = await prisma.codeChangeAction.findMany({
     where: {
@@ -63,7 +67,11 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
     orderBy: [{ codeChange: { mergedAt: "desc" } }, { createdAt: "desc" }],
     select: { id: true, articleId: true, codeChangeId: true, payload: true },
   });
-  const unmeasured = waiting.filter((edit) => !((edit.payload ?? {}) as { check?: { scope?: unknown } }).check?.scope);
+  // Written before the check measured it, or measured but not checked (UNCHECKED): a later run, with Checks on, takes it.
+  const unmeasured = waiting.filter((edit) => {
+    const check = ((edit.payload ?? {}) as { check?: { scope?: unknown; reason?: unknown } }).check;
+    return !check?.scope || UNCHECKED.includes(check.reason as string);
+  });
   let edits = 0;
   let pullRequests = 0;
   const byChange = new Map<string, typeof unmeasured>();
@@ -158,6 +166,9 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
  * sweep take the ones it hasn't reached yet, in parallel on Hatchet; run it on fewer, or longer, if that matters.
  */
 const SWEEP_AFTER_MS = 3_600_000;
+
+/** What the check stores for an edit it didn't review (or couldn't read the review of): not measured, for a later run. */
+const UNCHECKED = [CHECKS_OFF, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_UNCLEAR];
 
 /** The pull request wasn't ready any more when it was to be marked: the transaction's edits are rolled back. */
 class NotReady extends Error {}

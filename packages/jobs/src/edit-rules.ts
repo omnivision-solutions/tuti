@@ -35,6 +35,16 @@ export function editOf(before: string, after: string): { added: string[]; remove
   return { added: is.filter((s) => !wasSet.has(s)), removed: was.filter((s) => !isSet.has(s)), kept: is.filter((s) => wasSet.has(s)) };
 }
 
+/**
+ * Whether the edit leaves the article's sentences in their order and writes none it already had: nothing moved (steps
+ * swapped, a paragraph moved) or copied, which editOf, comparing sentences as sets, can't see.
+ */
+function inPlace(before: string, after: string): boolean {
+  const was = lines(before).flatMap(sentences);
+  const had = new Set(was);
+  return !diffBy(was, lines(after).flatMap(sentences), (sentence) => sentence).some((line) => line.kind === "added" && had.has(line.item));
+}
+
 /** On-screen labels and quoted words in a text: **bold**, "quoted" and “quoted”. */
 export function labelsIn(text: string): string[] {
   return [...text.matchAll(/\*\*([^*\n]{2,80}?)\*\*|"([^"\n]{2,80}?)"|“([^”\n]{2,80}?)”/g)].map((m) => (m[1] ?? m[2] ?? m[3])!.trim().replace(/[.,:;]$/, "")).filter((label) => label.length >= 2);
@@ -193,8 +203,8 @@ const hasName = (text: string, name: string) => wholeName(name).test(text);
  * A rename or a moved page (docs/plan.md, E6): the label, quoted word or `code` path the edit took out (`from`) and the
  * one it put in (`to`), when that's all it did (each sentence it changed reads as one it replaced, with those names masked, as
  * a heading renamed does too), and the pull request's diff removed the old one and added the new one (any case). Null
- * otherwise: one side missing, more than one name either side, other words changed too, or a name the code change
- * doesn't show.
+ * otherwise: one side missing, more than one name either side, other words changed too, text moved or copied (see
+ * inPlace), or a name the code change doesn't show.
  */
 export function renamed(before: string, after: string, diff: string): { from: string[]; to: string[] } | null {
   const edit = editOf(before, after);
@@ -211,7 +221,7 @@ export function renamed(before: string, after: string, diff: string): { from: st
   // Longest first, so a name inside another ("Team" in "Team settings") doesn't split it.
   const mask = (sentences: string[], names: string[]) =>
     sentences.map((sentence) => names.toSorted((a, b) => b.length - a.length).reduce((text, name) => text.replace(wholeName(name), "\u0000"), sentence)).toSorted();
-  if (!isDeepStrictEqual(mask(edit.removed, from), mask(edit.added, to))) {
+  if (!isDeepStrictEqual(mask(edit.removed, from), mask(edit.added, to)) || !inPlace(before, after)) {
     return null;
   }
   const [removedCode, addedCode] = [diffSide(diff, "-"), diffSide(diff, "+")];
@@ -227,7 +237,7 @@ export const SMALL_WORDS = 40;
 /**
  * How big an edit is, for what may go out by itself (docs/plan.md, E6): a `rename` (or moved page, see renamed); a
  * `correction`, small and in place: it replaces text (takes some out, not only adds), leaves every heading as it was
- * (none added, renamed or taken out), appends nothing at the end, and writes and takes out at most SMALL_WORDS words
+ * (none added, renamed or taken out), moves and copies nothing (inPlace), appends nothing at the end, and writes and takes out at most SMALL_WORDS words
  * within sizeOf's budget; or `larger`, everything else, which asks first.
  */
 export function editScope(before: string, after: string, diff: string): "rename" | "correction" | "larger" {
@@ -238,6 +248,7 @@ export function editScope(before: string, after: string, diff: string): "rename"
   const headings = (markdown: string) => lines(markdown).filter(isHeading).join("\n");
   const small =
     edit.removed.length > 0 &&
+    inPlace(before, after) &&
     headings(before) === headings(after) &&
     appendedAtEnd(before, after) === null &&
     !sizeOf(before, after).overBudget &&

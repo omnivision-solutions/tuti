@@ -36,7 +36,7 @@ export const CHECK_NO_REPOSITORY = "It wasn't checked: the repository couldn't b
 /** Why an edit written before the check (or before it measured an edit's size) waits where the check is on (E6). */
 export const CHECK_BEFORE = "It was written before the check, so it asks first";
 /** Why an edit the check passed waits all the same: only a rename, a moved page or a small correction goes out by itself (E6). */
-export const CHECK_LARGER = "It changes more than a label or a sentence, so it asks first";
+export const CHECK_LARGER = "It isn't a rename or a small correction in place, so it asks first";
 /** The review's own reason, one short line. */
 export const checkFailed = (reason: string) => {
   const line = reason.replace(/\s+/g, " ").trim();

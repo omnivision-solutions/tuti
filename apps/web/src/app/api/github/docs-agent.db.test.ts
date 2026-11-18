@@ -1402,14 +1402,14 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await edit(90)).toMatchObject({ status: "SCHEDULED", waitReason: null, check: expect.objectContaining({ pass: true, scope: "correction" }) as unknown });
   });
 
-  test("an accepted edit that adds a paragraph instead asks first, saying it changes more than a label or a sentence", async () => {
+  test("an accepted edit that adds a paragraph instead asks first, saying it isn't a rename or a small correction", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 0 } });
     proposeEdit(91, JSON.stringify({ reason: "No dark theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme.\n\nPick the dark one in **Settings**." } }));
     model.reply(ACCEPT, undefined, '"article_after"');
     await merge(91);
     expect(await edit(91)).toMatchObject({
       status: "PENDING",
-      waitReason: "It changes more than a label or a sentence, so it asks first",
+      waitReason: "It isn't a rename or a small correction in place, so it asks first",
       check: expect.objectContaining({ pass: true, scope: "larger" }) as unknown,
     });
   });
@@ -1690,6 +1690,38 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await edit(103)).toMatchObject({ status: "PENDING", check: undefined });
     expect(await changes()).toBe(body);
     expect(await change(103)).toMatchObject({ state: "READY" });
+  });
+
+  test("with Checks off, the rewrite is refused before it takes any edit out", async () => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    proposeEdit(130);
+    await merge(130);
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    await prisma.project.update({ where: { id: project.id }, data: { aiModels: { code_changes_check: "off" } } });
+    const body = await changes();
+    await expect(rewriteWaitingEdits(project.slug)).rejects.toThrow("Checks is off for");
+    expect(await edit(130)).toMatchObject({ status: "PENDING", check: undefined });
+    expect(await changes()).toBe(body);
+    expect(await change(130)).toMatchObject({ state: "READY" });
+  });
+
+  test("an edit written while Checks was off, stored as not checked, is written again by a later run once Checks is on", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { aiModels: { code_changes_check: "off" } } });
+    proposeEdit(131);
+    await merge(131);
+    expect(await edit(131)).toMatchObject({ status: "PENDING", check: expect.objectContaining({ pass: false, reason: "It wasn't checked: Checks was off when it was written" }) as unknown });
+    await prisma.project.update({ where: { id: project.id }, data: { aiModels: {} } });
+    pullRequest(131);
+    model.reply(EDIT_AT, undefined, '"merge-131"');
+    model.reply(REWRITE, undefined, '"problem"');
+    model.reply(ACCEPT, undefined, '"article_after"');
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 1, pullRequests: 1, analysed: 1 });
+    expect(
+      await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 131 }, kind: "ARTICLE_EDIT" }, orderBy: { createdAt: "asc" }, select: { status: true, dismissReason: true, payload: true } }),
+    ).toMatchObject([
+      { status: "DISMISSED", dismissReason: "Written again with the check" },
+      { status: "PENDING", payload: expect.objectContaining({ check: expect.objectContaining({ pass: true, scope: "correction" }) }) as unknown },
+    ]);
   });
 
   test("the rewrite leaves alone an edit a teammate stopped, and a waiting edit in an article that's a draft", async () => {

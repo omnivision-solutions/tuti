@@ -246,3 +246,16 @@ test("a small correction: in place, no heading touched, nothing appended, at mos
   // Nothing taken out, or a rename the diff doesn't show and that rewrote more than a couple of sentences' words.
   expect(editScope(ARTICLE, ARTICLE, "")).toBe("larger");
 });
+
+test("an edit that moves or copies text the article had is neither a rename nor a small correction", () => {
+  const STEPS = "## Invite\n\n1. Remove the old member.\n2. Send the invite.\n\nLinks last 3 days.";
+  // Steps swapped with a sentence corrected, or swapped alone.
+  expect(editScope(STEPS, "## Invite\n\n1. Send the invite.\n2. Remove the old member.\n\nLinks last 7 days.", "")).toBe("larger");
+  expect(editScope(STEPS, "## Invite\n\n1. Send the invite.\n2. Remove the old member.\n\nLinks last 3 days.", "")).toBe("larger");
+  // A sentence the article already had, copied in with a correction.
+  expect(editScope(STEPS, STEPS.replace("Links last 3 days.", "Links last 7 days. Send the invite."), "")).toBe("larger");
+  // A label renamed, and a paragraph moved.
+  const moved = "## Fonts\n\nFonts are in **Look and feel** too, at `/settings/appearance`.\n\n## Themes\n\nOpen **Look and feel** and pick a theme.";
+  expect(renamed(NAV, moved, DIFF)).toBeNull();
+  expect(editScope(NAV, moved, DIFF)).toBe("larger");
+});

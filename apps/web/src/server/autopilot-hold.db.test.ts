@@ -1481,8 +1481,8 @@ describe("where the check is on, only an edit it passed that's a rename or a sma
     expect(await prisma.article.findUniqueOrThrow({ where: { id: rename.article.id }, select: { body: true } })).toEqual({ body: "Pick Light, Dark or System in Settings." });
   });
 
-  test("a larger edit the check passed waits, saying it changes more than a label or a sentence", async () => {
-    expect(await checkedEdit({ ...PASSED, scope: "larger" })).toMatchObject({ status: "PENDING", waitReason: "It changes more than a label or a sentence, so it asks first" });
+  test("a larger edit the check passed waits, saying it isn't a rename or a small correction", async () => {
+    expect(await checkedEdit({ ...PASSED, scope: "larger" })).toMatchObject({ status: "PENDING", waitReason: "It isn't a rename or a small correction in place, so it asks first" });
   });
 
   test("one the check failed, or couldn't check, waits with the check's reason; one written before the check (or before it was measured) asks first", async () => {
