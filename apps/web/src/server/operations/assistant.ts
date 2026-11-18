@@ -59,7 +59,9 @@ export function offLimitsTopic(question: string, topics: string[]): string | und
 }
 
 /** The instructions with a tone before them, a blank line between; either alone when the other is empty. */
-export const foldTone = (tone: string, instructions: string) => [tone, instructions].filter(Boolean).join("\n\n");
+export const foldTone = (tone: string, instructions: string) =>
+  // Instructions that already open with the tone keep it once: the same tone sent twice doesn't stack.
+  instructions === tone || instructions.startsWith(`${tone}\n\n`) ? instructions : [tone, instructions].filter(Boolean).join("\n\n");
 
 /** A project's settings as everything reads them (the page, the API, the answer prompt): a stored tone folded into the instructions, saving nothing. */
 export async function assistantSettings(projectId: string): Promise<AssistantSettings> {
@@ -132,25 +134,29 @@ export const updateAssistantSettings = defineOperation({
   run: async ({ projectId }, input) => {
     // Instructions sent are the whole of them (a read gives the stored tone folded in, so written back it adds nothing).
     // A tone sent alone takes the stored tone's place, before the stored instructions.
-    // ponytail: read, then written, without a lock: an update between the two is overwritten. A transaction with a row lock if settings are ever saved by many at once; the field goes next release.
-    let instructions = input.instructions;
-    if (input.tone !== undefined) {
-      instructions = foldTone(
-        input.tone,
-        instructions ?? (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { assistantInstructions: true } })).assistantInstructions,
-      );
-      if (instructions.length > MAX_ASSISTANT_INSTRUCTIONS) {
-        throw new OperationError(400, "invalid_input", `Keep the instructions under ${MAX_ASSISTANT_INSTRUCTIONS.toLocaleString("en")} characters, the tone included`);
+    // The project's row is locked first, so instructions saved meanwhile aren't overwritten with the ones read here.
+    await prisma.$transaction(async (tx) => {
+      let instructions = input.instructions;
+      if (input.tone !== undefined) {
+        if (instructions === undefined) {
+          const [row] = await tx.$queryRaw<{ instructions: string }[]>`
+            SELECT "assistantInstructions" AS instructions FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
+          instructions = row?.instructions ?? "";
+        }
+        instructions = foldTone(input.tone, instructions);
+        if (instructions.length > MAX_ASSISTANT_INSTRUCTIONS) {
+          throw new OperationError(400, "invalid_input", `Keep the instructions under ${MAX_ASSISTANT_INSTRUCTIONS.toLocaleString("en")} characters, the tone included`);
+        }
       }
-    }
-    await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        ...(input.length !== undefined && { assistantLength: input.length.toUpperCase() as AnswerLength }),
-        // With the tone cleared in the same update, so it's never folded in twice.
-        ...(instructions !== undefined && { assistantInstructions: instructions, assistantTone: "" }),
-        ...(input.offLimits !== undefined && { assistantOffLimits: [...new Set(input.offLimits)] }),
-      },
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          ...(input.length !== undefined && { assistantLength: input.length.toUpperCase() as AnswerLength }),
+          // With the tone cleared in the same update, so it's never folded in twice.
+          ...(instructions !== undefined && { assistantInstructions: instructions, assistantTone: "" }),
+          ...(input.offLimits !== undefined && { assistantOffLimits: [...new Set(input.offLimits)] }),
+        },
+      });
     });
     return assistantSettings(projectId);
   },

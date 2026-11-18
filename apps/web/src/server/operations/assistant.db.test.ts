@@ -84,6 +84,8 @@ test("a tone sent to the API is folded into the instructions saved, and none is 
   expect(await stored()).toEqual({ assistantTone: "", assistantInstructions: "Friendly\n\nCall it Acme." });
   // Alone: before the instructions stored.
   expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
+  // The same tone sent again doesn't stack.
+  expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
   // Alone, where the previous release left a tone: it takes that tone's place, as it did then.
   await storeTone("Cheerful", "Call it Acme.");
   expect(await update({ tone: "Formal" })).toMatchObject({ tone: "", instructions: "Formal\n\nCall it Acme." });
