@@ -32,7 +32,18 @@ type Source = (typeof SOURCES)[number]["value"];
  * The spec at an address: "Fetch" reads it on the server as adding it will (https, public addresses, 5 MB), says
  * what's wrong at once, and suggests its name. Another address typed asks for Fetch again.
  */
-function UrlSource({ projectSlug, error, onChange }: { projectSlug: string; error?: string; onChange: (spec: Spec | null, error?: string) => void }) {
+function UrlSource({
+  projectSlug,
+  error,
+  onChange,
+  onReading,
+}: {
+  projectSlug: string;
+  error?: string;
+  onChange: (spec: Spec | null, error?: string) => void;
+  /** A read starting (1), and its answer handled, kept or dropped (-1): the dialog says while any is unsettled. */
+  onReading: (by: 1 | -1) => void;
+}) {
   const [url, setUrl] = useState("");
   const [pending, startTransition] = useTransition();
   const [fetched, setFetched] = useState<string | null>(null);
@@ -56,11 +67,14 @@ function UrlSource({ projectSlug, error, onChange }: { projectSlug: string; erro
     }
     asking.current = address;
     const turn = ++latest.current;
+    onReading(1);
     startTransition(async () => {
       const result = await previewApiReferenceUrl(projectSlug, address).catch(() => ({ error: "Couldn't read that address. Try again.", suggests: undefined }));
       if (asking.current === address) {
         asking.current = null;
       }
+      // Handled, kept or dropped: in the same update as what it changed.
+      onReading(-1);
       if (turn !== latest.current) {
         return;
       }
@@ -86,6 +100,8 @@ function UrlSource({ projectSlug, error, onChange }: { projectSlug: string; erro
           onChange={(event) => {
             setUrl(event.target.value);
             latest.current++;
+            // An edit asks again, even for the address on its way: its answer is dropped now.
+            asking.current = null;
             if (fetched !== null) {
               setFetched(null);
               onChange(null);
@@ -120,7 +136,7 @@ function UrlSource({ projectSlug, error, onChange }: { projectSlug: string; erro
  * The spec from a file: picked or dropped, read here as text. The readers load when a file is chosen
  * (they're large), and say at once what the server would: a file that's too large or isn't a spec.
  */
-function UploadSource({ error, onChange }: { error?: string; onChange: (spec: Spec | null, error?: string) => void }) {
+function UploadSource({ error, onChange, onReading }: { error?: string; onChange: (spec: Spec | null, error?: string) => void; onReading: (by: 1 | -1) => void }) {
   const picker = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -141,6 +157,7 @@ function UploadSource({ error, onChange }: { error?: string; onChange: (spec: Sp
     const turn = ++latest.current;
     setFileName(file.name);
     onChange(null);
+    onReading(1);
     try {
       const { OPENAPI_MAX_BYTES, readSpec } = await import("@tuti/shared/api-reference");
       // ponytail: read on the main thread, which a spec near 5 MB holds for a moment; a worker if that's felt.
@@ -160,6 +177,9 @@ function UploadSource({ error, onChange }: { error?: string; onChange: (spec: Sp
       if (turn === latest.current) {
         onChange(null, "This file couldn't be read. Reload the page and try again.");
       }
+    } finally {
+      // Handled, kept or dropped: in the same update as what it changed.
+      onReading(-1);
     }
   }
 
@@ -279,6 +299,11 @@ export function ApiReferenceDialog({
     }
   };
 
+  // Reads a source has started whose answers aren't handled yet (a panel switched away from still counts until its answer
+  // is dropped): the form says so (`data-reading`), which tests wait on.
+  const [unsettled, setUnsettled] = useState(0);
+  const reading = (by: 1 | -1) => setUnsettled((count) => count + by);
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // The button stays focusable while it's off, and Enter in Name submits too.
@@ -317,7 +342,7 @@ export function ApiReferenceDialog({
           <DialogTitle className="text-xl font-semibold">Add API reference</DialogTitle>
           <DialogDescription>Where does your OpenAPI spec or GraphQL schema live? We build a page for each endpoint.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} data-reading={unsettled > 0 || undefined}>
           <FieldGroup>
             {/* Native radios: arrow keys move between them. */}
             <div role="radiogroup" aria-label="Where the spec is" className="flex flex-col gap-2">
@@ -351,9 +376,9 @@ export function ApiReferenceDialog({
               ))}
             </div>
             {source === "url" ? (
-              <UrlSource key="url" projectSlug={projectSlug} error={about("url")} onChange={chosen("url")} />
+              <UrlSource key="url" projectSlug={projectSlug} error={about("url")} onChange={chosen("url")} onReading={reading} />
             ) : (
-              <UploadSource key="upload" error={about("spec")} onChange={chosen("spec")} />
+              <UploadSource key="upload" error={about("spec")} onChange={chosen("spec")} onReading={reading} />
             )}
             <Field data-invalid={about("name") ? true : undefined}>
               <FieldLabel htmlFor={FOCUS.name}>Name</FieldLabel>

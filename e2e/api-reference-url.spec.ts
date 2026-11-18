@@ -38,9 +38,19 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   const dialog = team.getByRole("dialog", { name: "Add API reference" });
   await expect(dialog.getByRole("radio", { name: /From a URL/ })).toBeChecked();
   const add = dialog.getByRole("button", { name: "Add reference" });
-  /** Nothing marks an answer dropped: two rendered frames, the moment it would have landed in, and Name empty, Add off. */
+  // Server actions the page sends, counted from the start and never unhooked: one sent late is counted too.
+  const isAction = (request: Request) => request.method() === "POST" && Boolean(request.headers()["next-action"]);
+  let actions = 0;
+  team.on("request", (request) => {
+    if (isAction(request)) actions++;
+  });
+  /**
+   * A read whose answer arrives after the team switched source changes nothing. The form says while a read's answer
+   * isn't handled yet (`data-reading`): once it's gone, every answer has been kept or dropped, in the same update as
+   * what it changed. Called while one is unsettled.
+   */
   const staysEmpty = async () => {
-    await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(dialog.locator("form")).not.toHaveAttribute("data-reading");
     await expect(dialog.getByLabel("Name")).toHaveValue("");
     await expect(add).toBeDisabled();
   };
@@ -58,6 +68,7 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   });
   await dialog.getByLabel("Spec file").setInputFiles({ name: "openapi.json", mimeType: "application/json", buffer: Buffer.from(spec({ "GET /posts": ["Posts", "List posts"] })) });
   await team.waitForFunction(() => typeof (window as unknown as { releaseRead?: () => void }).releaseRead === "function");
+  await expect(dialog.locator("form")).toHaveAttribute("data-reading");
   await dialog.getByText("From a URL", { exact: true }).click();
   await team.evaluate(() => (window as unknown as { releaseRead: () => void }).releaseRead());
   await staysEmpty();
@@ -71,37 +82,30 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   const started = new Promise<void>((resolve) => {
     begun = resolve;
   });
-  const isAction = (request: Request) => request.method() === "POST" && Boolean(request.headers()["next-action"]);
-  // Answered here, whole: once fulfil returns, the page has the answer (nothing waits on the response's own end).
-  let answered = () => {};
-  const delivered = new Promise<void>((resolve) => {
-    answered = resolve;
-  });
-  let fetches = 0;
   const holdFetch = async (route: Route) => {
     if (!isAction(route.request())) {
       await route.continue();
       return;
     }
-    fetches++;
     begun();
     await released;
     await route.fulfill({ response: await route.fetch() });
-    answered();
   };
+  const before = actions;
   await team.route("**/*", holdFetch);
   await dialog.getByLabel("Spec URL").fill(`${siteUrl()}${path}`);
   await dialog.getByRole("button", { name: "Fetch" }).click();
   await started;
-  // Enter again for the same address, as a held-down key repeats it, while it's on its way: no second fetch.
+  await expect(dialog.locator("form")).toHaveAttribute("data-reading");
+  // Enter again for the same address, as a held-down key repeats it, while it's on its way: no second fetch. (One
+  // would be a read of its own, held as the first is, so the form couldn't settle without it being counted.)
   await dialog.getByLabel("Spec URL").press("Enter");
   await dialog.getByLabel("Spec URL").press("Enter");
   await dialog.getByText("Upload a file", { exact: true }).click();
   release();
-  await delivered;
-  expect(fetches).toBe(1);
-  await team.unroute("**/*", holdFetch);
   await staysEmpty();
+  expect(actions - before).toBe(1);
+  await team.unroute("**/*", holdFetch);
   await dialog.getByText("From a URL", { exact: true }).click();
 
   // An address that isn't there is refused at Fetch, under its field.
@@ -168,8 +172,36 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   const moved = `/${slug}/v2/openapi.json`;
   await siteAnswers(moved, spec({ "GET /posts": ["Posts", "List posts"], "POST /posts": ["Posts", "Create a post"], "GET /users": ["Users", "List users"], "GET /teams": ["Teams", "List teams"] }));
   await address.fill(`${siteUrl()}${moved}`);
+  // Held on its way, while another address is typed: that stays once the change is done (its toast is shown in the
+  // same step that would clear the field).
+  let letChange = () => {};
+  const changeHeld = new Promise<void>((resolve) => {
+    letChange = resolve;
+  });
+  let changeSent = () => {};
+  const changeOnItsWay = new Promise<void>((resolve) => {
+    changeSent = resolve;
+  });
+  const holdChange = async (route: Route) => {
+    if (!isAction(route.request())) {
+      await route.continue();
+      return;
+    }
+    changeSent();
+    await changeHeld;
+    await route.fulfill({ response: await route.fetch() });
+  };
+  await team.route("**/*", holdChange);
   await source.getByRole("button", { name: "Change" }).click();
+  await changeOnItsWay;
+  const typed = `${siteUrl()}/${slug}/typed-meanwhile.json`;
+  await address.fill(typed);
+  letChange();
   await expect(team.getByText("Address changed: 1 added", { exact: true })).toBeVisible();
+  await team.unroute("**/*", holdChange);
+  await expect(address).toHaveValue(typed);
+  // Back to the address it's read from now: nothing to change.
+  await address.fill(`${siteUrl()}${moved}`);
   await expect(source.getByRole("button", { name: "Change" })).toBeDisabled();
   await checkpoint(team, "Settings' Source for a URL");
   // Synced from the new address from now on: the old one's gone, and Sync now still works.

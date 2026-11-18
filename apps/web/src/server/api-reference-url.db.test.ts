@@ -508,6 +508,8 @@ describe("the 6-hourly job", () => {
     // (Not "two each at most": while hosts are mid-read, a free one may be read again, so a slow read holds no one up.)
     const third = started.findIndex((at, index) => started.slice(0, index + 1).filter((other) => other === at).length === 3);
     const firsts = ["internal", "metadata", "busy", "other", "short"].map((host) => started.indexOf(host));
+    // Every host read at all (indexOf's -1 would hide in the max), then before any third.
+    expect(Math.min(...firsts), started.join(" ")).toBeGreaterThanOrEqual(0);
     expect(Math.max(...firsts), started.join(" ")).toBeLessThan(third === -1 ? Infinity : third);
   });
 
@@ -520,14 +522,14 @@ describe("the 6-hourly job", () => {
       where: { projectId_slug: { projectId: project.id, slug: made.slug } },
       select: { projectId: true, tabId: true, name: true, format: true, spec: true, doc: true, state: true },
     });
-    // The slow host is the site fake, its oldest first; four fast hosts' reads are refused at once, before anything is
-    // sent (ftp). Five hosts for four reads at once: while the slow one is read, a fast one is always free.
+    // The slow host is the site fake, its references the oldest (so it's chosen first); four fast hosts' reads are
+    // refused at once, before anything is sent (ftp). Five hosts for four reads at once.
     const due = (minutes: number) => new Date(now.getTime() - SYNC_EVERY_MS - minutes * 60_000);
     const fast = ["f1", "f2", "f3", "f4"];
     await prisma.apiReference.createMany({
       data: [
         ...[0, 1, 2].map((at) => ({ slug: `slow-${at}`, sourceUrl: `${site.origin}/slow-${at}.json`, syncTriedAt: due(100 - at) })),
-        ...fast.flatMap((host) => [0, 1, 2, 3, 4].map((at) => ({ slug: `${host}-${at}`, sourceUrl: `ftp://${host}.example/${at}.json`, syncTriedAt: due(50 - at) }))),
+        ...fast.flatMap((host) => Array.from({ length: 10 }, (_, at) => ({ slug: `${host}-${at}`, sourceUrl: `ftp://${host}.example/${at}.json`, syncTriedAt: due(50 - at) }))),
       ].map((row) => ({ ...rest, ...row, source: "URL" as const, doc: doc as object, state: state as object })),
     });
     const host = (url: string | null) => URL.parse(url ?? "")!.hostname;
@@ -538,10 +540,13 @@ describe("the 6-hourly job", () => {
       letGo = resolve;
     });
     site.during(() => held);
-    // Each read as it's chosen, by host; and the fast hosts' reads, paused once each has had two, until the slow host's
-    // next is chosen.
+    // Gated by count, not by time: a fast host's third read waits here, chosen, until the slow host's next is chosen. A
+    // fast host is read twice at most before that and has ten references, so no fast worker runs out of hosts: all
+    // three end up waiting here, each on its own host, and the fourth fast host, free, has had two reads (else it, with
+    // fewer, would have been chosen instead). Only then is the slow host let go: once its read is done, its worker's
+    // choice is between it (one read) and that free fast host (two).
     const chosen: { host: string; id: string }[] = [];
-    let paused = 0;
+    let waiting = 0;
     let resume = () => {};
     const resumed = new Promise<void>((resolve) => {
       resume = resolve;
@@ -553,32 +558,34 @@ describe("the 6-hourly job", () => {
       const before = chosen.filter((read) => read.host === at).map((read) => read.id);
       expect(await prisma.apiReference.count({ where: { id: { in: before }, syncTriedAt: { lte: now } } })).toBe(0);
       chosen.push({ host: at, id: next.id });
-      const reads = (name: string) => chosen.filter((read) => read.host === name).length;
-      if (at === slow && reads(slow) === 2) {
-        // The first choice once the slow host's read is done.
-        afterSlow ??= at;
+      const reads = chosen.filter((read) => read.host === at).length;
+      if (afterSlow !== undefined) {
+        return false;
+      }
+      if (at === slow && reads === 2) {
+        afterSlow = at;
         resume();
-      } else if (at !== slow && afterSlow === undefined && fast.every((name) => reads(`${name}.example`) >= 2) && reads(slow) === 1) {
-        // Past every fast host's second read: once all three fast reads are waiting here, the slow host is let go. A fourth
-        // fast read chosen before the slow host's next means it wasn't chosen first once free.
-        paused++;
-        if (paused === 3) {
+      } else if (at !== slow && reads >= 3) {
+        waiting++;
+        if (waiting === 3) {
           letGo();
-        } else if (paused > 3) {
-          afterSlow ??= at;
+        } else if (waiting > 3) {
+          // A fast host chosen, with the slow one free and behind on reads: what the test is to catch.
+          afterSlow = at;
           resume();
         }
         await resumed;
       }
       return false;
     };
-    expect(await syncApiReferences({}, log, new Date(), over)).toEqual({ synced: 0, failed: 23 });
-    expect(afterSlow).toBe(slow);
-    // Its second read came before any fast host's fourth, and each host had all its references read.
-    const slowSecond = chosen.findIndex((read, at) => read.host === slow && chosen.slice(0, at).filter((r) => r.host === slow).length === 1);
-    for (const name of fast) {
-      expect(chosen.slice(0, slowSecond).filter((read) => read.host === `${name}.example`).length).toBeLessThanOrEqual(3);
+    try {
+      expect(await syncApiReferences({}, log, new Date(), over)).toEqual({ synced: 0, failed: 43 });
+    } finally {
+      // Nothing left waiting if an expectation failed.
+      letGo();
+      resume();
     }
+    expect(afterSlow, chosen.map((read) => read.host).join(" ")).toBe(slow);
   }, 30_000);
 
   test("a run's window takes each host's first before any host's second: busy hosts' older backlogs don't fill it", async () => {

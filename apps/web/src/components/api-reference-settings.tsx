@@ -57,7 +57,8 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
         document.getElementById("reference-source-url")?.focus();
         return;
       }
-      setEdited(null);
+      // Back to following the stored address, unless something else was typed while this one was read: that stays.
+      setEdited((now) => (now !== null && now.trim() === next ? null : now));
       const what = [result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ");
       toast.success(what ? `Address changed: ${what}` : "Address changed");
     });
@@ -76,7 +77,8 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
             aria-invalid={error ? true : undefined}
             aria-describedby="reference-source-url-note"
             onChange={(event) => {
-              setEdited(event.target.value);
+              // The stored address typed back is the field left alone: it follows the stored one again.
+              setEdited(event.target.value.trim() === url ? null : event.target.value);
               setError(undefined);
             }}
           />
