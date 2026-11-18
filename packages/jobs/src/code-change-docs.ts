@@ -292,6 +292,10 @@ export function articleNotes(doc: Doc) {
     if (next.some((section, i) => titles(section).some((title) => !titles(parts[i]!).includes(title) && (before.includes(title) || all.indexOf(title) !== all.lastIndexOf(title))))) {
       return null;
     }
+    // Nor away from a title the article had twice: the other heading with it would be counted in this one's place.
+    if (parts.some((section, i) => titles(section).some((title) => !titles(next[i]!).includes(title) && before.indexOf(title) !== before.lastIndexOf(title)))) {
+      return null;
+    }
     const checked = parseDoc("article", content);
     return checked.ok && toPlainText(content) !== toPlainText(doc) ? checked.doc : null;
   };

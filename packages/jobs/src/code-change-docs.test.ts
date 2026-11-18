@@ -194,6 +194,9 @@ test("a heading can't be renamed to a title another heading in the article has: 
   const twice = articleNotes({ type: "doc", content: [head("Notes"), para("One."), head("Notes"), para("Two."), code] });
   expect(twice.edit({ sections: { "1": "## Notes\n\nFirst." } })).not.toBeNull();
   expect(twice.edit({ passages: [{ section: 2, find: "Two.", replace: "Second." }] })).not.toBeNull();
+  // But one of the two can't be renamed: the other would be counted in its place.
+  expect(twice.edit({ sections: { "1": "## Notes for admins\n\nOne." } })).toBeNull();
+  expect(twice.edit({ passages: [{ section: 2, find: "Notes", replace: "Notes for admins" }] })).toBeNull();
 });
 
 test("the three writers (an edit, a new article, Verify's fix) share one set of writing rules, and the two with a section for the end share when it may be used and how passages are replaced", () => {
