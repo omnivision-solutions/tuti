@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { mergeSections, type TaggedEdit, takeOut } from "./article-layers";
+import { mergeSections, type TaggedEdit, takeOut, waitingSections } from "./article-layers";
 
 /** An article of `## heading` sections, each with one paragraph. */
 const doc = (...sections: [string, string][]): Doc => ({
@@ -55,4 +55,41 @@ test("taking out an edit names only the edits after it as on top, matched by its
   });
   // Not in the list: none named.
   expect(takeOut(edit("r9", 9, doc(A), doc(["Light", "Other."])), text, [lower, upper])).toEqual({ refused: "Someone edited the same section since: change it in the editor instead" });
+});
+
+test("waiting edits by section: who wrote each, and held once a person changed any section of that edit", () => {
+  const edit = (number: number, base: Doc | null, after: Doc): TaggedEdit => ({ revisionId: `r${number}`, actionId: `a${number}`, number, createdAt: new Date(0), base, doc: after });
+  const one = edit(1, doc(A, B, C), doc(["Light", "Pick Light or Dark."], ["Dark", "Dark is here."], C));
+  const two = edit(2, one.doc, doc(["Light", "Pick Light, Dark or System."], ["Dark", "Dark is here."], C));
+  // As Autopilot wrote them: the newer one wrote over the older one's section; nothing held.
+  expect(waitingSections(two.doc, [one, two])).toEqual([
+    { by: ["PR #1", "PR #2"], held: false },
+    { by: ["PR #1"], held: false },
+    { by: [], held: false },
+  ]);
+  // A person changed one section of PR #1's: both of its sections are held; PR #2's wrote over the other, so not held there.
+  const touched = doc(["Light", "Pick Light, Dark or System."], ["Dark", "Dark is here, at night."], C);
+  expect(waitingSections(touched, [one, two]).map((section) => section.held)).toEqual([true, true, false]);
+  // A person changed the section PR #2 wrote last: PR #2's is held; PR #1's other section isn't (what PR #1 wrote there is as it was).
+  const onTop = doc(["Light", "Pick any theme."], ["Dark", "Dark is here."], C);
+  expect(waitingSections(onTop, [one, two]).map((section) => section.held)).toEqual([true, false, false]);
+  // A teammate's change to a section no waiting edit wrote holds nothing; one whose base is gone names nothing.
+  expect(waitingSections(doc(["Light", "Pick Light or Dark."], ["Dark", "Dark is here."], ["System", "Always."]), [one])).toEqual([
+    { by: ["PR #1"], held: false },
+    { by: ["PR #1"], held: false },
+    { by: [], held: false },
+  ]);
+  expect(waitingSections(doc(A, B, C), [edit(3, null, doc(A, B, C))])).toEqual([0, 1, 2].map(() => ({ by: [], held: false })));
+});
+
+test("a person renamed the heading of a waiting edit's section: the renamed section is held, with the rest of that edit", () => {
+  const one: TaggedEdit = { revisionId: "r1", actionId: "a1", number: 1, createdAt: new Date(0), base: doc(A, B, C), doc: doc(A, ["Dark", "Dark is here."], C) };
+  expect(waitingSections(doc(A, ["Dark mode", "Dark is here."], C), [one])).toEqual([
+    { by: [], held: false },
+    { by: ["PR #1"], held: true },
+    { by: [], held: false },
+  ]);
+  // Taken out by the edit itself, a section isn't missing: nothing held.
+  const out: TaggedEdit = { ...one, doc: doc(A, C) };
+  expect(waitingSections(doc(A, C), [out]).map((section) => section.held)).toEqual([false, false]);
 });
