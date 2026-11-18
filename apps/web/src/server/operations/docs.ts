@@ -99,8 +99,8 @@ const articleFields = {
   noindex: z.boolean().optional(),
 };
 
-/** A slug the team picks for an article (see customDocsSlug). */
-const customSlug = z
+/** A slug the team picks for an article or an API reference (see customDocsSlug). */
+export const customSlug = z
   .string()
   .trim()
   .min(1, "Enter a slug")
@@ -289,7 +289,7 @@ async function lastArticle(tx: Prisma.TransactionClient, projectId: string, coll
 }
 
 /** Numbers the rows 0, 1, … in the order of `ids`, in one statement. */
-async function renumber(tx: Prisma.TransactionClient, table: "article" | "collection" | "docs_tab", ids: string[]) {
+async function renumber(tx: Prisma.TransactionClient, table: "article" | "collection" | "docs_tab" | "api_reference", ids: string[]) {
   await tx.$executeRaw`
     UPDATE ${Prisma.raw(`"${table}"`)} t SET "order" = n.place - 1
     FROM unnest(${ids}::text[]) WITH ORDINALITY AS n(id, place)
@@ -304,19 +304,26 @@ function placed(siblings: { id: string }[], id: string, position: number | undef
 }
 
 /**
- * `slug`, as the team picked it for an article (`page`, when it has one): unlike freeDocsSlug, never
- * another one. Refused when it's reserved or a tab, collection or other live article has it. Like
- * freeDocsSlug, call it with the project locked; redirects follow the same way.
+ * `slug`, as the team picked it for an article or an API reference (`page`, when it has one): unlike
+ * freeDocsSlug, never another one. Refused when it's reserved (an article's) or a tab, collection, API
+ * reference or other live article has it. Like freeDocsSlug, call it with the project locked; redirects
+ * follow the same way.
  */
-async function customDocsSlug(tx: Prisma.TransactionClient, projectId: string, slug: string, page?: { id: string; slug: string }) {
-  if (RESERVED_ARTICLE_SLUGS.includes(slug)) {
+export async function customDocsSlug(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  slug: string,
+  page?: { id: string; slug: string },
+  kind: "article" | "reference" = "article",
+) {
+  if (kind === "article" && RESERVED_ARTICLE_SLUGS.includes(slug)) {
     throw new OperationError(400, "invalid_input", `“${slug}” is reserved; pick another`);
   }
   const [taken] = await docsSlugsTaken(tx, projectId, slug, page);
   if (taken) {
     throw new OperationError(409, "conflict", `That address is taken by ${taken.kind} “${taken.name}”`);
   }
-  return claimDocsSlug(tx, projectId, slug, "article", page);
+  return claimDocsSlug(tx, projectId, slug, kind, page);
 }
 
 /** Embeds a published article's sections for search, in the background. Never fails the save: search still matches its words. */
@@ -1840,9 +1847,10 @@ export const createTab = defineOperation({
           },
           select: { id: true },
         });
-        // The first tab: the collections there are go in it, in their order.
+        // The first tab: the collections and API references there are go in it, in their order.
         if (last._max.order === null) {
           await tx.collection.updateMany({ where: { projectId, parentId: null }, data: { tabId: tab.id } });
+          await tx.apiReference.updateMany({ where: { projectId }, data: { tabId: tab.id } });
         }
         return tx.docsTab.findUniqueOrThrow({ where: { id: tab.id }, select: tabSelect });
       }),
@@ -1951,7 +1959,7 @@ export const reorderTab = defineOperation({
 export const deleteTab = defineOperation({
   name: "tabs.delete",
   summary:
-    "Delete a docs tab. Its collections go last in the tab before it, with everything in them, and keep who can read them. The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
+    "Delete a docs tab. Its collections go last in the tab before it, with everything in them, and keep who can read them; its API references go with them, unpublished if the tab restricted who can read it (they have no access of their own). The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
   method: "DELETE",
   path: "/tabs/{slug}",
   scope: "write",
@@ -1980,6 +1988,17 @@ export const deleteTab = defineOperation({
         const staying = target ? await inTab(target.id) : [];
         await tx.collection.updateMany({ where: { tabId: id }, data: { tabId: target?.id ?? null } });
         await renumber(tx, "collection", [...staying, ...moving].map((c) => c.id));
+      }
+      // Its API references go with them, last there. They have no access of their own, so one a
+      // restricted tab kept closed becomes a draft: the move opens nothing.
+      const references = (tabId: string | null) =>
+        tx.apiReference.findMany({ where: { projectId, tabId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { id: true } });
+      const referencesMoving = await references(id);
+      if (referencesMoving.length > 0) {
+        const { access } = await tx.docsTab.findUniqueOrThrow({ where: { id }, select: { access: true } });
+        const referencesStaying = await references(target?.id ?? null);
+        await tx.apiReference.updateMany({ where: { tabId: id }, data: { tabId: target?.id ?? null, ...(access !== "INHERIT" && { publishedAt: null }) } });
+        await renumber(tx, "api_reference", [...referencesStaying, ...referencesMoving].map((r) => r.id));
       }
       await tx.docsTab.delete({ where: { id } });
       return target?.slug ?? null;

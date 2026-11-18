@@ -1,11 +1,14 @@
 import type { Prisma } from "@tuti/db";
 import { titleSlug } from "@tuti/shared/post-urls";
 
-/** The docs' addresses (/docs/<slug>): one per tab, collection and live article in a project, with redirects from old ones. */
+/** The docs' addresses (/docs/<slug>): one per tab, collection, API reference and live article in a project, with redirects from old ones. */
+
+/** What has an address. An API reference keeps its own when it's renamed, so no redirect points at one. */
+export type DocsPageKind = "tab" | "collection" | "article" | "reference";
 
 /**
- * A slug from `text` for a tab, collection or article (`page`, when it has one) that no other tab,
- * collection or live article in the project has, so /docs/<slug> is one page: "getting-started",
+ * A slug from `text` for a tab, collection, article or API reference (`page`, when it has one) that no
+ * other tab, collection, API reference or live article in the project has, so /docs/<slug> is one page: "getting-started",
  * then "getting-started-2", … Call it with the project locked (lockProject), so two saves can't pick
  * the same one, in the transaction that gives the page the slug. Deleted articles don't hold on to
  * their slugs (a restored one takes the next free one if its own is gone).
@@ -18,7 +21,7 @@ export async function freeDocsSlug(
   tx: Prisma.TransactionClient,
   projectId: string,
   text: string,
-  kind: "tab" | "collection" | "article",
+  kind: DocsPageKind,
   page?: { id: string; slug: string },
   // Sample content (server/sample-content.ts) takes no redirect's slug: the redirect would be gone once it's removed.
   { keepRedirects = false } = {},
@@ -41,13 +44,14 @@ export async function freeDocsSlug(
  */
 export const RESERVED_ARTICLE_SLUGS = ["new", "insights", "api", "tabs", "collections"];
 
-/** The tabs, collections and live articles in the project (but `page`) whose slug matches `slug`, with their names. */
+/** The tabs, collections, API references and live articles in the project (but `page`) whose slug matches `slug`, with their names. */
 export async function docsSlugsTaken(tx: Prisma.TransactionClient, projectId: string, slug: Prisma.StringFilter | string, page?: { id: string }) {
-  // Ids are unique across the three tables (cuids), so `page` needs no kind.
+  // Ids are unique across the four tables (cuids), so `page` needs no kind.
   const where = { projectId, slug, ...(page && { id: { not: page.id } }) };
   return [
     ...(await tx.docsTab.findMany({ where, select: { slug: true, name: true } })).map((tab) => ({ ...tab, kind: "the tab" })),
     ...(await tx.collection.findMany({ where, select: { slug: true, name: true } })).map((c) => ({ ...c, kind: "the collection" })),
+    ...(await tx.apiReference.findMany({ where, select: { slug: true, name: true } })).map((r) => ({ ...r, kind: "the API reference" })),
     ...(await tx.article.findMany({ where: { ...where, deletedAt: null }, select: { slug: true, title: true } })).map((a) => ({
       slug: a.slug,
       name: a.title,
@@ -56,16 +60,16 @@ export async function docsSlugsTaken(tx: Prisma.TransactionClient, projectId: st
   ];
 }
 
-/** Gives a page `candidate` (free, under the lock): a redirect with it goes, and `page`'s old slug redirects to it. */
+/** Gives a page `candidate` (free, under the lock): a redirect with it goes, and `page`'s old slug redirects to it (an API reference's doesn't). */
 export async function claimDocsSlug(
   tx: Prisma.TransactionClient,
   projectId: string,
   candidate: string,
-  kind: "tab" | "collection" | "article",
+  kind: DocsPageKind,
   page?: { id: string; slug: string },
 ) {
   await tx.docsRedirect.deleteMany({ where: { projectId, slug: candidate } });
-  if (page && page.slug !== candidate) {
+  if (kind !== "reference" && page && page.slug !== candidate) {
     const to = {
       tabId: kind === "tab" ? page.id : null,
       collectionId: kind === "collection" ? page.id : null,

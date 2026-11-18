@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { billingFile, type DnsFake, type ModelFake, type SiteFake, startDnsFake, startModelFake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
@@ -21,6 +22,8 @@ import { type Operation, type OperationName, operations } from "./index";
  */
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
+/** An API reference's spec, with one operation (key "GET /matrix"). */
+const MATRIX_SPEC = JSON.stringify({ openapi: "3.1.0", info: { title: "Matrix API", version: "1" }, paths: { "/matrix": { get: { summary: "List matrix" } } } });
 /** A valid call: path values and the rest of the input. */
 const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "project.get": () => ({}),
@@ -88,6 +91,12 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "tabs.update": () => ({ slug: "docs", name: "Documentation" }),
   "tabs.reorder": () => ({ slug: "docs", position: 0 }),
   "tabs.delete": () => ({ slug: "docs" }),
+  "apiReferences.list": () => ({}),
+  "apiReferences.get": () => ({ slug: "matrix-reference", spec: true }),
+  "apiReferences.create": () => ({ name: "Public API", spec: MATRIX_SPEC }),
+  "apiReferences.update": () => ({ slug: "matrix-reference", name: "Renamed by the matrix", hide: ["GET /matrix"] }),
+  "apiReferences.replace": () => ({ slug: "matrix-reference", spec: MATRIX_SPEC.replace("List matrix", "List them") }),
+  "apiReferences.delete": () => ({ slug: "matrix-reference" }),
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
   "groups.create": () => ({ name: "Enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] }),
@@ -256,6 +265,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   // A tab, a collection in it, a published article in that and a draft.
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
+  await prisma.apiReference.deleteMany({ where: { projectId: project.id } });
   await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
@@ -284,6 +294,11 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics", tabId: docs.id } });
   // Another, to move one into the other.
   await prisma.collection.create({ data: { projectId: project.id, slug: "guides", name: "Guides", order: 1, tabId: docs.id } });
+  // An API reference in the tab, as apiReferences.create stores one.
+  const reference = JSON.parse(JSON.stringify(settle(null, (readSpec(MATRIX_SPEC) as { doc: ApiDoc }).doc))) as { doc: object; state: object };
+  await prisma.apiReference.create({
+    data: { projectId: project.id, tabId: docs.id, slug: "matrix-reference", name: "Matrix reference", format: "OPENAPI", spec: MATRIX_SPEC, doc: reference.doc, state: reference.state, operationCount: 1, shownCount: 1 },
+  });
   await prisma.article.createMany({
     data: [
       { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
@@ -465,6 +480,7 @@ const snapshot = () =>
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.articleChanges.findMany({ where: { article: { projectId: project.id } }, orderBy: { articleId: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
+    prisma.apiReference.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: { key: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.docsGapDismissal.findMany({ where: { projectId: project.id } }),
