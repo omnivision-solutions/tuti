@@ -38,6 +38,14 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   const dialog = team.getByRole("dialog", { name: "Add API reference" });
   await expect(dialog.getByRole("radio", { name: /From a URL/ })).toBeChecked();
   const add = dialog.getByRole("button", { name: "Add reference" });
+  /** Nothing marks an answer dropped: Name stays empty and Add off for the second it would take to land, checked over it. */
+  const staysEmpty = async () => {
+    for (let at = 0; at < 10; at++) {
+      await expect(dialog.getByLabel("Name")).toHaveValue("");
+      await expect(add).toBeDisabled();
+      await team.waitForTimeout(100);
+    }
+  };
 
   // A file still being read when the team picks "From a URL": the read, ending after, changes nothing there.
   await dialog.getByText("Upload a file", { exact: true }).click();
@@ -54,9 +62,7 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   await team.waitForFunction(() => typeof (window as unknown as { releaseRead?: () => void }).releaseRead === "function");
   await dialog.getByText("From a URL", { exact: true }).click();
   await team.evaluate(() => (window as unknown as { releaseRead: () => void }).releaseRead());
-  await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await expect(dialog.getByLabel("Name")).toHaveValue("");
-  await expect(add).toBeDisabled();
+  await staysEmpty();
 
   // A Fetch still on its way when the team picks "Upload a file": its answer, arriving after, changes nothing there.
   let release = () => {};
@@ -68,6 +74,11 @@ test("An API reference read from a URL: added from its address, Sync now brings 
     begun = resolve;
   });
   const isAction = (request: Request) => request.method() === "POST" && Boolean(request.headers()["next-action"]);
+  // Answered here, whole: once fulfil returns, the page has the answer (nothing waits on the response's own end).
+  let answered = () => {};
+  const delivered = new Promise<void>((resolve) => {
+    answered = resolve;
+  });
   const holdFetch = async (route: Route) => {
     if (!isAction(route.request())) {
       await route.continue();
@@ -75,22 +86,18 @@ test("An API reference read from a URL: added from its address, Sync now brings 
     }
     begun();
     await released;
-    // Whole, so the page has all of it at once and its end can be waited for.
     await route.fulfill({ response: await route.fetch() });
+    answered();
   };
   await team.route("**/*", holdFetch);
   await dialog.getByLabel("Spec URL").fill(`${siteUrl()}${path}`);
   await dialog.getByRole("button", { name: "Fetch" }).click();
   await started;
   await dialog.getByText("Upload a file", { exact: true }).click();
-  const answered = team.waitForResponse((response) => isAction(response.request()));
   release();
-  // Its whole answer in the page, then two frames: the moment it would have landed in.
-  await (await answered).finished();
-  await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await delivered;
   await team.unroute("**/*", holdFetch);
-  await expect(dialog.getByLabel("Name")).toHaveValue("");
-  await expect(add).toBeDisabled();
+  await staysEmpty();
   await dialog.getByText("From a URL", { exact: true }).click();
 
   // An address that isn't there is refused at Fetch, under its field.

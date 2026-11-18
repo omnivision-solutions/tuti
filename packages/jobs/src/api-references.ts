@@ -318,8 +318,8 @@ export async function syncApiReferences(
   _: unknown,
   log: JobLogger,
   now = new Date(),
-  /** Whether the run's time is up, asked before each read. */
-  over: () => boolean | Promise<boolean> = budget(SYNC_BUDGET_MS),
+  /** Whether the run's time is up, asked before each read with the reference it would be (tests see the order by it). */
+  over: (next: { id: string; sourceUrl: string | null }) => boolean | Promise<boolean> = budget(SYNC_BUDGET_MS),
   candidates = SYNC_CANDIDATES,
 ): Promise<JobResult> {
   // The oldest due per host (its name, lowercased, as URL gives it: the port, credentials and path left off).
@@ -359,16 +359,20 @@ export async function syncApiReferences(
   // are reading the rest.
   const worker = async () => {
     for (let host = next(); host; host = next()) {
-      // Taken before anything's awaited, so no other worker picks it meanwhile.
+      // Chosen and taken in one step, nothing awaited between: no other worker picks it, or counts it, meanwhile. Given
+      // back if the run's time is up.
       host.reading = true;
-      if (await over()) {
+      host.reads++;
+      const chosen = host.ids.shift()!;
+      if (await over(chosen)) {
+        host.ids.unshift(chosen);
+        host.reads--;
         host.reading = false;
         return;
       }
-      host.reads++;
       try {
         // As it was chosen: one moved or synced since it was queued is left for the next run, and counted as neither.
-        const { id, sourceUrl, syncTriedAt } = host.ids.shift()!;
+        const { id, sourceUrl, syncTriedAt } = chosen;
         const result = await syncApiReference(id, { expected: { sourceUrl, syncTriedAt } });
         if (result && "error" in result) {
           failed++;

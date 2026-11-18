@@ -47,7 +47,9 @@ function UrlSource({ projectSlug, error, onChange }: { projectSlug: string; erro
   );
   const fetchIt = () => {
     const address = url.trim();
-    if (!address || pending) {
+    // Not held up by a Fetch before it, which may still be finishing (its answer shows before it's done): the newer one
+    // goes, and `latest` drops the older's answer.
+    if (!address) {
       return;
     }
     const turn = ++latest.current;

@@ -493,16 +493,93 @@ describe("the 6-hourly job", () => {
         state: state as object,
       })),
     });
-    // A budget of 8 reads: far less than the backlog, and the single host still gets one.
-    let reads = 0;
-    expect(await syncApiReferences({}, log, new Date(), () => reads++ >= 8)).toEqual({ synced: 0, failed: 8 });
+    // A budget of 8 reads: far less than the backlog, and the single host still gets one. Each read started, by host, in
+    // order (counted as started, not as asked): said on failure.
+    const started: string[] = [];
+    const over = (next: { sourceUrl: string | null }) => {
+      if (started.length >= 8) return true;
+      started.push(URL.parse(next.sourceUrl ?? "")!.hostname.split(".")[0]!);
+      return false;
+    };
+    expect(await syncApiReferences({}, log, new Date(), over), started.join(" ")).toEqual({ synced: 0, failed: 8 });
     const tried = await prisma.apiReference.findMany({ where: { projectId: project.id, syncTriedAt: { gt: now } }, select: { slug: true } });
-    expect(tried.map((row) => row.slug)).toContain("single");
-    // And each busy host had its turns, two reads each at most.
-    for (const host of ["internal", "metadata", "busy", "other"]) {
-      expect(tried.filter((row) => row.slug.startsWith(`${host}-`)).length).toBeLessThanOrEqual(2);
-    }
+    expect(tried.map((row) => row.slug), started.join(" ")).toContain("single");
+    // Every host's first read before any host's third: one with none is never mid-read, so it's always free to choose.
+    // (Not "two each at most": while hosts are mid-read, a free one may be read again, so a slow read holds no one up.)
+    const third = started.findIndex((at, index) => started.slice(0, index + 1).filter((other) => other === at).length === 3);
+    const firsts = ["internal", "metadata", "busy", "other", "short"].map((host) => started.indexOf(host));
+    expect(Math.max(...firsts), started.join(" ")).toBeLessThan(third === -1 ? Infinity : third);
   });
+
+  test("a host whose read was slow is read next once it's free, ahead of hosts with more reads; never two reads on one host", async () => {
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+    const now = new Date();
+    await prisma.apiReference.updateMany({ data: { syncTriedAt: now } });
+    const made = await call(createApiReference, as(), { name: "Template", spec: POSTS });
+    const { doc, state, ...rest } = await prisma.apiReference.findUniqueOrThrow({
+      where: { projectId_slug: { projectId: project.id, slug: made.slug } },
+      select: { projectId: true, tabId: true, name: true, format: true, spec: true, doc: true, state: true },
+    });
+    // The slow host is the site fake, its oldest first; four fast hosts' reads are refused at once, before anything is
+    // sent (ftp). Five hosts for four reads at once: while the slow one is read, a fast one is always free.
+    const due = (minutes: number) => new Date(now.getTime() - SYNC_EVERY_MS - minutes * 60_000);
+    const fast = ["f1", "f2", "f3", "f4"];
+    await prisma.apiReference.createMany({
+      data: [
+        ...[0, 1, 2].map((at) => ({ slug: `slow-${at}`, sourceUrl: `${site.origin}/slow-${at}.json`, syncTriedAt: due(100 - at) })),
+        ...fast.flatMap((host) => [0, 1, 2, 3, 4].map((at) => ({ slug: `${host}-${at}`, sourceUrl: `ftp://${host}.example/${at}.json`, syncTriedAt: due(50 - at) }))),
+      ].map((row) => ({ ...rest, ...row, source: "URL" as const, doc: doc as object, state: state as object })),
+    });
+    const host = (url: string | null) => URL.parse(url ?? "")!.hostname;
+    const slow = host(site.origin);
+    // The slow host's first read waits at the site until it's let go.
+    let letGo = () => {};
+    const held = new Promise<void>((resolve) => {
+      letGo = resolve;
+    });
+    site.during(() => held);
+    // Each read as it's chosen, by host; and the fast hosts' reads, paused once each has had two, until the slow host's
+    // next is chosen.
+    const chosen: { host: string; id: string }[] = [];
+    let paused = 0;
+    let resume = () => {};
+    const resumed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    let afterSlow: string | undefined;
+    const over = async (next: { id: string; sourceUrl: string | null }) => {
+      const at = host(next.sourceUrl);
+      // Never two at once on a host: everything chosen before on it has been read (written) by now.
+      const before = chosen.filter((read) => read.host === at).map((read) => read.id);
+      expect(await prisma.apiReference.count({ where: { id: { in: before }, syncTriedAt: { lte: now } } })).toBe(0);
+      chosen.push({ host: at, id: next.id });
+      const reads = (name: string) => chosen.filter((read) => read.host === name).length;
+      if (at === slow && reads(slow) === 2) {
+        // The first choice once the slow host's read is done.
+        afterSlow ??= at;
+        resume();
+      } else if (at !== slow && afterSlow === undefined && fast.every((name) => reads(`${name}.example`) >= 2) && reads(slow) === 1) {
+        // Past every fast host's second read: once all three fast reads are waiting here, the slow host is let go. A fourth
+        // fast read chosen before the slow host's next means it wasn't chosen first once free.
+        paused++;
+        if (paused === 3) {
+          letGo();
+        } else if (paused > 3) {
+          afterSlow ??= at;
+          resume();
+        }
+        await resumed;
+      }
+      return false;
+    };
+    expect(await syncApiReferences({}, log, new Date(), over)).toEqual({ synced: 0, failed: 23 });
+    expect(afterSlow).toBe(slow);
+    // Its second read came before any fast host's fourth, and each host had all its references read.
+    const slowSecond = chosen.findIndex((read, at) => read.host === slow && chosen.slice(0, at).filter((r) => r.host === slow).length === 1);
+    for (const name of fast) {
+      expect(chosen.slice(0, slowSecond).filter((read) => read.host === `${name}.example`).length).toBeLessThanOrEqual(3);
+    }
+  }, 30_000);
 
   test("a run's window takes each host's first before any host's second: busy hosts' older backlogs don't fill it", async () => {
     const now = new Date();
