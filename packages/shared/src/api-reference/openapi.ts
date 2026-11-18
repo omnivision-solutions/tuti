@@ -20,7 +20,44 @@ const DOC_SIZE = 50_000_000;
 /** How many named types are spelled out inside each other: the first met and two levels down. */
 const NAMED_LEVELS = 3;
 
+// Every piece of a doc is bounded where it's first read, so the count of pieces (bounded above)
+// bounds the doc, and nothing built from them (a warning's place, a type's words, a title) can
+// grow past it however often it's used:
+// - A name (a path, a parameter, schema, field, tag, scheme, status, operationId, content type,
+//   format, version, a server's address or variable) over its length is refused: names are what
+//   things are known by, so one cut short would be another name. No real spec has one this long.
+// - Text that's copied as written (descriptions, summaries, patterns, and the strings in defaults,
+//   enums and examples) is cut at its length, with a warning for the place.
+// - A warning's place and a type's words are made of those, and stop at a length of their own.
+// An example's or default's own keys are data: shared with the spec, never copied or built from.
+// The measurement after the doc is built stays as the backstop.
+const NAME_MOST = 256;
+const PATH_MOST = 500;
+const URL_MOST = 2_000;
+/** A summary, a title, a pattern. */
+const LINE_MOST = 2_000;
+/** A description, or a string in a default, an enum or an example. */
+const TEXT_MOST = 50_000;
+const TYPE_MOST = 300;
+const WHERE_MOST = 1_000;
+
+/** The text's start, never ending on half of a pair (a database refuses one). */
+function cut(text: string, most: number): string {
+  if (text.length <= most) return text;
+  const last = text.charCodeAt(most - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? most - 1 : most);
+}
+
+/** A name from the spec, or the error that refuses the spec for it. */
+function named(value: unknown, what: string, most = NAME_MOST): string {
+  const text = typeof value === "string" ? value : "";
+  // eslint-disable-next-line @typescript-eslint/only-throw-error -- an error value for `readOpenApi` to return, as TOO_LARGE is
+  if (text.length > most) throw { error: `This spec has ${what} over ${most} characters long, starting "${cut(text, 40)}". Shorten it and try again.` };
+  return text;
+}
+
 const MESSAGES = {
+  TEXT_CUT: "A text is longer than a reference holds, so it was cut short.",
   UNKNOWN_REF: 'A reference points at nothing in the spec: a schema there shows as "object", and anything else is left out.',
   OUTSIDE_REF:
     'A reference points outside the spec\'s file, which isn\'t followed: a schema there shows as "object", and anything else is left out.',
@@ -134,7 +171,7 @@ function constraints(schema: Obj): string {
     typeof below === "number" ? `less than ${below}` : null,
     typeof schema.multipleOf === "number" ? `a multiple of ${schema.multipleOf}` : null,
     range(schema.minLength, schema.maxLength, "character", "characters"),
-    typeof schema.pattern === "string" ? `matches ${schema.pattern}` : null,
+    typeof schema.pattern === "string" ? `matches ${cut(schema.pattern, LINE_MOST)}` : null,
     range(schema.minItems, schema.maxItems, "item", "items"),
     schema.uniqueItems === true ? "no two items the same" : null,
     range(schema.minProperties, schema.maxProperties, "field", "fields"),
@@ -200,7 +237,8 @@ export function readOpenApi(text: string): { doc: ApiDoc } | { error: string } {
     const doc = read(root);
     return sizeOf(doc, DOC_SIZE) > DOC_SIZE ? TOO_LARGE : { doc };
   } catch (error) {
-    if (error === TOO_LARGE) return TOO_LARGE;
+    // A refusal thrown from inside the read: too large, or a name too long.
+    if (isObj(error) && typeof error.error === "string") return { error: error.error };
     return { error: error instanceof RangeError ? "This spec is nested too deeply to read." : "This spec couldn't be read." };
   }
 }
@@ -230,6 +268,34 @@ function read(root: Obj): ApiDoc {
     warnings.push({ code, message: MESSAGES[code], where });
   }
 
+  /** Text copied as the spec has it, cut at its length with a warning for the place. */
+  function text(value: unknown, where: string, most = TEXT_MOST): string {
+    const whole = str(value);
+    if (whole.length > most) warn("TEXT_CUT", where);
+    return cut(whole, most);
+  }
+  /** A default, an enum or an example: its strings cut like any text. Each object is gone through once, however often it's used. */
+  function data(value: unknown, where: string): unknown {
+    if (typeof value === "string") return text(value, where);
+    const made = bound(value);
+    if (made.cut) warn("TEXT_CUT", where);
+    return made.value;
+  }
+  function bound(value: unknown): { value: unknown; cut: boolean } {
+    if (typeof value === "string") return value.length > TEXT_MOST ? { value: cut(value, TEXT_MOST), cut: true } : { value, cut: false };
+    if (typeof value !== "object" || value === null) return { value, cut: false };
+    const known = bounded.get(value);
+    if (known) return known;
+    const inner = Object.entries(value).map(([key, entry]) => [key, bound(entry)] as const);
+    const any = inner.some(([, entry]) => entry.cut);
+    const made = { value: !any ? value : Array.isArray(value) ? inner.map(([, entry]) => entry.value) : Object.fromEntries(inner.map(([key, entry]) => [key, entry.value])), cut: any };
+    bounded.set(value, made);
+    return made;
+  }
+  const bounded = new WeakMap<object, { value: unknown; cut: boolean }>();
+  /** A place under another, for a warning: no longer than a place may be, however deep. */
+  const under = (where: string, piece: string | number) => (where.length > WHERE_MOST ? where : `${where} › ${piece}`);
+
   /** What a `$ref` points at, and the type's name when that's one of the spec's named schemas. Warns with a `where`. */
   function lookup(ref: string, where?: string): { value: unknown; name?: string } | null {
     const miss = (code: "UNKNOWN_REF" | "OUTSIDE_REF") => {
@@ -237,24 +303,25 @@ function read(root: Obj): ApiDoc {
       return null;
     };
     if (!ref.startsWith("#")) return miss("OUTSIDE_REF");
-    if (!ref.startsWith("#/")) return miss("UNKNOWN_REF");
-    const keys = ref
-      .slice(2)
+    // A URI fragment holding a JSON Pointer: percent-decoded first, then split, then `~1` and `~0`
+    // read in each part ("a%7E1b" is the key "a/b"). A stray "%" is read as written.
+    let pointer = ref.slice(1);
+    try {
+      pointer = decodeURIComponent(pointer);
+    } catch {
+      // Not percent-encoding: the pointer as it is.
+    }
+    if (!pointer.startsWith("/")) return miss("UNKNOWN_REF");
+    const keys = pointer
+      .slice(1)
       .split("/")
-      .map((part) => {
-        const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
-        try {
-          return decodeURIComponent(key);
-        } catch {
-          return key;
-        }
-      });
+      .map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
     let value: unknown = root;
     for (const key of keys) {
       if (typeof value !== "object" || value === null || !Object.hasOwn(value, key)) return miss("UNKNOWN_REF");
       value = (value as Obj)[key];
     }
-    return keys.length === 3 && keys[0] === "components" && keys[1] === "schemas" ? { value, name: keys[2] } : { value };
+    return keys.length === 3 && keys[0] === "components" && keys[1] === "schemas" ? { value, name: named(keys[2], "a schema's name") } : { value };
   }
 
   /** The object a parameter, response, body or example is, through its `$ref`s. */
@@ -337,8 +404,9 @@ function read(root: Obj): ApiDoc {
   const firstOf = once((schema) => list(schema.enum).find((value) => value !== null));
   const requiredIn = new WeakMap<unknown[], Set<unknown>>();
   function typesIn(schema: Obj): { types: string[]; nullable: boolean } {
-    const said = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((type) => typeof type === "string");
-    const types = said.filter((type) => type !== "null");
+    // A handful of short words, as types are: what's built from them stays short.
+    const said = [...new Set((Array.isArray(schema.type) ? schema.type.slice(0, 20) : [schema.type]).filter((type) => typeof type === "string" && type.length <= 32))];
+    const types = said.filter((type) => type !== "null").slice(0, 8);
     const nullable = schema.nullable === true || said.includes("null") || list(schema.enum).includes(null);
     if (types.length > 0) return { types, nullable };
     if (isObj(schema.properties) || isObj(schema.additionalProperties)) return { types: ["object"], nullable };
@@ -378,7 +446,7 @@ function read(root: Obj): ApiDoc {
         named: place.named + (name === undefined ? 0 : 1),
         folding: place.folding,
       });
-      const description = str(node.description) || inner.description;
+      const description = text(node.description, place.where) || inner.description;
       return { ...inner, ...(name === undefined ? {} : { type: name, ref: name }), ...(description ? { description } : {}) };
     }
     if (!within) {
@@ -413,15 +481,16 @@ function read(root: Obj): ApiDoc {
       const only = inside === undefined ? toSchema({ $ref: held }, place) : name === undefined ? { type: "object" } : { type: name, ref: name };
       // The schema's own words first, whatever else it has, then those in a part of their own.
       const said = (key: string) => [node, ...words].find((part) => Object.hasOwn(part, key))?.[key];
-      const description = str(said("description")) || only.description;
+      const description = text(said("description"), place.where) || only.description;
       const limits = limitsOf(node);
+      if (str(node.pattern).length > LINE_MOST) warn("TEXT_CUT", place.where);
       return {
         ...only,
         ...(description ? { description } : {}),
         ...(said("nullable") === true ? { nullable: true } : {}),
         ...(said("deprecated") === true ? { deprecated: true } : {}),
         ...(limits ? { constraints: limits } : {}),
-        ...(said("default") === undefined ? {} : { default: said("default") }),
+        ...(said("default") === undefined ? {} : { default: data(said("default"), place.where) }),
       };
     }
     if (folded.length > 0) place = { ...place, folding: [...place.folding, node] };
@@ -430,21 +499,22 @@ function read(root: Obj): ApiDoc {
     const { types, nullable } = typesOf(schema);
     const { choices, nullable: nullChoice } = choicesOf(schema);
     const out: ApiSchema = { type: "any" };
-    const description = str(schema.description);
+    const description = text(schema.description, place.where);
     if (description) out.description = description;
     if (nullable || nullChoice) out.nullable = true;
     if (schema.deprecated === true) out.deprecated = true;
-    if (Object.hasOwn(schema, "default")) out.default = schema.default;
+    if (Object.hasOwn(schema, "default")) out.default = data(schema.default, place.where);
     // "This or null" is this, nullable.
     if (choices.length === 1 && types.length === 0) {
-      const only = toSchema(choices[0], { ...place, where: `${place.where} › option 1` });
+      const only = toSchema(choices[0], { ...place, where: under(place.where, "option 1") });
       return { ...only, ...out, type: only.type };
     }
 
-    if (typeof schema.format === "string") out.format = schema.format;
+    if (typeof schema.format === "string") out.format = named(schema.format, "a format");
     const limits = limitsOf(schema);
     if (limits) out.constraints = limits;
-    const values = Object.hasOwn(schema, "const") ? [schema.const] : list(schema.enum);
+    if (str(schema.pattern).length > LINE_MOST) warn("TEXT_CUT", place.where);
+    const values = Object.hasOwn(schema, "const") ? [data(schema.const, place.where)] : (data(list(schema.enum), place.where) as unknown[]);
     if (values.length > 0) out.enum = values;
     if (isObj(schema.properties)) {
       const names = list(schema.required);
@@ -457,27 +527,30 @@ function read(root: Obj): ApiDoc {
           warn("SCHEMA_TOO_LARGE", place.root);
           break;
         }
-        out.properties.push({ name, required: required.has(name), ...toSchema(property, { ...place, where: `${place.where} › ${name}` }) });
+        named(name, "a field's name");
+        out.properties.push({ name, required: required.has(name), ...toSchema(property, { ...place, where: under(place.where, name) }) });
       }
     }
-    if (schema.items !== undefined && types.includes("array")) out.items = toSchema(schema.items, { ...place, where: `${place.where} › items` });
-    if (choices.length > 0) out.oneOf = choices.slice(0, ROOT_NODES).map((choice, index) => toSchema(choice, { ...place, where: `${place.where} › option ${index + 1}` }));
+    if (schema.items !== undefined && types.includes("array")) out.items = toSchema(schema.items, { ...place, where: under(place.where, "items") });
+    if (choices.length > 0) out.oneOf = choices.slice(0, ROOT_NODES).map((choice, index) => toSchema(choice, { ...place, where: under(place.where, `option ${index + 1}`) }));
 
     const names = types.map((type) => {
       if (type === "array" && out.items) return `array of ${out.items.type}`;
       // ponytail: a map's values are only named in its type; give ApiSchema a field for them if pages need their fields.
       if (type === "object" && !out.properties && isObj(schema.additionalProperties)) {
-        return `map of ${toSchema(schema.additionalProperties, { ...place, where: `${place.where} › values` }).type}`;
+        return `map of ${toSchema(schema.additionalProperties, { ...place, where: under(place.where, "values") }).type}`;
       }
       return type;
     });
-    if (names.length === 0 && out.oneOf) names.push(...new Set(out.oneOf.map((choice) => choice.type)));
-    if (names.length > 0) out.type = names.join(" or ");
+    if (names.length === 0 && out.oneOf) names.push(...[...new Set(out.oneOf.map((choice) => choice.type))].slice(0, 8));
+    // Words made of other types' words: "array of array of …" stops at a length, with "…".
+    const label = names.join(" or ");
+    if (names.length > 0) out.type = label.length > TYPE_MOST ? `${cut(label, TYPE_MOST)}…` : label;
     return out;
   }
 
   /** A value of the schema's shape, from its own examples where it has them; undefined when there's nothing to show. */
-  function sample(node: unknown, stack: Obj[]): unknown {
+  function sample(node: unknown, stack: Obj[], where: string): unknown {
     const target = follow(node);
     if (!target) return isObj(node) ? {} : undefined;
     // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.
@@ -488,28 +561,28 @@ function read(root: Obj): ApiDoc {
     });
     if (stack.includes(target) || bases.some((base) => base !== target && stack.includes(base)) || !spend()) return undefined;
     const schema = flatten(target);
-    for (const key of ["example", "default", "const"]) if (Object.hasOwn(schema, key)) return schema[key];
-    if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
+    for (const key of ["example", "default", "const"]) if (Object.hasOwn(schema, key)) return data(schema[key], where);
+    if (Array.isArray(schema.examples) && schema.examples.length > 0) return data(schema.examples[0], where);
     const { types } = typesOf(schema);
     const type = types[0];
     const value = firstOf(schema);
-    if (value !== undefined) return value;
+    if (value !== undefined) return data(value, where);
     const inside = [...stack, target];
     if (type === undefined) {
       const { choices } = choicesOf(schema);
-      return choices.length > 0 ? sample(choices[0], inside) : undefined;
+      return choices.length > 0 ? sample(choices[0], inside, where) : undefined;
     }
     if (type === "object") {
       const made: [string, unknown][] = [];
       for (const [name, property] of fieldsOf(schema.properties)) {
         if (spent()) break;
-        const field = sample(property, inside);
-        if (field !== undefined) made.push([name, field]);
+        const field = sample(property, inside, where);
+        if (field !== undefined) made.push([named(name, "a field's name"), field]);
       }
       return Object.fromEntries(made);
     }
     if (type === "array") {
-      const item = sample(schema.items, inside);
+      const item = sample(schema.items, inside, where);
       return item === undefined ? [] : [item];
     }
     if (type === "string") {
@@ -535,32 +608,32 @@ function read(root: Obj): ApiDoc {
   }
 
   /** The spec's example for a parameter, body or response, else one made from its schema. */
-  function exampleOf(holder: Obj, make: boolean): unknown {
-    if (Object.hasOwn(holder, "example")) return holder.example;
+  function exampleOf(holder: Obj, make: boolean, where: string): unknown {
+    if (Object.hasOwn(holder, "example")) return data(holder.example, where);
     const first = follow(fieldsOf(holder.examples)[0]?.[1]);
-    if (first && Object.hasOwn(first, "value")) return first.value;
+    if (first && Object.hasOwn(first, "value")) return data(first.value, where);
     const schema = follow(holder.schema);
-    if (schema && Object.hasOwn(schema, "example")) return schema.example;
+    if (schema && Object.hasOwn(schema, "example")) return data(schema.example, where);
     if (!make || holder.schema === undefined) return undefined;
     rootNodes = 0;
-    return sample(holder.schema, []);
+    return sample(holder.schema, [], where);
   }
 
   /** A body's or response's content in the type the pages show: JSON when it's there, else the first. */
   const contentOf = once((holder): { contentType: string; media: Obj } | null => {
     const types = entries(holder.content);
     // However it's written: "application/json; charset=utf-8", then "application/problem+json".
-    const named = types.map(([type]) => (type.split(";")[0] ?? "").trim().toLowerCase());
-    const json = named.indexOf("application/json");
-    const [contentType, media] = types[json === -1 ? Math.max(0, named.findIndex((type) => type.endsWith("+json"))) : json] ?? [];
-    return contentType === undefined ? null : { contentType, media: isObj(media) ? media : {} };
+    const plain = types.map(([type]) => (type.split(";")[0] ?? "").trim().toLowerCase());
+    const json = plain.indexOf("application/json");
+    const [contentType, media] = types[json === -1 ? Math.max(0, plain.findIndex((type) => type.endsWith("+json"))) : json] ?? [];
+    return contentType === undefined ? null : { contentType: named(contentType, "a content type"), media: isObj(media) ? media : {} };
   });
 
   // Ways of signing.
   const auth: ApiAuth[] = [];
   const schemes = own(root.components, "securitySchemes");
   for (const [key, value] of entries(schemes)) {
-    const where = `securitySchemes › ${key}`;
+    const where = `securitySchemes › ${named(key, "a security scheme's name")}`;
     const scheme = follow(value, where);
     if (!scheme) continue;
     const http = str(scheme.scheme).toLowerCase();
@@ -573,27 +646,27 @@ function read(root: Obj): ApiDoc {
             ? scheme.type
             : null;
     if (!kind) warn("UNSUPPORTED_AUTH", where);
-    else auth.push({ key, kind, name: scheme.type === "apiKey" ? str(scheme.name) : "Authorization", description: str(scheme.description) });
+    else auth.push({ key, kind, name: scheme.type === "apiKey" ? named(scheme.name, "a security scheme's header, query or cookie name") : "Authorization", description: text(scheme.description, where) });
   }
   const signed = new Set(auth.map((scheme) => scheme.key));
 
   // Named types first: they're where a schema too deep to spell out elsewhere is read in full.
   const types: (Omit<ApiType, "slug"> & { slug?: string })[] = entries(own(root.components, "schemas")).map(([name, value]) => {
-    const schema = { ...schemaAt(value, `schemas › ${name}`, isObj(value) ? [value] : [], 1), ref: name };
+    const schema = { ...schemaAt(value, `schemas › ${named(name, "a schema's name")}`, isObj(value) ? [value] : [], 1), ref: name };
     const kind = schema.enum ? "enum" : schema.properties || schema.type === "object" ? "object" : schema.oneOf ? "union" : "scalar";
     return { name, kind, schema };
   });
 
   /** Where requests go: each address as the spec has it, with what may fill its variables. Made once per list, however many operations share it. */
   function serversOf(servers: unknown, where: string): ApiServer[] {
-    const made = Array.isArray(servers) ? (serversMade.get(servers) ?? serversIn(servers)) : [];
+    const made = Array.isArray(servers) ? (serversMade.get(servers) ?? serversIn(servers, where)) : [];
     if (Array.isArray(servers)) serversMade.set(servers, made);
     // Relative ("/v1"): to wherever the spec was read from, which only what read it knows.
     for (const server of made) if (!/^([a-z][a-z0-9+.-]*:|\{)/i.test(server.url)) warn("RELATIVE_SERVER", `${where} › ${server.url}`);
     return made;
   }
   const serversMade = new WeakMap<unknown[], ApiServer[]>();
-  const serversIn = (servers: unknown[]): ApiServer[] =>
+  const serversIn = (servers: unknown[], where: string): ApiServer[] =>
     servers
       .filter((server): server is Obj => isObj(server) && typeof server.url === "string")
       .map((server) => {
@@ -601,12 +674,12 @@ function read(root: Obj): ApiDoc {
           .filter((entry): entry is [string, Obj] => isObj(entry[1]))
           .map(([name, variable]) => {
             // YAML's unquoted `8443` is a number.
-            const text = (value: unknown) => (typeof value === "number" || typeof value === "boolean" ? String(value) : str(value));
-            const values = list(variable.enum).map(text).filter(Boolean);
-            const value = { default: text(variable.default), ...(values.length > 0 ? { enum: values } : {}), description: str(variable.description) };
-            return [name, value] as const;
+            const filling = (value: unknown) => named(typeof value === "number" || typeof value === "boolean" ? String(value) : value, "a server variable's value");
+            const values = list(variable.enum).map(filling).filter(Boolean);
+            const value = { default: filling(variable.default), ...(values.length > 0 ? { enum: values } : {}), description: text(variable.description, where) };
+            return [named(name, "a server variable's name"), value] as const;
           });
-        return { url: str(server.url), description: str(server.description), ...(variables.length > 0 ? { variables: Object.fromEntries(variables) } : {}) };
+        return { url: named(server.url, "a server's address", URL_MOST), description: text(server.description, where), ...(variables.length > 0 ? { variables: Object.fromEntries(variables) } : {}) };
       });
 
   // What an operation is known by: its method and path without its parameters' names, which aren't
@@ -614,6 +687,7 @@ function read(root: Obj): ApiDoc {
   const nameless = (kind: string, path: string) => `${kind} ${path.replace(/\{[^{}/]*\}/g, "{}")}`;
   const sharing = new Map<string, number>();
   for (const [path, value] of entries(root.paths)) {
+    named(path, "a path", PATH_MOST);
     if (!path.startsWith("/")) continue;
     // A path item many paths point at is gone through for each of them: that counts.
     const methods = fieldsOf(follow(value));
@@ -625,7 +699,7 @@ function read(root: Obj): ApiDoc {
 
   /** An operation's title and the slug it makes, once per operation: a path item many paths point at has one of each. */
   const titleOf = once((operation) => {
-    const title = str(operation.summary).trim() || inWords(str(operation.operationId));
+    const title = cut(str(operation.summary), LINE_MOST).trim() || inWords(named(operation.operationId, "an operationId"));
     return { title, slug: slugify(title) };
   });
   const slugs = new Map<string, number>();
@@ -650,10 +724,11 @@ function read(root: Obj): ApiDoc {
       // An operation's lists count too, schemas or not: a shared path item's are read for every path that points at it.
       charge(1 + list(item.parameters).length + list(operation.parameters).length + list(operation.tags).length + list(operation.servers ?? item.servers).length);
 
-      const named = titleOf(operation);
-      const title = named.title || key;
+      const titled = titleOf(operation);
+      const title = titled.title || key;
+      if (str(operation.summary).length > LINE_MOST) warn("TEXT_CUT", key);
       if (!str(operation.summary).trim() && !str(operation.operationId)) warn("NO_TITLE", key);
-      const proposed = named.slug || slugify(key) || "operation";
+      const proposed = titled.slug || slugify(key) || "operation";
       const slug = unique(proposed, slugs);
       if (slug !== proposed) warn("DUPLICATE_SLUG", key);
 
@@ -662,21 +737,22 @@ function read(root: Obj): ApiDoc {
       for (const [index, entry] of [...list(item.parameters), ...list(operation.parameters)].entries()) {
         const param = follow(entry, `${key} › parameters › ${index + 1}`);
         if (!param) continue;
-        const name = str(param.name);
+        const name = named(param.name, "a parameter's name");
         const place = param.in as ApiParam["in"];
         if (!name || !PARAM_PLACES.has(str(place))) {
           warn("INVALID_PARAMETER", `${key} › parameters › ${name || index + 1}`);
           continue;
         }
         const holder = param.schema === undefined ? (contentOf(param)?.media ?? {}) : param;
-        const schema = schemaAt(holder.schema, `${key} › parameters › ${name}`);
+        const where = `${key} › parameters › ${name}`;
+        const schema = schemaAt(holder.schema, where);
         if (param.deprecated === true) schema.deprecated = true;
-        const example = exampleOf({ ...holder, ...param, schema: holder.schema }, false);
+        const example = exampleOf({ ...holder, ...param, schema: holder.schema }, false, where);
         params.set(`${place} ${name}`, {
           name,
           in: place,
           required: place === "path" || param.required === true,
-          description: str(param.description),
+          description: text(param.description, where),
           schema,
           ...(example === undefined ? {} : { example }),
         });
@@ -688,13 +764,14 @@ function read(root: Obj): ApiDoc {
         required: request.required === true,
         contentType: content.contentType,
         schema: schemaAt(content.media.schema, `${key} › body`),
-        example: exampleOf(content.media, true) ?? null,
+        example: exampleOf(content.media, true, `${key} › body`) ?? null,
       };
 
       const responses: ApiResponse[] = [];
       const statuses = new Set<string>();
       for (const [code, entry] of fieldsOf(operation.responses)) {
         charge(1);
+        named(code, "a response's status");
         const exact = /^([1-5]\d\d|[1-5]XX|default)$/i.test(code);
         const status = exact ? (/^default$/i.test(code) ? "default" : code.toUpperCase()) : /^\s*([1-5]\d\d)(?!\d)/.exec(code)?.[1];
         // No two of an operation's responses share a status: "404 Not Found" beside "404" is left out.
@@ -710,10 +787,10 @@ function read(root: Obj): ApiDoc {
         const shown = contentOf(response);
         // The schema before its example: reading it is what warns about what's left out.
         const schema = shown && shown.media.schema !== undefined ? schemaAt(shown.media.schema, where) : null;
-        const example = shown ? exampleOf(shown.media, true) : undefined;
+        const example = shown ? exampleOf(shown.media, true, where) : undefined;
         responses.push({
           status,
-          description: str(response.description),
+          description: text(response.description, where),
           contentType: shown?.contentType ?? null,
           schema,
           ...(example === undefined ? {} : { example }),
@@ -730,13 +807,13 @@ function read(root: Obj): ApiDoc {
         if (!isObj(requirement)) continue;
         const names = Object.keys(requirement);
         charge(names.length);
-        for (const name of names) if (own(schemes, name) === undefined) warn("UNKNOWN_SECURITY", `${key} › security › ${name}`);
+        for (const name of names) if (own(schemes, name) === undefined) warn("UNKNOWN_SECURITY", `${key} › security › ${named(name, "a security scheme's name")}`);
         if (names.every((name) => signed.has(name))) needs.push(names);
         else if (names.every((name) => own(schemes, name) !== undefined)) warn("SECURITY_SKIPPED", `${key} › security`);
       }
       const servers = operation.servers ?? item.servers;
 
-      const [tag = "Other", ...others] = new Set(list(operation.tags).filter((name): name is string => typeof name === "string" && name.trim() !== ""));
+      const [tag = "Other", ...others] = new Set(list(operation.tags).filter((name): name is string => typeof name === "string" && named(name, "a tag").trim() !== ""));
       operations.push({
         key: id,
         slug,
@@ -745,7 +822,7 @@ function read(root: Obj): ApiDoc {
         kind,
         path,
         title,
-        description: str(operation.description),
+        description: text(operation.description, key),
         deprecated: operation.deprecated === true,
         auth: needs,
         ...(servers === undefined ? {} : { servers: serversOf(servers, `${key} › servers`) }),
@@ -759,7 +836,10 @@ function read(root: Obj): ApiDoc {
 
   // Groups: the spec's tags in its order, then those only operations name, then "Other"; a tag no operation has is no group.
   const descriptions = new Map<string, string>();
-  for (const tag of list(root.tags)) if (isObj(tag) && str(tag.name) && !descriptions.has(str(tag.name))) descriptions.set(str(tag.name), str(tag.description));
+  for (const tag of list(root.tags)) {
+    const name = isObj(tag) ? named(tag.name, "a tag") : "";
+    if (isObj(tag) && name && !descriptions.has(name)) descriptions.set(name, text(tag.description, `tags › ${name}`));
+  }
   const used = new Set(operations.flatMap((operation) => [operation.group, ...(operation.alsoIn ?? [])]));
   const groups: ApiGroup[] = [...new Set([...descriptions.keys(), ...[...used].filter((name) => name !== "Other"), "Other"])]
     .filter((name) => used.has(name))
@@ -773,9 +853,9 @@ function read(root: Obj): ApiDoc {
   const version = own(root.info, "version");
   return {
     format: "openapi",
-    title: str(own(root.info, "title")),
-    version: typeof version === "string" || typeof version === "number" ? String(version) : null,
-    description: str(own(root.info, "description")),
+    title: text(own(root.info, "title"), "info › title", LINE_MOST),
+    version: typeof version === "string" || typeof version === "number" ? named(String(version), "a version") : null,
+    description: text(own(root.info, "description"), "info › description"),
     servers: serversOf(root.servers, "servers"),
     auth,
     groups,

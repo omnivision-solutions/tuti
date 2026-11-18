@@ -1112,7 +1112,24 @@ test("what many places share is made once: a long pattern, a list of servers, a 
     servers: [{ url: "https://{v}.example.com", variables: { v: { default: "a", enum: ["a", "b"] } } }],
     get: { operationId: "listAllTheThings", responses: { "200": json({ type: "object", properties: { a: ref("Code"), b: ref("Code") } }) } },
   };
+  // How often the limits are put into words and the operationId into a title: once each, not once per use.
+  let joins = 0;
+  let titles = 0;
+  const join = Array.prototype.join;
+  const replace = String.prototype.replace;
+  const joined = vi.spyOn(Array.prototype, "join").mockImplementation(function (this: unknown[], ...args: Parameters<typeof join>) {
+    if (this.includes("matches ^[a-z]+$")) joins++;
+    return join.apply(this, args);
+  });
+  const replaced = vi.spyOn(String.prototype, "replace").mockImplementation(function (this: string, ...args: unknown[]) {
+    if (String(this) === "listAllTheThings") titles++;
+    return (replace as (...all: unknown[]) => string).apply(this, args);
+  });
   const doc = spec({ openapi: "3.1.0", paths, components: { pathItems: { Shared: shared }, schemas: { Code: { type: "string", pattern: "^[a-z]+$" } } } });
+  joined.mockRestore();
+  replaced.mockRestore();
+  expect(joins).toBe(1);
+  expect(titles).toBe(1);
   const [first, second] = doc.operations;
   expect(second!.servers).toBe(first!.servers);
   expect(first!.servers![0]!.variables).toEqual({ v: { default: "a", enum: ["a", "b"], description: "" } });
@@ -1125,7 +1142,7 @@ test("what many places share is made once: a long pattern, a list of servers, a 
 
 test("a type whose reference is spelled another way is still not spelled out inside itself", () => {
   const doc = spec({
-    components: { schemas: { "User Response": { type: "object", properties: { id: { type: "string" }, self: { $ref: "#/components/schemas/User%20Response" }, tilde: { $ref: "#/components/schemas/a~1b" } } }, "a/b": { type: "object", properties: { again: { $ref: "#/components/schemas/a%2Fb" } } } } },
+    components: { schemas: { "User Response": { type: "object", properties: { id: { type: "string" }, self: { $ref: "#/components/schemas/User%20Response" }, tilde: { $ref: "#/components/schemas/a~1b" } } }, "a/b": { type: "object", properties: { again: { $ref: "#/components/schemas/a%7E1b" } } } } },
   });
   expect(doc.types[0]!.schema.properties).toEqual([
     { name: "id", required: false, type: "string" },
@@ -1134,11 +1151,158 @@ test("a type whose reference is spelled another way is still not spelled out ins
   ]);
 });
 
+test("a reference's fragment is percent-decoded, then split, then its parts unescaped", () => {
+  const { schema, doc } = schemaOf(
+    {
+      type: "object",
+      properties: {
+        encodedTilde: { $ref: "#/components/schemas/a%7E1b" },
+        tilde: { $ref: "#/components/schemas/a~1b" },
+        space: { $ref: "#/components/schemas/User%20Response" },
+        // An encoded slash is a separator like any other: this is `a`, then `b`.
+        slash: { $ref: "#/components/schemas/a%2Fb" },
+        literalTilde: { $ref: "#/components/schemas/c~0d" },
+        stray: { $ref: "#/components/schemas/100%" },
+      },
+    },
+    { "a/b": { type: "integer" }, "User Response": { type: "boolean" }, "c~d": { type: "string" }, "100%": { type: "number" } },
+  );
+  expect(schema.properties!.map((property) => [property.name, property.type])).toEqual([
+    ["encodedTilde", "a/b"],
+    ["tilde", "a/b"],
+    ["space", "User Response"],
+    ["slash", "object"],
+    ["literalTilde", "c~d"],
+    ["stray", "100%"],
+  ]);
+  expect(codes(doc)).toEqual(["UNKNOWN_REF @ GET /x › responses › 200 › slash"]);
+});
+
+test("a name longer than a name is refuses the spec, saying which", () => {
+  const long = (most: number) => "n".repeat(most + 1);
+  const ok = (most: number) => "n".repeat(most);
+  const get = (operation: object = {}) => ({ get: { summary: "S", responses: {}, ...operation } });
+  // What it's called, the most it may be, and a spec with `name` there.
+  const cases: [string, number, (name: string) => object][] = [
+    ["a path", 500, (name) => ({ paths: { [name.replace(/^n/, "/")]: get() } })],
+    ["a path", 500, (name) => ({ paths: { [name]: get() } })],
+    ["a parameter's name", 256, (name) => ({ paths: { "/a": get({ parameters: [{ name, in: "query" }] }) } })],
+    ["a schema's name", 256, (name) => ({ components: { schemas: { [name]: { type: "string" } } } })],
+    ["a field's name", 256, (name) => ({ components: { schemas: { A: { type: "object", properties: { [name]: {} } } } } })],
+    ["a tag", 256, (name) => ({ paths: { "/a": get({ tags: [name] }) } })],
+    ["a tag", 256, (name) => ({ tags: [{ name }] })],
+    ["a security scheme's name", 256, (name) => ({ components: { securitySchemes: { [name]: { type: "http", scheme: "bearer" } } } })],
+    ["a security scheme's name", 256, (name) => ({ security: [{ [name]: [] }], paths: { "/a": get() } })],
+    ["a security scheme's header, query or cookie name", 256, (name) => ({ components: { securitySchemes: { k: { type: "apiKey", in: "header", name } } } })],
+    ["a response's status", 256, (name) => ({ paths: { "/a": get({ responses: { [name]: {} } }) } })],
+    ["an operationId", 256, (name) => ({ paths: { "/a": { get: { operationId: name, responses: {} } } } })],
+    ["a content type", 256, (name) => ({ paths: { "/a": get({ responses: { "200": { content: { [name]: {} } } } }) } })],
+    ["a format", 256, (name) => ({ components: { schemas: { A: { type: "string", format: name } } } })],
+    ["a version", 256, (name) => ({ info: { title: "T", version: name } })],
+    ["a server's address", 2_000, (name) => ({ servers: [{ url: name.replace(/^n{8}/, "https://") }] })],
+    ["a server variable's name", 256, (name) => ({ servers: [{ url: "https://{v}", variables: { [name]: { default: "a" } } }] })],
+    ["a server variable's value", 256, (name) => ({ servers: [{ url: "https://{v}", variables: { v: { default: name } } }] })],
+  ];
+  const text = (parts: object) => JSON.stringify({ openapi: "3.0.3", info: { title: "T", version: "1" }, ...parts });
+  for (const [what, most, parts] of cases) {
+    const refused = errorOf(text(parts(long(most))));
+    expect(refused).toMatch(new RegExp(`^This spec has ${what} over ${most.toLocaleString("en").replace(",", "")} characters long, starting "(/|https://)?n+"\\. Shorten it and try again\\.$`));
+    expect(refused!.length).toBeLessThan(200);
+    expect(errorOf(text(parts(ok(most))))).toBeNull();
+  }
+  // The start of the name, never half of a pair.
+  expect(errorOf(text({ components: { schemas: { [`${"n".repeat(39)}😀${"n".repeat(300)}`]: {} } } }))).toBe(`This spec has a schema's name over 256 characters long, starting "${"n".repeat(39)}". Shorten it and try again.`);
+});
+
+test("text that's copied is cut at its length, with a warning for the place", () => {
+  const long = (most: number, tail = "tail") => `${"t".repeat(most)}${tail}`;
+  const doc = spec({
+    info: { title: long(2_000), version: "1", description: long(50_000) },
+    tags: [{ name: "Tagged", description: long(50_000) }],
+    servers: [{ url: "https://{v}.example.com", description: long(50_000), variables: { v: { default: "a", description: long(50_000) } } }],
+    paths: {
+      "/a": {
+        get: {
+          summary: long(2_000),
+          description: long(50_000),
+          tags: ["Tagged"],
+          parameters: [{ name: "q", in: "query", description: long(50_000), example: long(50_000), schema: { type: "string", pattern: long(2_000), default: long(50_000), enum: ["a", long(50_000)] } }],
+          requestBody: json({ type: "object", description: long(50_000), properties: { deep: { type: "string", description: long(50_000) } } }, { example: { nested: [long(50_000), "short"] } }),
+          responses: { "200": { description: long(50_000), ...json({ type: "string", example: long(50_000) }) } },
+        },
+      },
+    },
+    components: { securitySchemes: { key: { type: "http", scheme: "bearer", description: long(50_000) } } },
+  });
+  const [get] = doc.operations;
+  const text = "t".repeat(50_000);
+  const line = "t".repeat(2_000);
+  expect(doc).toMatchObject({ title: line, description: text, groups: [{ description: text }], auth: [{ description: text }] });
+  expect(doc.servers[0]).toEqual({ url: "https://{v}.example.com", description: text, variables: { v: { default: "a", description: text } } });
+  expect(get).toMatchObject({ title: line, description: text });
+  expect(get!.params[0]).toEqual({
+    name: "q",
+    in: "query",
+    required: false,
+    description: text,
+    example: text,
+    schema: { type: "string", constraints: `matches ${line}`, default: text, enum: ["a", text] },
+  });
+  expect(get!.body).toMatchObject({ schema: { description: text, properties: [{ name: "deep", description: text }] }, example: { nested: [text, "short"] } });
+  expect(get!.responses[0]).toMatchObject({ description: text, example: text });
+  // One per place, however many texts there were cut.
+  expect(codes(doc)).toEqual([
+    "TEXT_CUT @ securitySchemes › key",
+    "TEXT_CUT @ GET /a",
+    "TEXT_CUT @ GET /a › parameters › q",
+    "TEXT_CUT @ GET /a › body",
+    "TEXT_CUT @ GET /a › body › deep",
+    "TEXT_CUT @ GET /a › responses › 200",
+    "TEXT_CUT @ tags › Tagged",
+    "TEXT_CUT @ info › title",
+    "TEXT_CUT @ info › description",
+    "TEXT_CUT @ servers",
+  ]);
+
+  // A text exactly as long as it may be is whole, and a cut never leaves half of a pair.
+  const whole = spec({ info: { title: "T", version: "1", description: "t".repeat(50_000) } });
+  expect(whole.description).toHaveLength(50_000);
+  expect(whole.warnings).toEqual([]);
+  const pair = spec({ info: { title: `${"t".repeat(1_999)}😀tail`, version: "1", description: `${"t".repeat(49_999)}😀tail` } });
+  expect(pair.title).toBe("t".repeat(1_999));
+  expect(pair.description).toBe("t".repeat(49_999));
+  expect(spec({ info: { title: `${"t".repeat(1_998)}😀tail`, version: "1" } }).title).toBe(`${"t".repeat(1_998)}😀`);
+});
+
+test("a warning's place and a type's words stay short, however deep or often", () => {
+  // Names as long as names may be, nested deep: the place stops growing.
+  const name = "f".repeat(256);
+  const nest = (levels: number): object => (levels === 0 ? { $ref: "#/components/schemas/Gone" } : { type: "object", properties: { [name]: nest(levels - 1) } });
+  const array = (levels: number): object => (levels === 0 ? { type: "string" } : { type: "array", items: array(levels - 1) });
+  const { schema, doc } = schemaOf({ type: "object", properties: { deep: nest(40), lists: array(60), many: { oneOf: Array.from({ length: 30 }, (_, index) => ({ type: "object", title: `T${index}`, properties: { [`p${index}`]: ref(`S${index}`) } })) } } }, Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`S${"s".repeat(200)}${index}`, { type: "string" }])));
+  const [warning] = doc.warnings.filter((one) => one.code === "UNKNOWN_REF" && one.where.includes("deep"));
+  expect(warning!.where.length).toBeLessThan(1_000 + 260);
+  const lists = schema.properties![1]!;
+  expect(lists.type).toHaveLength(301);
+  expect(lists.type.endsWith("…")).toBe(true);
+  expect(lists.type.startsWith("array of array of ")).toBe(true);
+
+  // The case that grew without end: an unknown scheme named in every operation's warning.
+  const paths = Object.fromEntries(Array.from({ length: 3_000 }, (_, index) => [`/${index}`, { get: {} }]));
+  expect(errorOf(JSON.stringify({ openapi: "3.0.0", security: [{ ["s".repeat(400_000)]: [] }], paths }))).toMatch(/^This spec has a security scheme's name over 256 characters long/);
+  const longest = spec({ security: [{ ["s".repeat(256)]: [] }], paths });
+  expect(longest.warnings).toHaveLength(6_000);
+  expect(longest.warnings.reduce((sum, one) => sum + one.where.length, 0)).toBeLessThan(6_000 * 300);
+});
+
 test("a spec that's too large once read is an error", () => {
   const paths = Object.fromEntries(
-    Array.from({ length: 200 }, (_, index) => [`/p${index}`, { get: { summary: `P${index}`, responses: { "200": json({ type: "string" }, { examples: { one: { $ref: "#/components/examples/Big" } } }) } } }]),
+    Array.from({ length: 40 }, (_, index) => [`/p${index}`, { get: { summary: `P${index}`, responses: { "200": json({ type: "string" }, { examples: { one: { $ref: "#/components/examples/Big" } } }) } } }]),
   );
-  expect(errorOf(JSON.stringify({ openapi: "3.0.0", paths, components: { examples: { Big: { value: "x".repeat(400_000) } } } }))).toMatch(/too large once its references are followed/);
+  const big = Array.from({ length: 50 }, () => "x".repeat(40_000));
+  const text = JSON.stringify({ openapi: "3.0.0", paths, components: { examples: { Big: { value: big } } } });
+  expect(text.length).toBeLessThan(2_100_000);
+  expect(errorOf(text)).toMatch(/too large once its references are followed/);
 });
 
 test("servers: a relative address is kept as written, with a warning; none is none", () => {
