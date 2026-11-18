@@ -16,7 +16,8 @@ const TYPICAL_TOKENS: Record<AiRole | "edit_review", { input: number; output: nu
   support_summary: { input: 3000, output: 300, per: "summary" },
   changelog: { input: 4000, output: 800, per: "draft" },
   code_changes_decide: { input: 150_000, output: 4_000, per: "merged pull request" },
-  code_changes_check: { input: 150_000, output: 4_000, per: "check (only when it proposes a new article)" },
+  // Its double-check of a new article; where the server also checks every edit (E5), Autopilot's page prices that apart.
+  code_changes_check: { input: 150_000, output: 4_000, per: "double-check of a new article" },
   code_changes: { input: 60_000, output: 5_000, per: "merged pull request" },
   // Checks' review of one article edit, where the server checks the project's edits (edit-review.ts): about four
   // rounds of tool calls, each sending the pull request, the article before and after it and what the tools read so far.
