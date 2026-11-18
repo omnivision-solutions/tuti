@@ -4,6 +4,7 @@ import { expect, type Locator, type Page, type Response, test } from "./fixtures
 
 import { seedAiConversations, seedViewsLastMonth } from "./articles";
 import { checkpoints } from "./checkpoint";
+import { query } from "./db";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
@@ -1624,13 +1625,29 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
 
-  // How the AI answers (Settings → AI answers; Customize's old address lands there): a tone, short answers, and a topic it doesn't touch.
+  // How the AI answers (Settings → AI answers; Customize's old address lands there): short answers, instructions (a tone
+  // saved when it was a field of its own is shown in them), and topics it doesn't touch.
+  await query(`UPDATE project SET "assistantTone" = 'Friendly and plain' WHERE slug = $1`, [slug]);
   await team.goto(`/app/${slug}/customize/ai-answers`);
   await team.waitForURL(`**/app/${slug}/settings/ai-answers`);
-  await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
+  await expect(team.getByLabel("Tone", { exact: true })).toHaveCount(0);
+  const instructions = team.getByLabel("Instructions");
+  await expect(instructions).toHaveValue("Friendly and plain");
+  await instructions.fill("Friendly and plain\n\nCall the product Acme.");
   await team.getByRole("radio", { name: "Short" }).check();
-  await team.getByLabel("Standing instructions").fill("Call the product Acme.");
-  await team.getByLabel("Off-limits topics").fill("refund\n  legal advice  ");
+  // Topics are chips: Enter or Add adds one, trimmed, and each has a button that removes it.
+  const topic = team.getByLabel("Off-limits topics");
+  const topics = team.getByRole("listitem").filter({ has: team.getByRole("button", { name: /^Remove / }) });
+  await topic.fill("refund");
+  await topic.press("Enter");
+  await topic.fill("  legal advice  ");
+  await team.getByRole("button", { name: "Add", exact: true }).click();
+  await topic.fill("pricing");
+  await topic.press("Enter");
+  await expect(topics).toHaveText(["refund", "legal advice", "pricing"]);
+  await team.getByRole("button", { name: "Remove pricing" }).click();
+  await expect(topics).toHaveText(["refund", "legal advice"]);
+  await expect(topic).toBeFocused();
   // Locked while it saves (held here until checked).
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
@@ -1644,15 +1661,36 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     await route.fulfill({ response });
   });
   await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
-  await expect(team.getByLabel("Tone", { exact: true })).toBeDisabled();
+  await expect(instructions).toBeDisabled();
   releaseSave();
   await expect(team.getByText("AI answers saved")).toBeVisible();
   await team.unroute(saving);
-  // The form shows what was saved: each topic trimmed.
-  await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
+  // The form shows what was saved, and the tone is stored once: in the instructions.
+  await expect(topics).toHaveText(["refund", "legal advice"]);
   await team.reload();
-  await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
+  await expect(topics).toHaveText(["refund", "legal advice"]);
+  await expect(instructions).toHaveValue("Friendly and plain\n\nCall the product Acme.");
+  expect(await query(`SELECT "assistantTone" AS tone, "assistantInstructions" AS instructions FROM project WHERE slug = $1`, [slug])).toEqual([
+    { tone: "", instructions: "Friendly and plain\n\nCall the product Acme." },
+  ]);
+
+  // The AI model, first on the page: a level, saved as it's chosen, with the model each role runs on under its label.
+  // (A server without plans has every level; ai-answers-settings.spec.ts has the plans.)
+  const aiModel = team.getByRole("radiogroup", { name: "AI model" });
+  await expect(aiModel.getByRole("radio")).toHaveText(["Affordable", "Balanced", "Best", "Custom"]);
+  await expect(aiModel.getByRole("radio", { name: "Balanced" })).toBeChecked();
+  await expect(team.getByText("Answers Claude Haiku 5.5 · Summaries Claude Haiku 5.5", { exact: true })).toBeVisible();
+  await aiModel.getByRole("radio", { name: "Best" }).click();
+  await expect(team.getByText("AI model saved")).toBeVisible();
+  await expect(aiModel.getByRole("radio", { name: "Best" })).toBeChecked();
+  await expect(team.getByText("Answers Claude Sonnet 5.5 · Summaries Claude Sonnet 5.5", { exact: true })).toBeVisible();
   await checkpoint(team, "team-ai-answers-settings");
+  // Its rows are gone from Settings → AI models.
+  await team.goto(`/app/${slug}/settings/ai-models`);
+  await expect(team.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
+  await expect(team.getByRole("radiogroup", { name: "AI answers" })).toHaveCount(0);
+  await expect(team.getByRole("radiogroup", { name: "Ask a person (summaries)" })).toHaveCount(0);
+  await expect(team.getByText(/AI answers is on the/)).toHaveCount(0);
 
   // A published article whose only section is close to the visitor's question.
   const question = "How do I add a colleague to my project?";
@@ -1695,9 +1733,9 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);
   expect(asked[0]!.user).toContain(body);
-  // The team's settings go with it, apart from the sections.
-  expect(asked[0]!.user).toContain('"tone": "Friendly and plain"');
-  expect(asked[0]!.user).toContain('"standingInstructions": "Call the product Acme."');
+  // The team's settings go with it, apart from the sections: the tone in the instructions.
+  expect(asked[0]!.user).not.toContain('"tone"');
+  expect(asked[0]!.user).toContain('"standingInstructions": "Friendly and plain\\n\\nCall the product Acme."');
   expect(asked[0]!.system).toContain("Keep it very short");
   // A rating that fails (offline) leaves the buttons, to try again.
   const offline = () =>
