@@ -105,10 +105,10 @@ async function rendered(node: ReactNode): Promise<unknown> {
 }
 
 /** All an operation's page sends this reader, and its metadata, as one string. */
-async function pageText(operation: string) {
+async function pageText(operation: string, slug?: string) {
   // Each object once: props can share, or loop back to, objects.
   const seen = new WeakSet();
-  return JSON.stringify([await rendered(await DocsOperationPage(params(operation))), await generateMetadata(params(operation))], (_, value: unknown) => {
+  return JSON.stringify([await rendered(await DocsOperationPage(params(operation, slug))), await generateMetadata(params(operation, slug))], (_, value: unknown) => {
     if (typeof value === "object" && value !== null) {
       if (seen.has(value)) {
         return undefined;
@@ -200,6 +200,81 @@ describe("an operation's page", () => {
     expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/create-a-post");
     await setTab("SIGNED_IN");
     await expect(redirectTarget(slugPage("reference"))).rejects.toThrow("Expected the action to redirect");
+  });
+});
+
+describe("the tree", () => {
+  test("lists the groups in the team's order, and the reference's own address opens the first operation listed", async () => {
+    await call(updateApiReference, as(), { slug: "reference", groupOrder: ["Admin", "Posts"] });
+    expect((await apiReferencePage(project.slug, "reference"))?.operations.map((o) => o.slug)).toEqual(["purge", "get-a-post", "create-a-post"]);
+    expect(await redirectTarget(DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug: "reference" }) } as never))).toBe("/docs/reference/purge");
+    const text = await pageText("get-a-post");
+    expect(text.indexOf('"children":"Admin"')).toBeGreaterThan(-1);
+    expect(text.indexOf('"children":"Admin"')).toBeLessThan(text.indexOf('"children":"Posts"'));
+  });
+
+  test("sits as the team set it: groups as folders, as headings, or the reference as one entry; the tab's other references are a link each", async () => {
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "api" });
+    await call(createApiReference, as(), { name: "Draft API", spec: SPEC, tab: "api" });
+    await call(updateApiReference, as(), { slug: "draft-api", published: false });
+    await call(createApiReference, as(), { name: "Elsewhere", spec: SPEC, tab: "guides" });
+    const folder = '"component":"details","props":{"open":true,"className":"group/collection","children":[{"component":"summary"';
+    const heading = '"role":"group","aria-label":"Posts"';
+    const folders = await pageText("get-a-post");
+    expect(folders).toContain(folder);
+    expect(folders).not.toContain(heading);
+    // The tab's other published reference by name, at its own address; no draft, and none of another tab's.
+    expect(folders).toContain('"href":"/docs/webhooks","title":"Webhooks"');
+    expect(folders).not.toContain("Draft API");
+    expect(folders).not.toContain("Elsewhere");
+    await call(updateApiReference, as(), { slug: "reference", treeStyle: "headings" });
+    const headings = await pageText("get-a-post");
+    expect(headings).toContain(heading);
+    expect(headings).not.toContain(folder);
+    expect(headings).toContain('"href":"/docs/reference/purge"');
+    await call(updateApiReference, as(), { slug: "reference", treeStyle: "entry" });
+    const entry = await pageText("get-a-post");
+    // One folder, the reference's, open on its own pages, with the groups as headings in it.
+    expect(entry).toContain(`${folder},"props":{"className":"flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 font-medium hover:bg-muted [&::-webkit-details-marker]:hidden","children":[{"component":"span","props":{"className":"min-w-0 break-words","children":"Reference"}}`);
+    expect(entry).toContain(heading);
+  });
+
+  test("has its tab's collections, and none of another tab's when its own has nothing else to read", async () => {
+    // API has the reference alone: no collection of Guides' beside it.
+    expect(await pageText("get-a-post")).not.toContain("Basics");
+    await call(createCollection, as(), { name: "Concepts", tab: "api" });
+    const { slug } = await call(createArticle, as(), { title: "Keys", body: "Hello.", collection: "concepts" });
+    await call(publishArticle, as(), { slug });
+    const text = await pageText("get-a-post");
+    expect(text).toContain("Concepts");
+    expect(text).not.toContain("Basics");
+    // In no tab: the first tab's.
+    await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { tabId: null } });
+    const loose = await pageText("get-a-post");
+    expect(loose).toContain("Basics");
+    expect(loose).not.toContain("Concepts");
+  });
+});
+
+describe("a GraphQL reference", () => {
+  test("has the plain page: the field's arguments, and the query to send in the examples", async () => {
+    await call(createApiReference, as(), {
+      name: "Graph",
+      spec: `type Query {\n  "A ${SECRET} by its id."\n  post(id: ID!): Post\n}\ntype Post {\n  id: ID!\n  title: String\n}\n`,
+      tab: "api",
+    });
+    const page = await apiReferencePage(project.slug, "graph");
+    expect(page).toMatchObject({ kind: "reference", doc: { format: "graphql" }, operations: [{ slug: "post", kind: "query" }] });
+    const text = await pageText("post", "graph");
+    const metadata = await generateMetadata(params("post", "graph"));
+    expect(metadata).toMatchObject({ title: "post · Graph" });
+    for (const shown of [`A ${SECRET} by its id.`, "Arguments", '"children":"id"', "ID!", "query", "curl ", "post(id: $id)"]) {
+      expect(text).toContain(shown);
+    }
+    // No method beside its name in the tree, no signing line and no status rows: those are OpenAPI's.
+    for (const absent of ['"aria-label":"Responses"', "Authorization", "text-status-planned"]) {
+      expect(text).not.toContain(absent);
+    }
   });
 });
 

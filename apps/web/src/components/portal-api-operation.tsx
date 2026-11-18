@@ -14,18 +14,18 @@ import { portalLinks } from "@/server/portal-base";
 
 type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
 
-/** A method's colour: reading in blue, adding in green, changing in amber, deleting in red. */
+/** A method's colour, in the portal's status hues (the app's `kind-*` aren't the portal's): reading in blue, adding in green, changing in orange, deleting in red. */
 const METHOD_COLOUR: Partial<Record<ApiOperation["kind"], string>> = {
-  GET: "text-kind-progress",
-  POST: "text-kind-new",
-  PUT: "text-kind-edit",
-  PATCH: "text-kind-edit",
+  GET: "text-status-planned",
+  POST: "text-status-completed",
+  PUT: "text-status-in-progress",
+  PATCH: "text-status-in-progress",
   DELETE: "text-destructive",
 };
 
 /** An operation's method as a small coloured label (GraphQL's: "query", "mutation"). */
 function Method({ kind, className }: { kind: ApiOperation["kind"]; className?: string }) {
-  return <span className={cn("shrink-0 font-mono text-[0.6875rem] font-semibold tracking-wide uppercase", METHOD_COLOUR[kind] ?? "text-muted-foreground", className)}>{kind}</span>;
+  return <span className={cn("shrink-0 font-mono text-xs font-semibold tracking-wide uppercase", METHOD_COLOUR[kind] ?? "text-muted-foreground", className)}>{kind}</span>;
 }
 
 /** A spec's Markdown, through markdownDoc: never as markup. */
@@ -252,9 +252,9 @@ const PLACES: [ApiParam["in"], string][] = [
   ["argument", "Arguments"],
 ];
 
-/** A status's dot: green for success, amber for the caller's mistakes, red for the server's. */
+/** A status's dot: green for success, orange for the caller's mistakes, red for the server's. */
 const statusColour = (status: string) =>
-  status.startsWith("2") || status === "data" ? "bg-kind-new" : status.startsWith("4") ? "bg-kind-edit" : status.startsWith("5") ? "bg-destructive" : "bg-muted-foreground";
+  status.startsWith("2") ? "bg-status-completed" : status.startsWith("4") ? "bg-status-in-progress" : status.startsWith("5") ? "bg-destructive" : "bg-muted-foreground";
 
 /** Code blocks as RichText shows an article's (tabs without scripts, and CodeCopyButtons' Copy): `tabs`, or one labelled block. */
 function codeDoc(tabs: { name: string; code: string }[]): Doc {
@@ -319,9 +319,10 @@ function Path({ path }: { path: string }) {
  */
 export async function ApiOperationPage({ project, page, operation }: { project: string; page: Reference; operation: ApiOperation }) {
   const docs = await docsContents(project);
-  // The tab's collections; a tab with nothing else to read isn't among the docs' tabs, and has none.
-  const tab = page.tab ? docs.tabs.find((t) => t.slug === page.tab) : null;
-  const tree = page.tab ? (tab ? docsTree(docs, tab.slug, null) : { collections: [], uncollected: [] }) : docsTree(docs, null, null);
+  // Its tab's collections (in no tab: the first tab's, or all of the docs without tabs). A tab with nothing else to read
+  // isn't among the docs' tabs, and has none: never another tab's.
+  const tab = page.tab ?? docs.home;
+  const tree = tab === null || docs.tabs.some((t) => t.slug === tab) ? docsTree(docs, tab, null) : { collections: [], uncollected: [] };
   const group = page.groups.find((g) => g.key === operation.group);
   const openapi = page.doc.format === "openapi";
   return (
@@ -344,7 +345,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             {operation.deprecated && <span className="w-fit rounded-full bg-highlight px-2 py-0.5 text-xs font-medium text-highlight-foreground">Deprecated</span>}
             <Markdown text={operation.description} className="article-text gap-4 text-foreground" />
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
-              <Method kind={operation.kind} className="text-xs" />
+              <Method kind={operation.kind} />
               <Path path={operation.path} />
             </div>
             {openapi && <Signing operation={operation} schemes={page.doc.auth} />}

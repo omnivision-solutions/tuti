@@ -15,7 +15,7 @@ import { currentReader } from "./portal-access";
 
 /**
  * What reference `slug` is to this reader, once per request (the page, its metadata and the tabs' row):
- * what `onHelpCenter` gives of it, when it's published and has an operation there; null otherwise. It
+ * what `onHelpCenter` gives of it (its operations in the tree's order), when it's published and has an operation there; null otherwise. It
  * has no access of its own: it's read by whoever may read its tab, as an article in that tab is (one
  * in no tab, like an article in no collection, is under the first). To everyone else it's as good as
  * missing, unless the tab shows what's in it with a lock: then `locked`, with its operations' titles
@@ -40,7 +40,11 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
     return null;
   }
   const doc = row.doc as unknown as ApiDoc;
-  const { groups, operations } = onHelpCenter(doc, row.state as unknown as ApiReferenceState);
+  const shown = onHelpCenter(doc, row.state as unknown as ApiReferenceState);
+  const { groups } = shown;
+  // As the tree lists them: by group in the team's order (the sort is stable: the spec's order within one). The first is where the reference's own address goes.
+  const place = new Map(groups.map((group, at) => [group.key, at]));
+  const operations = shown.operations.toSorted((a, b) => place.get(a.group)! - place.get(b.group)!);
   const level = row.tab ?? (await firstTabLevel(row.projectId));
   const isRestricted = restricted([level]);
   const reader = isRestricted ? await currentReader(row.projectId) : null;
