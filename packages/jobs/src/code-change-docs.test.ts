@@ -190,6 +190,8 @@ test("a heading can't be renamed to a title another heading in the article has: 
   // A section keeps its heading at its top: dropped, or with text before it, its text would join the section above.
   expect(edit({ sections: { "2": "Run it from Team." } })).toBeNull();
   expect(edit({ sections: { "2": "Intro.\n\n## Export\n\nRun it." } })).toBeNull();
+  // And the other way round: a section with code isn't rewritten whole, and the rest of that reply isn't used either.
+  expect(edit({ sections: { "1": "## Setup\n\nInstall it first.", "3": "## Files\n\nThey're CSV or JSON." } })).toBeNull();
   // A passage is only taken in a section that lists them: an editable one is rewritten whole.
   expect(edit({ passages: [{ section: 1, find: "Install it.", replace: "Install it first." }] })).toBeNull();
   expect(edit({ sections: { "1": "## Setup\n\nInstall it first." } })).not.toBeNull();

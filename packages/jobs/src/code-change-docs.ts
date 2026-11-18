@@ -248,8 +248,13 @@ export function articleNotes(doc: Doc) {
     for (const [key, text] of Object.entries(reply.sections ?? {})) {
       const index = Number(key) - 1;
       const section = parts[index];
-      if (!section || !notes[index]!.editable || typeof text !== "string") {
+      if (!section || typeof text !== "string") {
         continue;
+      }
+      // A section that lists passages can't be rewritten whole: the rest of the reply was written to go with it, so
+      // none of it is used (as a passage for an editable section isn't).
+      if (!notes[index]!.editable) {
+        return null;
       }
       const links = new Set([...factsIn(section).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
       const read = readNotes(JSON.stringify({ notes: text }), links, media);
