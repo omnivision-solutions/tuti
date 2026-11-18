@@ -1,4 +1,4 @@
-import { parse as parseYaml } from "yaml";
+import { isMap, isScalar, parseDocument } from "yaml";
 
 import { readGraphql } from "./graphql";
 import { OPENAPI_MAX_BYTES, readOpenApi } from "./openapi";
@@ -25,15 +25,20 @@ export function readSpec(text: string, options: { endpoint?: string } = {}): { d
   try {
     json = JSON.parse(clean);
   } catch {
-    let yaml: unknown = null;
+    // Only the top of the file is looked at, never its whole value: OpenAPI's reader takes YAML this
+    // one wouldn't (a key written twice, an anchor used hundreds of times), and says what's wrong itself.
+    let mapping = false;
+    let spec = false;
     try {
-      yaml = parseYaml(clean, { logLevel: "error" });
+      const top = parseDocument(clean, { logLevel: "silent", uniqueKeys: false }).contents;
+      mapping = isMap(top);
+      spec = isMap(top) && top.items.some((pair) => isScalar(pair.key) && (pair.key.value === "openapi" || pair.key.value === "swagger"));
     } catch {
       // Not YAML either.
     }
-    if (isObj(yaml) && ("openapi" in yaml || "swagger" in yaml)) return readOpenApi(text);
+    if (spec) return readOpenApi(text);
     const graphql = readGraphql(clean, options);
-    return "error" in graphql && isObj(yaml) ? readOpenApi(text) : graphql;
+    return "error" in graphql && mapping ? readOpenApi(text) : graphql;
   }
   const introspection = isObj(json) && (json.__schema !== undefined || (isObj(json.data) && json.data.__schema !== undefined));
   return introspection ? readGraphql(clean, options) : readOpenApi(text);

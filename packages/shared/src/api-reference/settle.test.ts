@@ -47,6 +47,14 @@ describe("readSpec", () => {
     expect("doc" in read && read.doc.operations).toHaveLength(1);
   });
 
+  it("reads as OpenAPI the YAML its reader takes: an anchor used often, a key written twice", () => {
+    const paths = Array.from({ length: 150 }, (_, index) => `  /p${index}:\n    get:\n      responses:\n        '200': *ok\n`).join("");
+    const aliases = readSpec(`openapi: 3.0.0\ninfo: { title: Acme, version: '1' }\nx-ok: &ok { description: OK }\npaths:\n${paths}`);
+    expect("doc" in aliases && aliases.doc.operations).toHaveLength(150);
+    const twice = readSpec("openapi: 3.0.0\ninfo: { title: Old, version: '1' }\ninfo: { title: Acme, version: '1' }\npaths:\n  /posts:\n    get: { summary: List posts }\n");
+    expect("doc" in twice && twice.doc.title).toBe("Acme");
+  });
+
   it("gives a GraphQL doc its endpoint", () => {
     const read = readSpec(sdl, { endpoint: "https://api.example.com/graphql" });
     expect("doc" in read && read.doc.servers.map((server) => server.url)).toEqual(["https://api.example.com/graphql"]);
