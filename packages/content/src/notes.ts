@@ -251,7 +251,8 @@ function linkRuns(content: JSONContent[]): Map<string, number> {
 function rewritten(target: JSONContent, replace: string): JSONContent | null {
   let rest = replace.trim();
   // One line, and no block of its own: a marker at its start (notesToDoc's) would be stored as text ("2. 1. Open…").
-  if (rest === "" || /[\n\r]/.test(rest) || BLOCK_MARKER.test(rest)) {
+  // Nor an image's placeholder: the image stays where it is, and the placeholder would be stored as text.
+  if (rest === "" || /[\n\r]/.test(rest) || BLOCK_MARKER.test(rest) || /\{\{media \d+\}\}/.test(rest)) {
     return null;
   }
   const links = new Set([...factsIn([target]).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));

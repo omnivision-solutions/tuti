@@ -164,6 +164,11 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(replacePassage(section, "Each plan has seats.", "Each plan has seats.\r\nAnd a price.")).toBeNull();
   });
 
+  test("a replacement with an image's placeholder is refused: the image stays where it is, and the placeholder would be stored as text", () => {
+    expect(replacePassage(section, "Each plan has seats.", "Each plan has seats. {{media 1}}")).toBeNull();
+    expect(replacePassage(section, "Each plan has seats.", "Each plan has five seats.")).not.toBeNull();
+  });
+
   test("a replacement that starts with a block's marker is refused: it would be stored as text, not read as a block", () => {
     // A list's item would read "2. 1. Open Plans.", a heading would show its hashes.
     expect(replacePassage(section, "Open **Billing**.", "1. Open **Plans**.")).toBeNull();
