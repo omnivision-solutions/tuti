@@ -1,4 +1,4 @@
-import { BoxesIcon, CodeXmlIcon, CpuIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
+import { BoxesIcon, CodeXmlIcon, CpuIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
@@ -46,6 +46,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         { title: "AI answers", href: at("ai-answers"), icon: <SparklesIcon aria-hidden /> },
         ...(aiEnabled()
           ? [
+              { title: "Inbox", href: at("inbox-ai"), icon: <MessagesSquareIcon aria-hidden /> },
               { title: "Changelog", href: at("changelog"), icon: <PenLineIcon aria-hidden /> },
               // Analysing merged pull requests needs AI too (codeChangesEnabled).
               ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot"), icon: <GitPullRequestArrowIcon aria-hidden /> }] : []),

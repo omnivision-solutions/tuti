@@ -185,6 +185,13 @@ export async function setSupportInbox(projectSlug: string, on: boolean): Promise
   );
 }
 
+/** Settings → AI → Inbox: the team's instructions for replies drafted by AI (owners and admins; see support.update). */
+export async function saveDraftInstructions(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can change support settings", (context) =>
+    call(updateSupportSettings, context, { draftInstructions: String(formData.get("instructions") ?? "") }),
+  );
+}
+
 /** "Email me new conversations": the signed-in team member's own choice, in the inbox. */
 export async function setNewConversationEmails(projectSlug: string, on: boolean): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team gets the inbox's emails", async ({ actor, projectId }) => {
