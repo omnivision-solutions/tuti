@@ -71,6 +71,8 @@ test("an owner sets the Inbox's AI model and instructions for drafts, and a repl
   await owner.goto(`/app/${slug}/settings/ai-models`);
   await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
   await expect(owner.getByRole("radiogroup", { name: /^Inbox/ })).toHaveCount(0);
+  // Nor does that page say what level the Inbox is on (Best, here): its own page does.
+  await expect(owner.locator("#ai-models-level")).toHaveCount(0);
 
   // A reply drafted with AI: the model is asked with the team's instructions, on the level's model for drafts.
   await nextModelReply(JSON.stringify({ answer: "Billing → Invoices → Export downloads them. Did that help?", sources: ["s1"] }), question);
