@@ -267,8 +267,9 @@ export const updateApiReference = defineOperation({
           throw notFound(input.slug);
         }
         const data: Prisma.ApiReferenceUncheckedUpdateInput = {};
-        const seen = input.seen;
-        const unseen = (state: ApiReferenceState) => (seen === undefined ? state.unseen : seen === true ? [] : state.unseen.filter((key) => !seen.includes(key)));
+        // A set, not a list: it may hold thousands of keys, and this runs with the project locked.
+        const seen = input.seen === true || input.seen === undefined ? input.seen : new Set(input.seen);
+        const unseen = (state: ApiReferenceState) => (seen === undefined ? state.unseen : seen === true ? [] : state.unseen.filter((key) => !seen.has(key)));
         if (choosing) {
           const doc = row.doc as unknown as ApiDoc;
           const state = row.state as unknown as ApiReferenceState;
@@ -295,7 +296,8 @@ export const updateApiReference = defineOperation({
           Object.assign(data, { state: json(next), ...counts(doc, next) });
         } else if (seen) {
           const state = row.state as unknown as ApiReferenceState;
-          Object.assign(data, { state: json({ ...state, unseen: unseen(state) }), unseenCount: unseen(state).length });
+          const left = unseen(state);
+          Object.assign(data, { state: json({ ...state, unseen: left }), unseenCount: left.length });
         }
         if (input.tab !== undefined) {
           const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });

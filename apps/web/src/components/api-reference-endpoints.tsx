@@ -228,7 +228,12 @@ export function ApiReferenceEndpoints({
         </p>
       )}
       {operations.length > 20 && <Input type="search" aria-label="Search endpoints" placeholder="Search endpoints" value={query} onChange={(event) => setQuery(event.currentTarget.value)} className="max-w-sm" />}
-      {words && !operations.some(matches) && <p className="text-sm text-muted-foreground">No endpoints match “{query.trim()}”.</p>}
+      {/* Always there with the search, so a screen reader hears it fill. */}
+      {operations.length > 20 && (
+        <p role="status" className="text-sm text-muted-foreground empty:hidden">
+          {words && !operations.some(matches) && `No endpoints match “${query.trim()}”.`}
+        </p>
+      )}
       {groups.map((group) => {
         const rows = operations.filter((operation) => operation.group === group.key && matches(operation));
         // Without rows of its own it's still a group with a switch: one that's only an operation's second tag takes that operation off too.

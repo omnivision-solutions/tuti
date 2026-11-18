@@ -118,3 +118,46 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await team.getByRole("alertdialog", { name: "Delete API reference?" }).getByRole("button", { name: "Delete" }).click();
   await team.waitForURL(`**/app/${slug}/docs`);
 });
+
+test("An API reference's Endpoints: a group that's only a second tag has its switch, and a long list is searched", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // 21 operations: enough for the search box. One is tagged Internal too, which no operation has as its first tag.
+  const paths: Record<string, unknown> = {};
+  for (let n = 1; n <= 21; n++) {
+    paths[`/things/${n}`] = { get: { tags: n === 1 ? ["Things", "Internal"] : ["Things"], summary: `Read thing ${n}`, responses: { 200: { description: "OK" } } } };
+  }
+  const text = (more: Record<string, unknown> = {}) => JSON.stringify({ openapi: "3.1.0", info: { title: "Acme API", version: "1" }, paths: { ...paths, ...more } });
+  await api("/api-references", { name: "API reference", spec: text() });
+  await team.setViewportSize({ width: 1280, height: 900 });
+  await team.goto(`/app/${slug}/docs/references/api-reference`);
+  await expect(team.getByText("21 of 21 on the help center")).toBeVisible();
+
+  // Internal off: the operation tagged with it is off too, its switch greyed, saying why.
+  await team.getByRole("switch", { name: "Internal: on the help center" }).uncheck();
+  await expect(team.getByText("20 of 21 on the help center")).toBeVisible();
+  const first = team.getByRole("switch", { name: "Read thing 1 (GET /things/1): on the help center" });
+  await expect(first).toBeDisabled();
+  await expect(first).toHaveAccessibleDescription("Off the help center while its group is off");
+
+  // Search by path or title; nothing found is said.
+  const search = team.getByRole("searchbox", { name: "Search endpoints" });
+  await search.fill("thing 20");
+  await expect(team.getByRole("region", { name: "Things", exact: true }).getByRole("listitem")).toHaveCount(1);
+  await search.fill("nothing like it");
+  await expect(team.getByRole("status").filter({ hasText: "No endpoints match “nothing like it”." })).toBeVisible();
+  await expect(team.getByRole("region", { name: "Things", exact: true })).toBeHidden();
+
+  // A new version's operation arrives hidden; the notice's link clears the search, so its row is there to go to.
+  await team.locator('input[type="file"]').setInputFiles({
+    name: "openapi.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(text({ "/others": { get: { tags: ["Others"], summary: "List others", responses: { 200: { description: "OK" } } } } })),
+  });
+  await expect(team.getByText("1 added", { exact: true })).toBeVisible();
+  await team.getByRole("link", { name: "Review it below." }).click();
+  await expect(search).toHaveValue("");
+  await expect(team.getByRole("region", { name: "Others", exact: true }).getByText("New", { exact: true })).toBeVisible();
+});
