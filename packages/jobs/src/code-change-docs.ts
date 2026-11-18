@@ -105,15 +105,17 @@ const writable = (node: Block): boolean =>
  */
 export const WRITING_RULES = `Writing rules, for everything you write into an article:
 - Say how the product works, never how it changed: no "now", "no longer", "has moved", "used to", "recently" or "as of", and no "new" for something the product gained. What a reader makes can be new (a new project), and a label on the screen keeps its own words.
+- Leave out how it works inside, every state or option of a control, anything the screen says by itself, edge cases a reader won't meet, and anything only developers or self-hosters care about, unless the article is for them.
+- The reader is a customer using the product, not a developer: no flag names, endpoints, internal names or code terms unless the article already uses them.
+- No heading over less than a few sentences.
+When you change an article that exists:
 - Edit in place: change the sentence that's wrong, where it stands. Add a paragraph or section only for something the article doesn't cover at all, and put it where a reader would look for it, not at the end by default. Never leave the old statement beside the corrected one.
 - Fix every mention: when a label, path or name changed, replace it everywhere it appears in the sections you may edit.
 - Length follows the change: a renamed label is a word-for-word replacement; a changed behaviour is a sentence or two; only a whole capability the article lacks earns a paragraph or steps. A short edit that says the one thing a reader needs beats a complete one.
-- Leave out how it works inside, every state or option of a control, anything the screen says by itself, edge cases a reader won't meet, and anything only developers or self-hosters care about, unless the article is for them.
-- No heading over less than a few sentences. Follow the article's own headings, tense, person, sentence length and the way it marks labels (bold, for example).
-- The reader is a customer using the product, not a developer: no flag names, endpoints, internal names or code terms unless the article already uses them.`;
+- Follow the article's own headings, tense, person, sentence length and the way it marks labels (bold, for example).`;
 
 /** When the section for the end ("add") may be used, for the writers that have it: sections with tables or code can't be edited, and a correction mustn't land there instead. */
-export const ADD_RULE = `Leave "add" empty unless there's something the article doesn't cover at all and no editable section is the place for it. Never use it to correct what a section that isn't editable says: the old statement would stay, and the article would contradict itself.`;
+export const ADD_RULE = `Leave "add" empty unless there's something the article doesn't cover at all and no editable section is the place for it. Never use it to correct what a section that isn't editable says: the old statement would stay, and the article would contradict itself. It starts with a heading even when it's short.`;
 
 export const EDIT_SYSTEM = `You keep a product's help articles right after the product changes. You get a merged pull request, what changed for users, and a help article in numbered sections (Markdown), and whether the article is now wrong or missing something. Readers are the product's users, not its developers.
 
