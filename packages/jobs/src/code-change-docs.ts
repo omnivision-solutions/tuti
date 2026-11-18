@@ -114,8 +114,11 @@ When you change an article that exists:
 - Length follows the change: a renamed label is a word-for-word replacement; a changed behaviour is a sentence or two; only a whole capability the article lacks earns a paragraph or steps. A short edit that says the one thing a reader needs beats a complete one.
 - Follow the article's own headings, tense, person, sentence length and the way it marks labels (bold, for example).`;
 
-/** When the section for the end ("add") may be used, for the writers that have it: sections with tables or code can't be edited, and a correction mustn't land there instead. */
-export const ADD_RULE = `Leave "add" empty unless there's something the article doesn't cover at all and no editable section is the place for it. Never use it to correct what a section that isn't editable says: the old statement would stay, and the article would contradict itself. It starts with a heading even when it's short.`;
+/**
+ * When the section for the end ("add") may be used, for the writers that have it. Sections with tables or code can't be
+ * edited yet (docs/plan.md, E1), so a statement that's wrong there still gets a short note for a person, rather than nothing.
+ */
+export const ADD_RULE = `Leave "add" empty, with two exceptions. One: there's something the article doesn't cover at all and no editable section is the place for it. Two: the statement that's wrong is in a section that isn't editable; then say what's right in a sentence or two, under a heading that names that section, so a person can fix it there. It starts with a heading even when it's short.`;
 
 export const EDIT_SYSTEM = `You keep a product's help articles right after the product changes. You get a merged pull request, what changed for users, and a help article in numbered sections (Markdown), and whether the article is now wrong or missing something. Readers are the product's users, not its developers.
 
