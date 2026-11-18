@@ -55,6 +55,7 @@ export const APP_ROUTES = [
   "[project]/docs/insights",
   "[project]/docs/new",
   "[project]/docs/references/[reference]",
+  "[project]/docs/references/[reference]/settings",
   "[project]/docs/[slug]",
   "[project]/docs/[slug]/history",
   "[project]/docs/tabs/[tab]",
