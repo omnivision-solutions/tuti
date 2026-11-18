@@ -50,6 +50,8 @@ test.each([
   ["https://[::ffff:10.0.0.1]/", "Webhook URLs must point to a public address"],
   ["https://[64:ff9b::a00:1]/", "Webhook URLs must point to a public address"],
   ["https://[64:ff9b:1::a00:1]/", "Webhook URLs must point to a public address"],
+  ["https://[2002:a00:1::]/", "Webhook URLs must point to a public address"],
+  ["https://[2001:0:4136:e378:8000:63bf:f5ff:fffe]/", "Webhook URLs must point to a public address"],
   ["https://0.0.0.0/", "Webhook URLs must point to a public address"],
   ["https://internal.test/", "Webhook URLs must point to a public address"],
   ["https://mixed.test/", "Webhook URLs must point to a public address"],
