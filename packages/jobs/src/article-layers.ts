@@ -227,8 +227,9 @@ export function takeOut(edit: TaggedEdit, text: Doc, edits: TaggedEdit[]): { doc
 /**
  * Saves an edit (`doc`, written on `writtenOn`) into the article's unpublished changes as a revision tagged with its
  * update; a draft's into its text, as the team's saves on a draft are (only the team sees it). A newer text than it
- * was written on gets only its changed sections; when that one changed one of the same sections it's `conflict`
- * (written again from the newest). `gone`: the article was deleted. Call it with the project locked.
+ * was written on gets only its changed sections; when that one changed one of the same sections, or the edit changes
+ * one held for a person's change since (waitingSections), it's `conflict` (written again from the newest). `gone`: the
+ * article was deleted. Call it with the project locked.
  */
 export async function landEdit(
   tx: Prisma.TransactionClient,
@@ -249,6 +250,14 @@ export async function landEdit(
   const text = sameDoc(now, writtenOn) ? doc : mergeSections(writtenOn, doc, now);
   if (!text) {
     return "conflict";
+  }
+  // Written on an older text: never over a waiting edit a person changed since (E4). Written again, it sees it held.
+  if (!sameDoc(now, writtenOn)) {
+    const marks = waitingSections(now, await taggedEdits(articleId, IN_CHANGES, tx));
+    const held = new Set(keyed(now).flatMap(([key], i) => (marks[i]!.held ? [key] : [])));
+    if ([...changedSections(writtenOn, doc)].some((key) => held.has(key))) {
+      return "conflict";
+    }
   }
   // Based on a revision of the text it's applied to: recorded first when the newest isn't (an article saved before revisions).
   const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: { id: true, ...versionSelect } });

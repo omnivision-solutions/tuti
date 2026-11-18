@@ -859,6 +859,35 @@ describe("keeping waiting edits fresh (E4)", () => {
     expect(await changes()).toBe(theirs);
   });
 
+  test("a person changes a waiting edit while the next one is written: it doesn't land over it, and is written again seeing it held", async () => {
+    const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: value }] });
+    const sectioned = { type: "doc", content: [heading("Light"), paragraph("The app has a light theme."), heading("Dark"), paragraph("Dark is coming.")] };
+    await prisma.article.update({ where: { id: article.id }, data: { content: sectioned, body: "Light\nThe app has a light theme.\nDark\nDark is coming." } });
+    await editing(80, JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": "## Light\n\nLight is the default.", "2": "## Dark\n\nDark is here." } }));
+    // While PR #81's writer answers (rewriting PR #80's Dark section), a teammate rewords PR #80's Light section.
+    const theirs = { type: "doc", content: [heading("Light"), paragraph("Light is the default theme."), heading("Dark"), paragraph("Dark is here.")] };
+    pullRequest(81);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It doesn't say where." }]), undefined, '"merge-81"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(
+      JSON.stringify({ reason: "It doesn't say where.", sections: { "2": "## Dark\n\nDark is here: pick it in Settings." } }),
+      () => prisma.articleChanges.update({ where: { articleId: article.id }, data: { content: theirs, body: "Light\nLight is the default theme.\nDark\nDark is here." } }),
+      '"problem"',
+    );
+    // Written again on the newest text: PR #80's sections are held, so it leaves them and adds a note for a person.
+    model.reply(JSON.stringify({ reason: "It doesn't say where.", add: "## Where to pick it\n\nPick Dark in Settings." }), undefined, '"problem"');
+    model.decide({ verify: 0.1 }, '"pull_requests_edits_waiting":2');
+    expect(await merge(81)).toBe(200);
+
+    const writers = model.requests.filter((one) => one.user.includes('"problem"') && one.user.includes('"Dark mode 81"'));
+    expect(writers).toHaveLength(2);
+    const marks = (request: (typeof writers)[number]) => (JSON.parse(request.user) as { article: { sections: Record<string, unknown>[] } }).article.sections.map((section) => section.edited_by_team ?? section.waiting);
+    expect(marks(writers[1]!)).toEqual(["PR #80", "PR #80"]);
+    expect((JSON.parse(writers[1]!.user) as { article: { sections: { editable: boolean }[] } }).article.sections.map((section) => section.editable)).toEqual([false, false]);
+    expect(await changes()).toBe("Light\nLight is the default theme.\nDark\nDark is here.\nWhere to pick it\nPick Dark in Settings.");
+  });
+
   test("a first edit already published: the next is written on the article as readers see it, nothing marked", async () => {
     await editing(76, FIRST);
     const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
