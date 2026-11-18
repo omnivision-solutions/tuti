@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
-import { exampleRequest, requestExamples, serverAddress } from "./examples";
+import { exampleRequest, graphqlResponse, graphqlSignature, requestExamples, serverAddress } from "./examples";
+import { readGraphql } from "./graphql";
 import type { ApiAuth, ApiDoc, ApiOperation, ApiParam } from "./types";
 
 function doc(over: Partial<ApiDoc> = {}): ApiDoc {
@@ -461,5 +462,33 @@ describe("requestExamples", () => {
     expect(JSON.parse(args[6]!)).toEqual({ query: query.text, variables: query.variables });
     const { init } = await fetchArguments(javascript);
     expect(JSON.parse(init.body!)).toEqual({ query: query.text, variables: query.variables });
+  });
+});
+
+describe("GraphQL", () => {
+  const read = readGraphql(`
+    type Query { posts(board: String!, first: Int = 10, tags: [String!]): [Post!]! }
+    type Mutation { createPost(input: CreatePostInput!): Post! }
+    input CreatePostInput { board: String!, title: String! }
+    type Post { number: Int!, title: String!, status: Status! }
+    enum Status { OPEN CLOSED }
+  `);
+  if (!("doc" in read)) throw new Error(read.error);
+  const [posts, createPost] = read.doc.operations;
+
+  it("heads a field with its arguments and its type in GraphQL's notation", () => {
+    expect(graphqlSignature(posts!)).toBe("posts(board, first, tags): [Post!]!");
+    expect(graphqlSignature(createPost!)).toBe("createPost(input): Post!");
+    expect(posts!.params.map((param) => [param.name, param.schema.type, param.required])).toEqual([
+      ["board", "String!", true],
+      ["first", "Int", false],
+      ["tags", "[String!]", false],
+    ]);
+    expect(createPost!.params[0]!.schema.properties?.map((field) => `${field.name}: ${field.type}`)).toEqual(["board: String!", "title: String!"]);
+  });
+
+  it("answers its example under data and the field's name, as the query selects it", () => {
+    expect(graphqlResponse(createPost!)).toEqual({ data: { createPost: { number: 1, title: "string", status: "OPEN" } } });
+    expect(graphqlResponse(posts!)).toEqual({ data: { posts: [{ number: 1, title: "string", status: "OPEN" }] } });
   });
 });

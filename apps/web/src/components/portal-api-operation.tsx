@@ -1,6 +1,18 @@
 import { ARTICLE_TITLE_ID, type Doc, MAX_CODE_TABS, toPlainText } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
-import { type ApiAuth, type ApiOperation, type ApiParam, type ApiProperty, type ApiResponse, type ApiSchema, requestExamples, serverAddress, tryable } from "@tuti/shared/api-reference";
+import {
+  type ApiAuth,
+  type ApiOperation,
+  type ApiParam,
+  type ApiProperty,
+  type ApiResponse,
+  type ApiSchema,
+  graphqlResponse,
+  graphqlSignature,
+  requestExamples,
+  serverAddress,
+  tryable,
+} from "@tuti/shared/api-reference";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,6 +31,8 @@ type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
 /**
  * A method's colour, in hues the portal keeps whatever the project's accent (statuses', info blue, destructive red): the
  * accent itself isn't for labels. Reading in the Planned status's blue, adding in the Completed status's green, changing in orange, deleting in red.
+ * GraphQL's likewise: a query reads, a mutation changes (the Completed status's green, as a POST), a subscription
+ * listens (the Under review status's purple).
  */
 const METHOD_COLOUR: Partial<Record<ApiOperation["kind"], string>> = {
   GET: "text-status-planned",
@@ -26,11 +40,29 @@ const METHOD_COLOUR: Partial<Record<ApiOperation["kind"], string>> = {
   PUT: "text-status-in-progress",
   PATCH: "text-status-in-progress",
   DELETE: "text-destructive",
+  query: "text-status-planned",
+  mutation: "text-status-completed",
+  subscription: "text-status-under-review",
 };
 
-/** An operation's method as a small coloured label (GraphQL's: "query", "mutation"). */
-function Method({ kind, className }: { kind: ApiOperation["kind"]; className?: string }) {
-  return <span className={cn("shrink-0 font-mono text-xs font-semibold tracking-wide uppercase", METHOD_COLOUR[kind] ?? "text-muted-foreground", className)}>{kind}</span>;
+/** GraphQL's kinds as the tree's narrow column fits them; read out whole. */
+const SHORT: Partial<Record<ApiOperation["kind"], string>> = { mutation: "mut", subscription: "sub" };
+
+/** An operation's method as a small coloured label (GraphQL's: "query", "mutation"; `short`: "mut"). */
+function Method({ kind, short, className }: { kind: ApiOperation["kind"]; short?: boolean; className?: string }) {
+  const label = short && SHORT[kind];
+  return (
+    <span className={cn("shrink-0 font-mono text-xs font-semibold tracking-wide uppercase", METHOD_COLOUR[kind] ?? "text-muted-foreground", className)}>
+      {label ? (
+        <>
+          <span aria-hidden>{label}</span>
+          <span className="sr-only">{kind}</span>
+        </>
+      ) : (
+        kind
+      )}
+    </span>
+  );
 }
 
 /** A spec's Markdown, through markdownDoc: never as markup. */
@@ -67,8 +99,7 @@ async function ReferenceTree({ page, references, current }: { page: Reference; r
                 {/* The line through it isn't read out. */}
                 {operation.deprecated && <span className="sr-only"> (deprecated)</span>}
               </span>
-              {/* GraphQL's groups already say which kind each is. */}
-              {page.doc.format === "openapi" && <Method kind={operation.kind} />}
+              <Method kind={operation.kind} short />
             </Link>
           </li>
         ))}
@@ -253,17 +284,17 @@ function Details({ schema, description }: { schema: ApiSchema; description?: str
 const typeLine = (schema: ApiSchema) => [schema.type, schema.format, schema.nullable && "nullable", schema.constraints];
 
 /** A body's or a response's schema: what it says of itself, then its fields. */
-function Root({ schema }: { schema: ApiSchema }) {
+function Root({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
   return (
     <div className="flex flex-col gap-1.5">
       <Details schema={schema} />
-      <Fields schema={schema} />
+      <Fields schema={schema} graphql={graphql} />
     </div>
   );
 }
 
 /** A schema's fields, or its shapes each as a row. */
-function Fields({ schema }: { schema: ApiSchema }) {
+function Fields({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
   const within = inside(schema);
   if (!within) {
     return null;
@@ -271,8 +302,8 @@ function Fields({ schema }: { schema: ApiSchema }) {
   return (
     <ul className="flex flex-col">
       {"properties" in within
-        ? within.properties.map((property) => <Field key={property.name} name={property.name} required={property.required} schema={property} />)
-        : within.oneOf.map((option, i) => <Field key={i} name={`Option ${i + 1}`} schema={option} />)}
+        ? within.properties.map((property) => <Field key={property.name} name={property.name} required={property.required} schema={property} graphql={graphql} />)
+        : within.oneOf.map((option, i) => <Field key={i} name={`Option ${i + 1}`} schema={option} graphql={graphql} />)}
     </ul>
   );
 }
@@ -280,12 +311,13 @@ function Fields({ schema }: { schema: ApiSchema }) {
 /**
  * A parameter or a field: its name, type, limits and whether it's required, its description, default and
  * allowed values, and what's in it behind "Show properties" (as deep as the spec was read: two levels).
- * A named type is only named: types have no pages yet.
+ * A named type is only named: types have no pages yet. GraphQL's types have fields, not properties.
  */
-function Field({ name, required = false, description, schema }: { name: string; required?: boolean; description?: string; schema: ApiSchema }) {
+function Field({ name, required = false, description, schema, graphql }: { name: string; required?: boolean; description?: string; schema: ApiSchema; graphql?: boolean }) {
   const within = inside(schema);
   const count = within && ("properties" in within ? within.properties.length : within.oneOf.length);
-  const what = within && ("properties" in within ? (count === 1 ? "property" : "properties") : count === 1 ? "option" : "options");
+  const what =
+    within && ("properties" in within ? (graphql ? (count === 1 ? "field" : "fields") : count === 1 ? "property" : "properties") : count === 1 ? "option" : "options");
   return (
     <li className="flex flex-col gap-1.5 border-t border-divider py-3">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -306,7 +338,7 @@ function Field({ name, required = false, description, schema }: { name: string; 
             <ChevronRightIcon aria-hidden className="size-3.5 transition-transform [[open]>summary>&]:rotate-90" />
           </summary>
           <div className="mt-2 ml-1 border-l border-divider pl-4">
-            <Fields schema={schema} />
+            <Fields schema={schema} graphql={graphql} />
           </div>
         </details>
       )}
@@ -354,25 +386,37 @@ function codeDoc(tabs: { name: string; code: string }[]): Doc {
 const exampleText = (example: unknown, contentType: string | null) =>
   typeof example === "string" && !/^application\/json\s*(;|$)|\+json\s*(;|$)/i.test(contentType ?? "") ? example : JSON.stringify(example, null, 2);
 
-/** Beside the page: the request as cURL, JavaScript and Python, and each response's example by status. */
+/**
+ * Beside the page: the request as cURL, JavaScript and Python, and each response's example by status. GraphQL's: the
+ * query first among them, its variables, and what it answers under `data`.
+ */
 function Examples({ page, operation }: { page: Reference; operation: ApiOperation }) {
   const request = requestExamples(page.doc, operation, { base: page.reference.baseUrl ?? undefined });
   const requests = [
+    ...(operation.query ? [{ name: "Query", code: operation.query.text }] : []),
     { name: "cURL", code: request.curl },
     { name: "JavaScript", code: request.javascript },
     { name: "Python", code: request.python },
   ];
-  const responses = operation.responses
-    .filter((response) => response.example !== undefined)
-    // ponytail: the tabs' styles show eight (MAX_CODE_TABS); a ninth status's example is in no tab, its fields still under Responses.
-    .slice(0, MAX_CODE_TABS)
-    .map((response) => ({ name: response.status === "data" ? "Response" : response.status, code: exampleText(response.example, response.contentType) }));
+  const responses = operation.query
+    ? [{ name: "Response", code: JSON.stringify(graphqlResponse(operation), null, 2) }]
+    : operation.responses
+        .filter((response) => response.example !== undefined)
+        // ponytail: the tabs' styles show eight (MAX_CODE_TABS); a ninth status's example is in no tab, its fields still under Responses.
+        .slice(0, MAX_CODE_TABS)
+        .map((response) => ({ name: response.status, code: exampleText(response.example, response.contentType) }));
+  const variables = operation.query && Object.keys(operation.query.variables).length > 0 ? JSON.stringify(operation.query.variables, null, 2) : null;
   return (
     <>
       <div className="flex min-w-0 flex-col gap-4">
         <section aria-label="Request example">
           <RichText doc={codeDoc(requests)} className="rich-text article-text" />
         </section>
+        {variables && (
+          <section aria-label="Variables">
+            <RichText doc={codeDoc([{ name: "Variables", code: variables }])} className="rich-text article-text" />
+          </section>
+        )}
         {responses.length > 0 && (
           <section aria-label="Response example">
             <RichText doc={codeDoc(responses)} className="rich-text article-text" />
@@ -450,13 +494,15 @@ async function tabTree(project: string, page: Reference) {
 /**
  * An operation's page (/docs/<reference>/<operation>): the tab's tree with the reference's operations,
  * what the operation is and takes and answers, and beside it (under it below desktop width) its
- * examples. GraphQL's is the plain version: its arguments, and the query to send.
+ * examples. GraphQL's: its arguments and the type it returns, and beside them the query, its variables and an answer.
  */
 export async function ApiOperationPage({ project, page, operation }: { project: string; page: Reference; operation: ApiOperation }) {
   const at = await portalLinks();
   const tree = await tabTree(project, page);
   const group = page.groups.find((g) => g.key === operation.group);
   const openapi = page.doc.format === "openapi";
+  /** GraphQL: the type the field returns. */
+  const returned = operation.responses[0]?.schema;
   return (
     <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} references={tree.references} current={operation.slug} />}>
       <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start">
@@ -480,9 +526,9 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             <Markdown text={operation.description} className="article-text gap-4 text-foreground" />
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
               <Method kind={operation.kind} />
-              <Path path={operation.path} />
+              <Path path={openapi ? operation.path : graphqlSignature(operation)} />
               {/* Only while the team lets readers try requests (Settings' Try it; the proxy refuses them too), and where there's
-                  somewhere to send it: never GraphQL (yet), nor servers without a host and no base address. */}
+                  somewhere to send it: never servers without a host and no base address, nor a subscription. */}
               {page.reference.tryIt && tryable(page.doc, operation, page.reference.baseUrl) && (
                 <TryIt
                   // One per operation. Next.js already mounts each operation's page afresh (it keys a page by its route's
@@ -498,6 +544,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
               )}
             </div>
             {openapi && <Signing operation={operation} schemes={page.doc.auth} />}
+            {operation.kind === "subscription" && <p className="text-[0.8125rem] text-muted-foreground">A subscription stays open over a websocket, so it can&apos;t be tried here.</p>}
           </div>
           {PLACES.map(([place, title]) => {
             const params = operation.params.filter((param) => param.in === place);
@@ -506,7 +553,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
                 <Section key={place} title={title}>
                   <ul className="mt-2 flex flex-col">
                     {params.map((param) => (
-                      <Field key={param.name} name={param.name} required={param.required} description={param.description} schema={param.schema} />
+                      <Field key={param.name} name={param.name} required={param.required} description={param.description} schema={param.schema} graphql={!openapi} />
                     ))}
                   </ul>
                 </Section>
@@ -516,6 +563,14 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
           {operation.body && (
             <Section title="Body" note={[operation.body.contentType, ...typeLine(operation.body.schema), operation.body.required && "required"].filter(Boolean).join(" · ")}>
               <Root schema={operation.body.schema} />
+            </Section>
+          )}
+          {!openapi && returned && (
+            <Section title="Returns">
+              <div className="mt-2 flex flex-col gap-1.5">
+                <code className="font-mono text-sm font-medium break-all">{returned.type}</code>
+                <Root schema={returned} graphql />
+              </div>
             </Section>
           )}
           {openapi && operation.responses.length > 0 && (
