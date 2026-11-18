@@ -168,6 +168,13 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
 });
 
+test("an edit that puts a section at the end of its article always waits for the team, however sure", async () => {
+  const edit = await articleEdit(0.99);
+  await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { payload: { ...(edit.action.payload as object), added: true } } });
+  await scheduleByItself(project.id, edit.codeChangeId!);
+  expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Its article gets a section at the end" });
+});
+
 test("held back at its time when it fell below the bar, or the switch went off", async () => {
   const a = await update("MOVES_FORWARD");
   const b = await update("MOVES_FORWARD");

@@ -136,7 +136,11 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (change?.state !== "READY") {
     return "Its pull request was analysed again";
   }
-  const payload = (action.payload ?? {}) as { comment?: string };
+  const payload = (action.payload ?? {}) as { comment?: string; added?: boolean };
+  // A section put at the end is new material, or a note about a section Autopilot can't edit: a person reads it first.
+  if (action.kind === "ARTICLE_EDIT" && payload.added) {
+    return "Its article gets a section at the end";
+  }
   if (action.kind === "MOVES_FORWARD" && !(payload.comment ?? "").trim()) {
     return "No progress update to post";
   }

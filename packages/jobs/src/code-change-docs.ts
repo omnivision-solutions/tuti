@@ -20,7 +20,8 @@ type Block = NonNullable<Doc["content"]>[number];
  * what the article's update changes with it (the edits already waiting on it included). Its document is its tagged
  * revision (see landEdit).
  */
-export type ArticleEditPayload = { problem: "wrong" | "missing"; title: string; body: string; before: string; overview: string; overviewOf: string[] };
+/** `added`: the edit puts a section at the end of the article (the model's "add"), so it always waits for a person (waitsBecause). */
+export type ArticleEditPayload = { problem: "wrong" | "missing"; title: string; body: string; before: string; overview: string; overviewOf: string[]; added?: true };
 /**
  * Where a new article's draft goes, when the analysis said: an existing collection (its id) and the article it follows
  * there (its id; null: first), or a new collection (its name and Lucide icon), created when the draft is approved.
@@ -116,9 +117,10 @@ When you change an article that exists:
 
 /**
  * When the section for the end ("add") may be used, for the writers that have it. Sections with tables or code can't be
- * edited yet (docs/plan.md, E1), so a statement that's wrong there still gets a short note for a person, rather than nothing.
+ * edited yet (docs/plan.md, E1), so a statement that's wrong there still gets a short note, rather than nothing. An edit with a section for the end never goes out by itself
+ * (waitsBecause), so the note is read by a person before readers see it.
  */
-export const ADD_RULE = `Leave "add" empty, with two exceptions. One: there's something the article doesn't cover at all and no editable section is the place for it. Two: the statement that's wrong is in a section that isn't editable; then say what's right in a sentence or two, under a heading that names that section, so a person can fix it there. It starts with a heading even when it's short.`;
+export const ADD_RULE = `Leave "add" empty, with two exceptions. One: there's something the article doesn't cover at all and no editable section is the place for it. Two: the statement that's wrong is in a section that isn't editable; then say what's right in a sentence or two, under a heading that names that section, so a person can fix it there (the one case where the old statement stays: you can't change it, and an edit with "add" is never published without a person reading it). It starts with a heading even when it's short.`;
 
 export const EDIT_SYSTEM = `You keep a product's help articles right after the product changes. You get a merged pull request, what changed for users, and a help article in numbered sections (Markdown), and whether the article is now wrong or missing something. Readers are the product's users, not its developers.
 
@@ -191,6 +193,7 @@ export async function writeArticleEdit(
       // Said by the model, or none: each edit's reason is in its pull request's chip, not joined here.
       overview: typeof parsed.overview === "string" ? parsed.overview.trim().slice(0, 1_000) : "",
       overviewOf: waiting.map((edit) => edit.id),
+      ...(typeof parsed.add === "string" && parsed.add.trim() && { added: true as const }),
     },
     writtenOn: doc,
     doc: checked,
