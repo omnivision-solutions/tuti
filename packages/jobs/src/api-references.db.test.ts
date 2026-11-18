@@ -99,8 +99,8 @@ test("the backfill indexes every reference without entries, carrying on past one
   expect(without.posts).toBeNull();
   expect(without.articles).toBeNull();
   // Only this test's own: others in the file may leave references of their own.
-  expect(without.references.failed).toContain(broken.id);
-  expect(without.references.failed).not.toContain(good.id);
+  expect(without.references!.failed).toContain(broken.id);
+  expect(without.references!.failed).not.toContain(good.id);
   expect(await entries(good.id)).toEqual([
     { key: "GET /items/0", embedded: false },
     { key: "GET /items/1", embedded: false },
@@ -108,8 +108,8 @@ test("the backfill indexes every reference without entries, carrying on past one
 
   withEmbeddings();
   const withKey = await backfillEmbeddings(log);
-  expect(withKey.references.failed).toContain(broken.id);
-  expect(withKey.references.failed).not.toContain(good.id);
+  expect(withKey.references!.failed).toContain(broken.id);
+  expect(withKey.references!.failed).not.toContain(good.id);
   expect((await entries(good.id)).every((row) => row.embedded)).toBe(true);
 }, 30_000);
 
@@ -137,4 +137,26 @@ test("the backfill leaves sample posts and articles out: never embedded or sugge
   expect(await prisma.postEmbedding.count({ where: { postId: { in: [real.id, seeded.id] } } })).toBe(1);
   expect(await prisma.articleChunk.count({ where: { articleId: sampleArticle.id } })).toBe(0);
   expect(await prisma.duplicateSuggestion.count({ where: { OR: [{ postId: seeded.id }, { originalId: seeded.id }] } })).toBe(0);
+}, 30_000);
+
+test("the backfill indexes references even when embedding posts fails, and says the posts phase failed", async () => {
+  withEmbeddings();
+  const project = await prisma.project.create({ data: { slug: `posts-fail-${Date.now()}`, name: "Posts fail" } });
+  const author = await prisma.user.create({ data: { id: `posts-fail-${Date.now()}`, name: "Author", email: `e2e-posts-fail-${Date.now()}@example.com` } });
+  const board = await prisma.board.create({ data: { projectId: project.id, slug: "ideas", name: "Ideas" } });
+  await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: author.id, number: 1, title: "A post never embedded", body: "" } });
+  const reference = await addReference(spec(2));
+
+  // The posts' embeddings request is the first the backfill makes: it fails.
+  openai.failNext();
+  const result = await backfillEmbeddings(log);
+  expect(result.posts).toBeNull();
+  expect(result.errors).toEqual([{ phase: "posts", message: expect.any(String) }]);
+  // The phases after it still ran.
+  expect(result.articles).not.toBeNull();
+  expect(result.references!.failed).not.toContain(reference.id);
+  expect(await entries(reference.id)).toEqual([
+    { key: "GET /items/0", embedded: true },
+    { key: "GET /items/1", embedded: true },
+  ]);
 }, 30_000);

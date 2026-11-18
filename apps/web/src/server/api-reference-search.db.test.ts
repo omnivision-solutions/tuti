@@ -165,35 +165,44 @@ describe("the indexing job", () => {
     const { id } = await reference();
     const entry = await prisma.apiOperationEntry.findFirstOrThrow({ where: { projectId: project.id, key: "POST /posts" }, select: { id: true } });
     // Holds the job mid-write: it has the project and the reference locked and waits on this entry's row to update it.
+    // The job starts only once the lock is held, and the lock goes whatever the test's outcome.
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const holds = new Promise<void>((resolve) => (locked = resolve));
     const holding = prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT 1 FROM api_operation_entry WHERE id = ${entry.id} FOR UPDATE`;
+        locked();
         await released;
       },
       { timeout: 20_000 },
     );
-    const waiting = (query: string) =>
-      // Sessions of this file's own database only (each has one), and not this one: other files' workers share the server.
-      prisma.$queryRaw<{ n: bigint }[]>`
-        SELECT count(*) AS n FROM pg_stat_activity
-        WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query LIKE ${`%${query}%`}`.then(([row]) => Number(row!.n));
-    const log = { info: () => {}, warn: () => {} };
-    const job = apiReferenceChanged({ referenceId: id }, log);
-    await expect.poll(() => waiting("INSERT INTO api_operation_entry"), { timeout: 10_000 }).toBe(1);
-    // The change's own job doesn't run: what's checked is the change's delete.
     const queued = vi.spyOn(handlers, "apiReferenceChanged").mockResolvedValue({ skipped: true });
-    const hide = call(updateApiReference, as(), { slug: "reference", hide: ["POST /posts"] });
-    await expect.poll(() => waiting("FOR UPDATE"), { timeout: 10_000 }).toBeGreaterThan(0);
-    release();
-    await holding;
-    expect(await job).toMatchObject({ skipped: false });
-    await hide;
-    queued.mockRestore();
-    expect(await found("create a post")).toEqual([]);
+    try {
+      await Promise.race([holds, holding]);
+      const waiting = (query: string) =>
+        // Sessions of this file's own database only (each has one), and not this one: other files' workers share the server.
+        prisma.$queryRaw<{ n: bigint }[]>`
+          SELECT count(*) AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query LIKE ${`%${query}%`}`.then(([row]) => Number(row!.n));
+      const log = { info: () => {}, warn: () => {} };
+      const job = apiReferenceChanged({ referenceId: id }, log);
+      await expect.poll(() => waiting("INSERT INTO api_operation_entry"), { timeout: 10_000 }).toBe(1);
+      // The change's own job doesn't run (the spy above): what's checked is the change's delete.
+      const hide = call(updateApiReference, as(), { slug: "reference", hide: ["POST /posts"] });
+      await expect.poll(() => waiting("FOR UPDATE"), { timeout: 10_000 }).toBeGreaterThan(0);
+      release();
+      await holding;
+      expect(await job).toMatchObject({ skipped: false });
+      await hide;
+      expect(await found("create a post")).toEqual([]);
+    } finally {
+      release();
+      queued.mockRestore();
+      await holding.catch(() => {});
+    }
   }, 30_000);
-
 
   test("writes nothing when the reference changed while it ran: the change's own job indexes it", async () => {
     for (const [name, value] of Object.entries(model.env)) {
