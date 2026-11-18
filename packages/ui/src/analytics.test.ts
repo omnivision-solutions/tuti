@@ -139,6 +139,7 @@ describe("analytics", () => {
     expect(routeOf("/app/inbox")).toBe("/app/[project]");
     // As Next.js picks: the route fixed where the two first differ (tabs), not the one listed first.
     expect(routeOf("/app/acme/docs/tabs/history")).toBe("/app/[project]/docs/tabs/[tab]");
+    expect(routeOf("/app/acme/docs/references/public-api")).toBe("/app/[project]/docs/references/[reference]");
   });
 
   it("knows every page of the app", () => {

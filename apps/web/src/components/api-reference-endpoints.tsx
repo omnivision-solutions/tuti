@@ -91,7 +91,7 @@ export function ApiReferenceSync({ projectSlug, slug, source, maxBytes }: { proj
           if (file) upload(file);
         }}
       />
-      <Button type="button" variant="outline" disabled={pending} onClick={() => input.current?.click()} className="@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0">
+      <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={() => input.current?.click()} className="@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0">
         <UploadIcon />
         <span className="@max-[44rem]/docs-page:sr-only">Upload new version</span>
       </Button>
@@ -130,7 +130,7 @@ export function ApiReferenceMore({ projectSlug, slug, name, published }: { proje
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(() => deleteApiReference(projectSlug, slug), `${name} deleted`)}>
+          <AlertDialogAction variant="destructive" disabled={pending} focusableWhenDisabled onClick={() => run(() => deleteApiReference(projectSlug, slug), `${name} deleted`)}>
             Delete
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -166,7 +166,9 @@ export function ApiReferenceEndpoints({
   const [query, setQuery] = useState("");
   const groupOn = (group: Group) => clicked[`group ${group.key}`] ?? group.onHelpCenter;
   const offGroups = new Set(groups.filter((group) => !groupOn(group)).map((group) => group.key));
-  const inOffGroup = (operation: Operation) => [operation.group, ...operation.alsoIn].some((key) => offGroups.has(key));
+  /** The group that keeps it off the help center, if one of its groups is off. */
+  const offGroupOf = (operation: Operation) => groups.find((group) => offGroups.has(group.key) && [operation.group, ...operation.alsoIn].includes(group.key));
+  const inOffGroup = (operation: Operation) => offGroupOf(operation) !== undefined;
   const ownOn = (operation: Operation) => clicked[`operation ${operation.key}`] ?? !operation.hidden;
   const shown = (operation: Operation) => ownOn(operation) && !inOffGroup(operation);
 
@@ -260,15 +262,21 @@ export function ApiReferenceEndpoints({
                     <span className="min-w-0 text-sm break-words text-muted-foreground">{operation.title}</span>
                     {operation.deprecated && <Badge variant="outline">Deprecated</Badge>}
                     {fresh.has(operation.key) && <Badge variant="highlight">New</Badge>}
+                    {offGroupOf(operation) && (
+                      <span id={`endpoint-${operation.slug}-off`} className="basis-full text-xs text-muted-foreground">
+                        Off while {offGroupOf(operation)?.name} is off
+                      </span>
+                    )}
                   </div>
-                  {/* Greyed while a group it's in is off: its own choice is kept for when the group is back. */}
+                  {/* Greyed while a group it's in is off, with the reason in the row: its own choice is kept for when the group is
+                      back. Still reached by Tab (`aria-disabled`, not `disabled`), so its reason is read out; clicks do nothing. */}
                   <Switch
                     aria-label={`${operation.title} (${operation.kind} ${operation.path}): on the help center`}
                     checked={ownOn(operation)}
-                    disabled={inOffGroup(operation)}
-                    aria-description={inOffGroup(operation) ? "Off the help center while its group is off" : undefined}
-                    title={inOffGroup(operation) ? "Off the help center while its group is off" : undefined}
-                    onChange={(event) => change("operation", operation.key, event.currentTarget.checked)}
+                    aria-disabled={inOffGroup(operation) || undefined}
+                    aria-describedby={inOffGroup(operation) ? `endpoint-${operation.slug}-off` : undefined}
+                    className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                    onChange={(event) => !inOffGroup(operation) && change("operation", operation.key, event.currentTarget.checked)}
                   />
                 </li>
               ))}

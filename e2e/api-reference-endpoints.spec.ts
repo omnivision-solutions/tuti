@@ -50,6 +50,12 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   const deletePost = team.getByRole("switch", { name: "Delete a post (DELETE /posts/{id}): on the help center" });
   await expect(deletePost).toBeDisabled();
   await expect(deletePost).toBeChecked();
+  // Why, in the row; and the switch is still reached by Tab, where a click changes nothing.
+  await expect(team.getByRole("region", { name: "Admin", exact: true }).getByRole("listitem")).toContainText("Off while Admin is off");
+  await deletePost.focus();
+  await expect(deletePost).toBeFocused();
+  await team.keyboard.press("Space");
+  await expect(deletePost).toBeChecked();
   // The header's actions fit beside the docs' tree at desktop widths, and on a phone below.
   const more = team.getByRole("button", { name: "More actions" });
   const fits = async (width: number) => {
@@ -140,7 +146,7 @@ test("An API reference's Endpoints: a group that's only a second tag has its swi
   await expect(team.getByText("20 of 21 on the help center")).toBeVisible();
   const first = team.getByRole("switch", { name: "Read thing 1 (GET /things/1): on the help center" });
   await expect(first).toBeDisabled();
-  await expect(first).toHaveAccessibleDescription("Off the help center while its group is off");
+  await expect(first).toHaveAccessibleDescription("Off while Internal is off");
 
   // Search by path or title; nothing found is said.
   const search = team.getByRole("searchbox", { name: "Search endpoints" });
