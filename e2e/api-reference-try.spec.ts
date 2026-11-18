@@ -239,11 +239,16 @@ test("a reader tries an operation with their key: from the browser, and through 
   await pickServer(slow, `Legacy (${closed.origin}/v1)`);
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
+  let reached!: () => void;
+  const atTuti = new Promise<void>((resolve) => (reached = resolve));
   await reader.route("**/docs/reference/get-a-post/try", async (route) => {
+    reached();
     await held;
     await route.fulfill({ json: { status: 200, statusText: "OK", headers: [], body: "{}", size: 2, cut: false, ms: 16_000 } });
   });
   await slow.getByRole("button", { name: "Send", exact: true }).click();
+  // Once the browser's own attempt has been refused and the request is on its way through Tuti: the clock moves then.
+  await atTuti;
   await reader.clock.runFor(16_000);
   await expect(slow.getByRole("button", { name: "Sending…" })).toBeDisabled();
   release();
