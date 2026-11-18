@@ -1,0 +1,54 @@
+import { createServer, type IncomingHttpHeaders } from "node:http";
+import type { AddressInfo } from "node:net";
+
+export type ApiFakeRequest = { method: string; path: string; query: string; headers: IncomingHttpHeaders; body: string };
+
+export type ApiFake = {
+  /** e.g. http://127.0.0.1:4321 */
+  origin: string;
+  /** What it was sent, oldest first. */
+  requests: ApiFakeRequest[];
+  close(): Promise<void>;
+};
+
+/**
+ * A local stand-in for a team's API, for Try it: answers every request with JSON of what it got (201, its method,
+ * path, query and body), except `/redirect` (a 302 to another site) and `/large` (`size` bytes of text). With `cors`
+ * it lets browsers on any site call it, the key's header too; without, a browser's request to it fails.
+ */
+export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake> {
+  const requests: ApiFakeRequest[] = [];
+  const allow = cors
+    ? { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*", "access-control-expose-headers": "*" }
+    : {};
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) {
+      body += chunk;
+    }
+    const url = new URL(request.url!, "http://localhost");
+    if (request.method === "OPTIONS") {
+      response.writeHead(cors ? 204 : 404, allow).end();
+      return;
+    }
+    requests.push({ method: request.method!, path: url.pathname, query: url.search, headers: request.headers, body });
+    if (url.pathname.endsWith("/redirect")) {
+      response.writeHead(302, { ...allow, location: "https://elsewhere.example/" }).end();
+      return;
+    }
+    if (url.pathname.endsWith("/large")) {
+      response.writeHead(200, { ...allow, "content-type": "text/plain" }).end("x".repeat(Number(url.searchParams.get("size") ?? 0)));
+      return;
+    }
+    response
+      .writeHead(201, { ...allow, "content-type": "application/json", "x-request-id": "fake-1" })
+      .end(JSON.stringify({ method: request.method, path: url.pathname, query: url.search, body }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    requests,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}

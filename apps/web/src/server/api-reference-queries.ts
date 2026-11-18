@@ -59,6 +59,7 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
   }
   return {
     kind: "reference" as const,
+    projectId: row.projectId,
     reference: { ...reference, baseUrl: row.baseUrl, treeStyle: row.treeStyle },
     tab,
     doc,
