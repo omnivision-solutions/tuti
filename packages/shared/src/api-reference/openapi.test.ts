@@ -1378,6 +1378,26 @@ test("one rule when parts are folded in: a later part's word counts, and a schem
   });
   expect(first.example).toEqual({ lives: 9, name: "Tom" });
   expect(first.schema.default).toEqual({ lives: 9 });
+
+  // Written 3.1's way, `examples`, its own is still the one shown over a base's `example`, and the other way round.
+  const either = (openapi: string) =>
+    read(
+      JSON.stringify({
+        openapi,
+        paths: { "/x": { get: { summary: "X", responses: { "200": json({ $ref: "#/components/schemas/Pet", examples: [{ name: "Tom" }] }), "201": json(ref("Cat")), "202": json(ref("Old")) } } } },
+        components: {
+          schemas: {
+            Pet: { type: "object", example: { name: "Rex" }, properties: { name: { type: "string" } } },
+            Cat: { allOf: [ref("Pet")], examples: [{ name: "Tom" }] },
+            Newer: { type: "object", examples: [{ name: "Rex" }], properties: { name: { type: "string" } } },
+            Old: { allOf: [ref("Newer")], example: { name: "Tom" } },
+          },
+        },
+      }),
+    ).operations[0]!.responses.map((response) => response.example);
+  expect(either("3.1.0")).toEqual([{ name: "Tom" }, { name: "Tom" }, { name: "Tom" }]);
+  // In 3.0 what's beside a reference doesn't count; what's written beside `allOf` does.
+  expect(either("3.0.3")).toEqual([{ name: "Rex" }, { name: "Tom" }, { name: "Tom" }]);
   expect(based.doc.types[2]!.schema).toMatchObject({ type: "Pet", ref: "Same", default: { name: "Rex" }, description: "A pet by another name." });
 });
 

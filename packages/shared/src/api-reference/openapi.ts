@@ -491,6 +491,8 @@ function read(root: Obj, most: number): ApiDoc {
         if (parent && (fieldsOf(parent.properties).length > 0 || (folds.get(parent) ?? []).some((other) => other !== part && adds(other)))) merged.delete(key);
       }
     }
+    // `example` and 3.1's `examples` are one choice: where the schema's own parts write one of them, the other isn't its own.
+    if (own.has("example") !== own.has("examples")) merged.delete(own.has("example") ? "examples" : "example");
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
     merged.set("required", [...required]);
     const whole: Obj = Object.fromEntries(merged);
