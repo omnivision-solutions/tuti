@@ -695,6 +695,11 @@ test("a made-up example keeps to the schema's limits", () => {
       list: { type: "array", items: { type: "string" } },
       crowd: { type: "array", items: { type: "boolean" }, minItems: 500 },
       unknowns: { type: "array", items: {}, minItems: 1 },
+      // Lists of lists, and of objects, have one of each: repeated at every level they'd multiply.
+      grid: { type: "array", minItems: 10, items: { type: "array", minItems: 10, items: { type: "array", minItems: 10, items: { type: "integer" } } } },
+      rows: { type: "array", minItems: 3, items: { type: "object", properties: { a: { type: "string" } } } },
+      cents: { type: "number", minimum: 100000, multipleOf: 0.01 },
+      thirds: { type: "number", minimum: 123456.7, multipleOf: 0.1 },
     },
   });
   expect(example).toEqual({
@@ -722,6 +727,10 @@ test("a made-up example keeps to the schema's limits", () => {
     list: ["string"],
     crowd: Array.from({ length: 10 }, () => true),
     unknowns: [],
+    grid: [[Array.from({ length: 10 }, () => 0)]],
+    rows: [{ a: "string" }],
+    cents: 100000,
+    thirds: 123456.7,
   });
 
   // What's sent has no read-only fields; what comes back has no write-only ones.

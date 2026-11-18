@@ -180,7 +180,8 @@ function numberWithin(schema: Obj, whole: boolean): number {
     (over === undefined || value > over) &&
     (under === undefined || value < under) &&
     (!whole || Number.isInteger(value)) &&
-    (step === undefined || step <= 0 || Math.abs(value / step - Math.round(value / step)) < 1e-9);
+    // (Within what dividing two decimals is out by, which grows with how many steps there are.)
+    (step === undefined || step <= 0 || Math.abs(value / step - Math.round(value / step)) < 1e-9 * Math.max(1, Math.abs(value / step)));
   // Around each limit, and where there's a step, its multiples around each.
   const limits = [least, over, most, under].filter((value) => value !== undefined);
   const near = limits.flatMap((limit) => [limit, Math.ceil(limit), Math.floor(limit), Math.floor(limit) + 1, Math.ceil(limit) - 1]);
@@ -814,8 +815,11 @@ function read(root: Obj, most: number): ApiDoc {
     }
     if (type === "array") {
       const item = sample(schema.items, inside, where, sent);
-      // As many as the schema says there are at least, up to a few. (Where they must all differ, they still don't.)
-      const count = typeof schema.minItems === "number" ? Math.min(Math.max(1, Math.ceil(schema.minItems)), 10) : 1;
+      // As many as the schema says there are at least, up to a few, when they're plain values: an
+      // object or a list repeated at every level would multiply past what an example may hold.
+      // (Where they must all differ, they still don't.)
+      const plain = typeof item !== "object" || item === null;
+      const count = plain && typeof schema.minItems === "number" ? Math.min(Math.max(1, Math.ceil(schema.minItems)), 10) : 1;
       return item === undefined ? [] : Array.from({ length: count }, () => item);
     }
     if (type === "string") {
