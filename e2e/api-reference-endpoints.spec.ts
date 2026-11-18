@@ -79,13 +79,15 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await expect(team.getByRole("switch", { name: "Admin: on the help center" })).not.toBeChecked();
 
   // A new version adds an operation: New, and off the help center since the team has hidden something. While it uploads
-  // (held back a second here) the button is disabled and keeps the keyboard's focus.
+  // (held back here until the test lets it go) the button is disabled and keeps the keyboard's focus.
   const uploadButton = team.getByRole("button", { name: "Upload new version" });
-  let held = false;
+  let release = () => {};
+  let held: Promise<void> | null = new Promise((resolve) => (release = resolve));
   await team.route(`**/docs/references/api-reference`, async (route) => {
-    if (route.request().method() === "POST" && !held) {
-      held = true;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (route.request().method() === "POST" && held) {
+      const until = held;
+      held = null;
+      await until;
     }
     await route.continue();
   });
@@ -97,6 +99,7 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   });
   await expect(uploadButton).toBeDisabled();
   await expect(uploadButton).toBeFocused();
+  release();
   await expect(team.getByText("1 added", { exact: true })).toBeVisible();
   const comments = team.getByRole("region", { name: "Comments", exact: true }).getByRole("listitem");
   await expect(comments.getByText("New", { exact: true })).toBeVisible();
