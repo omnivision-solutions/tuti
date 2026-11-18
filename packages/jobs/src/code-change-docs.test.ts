@@ -151,6 +151,48 @@ test("a passage that can't be replaced refuses the whole edit, as a section that
   expect(edit({ passages: [good, good] })).toBeNull();
 });
 
+const mixed = () => articleNotes({ type: "doc", content: [para("Run it from Settings."), code, { type: "heading", attrs: { level: 2 }, content: text("More") }, para("See below.")] });
+
+test("passages that aren't a list refuse the whole edit: the rest of it isn't applied without them", () => {
+  const { edit } = mixed();
+  const good = { section: 1, find: "Run it from Settings.", replace: "Run it from Team." };
+  const sections = { "2": "## More\n\nSee above." };
+  // The model sent one passage, not a list of them: the rest of the edit isn't applied without it.
+  expect(edit({ sections, passages: good })).toBeNull();
+  expect(edit({ sections, passages: "Run it from Team." })).toBeNull();
+  // Left out, or empty: an edit like any other.
+  expect(edit({ sections })).not.toBeNull();
+  expect(edit({ sections, passages: [] })).not.toBeNull();
+});
+
+test("a passage whose section isn't a section's number refuses the edit, without throwing", () => {
+  const { edit } = mixed();
+  const good = { section: 1, find: "Run it from Settings.", replace: "Run it from Team." };
+  const sections = { "2": "## More\n\nSee above." };
+  // A number, or its digits as "sections" has them.
+  expect(edit({ passages: [good] })).not.toBeNull();
+  expect(edit({ passages: [{ ...good, section: "1" }] })).not.toBeNull();
+  for (const section of [{ toString: null }, true, [1], 1.5, 0, -1, "1.0", " 1", "", null, undefined]) {
+    expect(edit({ sections, passages: [{ ...good, section }] })).toBeNull();
+  }
+});
+
+test("a heading can't be renamed to a title another heading in the article has: the edit would take that section's place", () => {
+  const head = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: text(value) });
+  const { edit } = articleNotes({ type: "doc", content: [head("Setup"), para("Install it."), head("Export"), para("Run it."), head("Files"), para("They're CSV."), code] });
+  // Rewritten whole, and by its heading's passage.
+  expect(edit({ sections: { "2": "## Setup\n\nRun it." } })).toBeNull();
+  expect(edit({ passages: [{ section: 3, find: "Files", replace: "Setup" }] })).toBeNull();
+  expect(edit({ sections: { "2": "## Export\n\nRun it.\n\n## Setup\n\nAgain." } })).toBeNull();
+  // A title no other heading has is a rename like any other.
+  expect(edit({ sections: { "2": "## Export to CSV\n\nRun it." } })).not.toBeNull();
+  expect(edit({ passages: [{ section: 3, find: "Files", replace: "File formats" }] })).not.toBeNull();
+  // Headings the edit left alone may repeat: an article that has two alike is still edited.
+  const twice = articleNotes({ type: "doc", content: [head("Notes"), para("One."), head("Notes"), para("Two."), code] });
+  expect(twice.edit({ sections: { "1": "## Notes\n\nFirst." } })).not.toBeNull();
+  expect(twice.edit({ passages: [{ section: 2, find: "Two.", replace: "Second." }] })).not.toBeNull();
+});
+
 test("the three writers (an edit, a new article, Verify's fix) share one set of writing rules, and the two with a section for the end share when it may be used and how passages are replaced", () => {
   for (const prompt of [EDIT_SYSTEM, NEW_SYSTEM, CHECK_SYSTEM]) {
     expect(prompt).toContain(WRITING_RULES);

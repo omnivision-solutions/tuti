@@ -222,13 +222,17 @@ const isImage = (block: Block) => block.type === "image";
 /** The same nodes (the very objects) in the same order. */
 const sameNodes = (a: (Block | undefined)[], b: Block[]) => a.length === b.length && a.every((node, i) => node === b[i]);
 
+/** The titles sections are keyed by (keyed): each top-level heading's text, in order. */
+const titles = (blocks: Block[]) => blocks.filter((block) => block.type === "heading").map((block) => toPlainText(block).trim());
+
 /**
  * An article's text as the model reads it: numbered sections (`notes`), each marked editable when it has only what
  * the model can write back, and otherwise listing its `passages` (the text blocks that can be replaced one by one,
  * those found once: a repeated one can't be named); and `edit`, which applies a reply's `sections` (number → new
  * text), `passages` (a section's passage → its new text, the nodes around it untouched) and `add` (a new last section)
  * to it: the new document, or null when it can't be used (a section losing a link, or not keeping its images, each once
- * and in their order; a passage refused, see replacePassage; not a valid article; or nothing changed).
+ * and in their order; a passage refused, see replacePassage; a heading renamed to a title another heading has; not a valid article; or
+ * nothing changed).
  */
 export function articleNotes(doc: Doc) {
   const parts = sections(doc.content ?? []);
@@ -260,9 +264,14 @@ export function articleNotes(doc: Doc) {
       next[index] = read.doc.content!;
     }
     // One passage at a time, in the section as it stands; one that can't be replaced refuses the edit, like a section's.
-    for (const passage of Array.isArray(reply.passages) ? (reply.passages as unknown[]) : []) {
+    // Passages that aren't a list (one object, say) refuse it too: the rest of the edit was written to go with them.
+    if (reply.passages !== undefined && reply.passages !== null && !Array.isArray(reply.passages)) {
+      return null;
+    }
+    for (const passage of (reply.passages ?? []) as unknown[]) {
       const { section, find, replace } = (passage ?? {}) as { section?: unknown; find?: unknown; replace?: unknown };
-      const index = Number(section) - 1;
+      // A section's number, as a number or its digits (as "sections" names them): nothing else is made into one.
+      const index = (typeof section === "number" && Number.isInteger(section)) || (typeof section === "string" && /^\d+$/.test(section)) ? Number(section) - 1 : -1;
       const replaced = next[index] && typeof find === "string" && typeof replace === "string" ? replacePassage(next[index], find, replace) : null;
       if (!replaced) {
         return null;
@@ -275,6 +284,12 @@ export function articleNotes(doc: Doc) {
     }
     const added = typeof reply.add === "string" && reply.add.trim() ? readNotes(JSON.stringify({ notes: reply.add }), new Set(), []) : null;
     const content: Doc = { type: "doc", content: [...next.flat(), ...(added?.doc.content ?? [])] };
+    // A section is known by its heading's text (keyed): a heading this edit renamed to one the article has already would
+    // take that section's place, and taking the edit out later would fail. Headings it left alone may repeat.
+    const all = titles(content.content!);
+    if (next.some((section, i) => titles(section).some((title, j) => title !== titles(parts[i]!)[j] && all.indexOf(title) !== all.lastIndexOf(title)))) {
+      return null;
+    }
     const checked = parseDoc("article", content);
     return checked.ok && toPlainText(content) !== toPlainText(doc) ? checked.doc : null;
   };

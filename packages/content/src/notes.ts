@@ -230,10 +230,28 @@ function swap(node: JSONContent, target: JSONContent, next: JSONContent): JSONCo
   return content?.some((child, i) => child !== node.content![i]) ? { ...node, content } : node;
 }
 
+/** What notesToDoc reads as a block's start: a heading, a quote, a list's item. Escaped ("1\. Use…"), it's text. */
+const BLOCK_MARKER = /^(#{1,6}(\s|$)|>|[-*•+]\s|\d+[.)]\s)/;
+
+/** How many links to each address these text nodes hold (nodes side by side with one address are one link). */
+function linkRuns(content: JSONContent[]): Map<string, number> {
+  const runs = new Map<string, number>();
+  let last: unknown;
+  for (const node of content) {
+    const href: unknown = node.marks?.find((mark) => mark.type === "link")?.attrs?.href;
+    if (typeof href === "string" && href !== last) {
+      runs.set(href, (runs.get(href) ?? 0) + 1);
+    }
+    last = href;
+  }
+  return runs;
+}
+
 /** A text block with `replace` as its content (see replacePassage), or null when it can't be used. */
 function rewritten(target: JSONContent, replace: string): JSONContent | null {
   let rest = replace.trim();
-  if (rest === "" || rest.includes("\n")) {
+  // One line, and no block of its own: a marker at its start (notesToDoc's) would be stored as text ("2. 1. Open…").
+  if (rest === "" || /[\n\r]/.test(rest) || BLOCK_MARKER.test(rest)) {
     return null;
   }
   const links = new Set([...factsIn([target]).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
@@ -253,14 +271,20 @@ function rewritten(target: JSONContent, replace: string): JSONContent | null {
     rest = rest.slice(at + span.length);
   }
   const next = { ...target, content };
-  return text(rest) && content.length > 0 && droppedFacts([target], [next]).length === 0 ? next : null;
+  // Each link the passage had, as often as it had it: one of two to the same address made plain text is a link lost.
+  if (!text(rest) || content.length === 0) {
+    return null;
+  }
+  const has = linkRuns(content);
+  return [...linkRuns(target.content ?? [])].every(([href, count]) => (has.get(href) ?? 0) >= count) ? next : null;
 }
 
 /**
  * These blocks with one passage's text replaced: the block whose text is exactly `find` (see passagesIn) gets
  * `replace` as its content, and keeps its type and attributes; every other node is the object it was. Null when it
- * can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is empty or more than one line;
- * it loses a link the passage had; or its `code` isn't the passage's own, each once, in order and exactly as it was
+ * can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is empty, more than one line or
+ * starts like a block of its own (a heading's #, a list's marker); it loses a link the passage had (one of two to the
+ * same address counts); or its `code` isn't the passage's own, each once, in order and exactly as it was
  * (code is never written here, only kept: those nodes come back as they were). The rest is read like any reply (inline):
  * text, **bold** and the links the passage had.
  */

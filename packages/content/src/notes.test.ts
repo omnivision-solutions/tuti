@@ -158,4 +158,33 @@ describe("passages: a block's text replaced where it stands", () => {
     // A passage without code can't gain any.
     expect(replacePassage(section, "Each plan has seats.", "Each plan has `seats`.")).toBeNull();
   });
+
+  test("a replacement with a carriage return is more than one line: refused, like a line feed", () => {
+    expect(replacePassage(section, "Plans", "New label\rDetails")).toBeNull();
+    expect(replacePassage(section, "Each plan has seats.", "Each plan has seats.\r\nAnd a price.")).toBeNull();
+  });
+
+  test("a replacement that starts with a block's marker is refused: it would be stored as text, not read as a block", () => {
+    // A list's item would read "2. 1. Open Plans.", a heading would show its hashes.
+    expect(replacePassage(section, "Open **Billing**.", "1. Open **Plans**.")).toBeNull();
+    expect(replacePassage(section, "Plans", "## Export to CSV")).toBeNull();
+    for (const refused of ["- Each plan has a price.", "* Each plan has a price.", "+ Each plan has a price.", "2) Each plan has a price.", "> Each plan has a price.", "# Plans"]) {
+      expect(replacePassage(section, "Each plan has seats.", refused)).toBeNull();
+    }
+    // Escaped, or no marker at all (bold, a number in a sentence), it's text.
+    expect(replacePassage(section, "Each plan has seats.", "1\\. Use a plan.")![1]!.content).toEqual([text("1. Use a plan.")]);
+    expect(replacePassage(section, "Each plan has seats.", "**Each** plan has 3.5 seats.")).not.toBeNull();
+  });
+
+  test("two links to one address are two links: a replacement that keeps one and makes the other plain text is refused", () => {
+    const docs = { type: "link", attrs: { href: "https://example.com/docs" } };
+    const twice = [para(text("Read "), text("Setup", docs), text(" and "), text("Export", docs), text("."))];
+    const find = "Read [Setup](https://example.com/docs) and [Export](https://example.com/docs).";
+    expect(passagesIn(twice)[0]!.text).toBe(find);
+    expect(replacePassage(twice, find, "Read [Setup](https://example.com/docs) and Export.")).toBeNull();
+    // Their words may change.
+    expect(replacePassage(twice, find, "Read [Set up](https://example.com/docs), then [Exports](https://example.com/docs).")![0]).toEqual(
+      para(text("Read "), text("Set up", docs), text(", then "), text("Exports", docs), text(".")),
+    );
+  });
 });
