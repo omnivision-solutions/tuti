@@ -145,6 +145,14 @@ test("where the server checks a project's article edits, the Checks switch says 
   await expect(checks).toBeFocused();
   await expect(checks).toHaveAccessibleDescription(/About 26 credits per edit reviewed$/);
   await checkpoint(owner, "team-settings-autopilot-checks-notice");
+  // Only while edits would otherwise go out by themselves: Publish article edits off, no notice; on again, it's back.
+  const publish = owner.getByRole("switch", { name: "Publish article edits", exact: true });
+  await publish.click();
+  await expect(publish).not.toBeChecked();
+  await expect(notice).toHaveCount(0);
+  await publish.click();
+  await expect(publish).toBeChecked();
+  await expect(notice).toBeVisible();
 
   // Switch Checks on, from the keyboard: on, the notice gone, focus on the switch.
   await notice.getByRole("button", { name: "Switch Checks on" }).focus();
