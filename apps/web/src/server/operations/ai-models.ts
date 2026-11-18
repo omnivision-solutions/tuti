@@ -58,7 +58,7 @@ async function listedModels(projectId: string): Promise<Map<string, AiModelListi
  * The first model of `level`'s row that the server's price cap rules out (one the endpoint doesn't list has no price,
  * so it's ruled out too, like a model picked), or null: no cap, no row, or all within it.
  */
-function overCap(level: AiLevel, listed: Map<string, AiModelListing> | null): string | null {
+export function overCap(level: AiLevel, listed: Map<string, AiModelListing> | null): string | null {
   const models = level === "affordable" || level === "best" ? Object.values(aiLevelRows()[level] ?? {}) : [];
   return (listed && models.find((id) => !listed.has(id) || !withinModelCap(listed.get(id)!))) ?? null;
 }

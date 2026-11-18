@@ -283,6 +283,13 @@ test("a settings page's AI model: every level the server offers, with the upgrad
   // Back on Free: Custom is kept and not used, so Balanced is the one shown, with a line saying so.
   await onPlan("free");
   expect(await setting()).toMatchObject({ saved: "custom", used: "balanced", notice: "Custom isn't available on this plan." });
+
+  // A level the server's cap rules out isn't offered as an upgrade: no plan would bring it.
+  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  await prisma.project.update({ where: { id: project.id }, data: { aiLevels: { answers: "best" } } });
+  const capped = await setting();
+  expect(capped.levels.map(({ level }) => level)).toEqual(["affordable", "balanced", "custom"]);
+  expect(capped).toMatchObject({ saved: "best", used: "balanced", notice: "Best isn't available on this server." });
 });
 
 test("a settings page's AI model on a server without plans: no prompts; a level over the server's cap isn't shown, and a saved one the server stopped offering is said", async () => {

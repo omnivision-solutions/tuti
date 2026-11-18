@@ -1,8 +1,8 @@
-import { AI_GROUPS, AI_LEVELS, type AiGroup, type AiLevel, type AiRole, creditsEnabled, creditsPerUsageDollar, listModels, log, planAllowsLevel, type PlanKey, roleNeedsTools, withinModelCap } from "@tuti/shared";
+import { AI_GROUPS, AI_LEVELS, type AiGroup, type AiLevel, type AiRole, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, offeredLevels, planAllowsLevel, type PlanKey, roleNeedsTools, withinModelCap } from "@tuti/shared";
 
 import type { ListedModel } from "@/lib/model-tiers";
 import { type UpgradePrompt, upgradePrompt } from "@/lib/upgrade-prompt";
-import { aiModels } from "@/server/operations/ai-models";
+import { aiModels, overCap } from "@/server/operations/ai-models";
 
 export const LEVEL_NAMES: Record<AiLevel, string> = { affordable: "Affordable", balanced: "Balanced", best: "Best", custom: "Custom" };
 
@@ -38,7 +38,9 @@ export async function aiModelSetting<G extends AiGroup>(project: { id: string; s
   });
   const byId = new Map(all.map((model) => [model.id, model]));
   const models = await aiModels(project.id, byId);
-  const { level: saved, used, available } = models.levels[group];
+  const { level: saved, used } = models.levels[group];
+  // What this server has, on any plan: the levels it offers whose models are within its price cap (as aiModels works out `available`).
+  const offered = offeredLevels().filter((level) => overCap(level, modelMaxPrice() === null ? null : byId) === null);
   // The endpoint's names start with the provider ("Anthropic: Claude Sonnet 5.5"); a model it doesn't list goes by its id.
   const name = (id: string) => (id === "off" ? "Off" : (byId.get(id)?.name.replace(/^[^:]+: /, "") ?? id));
   const roles = (AI_GROUPS[group] as readonly AiRole[]).map((role) => ({ role, label: (labels as Record<AiRole, string>)[role] }));
@@ -47,14 +49,14 @@ export async function aiModelSetting<G extends AiGroup>(project: { id: string; s
     group,
     saved,
     used,
-    // What the plan may pick here, what a higher plan could (the upgrade prompt), and the one in use whatever happened to it since.
-    levels: AI_LEVELS.filter((level) => available.includes(level) || !planAllowsLevel(project.plan, level) || level === used).map((level) => ({
+    // What the server has, with the upgrade prompt on those the plan lacks, and the one in use whatever happened to it since.
+    levels: AI_LEVELS.filter((level) => offered.includes(level) || level === used).map((level) => ({
       level,
       name: LEVEL_NAMES[level],
       upgrade: planAllowsLevel(project.plan, level) ? null : levelUpgrade(level, project.slug),
     })),
     summary: roles.map(({ role, label }) => `${label} ${name(models[role].used)}`).join(" · "),
-    notice: saved === used ? null : `${LEVEL_NAMES[saved]} isn't available on this ${planAllowsLevel(project.plan, saved) ? "server" : "plan"}.`,
+    notice: saved === used ? null : `${LEVEL_NAMES[saved]} isn't available on this ${offered.includes(saved) ? "plan" : "server"}.`,
     roles: roles.map(({ role, label }) => ({ role, label, model: models[role].model ?? "", default: models[role].default, agent: roleNeedsTools(role) })),
     listed: all.filter(withinModelCap),
     creditsPerDollar: creditsEnabled() ? creditsPerUsageDollar() : null,

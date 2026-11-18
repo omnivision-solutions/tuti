@@ -127,10 +127,13 @@ test("Custom lists a model for each role; one picked from the list saves at once
   saveAiModel.mockResolvedValueOnce({ error: "Couldn't check the models just now. Try again in a moment." });
   await type(summaries!, "acme/later");
   await leave(summaries!);
+  // Said under the box, which is marked invalid until it's changed.
+  expect([summaries!.getAttribute("aria-invalid"), document.getElementById(summaries!.getAttribute("aria-describedby")!)?.textContent]).toEqual(["true", "Couldn't check the models just now. Try again in a moment."]);
   const calls = saveAiModel.mock.calls.length;
   await act(async () => summaries!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
   expect(saveAiModel).toHaveBeenCalledTimes(calls + 1);
   expect(saveAiModel).toHaveBeenLastCalledWith("acme", { support_summary: "acme/later" });
+  expect(summaries!.hasAttribute("aria-invalid")).toBe(false);
 });
 
 test("a saved level that isn't in use: the one in use is selected, a line says so, and choosing the one in use saves it", async () => {

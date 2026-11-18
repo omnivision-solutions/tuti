@@ -387,6 +387,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("link", { name: "AI models", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(team.getByRole("radiogroup", { name: "AI answers" })).toBeVisible();
   await expect(team.getByRole("radiogroup", { name: "Changelog drafts and edits" })).toHaveCount(0);
+  // Nor is its level (Best, above) said here.
+  await expect(team.getByText(/The changelog is on the/)).toHaveCount(0);
   const summaryModels = team.getByRole("radiogroup", { name: "Ask a person (summaries)" });
   await expect(summaryModels.getByRole("radio", { name: /^Fast/ })).toBeChecked();
   await expect(summaryModels.getByRole("radio")).toHaveCount(3); // Fast, Balanced, Custom model

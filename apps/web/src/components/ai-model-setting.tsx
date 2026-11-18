@@ -25,20 +25,20 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
   const [upgrading, setUpgrading] = useState(false);
   const id = useId();
 
-  /** Whether it was saved. */
+  /** Resolves with why it wasn't saved, if it wasn't. A level's reason goes in a toast; a role's model's under its box. */
   const save = (input: Parameters<typeof saveAiModel>[1], level?: typeof used) =>
-    new Promise<boolean>((resolve) =>
+    new Promise<string | undefined>((resolve) =>
       startTransition(async () => {
         if (level) {
           setShown(level);
         }
         const result = await saveAiModel(projectSlug, input);
-        if (result.error) {
-          toast.error(result.error);
-        } else {
+        if (!result.error) {
           toast.success("AI model saved");
+        } else if (level) {
+          toast.error(result.error);
         }
-        resolve(!result.error);
+        resolve(result.error);
       }),
     );
 
@@ -112,17 +112,22 @@ function RoleModel({
   listed,
   creditsPerDollar,
   onPick,
-}: AiModelSettingProps["roles"][number] & Pick<AiModelSettingProps, "listed" | "creditsPerDollar"> & { onPick: (model: string) => Promise<boolean> }) {
+}: AiModelSettingProps["roles"][number] & Pick<AiModelSettingProps, "listed" | "creditsPerDollar"> & { onPick: (model: string) => Promise<string | undefined> }) {
   const [value, setValue] = useState(model);
   // What was last sent, so picking from the list and then leaving the box saves once.
   const sent = useRef(model);
+  const [error, setError] = useState<string>();
   const id = useId();
   const pick = async (next: string) => {
     if (next.trim() !== sent.current) {
       sent.current = next.trim();
-      // One the server refused can be sent again.
-      if (!(await onPick(next.trim())) && sent.current === next.trim()) {
-        sent.current = model;
+      const refused = await onPick(next.trim());
+      if (sent.current === next.trim()) {
+        setError(refused);
+        // One the server refused can be sent again.
+        if (refused) {
+          sent.current = model;
+        }
       }
     }
   };
@@ -139,6 +144,7 @@ function RoleModel({
           value={value}
           onChange={(event) => {
             setValue(event.target.value);
+            setError(undefined);
             // Chosen from the list (browsers mark it so, or don't mark it at all), not typed: an id typed may be the start of a longer one.
             const how = (event.nativeEvent as InputEvent).inputType;
             if ((how === undefined || how === "insertReplacementText") && listed.some((listing) => listing.id === event.target.value)) {
@@ -152,6 +158,8 @@ function RoleModel({
             }
           }}
           placeholder={fallback}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
           maxLength={200}
           autoComplete="off"
           spellCheck={false}
@@ -163,6 +171,11 @@ function RoleModel({
             </option>
           ))}
         </datalist>
+        {error && (
+          <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         {price && <p className="text-xs text-muted-foreground">{price}</p>}
       </div>
     </div>
