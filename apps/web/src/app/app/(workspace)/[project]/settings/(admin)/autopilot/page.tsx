@@ -65,7 +65,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
   // review, and with Checks off a notice says edits wait (checksNoticeShown), until it's on or dismissed.
   const reviews = checks && checksOn(slug) ? { price: costLabel(costPerUse("edit_review", model.listed.find((listed) => listed.id === checks.model)), model.creditsPerDollar) } : undefined;
   const notice = checksNoticeShown({
-    reviewed: Boolean(reviews),
+    // Where the server runs no Checks model there's no switch, and every edit still waits: the notice says so.
+    reviewed: checksOn(slug),
     checks: checks?.on ?? false,
     planHasIt: planIncludes(project.plan, "codeChanges"),
     analyses: project.analyseCodeChanges,
@@ -95,7 +96,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         </>
       }
     >
-      {notice && <AutopilotChecksNotice projectSlug={slug} />}
+      {notice && <AutopilotChecksNotice projectSlug={slug} switchable={Boolean(checks)} />}
       {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings. Admins can change its AI model and Checks.</p>}
       {!planIncludes(project.plan, "codeChanges") && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin>

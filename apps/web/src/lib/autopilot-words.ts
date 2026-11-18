@@ -11,6 +11,13 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
 export const checksNoticeShown = (project: { reviewed: boolean; checks: boolean; planHasIt: boolean; analyses: boolean; publishesEdits: boolean; dismissed: boolean }) =>
   project.reviewed && !project.checks && project.planHasIt && project.analyses && project.publishesEdits && !project.dismissed;
 
+/**
+ * The Checks notice's words: what waits, and, where the server runs no Checks model (no switch to turn it on), that the
+ * server is why.
+ */
+export const checksNoticeText = (switchable: boolean) =>
+  `Article edits written while Checks is off don't go out by themselves: each one waits for your team.${switchable ? "" : " This server doesn't run Checks."}`;
+
 /** What an update is, as the review page names it. */
 export function updateKind(update: { kind: string; problem?: string }): string {
   switch (update.kind) {

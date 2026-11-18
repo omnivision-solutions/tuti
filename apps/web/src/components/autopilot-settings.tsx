@@ -12,6 +12,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
+import { checksNoticeText } from "@/lib/autopilot-words";
 import { keepingFields } from "@/lib/forms";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { saveAiModel } from "@/server/ai-models";
@@ -96,7 +97,7 @@ export function AutopilotChecksSwitch({ projectSlug, on, reviews }: { projectSlu
  * Checks is off: those edits no longer go out by themselves. Switch Checks on, or Dismiss it for the project; either
  * way the notice goes and focus moves to the Checks switch, which keeps saying what off means.
  */
-export function AutopilotChecksNotice({ projectSlug }: { projectSlug: string }) {
+export function AutopilotChecksNotice({ projectSlug, switchable = true }: { projectSlug: string; switchable?: boolean }) {
   const [pending, startTransition] = useTransition();
   const act = (action: () => Promise<{ error?: string }>, done: string) => {
     if (pending) {
@@ -109,18 +110,21 @@ export function AutopilotChecksNotice({ projectSlug }: { projectSlug: string }) 
         return;
       }
       toast.success(done);
-      document.getElementById("autopilot-checks")?.focus();
+      // The switch, or without one the AI model's chosen level: never the page's top, where the notice was.
+      (document.getElementById("autopilot-checks") ?? document.querySelector<HTMLElement>("main [role=radiogroup] [role=radio][aria-checked=true]"))?.focus();
     });
   };
   return (
     <Alert role="status">
       <AlertDescription className="flex flex-col gap-2">
-        <div>Article edits written while Checks is off don't go out by themselves: each one waits for your team.</div>
+        <div>{checksNoticeText(switchable)}</div>
         <div className="flex flex-wrap gap-2">
           {/* Not disabled while it runs, which would drop keyboard focus. */}
-          <Button size="sm" variant="outline" aria-disabled={pending || undefined} onClick={() => act(() => saveAiModel(projectSlug, { code_changes_check: "" }), "Checks: on")}>
-            Switch Checks on
-          </Button>
+          {switchable && (
+            <Button size="sm" variant="outline" aria-disabled={pending || undefined} onClick={() => act(() => saveAiModel(projectSlug, { code_changes_check: "" }), "Checks: on")}>
+              Switch Checks on
+            </Button>
+          )}
           <Button size="sm" variant="ghost" aria-disabled={pending || undefined} onClick={() => act(() => dismissAutopilotChecksNotice(projectSlug), "Dismissed")}>
             Dismiss
           </Button>

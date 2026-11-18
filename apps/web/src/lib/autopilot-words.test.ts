@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, checksNoticeShown, undoQuestion, changeRow, draftPick, partState, plainWhy, completingWarning, progressWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, checksNoticeShown, checksNoticeText, undoQuestion, changeRow, draftPick, partState, plainWhy, completingWarning, progressWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -465,4 +465,7 @@ test("Autopilot's notice that edits wait shows only where they're reviewed, Chec
   for (const [name, value] of Object.entries(shown)) {
     expect(checksNoticeShown({ ...shown, [name]: !value })).toBe(false);
   }
+  // Where the server runs no Checks model there's no switch to turn it on: the notice says the server is why.
+  expect(checksNoticeText(true)).toBe("Article edits written while Checks is off don't go out by themselves: each one waits for your team.");
+  expect(checksNoticeText(false)).toBe("Article edits written while Checks is off don't go out by themselves: each one waits for your team. This server doesn't run Checks.");
 });
