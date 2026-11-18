@@ -4,6 +4,7 @@ import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPl
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
+import { formatDate } from "@/lib/format";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import BillingSettingsPage from "./page";
@@ -142,10 +143,20 @@ test("on a license, the card says what's left of the license's emails for its mo
   await prisma.project.update({ where: { id: projectId }, data: { plan: "pro" } });
   await grantLicenseCredits(license.id);
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
-  const until = creditsThrough!.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const until = formatDate(creditsThrough!);
   expect(await billing()).toContain(`10,000 of the license's 10,000 emails left until ${until}`);
   expect(await claimProjectEmail(projectId)).toBe(true);
   expect(await billing()).toContain(`9,999 of the license's 10,000 emails left until ${until}`);
+});
+
+test("the credits table's dates read day first: when a grant was made, and when it expires", async () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  await prisma.creditGrant.create({
+    data: { projectId, source: "MANUAL", credits: 100, remaining: 100, createdAt: new Date("2026-11-17T12:00:00Z"), expiresAt: new Date("2031-01-05T12:00:00Z") },
+  });
+  const page = await billing();
+  expect(page).toContain("(17 November 2026)");
+  expect(page).toContain(">5 January 2031</td>");
 });
 
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {

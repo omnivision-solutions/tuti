@@ -39,7 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { initial, timeAgo } from "@/lib/format";
+import { formatDay, initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
 import { conversationReads } from "@/server/conversation-reads";
@@ -217,7 +217,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const month = !emailPaused && emailable ? await emailsThisMonth(projectId) : null;
   const monthFull = month?.left === 0;
   // On a license, its emails come with its next month, not the calendar's.
-  const licenseMonth = month?.until?.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
+  const licenseMonth = month?.until && formatDay(month.until);
   const capped = !emailPaused && emailable && !monthFull && (await cappedProjects()).includes(projectId);
   // Why: in the toast as a reply is sent, and as the title of its held message's short status. Warning: over the reply box, before Send,
   // with where to see more (for owners and admins: nobody else can open Settings).

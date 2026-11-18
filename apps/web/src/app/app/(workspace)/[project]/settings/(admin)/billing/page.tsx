@@ -10,6 +10,7 @@ import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/componen
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
+import { formatDate } from "@/lib/format";
 import { planPriceText } from "@/lib/plans";
 import { plansWithFacts, pricingPage } from "@/lib/pricing-plans";
 import { credits } from "@/lib/usage-format";
@@ -22,7 +23,6 @@ const LICENSE_SOURCES: Record<string, string> = { appsumo: "AppSumo", tuti: "Tut
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
-const day = (date: Date) => date.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
  * Settings → Billing: the project's plan (where plans are sold), its AI credits (where AI is paid with
@@ -92,13 +92,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               : trial
               ? trial.ended
                 ? "Choose a plan to keep going. Plans are per project: readers are always unlimited."
-                : `Ends on ${day(trial.endsAt)}. Choose a plan to keep going.`
+                : `Ends on ${formatDate(trial.endsAt)}. Choose a plan to keep going.`
               : !onPaidPlan
                 ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
                 : [
                     // None for a plan the file sells no way (by quote): it's billed as agreed.
                     shown.price[plan.planInterval === "year" ? "year" : "month"] !== null && planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
-                    plan.planEndsAt ? `Ends on ${day(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${day(plan.planPeriodEnd)}`,
+                    plan.planEndsAt ? `Ends on ${formatDate(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${formatDate(plan.planPeriodEnd)}`,
                   ]
                     .filter(Boolean)
                     .join(" · ")
@@ -116,7 +116,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   ? `${emails.emails.toLocaleString("en")} emails sent this month`
                   : emails.until
                     ? // A license's emails are its month's, wherever it was: what this project sent says little.
-                      `${emails.left!.toLocaleString("en")} of the license's ${emails.limit.toLocaleString("en")} emails left until ${day(emails.until)}`
+                      `${emails.left!.toLocaleString("en")} of the license's ${emails.limit.toLocaleString("en")} emails left until ${formatDate(emails.until)}`
                     : `${emails.emails.toLocaleString("en")} of ${emails.limit.toLocaleString("en")} emails sent this month`}
               </p>
             )}
@@ -202,11 +202,11 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   {grants.map((grant) => (
                     <tr key={grant.id}>
                       <td className="py-2">
-                        {SOURCES[grant.source]} <span className="text-muted-foreground">({day(grant.createdAt)})</span>
+                        {SOURCES[grant.source]} <span className="text-muted-foreground">({formatDate(grant.createdAt)})</span>
                       </td>
                       <td className="py-2 text-right tabular-nums">{credits(grant.remaining)}</td>
                       <td className="hidden py-2 text-right tabular-nums sm:table-cell">{credits(grant.credits)}</td>
-                      <td className="py-2 text-right">{grant.expiresAt ? day(grant.expiresAt) : "Never"}</td>
+                      <td className="py-2 text-right">{grant.expiresAt ? formatDate(grant.expiresAt) : "Never"}</td>
                     </tr>
                   ))}
                 </tbody>

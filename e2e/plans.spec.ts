@@ -71,7 +71,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);
   await expect(owner.getByText("Pro plan", { exact: true })).toBeVisible();
-  await expect(owner.getByText(/^\$39 a month · Renews on /)).toBeVisible();
+  await expect(owner.getByText(/^\$39 a month · Renews on \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
   await expect(owner.getByText("0 of 10,000 emails sent this month")).toBeVisible();
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
@@ -110,7 +110,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.getByRole("button", { name: "Manage plan" }).click();
   await owner.getByRole("button", { name: "Cancel plan" }).click();
   await owner.getByRole("link", { name: "Return to Tuti" }).click();
-  await expect(owner.getByText(/^\$39 a month · Ends on /)).toBeVisible();
+  await expect(owner.getByText(/^\$39 a month · Ends on \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
 });
 
 test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Billing, where paid plans can add it", async ({ browser }) => {
