@@ -813,6 +813,20 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     expect(agentRequests(64).map((request) => request.model)).toEqual(["anthropic/claude-sonnet-5.5"]);
   });
 
+  test.each([
+    ["writes a section for the end is marked as adding one (so it waits for a person)", { add: "## Themes\n\nDark is one of the themes." }, true],
+    ["writes none isn't", {}, false],
+  ])("an edit that %s", async (_name, more, added) => {
+    pullRequest(65);
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.65), undefined, '"merge-65"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ ...(JSON.parse(EDIT) as object), ...more }), undefined, '"problem"');
+    await merge(65);
+    const { payload } = await prisma.codeChangeAction.findFirstOrThrow({ where: { kind: "ARTICLE_EDIT", codeChange: { projectId: project.id, number: 65 } }, select: { payload: true } });
+    expect((payload as { added?: boolean }).added ?? false).toBe(added);
+  });
+
   test("a value past a range the server narrowed since is used at its end", async () => {
     // The server's likely for edits is 0.6 now: a "from" past it would make every kept fix likely.
     vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_LIKELY", "0.6");
