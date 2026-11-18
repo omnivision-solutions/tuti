@@ -125,6 +125,9 @@ function message(error: unknown) {
   return at ? `${text} (line ${at.line}, column ${at.column})` : text;
 }
 
+/** Half of a character written as two, without its other half. */
+const HALF_PAIR = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 function parse(text: string): { schema: GraphQLSchema } | { error: string } {
   if (!text.trimStart().startsWith("{")) {
     try {
@@ -145,7 +148,9 @@ function parse(text: string): { schema: GraphQLSchema } | { error: string } {
   let json: unknown;
   try {
     // Without the byte-order mark some editors put first: JSON doesn't take one.
-    json = JSON.parse(text.trimStart());
+    // JSON can write half of a character written as two ("\ud83d", from a server that cut its own
+    // text); a database refuses one, so each becomes the replacement character as it's read.
+    json = JSON.parse(text.trimStart(), (_key, value: unknown) => (typeof value === "string" ? value.replace(HALF_PAIR, "\uFFFD") : value));
   } catch (error) {
     return { error: `The introspection result isn't valid JSON: ${message(error)}` };
   }

@@ -656,3 +656,10 @@ test("a description cut in the middle of an emoji loses the whole emoji, never h
   if ("error" in result) throw new Error(result.error);
   expect(result.doc.operations[0]?.description).toBe("a".repeat(9_999));
 });
+
+test("half of an emoji in an introspection result's text is read as the replacement character", () => {
+  const result = readGraphql(JSON.stringify(introspectionFromSchema(buildSchema('type Query { """cut here HALF""" ok: Int }'))).replace("HALF", "\\ud83d"));
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.operations[0]?.description).toBe("cut here \uFFFD");
+  expect(JSON.stringify(result.doc)).not.toMatch(/\\ud83d/i);
+});
