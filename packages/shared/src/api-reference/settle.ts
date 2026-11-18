@@ -62,8 +62,8 @@ const typeKey = (name: string) => `type:${name}`;
  * - An operation seen before (by its key) and a type (by its name) keep the slug they first had. Every
  *   slug ever given stays taken, by keys that left the spec too (one that comes back is where it was),
  *   so anything else proposing it gets a number.
- * - Operations the doc before didn't have are `unseen`, and start hidden once the team has hidden
- *   anything: a renamed tag or a moved path never publishes what was hidden. A first read hides nothing
+ * - Operations the doc before didn't have are `unseen`, and start hidden while any operation of the
+ *   doc before is off the help center: a renamed tag or a moved path never publishes what was hidden. A first read hides nothing
  *   and marks nothing.
  * - An operation that was off the help center stays off: one whose hidden tag was renamed (its key is
  *   the same, its group a new one) is hidden by itself.
@@ -92,7 +92,9 @@ export function settle(previous: { doc: ApiDoc; state: ApiReferenceState } | nul
   const known = new Set(previous?.doc.operations.map((operation) => operation.key));
   const keys = new Set(operations.map((operation) => operation.key));
   const added = previous ? [...keys].filter((key) => !known.has(key)) : [];
-  const hidesSomething = (before?.hiddenOperations.length ?? 0) + (before?.hiddenGroups.length ?? 0) > 0;
+  // Hidden as the team sees it: an operation of the doc before that's off. A kept key of something
+  // that left the spec hides nothing they could show again, so it doesn't count.
+  const hidesSomething = previous !== null && onHelpCenter(previous.doc, previous.state).operations.length < previous.doc.operations.length;
   const doc = { ...next, operations, types };
   const state: ApiReferenceState = {
     slugs,

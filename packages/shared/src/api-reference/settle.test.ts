@@ -191,4 +191,23 @@ describe("onHelpCenter", () => {
     expect(onHelpCenter(all, state({ hiddenGroups: ["Admin"] })).types.map((t) => t.name)).toEqual(["Team", "Post", "Author", "Sort", "NewPost"]);
     expect(onHelpCenter(all, state({ hiddenOperations: ["GET /posts"] })).types.map((t) => t.name)).toEqual(["NewPost", "AuditEntry", "Secret"]);
   });
+
+  it("shows what a read adds once nothing the team can see is hidden, whatever keys are kept", () => {
+    // A hidden tag is renamed, its operation shown again: the old tag's key is kept, and hides nothing.
+    const first = hide(settle(null, posts), { hiddenGroups: ["Admin"] });
+    const renamed = settle(first, doc({ groups: [group("Posts"), group("Internal")], operations: [operation("GET /posts"), operation("DELETE /posts", { group: "Internal" })] }));
+    expect(renamed.state.hiddenOperations).toEqual(["DELETE /posts"]);
+    const shown = hide(renamed, { hiddenOperations: [] });
+    expect(shown.state.hiddenGroups).toEqual(["Admin"]);
+    const more = settle(shown, doc({ ...shown.doc, operations: [...shown.doc.operations, operation("GET /comments")] }));
+    expect(onHelpCenter(more.doc, more.state).operations.map((o) => o.key)).toContain("GET /comments");
+
+    // A hidden operation leaves the spec: its key is kept (it comes back hidden), and hides nothing meanwhile.
+    const hidden = hide(settle(null, posts), { hiddenOperations: ["DELETE /posts"] });
+    const gone = settle(hidden, doc({ groups: [group("Posts")], operations: [operation("GET /posts")] }));
+    const grown = settle(gone, doc({ groups: [group("Posts")], operations: [operation("GET /posts"), operation("GET /comments")] }));
+    expect(onHelpCenter(grown.doc, grown.state).operations.map((o) => o.key)).toEqual(["GET /posts", "GET /comments"]);
+    const back = settle(grown, doc({ ...grown.doc, groups: posts.groups, operations: [...grown.doc.operations, operation("DELETE /posts", { group: "Admin" })] }));
+    expect(onHelpCenter(back.doc, back.state).operations.map((o) => o.key)).not.toContain("DELETE /posts");
+  });
 });
