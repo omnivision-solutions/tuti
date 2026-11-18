@@ -319,7 +319,7 @@ export const updateApiReference = defineOperation({
 export const replaceApiReference = defineOperation({
   name: "apiReferences.replace",
   summary:
-    "Replace an uploaded API reference's spec with a new one (`spec`, as in apiReferences.create). The team's choices stay: an operation there before (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center once the team has hidden anything. A spec that can't be read, or has no operations, changes nothing and is refused with the reason",
+    "Replace an uploaded API reference's spec with a new one (`spec`, as in apiReferences.create). The team's choices stay: an operation there before (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center while any operation the spec had before is off it. A spec that can't be read, or has no operations, changes nothing and is refused with the reason",
   method: "POST",
   path: "/api-references/{slug}/replace",
   scope: "write",
