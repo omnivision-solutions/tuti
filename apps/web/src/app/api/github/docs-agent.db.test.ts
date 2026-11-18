@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { enqueue, grantCredits } from "@tuti/jobs";
 import { resetCodeChangesSettings, roleDefaultModel } from "@tuti/shared";
 import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -1243,5 +1243,154 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     model.fail(503);
     await call(analyseCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id }).catch(() => {});
     expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, settings: true } })).toEqual({ state: "FAILED", settings: null });
+  });
+});
+
+describe("the check before an edit is proposed (E5)", () => {
+  const EDIT_AT = answer([{ slug: "appearance", problem: "missing", probability: 0.8, reason: "It doesn't name the dark theme." }]);
+  const ACCEPT = JSON.stringify({
+    claims: [{ claim: "Settings has a Theme menu with Dark", check: "confirmed", evidence: "src/settings/appearance.tsx:1" }],
+    accuracy: 5,
+    needed: 5,
+    placement: 5,
+    voice: 5,
+    proportion: 5,
+    verdict: "accept",
+    reasons: [],
+  });
+  const FAIL = (reason: string) => JSON.stringify({ claims: [], accuracy: 5, needed: 5, placement: 4, voice: 2, proportion: 4, verdict: "touch_up", reasons: [reason] });
+  const REWRITE = JSON.stringify({ reason: "It says there's only a light theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme and a dark one." } });
+  /** The review's requests: its system prompt is the reviewer's. */
+  const reviews = () => model.requests.filter((request) => request.system.startsWith("You review one edit"));
+  const writes = () => model.requests.filter((request) => request.user.includes('"problem"'));
+  const edit = async (number: number) => {
+    const found = await prisma.codeChangeAction.findFirstOrThrow({
+      where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" },
+      select: { status: true, waitReason: true, payload: true },
+    });
+    return { ...found, check: (found.payload as { check?: Record<string, unknown> }).check };
+  };
+  const changes = async () => (await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { body: true } })).body;
+  /** A merge whose docs agent proposes the edit, with the writer's first reply. */
+  const proposeEdit = (number: number, first = EDIT) => {
+    pullRequest(number);
+    model.decide(USERS);
+    model.reply(EDIT_AT, undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(first, undefined, '"problem"');
+  };
+  beforeEach(() => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", `other, ${project.slug}`);
+  });
+
+  test("a project it isn't switched on for is unchanged: nothing is reviewed, and the edit lands as today", async () => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    proposeEdit(80);
+    await merge(80);
+    expect(reviews()).toEqual([]);
+    expect(await edit(80)).toMatchObject({ status: "PENDING", waitReason: "Autopilot asks first for these", check: undefined });
+  });
+
+  test("an edit the review accepts lands as today; the review reads the repository with the analysis's tools and is metered as Autopilot's", async () => {
+    proposeEdit(81);
+    model.toolCalls([{ name: "read_file", arguments: '{"path":"src/settings/appearance.tsx"}' }], '"article_after"');
+    model.reply(ACCEPT, undefined, '"article_after"');
+    await merge(81);
+    const [review, answered] = reviews();
+    expect(review!.model).toBe(roleDefaultModel("code_changes_check"));
+    expect(toolNames(review!)).toEqual(["list_files", "read_file", "search_code", "read_article", "search_articles"]);
+    expect(String(answered!.messages.find((message) => message.role === "tool")!.content)).toContain('options={["Light", "Dark"]}');
+    const sent = JSON.parse(review!.user) as { article_before: string; article_after: string; edit: string; rule_checks: string[] };
+    expect(sent.article_before).toBe("The app has a light theme.");
+    expect(sent.article_after).toContain("a dark one");
+    expect(sent.edit).toContain("+ The app has a light theme and a dark one");
+    expect(sent.rule_checks).toEqual([]);
+    expect(await changes()).toContain("a dark one");
+    // As it would without the check: the project asks first for edits.
+    expect(await edit(81)).toMatchObject({ status: "PENDING", waitReason: "Autopilot asks first for these", check: expect.objectContaining({ pass: true, verdict: "accept" }) as unknown });
+    // Every request was metered as Autopilot's (code_changes), the review's two included.
+    const usage = await prisma.aiUsage.findMany({ where: { projectId: project.id, kind: "chat" }, select: { feature: true } });
+    expect(usage.length).toBe(model.requests.length);
+    expect(new Set(usage.map((row) => row.feature))).toEqual(new Set(["code_changes"]));
+  });
+
+  test("a failing edit is written once more with the review's reasons, and the rewrite, accepted, lands", async () => {
+    proposeEdit(82);
+    model.reply(FAIL("Drop “and pick it in Settings”: the menu says so."), undefined, '"article_after"');
+    model.reply(REWRITE, undefined, '"check_failed"');
+    model.reply(ACCEPT, undefined, '"article_after"');
+    await merge(82);
+    const rewrite = JSON.parse(writes()[1]!.user) as { check_failed: { earlier_reply: string; reasons: string[] } };
+    expect(rewrite.check_failed).toEqual({ earlier_reply: EDIT, reasons: ["Drop “and pick it in Settings”: the menu says so."] });
+    expect(reviews()).toHaveLength(2);
+    expect(await changes()).toBe("The app has a light theme and a dark one.");
+    expect(await edit(82)).toMatchObject({ waitReason: "Autopilot asks first for these", check: expect.objectContaining({ pass: true, rewritten: true }) as unknown });
+  });
+
+  test("failing twice, the rewrite is saved and waits for a person with the review's reason, even where edits go out by themselves", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 0 } });
+    proposeEdit(83);
+    model.reply(FAIL("Says it twice."), undefined, '"article_after"');
+    model.reply(REWRITE, undefined, '"check_failed"');
+    model.reply(FAIL("Reads like a release note."), undefined, '"article_after"');
+    await merge(83);
+    expect(await changes()).toBe("The app has a light theme and a dark one.");
+    expect(await edit(83)).toMatchObject({
+      status: "PENDING",
+      waitReason: "The check failed it: Reads like a release note.",
+      check: expect.objectContaining({ pass: false, verdict: "touch_up", reasons: ["Reads like a release note."], rewritten: true }) as unknown,
+    });
+  });
+
+  test("text appended at the end fails by the rule checks alone (no review), and the writer is told why", async () => {
+    const APPENDED = JSON.stringify({ reason: "No dark theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme.\n\nThere's a dark one too." } });
+    proposeEdit(84, APPENDED);
+    model.reply(REWRITE, undefined, '"check_failed"');
+    model.reply(ACCEPT, undefined, '"article_after"');
+    await merge(84);
+    // Reviewed once: the rewrite.
+    expect(reviews()).toHaveLength(1);
+    const rewrite = JSON.parse(writes()[1]!.user) as { check_failed: { reasons: string[] } };
+    expect(rewrite.check_failed.reasons[0]).toContain("puts text after the article's last line");
+    expect(await edit(84)).toMatchObject({ check: expect.objectContaining({ pass: true, rewritten: true }) as unknown });
+  });
+
+  test("the review's request carries the rule checks' hints", async () => {
+    proposeEdit(85, JSON.stringify({ reason: "No dark theme.", overview: "It names Dark.", sections: { "1": "You can now pick a light theme or a dark one." } }));
+    model.reply(ACCEPT, undefined, '"article_after"');
+    await merge(85);
+    expect((JSON.parse(reviews()[0]!.user) as { rule_checks: string[] }).rule_checks).toEqual(['Says how the product changed ("now") in “You can now pick a light theme or a dark one.”.']);
+  });
+
+  test("a review that can't be read isn't rewritten: the edit waits, saying the check didn't answer clearly", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 0 } });
+    proposeEdit(86);
+    model.reply(JSON.stringify({ verdict: "looks fine" }), undefined, '"article_after"');
+    await merge(86);
+    expect(writes()).toHaveLength(1);
+    expect(await changes()).toContain("a dark one");
+    expect(await edit(86)).toMatchObject({ status: "PENDING", waitReason: "The check didn't answer clearly", check: expect.objectContaining({ pass: false }) as unknown });
+  });
+
+  test("with Checks off nothing is reviewed and every edit waits, saying so", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { aiModels: { code_changes_check: "off" }, autopilotArticleEdits: true, autopilotMinSure: 0 } });
+    proposeEdit(87);
+    await merge(87);
+    expect(reviews()).toEqual([]);
+    expect(await edit(87)).toMatchObject({ status: "PENDING", waitReason: "Checks is off" });
+  });
+
+  test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
+    vi.stubEnv("AI_CREDITS", "on");
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    pullRequest(88);
+    model.decide(USERS);
+    model.reply(EDIT_AT, undefined, '"merge-88"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    // The credits run out while the edit is written.
+    model.reply(EDIT, () => prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } }), '"problem"');
+    await merge(88);
+    expect(reviews()).toEqual([]);
+    expect(await edit(88)).toMatchObject({ status: "PENDING", waitReason: "The check needs AI credits, so it waits for you" });
   });
 });

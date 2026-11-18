@@ -4,6 +4,7 @@ import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { articleLimit, ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { hasTeammateEdit, scheduleArticle } from "./article-layers";
+import { CHECK_UNCLEAR } from "./edit-review";
 
 /**
  * Autopilot's hold (docs/plan.md, Autopilot A4): what it's sure of goes out by itself, drafts at once
@@ -123,6 +124,12 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (!codeChangesEnabled() || !project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
     return "Autopilot is off";
   }
+  // The check before an edit is proposed (E5), where it ran: one it didn't pass waits for a person, saying why. Before
+  // the project's own switches, so the review shows what the check found.
+  const check = action.kind === "ARTICLE_EDIT" ? (action.payload as { check?: { pass?: unknown; reason?: unknown } } | null)?.check : undefined;
+  if (check && check.pass !== true) {
+    return typeof check.reason === "string" && check.reason ? check.reason : CHECK_UNCLEAR;
+  }
   const on: Partial<Record<CodeChangeActionKind, boolean>> = {
     NEW_ARTICLE: project.autopilotDrafts,
     ARTICLE_EDIT: project.autopilotArticleEdits,
@@ -194,7 +201,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
  * a failed apply's message, which a waiting part keeps. Keep it beside `waitsBecause`'s wordings.
  */
 const checksSay = (why: string) =>
-  /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
+  /^(Autopilot is off|Autopilot asks first|Checks is off|The check |Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
 
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>

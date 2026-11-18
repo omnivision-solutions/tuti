@@ -28,6 +28,7 @@ import { queueAutopilotNotices } from "./autopilot-email";
 import { aiPaused, OutOfCredits } from "./credits";
 import { type ArticlePlace, type Ask, writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { askingWithTools, decideDocs } from "./docs-agent";
+import { checkedEdit, checksOn, type Review } from "./edit-review";
 import { closeTools, type ToolContext } from "./docs-agent-tools";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
 import { installationApi } from "./github-api";
@@ -407,10 +408,12 @@ async function analyse(
     proposals.sort((a, b) => b.probability - a.probability);
     // The docs' edits and drafts are written now (by the agent, with its tools); one the model couldn't write usably isn't proposed.
     const ask = askingWithTools(tools, use, signal);
+    // Each article edit checked before it's proposed (E5), where the server switched the check on for the project.
+    const review: Review | null = checksOn(change.slug) ? { projectId: change.projectId, context: tools, signal } : null;
     const [{ why, line }, written] = await Promise.all([
       // Why, the posts' reasons and the changelog line: only for what users see (the gate).
       seen ? writeProposals(pr, summary, proposals, posts, use) : { why: "", line: "" },
-      Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, ask))),
+      Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, ask, review))),
     ]);
     let kept = proposals.filter((_, i) => written[i]);
     if (!seen && kept.length === 0) {
@@ -434,7 +437,7 @@ async function analyse(
         }
         // Written again from the newest text, so neither edit is lost (one the model can't write usably isn't proposed).
         const again = kept.filter((proposal) => proposal.kind === "ARTICLE_EDIT" && error.articleIds.includes(proposal.articleId!));
-        const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, ask)));
+        const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, ask, review)));
         kept = kept.filter((proposal) => !again.includes(proposal) || rewritten[again.indexOf(proposal)]);
       }
     }
@@ -526,13 +529,20 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
 /** The app's address (APP_URL), for links to the team's pages. */
 const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).origin : "");
 
-/** Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds pass. */
-async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, ask: Ask): Promise<boolean> {
+/**
+ * Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds
+ * pass. With `review` (the project's check is on), an article edit is checked and may be written once more (checkedEdit).
+ */
+async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, ask: Ask, review: Review | null): Promise<boolean> {
   const { brief } = proposal;
-  const written =
+  const edit =
     proposal.kind === "ARTICLE_EDIT" && brief && "facts" in brief
-      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief.found, brief.facts)
-      : proposal.kind === "NEW_ARTICLE" && brief && "title" in brief
+      ? (failed?: Parameters<typeof writeArticleEdit>[7]) =>
+          writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief.found, brief.facts, failed)
+      : null;
+  const written = edit
+    ? await (review ? checkedEdit(edit, pr, review) : edit())
+    : proposal.kind === "NEW_ARTICLE" && brief && "title" in brief
         ? await writeNewArticle(pr, summary, { title: brief.title, reason: brief.reason }, ask)
         : undefined;
   if (written === undefined) {
