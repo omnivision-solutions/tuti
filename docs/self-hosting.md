@@ -202,8 +202,8 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 
 **Autopilot's check.** `AUTOPILOT_CHECKS_PROJECTS`, on the web app and the worker alike, switches on the
 check of every article edit before it's proposed, project by project: their slugs separated by commas
-(`help,acme`), or `*` for every project. Rule checks in code look at the edit first (text appended at the
-end of the article fails it by itself), then the project's Checks model reviews it against the
+(`help,acme`), or `*` for every project. Rule checks in code look at the edit first (a new section appended at
+the end of the article fails it by itself), then the project's Checks model reviews it against the
 repository and passes it only when it would publish it as written; a fail is written once more and
 checked again. An edit that still fails waits for a person, saying why; so does every edit of a project
 with Checks off, or out of AI credits when it's checked. The review is metered as Autopilot's usage.

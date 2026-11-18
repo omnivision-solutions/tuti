@@ -885,6 +885,20 @@ describe("deciding", () => {
       expect(asked[1]!.user).toContain("The app has a light theme (default).");
       expect(asked[1]!.user).toContain("edits_already_waiting");
     });
+
+    test("with the check on (E5), the edit written again on top of the other is checked again, and its check is kept", async () => {
+      vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+      const accept = JSON.stringify({ claims: [], accuracy: 5, needed: 5, placement: 5, voice: 5, proportion: 5, verdict: "accept", reasons: [] });
+      model.reply(accept, undefined, '"article_after"');
+      model.reply(accept, undefined, '"article_after"');
+      await analyse(33, ["The app has a light theme and a dark one.", other("Light", "The app has a light theme (default).")], ["The app has a light theme (default) and a dark one.", undefined]);
+      const reviewed = model.requests.filter((request) => request.system.startsWith("You review one edit"));
+      expect(reviewed).toHaveLength(2);
+      // The second review is of the edit written on top of the other one.
+      expect(reviewed[1]!.user).toContain("The app has a light theme (default) and a dark one.");
+      const saved = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { number: 33, projectId: project.id }, kind: "ARTICLE_EDIT" }, select: { payload: true } });
+      expect((saved.payload as { check?: unknown }).check).toMatchObject({ pass: true });
+    });
   });
 
   test("a second pull request's progress update joins the post's waiting one; analysed again, a pull request changes only its part", async () => {

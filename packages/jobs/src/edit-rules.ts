@@ -1,8 +1,8 @@
 /**
  * Rule checks on an article edit (docs/plan.md, E5): plain functions of the article's Markdown before and after the
  * edit (one also reads the pull request's diff), no model. Lifted from the private writing evaluation, where each was
- * measured against graded edits: only "a section appended at the end" agreed with the graders closely enough to fail an
- * edit by itself (ruleChecks' `fails`); the others are often right but often not, so they go to the Checks review as
+ * measured against graded edits: only "a section appended at the end" (under a new heading) agreed with the graders
+ * closely enough to fail an edit by itself (ruleChecks' `fails`); the others are often right but often not, so they go to the Checks review as
  * hints (`hints`), never a verdict.
  */
 
@@ -162,25 +162,27 @@ export function leftContradictions(before: string, after: string, diff: string):
   return [...found.values()];
 }
 
-/** Why an edit with text appended at the end fails by itself (said to the writer, for its one rewrite). */
+/** Why an edit with a section appended at the end fails by itself (said to the writer, for its one rewrite). */
 export const APPENDED_FAILS =
-  "It puts text after the article's last line instead of where a reader would look: change the sentences that are wrong where they stand, or add to the section the new text belongs in.";
+  "It adds a new section after the article's last line instead of where a reader would look: change the sentences that are wrong where they stand, or add to the section the new text belongs in.";
 
 const quote = (text: string) => `“${text.length > 160 ? `${text.slice(0, 157)}…` : text}”`;
 
 /**
- * Every rule check on one edit: `fails` when one that's reliable enough fails it by itself (text appended at the end,
- * unless it's the section for the end the writer is allowed, `added`), and the others' findings as `hints`, one
- * sentence each, for the Checks review.
+ * Every rule check on one edit: `fails` when one that's reliable enough fails it by itself (a section appended at the
+ * end, under a new heading, unless it's the section for the end the writer is allowed, `added`), and the others'
+ * findings as `hints`, one sentence each, for the Checks review. Text appended without a heading is a hint: it may be
+ * the last section's next step, which belongs there.
  */
 export function ruleChecks(before: string, after: string, { diff, added }: { diff: string; added: boolean }): { fails: string | null; hints: string[] } {
   const appended = added ? null : appendedAtEnd(before, after);
   const size = sizeOf(before, after);
   const hints = [
+    ...(appended && !appended.heading ? [`Adds text after the article's last line: ${quote(appended.lines.join(" "))}.`] : []),
     ...changelogWords(before, after).map(({ word, sentence }) => `Says how the product changed ("${word}") in ${quote(sentence)}.`),
     ...headingOverLittle(before, after).map(({ heading, words: count }) => `Adds the heading ${quote(heading)} over ${count} words.`),
     ...(size.overBudget ? [`Writes ${size.net} words more than it takes out: past the budget for a label or a changed behaviour.`] : []),
     ...leftContradictions(before, after, diff).map(({ label, left }) => `May leave the old ${quote(label)} in ${quote(left)}.`),
   ];
-  return { fails: appended ? APPENDED_FAILS : null, hints };
+  return { fails: appended?.heading ? APPENDED_FAILS : null, hints };
 }

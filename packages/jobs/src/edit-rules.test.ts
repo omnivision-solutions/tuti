@@ -56,15 +56,19 @@ test("old text the edit contradicts and leaves: a label it replaced once, one it
   expect(leftContradictions(ARTICLE, ARTICLE.replace("The app uses one font.", "The app uses one font, as it did."), diff)).toEqual([{ label: "Appearance", left: "Pick it in **Appearance**." }]);
 });
 
-test("only text appended at the end fails an edit by itself, and not the section for the end the writer may add; the rest are hints", () => {
-  const appended = `${ARTICLE}\n\nThe app no longer has only a light theme.`;
-  expect(ruleChecks(ARTICLE, appended, { diff: "", added: false })).toEqual({
+test("only a section appended at the end under a new heading fails an edit by itself, and not the section for the end the writer may add; the rest are hints", () => {
+  expect(ruleChecks(ARTICLE, `${ARTICLE}\n\n## Dark theme\n\nThe app no longer has only a light theme.`, { diff: "", added: false })).toEqual({
     fails: APPENDED_FAILS,
-    hints: ['Says how the product changed ("no longer") in “The app no longer has only a light theme.”.'],
+    hints: ['Says how the product changed ("no longer") in “The app no longer has only a light theme.”.', "Adds the heading “Dark theme” over 9 words."],
   });
   expect(ruleChecks(ARTICLE, `${ARTICLE}\n\n## Dark theme\n\nThere's a dark theme.`, { diff: "", added: true })).toEqual({
     fails: null,
     hints: ["Adds the heading “Dark theme” over 4 words."],
+  });
+  // Text after the last line without a heading may be the last section's next step: a hint for the review.
+  expect(ruleChecks(ARTICLE, `${ARTICLE}\n\nThere's a dark theme too.`, { diff: "", added: false })).toEqual({
+    fails: null,
+    hints: ["Adds text after the article's last line: “There's a dark theme too.”."],
   });
   expect(ruleChecks(ARTICLE, ARTICLE.replace("**Appearance**", "**Display**"), { diff: "", added: false })).toEqual({ fails: null, hints: [] });
 });
@@ -107,7 +111,8 @@ test("the review passes an edit only on accept, with scores and claims that agre
     reasons: ["Drop “now” from “You can now pick”.", "Shorter."],
     verdict: "touch_up",
   });
-  // A fail with no reasons says which scores were low.
+  // Reasons that aren't text are left out; a fail with no reasons says which scores were low.
+  expect(readReview(review({ verdict: "dismiss", needed: 1, reasons: [{ text: "Not needed." }] }))).toMatchObject({ pass: false, reasons: ["Its needed scored 1 of 5."] });
   expect(readReview(review({ verdict: "rewrite", placement: 1, reasons: [] }))).toMatchObject({ pass: false, reasons: ["Its placement scored 1 of 5."] });
   // An accept its own scores or claims contradict is a fail, saying why (its reasons, if any, were for an accept).
   expect(readReview(review({ needed: 3 }))).toMatchObject({ pass: false, reason: "The check failed it: Its needed scored 3 of 5.", verdict: "accept" });
@@ -128,6 +133,9 @@ test("a review that can't be read is no review (the edit waits, it isn't rewritt
     review({ accuracy: 4.5 }),
     review({ needed: "5" }),
     review({ claims: "none" }),
+    // Turned down with nothing a rewrite could act on: no reasons (or none readable), and scores that would pass.
+    review({ verdict: "touch_up", reasons: [] }),
+    review({ verdict: "dismiss", proportion: 5, reasons: [{ text: "Not needed." }] }),
   ]) {
     expect(readReview(reply)).toBeNull();
   }

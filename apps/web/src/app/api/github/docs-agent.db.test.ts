@@ -1342,8 +1342,8 @@ describe("the check before an edit is proposed (E5)", () => {
     });
   });
 
-  test("text appended at the end fails by the rule checks alone (no review), and the writer is told why", async () => {
-    const APPENDED = JSON.stringify({ reason: "No dark theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme.\n\nThere's a dark one too." } });
+  test("a section appended at the end fails by the rule checks alone (no review), and the writer is told why", async () => {
+    const APPENDED = JSON.stringify({ reason: "No dark theme.", overview: "It names Dark.", sections: { "1": "The app has a light theme.\n\n## Dark theme\n\nThere's a dark one too." } });
     proposeEdit(84, APPENDED);
     model.reply(REWRITE, undefined, '"check_failed"');
     model.reply(ACCEPT, undefined, '"article_after"');
@@ -1351,7 +1351,7 @@ describe("the check before an edit is proposed (E5)", () => {
     // Reviewed once: the rewrite.
     expect(reviews()).toHaveLength(1);
     const rewrite = JSON.parse(writes()[1]!.user) as { check_failed: { reasons: string[] } };
-    expect(rewrite.check_failed.reasons[0]).toContain("puts text after the article's last line");
+    expect(rewrite.check_failed.reasons[0]).toContain("adds a new section after the article's last line");
     expect(await edit(84)).toMatchObject({ check: expect.objectContaining({ pass: true, rewritten: true }) as unknown });
   });
 

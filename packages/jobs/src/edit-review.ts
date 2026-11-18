@@ -117,7 +117,7 @@ const short = (value: unknown, max: number) => (typeof value === "string" ? valu
 
 /**
  * The review's reply as a check, or null when it can't be read as one: not JSON, a score that isn't a whole number from
- * 1 to 5, a verdict the rubric hasn't, or claims that aren't a list. It passes only on accept, and only when its own
+ * 1 to 5, a verdict the rubric hasn't, claims that aren't a list, or a fail that says nothing a rewrite could act on. It passes only on accept, and only when its own
  * scores and claims agree (accuracy 5, every other score 4 or more, no claim it found contradicted: the rubric's rule
  * for accept); an accept they contradict is a fail. A fail says what to change: its reasons, else the claims it found
  * contradicted and the scores under the rule's.
@@ -145,6 +145,10 @@ export function readReview(reply: string): Omit<EditCheck, "hints"> | null {
   const said = verdict === "accept" ? [] : (Array.isArray(parsed.reasons) ? parsed.reasons : []).map((r) => short(r, 500)).filter(Boolean);
   const reasons =
     said.length > 0 ? said : [...contradicted.map((c) => `The code says otherwise: ${c.claim}.`), ...low.map((name) => `Its ${name} scored ${graded[name]} of 5.`)];
+  // Turned down with nothing to say why (no reasons, and scores and claims that would pass): it can't be acted on.
+  if (reasons.length === 0) {
+    return null;
+  }
   return { pass: false, reason: checkFailed(reasons[0]!), reasons, claims, scores: graded, verdict };
 }
 
