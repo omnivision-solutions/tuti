@@ -37,8 +37,13 @@ export type GithubFake = {
   repository(repo: string, snapshot: FakeRepository): void;
   /** Every path the App read with an installation token, in order. */
   reads: string[];
-  /** What GitHub answers every installation token request with from now on (a 503 in an outage, say); null for tokens again. */
-  answerTokens(status: number | null): void;
+  /**
+   * What GitHub answers every installation token request with from now on (a 503 in an outage, say), with these headers
+   * and message; null for tokens again.
+   */
+  answerTokens(status: number | null, answer?: { headers?: Record<string, string>; message?: string }): void;
+  /** In this process only: run before each request is answered, which waits for it (a test holding GitHub). Null: none. */
+  beforeAnswering(hook: ((request: { method: string; path: string }) => Promise<unknown> | void) | null): void;
   /** A signed webhook delivery, as GitHub would send it. */
   webhook(event: string, payload: unknown): { body: string; headers: Record<string, string> };
   close(): Promise<void>;
@@ -86,6 +91,8 @@ export async function startGithubFake(): Promise<GithubFake> {
   const repositories = new Map<string, FakeRepository>();
   const reads: string[] = [];
   let tokenStatus: number | null = null;
+  let tokenAnswer: { headers?: Record<string, string>; message?: string } = {};
+  let hook: ((request: { method: string; path: string }) => Promise<unknown> | void) | null = null;
   const signInsFor = new Map<string, FakeGithubSignIn>();
   const signIns = new Map<string, FakeGithubSignIn>();
   let globalInstall: { setupUrl: string; id: number; code: string } | undefined;
@@ -108,7 +115,8 @@ export async function startGithubFake(): Promise<GithubFake> {
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
+      await hook?.({ method: req.method ?? "GET", path: new URL(req.url ?? "/", "http://fake").pathname });
       const send = (status: number, body: unknown) =>
         res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
       const url = new URL(req.url ?? "/", "http://fake");
@@ -169,7 +177,7 @@ export async function startGithubFake(): Promise<GithubFake> {
       const redirect = (to: URL) => res.writeHead(302, { location: to.href }).end();
       const installationToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
       if (req.method === "POST" && installationToken && tokenStatus !== null) {
-        return send(tokenStatus, { message: "Refused" });
+        return res.writeHead(tokenStatus, { "content-type": "application/json", ...tokenAnswer.headers }).end(JSON.stringify({ message: tokenAnswer.message ?? "Refused" }));
       }
       if (req.method === "POST" && installationToken) {
         return validJwt(req.headers.authorization)
@@ -360,8 +368,12 @@ export async function startGithubFake(): Promise<GithubFake> {
     pullRequest: (repo, pr) => pulls.set(`${repo}#${pr.number}`, pr),
     repository: (repo, snapshot) => repositories.set(repo, snapshot),
     reads,
-    answerTokens(status) {
+    answerTokens(status, answer = {}) {
       tokenStatus = status;
+      tokenAnswer = answer;
+    },
+    beforeAnswering(next) {
+      hook = next;
     },
     webhook(event, payload) {
       const body = JSON.stringify(payload);

@@ -349,8 +349,22 @@ describe("a sync", () => {
 
   test("an uploaded reference isn't synced, and a URL's isn't replaced by hand", async () => {
     await call(createApiReference, as(), { name: "Uploaded", spec: POSTS });
-    await expect(call(syncApiReference, as(), { slug: "uploaded" })).rejects.toMatchObject({ status: 409 });
+    await expect(call(syncApiReference, as(), { slug: "uploaded" })).rejects.toMatchObject({
+      status: 409,
+      code: "uploaded",
+      message: "This reference's spec was uploaded: upload a new version instead",
+    });
     await expect(call((await import("./operations/api-references")).replaceApiReference, as(), { slug: "acme-api", spec: POSTS })).rejects.toMatchObject({ status: 409 });
+  });
+
+  test("a URL's reference isn't given a file on GitHub: refused, unread, and left as it was", async () => {
+    const before = await stored();
+    await expect(call(syncApiReference, as(), { slug: "acme-api", github: { repoId: 4242, path: "openapi.json", ref: "main" } })).rejects.toMatchObject({
+      status: 409,
+      code: "not_github",
+      message: "This reference is read from a URL: change its address instead",
+    });
+    expect(await stored()).toEqual(before);
   });
 });
 

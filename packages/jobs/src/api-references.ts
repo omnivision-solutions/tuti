@@ -237,8 +237,10 @@ export async function fetchGithubSpec(
     if (name === "TimeoutError" || cause?.name === "TimeoutError" || signal.aborted) {
       return { error: `GitHub didn't answer within ${SPEC_FETCH_TIMEOUT_MS / 1000} seconds.` };
     }
-    // The installation gone or suspended; GitHub's own trouble (a 503, a rate limit) is the message below, not this.
-    if ([401, 403, 404].includes((error as { status?: number }).status ?? 0)) {
+    // The installation gone (401, 404) or suspended (a 403 that isn't a rate limit); GitHub's own trouble (a 503, a rate
+    // limit) is the message below, not this.
+    const { status, rateLimited } = error as { status?: number; rateLimited?: boolean };
+    if (status === 401 || status === 404 || (status === 403 && !rateLimited)) {
       return { error: "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations." };
     }
     return { error: "Couldn't read the file from GitHub. Try again later." };

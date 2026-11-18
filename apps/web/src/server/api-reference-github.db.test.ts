@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { fetchGithubSpec, GITHUB_NOT_ADDED, SPEC_FILE_TOO_LARGE, syncApiReference as syncReferenceNow, syncApiReferences, SYNC_EVERY_MS } from "@tuti/jobs";
+import { fetchGithubSpec, GITHUB_NOT_ADDED, SPEC_FETCH_TIMEOUT_MS, SPEC_FILE_TOO_LARGE, syncApiReference as syncReferenceNow, syncApiReferences, SYNC_EVERY_MS } from "@tuti/jobs";
 import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -46,6 +46,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs();
   github.answerTokens(null);
+  github.beforeAnswering(null);
 });
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
@@ -140,28 +141,56 @@ describe("added from GitHub", () => {
       github.answerTokens(status);
       await expect(add()).rejects.toMatchObject({ status: 400, message: later });
     }
+    // Nor a secondary rate limit, which GitHub answers with a 403: by its retry-after, its remaining count or its words.
+    const limits: { headers?: Record<string, string>; message?: string }[] = [
+      { headers: { "retry-after": "60" } },
+      { headers: { "x-ratelimit-remaining": "0" } },
+      { message: "You have exceeded a secondary rate limit." },
+    ];
+    for (const answer of limits) {
+      github.answerTokens(403, answer);
+      await expect(add()).rejects.toMatchObject({ status: 400, message: later });
+    }
+    // A 403 with none of them, and the remaining count above 0, is a suspended installation.
+    github.answerTokens(403, { headers: { "x-ratelimit-remaining": "4999" }, message: "This installation has been suspended" });
+    await expect(add()).rejects.toMatchObject({ status: 400, message: reconnect });
     // Nor a file GitHub fails to send.
     github.answerTokens(null);
     github.repository(repo.fullName, { commit: "failing", files: { "docs/openapi.json": POSTS }, failing: ["docs/openapi.json"] });
     await expect(add()).rejects.toMatchObject({ status: 400, message: later });
   });
 
-  test("a read GitHub doesn't finish by its deadline says so", async () => {
-    // The deadline ends once GitHub has the file's request, which it holds until the read has given up.
+  // One deadline for all of a read's requests: GitHub's answers move a clock of the test's own on by what each takes,
+  // and once it's past the deadline, the deadline ends and GitHub's answer is held (until the test lets it go).
+  const SLOW: [string, Partial<Record<"token" | "branch" | "file", number>>][] = [
+    ["the token's request", { token: SPEC_FETCH_TIMEOUT_MS + 1000 }],
+    ["the default branch's read", { token: 6000, branch: 10_000 }],
+    ["the file's read, after the others took most of it", { token: 6000, branch: 6000, file: 6000 }],
+  ];
+  test.each(SLOW)("a read GitHub doesn't finish by its deadline says so: ending in %s", async (_, takes) => {
     const deadline = new AbortController();
     let release = () => {};
     const released = new Promise<void>((resolve) => {
       release = resolve;
     });
-    github.repository(repo.fullName, {
-      commit: "slow",
-      files: { "docs/openapi.json": POSTS },
-      during: () => {
+    let elapsed = 0;
+    github.beforeAnswering(({ method, path }) => {
+      const step =
+        method === "POST" && path.endsWith("/access_tokens")
+          ? "token"
+          : path === `/repos/${repo.fullName}`
+            ? "branch"
+            : path.startsWith(`/repos/${repo.fullName}/contents/`)
+              ? "file"
+              : null;
+      elapsed += step ? (takes[step] ?? 0) : 0;
+      if (elapsed >= SPEC_FETCH_TIMEOUT_MS) {
         deadline.abort();
         return released;
-      },
+      }
     });
-    expect(await fetchGithubSpec(project.id, { repoId: repo.id, path: "docs/openapi.json", ref: "main" }, { signal: deadline.signal })).toEqual({
+    // No branch given: the default one is read first.
+    expect(await fetchGithubSpec(project.id, { repoId: repo.id, path: "docs/openapi.json" }, { signal: deadline.signal })).toEqual({
       error: "GitHub didn't answer within 15 seconds.",
     });
     release();

@@ -45,8 +45,12 @@ export async function installationApi(installationId: number, signal?: AbortSign
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${appJwt()}`, "user-agent": "Tuti" },
   });
   if (!response.ok) {
-    // Its status says why: 401, 403 or 404 that the installation is gone or suspended; anything else, GitHub's trouble.
-    throw Object.assign(new Error(`GitHub refused an installation token (${response.status})`), { status: response.status });
+    // Its status says why, and a rate limit says so too (GitHub answers a secondary one with a 403): see tokenRefusal.
+    const message = (await response.text().catch(() => "")).slice(0, 1000);
+    throw Object.assign(new Error(`GitHub refused an installation token (${response.status})`), {
+      status: response.status,
+      rateLimited: response.headers.has("retry-after") || response.headers.get("x-ratelimit-remaining") === "0" || /rate limit/i.test(message),
+    });
   }
   const { token } = (await response.json()) as { token: string };
   const headers = { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" };
