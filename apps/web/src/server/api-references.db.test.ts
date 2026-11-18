@@ -79,6 +79,7 @@ describe("adding and reading", () => {
       source: "upload",
       treeStyle: "folders",
       baseUrl: null,
+      tryIt: true,
       counts: { operations: 3, onHelpCenter: 3, new: 0 },
       published: true,
       syncError: null,
@@ -236,6 +237,17 @@ describe("the team's choices", () => {
     expect(await call(updateApiReference, as(), { slug: "api-reference", baseUrl: null, published: true })).toMatchObject({ baseUrl: null, published: true });
   });
 
+  test("Try it is on until the team switches it off, and get says so for the console", async () => {
+    await add();
+    expect(await get()).toMatchObject({ tryIt: true });
+    expect(await call(updateApiReference, as(), { slug: "api-reference", tryIt: false })).toMatchObject({ tryIt: false });
+    expect(await get()).toMatchObject({ tryIt: false });
+    // Another change leaves it as it is.
+    await call(updateApiReference, as(), { slug: "api-reference", name: "Public API" });
+    expect(await get()).toMatchObject({ tryIt: false, name: "Public API" });
+    expect(await call(updateApiReference, as(), { slug: "api-reference", tryIt: true })).toMatchObject({ tryIt: true });
+  });
+
   test("a key the reference doesn't have, or an address that isn't one, is refused and changes nothing", async () => {
     await add();
     const before = await stored();
@@ -245,7 +257,8 @@ describe("the team's choices", () => {
     await expect(call(updateApiReference, as(), { slug: "api-reference", hide: ["GET /nope"] })).rejects.toMatchObject({
       message: "This reference has no operation “GET /nope”",
     });
-    for (const baseUrl of ["api.example.com", "ftp://api.example.com", "javascript:alert(1)"]) {
+    // https only: a key typed into Try it never goes over plain http.
+    for (const baseUrl of ["api.example.com", "http://api.example.com", "ftp://api.example.com", "javascript:alert(1)", "https://"]) {
       await expect(call(updateApiReference, as(), { slug: "api-reference", baseUrl })).rejects.toMatchObject(refused);
     }
     await expect(call(updateApiReference, as(), { slug: "api-reference", tab: "nope" })).rejects.toMatchObject(refused);

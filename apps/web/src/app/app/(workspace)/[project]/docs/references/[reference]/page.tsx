@@ -1,37 +1,23 @@
 import type { Metadata } from "next";
 import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { BracesIcon } from "lucide-react";
-import { notFound, redirect } from "next/navigation";
 
-import { ApiReferenceEndpoints, ApiReferenceMore, ApiReferenceSync } from "@/components/api-reference-endpoints";
+import { ApiReferenceEndpoints, ApiReferenceMore, ApiReferenceSync, ApiReferenceTabs } from "@/components/api-reference-endpoints";
 import { ArticleStateBadge } from "@/components/docs-article-rows";
 import { DocsPageHeader } from "@/components/docs-page-header";
 import { portalAddress } from "@/server/custom-domains";
-import { getMembership } from "@/server/membership";
-import { OperationError } from "@/server/operations";
-import { getApiReference } from "@/server/operations/api-references";
-import { call } from "@/server/operations/run";
-import { getSession } from "@/server/session";
+
+import { loadReference } from "./load";
 
 export const metadata: Metadata = { title: "API reference · Docs" };
 
 /**
  * An API reference's page in the app: Endpoints, its groups and operations with a switch each for the help center.
- * Its Settings are its other tab, once they're built (docs/plan.md, A9): until then there's no row of tabs for one.
+ * Its Settings are its other tab (settings/page.tsx).
  */
 export default async function ApiReferencePage(props: PageProps<"/app/[project]/docs/references/[reference]">) {
   const { project: slug, reference: referenceSlug } = await props.params;
-  const [session, membership] = await Promise.all([getSession(), getMembership(slug)]);
-  if (!session || !membership) {
-    notFound();
-  }
-  const reference = await call(getApiReference, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, { slug: referenceSlug }).catch((error: unknown) => {
-    if (error instanceof OperationError) {
-      // Deleted (here too, under More), or its address changed: the docs.
-      redirect(`/app/${slug}/docs`);
-    }
-    throw error;
-  });
+  const reference = await loadReference(slug, referenceSlug);
   const portal = await portalAddress(slug);
 
   return (
@@ -44,6 +30,7 @@ export default async function ApiReferencePage(props: PageProps<"/app/[project]/
         helpCenter={reference.published && reference.counts.onHelpCenter > 0 ? `${portal}/docs/${reference.slug}` : undefined}
         actions={<ApiReferenceSync projectSlug={slug} slug={reference.slug} source={reference.source} maxBytes={OPENAPI_MAX_BYTES} />}
         more={<ApiReferenceMore projectSlug={slug} slug={reference.slug} name={reference.name} published={reference.published} />}
+        filters={<ApiReferenceTabs projectSlug={slug} slug={reference.slug} endpoints={reference.counts.operations} />}
       />
       <ApiReferenceEndpoints
         // Another reference's page is another list: nothing of this one's New or unsaved switches carries over.

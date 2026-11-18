@@ -25,7 +25,7 @@ const baseUrl = z
   .string()
   .trim()
   .max(2000)
-  .refine((value) => /^https?:\/\//i.test(value) && URL.canParse(value), "Enter an address that starts with http:// or https://");
+  .refine((value) => /^https:\/\//i.test(value) && URL.canParse(value), "Enter an address that starts with https://");
 
 /** The spec as a doc to store; one that can't be read, or has nothing to show, is refused with the reader's sentence. */
 function read(text: string): ApiDoc {
@@ -80,6 +80,7 @@ const summarySelect = {
   ref: true,
   baseUrl: true,
   treeStyle: true,
+  tryIt: true,
   operationCount: true,
   shownCount: true,
   unseenCount: true,
@@ -131,7 +132,7 @@ export const listApiReferences = defineOperation({
 export const getApiReference = defineOperation({
   name: "apiReferences.get",
   summary:
-    "Get an API reference as the team sees it: its groups in the team's order and its operations (each with whether it's on the help center, `onHelpCenter`, whether the team took it off itself, `hidden`: it's off too while a group it's in is, and whether a read added it since the team last looked, `new`), its types (one has a page only while an operation on the help center uses it), what the reader couldn't read (`warnings`, by kind: how many and the first 20 places), how it sits in the docs' tree (`treeStyle`), and where requests go when the spec's servers have no host (`baseUrl`). `spec=true` adds the spec's text",
+    "Get an API reference as the team sees it: its groups in the team's order and its operations (each with whether it's on the help center, `onHelpCenter`, whether the team took it off itself, `hidden`: it's off too while a group it's in is, and whether a read added it since the team last looked, `new`), its types (one has a page only while an operation on the help center uses it), what the reader couldn't read (`warnings`, by kind: how many and the first 20 places), how it sits in the docs' tree (`treeStyle`), where requests go when the spec's servers have no host (`baseUrl`), and whether readers can send requests from its pages (`tryIt`). `spec=true` adds the spec's text",
   method: "GET",
   path: "/api-references/{slug}",
   scope: "read",
@@ -234,7 +235,7 @@ export const createApiReference = defineOperation({
 export const updateApiReference = defineOperation({
   name: "apiReferences.update",
   summary:
-    "Change an API reference: its `name` (its address stays), its address (`newSlug`: one no tab, collection, article or other reference has; 409 otherwise), its `tab` (it goes last there), whether it's `published`, how it sits in the docs' tree (`treeStyle`: each group a folder, `folders`; a heading, `headings`; or one `entry`), the groups' order (`groupOrder`: groups' keys, the ones left out after them), and where requests go when the spec's servers have no host (`baseUrl`, an http(s) address; null removes it). `hide` and `show` take operations off and put them on the help center by their keys (\"GET /posts\"), `hideGroups` and `showGroups` whole groups by theirs; an operation is off when it's hidden or a group it's in is. `seen` says the team has looked: `true`, and nothing is new any more; or the keys of the operations it saw, and what a read added since is still new (a key it doesn't have is passed over). In the others, a key the reference doesn't have is refused",
+    "Change an API reference: its `name` (its address stays), its address (`newSlug`: one no tab, collection, article or other reference has; 409 otherwise), its `tab` (it goes last there), whether it's `published`, how it sits in the docs' tree (`treeStyle`: each group a folder, `folders`; a heading, `headings`; or one `entry`), the groups' order (`groupOrder`: groups' keys, the ones left out after them), where requests go when the spec's servers have no host (`baseUrl`, an https address; null removes it), and whether readers can send requests from its pages (`tryIt`). `hide` and `show` take operations off and put them on the help center by their keys (\"GET /posts\"), `hideGroups` and `showGroups` whole groups by theirs; an operation is off when it's hidden or a group it's in is. `seen` says the team has looked: `true`, and nothing is new any more; or the keys of the operations it saw, and what a read added since is still new (a key it doesn't have is passed over). In the others, a key the reference doesn't have is refused",
   method: "PATCH",
   path: "/api-references/{slug}",
   scope: "write",
@@ -248,6 +249,7 @@ export const updateApiReference = defineOperation({
     treeStyle: z.enum(TREE_STYLES).optional(),
     groupOrder: keys.optional(),
     baseUrl: baseUrl.nullable().optional(),
+    tryIt: z.boolean().optional(),
     hide: keys.optional(),
     show: keys.optional(),
     hideGroups: keys.optional(),
@@ -318,6 +320,7 @@ export const updateApiReference = defineOperation({
             ...(input.published !== undefined && { publishedAt: input.published ? (row.publishedAt ?? new Date()) : null }),
             ...(input.treeStyle !== undefined && { treeStyle: input.treeStyle.toUpperCase() as Uppercase<(typeof TREE_STYLES)[number]> }),
             ...(input.baseUrl !== undefined && { baseUrl: input.baseUrl }),
+            ...(input.tryIt !== undefined && { tryIt: input.tryIt }),
           },
           select: summarySelect,
         });

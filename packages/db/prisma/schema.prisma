@@ -2087,6 +2087,8 @@ model ApiReference {
   shownCount     Int                   @default(0)
   unseenCount    Int                   @default(0)
   treeStyle      ApiReferenceTreeStyle @default(FOLDERS)
+  /// Whether readers can send requests from its pages (Try it): the console's button is gone when it's off.
+  tryIt          Boolean               @default(true)
   /// Null: a draft, on the help center nowhere.
   publishedAt    DateTime?
   /// When the spec was last read, and when that last changed `doc`.
