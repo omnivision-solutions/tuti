@@ -1139,7 +1139,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, retryAt: true, retries: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, retryAt: true, retries: true, rewriteDocsOnly: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -1152,10 +1152,11 @@ export const analyseCodeChange = defineOperation({
     await aiOrRefuse(projectId, "code_changes");
     // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done. Claimed, so two asking
     // at once queue it once: already being analysed (while a run could still be going), nothing more is queued. A retry
-    // waiting (the provider didn't answer) is dropped, and this analysis gets retries of its own.
+    // waiting (the provider didn't answer) is dropped, and this analysis gets retries of its own. A person's analysis is
+    // a whole one: one whose edits were being written again (rewriteDocsOnly) is analysed whole, posts and changelog too.
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
-      data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0 },
+      data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, rewriteDocsOnly: false },
     });
     if (count === 0) {
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
@@ -1171,7 +1172,7 @@ export const analyseCodeChange = defineOperation({
           where: { id: change.id, state: "ANALYSING" },
           data: stopped
             ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." }
-            : { state: change.state, reason: change.reason, retryAt: change.retryAt, retries: change.retries },
+            : { state: change.state, reason: change.reason, retryAt: change.retryAt, retries: change.retries, rewriteDocsOnly: change.rewriteDocsOnly },
         });
       }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");

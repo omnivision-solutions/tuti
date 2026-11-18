@@ -2562,6 +2562,10 @@ model CodeChange {
   retryAt       DateTime?
   retries       Int             @default(0)
   retryPastGate Boolean         @default(false)
+  /// Its waiting edits are being written again (rewriteWaitingEdits, E6): every analysis is of its help center's part only
+  /// (docsOnly), whichever path runs it (a retry, Resume all, a run that stopped), until one finishes; a person's
+  /// "Analyse again" clears it (a full analysis).
+  rewriteDocsOnly Boolean       @default(false)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 

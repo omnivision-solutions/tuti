@@ -6,7 +6,8 @@ import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { docOf, editsInChanges, hasTeammateEdit, recordRevision, scheduleArticle, takeOut, versions } from "./article-layers";
 import { autopilotSettingsSelect } from "./autopilot";
-import { codeChange, REWRITING, REWRITTEN } from "./code-changes";
+import { codeChange, releaseStoppedRewrites, REWRITING, REWRITTEN } from "./code-changes";
+import { aiPaused } from "./credits";
 import { checksOn } from "./edit-review";
 import { lockProject } from "./running-draft";
 
@@ -22,13 +23,16 @@ import { lockProject } from "./running-draft";
  * lock each is taken out of its article by section, as Dismiss does (one that can't be stays as it is), and dismissed
  * by nobody saying REWRITTEN; the article's other edits go out by themselves again if they qualify; and the pull
  * request is marked to be written again (failed, saying REWRITING, its retry an hour away). Then each pull request so
- * marked (this run's, and any a run that stopped left) is analysed here, one at a time, the oldest merged first, so
- * each is written knowing the edits of those merged before it: claimed first, so the retries' sweep (which takes over
- * the ones left if this stops) and this never both run one. That analysis is the help center's part only (`docsOnly`:
- * no gate, no posts, its posts' updates, links and changelog line left as they are); it writes its edits again (one of
- * its edits left in an article keeps a new one off it), tells the team as any analysis does (each person's in one
- * email), and isn't retried by itself if the AI provider doesn't answer (the team's "Analyse again" is). Run again, it
- * finds the rewritten edits measured and nothing marked, so it does nothing more.
+ * marked (this run's, and any a run that stopped left: failed, paused, or analysing for over REWRITE_STALE_MS) is
+ * analysed here, one at a time, the oldest merged first, so each is written knowing the edits of those merged before
+ * it: claimed first, so the retries' sweep (which takes over the ones left if this stops) and this never both run one.
+ * That analysis is the help center's part only (`docsOnly`: no gate, no posts, its posts' updates, links and changelog
+ * line left as they are), whichever path runs it, by its marker (`rewriteDocsOnly`), which only its finishing or a
+ * person's "Analyse again" (a whole analysis) clears: paused for credits and resumed, or retried after the AI provider
+ * didn't answer (as any analysis, by the sweep), it's still docs-only. It writes its edits again (one of its edits left
+ * in an article keeps a new one off it) and tells the team as any analysis does (each person's in one email). Refused,
+ * before anything is taken out, while the project is out of AI credits. Run again, it finds the rewritten edits
+ * measured and nothing marked, so it does nothing more.
  */
 export async function rewriteWaitingEdits(slug: string, now = new Date()): Promise<{ edits: number; pullRequests: number; analysed: number }> {
   if (!checksOn(slug)) {
@@ -40,6 +44,10 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
   }
   if (!codeChangesEnabled() || !project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
     throw new Error(`Autopilot is off for ${slug}`);
+  }
+  // Nothing taken out that its analysis couldn't write again now.
+  if (await aiPaused(project.id)) {
+    throw new Error(`${slug} is out of AI credits: nothing was taken out. Run it again once it has some`);
   }
   const waiting = await prisma.codeChangeAction.findMany({
     where: {
@@ -69,8 +77,10 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
       }
       const articles: string[] = [];
       for (const { id, articleId } of its) {
-        // As things stand under the lock: still waiting, nobody's, and no person's change in its article.
-        if ((await tx.codeChangeAction.count({ where: { id, status: { in: ["PENDING", "SCHEDULED"] }, decidedById: null } })) === 0 || (await hasTeammateEdit(articleId!, tx))) {
+        // As things stand under the lock: still waiting, nobody's, in its published article's changes, and no person's
+        // change in that article.
+        const still = { id, status: { in: ["PENDING" as const, "SCHEDULED" as const] }, decidedById: null, revisions: { some: {} }, article: { publishedAt: { not: null }, deletedAt: null } };
+        if ((await tx.codeChangeAction.count({ where: still })) === 0 || (await hasTeammateEdit(articleId!, tx))) {
           continue;
         }
         const article = await tx.article.findUniqueOrThrow({ where: { id: articleId! }, select: { changes: { select: { body: true, content: true } } } });
@@ -96,7 +106,7 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
       // The sweep's, only if this run stops first: the oldest merged first then too (a millisecond before the next newer).
       await tx.codeChange.update({
         where: { id: codeChangeId },
-        data: { state: "FAILED", reason: REWRITING, retryAt: new Date(now.getTime() + SWEEP_AFTER_MS - pullRequests), retries: 0, retryPastGate: false },
+        data: { state: "FAILED", reason: REWRITING, retryAt: new Date(now.getTime() + SWEEP_AFTER_MS - pullRequests), retries: 0, retryPastGate: false, rewriteDocsOnly: true },
       });
       // The edit that held the article's others back may be gone, as after a Dismiss.
       for (const articleId of new Set(articles)) {
@@ -112,15 +122,17 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
     }
   }
   let analysed = 0;
-  const marked = await prisma.codeChange.findMany({ where: { projectId: project.id, state: "FAILED", reason: REWRITING }, orderBy: [{ mergedAt: "asc" }, { id: "asc" }], select: { id: true } });
+  await releaseStoppedRewrites(now);
+  const left = { projectId: project.id, rewriteDocsOnly: true, state: { in: ["FAILED" as const, "PAUSED" as const] } };
+  const marked = await prisma.codeChange.findMany({ where: left, orderBy: [{ mergedAt: "asc" }, { id: "asc" }], select: { id: true } });
   for (const { id } of marked) {
-    const { count } = await prisma.codeChange.updateMany({ where: { id, state: "FAILED", reason: REWRITING }, data: { state: "ANALYSING", reason: "", retryAt: null } });
+    const { count } = await prisma.codeChange.updateMany({ where: { ...left, id }, data: { state: "ANALYSING", reason: "", retryAt: null } });
     if (count === 0) {
       continue;
     }
     analysed++;
-    // A failure is the code change's to say (failed, with why); the next one goes on.
-    await codeChange({ codeChangeId: id, force: true, pastGate: false, resume: false, docsOnly: true }, log).catch((error: unknown) => log.error("Writing a pull request's edits again failed", { error, codeChangeId: id }));
+    // A failure is the code change's to say (failed, with why, and when it's tried again); the next one goes on.
+    await codeChange({ codeChangeId: id, force: true, pastGate: false, resume: false }, log).catch((error: unknown) => log.error("Writing a pull request's edits again failed", { error, codeChangeId: id }));
   }
   return { edits, pullRequests, analysed };
 }
