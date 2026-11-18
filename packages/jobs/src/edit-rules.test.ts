@@ -260,6 +260,16 @@ test("a small correction: in place, no heading touched, nothing appended, at mos
   expect(editScope(ARTICLE, ARTICLE, "")).toBe("larger");
 });
 
+test("a small correction counts what it takes out by occurrence: repeated sentences removed past the limit make it larger", () => {
+  const repeated = Array.from({ length: 6 }, () => "Each invite link expires after three days unless the owner resends it.").join(" ");
+  const before = `## Invite\n\nLinks last 3 days.\n\n${repeated}`;
+  // One sentence corrected, and five of the six copies taken out: more than a small correction takes out.
+  const after = "## Invite\n\nLinks last 7 days.\n\nEach invite link expires after three days unless the owner resends it.";
+  expect(editScope(before, after, "")).toBe("larger");
+  // The correction alone is still small.
+  expect(editScope(before, before.replace("Links last 3 days.", "Links last 7 days."), "")).toBe("correction");
+});
+
 test("an edit that moves or copies text the article had is neither a rename nor a small correction", () => {
   const STEPS = "## Invite\n\n1. Remove the old member.\n2. Send the invite.\n\nLinks last 3 days.";
   // Steps swapped with a sentence corrected, or swapped alone.

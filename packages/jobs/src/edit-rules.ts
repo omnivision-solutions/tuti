@@ -249,14 +249,17 @@ export function editScope(before: string, after: string, diff: string): "rename"
   }
   const edit = editOf(before, after);
   const headings = (markdown: string) => lines(markdown).filter(isHeading).join("\n");
+  // Counted by occurrence (a sentence the article had twice, taken out once, is taken out): editOf's sets can't see it.
+  const changed = diffBy(lines(before).flatMap(sentences), lines(after).flatMap(sentences), (sentence) => sentence);
+  const wordsOf = (kind: "added" | "removed") => words(changed.filter((line) => line.kind === kind).map((line) => line.item).join(" ")).length;
   const small =
     edit.removed.length > 0 &&
     inPlace(before, after) &&
     headings(before) === headings(after) &&
     appendedAtEnd(before, after) === null &&
     !sizeOf(before, after).overBudget &&
-    words(edit.added.join(" ")).length <= SMALL_WORDS &&
-    words(edit.removed.join(" ")).length <= SMALL_WORDS;
+    wordsOf("added") <= SMALL_WORDS &&
+    wordsOf("removed") <= SMALL_WORDS;
   return small ? "correction" : "larger";
 }
 
