@@ -77,8 +77,8 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
 
 export type ApiReferencePage = NonNullable<Awaited<ReturnType<typeof apiReferencePage>>>;
 
-/** Text with none of Markdown's marks: paragraphs as they are. */
-const PLAIN = /^(?![ \t]*(?:[-+]|\d+[.)])[ \t]|[ \t]*-{3,}[ \t]*$| {4}|\t)[^\\`*_[\]<>#|~&=]*$/;
+/** A line with none of Markdown's marks, and no address Markdown would link. */
+const PLAIN = /^(?![ \t]*(?:[-+]|\d+[.)])[ \t]|[ \t]*-{3,}[ \t]*$| {4}|\t|.*(?::\/\/|www\.))[^\\`*_[\]<>#|~&=]*$/;
 
 /**
  * A spec's Markdown (a description) as content for RichText. A spec is untrusted: its Markdown becomes
@@ -86,9 +86,11 @@ const PLAIN = /^(?![ \t]*(?:[-+]|\d+[.)])[ \t]|[ \t]*-{3,}[ \t]*$| {4}|\t)[^\\`*
  * only when safe, images left out), and RichText renders the result as elements, never as markup.
  */
 export const markdownDoc = cache(async (text: string): Promise<Doc> => {
-  // Most parameters' descriptions are a plain sentence: no parser for those.
+  // Most parameters' descriptions are a plain sentence: no parser for those. As Markdown reads them: a blank line
+  // between paragraphs, and a line the spec wrapped is the same paragraph going on.
   if (text.split("\n").every((line) => PLAIN.test(line))) {
-    return fromPlainText(text);
+    const paragraphs = text.split(/\n\s*\n/).map((paragraph) => paragraph.trim().split(/\s*\n\s*/).join(" "));
+    return fromPlainText(paragraphs.join("\n\n"));
   }
   const content = await htmlToContent("article", marked.parse(text, { async: false, gfm: true }));
   return "error" in content ? fromPlainText(text) : content.doc;

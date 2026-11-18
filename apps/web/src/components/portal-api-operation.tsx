@@ -14,10 +14,13 @@ import { portalLinks } from "@/server/portal-base";
 
 type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
 
-/** A method's colour, in the portal's status hues (the app's `kind-*` aren't the portal's): reading in blue, adding in green, changing in orange, deleting in red. */
+/**
+ * A method's colour: reading in blue, changing in orange, deleting in red (the portal's status hues), and adding in the
+ * project's accent, never a green of Tuti's own on a team's portal.
+ */
 const METHOD_COLOUR: Partial<Record<ApiOperation["kind"], string>> = {
   GET: "text-status-planned",
-  POST: "text-status-completed",
+  POST: "text-soft-foreground",
   PUT: "text-status-in-progress",
   PATCH: "text-status-in-progress",
   DELETE: "text-destructive",
@@ -123,28 +126,31 @@ function authLabel(auth: ApiAuth): ReactNode {
   }
 }
 
-/** How the operation is signed: any one of its ways, each the schemes it needs together. Nothing when the spec declares none. */
+/**
+ * How the operation is signed: any one of its ways, each the schemes it needs together, and "or none" when unsigned
+ * is one of them. Nothing when the spec declares none.
+ */
 function Signing({ operation, schemes }: { operation: ApiOperation; schemes: ApiAuth[] }) {
   if (schemes.length === 0) {
     return null;
   }
   const ways = operation.auth.map((keys) => keys.flatMap((key) => schemes.find((scheme) => scheme.key === key) ?? [])).filter((way) => way.length > 0);
+  const optional = operation.auth.some((keys) => keys.length === 0);
   return (
     <p className="text-sm text-muted-foreground">
       <span className="font-medium text-foreground">Authorization</span>{" "}
-      {ways.length === 0
-        ? "None needed"
-        : ways.map((way, i) => (
-            <Fragment key={i}>
-              {i > 0 && " or "}
-              {way.map((scheme, j) => (
-                <Fragment key={scheme.key}>
-                  {j > 0 && " and "}
-                  {authLabel(scheme)}
-                </Fragment>
-              ))}
+      {ways.map((way, i) => (
+        <Fragment key={i}>
+          {i > 0 && " or "}
+          {way.map((scheme, j) => (
+            <Fragment key={scheme.key}>
+              {j > 0 && " and "}
+              {authLabel(scheme)}
             </Fragment>
           ))}
+        </Fragment>
+      ))}
+      {ways.length === 0 ? "None needed" : optional && ", or none"}
     </p>
   );
 }
@@ -252,9 +258,9 @@ const PLACES: [ApiParam["in"], string][] = [
   ["argument", "Arguments"],
 ];
 
-/** A status's dot: green for success, orange for the caller's mistakes, red for the server's. */
+/** A status's dot: the project's accent for success, orange for the caller's mistakes, red for the server's. */
 const statusColour = (status: string) =>
-  status.startsWith("2") ? "bg-status-completed" : status.startsWith("4") ? "bg-status-in-progress" : status.startsWith("5") ? "bg-destructive" : "bg-muted-foreground";
+  status.startsWith("2") ? "bg-primary" : status.startsWith("4") ? "bg-status-in-progress" : status.startsWith("5") ? "bg-destructive" : "bg-muted-foreground";
 
 /** Code blocks as RichText shows an article's (tabs without scripts, and CodeCopyButtons' Copy): `tabs`, or one labelled block. */
 function codeDoc(tabs: { name: string; code: string }[]): Doc {

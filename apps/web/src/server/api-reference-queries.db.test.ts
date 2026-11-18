@@ -52,6 +52,7 @@ paths:
     post:
       tags: [Posts]
       summary: Create a post
+      security: [{}, { key: [] }]
       requestBody:
         required: true
         content:
@@ -159,6 +160,25 @@ describe("an operation's page", () => {
     // A plain sentence is a paragraph as it is.
     expect(await markdownDoc("Plain words, 3-200 characters.")).toEqual({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Plain words, 3-200 characters." }] }] });
     expect(JSON.stringify(await markdownDoc("- one\n- two"))).toContain("bulletList");
+    // A wrapped line is its paragraph going on, as Markdown has it; an address goes to the parser, and is a link.
+    expect(await markdownDoc("Wrapped by\nthe spec.\n\nNext.")).toEqual({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Wrapped by the spec." }] },
+        { type: "paragraph", content: [{ type: "text", text: "Next." }] },
+      ],
+    });
+    expect(JSON.stringify(await markdownDoc("See https://acme.example/docs for more."))).toContain('"href":"https://acme.example/docs"');
+  });
+
+  test("says how it's signed: the scheme, and that unsigned works too when the spec says so", async () => {
+    const signed = await pageText("get-a-post");
+    expect(signed).toContain('"Bearer token"');
+    expect(signed).not.toContain(", or none");
+    const optional = await pageText("create-a-post");
+    expect(optional).toContain('"Bearer token"');
+    expect(optional).toContain(", or none");
+    expect(await pageText("purge")).not.toContain(", or none");
   });
 
   test("sends examples to the team's base address when the spec's server has no host", async () => {
