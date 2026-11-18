@@ -43,7 +43,8 @@ type Result =
   /** Sent from the browser, which may not read the answer: the API may have run it, so Tuti sends it again only when asked. */
   | { unread: true };
 
-const field = "h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+// 16px on phones, as the inputs: smaller, and iPhones zoom the page in when one's tapped.
+const field = "h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-base md:text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** What a scheme's key is called by the input that asks for it. */
 const keyLabel = (auth: ApiAuth) =>
@@ -70,9 +71,11 @@ function useKeys(reference: string) {
 }
 
 /** The "Try it" button by the operation's method and path, and its console. */
-export function TryIt(props: { reference: string; operationSlug: string; doc: ApiDoc; operation: ApiOperation; base: string | null }) {
+export function TryIt(props: Props) {
   const [open, setOpen] = useState(false);
   const phone = useIsMobile();
+  // Here, not in the console: what the reader typed and the last answer stay while it's closed (the key is kept apart).
+  const form = useForm(props);
   return (
     <>
       <Button size="sm" className="ml-auto" onClick={() => setOpen(true)}>
@@ -83,27 +86,36 @@ export function TryIt(props: { reference: string; operationSlug: string; doc: Ap
           side={phone ? "bottom" : "right"}
           className="w-full gap-0 p-0 data-[side=bottom]:max-h-[92dvh] data-[side=right]:w-full data-[side=right]:sm:max-w-xl"
         >
-          <Console {...props} />
+          <Console {...props} form={form} />
         </SheetContent>
       </Sheet>
     </>
   );
 }
 
-function Console({ reference, operationSlug, doc, operation, base }: { reference: string; operationSlug: string; doc: ApiDoc; operation: ApiOperation; base: string | null }) {
-  const href = usePortalHref();
+type Props = { reference: string; operationSlug: string; doc: ApiDoc; operation: ApiOperation; base: string | null };
+
+/** The console's fields, prefilled as the examples are, and its last answer. */
+function useForm({ doc, operation, base }: Props) {
   const servers = useMemo(() => tryServers(doc, operation, base), [doc, operation, base]);
-  const { schemes, optional } = tryAuth(doc, operation);
-  const shown = tryParams(operation);
   const [server, setServer] = useState(servers[0]!.url);
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [params, setParams] = useState<Record<string, string>>(() =>
-    Object.fromEntries(shown.map((param) => [`${param.in}:${param.name}`, param.required || param.example !== undefined ? paramText(param) : ""])),
+    Object.fromEntries(tryParams(operation).map((param) => [`${param.in}:${param.name}`, param.required || param.example !== undefined ? paramText(param) : ""])),
   );
   const [body, setBody] = useState(() => exampleRequest(doc, operation).body ?? "");
-  const [keys, setKeys] = useKeys(reference);
   const [result, setResult] = useState<Result | null>(null);
+  return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult };
+}
+
+function Console({ reference, operationSlug, doc, operation, base, form }: Props & { form: ReturnType<typeof useForm> }) {
+  const href = usePortalHref();
+  const { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult } = form;
+  const { schemes, optional } = tryAuth(doc, operation);
+  const shown = tryParams(operation);
+  const [keys, setKeys] = useKeys(reference);
   const [sending, setSending] = useState(false);
+  const sendButton = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
   const chosen = servers.find((s) => s.url === server)!;
   const answer = useRef<HTMLDivElement>(null);
@@ -135,6 +147,8 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
       return;
     }
     setSending(true);
+    // "Send through Tuti" goes with the answer it's in: focus moves to Send, which stays.
+    if (through) sendButton.current?.focus();
     // Emptied, so the answer's arrival is read out even when it's the same as the last.
     setResult(null);
     try {
@@ -279,7 +293,7 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
         )}
         {operation.body && operation.kind !== "GET" && operation.kind !== "HEAD" && (
           <Group title="Body" note={operation.body.contentType}>
-            <Textarea aria-label="Body" spellCheck={false} rows={10} className="font-mono text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
+            <Textarea aria-label="Body" spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
           </Group>
         )}
         {/* Always there, so a screen reader reads the answer's one line as it arrives (not its body). */}
@@ -296,7 +310,7 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
         <Button variant="outline" disabled={"error" in made} onClick={() => void copy()}>
           {copied ? "Copied" : "Copy as cURL"}
         </Button>
-        <Button disabled={sending} focusableWhenDisabled onClick={() => void send()}>
+        <Button ref={sendButton} disabled={sending} focusableWhenDisabled onClick={() => void send()}>
           {sending ? "Sending…" : "Send"}
         </Button>
       </div>
@@ -343,7 +357,10 @@ function pretty(answer: TryAnswer) {
 
 /** Why the request went through Tuti, when it did. */
 const throughLine = (result: Exclude<Result, { unread: true }>) =>
-  result.via === "cors"
+  // Only for what was sent: an error from Tuti (it refused, or couldn't be reached) sent nothing.
+  "error" in result
+    ? null
+    : result.via === "cors"
     ? "Sent through Tuti, since the API doesn't allow browser requests."
     : result.via === "cookies"
       ? "Sent through Tuti, since browsers don't send cookies to another site."

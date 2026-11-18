@@ -23,6 +23,7 @@ info: { title: Acme API, version: "1" }
 servers:
   - { url: "${open.origin}/v1", description: Production }
   - { url: "${closed.origin}/v1", description: Legacy }
+  - { url: "https://api.unverified.example/v1", description: Elsewhere }
 components:
   securitySchemes:
     key: { type: http, scheme: bearer }
@@ -104,6 +105,8 @@ test("a reader tries an operation with their key: from the browser, and through 
   expect(closed.requests).toHaveLength(0);
   await response.getByRole("button", { name: "Send through Tuti" }).click();
   await expect(response.getByText("Sent through Tuti, since the API doesn't allow browser requests.")).toBeVisible();
+  // The button went with the answer it was in: the keyboard is on Send.
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   await expect(response.getByText("201 Created")).toBeVisible();
   expect(closed.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/posts", headers: { authorization: "Bearer sk_test_123", "user-agent": "Tuti-Try-It/1" } });
   // None of the reader's own cookies went on.
@@ -117,10 +120,13 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect.poll(() => reader.evaluate(() => navigator.clipboard.readText())).toContain(`curl '${closed.origin}/v1/posts?board=ideas'`);
   expect(await reader.evaluate(() => navigator.clipboard.readText())).toContain("Authorization: Bearer sk_test_123");
 
-  // The key stays for this tab: closed and opened again, it's still there.
+  // Closed and opened again: the key, what was typed and the last answer are still there.
+  await panel.getByRole("textbox", { name: "Body" }).fill('{"title": "Edited"}');
   await reader.keyboard.press("Escape");
   await reader.getByRole("button", { name: "Try it" }).click();
-  await expect(reader.getByRole("dialog", { name: "Try it" }).getByLabel("Bearer token")).toHaveValue("sk_test_123");
+  await expect(panel.getByLabel("Bearer token")).toHaveValue("sk_test_123");
+  await expect(panel.getByRole("textbox", { name: "Body" })).toHaveValue('{"title": "Edited"}');
+  await expect(response.getByText("201 Created")).toBeVisible();
 
   // A request the browser sends without asking the API first (a POST with its key in the query, no body) reached the
   // API though its answer can't be read: it isn't sent again unless the reader asks.
@@ -150,6 +156,12 @@ test("a reader tries an operation with their key: from the browser, and through 
   await get.getByRole("button", { name: "Send", exact: true }).click();
   await expect(get.getByRole("region", { name: "Response" }).getByText("Sent through Tuti, since the API doesn't allow browser requests.")).toBeVisible();
   expect(closed.requests.at(-1)).toMatchObject({ method: "GET", path: "/v1/posts/7", headers: { authorization: "Bearer sk_test_123" } });
+  // A server off the help center's sites: Tuti refuses it, and says why; nothing says it was sent.
+  await get.getByRole("combobox", { name: "Server" }).selectOption({ label: "Elsewhere (https://api.unverified.example/v1)" });
+  await get.getByRole("button", { name: "Send", exact: true }).click();
+  const refused = get.getByRole("region", { name: "Response" });
+  await expect(refused.getByText("Tuti sends requests only to this help center's own sites, and api.unverified.example isn't one")).toBeVisible();
+  await expect(refused.getByText(/Sent through Tuti/)).toHaveCount(0);
 
   // A key in a cookie goes through Tuti from the start: a browser sends no cookie it's given to another site.
   await reader.keyboard.press("Escape");
