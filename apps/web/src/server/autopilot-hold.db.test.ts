@@ -7,14 +7,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, test
 
 import { POST as due } from "@/app/api/autopilot/due/route";
 import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
-import { dismissAutopilotChecksNotice, saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
+import { saveAutopilotSettings, setAutopilotSwitch } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { setVote } from "@/server/operations/more";
 import { createArticle, publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
 import { applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChangeTargets, publishCodeChangeActionNow, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
-import { actAs, addMember, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -496,18 +496,6 @@ test("Autopilot's settings: owners flip each switch on its own, and save the thr
     });
   }
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).autopilotHoldHours).toBe(12);
-});
-
-test("the notice that edits wait with Checks off: an owner or admin dismisses it for their project alone, a member can't", async () => {
-  const other = await createProject(owner);
-  const dismissed = async (id: string) => (await prisma.project.findUniqueOrThrow({ where: { id }, select: { autopilotChecksNoticeDismissed: true } })).autopilotChecksNoticeDismissed;
-  expect(await dismissed(project.id)).toBe(false);
-  actAs(await addMember(project.id, "MEMBER"));
-  expect(await dismissAutopilotChecksNotice(project.slug)).toEqual({ error: "Only project owners and admins can dismiss it" });
-  expect(await dismissed(project.id)).toBe(false);
-  actAs(await addMember(project.id, "ADMIN"));
-  expect(await dismissAutopilotChecksNotice(project.slug)).toEqual({});
-  expect([await dismissed(project.id), await dismissed(other.id)]).toEqual([true, false]);
 });
 
 test("a request that goes out by itself says how many people completing it emails, as one waiting does", async () => {
@@ -1448,22 +1436,17 @@ test("due, a post's update goes out as Autopilot's own: only the parts it applie
   vi.restoreAllMocks();
 });
 
-describe("where the check is on, only an edit it passed that's a rename or a small correction goes out by itself (E6)", () => {
+describe("only an edit the check passed that's a rename or a small correction goes out by itself (E6)", () => {
   const PASSED = { pass: true, reasons: [], hints: [], verdict: "accept" };
   /** An article's edit, as the analysis saved it with its check (`check`; none: written before the check). */
   async function checkedEdit(check: Prisma.InputJsonObject | null, probability = 0.97) {
     const edit = await articleEdit(probability);
-    await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { payload: { ...(edit.action.payload as object), ...(check && { check }) } } });
+    const payload = { ...(edit.action.payload as Record<string, Prisma.InputJsonValue>) };
+    delete payload.check;
+    await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { payload: { ...payload, ...(check && { check }) } } });
     await scheduleByItself(project.id, edit.codeChangeId!);
     return { ...edit, ...(await statusOf(edit.action.id)) };
   }
-  beforeEach(() => {
-    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", `other,${project.slug}`);
-    onTestFinished(() => {
-      vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "");
-    });
-  });
-
   test("a rename the check passed goes out after the hold, published by the runner when due; so does a small correction", async () => {
     const before = Date.now();
     const rename = await checkedEdit({ ...PASSED, scope: "rename" });
@@ -1517,20 +1500,5 @@ describe("where the check is on, only an edit it passed that's a rename or a sma
     await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
     expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
     expect(await statusOf(edit.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its article was read 500 times or more in 30 days" });
-  });
-
-  test("a larger edit waiting, once its project leaves the list, says what holds it now when an unsure edit lands on its article", async () => {
-    const larger = await checkedEdit({ ...PASSED, scope: "larger" });
-    expect(larger.waitReason).toBe("It isn't a rename or a small correction in place, so it asks first");
-    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
-    const unsure = await landArticleEdit(project.id, larger.article.id, ++number, (doc) => doc, { probability: 0.7 });
-    await scheduleByItself(project.id, unsure.codeChangeId!);
-    expect(await statusOf(larger.action.id)).toMatchObject({ status: "PENDING", waitReason: "Another edit to its article waits for you" });
-  });
-
-  test("a project the check isn't on for is as before: an edit with no check, or a larger one, goes out after the hold", async () => {
-    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
-    expect((await checkedEdit(null)).status).toBe("SCHEDULED");
-    expect((await checkedEdit({ ...PASSED, scope: "larger" })).status).toBe("SCHEDULED");
   });
 });

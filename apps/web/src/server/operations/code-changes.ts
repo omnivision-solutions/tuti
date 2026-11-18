@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
 import { statusMoveEmails } from "@tuti/shared/status-emails";
@@ -1141,7 +1139,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, retryAt: true, retries: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -1154,37 +1152,26 @@ export const analyseCodeChange = defineOperation({
     await aiOrRefuse(projectId, "code_changes");
     // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done. Claimed, so two asking
     // at once queue it once: already being analysed (while a run could still be going), nothing more is queued. A retry
-    // waiting (the provider didn't answer) is dropped, and this analysis gets retries of its own. A person's analysis is
-    // a whole one: one whose edits were being written again (rewriteDocsOnly) is analysed whole, posts and changelog too.
-    // Its job carries the claim, so a job queued before (still waiting in the queue) does nothing.
-    // What it was is read under the pull request's lock, as it's claimed (a rewrite of its edits marking it meanwhile
-    // goes first), so a failed queueing puts back what was really there.
-    const claim = randomUUID();
-    const was = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${change.id} FOR UPDATE`;
-      const before = await tx.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { state: true, reason: true, retryAt: true, retries: true, rewriteDocsOnly: true } });
-      const { count } = await tx.codeChange.updateMany({
-        where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
-        data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, rewriteDocsOnly: false, claim },
-      });
-      return count === 0 ? null : before;
+    // waiting (the provider didn't answer) is dropped, and this analysis gets retries of its own.
+    const { count } = await prisma.codeChange.updateMany({
+      where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
+      data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0 },
     });
-    if (!was) {
+    if (count === 0) {
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
     }
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: was.state === "NOTHING_TO_DO", resume: false, claim });
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
-      // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed. One
-      // whose edits were being written again stays marked (rewriteDocsOnly), and stopped, is the sweep's to retry.
+      // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.
       if (process.env.JOBS_DRIVER !== "inline") {
-        const stopped = was.state === "ANALYSING";
+        const stopped = change.state === "ANALYSING";
         await prisma.codeChange.updateMany({
-          where: { id: change.id, state: "ANALYSING", claim },
+          where: { id: change.id, state: "ANALYSING" },
           data: stopped
-            ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment.", retryAt: was.rewriteDocsOnly ? new Date() : null, rewriteDocsOnly: was.rewriteDocsOnly }
-            : { state: was.state, reason: was.reason, retryAt: was.retryAt, retries: was.retries, rewriteDocsOnly: was.rewriteDocsOnly },
+            ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." }
+            : { state: change.state, reason: change.reason, retryAt: change.retryAt, retries: change.retries },
         });
       }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");

@@ -70,6 +70,11 @@ export type ModelFake = {
    * something mid-run).
    */
   reply(content: string, during?: () => Promise<unknown>, match?: string): void;
+  /**
+   * Every request whose user message contains `match` that no step takes gets this reply, until `done()`: a reply a test
+   * doesn't care about, never counted as unused (e.g. Autopilot's check accepting each edit).
+   */
+  otherwise(content: string, match: string): void;
   /** The next request (in order with replies; `match` as there) gets these tool calls instead of a reply. */
   toolCalls(calls: FakeToolCall[], match?: string): void;
   /** The next request fails with this HTTP status. */
@@ -96,6 +101,7 @@ export type ModelFake = {
 export async function startModelFake({ embeddings: given }: { embeddings?: OpenAIFake } = {}): Promise<ModelFake> {
   const embeddings = given ?? (await startOpenAIFake());
   const steps: Step[] = [];
+  const standing: Step[] = [];
   // Replies held till a journey releases them (POST /_fake/release), by name; released first, they don't wait.
   const holds = new Map<string, { promise: Promise<void>; release: () => void }>();
   const held = (name: string) => {
@@ -260,7 +266,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
       if (index === -1) {
         index = steps.findIndex((step) => step.match === undefined);
       }
-      const [step] = index === -1 ? [] : steps.splice(index, 1);
+      const [step] = index === -1 ? standing.filter((one) => user.includes(one.match!)) : steps.splice(index, 1);
       if (!step) {
         unexpected.push(`a request with no reply scripted: ${user.slice(0, 200)}`);
         return send(500, { error: { message: "the model fake has no reply scripted" } });
@@ -302,6 +308,9 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     reply(content, during, match) {
       steps.push({ status: 200, content, during, match });
     },
+    otherwise(content, match) {
+      standing.push({ status: 200, content, match });
+    },
     toolCalls(calls, match) {
       steps.push({ status: 200, toolCalls: calls, match });
     },
@@ -313,6 +322,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
       decisionSteps.push({ answers, match });
     },
     done() {
+      standing.splice(0);
       const problems = [
         ...unexpected.splice(0),
         ...steps

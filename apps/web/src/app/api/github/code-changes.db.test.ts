@@ -1,8 +1,8 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
-import { log, resetCodeChangesSettings } from "@tuti/shared";
-import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver } from "@tuti/testkit";
+import { log, resetCodeChangesSettings, roleDefaultModel } from "@tuti/shared";
+import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
@@ -20,6 +20,18 @@ let project: Awaited<ReturnType<typeof createProject>>;
 let installationId = 9000;
 let repo: string;
 
+/** A review that accepts the edit, its claim confirmed in the code. */
+const PASSES = JSON.stringify({
+  claims: [{ claim: "The app has a dark theme", check: "confirmed", evidence: "src/settings/appearance.tsx:1" }],
+  accuracy: 5,
+  needed: 5,
+  placement: 5,
+  voice: 5,
+  proportion: 5,
+  verdict: "accept",
+  reasons: [],
+});
+
 beforeAll(async () => {
   [github, model] = await Promise.all([startGithubFake(), startModelFake()]);
   openai = model.embeddings;
@@ -34,6 +46,8 @@ beforeEach(async () => {
   resetCodeChangesSettings();
   model.decisions.splice(0);
   model.requests.splice(0);
+  // Autopilot's check (E5) passes every edit a test doesn't script its review for, as a review that confirms it would.
+  model.otherwise(PASSES, '"article_after"');
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   // What analysing proposes, as the team sees it: nothing goes out by itself here (autopilot-hold.db.test.ts has that).
@@ -342,8 +356,11 @@ describe("deciding", () => {
     });
     expect(change).toMatchObject({ state: "READY", summary: SUMMARY, why: "It ships the dark theme people asked for.", decider: "nace-ai/drex-max", model: "acme/tiny" });
     // It wrote everything with it; the decisions stayed with the decision model, and the docs agent's deciding with its own.
+    // Autopilot's check (E5) reviews the edit on Checks' model.
+    const reviewing = (request: ModelRequest) => request.system.startsWith("You review one edit");
     expect(new Set(model.requests.filter((request) => !request.user.includes('"merge_commit"')).map((request) => request.model))).toEqual(new Set(["acme/tiny"]));
-    expect(model.requests.filter((request) => request.user.includes('"merge_commit"')).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);
+    expect(model.requests.filter((request) => request.user.includes('"merge_commit"') && !reviewing(request)).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);
+    expect(model.requests.filter(reviewing).map((request) => request.model)).toEqual([roleDefaultModel("code_changes_check")]);
     const byProbability = <T extends { probability: number }>(list: T[]) => list.sort((a, b) => b.probability - a.probability);
     expect(byProbability(change.actions)).toEqual([
       // Users see it, so there's always the changelog line: written into the running draft by itself, never waiting.
@@ -370,6 +387,8 @@ describe("deciding", () => {
           overview: "",
           // None waiting before it.
           overviewOf: [],
+          // What Autopilot's check found (E5, E6): it passed, a small correction.
+          check: expect.objectContaining({ pass: true, verdict: "accept", scope: "correction" }) as unknown,
         },
         status: "PENDING",
         reason: "It says there's only a light theme.",
@@ -411,10 +430,10 @@ describe("deciding", () => {
     expect(asked().find((state) => state.includes('"title":"Dark mode"'))).not.toContain("the_pull_request_names_this_post");
     // Every request asked for providers that don't keep or train on it.
     expect(model.decisions.every((request) => JSON.stringify(request.provider) === '{"data_collection":"deny"}')).toBe(true);
-    // Everything it asked is the project's code changes' spend: 7 decisions (the gate and 6 posts), the docs agent, the summary and 2
-    // writers (the summary's embedding isn't recorded).
+    // Everything it asked is the project's code changes' spend: 7 decisions (the gate and 6 posts), the docs agent, the summary, 2
+    // writers and the check's review of the edit (the summary's embedding isn't recorded).
     const spent = await prisma.aiUsage.groupBy({ by: ["feature", "kind"], where: { projectId: project.id }, _count: true });
-    expect(spent.map((row) => `${row.feature} ${row.kind} ${row._count}`).sort()).toEqual(["code_changes chat 4", "code_changes decision 7"]);
+    expect(spent.map((row) => `${row.feature} ${row.kind} ${row._count}`).sort()).toEqual(["code_changes chat 5", "code_changes decision 7"]);
     // The docs agent decided first; the summary (none from the agent) was written from the pull request, and is what found the posts.
     expect(model.requests[0]!.user).toContain('"merge_commit": "merge-10"');
     expect(model.requests[1]!.user).toContain("Dark mode 10");
@@ -842,6 +861,8 @@ describe("deciding", () => {
         await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
         await prisma.article.update({ where: { id: article.id }, data: { content: sectioned, body: toPlainText(sectioned) } });
         github.pullRequest(repo, pullRequest(32));
+        // The repository the check reads (without it, an edit isn't checked, and waits).
+        github.repository(repo, { commit: "merge-32", files: { "src/theme.ts": "export const themes = ['light', 'dark'];" } });
         // It completes Dark mode (completing asks first) and edits the article (edits ask first too, for now).
         const script = () => {
           model.decide(USERS);
@@ -886,8 +907,7 @@ describe("deciding", () => {
       expect(asked[1]!.user).toContain("edits_already_waiting");
     });
 
-    test("with the check on (E5), the edit written again on top of the other is checked again, and its check is kept", async () => {
-      vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    test("the edit written again on top of the other is checked again (E5), and its check is kept", async () => {
       // The repository the review reads (without it, an edit isn't reviewed).
       github.repository(repo, { commit: "merge-33", files: { "src/theme.ts": "export const themes = ['light', 'dark'];" } });
       const accept = JSON.stringify({ claims: [{ claim: "The theme is Dark", check: "confirmed", evidence: "src/theme.ts:1" }], accuracy: 5, needed: 5, placement: 5, voice: 5, proportion: 5, verdict: "accept", reasons: [] });

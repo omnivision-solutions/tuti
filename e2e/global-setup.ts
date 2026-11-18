@@ -47,6 +47,20 @@ export default async function globalSetup() {
   const model = await startModelFake({ embeddings: openai });
   // Journeys script its replies through /_fake/replies (e2e/model.ts).
   process.env.E2E_MODEL_URL = model.url;
+  // Autopilot's check (E5) accepts every article edit a journey doesn't script its review for, its claim confirmed.
+  model.otherwise(
+    JSON.stringify({
+      claims: [{ claim: "What the edit says", check: "confirmed", evidence: "src/app.ts:1" }],
+      accuracy: 5,
+      needed: 5,
+      placement: 5,
+      voice: 5,
+      proportion: 5,
+      verdict: "accept",
+      reasons: [],
+    }),
+    '"article_after"',
+  );
   const s3 = await startS3Fake();
   const github = await startGithubFake();
   // Journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, CHECKS_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
 import { createProject, signUp } from "./helpers";
 
@@ -61,7 +61,7 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
   await expect(summary("Decides Claude Haiku 5.5 · Checks Off · Writes Claude Haiku 5.5")).toBeVisible();
   await expect(level("Affordable")).toBeChecked();
   expect(await saved(slug)).toEqual({ levels: { code_changes: "affordable" }, models: { code_changes_check: "off" } });
-  // The server doesn't check this project's article edits: no notice that they wait, and the switch says nothing more (below).
+  // No notice that edits wait: the switch's own line says what off does (below).
   await expect(owner.getByText(/go out by themselves/)).toHaveCount(0);
 
   // Custom lists a model for Decides, Checks and Writes. With Checks off, its row says Off instead of a model.
@@ -107,8 +107,10 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
   await checkpoint(owner, "team-settings-autopilot-phone");
   await owner.setViewportSize({ width: 1440, height: 900 });
 
-  // Every switch is a label, with nothing more read out; one keeps a hint: completing a post emails people.
-  for (const name of ["Checks", "Analyse merged pull requests", "Link posts by itself", "Write drafts at once", "Publish article edits", "Post progress updates"]) {
+  // Every switch is a label, with nothing more read out; two keep a line: Checks says what it does (below), and completing a
+  // post emails people.
+  await expect(checks).toHaveAccessibleDescription(/^Reviews every article edit/);
+  for (const name of ["Analyse merged pull requests", "Link posts by itself", "Write drafts at once", "Publish article edits", "Post progress updates"]) {
     await expect(owner.getByRole("switch", { name, exact: true })).toHaveAccessibleDescription("");
   }
   await expect(owner.getByRole("switch", { name: "Complete posts" })).toHaveAccessibleDescription("Completing a post emails the people who asked for it.");
@@ -124,57 +126,30 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
   await owner.waitForURL(`**/app/${slug}/settings/autopilot`);
 });
 
-test("where the server checks a project's article edits, the Checks switch says what it does and prices a review; with Checks off a notice says edits wait, until Checks is switched on from it or it's dismissed for good", async ({ browser }, testInfo) => {
+test("the Checks switch says what it does and prices a review; switched off, it keeps focus and its line, nothing else appears, and it stays off", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(owner, "Acme", CHECKS_SLUG);
-  await owner.goto(`/app/${CHECKS_SLUG}/settings/autopilot`);
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/autopilot`);
 
-  // On: what it does, what off means and a review's price (Balanced checks on Sonnet), read out with the switch. No notice.
+  // On for a new project: what it does, what off means and a review's price (Balanced checks on Sonnet), read out with the switch.
   const checks = owner.getByRole("switch", { name: "Checks", exact: true });
-  const notice = owner.getByRole("status").filter({ hasText: "Article edits written while Checks is off don't go out by themselves: each one waits for your team." });
   await expect(checks).toBeChecked();
   await expect(checks).toHaveAccessibleDescription("Reviews every article edit and double-checks new articles. Off, edits written from then on wait for your team. About 26 credits per edit reviewed");
-  await expect(notice).toHaveCount(0);
 
-  // Off from the keyboard: the notice is at the top of the page, and the switch keeps focus and its price.
+  // Off from the keyboard: the switch keeps focus and its line, and no notice comes up.
   await checks.focus();
   await owner.keyboard.press("Space");
   await expect(owner.getByText("Checks: off")).toBeVisible();
-  await expect(notice).toBeVisible();
+  await expect(checks).not.toBeChecked();
   await expect(checks).toBeFocused();
   await expect(checks).toHaveAccessibleDescription(/About 26 credits per edit reviewed$/);
-  await checkpoint(owner, "team-settings-autopilot-checks-notice");
-  // Only while edits would otherwise go out by themselves: Publish article edits off, no notice; on again, it's back.
-  const publish = owner.getByRole("switch", { name: "Publish article edits", exact: true });
-  await publish.click();
-  await expect(publish).not.toBeChecked();
-  await expect(notice).toHaveCount(0);
-  await publish.click();
-  await expect(publish).toBeChecked();
-  await expect(notice).toBeVisible();
-
-  // Switch Checks on, from the keyboard: on, the notice gone, focus on the switch.
-  await notice.getByRole("button", { name: "Switch Checks on" }).focus();
-  await owner.keyboard.press("Enter");
-  await expect(owner.getByText("Checks: on")).toBeVisible();
-  await expect(checks).toBeChecked();
-  await expect(notice).toHaveCount(0);
-  await expect(checks).toBeFocused();
-
-  // Off again, the notice is back; Dismiss, from the keyboard, hides it for good, Checks still off.
-  await owner.keyboard.press("Space");
-  await expect(notice).toBeVisible();
-  await notice.getByRole("button", { name: "Dismiss" }).focus();
-  await owner.keyboard.press("Enter");
-  await expect(owner.getByText("Dismissed")).toBeVisible();
-  await expect(notice).toHaveCount(0);
-  await expect(checks).toBeFocused();
-  await expect(checks).not.toBeChecked();
+  await expect(owner.getByRole("status").filter({ hasText: /go out by themselves/ })).toHaveCount(0);
+  await checkpoint(owner, "team-settings-autopilot-checks-off");
   await owner.reload();
   await expect(checks).not.toBeChecked();
   await expect(checks).toHaveAccessibleDescription(/^Reviews every article edit/);
-  await expect(notice).toHaveCount(0);
 });
 
 // On Tuti's cloud, which sells plans: levels are on Pro, Custom and Advanced tuning on Business.

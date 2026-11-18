@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
 import { APPENDED_FAILS, appendedAtEnd, changelogWords, editScope, headingOverLittle, leftContradictions, renamed, ruleChecks, sizeOf, SMALL_WORDS } from "./edit-rules";
-import { CHECK_UNCLEAR, checkedEdit, checkFailed, checksOn, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
+import { CHECK_UNCLEAR, checkedEdit, checkFailed, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
 import { CHECK_SYSTEM } from "./verify";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -97,16 +97,6 @@ test("only a section appended at the end under a new heading fails an edit by it
     hints: ["Adds text after the article's last line: “There's a dark theme too.”."],
   });
   expect(ruleChecks(ARTICLE, ARTICLE.replace("**Appearance**", "**Display**"), { diff: "", added: false })).toEqual({ fails: null, hints: [] });
-});
-
-test("the check is on for the projects AUTOPILOT_CHECKS_PROJECTS lists, or every project with *, and none when it's unset", () => {
-  expect(checksOn("help")).toBe(false);
-  vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", " Help , acme");
-  expect([checksOn("help"), checksOn("acme"), checksOn("other"), checksOn("hel")]).toEqual([true, true, false, false]);
-  vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "*");
-  expect(checksOn("other")).toBe(true);
-  vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "");
-  expect(checksOn("help")).toBe(false);
 });
 
 const review = (over: Record<string, unknown> = {}) =>

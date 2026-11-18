@@ -54,7 +54,8 @@ export async function mergePullRequest(
 ) {
   const fake = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/pull-request`, {
     method: "POST",
-    body: JSON.stringify({ repo: "acme/app", author: "octo", mergedAt: new Date().toISOString(), ...pr }),
+    // Its merge commit's archive, as GitHub has one, so Autopilot reads the code (and checks its edits against it).
+    body: JSON.stringify({ repo: "acme/app", author: "octo", mergedAt: new Date().toISOString(), archived: true, ...pr }),
   });
   expect(fake.ok).toBe(true);
   const body = JSON.stringify({
