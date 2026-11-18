@@ -38,13 +38,11 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   const dialog = team.getByRole("dialog", { name: "Add API reference" });
   await expect(dialog.getByRole("radio", { name: /From a URL/ })).toBeChecked();
   const add = dialog.getByRole("button", { name: "Add reference" });
-  /** Nothing marks an answer dropped: Name stays empty and Add off for the second it would take to land, checked over it. */
+  /** Nothing marks an answer dropped: two rendered frames, the moment it would have landed in, and Name empty, Add off. */
   const staysEmpty = async () => {
-    for (let at = 0; at < 10; at++) {
-      await expect(dialog.getByLabel("Name")).toHaveValue("");
-      await expect(add).toBeDisabled();
-      await team.waitForTimeout(100);
-    }
+    await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(dialog.getByLabel("Name")).toHaveValue("");
+    await expect(add).toBeDisabled();
   };
 
   // A file still being read when the team picks "From a URL": the read, ending after, changes nothing there.
@@ -79,11 +77,13 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   const delivered = new Promise<void>((resolve) => {
     answered = resolve;
   });
+  let fetches = 0;
   const holdFetch = async (route: Route) => {
     if (!isAction(route.request())) {
       await route.continue();
       return;
     }
+    fetches++;
     begun();
     await released;
     await route.fulfill({ response: await route.fetch() });
@@ -93,9 +93,13 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   await dialog.getByLabel("Spec URL").fill(`${siteUrl()}${path}`);
   await dialog.getByRole("button", { name: "Fetch" }).click();
   await started;
+  // Enter again for the same address, as a held-down key repeats it, while it's on its way: no second fetch.
+  await dialog.getByLabel("Spec URL").press("Enter");
+  await dialog.getByLabel("Spec URL").press("Enter");
   await dialog.getByText("Upload a file", { exact: true }).click();
   release();
   await delivered;
+  expect(fetches).toBe(1);
   await team.unroute("**/*", holdFetch);
   await staysEmpty();
   await dialog.getByText("From a URL", { exact: true }).click();

@@ -45,16 +45,22 @@ function UrlSource({ projectSlug, error, onChange }: { projectSlug: string; erro
     },
     [],
   );
+  // The address a Fetch is on its way for: Enter again (or held down) for it waits for its answer, rather than asking
+  // again. Cleared as the answer arrives, before it shows, so a Fetch once it's answered (an error, say) goes at once.
+  const asking = useRef<string | null>(null);
   const fetchIt = () => {
     const address = url.trim();
-    // Not held up by a Fetch before it, which may still be finishing (its answer shows before it's done): the newer one
-    // goes, and `latest` drops the older's answer.
-    if (!address) {
+    // Another address goes even while one is on its way, and `latest` drops the older's answer.
+    if (!address || asking.current === address) {
       return;
     }
+    asking.current = address;
     const turn = ++latest.current;
     startTransition(async () => {
       const result = await previewApiReferenceUrl(projectSlug, address).catch(() => ({ error: "Couldn't read that address. Try again.", suggests: undefined }));
+      if (asking.current === address) {
+        asking.current = null;
+      }
       if (turn !== latest.current) {
         return;
       }
