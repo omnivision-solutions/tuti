@@ -1,0 +1,268 @@
+"use client";
+
+import { cn } from "cn";
+import { EyeIcon, EyeOffIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { useDocsMoreFocus } from "@/components/docs-page-header";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { deleteApiReference, markApiReferenceSeen, replaceApiReferenceSpec, setApiReferencePublished, setApiReferenceShown } from "@/server/api-references";
+
+/** An API reference's page in the app (docs/plan.md, A8): its header's actions and its Endpoints. */
+
+type Group = { key: string; name: string; description: string; onHelpCenter: boolean };
+type Operation = {
+  key: string;
+  slug: string;
+  title: string;
+  kind: string;
+  path: string;
+  group: string;
+  alsoIn: string[];
+  deprecated: boolean;
+  /** Switched off itself; it's off the help center too while a group it's in is. */
+  hidden: boolean;
+  new: boolean;
+};
+
+/** A method's colour, as on the help center's pages: GET green, POST blue, PUT and PATCH amber, DELETE red; the rest (GraphQL's kinds too) muted. */
+const METHOD_COLOURS: Record<string, string> = {
+  GET: "text-kind-new",
+  POST: "text-kind-progress",
+  PUT: "text-kind-edit",
+  PATCH: "text-kind-edit",
+  DELETE: "text-destructive-foreground",
+};
+
+const SAVE_FAILED = { error: "Couldn't save that. Try again." };
+
+/**
+ * The header's button that reads the spec again. An uploaded file's is "Upload new version": pick the file, and the toast
+ * says what it added and removed. A URL's or a repository's is read from where it lives ("Sync now"), with those sources.
+ */
+export function ApiReferenceSync({ projectSlug, slug, source, maxBytes }: { projectSlug: string; slug: string; source: string; maxBytes: number }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  if (source !== "upload") {
+    return null;
+  }
+  const upload = (file: File) => {
+    if (file.size > maxBytes) {
+      toast.error("This file is over 5 MB, the most an API reference reads.");
+      return;
+    }
+    const data = new FormData();
+    data.set("spec", file);
+    startTransition(async () => {
+      const result = await replaceApiReferenceSpec(projectSlug, slug, data).catch(() => ({ error: "Couldn't upload that file. Try again." }) as Awaited<ReturnType<typeof replaceApiReferenceSpec>>);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success([result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ") || "No changes");
+      }
+    });
+  };
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        aria-label="New version of the spec"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          // The same file picked again is a change too.
+          event.currentTarget.value = "";
+          if (file) upload(file);
+        }}
+      />
+      <Button type="button" variant="outline" disabled={pending} onClick={() => input.current?.click()} className="@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0">
+        <UploadIcon />
+        <span className="@max-[44rem]/docs-page:sr-only">Upload new version</span>
+      </Button>
+    </>
+  );
+}
+
+/** Under the header's More actions: "Unpublish" or "Publish", and "Delete" (the page then goes back to Docs: there's no reference to show). */
+export function ApiReferenceMore({ projectSlug, slug, name, published }: { projectSlug: string; slug: string; name: string; published: boolean }) {
+  const moreFocus = useDocsMoreFocus();
+  const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const run = (action: () => Promise<{ error?: string }>, done: string) =>
+    startTransition(async () => {
+      const result = await action().catch(() => SAVE_FAILED);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(done);
+      }
+    });
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <DropdownMenuItem disabled={pending} onClick={() => run(() => setApiReferencePublished(projectSlug, slug, !published), published ? `${name} unpublished` : `${name} published`)}>
+        {published ? <EyeOffIcon /> : <EyeIcon />}
+        {published ? "Unpublish" : "Publish"}
+      </DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" disabled={pending} onClick={() => setOpen(true)}>
+        <Trash2Icon />
+        Delete
+      </DropdownMenuItem>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
+          <AlertDialogDescription>Its pages leave the help center, and what you switched off here is forgotten. This can’t be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(() => deleteApiReference(projectSlug, slug), `${name} deleted`)}>
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/**
+ * Endpoints: each group and its operations, with a switch for the help center that saves at once. What a new spec added
+ * is New for this visit: opening the page marks it seen, so it's gone on the next one, not while the team looks.
+ */
+export function ApiReferenceEndpoints({
+  projectSlug,
+  slug,
+  state,
+  groups,
+  operations,
+  unreadable,
+}: {
+  projectSlug: string;
+  slug: string;
+  /** Its Draft or Published badge. */
+  state: ReactNode;
+  /** In the team's order. */
+  groups: Group[];
+  operations: Operation[];
+  /** How many things the reader couldn't read. */
+  unreadable: number;
+}) {
+  // Switches clicked and not saved yet, over what the page was given: a save's answer brings the page again, as saved.
+  const [clicked, setClicked] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState("");
+  const groupOn = (group: Group) => clicked[`group ${group.key}`] ?? group.onHelpCenter;
+  const offGroups = new Set(groups.filter((group) => !groupOn(group)).map((group) => group.key));
+  const inOffGroup = (operation: Operation) => [operation.group, ...operation.alsoIn].some((key) => offGroups.has(key));
+  const ownOn = (operation: Operation) => clicked[`operation ${operation.key}`] ?? !operation.hidden;
+  const shown = (operation: Operation) => ownOn(operation) && !inOffGroup(operation);
+
+  // What's New this visit, each with whether it arrived off the help center: kept while the page is open, though marked seen.
+  const [fresh, setFresh] = useState(() => new Map<string, boolean>());
+  const arrived = operations.filter((operation) => operation.new && !fresh.has(operation.key));
+  if (arrived.length > 0) {
+    setFresh(new Map([...fresh, ...arrived.map((operation) => [operation.key, !shown(operation)] as const)]));
+  }
+  const unseen = operations.some((operation) => operation.new);
+  useEffect(() => {
+    if (unseen) {
+      // Not saved: they're New again on the next visit.
+      void markApiReferenceSeen(projectSlug, slug).catch(() => undefined);
+    }
+  }, [unseen, projectSlug, slug]);
+
+  const change = (what: "operation" | "group", key: string, on: boolean) => {
+    const id = `${what} ${key}`;
+    setClicked((now) => ({ ...now, [id]: on }));
+    void setApiReferenceShown(projectSlug, slug, what, key, on)
+      .catch(() => SAVE_FAILED)
+      .then((result) => {
+        if (result.error) {
+          toast.error(result.error);
+        }
+        // Saved: as the page has it now. Refused: back as it was. Unless it was clicked again since (that save answers for it).
+        setClicked((now) => {
+          if (now[id] !== on) return now;
+          const { [id]: _, ...rest } = now;
+          return rest;
+        });
+      });
+  };
+
+  const addedHidden = operations.filter((operation) => fresh.get(operation.key) && !shown(operation));
+  const words = query.trim().toLowerCase();
+  const matches = (operation: Operation) => !words || operation.path.toLowerCase().includes(words) || operation.title.toLowerCase().includes(words);
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
+        {state}
+        <span>
+          {operations.filter(shown).length} of {operations.length} on the help center
+        </span>
+        {unreadable > 0 && <span>{unreadable === 1 ? "1 thing couldn’t be read" : `${unreadable} things couldn’t be read`}</span>}
+      </div>
+      {addedHidden[0] && (
+        <p role="status" className="rounded-lg bg-highlight px-3.5 py-2.5 text-sm text-highlight-foreground">
+          {addedHidden.length === 1 ? "1 new endpoint was added hidden." : `${addedHidden.length} new endpoints were added hidden.`}{" "}
+          <a href={`#endpoint-${addedHidden[0].slug}`} className="font-medium underline underline-offset-2">
+            {addedHidden.length === 1 ? "Review it below." : "Review them below."}
+          </a>
+        </p>
+      )}
+      {operations.length > 20 && <Input type="search" aria-label="Search endpoints" placeholder="Search endpoints" value={query} onChange={(event) => setQuery(event.currentTarget.value)} className="max-w-sm" />}
+      {groups.map((group) => {
+        const rows = operations.filter((operation) => operation.group === group.key && matches(operation));
+        if (rows.length === 0) return null;
+        const description = group.description.trim().split("\n")[0];
+        return (
+          <section key={group.key} aria-label={group.name}>
+            <div className="flex items-center gap-3 border-b pb-2.5">
+              <div className="min-w-0 flex-1">
+                <h2 className="font-heading text-base font-semibold break-words">{group.name}</h2>
+                {description && <p className="truncate text-sm text-muted-foreground">{description}</p>}
+              </div>
+              <Switch aria-label={`${group.name}: on the help center`} checked={groupOn(group)} onChange={(event) => change("group", group.key, event.currentTarget.checked)} />
+            </div>
+            <ul>
+              {rows.map((operation) => (
+                <li key={operation.key} id={`endpoint-${operation.slug}`} className="flex items-center gap-3 border-b py-2.5 last:border-b-0">
+                  {/* A narrow pane: the method and path on one line, the title under them, the switch at the right. */}
+                  <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                    <span className="flex min-w-0 items-baseline gap-2 @max-[44rem]/docs-page:basis-full">
+                      <span className={cn("min-w-13 shrink-0 font-mono text-xs font-semibold", METHOD_COLOURS[operation.kind] ?? "text-muted-foreground")}>{operation.kind}</span>
+                      <code className="min-w-0 font-mono text-[13px] break-all">{operation.path}</code>
+                    </span>
+                    <span className="min-w-0 text-sm break-words text-muted-foreground">{operation.title}</span>
+                    {operation.deprecated && <Badge variant="outline">Deprecated</Badge>}
+                    {fresh.has(operation.key) && <Badge variant="highlight">New</Badge>}
+                  </div>
+                  {/* Greyed while a group it's in is off: its own choice is kept for when the group is back. */}
+                  <Switch
+                    aria-label={`${operation.title || operation.path}: on the help center`}
+                    checked={ownOn(operation)}
+                    disabled={inOffGroup(operation)}
+                    onChange={(event) => change("operation", operation.key, event.currentTarget.checked)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}

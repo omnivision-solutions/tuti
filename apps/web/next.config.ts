@@ -17,6 +17,8 @@ const nextConfig = (phase: string): NextConfig => ({
   // stays in the page when React renders its part again before it arrives (anything updating as the page hydrates), so
   // the page would have two of each tag (two RSS links on the changelog).
   htmlLimitedBots: /.*/,
+  // An API reference's spec is uploaded through a server action, and may be 5 MB (OPENAPI_MAX_BYTES); the default is 1 MB.
+  experimental: { serverActions: { bodySizeLimit: "6mb" } },
 });
 
 export default nextConfig;

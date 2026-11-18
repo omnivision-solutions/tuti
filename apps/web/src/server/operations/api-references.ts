@@ -129,7 +129,7 @@ export const listApiReferences = defineOperation({
 export const getApiReference = defineOperation({
   name: "apiReferences.get",
   summary:
-    "Get an API reference as the team sees it: its groups in the team's order and its operations (each with whether it's on the help center, `onHelpCenter`, and whether a read added it since the team last looked, `new`), its types (one has a page only while an operation on the help center uses it), what the reader couldn't read (`warnings`, by kind: how many and the first 20 places), how it sits in the docs' tree (`treeStyle`), and where requests go when the spec's servers have no host (`baseUrl`). `spec=true` adds the spec's text",
+    "Get an API reference as the team sees it: its groups in the team's order and its operations (each with whether it's on the help center, `onHelpCenter`, whether the team took it off itself, `hidden`: it's off too while a group it's in is, and whether a read added it since the team last looked, `new`), its types (one has a page only while an operation on the help center uses it), what the reader couldn't read (`warnings`, by kind: how many and the first 20 places), how it sits in the docs' tree (`treeStyle`), and where requests go when the spec's servers have no host (`baseUrl`). `spec=true` adds the spec's text",
   method: "GET",
   path: "/api-references/{slug}",
   scope: "read",
@@ -150,6 +150,7 @@ export const getApiReference = defineOperation({
     const shownOperations = new Set(shown.operations.map((operation) => operation.key));
     const shownTypes = new Set(shown.types.map((type) => type.name));
     const hiddenGroups = new Set(state.hiddenGroups);
+    const hiddenOperations = new Set(state.hiddenOperations);
     const unseen = new Set(state.unseen);
     const place = new Map(state.groupOrder.map((key, at) => [key, at]));
     const warnings = new Map<string, { code: string; message: string; count: number; where: string[] }>();
@@ -181,6 +182,7 @@ export const getApiReference = defineOperation({
         alsoIn: alsoIn ?? [],
         deprecated,
         onHelpCenter: shownOperations.has(key),
+        hidden: hiddenOperations.has(key),
         new: unseen.has(key),
       })),
       types: doc.types.map(({ name, slug, kind }) => ({ name, slug, kind, onHelpCenter: shownTypes.has(name) })),
