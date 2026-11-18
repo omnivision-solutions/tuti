@@ -570,10 +570,10 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
   const byGroup = Map.groupBy(operations, (operation) => operation.group);
   const used = new Set(operations.flatMap((operation) => operation.auth.flat()));
   const schemes = doc.auth.filter((scheme) => used.has(scheme.key));
-  // No server for the whole spec: the shown operations' own (by address), and the base or the examples' placeholder
-  // (`undefined`) where any goes without one.
-  const own = [...new Map(operations.flatMap((operation) => operation.servers ?? []).map((server) => [server.url, server])).values()];
-  const servers = doc.servers.length > 0 ? doc.servers : [...own, ...(operations.some((operation) => !operation.servers?.length) ? [undefined] : [])];
+  // The spec's servers and the shown operations' own, each address once; with none for the whole spec, the base or the
+  // examples' placeholder (`undefined`) too where an operation goes without one of its own.
+  const listed = [...new Map([...doc.servers, ...operations.flatMap((operation) => operation.servers ?? [])].map((server) => [server.url, server])).values()];
+  const servers = [...listed, ...(doc.servers.length === 0 && operations.some((operation) => !operation.servers?.length) ? [undefined] : [])];
   const descriptions = new Map(await Promise.all(groups.map(async (group) => [group.key, await firstLine(group.description)] as const)));
   return (
     <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} current={null} />}>

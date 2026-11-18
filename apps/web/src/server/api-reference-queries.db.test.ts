@@ -591,6 +591,23 @@ paths:
     expect(mixed).toContain("A placeholder");
     await call(updateApiReference, as(), { slug: "mixed", baseUrl: "https://api.acme.test" });
     expect(await slugText("mixed")).toContain('"children":"https://api.acme.test"');
+    // Beside the spec's servers too.
+    await call(createApiReference, as(), {
+      name: "Both",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Both, version: "1" }
+servers: [{ url: "https://api.acme.test" }]
+paths:
+  /uploads: { servers: [{ url: "https://upload.acme.test" }], post: { summary: Upload, responses: { "200": { description: ok } } } }
+  /posts: { get: { summary: Posts, responses: { "200": { description: ok } } } }
+`,
+    });
+    const both = await slugText("both");
+    expect(both).toContain('"children":"https://api.acme.test"');
+    expect(both).toContain('"children":"https://upload.acme.test"');
+    expect(both).not.toContain("A placeholder");
   });
 
   test("a group with every operation hidden has no card, and signing no shown operation uses isn't listed", async () => {
