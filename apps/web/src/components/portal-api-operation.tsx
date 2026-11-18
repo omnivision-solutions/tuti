@@ -9,6 +9,7 @@ import {
   type ApiSchema,
   graphqlResponse,
   graphqlSignature,
+  operationMarkdown,
   requestExamples,
   serverAddress,
   tryable,
@@ -19,10 +20,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Fragment, type ReactNode } from "react";
 
+import { ArticleActions } from "@/components/article-actions";
 import { CodeCopyButtons } from "@/components/code-copy-buttons";
 import { TryIt } from "@/components/portal-api-try";
 import { DocsLayout, LockedMessage } from "@/components/portal-docs";
 import { cn } from "@/lib/utils";
+import { portalAddress } from "@/server/custom-domains";
 import { type ApiReferencePage, apiReferencePage, firstLine, markdownDoc } from "@/server/api-reference-queries";
 import { docsContents, type DocsTree, docsTree } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
@@ -504,25 +507,37 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
   const openapi = page.doc.format === "openapi";
   /** GraphQL: the type the field returns. */
   const returned = operation.responses[0]?.schema;
+  // Copy page and its menu, as an article's (Customize → Content actions): its Markdown, and its .md for AI tools.
+  const actions = (
+    <ArticleActions
+      markdown={operationMarkdown(page.doc, operation, { base: page.reference.baseUrl ?? undefined })}
+      markdownUrl={`${await portalAddress(project)}/docs/${page.reference.slug}/${operation.slug}.md`}
+    />
+  );
   return (
     <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} references={tree.references} current={operation.slug} />}>
       <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start">
         <article className="flex min-w-0 flex-col gap-8" aria-labelledby={ARTICLE_TITLE_ID}>
           <div className="flex flex-col gap-3">
-            <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-              <Link href={at(`/docs/${page.reference.slug}`)} className="truncate hover:text-foreground">
-                {page.reference.name}
-              </Link>
-              {group && (
-                <>
-                  <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
-                  <span className="truncate font-medium text-foreground">{group.name}</span>
-                </>
-              )}
-            </p>
+            {/* The way up, and the page's actions at the row's end on wide screens, under the title on phones (as an article's). */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                <Link href={at(`/docs/${page.reference.slug}`)} className="truncate hover:text-foreground">
+                  {page.reference.name}
+                </Link>
+                {group && (
+                  <>
+                    <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+                    <span className="truncate font-medium text-foreground">{group.name}</span>
+                  </>
+                )}
+              </p>
+              <div className="max-sm:hidden">{actions}</div>
+            </div>
             <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
               {operation.title}
             </h1>
+            <div className="w-fit sm:hidden">{actions}</div>
             {operation.deprecated && <span className="w-fit rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">Deprecated</span>}
             <Markdown text={operation.description} className="article-text gap-4 text-foreground" />
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
