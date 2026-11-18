@@ -1,13 +1,19 @@
 "use client";
 
-import { useActionState, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { ChevronRightIcon } from "lucide-react";
+import Link from "next/link";
+import { useActionState, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
+import { SettingRow } from "@/components/settings-card";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { keepingFields } from "@/lib/forms";
+import type { UpgradePrompt } from "@/lib/upgrade-prompt";
+import { saveAiModel } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
 import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails, setAutopilotSwitch } from "@/server/github";
 
@@ -20,12 +26,78 @@ export type AutopilotSettingsValues = {
   holdHours: number;
 };
 
+/** Each switch's name and label. One has a hint: what it sends can't be taken back. */
 const SWITCHES = [
-  ["drafts", "Write drafts at once", "A new article's draft. Only your team sees it. (The changelog line is always written into the running draft.)"],
-  ["articleEdits", "Publish article edits", "After the hold, when the article hasn't changed since."],
-  ["progress", "Post progress updates", "After the hold: the post moves to In progress with Autopilot's update."],
-  ["complete", "Complete posts", "After the hold. Completing a post emails the people who asked for it. Off: it asks you first."],
+  ["drafts", "Write drafts at once", undefined],
+  ["articleEdits", "Publish article edits", undefined],
+  ["progress", "Post progress updates", undefined],
+  ["complete", "Complete posts", "Completing a post emails the people who asked for it."],
 ] as const;
+
+/**
+ * Settings → Autopilot → Checks (owners and admins, like the AI model above it): off saves "off" as the role's model,
+ * on clears it, so the level's model (or Custom's) checks again. What's shown is what the page read once it's saved,
+ * the same the AI model setting shows, so the two can't disagree.
+ */
+export function AutopilotChecksSwitch({ projectSlug, on }: { projectSlug: string; on: boolean }) {
+  const [, startTransition] = useTransition();
+  const [checked, setChecked] = useOptimistic(on);
+  return (
+    <SettingRow label="Checks" htmlFor="autopilot-checks" inline>
+      <Switch
+        id="autopilot-checks"
+        checked={checked}
+        // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
+        onChange={(event) => {
+          const next = event.currentTarget.checked;
+          startTransition(async () => {
+            setChecked(next);
+            const result = await saveAiModel(projectSlug, { code_changes_check: next ? "" : "off" }).catch(() => ({ error: "Couldn't save. Try again." }));
+            if (result.error) {
+              toast.error(result.error);
+            } else {
+              toast.success(`Checks: ${next ? "on" : "off"}`);
+            }
+          });
+        }}
+      />
+    </SettingRow>
+  );
+}
+
+/**
+ * Settings → Autopilot's way to Advanced tuning, a row of its card. `upgrade`: the plan doesn't include tuning, so the
+ * row looks the same, says which plan it needs to a screen reader, and opens the upgrade prompt instead of the page.
+ */
+export function AdvancedTuningLink({ href, upgrade }: { href: string; upgrade: UpgradePrompt | null }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const row = "flex w-full items-center gap-3 px-4 py-3.5 text-left font-medium outline-none last:rounded-b-xl hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @min-[34rem]/settings:px-5";
+  const content = (
+    <>
+      <span className="min-w-0 flex-1">Advanced tuning</span>
+      <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
+    </>
+  );
+  if (!upgrade) {
+    return (
+      <Link href={href} className={row}>
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <>
+      <button type="button" aria-describedby={id} aria-haspopup="dialog" onClick={() => setOpen(true)} className={row}>
+        {content}
+      </button>
+      <span id={id} hidden>
+        {upgrade.title}
+      </span>
+      <UpgradeDialog prompt={upgrade} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
 
 /** Settings → Autopilot: what goes out by itself, each switch saved as it's flipped (owners; `owner` false: shown, not changed). */
 export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSwitchValues; owner: boolean }) {
@@ -35,19 +107,13 @@ export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlu
   const saved = useRef(settings);
   const flips = useRef<Partial<Record<keyof AutopilotSwitchValues, number>>>({});
   // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
-  return SWITCHES.map(([name, label, description]) => (
-    <div key={name} className="flex items-start justify-between gap-4">
-      <div className="flex flex-col gap-0.5">
-        <label htmlFor={`autopilot-${name}`} className="text-sm font-medium">
-          {label}
-        </label>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+  return SWITCHES.map(([name, label, hint]) => (
+    <SettingRow key={name} label={label} description={hint} htmlFor={`autopilot-${name}`} inline>
       <Switch
         id={`autopilot-${name}`}
         checked={checked[name]}
         disabled={!owner}
-        className="mt-0.5"
+        aria-describedby={hint && `autopilot-${name}-description`}
         onChange={(event) => {
           const on = event.currentTarget.checked;
           setChecked((current) => ({ ...current, [name]: on }));
@@ -67,7 +133,7 @@ export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlu
           });
         }}
       />
-    </div>
+    </SettingRow>
   ));
 }
 

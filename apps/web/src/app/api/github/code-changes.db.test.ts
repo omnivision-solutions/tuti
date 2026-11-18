@@ -314,7 +314,7 @@ describe("deciding", () => {
       undefined,
       '"problem"',
     );
-    // The project picked its own model for code changes (Settings → AI models).
+    // The project picked its own model for code changes (Settings → Autopilot, Custom).
     await prisma.project.update({ where: { id: project.id }, data: { aiLevels: { code_changes: "custom" }, aiModels: { code_changes: "acme/tiny" } } });
     expect(await merge(10)).toBe(200);
 

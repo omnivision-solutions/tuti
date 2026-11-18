@@ -39,7 +39,7 @@ const field = (value: Value["value"], range: Value["range"]) => (typeof value ==
 const overridden = (value: Value) => value.saved !== null && (value.saved !== value.default || value.clamped);
 
 /**
- * Settings → AI models → Advanced tuning: Autopilot's values for this project. Owners change them on a plan with it;
+ * Settings → Autopilot → Advanced tuning: Autopilot's values for this project. Owners change them on a plan with it;
  * admins, and everyone on a plan without it, see them read-only (`notice` says why, with the way to Business). Each
  * value keeps the server's range, says its tradeoff and "Changed from" the server's. The page saves one way, its Save:
  * Reset and Reset all only put the server's value back in their fields for it. After a save the form starts again from

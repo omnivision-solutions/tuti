@@ -1,22 +1,26 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
+import { AiModelSetting } from "@/components/ai-model-setting";
+import { AdvancedTuningLink, AutopilotChecksSwitch, AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { aiModelSetting } from "@/lib/ai-model-setting";
 import { autopilotRecordText } from "@/lib/autopilot-words";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
 
 export const metadata: Metadata = { title: "Autopilot · Settings" };
 
 /**
- * Settings → AI → Autopilot: whether it reads merged pull requests (and what's sent where), what it does
- * by itself, and how it's doing. Owners change it; admins see it. Only where the server has AI.
+ * Settings → AI → Autopilot: its AI model (Decides, Checks, Writes), whether Checks run and the way to Advanced tuning,
+ * which owners and admins change; then whether it reads merged pull requests, what it does by itself, and how it's
+ * doing, which owners change and admins see. Only where the server has AI.
  */
 export default async function AutopilotSettingsPage(props: PageProps<"/app/[project]/settings/autopilot">) {
   const { project: slug } = await props.params;
@@ -25,7 +29,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     notFound();
   }
   const owner = membership.role === "OWNER";
-  const [team, project, github, record] = await Promise.all([
+  const [model, team, project, github, record] = await Promise.all([
+    aiModelSetting(membership.project, "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" }),
     prisma.teamMember.findMany({
       where: { projectId: membership.project.id, role: { not: "OWNER" } },
       orderBy: { createdAt: "asc" },
@@ -51,6 +56,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     prisma.githubInstallation.findUnique({ where: { projectId: membership.project.id }, select: { projectId: true } }),
     autopilotRecord(membership.project.id),
   ]);
+  const checks = model.roles.find(({ role }) => role === "code_changes_check")!;
   return (
     <SettingsPane
       title="Autopilot"
@@ -69,31 +75,35 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         </>
       }
     >
-      {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings.</p>}
+      {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings. Admins can change its AI model and Checks.</p>}
       {!planIncludes(project.plan, "codeChanges") && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin>
           Merged pull requests still go into the changelog&apos;s running draft.
         </PlanNotice>
       )}
       <SettingsCard>
-        <SettingBlock>
-          <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} provider={aiProvider()} owner={owner} />
-        </SettingBlock>
+        <AiModelSetting {...model} />
+        {/* Off is the role's model saved as "off", on every level and plan. Where the server itself runs no checks, there's nothing to switch (unless a saved Off is still to undo). */}
+        {(checks.default !== "off" || checks.model === "off") && <AutopilotChecksSwitch projectSlug={slug} on={checks.model !== "off"} />}
+        <AdvancedTuningLink href={`/app/${slug}/settings/ai-models/tuning`} upgrade={planIncludes(project.plan, "aiTuning") ? null : upgradePrompt("aiTuning", slug, true)} />
+      </SettingsCard>
+      <SettingsCard>
+        <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />
       </SettingsCard>
       {project.analyseCodeChanges && (
         <SettingsCard title="What it does by itself">
-          <SettingBlock className="gap-6">
-            <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} provider={aiProvider()} owner={owner} />
-            <AutopilotSwitches
-              projectSlug={slug}
-              owner={owner}
-              settings={{
-                drafts: project.autopilotDrafts,
-                articleEdits: project.autopilotArticleEdits,
-                progress: project.autopilotProgress,
-                complete: project.autopilotComplete,
-              }}
-            />
+          <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} owner={owner} />
+          <AutopilotSwitches
+            projectSlug={slug}
+            owner={owner}
+            settings={{
+              drafts: project.autopilotDrafts,
+              articleEdits: project.autopilotArticleEdits,
+              progress: project.autopilotProgress,
+              complete: project.autopilotComplete,
+            }}
+          />
+          <SettingBlock>
             <AutopilotSettingsForm
               projectSlug={slug}
               owner={owner}

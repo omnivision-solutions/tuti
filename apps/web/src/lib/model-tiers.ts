@@ -3,17 +3,6 @@ import type { AiRole } from "@tuti/shared";
 /** A model the AI endpoint lists, with its prices in dollars per token (null when it has none). */
 export type ListedModel = { id: string; name: string; input: number | null; output: number | null; tools: boolean };
 
-export type Tier = "fast" | "balanced" | "best";
-/** What a row's choice is: a tier, a custom id, or (Autopilot's checks) off. */
-export type Choice = Tier | "custom" | "off";
-export const TIER_NAMES: Record<Tier, string> = { fast: "Fast", balanced: "Balanced", best: "Best" };
-
-/** Balanced and Best: offered where the endpoint lists them. Fast is each feature's default on the server. */
-const TIER_MODELS: Record<Exclude<Tier, "fast">, string> = {
-  balanced: "anthropic/claude-sonnet-5.5",
-  best: "anthropic/claude-opus-5.5",
-};
-
 /**
  * Roughly what one use of each role reads and writes, in tokens, to price it. Autopilot's three are its docs agent's:
  * deciding (rounds of tool calls, each sending the conversation so far), checking (the same, again, only when it
@@ -43,28 +32,6 @@ export function costPerUse(role: AiRole, model: ListedModel | undefined): { doll
   return { dollars: typical.input * model.input + typical.output * model.output, per: typical.per };
 }
 
-/** The tiers a feature offers: Fast (its default), then Balanced and Best where listed, each with its model. */
-export function tiersFor(defaultModel: string, listed: ListedModel[]): { tier: Tier; model: string }[] {
-  const ids = new Set(listed.map((model) => model.id));
-  return [
-    { tier: "fast" as const, model: defaultModel },
-    ...(Object.entries(TIER_MODELS) as [Tier, string][])
-      .filter(([, model]) => ids.has(model) && model !== defaultModel)
-      .map(([tier, model]) => ({ tier, model })),
-  ];
-}
-
-/** Which choice a saved pick is: no pick is Fast, "off" Off, a tier's model that tier, anything else Custom. */
-export function choiceOf(picked: string | null, tiers: { tier: Tier; model: string }[]): Choice {
-  if (picked === null) {
-    return "fast";
-  }
-  if (picked === "off") {
-    return "off";
-  }
-  return tiers.find((option) => option.tier !== "fast" && option.model === picked)?.tier ?? "custom";
-}
-
 /** "About $0.0042 per answer", or in credits where AI is paid with them ("About 0.42 credits per answer"). */
 export function costLabel(cost: { dollars: number; per: string } | null, creditsPerDollar: number | null): string | null {
   if (!cost) {
@@ -76,21 +43,4 @@ export function costLabel(cost: { dollars: number; per: string } | null, credits
     return `About ${credits} ${credits === 1 ? "credit" : "credits"} per ${cost.per}`;
   }
   return `About $${round(cost.dollars)} per ${cost.per}`;
-}
-
-/**
- * The model id a feature's choice saves: "" for Fast (the default), "off", the tier's model, or the custom id.
- * A tier no longer offered (the endpoint stopped listing its model) keeps what was saved, as a custom id.
- */
-export function pickedModel(choice: Choice, custom: string, tiers: { tier: Tier; model: string }[], saved: string | null): string {
-  if (choice === "fast") {
-    return "";
-  }
-  if (choice === "off") {
-    return "off";
-  }
-  if (choice === "custom") {
-    return custom;
-  }
-  return tiers.find((option) => option.tier === choice)?.model ?? saved ?? "";
 }

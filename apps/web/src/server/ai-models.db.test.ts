@@ -7,12 +7,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { SIGNED_OUT } from "@/lib/read-access";
 import { aiModelSetting } from "@/lib/ai-model-setting";
-import { saveAiModel, saveAiModels } from "@/server/ai-models";
+import { saveAiModel } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** Models per feature (docs/plan.md, AI usage per project): the server's default for each feature, or the project's pick. */
 
@@ -119,9 +119,7 @@ test("two people picking models for different features at once both keep theirs"
 test("the settings form saves only what it sends: a feature it leaves out keeps its model", async () => {
   await call(updateAiModels, as(), { answers: "acme/tiny" });
   actAs(owner);
-  const form = new FormData();
-  form.set("changelog", "anthropic/claude-sonnet-5.5");
-  expect(await saveAiModels(project.slug, {}, form)).toEqual({});
+  expect(await saveAiModel(project.slug, { changelog: "anthropic/claude-sonnet-5.5" })).toEqual({});
   const models = await call(getAiModels, as(), {});
   expect([models.answers.model, models.changelog.model]).toEqual(["acme/tiny", "anthropic/claude-sonnet-5.5"]);
 });
@@ -171,9 +169,7 @@ test("Autopilot's roles: Decides and Checks have their own picks (Off only for C
   expect((await call(updateAiModels, as(), { answers: "acme/no-tools" })).answers.model).toBe("acme/no-tools");
   // The form sends the steps too.
   actAs(owner);
-  const form = new FormData();
-  form.set("code_changes_check", "");
-  expect(await saveAiModels(project.slug, {}, form)).toEqual({});
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
   expect((await call(getAiModels, as(), {})).code_changes_check.model).toBeNull();
 });
 
@@ -306,4 +302,54 @@ test("a settings page's AI model on a server without plans: no prompts; a level 
   const own = await setting();
   expect(own).toMatchObject({ saved: "affordable", used: "balanced", summary: "Drafts Tiny", notice: "Affordable isn't available on this server." });
   expect(own.levels.map(({ level }) => level)).toEqual(["balanced", "custom"]);
+});
+
+test("Autopilot's Checks switch: off needs no plan and holds on every level and under Custom, and the AI model setting says so; on goes back to the level's model, or the server's under Custom; a member can't flip it", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const HAIKU = "anthropic/claude-haiku-5.5";
+  const SONNET = "anthropic/claude-sonnet-5.5";
+  /** What Settings → Autopilot shows: the line under AI model, Custom's row for Checks, and the model the checks run on. */
+  const shown = async () => {
+    const setting = await aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
+    return { summary: setting.summary, used: setting.used, checks: setting.roles[1]!.model, runsOn: (await call(getAiModels, as(), {})).code_changes_check.used };
+  };
+  actAs(owner);
+
+  // Free, on Balanced: on by default, on the server's model for it. Off is the switch's save, and needs no plan.
+  await onPlan("free");
+  expect(await shown()).toEqual({ summary: "Decides Claude Haiku 5.5 · Checks Claude Sonnet 5.5 · Writes Claude Sonnet 5.5", used: "balanced", checks: "", runsOn: SONNET });
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
+  expect(await shown()).toEqual({ summary: "Decides Claude Haiku 5.5 · Checks Off · Writes Claude Sonnet 5.5", used: "balanced", checks: "off", runsOn: "off" });
+  // On again: the pick is cleared, so it's the level's model.
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
+  expect(await shown()).toMatchObject({ checks: "", runsOn: SONNET });
+
+  // With a level: off holds whatever level is chosen after it, the other roles follow the level, and on is that level's model.
+  await onPlan("pro");
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
+  expect(await saveAiModel(project.slug, { levels: { code_changes: "affordable" } })).toEqual({});
+  expect(await shown()).toEqual({ summary: "Decides Claude Haiku 5.5 · Checks Off · Writes Claude Haiku 5.5", used: "affordable", checks: "off", runsOn: "off" });
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
+  expect(await shown()).toMatchObject({ summary: "Decides Claude Haiku 5.5 · Checks Claude Haiku 5.5 · Writes Claude Haiku 5.5", used: "affordable", runsOn: HAIKU });
+
+  // With Custom: off doesn't move the group off Custom or touch the other roles' picks; on, Checks runs on the server's own until a model is picked.
+  await onPlan("business");
+  expect(await saveAiModel(project.slug, { code_changes_decide: "acme/tiny", code_changes_check: "acme/tiny" })).toEqual({});
+  expect(await shown()).toMatchObject({ used: "custom", checks: "acme/tiny", runsOn: "acme/tiny" });
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
+  expect(await shown()).toEqual({ summary: "Decides Tiny · Checks Off · Writes Claude Sonnet 5.5", used: "custom", checks: "off", runsOn: "off" });
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
+  expect(await shown()).toEqual({ summary: "Decides Tiny · Checks Claude Sonnet 5.5 · Writes Claude Sonnet 5.5", used: "custom", checks: "", runsOn: SONNET });
+
+  // Off under Custom, then a plan without Custom: still off, on Balanced.
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
+  await onPlan("free");
+  expect(await shown()).toMatchObject({ summary: "Decides Claude Haiku 5.5 · Checks Off · Writes Claude Sonnet 5.5", used: "balanced", runsOn: "off" });
+
+  // Admins flip it, like the AI model; other team members can't.
+  actAs(await addMember(project.id, "ADMIN"));
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
+  actAs(await addMember(project.id, "MEMBER"));
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({ error: "Only project owners and admins can change AI models" });
+  expect((await call(getAiModels, as(), {})).code_changes_check).toMatchObject({ model: null, used: SONNET });
 });

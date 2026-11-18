@@ -22,7 +22,7 @@ export type AiModelSettingProps = {
   summary: string;
   /** Said when the saved level isn't the one in use. */
   notice: string | null;
-  /** Custom's rows: the model picked ("" for none) and the server's own, which it runs on until one is. */
+  /** Custom's rows: the model picked ("" for none; "off" for a role switched off, shown as Off) and the server's own, which it runs on until one is. */
   roles: { role: AiRole; label: string; model: string; default: string; agent: boolean }[];
   /** The endpoint's models a project may pick; empty when the list couldn't be read (an id can still be typed). */
   listed: ListedModel[];

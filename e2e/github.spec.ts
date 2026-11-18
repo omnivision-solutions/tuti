@@ -63,8 +63,6 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await checkpoint(owner, "settings-autopilot");
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
-  // What it sends: the docs agent reads the repository and the help center on every merged pull request.
-  await expect(owner.getByText("the repository files Autopilot reads at its merge commit and your help center's articles and drafts", { exact: false })).toBeVisible();
   await analysis.click();
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
@@ -84,9 +82,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // Linking by itself is on for a new project; its owner can turn it off.
   const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
   await expect(autoLinks).toBeChecked();
-  await expect(owner.getByText("Off, Autopilot makes no links.", { exact: false })).toBeVisible();
-  await autoLinks.click();
+  // Flipped from the keyboard, the switch keeps focus while it saves and after.
+  await autoLinks.focus();
+  await owner.keyboard.press("Space");
   await expect(owner.getByText("Autopilot doesn't link posts")).toBeVisible();
+  await expect(autoLinks).not.toBeChecked();
+  await expect(autoLinks).toBeFocused();
   // The page saves one way: switches and ticks as they change, the numbers (what always waits, and the hold) with its one Save.
   await expect(owner.getByRole("switch", { name: "Complete posts" })).not.toBeChecked();
   await owner.getByRole("switch", { name: "Complete posts" }).click();

@@ -150,7 +150,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "license.check": () => ({}),
   // Like license.check: admins only in the app (Settings → Usage).
   "usage.get": () => ({ months: 3 }),
-  // Like usage.get: admins only in the app (Settings → AI models).
+  // Like usage.get: admins only in the app (each feature's AI model, under Settings → AI).
   "aiModels.get": () => ({}),
   "aiModels.update": () => ({ answers: "acme/tiny", changelog: "" }),
   // Owners only in the app; a key works while whoever created it owns the project (see code-changes-tuning.db.test.ts).
