@@ -126,7 +126,7 @@ When you change an article that exists:
  * code or anything else Markdown can't carry back by its passages, each replaced, taken out or added after where it
  * stands (articleNotes).
  */
-export const PASSAGES_RULE = `A section marked editable is changed by giving its whole new text in "sections". A section that isn't has a table, code or something else that must stay as it is: it lists its "passages" (its paragraphs, headings, list items, table cells and code blocks), and you change it by them, in "passages". To change one, "find" is the passage exactly as listed and "replace" its new text: on one line, with **bold**, *italics*, <br> for a line break, the links it had, and as many \`code\` spans as it had, in the same order (what's in one may change); a code block's "replace" is the whole block, fences included. To take one out (a paragraph, a list item or a code block, with no link in it), "replace" is ""; a heading goes only with everything else in its section, when what the whole section describes is gone. To add after one, "after" is the passage exactly as listed and "insert" the new text: paragraphs, or "- " items after a list item, with **bold**, *italics* and the section's links, and no heading or code. Nothing else in such a section can be changed, and a passage can't be split in two. When what a passage describes is gone, take it out; don't reuse it for something else.`;
+export const PASSAGES_RULE = `A section marked editable is changed by giving its whole new text in "sections". A section that isn't has a table, code or something else that must stay as it is: it lists its "passages" (its paragraphs, headings, list items, table cells and code blocks), and you change it by them, in "passages". To change one, "find" is the passage exactly as listed and "replace" its new text: on one line, with **bold**, *italics*, <br> for a line break, the links it had, and as many \`code\` spans as it had, in the same order (what's in one may change); a code block's "replace" is the whole block, fences included. To take one out (a paragraph, a list item or a code block, with no link in it), "replace" is ""; a heading goes only with everything else in its section, when what the whole section describes is gone. To add after one, "after" is the passage exactly as listed and "insert" the new text: paragraphs, or "- " items after a list item, with **bold**, *italics* and the section's links, and no heading, code or <br>. Nothing else in such a section can be changed, and a passage can't be split in two. When what a passage describes is gone, take it out; don't reuse it for something else.`;
 
 /**
  * When the section for the end ("add") may be used, for the writers that have it: for what the article doesn't cover at
@@ -318,11 +318,13 @@ export function articleNotes(doc: Doc, marks: { by: string[]; held: boolean }[] 
       // A section's number, as a number or its digits (as "sections" names them): nothing else is made into one.
       const index = (typeof section === "number" && Number.isInteger(section)) || (typeof section === "string" && /^\d+$/.test(section)) ? Number(section) - 1 : -1;
       // Only in a section that lists passages: an editable one is rewritten whole. One thing each: a replacement or an addition.
+      // A key the reply leaves null or "" is a key it didn't use (its template lists both kinds in one list).
       const blocks = next[index] && !notes[index]!.editable && !held(index) ? next[index] : null;
+      const unused = (value: unknown) => value === undefined || value === null || value === "";
       const replaced =
-        blocks && typeof find === "string" && typeof replace === "string" && after === undefined && insert === undefined
+        blocks && typeof find === "string" && find !== "" && typeof replace === "string" && unused(after) && unused(insert)
           ? replacePassage(blocks, find, replace)
-          : blocks && typeof after === "string" && typeof insert === "string" && find === undefined && replace === undefined
+          : blocks && typeof after === "string" && typeof insert === "string" && insert !== "" && unused(find) && unused(replace)
             ? insertAfterPassage(blocks, after, insert)
             : null;
       if (!replaced) {

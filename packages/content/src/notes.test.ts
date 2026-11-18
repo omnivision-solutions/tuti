@@ -204,6 +204,9 @@ describe("passages: a block's text replaced where it stands", () => {
     // A divider, and a marker with nothing after it, are blocks too.
     expect(replacePassage(section, "Plans", "---")).toBeNull();
     expect(replacePassage(section, "Plans", "1.")).toBeNull();
+    // One that reads as no text would leave the block blank.
+    expect(replacePassage(section, "Each plan has seats.", "**")).toBeNull();
+    expect(replacePassage(section, "Plans", "**")).toBeNull();
     for (const refused of ["- Each plan has a price.", "* Each plan has a price.", "+ Each plan has a price.", "2) Each plan has a price.", "> Each plan has a price.", "# Plans"]) {
       expect(replacePassage(section, "Each plan has seats.", refused)).toBeNull();
     }
@@ -291,6 +294,8 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(insertAfterPassage(section, "Each plan has seats.", "Seats are *per project*.")![2]).toEqual(para(text("Seats are "), text("per project", { type: "italic" }), text(".")));
     // After a heading, and after a code block.
     expect(insertAfterPassage(section, "Plans", "Pick one.")!.slice(0, 2)).toEqual([section[0], para(text("Pick one."))]);
+    // A <br> would be stored as text: refused. An escaped one is text the writer meant.
+    expect(insertAfterPassage(section, "Each plan has seats.", "Open **Export**.<br>Pick CSV.")).toBeNull();
     expect(insertAfterPassage(section, "```bash\nnpm run export\n```", "It writes a CSV file.")![4]).toEqual(para(text("It writes a CSV file.")));
     // After a list's item, the new items join its list, whatever their marker; the list keeps its kind and start.
     const list = section[5] as JSONContent;

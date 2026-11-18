@@ -167,6 +167,9 @@ test("in a section that isn't editable, a passage is taken out or has text added
   expect(edit({ passages: [{ section: 1, find: "It takes a minute.", replace: "", insert: "More." }] })).toBeNull();
   expect(edit({ passages: [{ section: 1, after: "It takes a minute.", insert: "More.", replace: "Less." }] })).toBeNull();
   expect(edit({ passages: [{ section: 1, after: "It takes a minute.", insert: 3 }] })).toBeNull();
+  // Keys left null or "" are keys not used: the operation is the one the other two name.
+  expect(edit({ passages: [{ section: 1, find: "It takes a minute.", replace: "", after: null, insert: "" }] })!.content).toEqual([para("Run it from Settings."), { ...code, attrs: { language: "bash", filename: null } }]);
+  expect(edit({ passages: [{ section: 1, find: null, replace: "", after: "It takes a minute.", insert: "More." }] })!.content).toEqual([para("Run it from Settings."), { ...code, attrs: { language: "bash", filename: null } }, para("It takes a minute."), para("More.")]);
 });
 
 test("a section is taken out whole by taking out every passage in it, its heading too; its heading alone can't go", () => {

@@ -329,7 +329,8 @@ function rewritten(target: JSONContent, replace: string): JSONContent | null {
   }
   // Each link the passage had, as often as it had it: one of two to the same address made plain text is a link lost.
   // A line break at either end isn't written back (toMarkdown drops one at the end): the block couldn't be found again.
-  if (!text(rest) || content[0]?.type === "hardBreak" || content.at(-1)?.type === "hardBreak") {
+  // Nor one that reads as no text ("**", say): a heading, a cell or a step's title would be left blank.
+  if (!text(rest) || content.length === 0 || content[0]?.type === "hardBreak" || content.at(-1)?.type === "hardBreak") {
     return null;
   }
   // A link the passage had comes back as the mark it was, every attribute: the reader makes one with the address alone.
@@ -401,14 +402,15 @@ export function replacePassage(blocks: JSONContent[], find: string, replace: str
  * These blocks with `insert` added after one passage (found as replacePassage finds it): read like any reply (readNotes:
  * paragraphs, lists, bold, italics, the links these blocks have), after the passage's block when it's one of these, or as more
  * items of its list after a list's item. Null when it can't be used: the passage isn't found exactly once or has no
- * place (see unitOf); `insert` reads as nothing, has code (a backtick), a heading (it would start a section), an image's placeholder, or
+ * place (see unitOf); `insert` reads as nothing, has code (a backtick), a <br>, a heading (it would start a section), an image's placeholder, or
  * after a list's item is anything but one list.
  */
 export function insertAfterPassage(blocks: JSONContent[], after: string, insert: string): JSONContent[] | null {
   const node = passageAt(blocks, after);
   const at = node && unitOf(blocks, node);
   // No code: none is made up here, as in a replacement (its backticks would be dropped, and the code shown as text).
-  if (!at || insert.includes("`") || /\{\{media \d+\}\}/.test(insert.replace(/\\(.)/g, "$1"))) {
+  // Nor a <br>: it's read as text here, and readers would see it.
+  if (!at || insert.includes("`") || BREAKS.test(insert) || /\{\{media \d+\}\}/.test(insert.replace(/\\(.)/g, "$1"))) {
     return null;
   }
   const added = notesToDoc(insert, linksOf(blocks), [], true).content ?? [];
