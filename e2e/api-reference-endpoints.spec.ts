@@ -35,7 +35,8 @@ test("An API reference's Endpoints: switches for the help center, a new version'
 
   await team.goto(`/app/${slug}/docs/references/api-reference`);
   await expect(team.getByRole("heading", { name: "API reference", level: 1 })).toBeVisible();
-  await expect(team.getByText("3 of 3 on the help center")).toBeVisible();
+  // Exactly: only a draft's count goes on to "when published".
+  await expect(team.getByText("3 of 3 on the help center", { exact: true })).toBeVisible();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(team.getByRole("link", { name: "View on help center" })).toHaveAttribute("href", /\/docs\/api-reference$/);
   // It opens the reference on the help center, which shows its first operation's page.
