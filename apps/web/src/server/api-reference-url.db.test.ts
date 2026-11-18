@@ -478,8 +478,9 @@ describe("the 6-hourly job", () => {
     });
     // Four busy hosts, five due each and every one older than the single host's: more than a window of 6 holds.
     const due = (minutes: number) => new Date(now.getTime() - SYNC_EVERY_MS - minutes * 60_000);
-    const busy = ["internal", "metadata", "busy", "other"].flatMap((host) =>
-      Array.from({ length: 5 }, (_, at) => ({ slug: `${host}-${at}`, sourceUrl: `https://${host}.acme.test/${at}.json`, syncTriedAt: due(100 - at) })),
+    // No two share a time, so the order is the ages' alone: internal's are the oldest at each place.
+    const busy = ["internal", "metadata", "busy", "other"].flatMap((host, index) =>
+      Array.from({ length: 5 }, (_, at) => ({ slug: `${host}-${at}`, sourceUrl: `https://${host}.acme.test/${at}.json`, syncTriedAt: due(100 - at * 10 - index) })),
     );
     await prisma.apiReference.createMany({
       data: [...busy, { slug: "single", sourceUrl: "https://short.acme.test/openapi.json", syncTriedAt: due(1) }].map((row) => ({
