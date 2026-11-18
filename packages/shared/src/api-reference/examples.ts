@@ -147,11 +147,17 @@ export function requestExamples(
   options?: ExampleOptions,
 ): { curl: string; javascript: string; python: string } {
   const request = exampleRequest(doc, operation, options);
-  return { curl: curl(request), javascript: javascript(request), python: python(request) };
+  return { curl: curlCommand(request), javascript: javascript(request), python: python(request) };
 }
 
 function isJson(contentType: string) {
   return /json/i.test(contentType);
+}
+
+/** A parameter's example as text, as the examples fill it in; empty when there's none to make up. */
+export function paramText(param: ApiParam): string {
+  const value = paramValue(param);
+  return value === undefined ? "" : asText(value);
 }
 
 function paramValue(param: ApiParam): unknown {
@@ -177,7 +183,8 @@ function shellQuote(text: string) {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
-function curl({ method, url, headers, body }: ExampleRequest) {
+/** A request as a cURL command (the console copies a filled one). */
+export function curlCommand({ method, url, headers, body }: ExampleRequest) {
   const parts = [`curl ${shellQuote(url)}`];
   // curl reads {…} and […] in an address as lists and ranges; a parameter left as "{name}" is neither.
   if (/[[\]{}]/.test(url)) parts.push("--globoff");

@@ -1,12 +1,13 @@
 import { ARTICLE_TITLE_ID, type Doc, MAX_CODE_TABS, toPlainText } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
-import { type ApiAuth, type ApiOperation, type ApiParam, type ApiProperty, type ApiResponse, type ApiSchema, requestExamples, serverAddress } from "@tuti/shared/api-reference";
+import { type ApiAuth, type ApiOperation, type ApiParam, type ApiProperty, type ApiResponse, type ApiSchema, requestExamples, serverAddress, tryable } from "@tuti/shared/api-reference";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Fragment, type ReactNode } from "react";
 
 import { CodeCopyButtons } from "@/components/code-copy-buttons";
+import { TryIt } from "@/components/portal-api-try";
 import { DocsLayout, LockedMessage } from "@/components/portal-docs";
 import { cn } from "@/lib/utils";
 import { type ApiReferencePage, apiReferencePage, firstLine, markdownDoc } from "@/server/api-reference-queries";
@@ -480,6 +481,17 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
               <Method kind={operation.kind} />
               <Path path={operation.path} />
+              {/* Only where there's somewhere to send it: never GraphQL (yet), nor servers without a host and no base address. */}
+              {tryable(page.doc, operation, page.reference.baseUrl) && (
+                <TryIt
+                  reference={page.reference.slug}
+                  operationSlug={operation.slug}
+                  // What the console reads, not the whole spec: its servers, its ways of signing, this operation.
+                  doc={{ ...page.doc, groups: [], operations: [], types: [], warnings: [], description: "" }}
+                  operation={{ ...operation, responses: [], description: "" }}
+                  base={page.reference.baseUrl}
+                />
+              )}
             </div>
             {openapi && <Signing operation={operation} schemes={page.doc.auth} />}
           </div>
