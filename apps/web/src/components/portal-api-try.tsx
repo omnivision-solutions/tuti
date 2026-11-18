@@ -30,9 +30,9 @@ import { cn } from "@/lib/utils";
 import type { TryAnswer } from "@/server/api-try";
 
 /**
- * Try it on an OpenAPI operation's page (docs/plan.md, API reference in Docs, A12): the console, a panel from the right
- * (a sheet from the bottom on phones), with the server, the key, the parameters and the body, prefilled from the
- * examples. It sends from the browser first; an API that doesn't let browsers call it (a network error, which is what
+ * Try it on an operation's page (docs/plan.md, API reference in Docs, A12; GraphQL's, A13): the console, a panel from
+ * the right (a sheet from the bottom on phones), with the server, the key, the parameters and the body (GraphQL: the
+ * query and its variables), prefilled from the examples. It sends from the browser first; an API that doesn't let browsers call it (a network error, which is what
  * CORS refusing looks like) gets the request through Tuti instead (server/api-try.ts). The key stays in this tab
  * (sessionStorage) and goes nowhere but in the request.
  */
@@ -127,6 +127,7 @@ function useForm({ doc, operation, base }: Props) {
     Object.fromEntries(tryParams(doc, operation).map((param) => [`${param.in}:${param.name}`, param.required || param.example !== undefined ? paramText(param) : ""])),
   );
   const [body, setBody] = useState(() => exampleRequest(doc, operation).body ?? "");
+  const [graphql, setGraphql] = useState(() => operation.query && { query: operation.query.text, variables: JSON.stringify(operation.query.variables, null, 2) });
   const [result, setResult] = useState<Result | null>(null);
   const [sending, setSending] = useState(false);
   /** The latest send, and how to stop it: an answer to an earlier one is dropped. */
@@ -136,7 +137,7 @@ function useForm({ doc, operation, base }: Props) {
     const latest = latestRef;
     return () => latest.current.stop?.abort();
   }, []);
-  return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult, sending, setSending, latestRef };
+  return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, graphql, setGraphql, result, setResult, sending, setSending, latestRef };
 }
 
 /** How long a request from the browser may take, as through Tuti; */
@@ -146,19 +147,22 @@ const TUTI_TIMEOUT_MS = 20_000;
 
 function Console({ reference, operationSlug, doc, operation, base, form }: Props & { form: ReturnType<typeof useForm> }) {
   const href = usePortalHref();
-  const { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult, sending, setSending, latestRef } = form;
+  const { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, graphql, setGraphql, result, setResult, sending, setSending, latestRef } = form;
   const { schemes, optional } = tryAuth(doc, operation);
   const shown = tryParams(doc, operation);
   const [keys, setKeys] = useKeys(reference);
   const sendButton = useRef<HTMLButtonElement>(null);
   const chosen = servers.find((s) => s.url === server)!;
   const answer = useRef<HTMLDivElement>(null);
+  // Once per answer, not on every keystroke in the query: a body can be 2 MB.
+  const isGraphql = !!graphql;
+  const errors = useMemo(() => (isGraphql && result && "answer" in result ? graphqlErrors(result.answer) : []), [isGraphql, result]);
   // Below the fields, often out of sight (a phone's sheet): brought into view, focus left on Send.
   useEffect(() => {
     if (result) answer.current?.scrollIntoView({ block: "nearest" });
   }, [result]);
 
-  const input = tryInput(doc, operation, { server, variables, params, keys, body });
+  const input = tryInput(doc, operation, { server, variables, params, keys, body, graphql });
   const made = tryRequest(doc, operation, base, input);
 
   /** `through`: sent through Tuti at the reader's word, after the browser couldn't show the answer (and why). */
@@ -374,13 +378,23 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
             <Textarea aria-label="Body" spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
           </Group>
         )}
+        {graphql && (
+          <>
+            <Group title="Query">
+              <Textarea aria-label="Query" spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={graphql.query} onChange={(event) => setGraphql({ ...graphql, query: event.target.value })} />
+            </Group>
+            <Group title="Variables" note="JSON">
+              <Textarea aria-label="Variables" spellCheck={false} rows={4} className="font-mono text-base md:text-xs" value={graphql.variables} onChange={(event) => setGraphql({ ...graphql, variables: event.target.value })} />
+            </Group>
+          </>
+        )}
         {/* Always there, so a screen reader reads the answer's one line as it arrives (not its body). */}
         <p aria-live="polite" className="sr-only">
-          {result && summary(result)}
+          {result && summary(result, errors.length)}
         </p>
         {result && (
           <div ref={answer}>
-            <Answer result={result} onThrough={(why) => void send(why)} sending={sending} />
+            <Answer result={result} onThrough={(why) => void send(why)} sending={sending} errors={errors} />
           </div>
         )}
       </div>
@@ -433,6 +447,16 @@ function pretty(answer: TryAnswer) {
   }
 }
 
+/** A GraphQL answer's `errors`, each's message: what went wrong, though its status is often 200. */
+function graphqlErrors(answer: TryAnswer): string[] {
+  try {
+    const { errors } = JSON.parse(answer.body) as { errors?: unknown };
+    return Array.isArray(errors) ? errors.map((error) => String((error as { message?: unknown } | null)?.message ?? JSON.stringify(error))) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Why the request went through Tuti, when it did. */
 const throughLine = (result: Exclude<Result, { unread: "cors" | "redirect" }>) =>
   // Only for what was sent: an error from Tuti (it refused, or couldn't be reached) sent nothing.
@@ -451,15 +475,19 @@ const UNREAD = {
   redirect: "The API answered with a redirect, which Try it doesn't follow. Send it through Tuti to see its status and where it points; the request runs again.",
 };
 
-/** The answer in a line, for screen readers. */
-function summary(result: Result) {
+/** The answer in a line, for screen readers (with GraphQL's errors counted). */
+function summary(result: Result, errors: number) {
   if ("unread" in result) return UNREAD[result.unread];
-  const what = "error" in result ? result.error : `${result.answer.status} ${result.answer.statusText}, ${result.answer.ms} ms, ${size(result.answer.size)}`;
+  const what =
+    "error" in result
+      ? result.error
+      : `${result.answer.status} ${result.answer.statusText}, ${result.answer.ms} ms, ${size(result.answer.size)}${errors ? `, ${errors === 1 ? "1 error" : `${errors} errors`}` : ""}`;
   return [what, throughLine(result)].filter(Boolean).join(". ");
 }
 
 /** The answer: its status, time and size, its headers (closed), and its body. Or why it wasn't sent. */
-function Answer({ result, onThrough, sending }: { result: Result; onThrough: (why: "cors" | "redirect") => void; sending: boolean }) {
+/** `errors`: a GraphQL answer's error messages. */
+function Answer({ result, onThrough, sending, errors }: { result: Result; onThrough: (why: "cors" | "redirect") => void; sending: boolean; errors: string[] }) {
   if ("unread" in result) {
     return (
       <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
@@ -498,6 +526,17 @@ function Answer({ result, onThrough, sending }: { result: Result; onThrough: (wh
             <span className="text-muted-foreground">{size(result.answer.size)}</span>
           </p>
           {result.answer.cut && <p className="text-[0.8125rem] text-muted-foreground">Showing the first 2 MB.</p>}
+          {errors.length > 0 && (
+            <div role="group" aria-label="Errors" className="flex flex-col gap-1 rounded-lg border border-destructive/40 p-3 text-sm">
+              <p className="font-medium text-destructive">{errors.length === 1 ? "1 error" : `${errors.length} errors`}</p>
+              <ul className="flex list-disc flex-col gap-1 pl-5 break-words">
+                {/* ponytail: the first 20; the body below has them all. */}
+                {errors.slice(0, 20).map((message, i) => (
+                  <li key={i}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {result.answer.headers.length > 0 && (
             <details className="group/headers">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden">

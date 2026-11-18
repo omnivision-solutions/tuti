@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { readUpTo, shownUrl, tryable, tryAuth, type TryForm, tryInput, type TryInput, tryParams, tryRequest, tryServers } from "./try";
 import type { ApiDoc, ApiOperation } from "./types";
@@ -207,4 +207,83 @@ test("a header or cookie with a character beyond Latin-1 is refused before sendi
   expect(tryRequest(doc(), team, null, input({ headers: [["X-Team", "café"]] }))).not.toHaveProperty("error");
   const cookie = doc({ auth: [{ key: "cookie", kind: "cookie", name: "session", description: "" }] });
   expect(tryRequest(cookie, operation({ auth: [["cookie"]] }), null, input({ cookies: [["session", "it’s"]] }))).toEqual({ error: "session has a character a request can't carry in a header: ’" });
+});
+
+describe("GraphQL", () => {
+  const graphql = doc({ format: "graphql", auth: [], servers: [{ url: "https://api.acme.test/graphql", description: "" }] });
+  const query = operation({ key: "query post", kind: "query", path: "post", auth: [], params: [], query: { text: "query Post($id: ID!) {\n  post(id: $id) {\n    title\n  }\n}", variables: { id: "1" } } });
+  const form = (over: Partial<TryForm> = {}): TryForm => ({
+    server: "https://api.acme.test/graphql",
+    variables: {},
+    params: {},
+    keys: {},
+    body: "",
+    graphql: { query: query.query!.text, variables: '{ "id": "7" }' },
+    ...over,
+  });
+
+  test("a query or mutation has Try it, with an optional bearer token; a subscription doesn't", () => {
+    expect(tryable(graphql, query, null)).toBe(true);
+    expect(tryable(graphql, { ...query, kind: "mutation" }, null)).toBe(true);
+    expect(tryable(graphql, { ...query, kind: "subscription" }, null)).toBe(false);
+    // A schema file names no endpoint: the reference's base address is it.
+    expect(tryable({ ...graphql, servers: [] }, query, null)).toBe(false);
+    expect(tryServers({ ...graphql, servers: [] }, query, "https://acme.test/graphql")).toEqual([{ url: "https://acme.test/graphql", description: "" }]);
+    expect(tryAuth(graphql, query)).toEqual({ schemes: [{ key: "bearer", kind: "bearer", name: "Authorization", description: "" }], optional: true });
+    expect(tryParams(graphql, query)).toEqual([]);
+  });
+
+  test("the console's request is a POST of the query and variables as JSON to the endpoint, with the key", () => {
+    const made = tryRequest(graphql, query, null, tryInput(graphql, query, form({ keys: { bearer: "sk_1" } })));
+    expect(made).toEqual({
+      method: "POST",
+      url: new URL("https://api.acme.test/graphql"),
+      headers: [
+        ["Content-Type", "application/json"],
+        ["Authorization", "Bearer sk_1"],
+      ],
+      body: JSON.stringify({ query: query.query!.text, variables: { id: "7" } }),
+    });
+    // No key, no variables: none sent, and variables are {}.
+    const bare = tryRequest(graphql, query, null, tryInput(graphql, query, form({ graphql: { query: "{ ping }", variables: " " } })));
+    expect(bare).toMatchObject({ headers: [["Content-Type", "application/json"]], body: '{"query":"{ ping }","variables":{}}' });
+    expect(tryRequest(graphql, query, null, tryInput(graphql, query, form({ graphql: { query: "{ ping }", variables: "{ id: 7 }" } })))).toEqual({ error: "Variables must be a JSON object" });
+    expect(tryRequest(graphql, query, null, tryInput(graphql, query, form({ graphql: { query: "{ ping }", variables: "[1]" } })))).toEqual({ error: "Variables must be a JSON object" });
+    expect(tryRequest(graphql, query, null, tryInput(graphql, query, form({ graphql: { query: "  ", variables: "" } })))).toEqual({ error: "Write a query" });
+  });
+
+  test("Tuti's proxy takes nothing but a POST of { query, variables, operationName? }", () => {
+    const body = (value: unknown) => input({ server: "https://api.acme.test/graphql", path: {}, body: JSON.stringify(value) });
+    expect(tryRequest(graphql, query, null, body({ query: "{ a }", variables: { x: 1 }, operationName: "A" }))).toMatchObject({
+      method: "POST",
+      body: '{"query":"{ a }","variables":{"x":1},"operationName":"A"}',
+    });
+    const refused = (value: TryInput) => {
+      const made = tryRequest(graphql, query, null, value);
+      expect(made).toHaveProperty("error");
+    };
+    refused(body({ query: "{ a }", extensions: { persistedQuery: {} } }));
+    refused(body({ query: 1 }));
+    refused(body({ query: "{ a }", variables: "x" }));
+    refused(body({ query: "{ a }", operationName: 1 }));
+    refused(body(["{ a }"]));
+    refused({ ...body({ query: "{ a }" }), body: "query { a }" });
+    refused({ ...body({ query: "{ a }" }), body: null });
+    refused({ ...body({ query: "{ a }" }), body: JSON.stringify({ query: "x".repeat(1_000_001) }) });
+    // Under 1 MB as sent to Tuti, over it as written again.
+    const grows = `{"query":"{ a }","variables":{"n":[${Array(120_000).fill("1E20").join(",")}]}}`;
+    expect(new TextEncoder().encode(grows).length).toBeLessThan(1_000_000);
+    expect(tryRequest(graphql, query, null, { ...body({}), body: grows })).toEqual({ error: "The body is over 1 MB" });
+    // Nothing but the key's header: no others, no query parameters, cookies or path.
+    refused({ ...body({ query: "{ a }" }), headers: [["X-Team", "1"]] });
+    refused({ ...body({ query: "{ a }" }), headers: [["Host", "evil.example"]] });
+    refused({ ...body({ query: "{ a }" }), headers: [["Content-Type", "text/plain"]] });
+    refused({ ...body({ query: "{ a }" }), headers: [["Authorization", "Bearer a\r\nX-Evil: 1"]] });
+    refused({ ...body({ query: "{ a }" }), query: [["a", "1"]] });
+    refused({ ...body({ query: "{ a }" }), cookies: [["a", "1"]] });
+    refused({ ...body({ query: "{ a }" }), path: { id: "1" } });
+    // Only to the endpoint itself.
+    refused({ ...body({ query: "{ a }" }), server: "https://evil.example/graphql" });
+    expect(tryRequest(graphql, { ...query, kind: "subscription" }, null, body({ query: "subscription { a }" }))).toEqual({ error: "This operation can't be tried here" });
+  });
 });

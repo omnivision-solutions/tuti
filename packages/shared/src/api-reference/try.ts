@@ -77,16 +77,26 @@ function fillServer(server: Pick<ApiServer, "url" | "variables">, values: Record
   return missing === null ? { url } : { missing };
 }
 
-/** Whether an operation's page has Try it: an OpenAPI operation fetch can send, with somewhere to send it. */
+/**
+ * Whether an operation's page has Try it: an OpenAPI operation fetch can send, or a GraphQL query or mutation, with
+ * somewhere to send it. Not a subscription: it stays open over a websocket.
+ */
 export const tryable = (doc: ApiDoc, operation: ApiOperation, base: string | null | undefined) =>
   // Not TRACE: fetch, a browser's and Tuti's, refuses to send one.
-  doc.format === "openapi" && !operation.query && operation.kind !== "TRACE" && tryServers(doc, operation, base).length > 0;
+  (doc.format === "openapi" ? !operation.query && operation.kind !== "TRACE" : !!operation.query && operation.kind !== "subscription") &&
+  tryServers(doc, operation, base).length > 0;
+
+/** GraphQL's key: a schema says nothing of signing, so the console offers a bearer token, optional. */
+const GRAPHQL_KEY: ApiAuth = { key: "bearer", kind: "bearer", name: "Authorization", description: "" };
 
 /**
  * The ways of signing the console asks a key for: the first of the operation's whose schemes are all known (as the
  * page names them), and whether it may go unsigned.
  */
 export function tryAuth(doc: ApiDoc, operation: ApiOperation): { schemes: ApiAuth[]; optional: boolean } {
+  if (doc.format === "graphql") {
+    return { schemes: [GRAPHQL_KEY], optional: true };
+  }
   const ways = operation.auth
     .filter((keys) => keys.length > 0)
     .map((keys) => keys.map((key) => doc.auth.find((scheme) => scheme.key === key)))
@@ -136,6 +146,9 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     return { error: "The server's address can't have a user or password in it" };
   }
   url.hash = "";
+  if (doc.format === "graphql") {
+    return graphqlRequest(url, input);
+  }
   const path = operation.path.replace(/\{([^{}]+)\}/g, (_, name: string) => {
     const value = input.path[name];
     // "." and ".." would be read as moving up the path.
@@ -206,8 +219,71 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
   return { method, url, headers: sent, body };
 }
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * A GraphQL request: only ever a POST of JSON `{ query, variables, operationName? }` to the server itself, with the key's
+ * Authorization header if there's one. The body is written anew from what's checked, so nothing else rides along.
+ */
+function graphqlRequest(url: URL, input: TryInput): TryRequest | { error: string } {
+  if (input.query.length > 0 || input.cookies.length > 0 || Object.keys(input.path).length > 0) {
+    return { error: "A GraphQL request has no parameters or cookies" };
+  }
+  const headers: [string, string][] = [["Content-Type", "application/json"]];
+  for (const [name, value] of input.headers) {
+    if (/^content-type$/i.test(name) && /^application\/json\s*(;|$)/i.test(value)) continue;
+    if (!/^authorization$/i.test(name)) {
+      return { error: `${name} isn't one of this operation's headers` };
+    }
+    if (BREAKS.test(value)) {
+      return { error: `${name} can't have a line break in it` };
+    }
+    const wrong = unsendable(name, value);
+    if (wrong) {
+      return { error: wrong };
+    }
+    headers.push(["Authorization", value]);
+  }
+  if (input.body === null || new TextEncoder().encode(input.body).length > TRY_MAX_BODY_BYTES) {
+    return { error: input.body === null ? "Write a query" : "The body is over 1 MB" };
+  }
+  let sent: unknown;
+  try {
+    sent = JSON.parse(input.body);
+  } catch {
+    sent = null;
+  }
+  if (!isPlainObject(sent) || Object.keys(sent).some((key) => key !== "query" && key !== "variables" && key !== "operationName")) {
+    return { error: "A GraphQL request is JSON of its query and variables" };
+  }
+  const { query, variables, operationName } = sent;
+  if (typeof query !== "string" || !query.trim()) {
+    return { error: "Write a query" };
+  }
+  if (variables !== undefined && variables !== null && !isPlainObject(variables)) {
+    return { error: "Variables must be a JSON object" };
+  }
+  if (operationName !== undefined && operationName !== null && typeof operationName !== "string") {
+    return { error: "The operation's name must be text" };
+  }
+  const body = JSON.stringify({ query, variables: variables ?? {}, ...(typeof operationName === "string" && { operationName }) });
+  // Written anew, it can be longer than what was checked ("1E20" is "100000000000000000000"): the limit is on what's sent.
+  if (new TextEncoder().encode(body).length > TRY_MAX_BODY_BYTES) {
+    return { error: "The body is over 1 MB" };
+  }
+  return { method: "POST", url, headers, body };
+}
+
 /** What the console's fields hold: parameters by `<in>:<name>`; keys by their scheme's key (Basic's as `<key>:user` and `<key>:password`). */
-export type TryForm = { server: string; variables: Record<string, string>; params: Record<string, string>; keys: Record<string, string>; body: string };
+export type TryForm = {
+  server: string;
+  variables: Record<string, string>;
+  params: Record<string, string>;
+  keys: Record<string, string>;
+  body: string;
+  /** GraphQL: the query and its variables as typed (JSON). */
+  graphql?: { query: string; variables: string };
+};
 
 /**
  * The parameters the console asks for: path, query and header ones, without the headers OpenAPI has ignored as
@@ -276,6 +352,18 @@ export function tryInput(doc: ApiDoc, operation: ApiOperation, form: TryForm): T
     else input.headers.push(["Authorization", `Bearer ${value}`]);
   }
   if (operation.body && input.body) input.headers.push(["Content-Type", operation.body.contentType]);
+  if (doc.format === "graphql") {
+    const { query = "", variables = "" } = form.graphql ?? {};
+    let parsed: unknown;
+    try {
+      parsed = variables.trim() ? JSON.parse(variables) : undefined;
+    } catch {
+      // Left as typed: tryRequest says variables must be a JSON object.
+      parsed = variables;
+    }
+    input.body = JSON.stringify({ query, variables: parsed });
+    input.headers.push(["Content-Type", "application/json"]);
+  }
   return input;
 }
 

@@ -243,3 +243,14 @@ function python({ method, url, headers, body }: ExampleRequest) {
     "print(response.text)",
   ].join("\n");
 }
+
+/** GraphQL: the field as its page heads it, its arguments by name and its type in GraphQL's notation ("createPost(input): Post!"). */
+export function graphqlSignature(operation: ApiOperation): string {
+  const args = operation.params.map((param) => param.name).join(", ");
+  return `${operation.path}${args && `(${args})`}: ${operation.responses[0]?.schema?.type ?? ""}`;
+}
+
+/** GraphQL: what its query answers, as an endpoint sends it: the example of the returned type under `data` and the field's name. */
+export function graphqlResponse(operation: ApiOperation): { data: Record<string, unknown> } {
+  return { data: { [operation.path]: operation.responses[0]?.example ?? null } };
+}
