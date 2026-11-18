@@ -1,5 +1,7 @@
 "use server";
 
+import { redirect } from "next/navigation";
+
 import type { FormState } from "./form-state";
 import {
   deleteApiReference as deleteOperation,
@@ -45,4 +47,28 @@ export async function replaceApiReferenceSpec(projectSlug: string, slug: string,
 
 export async function deleteApiReference(projectSlug: string, slug: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(deleteOperation, context, { slug: String(slug) }));
+}
+
+/** What Settings changed: only those go to apiReferences.update, which checks each. */
+export type ApiReferenceSettings = {
+  name?: string;
+  newSlug?: string;
+  baseUrl?: string | null;
+  treeStyle?: "folders" | "headings" | "entry";
+  groupOrder?: string[];
+  tryIt?: boolean;
+};
+
+/** Settings' Save, and its controls that save as they change. A new slug goes to Settings at the new address. */
+export async function saveApiReferenceSettings(projectSlug: string, slug: string, changes: ApiReferenceSettings): Promise<FormState> {
+  const { name, newSlug, baseUrl, treeStyle, groupOrder, tryIt } = changes ?? {};
+  let saved: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    ({ slug: saved } = await call(updateApiReference, context, { slug: String(slug), name, newSlug, baseUrl, treeStyle, groupOrder, tryIt }));
+  });
+  // A new address leaves none at the old one: its Settings are at the new one.
+  if (saved !== undefined && saved !== slug) {
+    redirect(`/app/${projectSlug}/docs/references/${saved}/settings`);
+  }
+  return result;
 }
