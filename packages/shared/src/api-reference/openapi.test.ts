@@ -1288,6 +1288,23 @@ test("a schema of fields that are only true counts like any other", () => {
   expect(errorOf(JSON.stringify({ openapi: "3.1.0", paths, components: { schemas: { W: wide(6_000) } } }))).toMatch(/too large once its references are followed/);
 });
 
+test("an allOf of one reference and thousands of parts of only words is gone through once", () => {
+  const text = JSON.stringify({ openapi: "3.0.0", components: { schemas: { A: { type: "string" }, B: { allOf: [ref("A"), ...Array.from({ length: 20_000 }, () => ({}))] } } } });
+  // How often a list as long as B's parts is searched: a few times, not once for each part.
+  let searches = 0;
+  const includes = Array.prototype.includes;
+  const spy = vi.spyOn(Array.prototype, "includes").mockImplementation(function (this: unknown[], ...args: Parameters<typeof includes>) {
+    if (this.length >= 20_000) searches++;
+    return includes.apply(this, args);
+  });
+  const result = readOpenApi(text);
+  spy.mockRestore();
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.types[1]!.schema).toEqual({ type: "A", ref: "B" });
+  expect(result.doc.warnings).toEqual([]);
+  expect(searches).toBeLessThan(5);
+});
+
 test("a schema or parameter with thousands of other keys has them listed once, not on every use", () => {
   const junk = Object.fromEntries(Array.from({ length: 5_000 }, (_, index) => [`x-${index}`, 1]));
   const wide = { "x-wide": true, ...junk, type: "string", description: "Wide." };

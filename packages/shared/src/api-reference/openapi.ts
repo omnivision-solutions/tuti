@@ -532,7 +532,7 @@ function read(root: Obj): ApiDoc {
     const held = inside ?? alone;
     if (held !== undefined) {
       // Left out: fields and the like in a part of their own, or beside the reference.
-      const kept = (part: unknown) => isObj(part) && (typeof part.$ref === "string" || words.includes(part));
+      const kept = (part: unknown) => isObj(part) && (typeof part.$ref === "string" || saysOf(part).words);
       if (!parts.every(kept) || !saysOf(node).carried) {
         warn("ADDS_TO_ITSELF", place.where);
       }
