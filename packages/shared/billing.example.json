@@ -16,7 +16,7 @@
         "month": { "perMonth": 39, "stripe": ["price_pro_monthly"] },
         "year": { "perMonth": 32, "stripe": ["price_pro_yearly"] }
       },
-      "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
+      "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "aiLevels"],
       "limits": { "seats": null, "boards": 5, "articles": null, "historyDays": 30, "articleVersions": 5, "reportingDays": 31, "emailsPerMonth": 10000 },
       "monthlyCredits": 1000,
       "featured": true
@@ -28,7 +28,7 @@
         "month": { "perMonth": 99, "stripe": ["price_business_monthly"] },
         "year": { "perMonth": 79, "stripe": ["price_business_yearly"] }
       },
-      "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath", "aiTuning"],
+      "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "aiLevels", "privatePortal", "sitePath", "aiTuning"],
       "limits": { "seats": null, "boards": null, "articles": null, "historyDays": 90, "articleVersions": 50, "reportingDays": null, "emailsPerMonth": null },
       "monthlyCredits": 5000,
       "extras": ["Priority support"]
@@ -61,7 +61,7 @@
       "key": "appsumo-4",
       "name": "AppSumo Tier 4",
       "hidden": true,
-      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting", "sitePath", "privatePortal", "aiTuning"],
+      "features": ["codeChanges", "customDomain", "emailDomain", "launcherIcon", "reporting", "sitePath", "privatePortal", "aiLevels", "aiTuning"],
       "limits": { "seats": null, "boards": 15, "articles": null, "historyDays": 365, "articleVersions": 20, "reportingDays": null, "emailsPerMonth": 100000 },
       "monthlyCredits": 8000,
       "extras": ["Priority support"]

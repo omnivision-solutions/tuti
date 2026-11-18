@@ -1,4 +1,4 @@
-import { assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, log } from "@tuti/shared";
+import { aiLevelRows, assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, log } from "@tuti/shared";
 import { assertSesSettings } from "@tuti/shared/ses";
 
 // Runs once when the server starts (not during `next build`).
@@ -9,6 +9,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     checkCodeChangesSettings();
     billingConfig();
+    // A levels file that can't be read or isn't valid stops start-up too, rather than failing every AI request later.
+    aiLevelRows();
     // Not awaited: a slow or wrong AI provider is logged, never holds up the start (AI is optional).
     void checkAiProvider();
   }
