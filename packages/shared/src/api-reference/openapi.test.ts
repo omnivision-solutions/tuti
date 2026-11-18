@@ -1202,6 +1202,53 @@ test("a schema's own word on a field counts over the one it folds in", () => {
   ]);
 });
 
+test("one rule when parts are folded in: a later part's word counts, and a schema's own over all", () => {
+  const schemas = {
+    Pet: { type: "object", description: "A pet.", example: { kind: "cat" }, properties: { kind: { type: "string", description: "Any kind." } } },
+    // The common way to extend a type: its own words and fields in a part after the base.
+    Dog: { allOf: [ref("Pet"), { description: "A dog.", example: { kind: "dog", barks: true }, properties: { kind: { type: "string", enum: ["dog"] }, barks: { type: "boolean" } } }] },
+    // Two levels down, with a word of its own beside `allOf`, which counts over its parts'.
+    Pup: { allOf: [ref("Dog"), { description: "A part's word.", maxProperties: 3, properties: { barks: { type: "boolean", description: "Squeaks." } } }], description: "A pup." },
+  };
+  const dog = schemaOf(ref("Dog"), schemas);
+  expect(dog.schema).toEqual({
+    type: "Dog",
+    ref: "Dog",
+    description: "A dog.",
+    properties: [
+      { name: "kind", required: false, type: "string", enum: ["dog"] },
+      { name: "barks", required: false, type: "boolean" },
+    ],
+  });
+  expect(dog.example).toEqual({ kind: "dog", barks: true });
+  const pup = schemaOf(ref("Pup"), schemas);
+  expect(pup.schema).toEqual({
+    type: "Pup",
+    ref: "Pup",
+    description: "A pup.",
+    constraints: "at most 3 fields",
+    properties: [
+      { name: "kind", required: false, type: "string", enum: ["dog"] },
+      { name: "barks", required: false, type: "boolean", description: "Squeaks." },
+    ],
+  });
+  // Dog's example, the nearest one said: Pet's is under it.
+  expect(pup.example).toEqual({ kind: "dog", barks: true });
+  expect(pup.doc.types.map((type) => type.schema.description)).toEqual(["A pet.", "A dog.", "A pup."]);
+});
+
+test("a schema of fields that are only true counts like any other", () => {
+  const wide = (count: number) => ({ type: "object", properties: Object.fromEntries(Array.from({ length: count }, (_, index) => [`f${index}`, index % 2 === 0])) });
+  const one = schemaOf(ref("W"), { W: wide(6_000) });
+  expect(one.schema.properties!.length).toBeLessThanOrEqual(4_000);
+  expect(one.schema.properties![1]).toEqual({ name: "f1", required: false, type: "any" });
+  expect(Object.keys(one.example as object)).toEqual([]);
+  expect(codes(one.doc)).toEqual(["SCHEMA_TOO_LARGE @ schemas › W", "SCHEMA_TOO_LARGE @ GET /x › responses › 200"]);
+  // Used by many operations, it's too much, as a schema of that many strings would be.
+  const paths = Object.fromEntries(Array.from({ length: 2_500 }, (_, index) => [`/${index}`, { get: { summary: `S${index}`, responses: { "200": json(ref("W")) } } }]));
+  expect(errorOf(JSON.stringify({ openapi: "3.1.0", paths, components: { schemas: { W: wide(6_000) } } }))).toMatch(/too large once its references are followed/);
+});
+
 test("a schema or parameter with thousands of other keys has them listed once, not on every use", () => {
   const junk = Object.fromEntries(Array.from({ length: 5_000 }, (_, index) => [`x-${index}`, 1]));
   const wide = { "x-wide": true, ...junk, type: "string", description: "Wide." };

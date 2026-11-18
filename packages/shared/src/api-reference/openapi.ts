@@ -8,7 +8,9 @@ export const OPENAPI_MAX_BYTES = 5 * 1024 * 1024;
 // whole doc: named types fan out three levels deep, so a spec within the size limit could otherwise
 // ask for millions of fields. Past either, a named type is only named and anything else is "object",
 // with a warning. Once the doc's is spent each one still gets a little, so a parameter after many
-// large types keeps its type.
+// large types keeps its type. Every way out of the schema walk (`toSchema`) and the example walk
+// (`sample`) counts at least one value first, a schema that's only `true` included, so neither can
+// go round for free.
 const ROOT_NODES = 2_000;
 const DOC_NODES = 200_000;
 const ROOT_NODES_AFTER = 100;
@@ -339,36 +341,35 @@ function read(root: Obj): ApiDoc {
     return isObj(node) ? node : null;
   }
 
-  /** A schema with its `allOf` parts folded in: fields together (a later part's wins), the rest from whichever says it first. */
+  /** A schema with its `allOf` parts folded in: their fields together and their keywords, a later part's word over an earlier one's. */
   function flatten(schema: Obj, where?: string): Obj {
     if (!Array.isArray(schema.allOf)) return schema;
     const done = flattened.get(schema);
     if (done) return done;
     const seen = new Set<Obj>();
-    const parts: Obj[] = [];
     const add = (part: Obj | null) => {
       if (!part || seen.has(part)) return;
       seen.add(part);
       // Folding in a wide schema is work and memory like spelling it out, so it counts the same.
       docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
       if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
-      parts.push(part);
       for (const inner of list(part.allOf)) add(follow(inner, where));
       after.push(part);
     };
-    /** Each part after the parts it folds in, the schema last: the order their fields are laid down in. */
+    /** Each part after the parts it folds in, the schema itself last: the order they're laid down in. */
     const after: Obj[] = [];
     add(schema);
     const merged = new Map<string, unknown>();
     const properties = new Map<string, unknown>();
     const required = new Set<unknown>();
-    // Only the keywords the reader reads, so a part with thousands of other keys costs what its fields do.
-    for (const part of parts) {
-      for (const key of KEYWORDS) if (Object.hasOwn(part, key) && !merged.has(key)) merged.set(key, part[key]);
+    // One rule for keywords and fields, at every level: a later part's word counts over an earlier
+    // one's, and a schema's own over all it folds in. Only the keywords the reader reads, so a part
+    // with thousands of other keys costs what its fields do.
+    for (const part of after) {
+      for (const key of KEYWORDS) if (Object.hasOwn(part, key)) merged.set(key, part[key]);
       for (const name of list(part.required)) required.add(name);
+      for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
     }
-    // A part's own fields after those of what it folds in, at every level: its word on a field they share is the one that counts.
-    for (const part of after) for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
     merged.set("required", [...required]);
     const whole: Obj = Object.fromEntries(merged);
@@ -443,8 +444,9 @@ function read(root: Obj): ApiDoc {
   type Place = { where: string; root: string; stack: Obj[]; named: number; folding: Obj[] };
 
   function toSchema(node: unknown, place: Place): ApiSchema {
-    if (!isObj(node)) return { type: "any" };
+    // Counted before anything else: a schema that's `true`, or anything else that isn't one, is a value too.
     const within = spend();
+    if (!isObj(node)) return { type: "any" };
     if (typeof node.$ref === "string") {
       const found = lookup(node.$ref, place.where);
       if (!found) return { type: "object" };
@@ -567,6 +569,7 @@ function read(root: Obj): ApiDoc {
 
   /** A value of the schema's shape, from its own examples where it has them; undefined when there's nothing to show. */
   function sample(node: unknown, stack: Obj[], where: string): unknown {
+    const within = spend();
     const target = follow(node);
     if (!target) return isObj(node) ? {} : undefined;
     // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.
@@ -575,7 +578,7 @@ function read(root: Obj): ApiDoc {
       const base = follow(part);
       return base ? [base] : [];
     });
-    if (stack.includes(target) || bases.some((base) => base !== target && stack.includes(base)) || !spend()) return undefined;
+    if (stack.includes(target) || bases.some((base) => base !== target && stack.includes(base)) || !within) return undefined;
     const schema = flatten(target);
     for (const key of ["example", "default", "const"]) if (Object.hasOwn(schema, key)) return data(schema[key], where);
     if (Array.isArray(schema.examples) && schema.examples.length > 0) return data(schema.examples[0], where);
