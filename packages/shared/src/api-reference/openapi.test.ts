@@ -685,6 +685,11 @@ test("a made-up example keeps to the schema's limits", () => {
       fraction: { type: "integer", minimum: 1.5 },
       any: { type: "number", minimum: -5, maximum: 5 },
       impossible: { type: "integer", minimum: 5, maximum: 1 },
+      stepped: { type: "integer", minimum: 1, multipleOf: 5 },
+      steppedDown: { type: "number", maximum: -1, multipleOf: 0.25 },
+      both: { type: "integer", minimum: 10, exclusiveMinimum: 5 },
+      bothOther: { type: "integer", minimum: 5, exclusiveMinimum: 10 },
+      evens: { type: "integer", exclusiveMinimum: 2, exclusiveMaximum: 6, multipleOf: 2 },
     },
   });
   expect(example).toEqual({
@@ -702,6 +707,11 @@ test("a made-up example keeps to the schema's limits", () => {
     fraction: 2,
     any: 0,
     impossible: 0,
+    stepped: 5,
+    steppedDown: -1,
+    both: 10,
+    bothOther: 11,
+    evens: 4,
   });
 });
 

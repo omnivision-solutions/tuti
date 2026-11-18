@@ -168,24 +168,25 @@ function range(min: unknown, max: unknown, one = "", many = ""): string | null {
   return null;
 }
 
-/** A number the schema's limits allow, 0 when they do; for an example. */
+/** A number the schema's limits allow, 0 when they do; for an example. 0 too when no number does. */
 function numberWithin(schema: Obj, whole: boolean): number {
   const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
-  // 3.0 says `exclusiveMinimum: true` beside `minimum`; 3.1 gives the limit itself.
-  const low = number(schema.exclusiveMinimum) ?? number(schema.minimum);
-  const high = number(schema.exclusiveMaximum) ?? number(schema.maximum);
-  const above = schema.exclusiveMinimum === true || typeof schema.exclusiveMinimum === "number";
-  const below = schema.exclusiveMaximum === true || typeof schema.exclusiveMaximum === "number";
-  const fits = (value: number) => (low === undefined || (above ? value > low : value >= low)) && (high === undefined || (below ? value < high : value <= high));
-  const candidates = [
-    0,
-    low === undefined ? undefined : whole ? Math.ceil(low) : low,
-    low === undefined ? undefined : Math.floor(low) + 1,
-    high === undefined ? undefined : whole ? Math.floor(high) : high,
-    high === undefined ? undefined : Math.ceil(high) - 1,
-    low === undefined || high === undefined || whole ? undefined : (low + high) / 2,
-  ];
-  return candidates.find((value) => value !== undefined && fits(value)) ?? 0;
+  // 3.0 says `exclusiveMinimum: true` beside `minimum`; 3.1 gives the limit itself, and may give both.
+  const [least, most, over, under] = [number(schema.minimum), number(schema.maximum), number(schema.exclusiveMinimum), number(schema.exclusiveMaximum)];
+  const step = number(schema.multipleOf);
+  const fits = (value: number) =>
+    (least === undefined || (schema.exclusiveMinimum === true ? value > least : value >= least)) &&
+    (most === undefined || (schema.exclusiveMaximum === true ? value < most : value <= most)) &&
+    (over === undefined || value > over) &&
+    (under === undefined || value < under) &&
+    (!whole || Number.isInteger(value)) &&
+    (step === undefined || step <= 0 || Math.abs(value / step - Math.round(value / step)) < 1e-9);
+  // Around each limit, and where there's a step, its multiples around each.
+  const limits = [least, over, most, under].filter((value) => value !== undefined);
+  const near = limits.flatMap((limit) => [limit, Math.ceil(limit), Math.floor(limit), Math.floor(limit) + 1, Math.ceil(limit) - 1]);
+  const stepped = step === undefined || step <= 0 ? [] : limits.flatMap((limit) => [Math.ceil(limit / step) * step, (Math.floor(limit / step) + 1) * step, Math.floor(limit / step) * step, (Math.ceil(limit / step) - 1) * step]);
+  const between = (least ?? over) !== undefined && (most ?? under) !== undefined ? [((least ?? over ?? 0) + (most ?? under ?? 0)) / 2] : [];
+  return [0, ...stepped, ...near, ...between].find(fits) ?? 0;
 }
 
 /** A schema's limits in words: "3–200 characters, matches ^[a-z]+$". */
