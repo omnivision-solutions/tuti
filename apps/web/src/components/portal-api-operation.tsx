@@ -324,9 +324,12 @@ function codeDoc(tabs: { name: string; code: string }[]): Doc {
   return { type: "doc", content: blocks.length > 1 ? [{ type: "codeTabs", content: blocks }] : blocks };
 }
 
-/** A response's example as it's sent: JSON under a JSON content type (a string in its quotes), else text as it is. */
+/**
+ * A response's example as it's sent: JSON under a JSON content type (a string in its quotes), else text as it is.
+ * JSON is application/json and the "+json" types: lines of JSON (application/x-ndjson, jsonl) are text, a line each.
+ */
 const exampleText = (example: unknown, contentType: string | null) =>
-  typeof example === "string" && !/json/i.test(contentType ?? "") ? example : JSON.stringify(example, null, 2);
+  typeof example === "string" && !/^application\/json\s*(;|$)|\+json\s*(;|$)/i.test(contentType ?? "") ? example : JSON.stringify(example, null, 2);
 
 /** Beside the page: the request as cURL, JavaScript and Python, and each response's example by status. */
 function Examples({ page, operation }: { page: Reference; operation: ApiOperation }) {

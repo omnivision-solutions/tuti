@@ -96,6 +96,9 @@ paths:
         "202":
           description: Taken
           content: { application/json: { schema: { type: string }, example: accepted } }
+        "206":
+          description: A line each
+          content: { application/x-ndjson: { schema: { type: string }, example: '{"id":1}' } }
         "204": { description: "Nothing **changed**" }
     get:
       tags: [Posts]
@@ -329,6 +332,8 @@ describe("a response", () => {
     // A string is text under text/plain, and JSON (in its quotes) under application/json.
     expect(text).toContain('"text":"saved"');
     expect(text).toContain('"text":"\\"accepted\\""');
+    // Lines of JSON are text, each as it's sent.
+    expect(text).toContain('"text":"{\\"id\\":1}"');
   });
 });
 

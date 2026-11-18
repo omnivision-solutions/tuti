@@ -79,6 +79,9 @@ describe("exampleRequest: where it goes", () => {
     expect(exampleRequest(doc({ servers: [] }), listing, { base }).url).toBe("https://gateway.example/proxy/posts?tenant=acme&board=ideas");
     // A server with a host of its own isn't on the base: none of its query either.
     expect(exampleRequest(doc(), listing, { base }).url).toBe("https://api.acme.test/v1/posts?board=ideas");
+    // Nor one whose host shows only once its variables are filled.
+    const variable = { url: "{scheme}://api.acme.test", description: "", variables: { scheme: { default: "https", description: "" } } };
+    expect(exampleRequest(doc({ servers: [variable] }), listing, { base }).url).toBe("https://api.acme.test/posts?board=ideas");
   });
 
   it("joins a server and a path with one slash, however many either has", () => {

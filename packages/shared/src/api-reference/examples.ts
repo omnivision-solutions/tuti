@@ -48,8 +48,10 @@ export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: Ex
   // A base may have a query of its own ("https://gateway.example/proxy?tenant=acme"): paths go before it, and it's kept.
   const [, basePath = "", baseQuery = ""] = /^([^?#]*)\??([^#]*)/.exec(options.base ?? "") ?? [];
   const base = basePath ? trimSlashes(basePath, "end") : PLACEHOLDER_HOST;
-  const onBase = options.server === undefined && !(spec && hasHost(spec.url));
-  const server = options.server ?? (spec ? absolute(spec.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder), base) : base);
+  // The spec's server with its variables filled: only then is it clear whether it names a host ("{scheme}://api.example.com").
+  const filled = spec?.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder);
+  const onBase = options.server === undefined && !(filled !== undefined && hasHost(filled));
+  const server = options.server ?? (filled !== undefined ? absolute(filled, base) : base);
   const token = options.token ?? "YOUR_API_KEY";
   const headers: Record<string, string> = {};
   let query: [name: string, value: string][] = [];
