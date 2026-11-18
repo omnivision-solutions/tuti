@@ -126,6 +126,9 @@ export const servedArticle = { ...published, listing: { in: ["EVERYWHERE", "UNLI
 /** An article in a list: `locked` when this reader may not read it but sees its title with a lock. */
 export type DocsArticleLink = { slug: string; title: string; locked?: true };
 
+/** A published API reference with something on the help center, as the tree and a tab's landing list it. */
+export type DocsReferenceLink = { slug: string; name: string };
+
 export type DocsCollection = {
   slug: string;
   name: string;
@@ -152,6 +155,8 @@ export type DocsTabView = {
   name: string;
   collections: DocsCollection[];
   uncollected: DocsArticleLink[];
+  /** Its API references, after its collections in the tree (the first tab's has the ones in no tab). */
+  references: DocsReferenceLink[];
   landing: DocsLanding;
   page: string | null;
   /** This reader may not read it, but sees its name with a lock (and nothing in it). */
@@ -162,7 +167,7 @@ export type DocsTabView = {
  * The portal's /docs (and the widget's, and llms.txt): the top-level collections in order, each with
  * its listed articles in order and then the collections in it, and the listed articles in none.
  * Collections without a listed article (in them or in the ones in them) are left out. `tabs`
- * splits the same by tab, leaving out the ones with nothing to read; it's empty when the docs
+ * splits the same by tab, leaving out the ones with nothing to read (an API reference is something); it's empty when the docs
  * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
  * reader: the docs pages, their tabs row and their tree share it. `indexable` (llms.txt) leaves out
@@ -178,7 +183,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
   const listed = { ...listedArticle, ...(options.indexable && { noindex: false, sample: false }) };
   // Sorted here (inArticleOrder), not by the database: its title order puts "Step 10" before "Step 2".
   const articleSelect = { where: listed, select: { projectId: true, slug: true, title: true, order: true, ...levelSelect } } as const;
-  const [rows, uncollected, tabRows] = await Promise.all([
+  const [rows, uncollected, tabRows, referenceRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
@@ -210,6 +215,12 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         landingArticle: { select: { slug: true, deletedAt: true } },
         landingCollection: { select: { slug: true } },
       },
+    }),
+    // What apiReferencePage serves: published, with an operation on the help center. Read by whoever may read its tab.
+    prisma.apiReference.findMany({
+      where: { project: { slug: projectSlug }, publishedAt: { not: null }, shownCount: { gt: 0 } },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+      select: { tabId: true, slug: true, name: true },
     }),
   ]);
   type Row = (typeof rows)[number];
@@ -250,8 +261,10 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
       const collection = view(row);
       return collection ? [{ tabId: row.tabId, collection }] : [];
     });
-  // The articles in no collection are under the first tab.
+  // The articles and references in no collection or tab are under the first tab.
   const loose = readable(reader, tabRows[0]) ? articlesFor(uncollected, [tabRows[0]]) : [];
+  const referencesIn = (tabId: string | null) =>
+    referenceRows.filter((row) => row.tabId === tabId || (row.tabId === null && tabId === (tabRows[0]?.id ?? null))).map(({ slug, name }) => ({ slug, name }));
   const tabs = tabRows.flatMap(({ id, slug, name, landing, landingArticle, landingCollection, ...level }, index): DocsTabView[] => {
     const tab = {
       slug,
@@ -261,13 +274,22 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
       page: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
     };
     if (!readable(reader, level)) {
-      const hasSome = rows.some((row) => row.parentId === null && row.tabId === id && hasArticles(row)) || (index === 0 && uncollected.length > 0);
-      return withLocks && locks(level) && hasSome ? [{ ...tab, collections: [], uncollected: [], locked: true }] : [];
+      const hasSome =
+        rows.some((row) => row.parentId === null && row.tabId === id && hasArticles(row)) || (index === 0 && uncollected.length > 0) || referencesIn(id).length > 0;
+      return withLocks && locks(level) && hasSome ? [{ ...tab, collections: [], uncollected: [], references: [], locked: true }] : [];
     }
-    const view = { ...tab, collections: top.filter((t) => t.tabId === id).map((t) => t.collection), uncollected: index === 0 ? loose : [] };
-    return view.collections.length > 0 || view.uncollected.length > 0 ? [view] : [];
+    const view = { ...tab, collections: top.filter((t) => t.tabId === id).map((t) => t.collection), uncollected: index === 0 ? loose : [], references: referencesIn(id) };
+    return view.collections.length > 0 || view.uncollected.length > 0 || view.references.length > 0 ? [view] : [];
   });
-  return { collections: top.map((t) => t.collection), uncollected: loose, tabs, home: tabRows.at(0)?.slug ?? null, signedIn: reader?.signedIn ?? true };
+  return {
+    collections: top.map((t) => t.collection),
+    uncollected: loose,
+    // Every one this reader may read, as `collections` (without tabs, each is in none).
+    references: tabRows.length > 0 ? tabs.flatMap((t) => t.references) : referencesIn(null),
+    tabs,
+    home: tabRows.at(0)?.slug ?? null,
+    signedIn: reader?.signedIn ?? true,
+  };
 });
 
 export type DocsContents = Awaited<ReturnType<typeof docsContents>>;
@@ -288,12 +310,12 @@ export type DocsTreeCollection = {
  * article is in: it and the ones it's in are `open`.
  */
 export function docsTree(docs: DocsContents, tab: string | null, at: string | null) {
-  const { collections, uncollected } = docs.tabs.find((t) => t.slug === tab) ?? docs.tabs[0] ?? docs;
+  const { collections, uncollected, references } = docs.tabs.find((t) => t.slug === tab) ?? docs.tabs[0] ?? docs;
   const branch = ({ slug, name, icon, articles, collections, locked }: DocsCollection): DocsTreeCollection => {
     const inside = collections.map(branch);
     return { slug, name, icon, articles, collections: inside, open: slug === at || inside.some((c) => c.open), ...(locked && { locked }) };
   };
-  return { collections: collections.map(branch), uncollected };
+  return { collections: collections.map(branch), uncollected, references };
 }
 
 export type DocsTree = ReturnType<typeof docsTree>;
@@ -311,10 +333,18 @@ type PublishedArticle = NonNullable<Awaited<ReturnType<typeof publishedArticle>>
 type CollectionPage = { kind: "collection"; docs: DocsContents; tab: DocsTabView | null; parent: DocsCollection | null; collection: DocsCollection };
 
 /**
- * What a tab's path shows this reader: its overview, or an article's or collection's page (its
- * `slug`) in its place.
+ * What a tab's path shows this reader: its overview, or an article's, collection's or API reference's
+ * page (its `slug`) in its place.
  */
-export type TabLanding = { kind: "overview" } | { kind: "article"; slug: string; article: PublishedArticle } | (CollectionPage & { slug: string });
+export type TabLanding =
+  | { kind: "overview" }
+  | { kind: "article"; slug: string; article: PublishedArticle }
+  | (CollectionPage & { slug: string })
+  | { kind: "reference"; slug: string; name: string };
+
+/** A tab (or the docs without tabs) holding one API reference and nothing else: its path is that reference's page. */
+const soleReference = (view: { collections: unknown[]; uncollected: unknown[]; references: DocsReferenceLink[] }): TabLanding | null =>
+  view.collections.length === 0 && view.uncollected.length === 0 && view.references.length === 1 ? { kind: "reference", ...view.references[0]! } : null;
 
 /** What /docs/<slug> is for this reader. */
 export type DocsPage =
@@ -337,9 +367,14 @@ export const tabLandingSlug = (tab: DocsTabView): string | null | undefined =>
  * What tab `tab`'s path shows this reader: its first article (in its first collection, else the
  * first in none), the article or collection the team picked, or its overview. A picked page this
  * reader may not read there (deleted, unpublished, hidden or AI only, restricted, locked, or in
- * another tab now) is the overview, as is a tab with no article.
+ * another tab now) is the overview, as is a tab with no article. One holding an API reference and
+ * nothing else shows the reference.
  */
 export async function tabLanding(projectSlug: string, docs: DocsContents, tab: DocsTabView): Promise<TabLanding> {
+  const sole = soleReference(tab);
+  if (sole) {
+    return sole;
+  }
   const slug = tabLandingSlug(tab);
   if (!slug) {
     return { kind: "overview" };
@@ -360,7 +395,7 @@ export async function tabLanding(projectSlug: string, docs: DocsContents, tab: D
 export const docsHome = cache(async (projectSlug: string) => {
   const docs = await docsContents(projectSlug);
   const tab = docs.tabs.find((t) => t.slug === docs.home) ?? docs.tabs[0] ?? null;
-  return { docs, tab, landing: tab ? await tabLanding(projectSlug, docs, tab) : ({ kind: "overview" } as const) };
+  return { docs, tab, landing: tab ? await tabLanding(projectSlug, docs, tab) : (soleReference(docs) ?? ({ kind: "overview" } as const)) };
 });
 
 /**

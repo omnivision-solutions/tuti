@@ -1,4 +1,4 @@
-import type { ApiDoc, ApiOperation, ApiParam, ApiSchema } from "./types";
+import type { ApiDoc, ApiOperation, ApiParam, ApiSchema, ApiServer } from "./types";
 
 export type ExampleRequest = {
   method: string;
@@ -31,6 +31,22 @@ export function absolute(server: string, base: string): string {
   // "./v1" and "." are relative to where the spec is: the base's root here.
   const path = trimSlashes(server.startsWith("./") ? server.slice(2) : server === "." ? "" : server, "start");
   return path ? `${base}/${path}` : base;
+}
+
+/**
+ * A spec's server as the reference's page lists it, variables left as `{name}`: one with a host as it is, one
+ * without on `base` (the reference's `baseUrl`, its query kept after the path), else on the placeholder's host the
+ * examples use (`placeholder`). Without a server, the base or the placeholder alone.
+ */
+export function serverAddress(server: ApiServer | undefined, base?: string): { url: string; placeholder: boolean } {
+  const filled = server?.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => server.variables?.[name]?.default ?? placeholder);
+  if (server && filled !== undefined && hasHost(filled)) {
+    return { url: server.url.startsWith("//") ? `https:${server.url}` : server.url, placeholder: false };
+  }
+  const [, basePath = "", baseQuery = ""] = /^([^?#]*)\??([^#]*)/.exec(base ?? "") ?? [];
+  const root = basePath ? trimSlashes(basePath, "end") : PLACEHOLDER_HOST;
+  const url = server ? absolute(server.url, root) : root;
+  return { url: baseQuery ? `${url}?${baseQuery}` : url, placeholder: !basePath };
 }
 
 export type ExampleOptions = {

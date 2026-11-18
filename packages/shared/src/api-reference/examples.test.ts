@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
-import { exampleRequest, requestExamples } from "./examples";
+import { exampleRequest, requestExamples, serverAddress } from "./examples";
 import type { ApiAuth, ApiDoc, ApiOperation, ApiParam } from "./types";
 
 function doc(over: Partial<ApiDoc> = {}): ApiDoc {
@@ -169,6 +169,22 @@ describe("exampleRequest: where it goes", () => {
       }),
     );
     expect(request.headers).toEqual({ "X-Version": "2026-01-01", Cookie: "session=abc" });
+  });
+});
+
+describe("serverAddress", () => {
+  it("lists a server as the examples place it, its variables left to name", () => {
+    const server = (url: string) => ({ url, description: "" });
+    expect(serverAddress(server("https://{region}.acme.test/v1"))).toEqual({ url: "https://{region}.acme.test/v1", placeholder: false });
+    // A host only once its variables are filled.
+    expect(serverAddress({ url: "{scheme}://acme.test", description: "", variables: { scheme: { default: "https", description: "" } } })).toEqual({ url: "{scheme}://acme.test", placeholder: false });
+    expect(serverAddress(server("//api.acme.test"))).toEqual({ url: "https://api.acme.test", placeholder: false });
+    expect(serverAddress(server("/v1"))).toEqual({ url: "https://api.example.com/v1", placeholder: true });
+    expect(serverAddress(undefined)).toEqual({ url: "https://api.example.com", placeholder: true });
+    // On the team's base, its query after the path; a server with a host ignores it.
+    expect(serverAddress(server("/v1"), "https://gateway.test/proxy/?tenant=acme")).toEqual({ url: "https://gateway.test/proxy/v1?tenant=acme", placeholder: false });
+    expect(serverAddress(undefined, "https://acme.test/")).toEqual({ url: "https://acme.test", placeholder: false });
+    expect(serverAddress(server("https://api.acme.test"), "https://acme.test")).toEqual({ url: "https://api.acme.test", placeholder: false });
   });
 });
 

@@ -97,8 +97,21 @@ test("a reader opens an API reference's operation: its method, path and fields, 
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 1440, height: 900 });
-  // The reference's own address is its first operation's, until it has a page of its own.
+  // The reference's own page: where requests go, how they're signed, and a card per group with a few of its operations.
   await reader.goto("/docs/reference");
+  const overview = reader.getByRole("article", { name: "Reference" });
+  await expect(overview).toBeVisible();
+  await expect(reader).toHaveTitle(/^Reference/);
+  await expect(overview.getByText("Version 1 · OpenAPI")).toBeVisible();
+  await expect(overview.getByRole("region", { name: "Where requests go" })).toContainText("https://api.acme.example/v1");
+  await expect(overview.getByRole("region", { name: "How requests are signed" })).toContainText("Bearer token in the Authorization header");
+  const posts = overview.getByRole("listitem").filter({ has: reader.getByRole("heading", { name: "Posts", level: 3 }) });
+  await expect(posts.getByRole("link", { name: "GET List posts" })).toBeVisible();
+  await expect(posts.getByRole("link", { name: "POST Create a post" })).toBeVisible();
+  await expect(overview.getByText("Internal")).toHaveCount(0);
+  await expect(reader.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(reader, "reference-desktop", { fullPage: false });
+  await posts.getByRole("link", { name: "GET List posts" }).click();
   await expect(reader).toHaveURL(/\/docs\/reference\/list-posts$/);
   await expect(reader.getByRole("heading", { name: "List posts", level: 1 })).toBeVisible();
   // Its tab is the open one, and the tree has the tab's collection, then the reference's groups with each operation's method.
@@ -189,4 +202,44 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   for (const missing of ["purge-everything", "no-such-operation"]) {
     expect((await reader.goto(`/docs/reference/${missing}`))!.status()).toBe(404);
   }
+});
+
+test("a tab holding only an API reference is in the tabs' row and shows it, and an article's tree lists its tab's references", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Guides: an article and a reference; API: a reference alone.
+  const { slug: guides } = await api("/tabs", { name: "Guides" });
+  const { slug: collection } = await api("/collections", { name: "Getting started", tab: guides });
+  const { slug: article } = await api("/articles", { title: "Welcome", body: "About welcome.", collection });
+  await api(`/articles/${article}/publish`, {});
+  await api("/api-references", { name: "Webhooks", spec: SPEC, tab: guides });
+  const { slug: apiTab } = await api("/tabs", { name: "API" });
+  await api("/api-references", { name: "Reference", spec: SPEC, tab: apiTab });
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  await reader.goto(`/docs/${article}`);
+  const tree = reader.getByRole("navigation", { name: "Docs", exact: true });
+  await expect(tree.getByRole("link", { name: "Welcome" })).toHaveAttribute("aria-current", "page");
+  await expect(tree.getByRole("link", { name: "Webhooks" })).toHaveAttribute("href", /\/docs\/webhooks$/);
+  await expect(tree.getByRole("link", { name: "Reference" })).toHaveCount(0);
+  // The tab with nothing but the reference is in the row, and its address is the reference's page.
+  await reader.getByRole("navigation", { name: "Docs tabs" }).getByRole("link", { name: "API", exact: true }).click();
+  await expect(reader).toHaveURL(new RegExp(`/docs/${apiTab}$`));
+  await expect(reader.getByRole("navigation", { name: "Docs tabs" }).getByRole("link", { name: "API", exact: true })).toHaveAttribute("aria-current", "page");
+  const overview = reader.getByRole("article", { name: "Reference" });
+  await expect(overview.getByRole("region", { name: "Where requests go" })).toBeVisible();
+  await checkpoint(reader, "tab-of-a-reference-desktop", { fullPage: false });
+  // On a phone the cards stack and nothing scrolls sideways.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.reload();
+  await expect(overview).toBeVisible();
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(reader, "reference-phone");
+  await overview.getByRole("link", { name: "POST Create a post" }).click();
+  await expect(reader.getByRole("heading", { name: "Create a post", level: 1 })).toBeVisible();
 });

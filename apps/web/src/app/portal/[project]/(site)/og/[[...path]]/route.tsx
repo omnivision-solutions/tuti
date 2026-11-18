@@ -57,7 +57,7 @@ async function cardFor(slug: string, site: Site, path: string[]): Promise<ShareC
       return rest.length === 0
         ? docsCard(site, await docsHome(slug))
         : rest.length === 1
-          ? docsPageCard(site, await docsPage(slug, rest[0]!))
+          ? (docsPageCard(site, await docsPage(slug, rest[0]!)) ?? referenceCard(await apiReferencePage(slug, rest[0]!)))
           : rest.length === 2
             ? operationCard(await apiReferencePage(slug, rest[0]!), rest[1]!)
             : null;
@@ -79,6 +79,11 @@ function docsCard(site: Site, home: Awaited<ReturnType<typeof docsHome>>): Share
 
 function landingCard(landing: TabLanding): ShareCard | null {
   return landing.kind === "overview" ? null : docsPageCard(null, landing);
+}
+
+/** An API reference's own page: its name (a locked one's too, as a locked article's). */
+function referenceCard(page: ApiReferencePage | null): ShareCard | null {
+  return page && { eyebrow: "Documentation", title: page.reference.name, picture: "page" };
 }
 
 /** An API reference's operation: its title under the reference's name (a locked one's too, as a locked article's). */
@@ -104,6 +109,8 @@ function docsPageCard(site: Site | null, page: DocsPage | TabLanding | null): Sh
       const count = articleCount(page.collection);
       return { eyebrow: "Documentation", title: page.collection.name, facts: count ? [plural(count, "article")] : [], picture: "page" };
     }
+    case "reference":
+      return { eyebrow: "Documentation", title: page.name, picture: "page" };
     case "tab":
       return (page.tab.locked ? null : landingCard(page.landing)) ?? { eyebrow: "Documentation", title: page.tab.name, picture: "page" };
     case "overview":

@@ -119,7 +119,9 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
  * none. A collection's list (`collection`): the way back, its articles, then the collections in it.
  */
 async function Collections({ projectSlug, docsTab, collection: slug }: { projectSlug: string; docsTab?: string; collection?: string }) {
-  const [docs, link] = await Promise.all([docsContents(projectSlug), portalLinks()]);
+  const [contents, link] = await Promise.all([docsContents(projectSlug), portalLinks()]);
+  // The widget lists articles: a tab of API references only isn't one of its tabs.
+  const docs = { ...contents, tabs: contents.tabs.filter((t) => t.locked || t.collections.length > 0 || t.uncollected.length > 0) };
   // One this reader may read, else the top level.
   const found = slug ? findCollection(docs, slug) : null;
   const tab = found ? found.tab : (docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0]);
