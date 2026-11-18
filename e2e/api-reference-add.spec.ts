@@ -91,6 +91,19 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   // Nothing to add until there's a spec.
   await expect(add).toBeDisabled();
 
+  // A file that can't be read at all (it went from the disk since it was chosen, or the readers didn't load) says so,
+  // and the dialog still takes another.
+  await team.evaluate(() => {
+    const text = File.prototype.text;
+    File.prototype.text = function () {
+      File.prototype.text = text;
+      return Promise.reject(new DOMException("The file could not be read.", "NotReadableError"));
+    };
+  });
+  await dialog.getByLabel("Spec file").setInputFiles(file("gone.yaml", SPEC));
+  await expect(dialog.getByRole("button", { name: /gone\.yaml/ })).toHaveAccessibleDescription("This file couldn't be read. Reload the page and try again.");
+  await expect(add).toBeDisabled();
+
   // A file that isn't a spec is refused as it's chosen, in the reader's words.
   await dialog.getByLabel("Spec file").setInputFiles(file("package.json", JSON.stringify({ name: "package" })));
   await expect(dialog.getByText(/^This isn't an OpenAPI spec: it has no `openapi` version\./)).toBeVisible();

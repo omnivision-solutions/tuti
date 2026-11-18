@@ -38,17 +38,25 @@ function UploadSource({ error, onChange }: { error?: string; onChange: (spec: Sp
     const turn = ++latest.current;
     setFileName(file.name);
     onChange(null);
-    const { OPENAPI_MAX_BYTES, readSpec } = await import("@tuti/shared/api-reference");
-    // ponytail: read on the main thread, which a spec near 5 MB holds for a moment; a worker if that's felt.
-    const text = file.size > OPENAPI_MAX_BYTES ? null : await file.text();
-    const read = text === null ? { error: SPEC_TOO_LARGE } : readSpec(text);
-    if (turn !== latest.current) {
-      return;
-    }
-    if (text === null || "error" in read) {
-      onChange(null, "error" in read ? read.error : undefined);
-    } else {
-      onChange({ text, suggests: read.doc.title || file.name.replace(/\.[^.]+$/, "") });
+    try {
+      const { OPENAPI_MAX_BYTES, readSpec } = await import("@tuti/shared/api-reference");
+      // ponytail: read on the main thread, which a spec near 5 MB holds for a moment; a worker if that's felt.
+      const text = file.size > OPENAPI_MAX_BYTES ? null : await file.text();
+      const read = text === null ? { error: SPEC_TOO_LARGE } : readSpec(text);
+      if (turn !== latest.current) {
+        return;
+      }
+      if (text === null || "error" in read) {
+        onChange(null, "error" in read ? read.error : undefined);
+      } else {
+        onChange({ text, suggests: read.doc.title || file.name.replace(/\.[^.]+$/, "") });
+      }
+    } catch {
+      // The readers didn't load (a release since the page did, the network), or the file changed or went since it was
+      // chosen: said under the field, like a file that isn't a spec.
+      if (turn === latest.current) {
+        onChange(null, "This file couldn't be read. Reload the page and try again.");
+      }
     }
   }
 
