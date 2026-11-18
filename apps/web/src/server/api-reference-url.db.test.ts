@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { fetchSpec, handlers, syncBudget, SPEC_FETCH_TIMEOUT_MS, SPEC_URL_TOO_LARGE, syncApiReferences, SYNC_EVERY_MS, SYNC_ROWS_PER_HOST } from "@tuti/jobs";
+import { fetchSpec, handlers, syncApiReference as syncReferenceNow, syncBudget, SPEC_FETCH_TIMEOUT_MS, SPEC_URL_TOO_LARGE, syncApiReferences, SYNC_EVERY_MS, SYNC_ROWS_PER_HOST } from "@tuti/jobs";
 import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { type ApiFake, type SiteFake, startApiFake, startSiteFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -122,6 +122,13 @@ describe("added from a URL", () => {
     expect(await prisma.apiReferenceFetch.count({ where: { userId: owner.id } })).toBe(1);
   });
 
+  test("an address over 2,000 characters is refused, not cut short to another, and not counted", async () => {
+    actAs(owner);
+    const long = `${site.origin}/${"x".repeat(2_000)}`;
+    expect(await actions.previewApiReferenceUrl(project.slug, long)).toEqual({ error: "Keep the address to 2,000 characters" });
+    expect(await prisma.apiReferenceFetch.count({ where: { userId: owner.id } })).toBe(0);
+  });
+
   test("a member's fetches count across their projects, and fetches at once can't overrun the limit together", async () => {
     actAs(owner);
     const other = await createProject(owner);
@@ -226,7 +233,7 @@ describe("a sync", () => {
     actAs(owner);
     const before = await stored();
     site.answer("/openapi.json", null);
-    expect(await sync()).toMatchObject({ changes: null, syncError: "The address answered 404 Not Found." });
+    expect(await sync()).toMatchObject({ changes: null, failure: "The address answered 404 Not Found.", syncError: "The address answered 404 Not Found." });
     expect(await actions.syncApiReferenceNow(project.slug, "acme-api")).toEqual({ error: "The address answered 404 Not Found." });
     // A spec with nothing to show is a failure too.
     site.answer("/openapi.json", spec({}));
@@ -296,9 +303,38 @@ describe("a sync", () => {
     site.during(async () => {
       second = await change("/b.json");
     });
-    await expect(change("/a.json")).rejects.toMatchObject({ status: 409, message: "Someone changed the address meanwhile. Reload to see it, and try again." });
+    await expect(change("/a.json")).rejects.toMatchObject({ status: 409, message: "The address changed or was synced meanwhile. Reload to see it, and try again." });
     expect(second).toMatchObject({ sourceUrl: `${site.origin}/b.json`, changes: { added: 1, removed: 1, changed: true } });
     expect(await stored()).toMatchObject({ sourceUrl: `${site.origin}/b.json`, spec: spec({ "GET /posts": "Posts", "GET /b": "B" }) });
+  });
+
+  test("a change overtaken by teammates' changes away and back to where it started (A to C to A) is refused too", async () => {
+    site.answer("/b.json", spec({ "GET /posts": "Posts", "GET /b": "B" }));
+    site.answer("/c.json", spec({ "GET /posts": "Posts", "GET /c": "C" }));
+    const change = (path: string) => call(syncApiReference, as(), { slug: "acme-api", url: `${site.origin}${path}` });
+    // The change to B waits at the site while a teammate changes the address to C and back.
+    site.during(async () => {
+      await change("/c.json");
+      await change("/openapi.json");
+    });
+    await expect(change("/b.json")).rejects.toMatchObject({ status: 409 });
+    expect(await stored()).toMatchObject({ sourceUrl: `${site.origin}/openapi.json`, spec: POSTS });
+  });
+
+  test("a sync reads the address it checked: one changed or synced since is left alone, unfetched", async () => {
+    // The API fake records what it's sent.
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "acme-api" } }, data: { sourceUrl: `${api.origin}/spec` } });
+    const row = await stored();
+    const sent = api.requests.length;
+    expect(await syncReferenceNow(row.id, { allowLoopback: true, expected: { sourceUrl: `${site.origin}/openapi.json`, syncTriedAt: row.syncTriedAt } })).toBeNull();
+    expect(await syncReferenceNow(row.id, { allowLoopback: true, expected: { sourceUrl: row.sourceUrl, syncTriedAt: new Date(0) } })).toBeNull();
+    expect(api.requests.length).toBe(sent);
+    expect((await stored()).syncTriedAt).toEqual(row.syncTriedAt);
+  });
+
+  test("the address is kept as a URL parser writes it", async () => {
+    const spelled = `${site.origin.replace("http://", "http:")}/openapi.json`;
+    expect(await call(createApiReference, as(), { name: "Spelled", url: spelled })).toMatchObject({ sourceUrl: `${site.origin}/openapi.json` });
   });
 
   test("Settings' Change to the address it already has syncs it, and says so when that fails", async () => {
@@ -495,6 +531,24 @@ describe("the 6-hourly job", () => {
     const tried = (await prisma.apiReference.findMany({ where: { projectId: project.id, source: "URL", syncTriedAt: { gt: now } }, select: { slug: true } })).map((row) => row.slug);
     // Each host's oldest, and the oldest host's second.
     expect(tried.sort()).toEqual(["busy-0", "internal-0", "internal-1", "metadata-0", "other-0", "single"]);
+  });
+
+  test("a reference changed after the run chose it is left for the next, counted as neither synced nor failed", async () => {
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+    await prisma.apiReference.updateMany({ data: { syncTriedAt: new Date() } });
+    await addFromUrl();
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "acme-api" } }, data: { sourceUrl: `${api.origin}/spec`, syncTriedAt: new Date(0) } });
+    const sent = api.requests.length;
+    // A teammate's Sync now lands between the run choosing it and reading it.
+    let asked = 0;
+    const over = async () => {
+      if (asked++ === 0) {
+        await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "acme-api" } }, data: { syncTriedAt: new Date() } });
+      }
+      return false;
+    };
+    expect(await syncApiReferences({}, log, new Date(), over)).toEqual({ synced: 0, failed: 0 });
+    expect(api.requests.length).toBe(sent);
   });
 
   test("a run starts no read past its time budget: the rest wait for the next", async () => {

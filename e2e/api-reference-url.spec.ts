@@ -39,6 +39,25 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   await expect(dialog.getByRole("radio", { name: /From a URL/ })).toBeChecked();
   const add = dialog.getByRole("button", { name: "Add reference" });
 
+  // A file still being read when the team picks "From a URL": the read, ending after, changes nothing there.
+  await dialog.getByText("Upload a file", { exact: true }).click();
+  await team.evaluate(() => {
+    const text = File.prototype.text;
+    File.prototype.text = function (this: File) {
+      File.prototype.text = text;
+      return new Promise<string>((resolve) => {
+        (window as unknown as { releaseRead: () => void }).releaseRead = () => resolve(text.call(this));
+      });
+    };
+  });
+  await dialog.getByLabel("Spec file").setInputFiles({ name: "openapi.json", mimeType: "application/json", buffer: Buffer.from(spec({ "GET /posts": ["Posts", "List posts"] })) });
+  await team.waitForFunction(() => typeof (window as unknown as { releaseRead?: () => void }).releaseRead === "function");
+  await dialog.getByText("From a URL", { exact: true }).click();
+  await team.evaluate(() => (window as unknown as { releaseRead: () => void }).releaseRead());
+  await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(dialog.getByLabel("Name")).toHaveValue("");
+  await expect(add).toBeDisabled();
+
   // A Fetch still on its way when the team picks "Upload a file": its answer, arriving after, changes nothing there.
   let release = () => {};
   const released = new Promise<void>((resolve) => {

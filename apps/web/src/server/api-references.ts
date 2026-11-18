@@ -59,7 +59,7 @@ export async function syncApiReferenceNow(projectSlug: string, slug: string): Pr
     return result;
   }
   // No changes and no reason: another sync finished first (the page shows what it read), or the address changed meanwhile.
-  return answer.changes ?? { error: answer.syncError ?? "Another sync finished first. The page shows what it read." };
+  return answer.changes ?? { error: answer.failure ?? "Another sync finished first. The page shows what it read." };
 }
 
 /** Settings' Source: the reference is read from `url` from now on, once it's read there (the toast says what that changed). */
@@ -72,7 +72,7 @@ export async function changeApiReferenceUrl(projectSlug: string, slug: string, u
     return result;
   }
   // The address it already had is synced as it is: its failure is said, as Sync now's is.
-  return answer.changes ?? { error: answer.syncError ?? "Another sync finished first. The page shows what it read." };
+  return answer.changes ?? { error: answer.failure ?? "Another sync finished first. The page shows what it read." };
 }
 
 /**
@@ -81,7 +81,11 @@ export async function changeApiReferenceUrl(projectSlug: string, slug: string, u
  */
 export async function previewApiReferenceUrl(projectSlug: string, url: string): Promise<FormState & { suggests?: string }> {
   let suggests: string | undefined;
-  const address = String(url).trim().slice(0, 2000);
+  const address = String(url).trim();
+  // As adding it would: refused, not cut short to another address.
+  if (address.length > 2000) {
+    return { error: "Keep the address to 2,000 characters" };
+  }
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     // Refused before anything's fetched, it isn't counted (`fetched`).
     const spec = await fetched(address, context);

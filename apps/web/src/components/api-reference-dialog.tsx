@@ -116,8 +116,15 @@ function UploadSource({ error, onChange }: { error?: string; onChange: (spec: Sp
   const picker = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // The latest file chosen: one still being read when another is picked is dropped.
+  // The latest file chosen: one still being read when another is picked, or when the team picks another source (this
+  // panel gone), is dropped.
   const latest = useRef(0);
+  useEffect(
+    () => () => {
+      latest.current++;
+    },
+    [],
+  );
 
   async function choose(file: File | undefined) {
     if (!file) {

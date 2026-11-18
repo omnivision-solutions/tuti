@@ -87,6 +87,13 @@ export async function countSpecFetch({ actor, projectId }: { actor: Actor; proje
 
 const counts = referenceCounts;
 
+/**
+ * A URL source's address as it's kept: as a URL parser writes it ("https:Example.com/x" is "https://example.com/x"),
+ * so the 6-hourly job's grouping by host, in SQL, sees the host its reads go to. An address that doesn't parse is
+ * kept as given (it's refused before it would be).
+ */
+const stored = (url: string) => URL.parse(url.trim())?.href ?? url;
+
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 
 /** Everything about a reference but its `spec` and `doc`: those are large, so only apiReferences.get reads them. */
@@ -246,7 +253,7 @@ export const createApiReference = defineOperation({
             name: input.name,
             order: await lastIn(tx, projectId, tabId),
             format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
-            ...(input.url !== undefined && { source: "URL", sourceUrl: input.url }),
+            ...(input.url !== undefined && { source: "URL", sourceUrl: stored(input.url) }),
             spec: text,
             doc: json(doc),
             state: json(state),
@@ -390,7 +397,7 @@ export const replaceApiReference = defineOperation({
 export const syncApiReference = defineOperation({
   name: "apiReferences.sync",
   summary:
-    "Read a URL's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `syncError` says why (the reference's page says so too, until a sync works). A sync that another (the 6-hourly one, or a second Sync now) overtook writes nothing, as that one's answer is newer: `changes` is null. With `url`, the reference is read from that address from now on: it's fetched and read first, with apiReferences.create's checks, and one that can't be is refused (400) with the address left as it was; so is one overtaken by another change of the address (409). An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
+    "Read a URL's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `failure` says why (and `syncError`, the reference's page too, until a sync works). A sync that another (the 6-hourly one, a second Sync now, a change of address) overtook writes nothing, as that one's answer is newer: `changes` and `failure` are null. The rest of the answer is the reference as it is once this sync is done. With `url`, the reference is read from that address from now on: it's fetched and read first, with apiReferences.create's checks, and one that can't be is refused (400) with the address left as it was; so is one overtaken by another change of the address, or by a sync (409). The address is kept as a URL parser writes it. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
   method: "POST",
   path: "/api-references/{slug}/sync",
   scope: "write",
@@ -399,43 +406,50 @@ export const syncApiReference = defineOperation({
   example: { url: "https://api.example.com/openapi.json" },
   run: async (context, input) => {
     const { projectId } = context;
-    const row = await prisma.apiReference.findUnique({ where: { projectId_slug: { projectId, slug: input.slug } }, select: { id: true, source: true, sourceUrl: true } });
+    const row = await prisma.apiReference.findUnique({
+      where: { projectId_slug: { projectId, slug: input.slug } },
+      select: { id: true, source: true, sourceUrl: true, syncTriedAt: true },
+    });
     if (!row) {
       throw notFound(input.slug);
     }
     if (row.source !== "URL") {
       throw new OperationError(409, "not_url", "This reference's spec isn't read from a URL: upload a new version instead");
     }
-    if (input.url !== undefined && input.url !== row.sourceUrl) {
+    if (input.url !== undefined && stored(input.url) !== row.sourceUrl) {
       // A new address: read whole before it's kept, so one that doesn't work leaves the reference as it was.
       const { text, url: from } = await fetched(input.url, context);
       const next = read(text, from);
       return prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        // Only over the address it started from: a teammate's change that landed meanwhile is newer, and stays.
-        const current = await tx.apiReference.findFirst({ where: { id: row.id, sourceUrl: row.sourceUrl }, select: { doc: true, state: true } });
+        // Only over the reference as it started from: every change and sync moves syncTriedAt on, so a teammate's change
+        // that landed meanwhile stays, even one back to this address (A to C to A). A sync landing meanwhile refuses it
+        // too: the rare price of telling those apart without a counter.
+        const current = await tx.apiReference.findFirst({ where: { id: row.id, sourceUrl: row.sourceUrl, syncTriedAt: row.syncTriedAt }, select: { doc: true, state: true } });
         if (!current) {
           if (await tx.apiReference.count({ where: { id: row.id } })) {
-            throw new OperationError(409, "source_changed", "Someone changed the address meanwhile. Reload to see it, and try again.");
+            throw new OperationError(409, "source_changed", "The address changed or was synced meanwhile. Reload to see it, and try again.");
           }
           throw notFound(input.slug);
         }
         // A sync of the old address still on its way finds the address changed, and writes nothing.
         const { data, changes } = respec(current, text, next);
-        return { ...summary(await tx.apiReference.update({ where: { id: row.id }, data: { ...data, sourceUrl: input.url }, select: summarySelect })), changes };
+        const updated = await tx.apiReference.update({ where: { id: row.id }, data: { ...data, sourceUrl: stored(input.url!) }, select: summarySelect });
+        return { ...summary(updated), changes, failure: null };
       });
     }
-    // An address refused before anything is fetched costs nothing: the sync still says why, uncounted.
+    // An address refused before anything is fetched costs nothing: the sync still says why, uncounted. The sync is of
+    // the address checked here: one changed or synced meanwhile is left alone (`expected`), unfetched.
     if (!specUrlRefusal(row.sourceUrl ?? "")) {
       await countSpecFetch(context);
     }
-    const result = await syncReference(row.id);
-    // Deleted, or its address changed, while it was read: what it is now.
+    const result = await syncReference(row.id, { expected: row });
+    // The reference as it is now; what this sync did is `changes` and `failure`, its own, whatever landed since.
     const now = await prisma.apiReference.findUnique({ where: { id: row.id }, select: summarySelect });
     if (!now) {
       throw notFound(input.slug);
     }
-    return { ...summary(now), changes: result && "changes" in result ? result.changes : null };
+    return { ...summary(now), changes: result && "changes" in result ? result.changes : null, failure: result && "error" in result ? result.error : null };
   },
 });
 

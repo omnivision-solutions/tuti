@@ -268,9 +268,23 @@ export function respec(row: { doc: unknown; state: unknown }, text: string, next
  * the reference is gone, isn't read from a URL, its address changed while this read the old one, or another sync
  * (Sync now beside the 6-hourly one) finished while this one read: its answer is newer, so this one's is dropped.
  */
-export async function syncApiReference(id: string, options: { allowLoopback?: boolean } = {}): Promise<{ changes: SpecChanges } | { error: string } | null> {
+export async function syncApiReference(
+  id: string,
+  options: {
+    allowLoopback?: boolean;
+    /**
+     * The reference as whoever chose to sync it saw it (the job's queue, Sync now's check of its address): one moved or
+     * synced since is left alone, unfetched, until it's chosen again as it is.
+     */
+    expected?: { sourceUrl: string | null; syncTriedAt: Date };
+  } = {},
+): Promise<{ changes: SpecChanges } | { error: string } | null> {
   const found = await prisma.apiReference.findUnique({ where: { id }, select: { projectId: true, source: true, sourceUrl: true, syncTriedAt: true } });
   if (!found || found.source !== "URL" || !found.sourceUrl) {
+    return null;
+  }
+  const { expected } = options;
+  if (expected && (expected.sourceUrl !== found.sourceUrl || expected.syncTriedAt.getTime() !== found.syncTriedAt.getTime())) {
     return null;
   }
   const url = found.sourceUrl;
@@ -304,14 +318,16 @@ export async function syncApiReferences(
   _: unknown,
   log: JobLogger,
   now = new Date(),
-  over = budget(SYNC_BUDGET_MS),
+  /** Whether the run's time is up, asked before each read. */
+  over: () => boolean | Promise<boolean> = budget(SYNC_BUDGET_MS),
   candidates = SYNC_CANDIDATES,
 ): Promise<JobResult> {
   // The oldest due per host (its name, lowercased, as URL gives it: the port, credentials and path left off).
-  const due = await prisma.$queryRaw<{ id: string; sourceUrl: string | null }[]>`
-    SELECT id, "sourceUrl" FROM (
+  // The address is stored as URL writes it (`href`), so this is the name URL.hostname gives, an IPv6 address bracketed.
+  const due = await prisma.$queryRaw<{ id: string; sourceUrl: string | null; syncTriedAt: Date }[]>`
+    SELECT id, "sourceUrl", "syncTriedAt" FROM (
       SELECT id, "sourceUrl", "syncTriedAt",
-        row_number() OVER (PARTITION BY lower(substring("sourceUrl" from '^[^:]+://(?:[^/?#@]*@)?([^/?#:]+)')) ORDER BY "syncTriedAt", id) AS place
+        row_number() OVER (PARTITION BY lower(substring("sourceUrl" from '^[^:]+://(?:[^/?#@]*@)?(\\[[^]]*\\]|[^/?#:]+)')) ORDER BY "syncTriedAt", id) AS place
       FROM api_reference
       WHERE source = 'URL' AND "syncTriedAt" <= ${new Date(now.getTime() - SYNC_EVERY_MS)}
     ) due
@@ -319,36 +335,51 @@ export async function syncApiReferences(
     -- Each host's first before any host's second: busy hosts can't fill the window between them.
     ORDER BY place, "syncTriedAt", id
     LIMIT ${candidates}`;
-  const byHost = new Map<string, string[]>();
-  for (const { id, sourceUrl } of due) {
-    const host = URL.parse(sourceUrl ?? "")?.hostname ?? "";
-    byHost.set(host, [...(byHost.get(host) ?? []), id]);
+  const byHost = new Map<string, typeof due>();
+  for (const row of due) {
+    const host = URL.parse(row.sourceUrl ?? "")?.hostname ?? "";
+    byHost.set(host, [...(byHost.get(host) ?? []), row]);
   }
-  // Ranked by each host's oldest due reference (the rows come oldest first), not by how many: a busy host's backlog
-  // never puts a host with one reference behind it.
-  const hosts = [...byHost.values()];
+  // Each host with its references due, how many it's had read this run, and whether one is being read now; in the order
+  // of their oldest due reference (the rows come oldest first), which breaks ties.
+  const hosts = [...byHost.values()].map((ids) => ({ ids, reads: 0, reading: false }));
+  /** The next host to read: of those not being read now with something left, the one with the fewest reads this run. */
+  const next = () => {
+    let pick: (typeof hosts)[number] | undefined;
+    for (const host of hosts) {
+      if (!host.reading && host.ids.length > 0 && (!pick || host.reads < pick.reads)) {
+        pick = host;
+      }
+    }
+    return pick;
+  };
   let [synced, failed] = [0, 0];
-  // A host goes back at the end of the queue after each read, never into it twice: one read at a time per host, and
-  // hosts with long backlogs take turns with the rest rather than holding every worker to the end of the budget.
+  // Never two reads on one host at once, and no host a read ahead of another that's free: every host with something due
+  // gets a read before any gets a second, however long each read takes. A worker with no host free stops; the others
+  // are reading the rest.
   const worker = async () => {
-    for (let ids = hosts.shift(); ids; ids = hosts.shift()) {
-      if (over()) {
+    for (let host = next(); host; host = next()) {
+      // Taken before anything's awaited, so no other worker picks it meanwhile.
+      host.reading = true;
+      if (await over()) {
+        host.reading = false;
         return;
       }
-      const id = ids.shift()!;
+      host.reads++;
       try {
-        const result = await syncApiReference(id);
+        // As it was chosen: one moved or synced since it was queued is left for the next run, and counted as neither.
+        const { id, sourceUrl, syncTriedAt } = host.ids.shift()!;
+        const result = await syncApiReference(id, { expected: { sourceUrl, syncTriedAt } });
         if (result && "error" in result) {
           failed++;
-        } else {
+        } else if (result) {
           synced++;
         }
       } catch (error) {
         failed++;
         log.warn(`Syncing an API reference failed: ${String(error)}`);
-      }
-      if (ids.length > 0) {
-        hosts.push(ids);
+      } finally {
+        host.reading = false;
       }
     }
   };
