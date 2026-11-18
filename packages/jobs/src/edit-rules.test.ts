@@ -141,6 +141,10 @@ test("a review that can't be read is no review (the edit waits, it isn't rewritt
     // A claim that can't be read isn't dropped: the reply as a whole can't be trusted.
     review({ claims: [{ claim: "The tab is Display", check: "confirmed", evidence: "a:1" }, { claim: "The tab moved", check: "likely" }] }),
     review({ claims: [{ claim: "The tab is Display", check: "confirmed", evidence: "a:1" }, "the tab moved"] }),
+    // Nor a claim with no text, or confirmed with nothing to show where.
+    review({ claims: [{ claim: " ", check: "confirmed", evidence: "a:1" }] }),
+    review({ claims: [{ claim: "The tab is Display", check: "confirmed" }] }),
+    review({ claims: [{ claim: "The tab is Display", check: "confirmed", evidence: "  " }] }),
     // Turned down with nothing a rewrite could act on: no reasons (or none readable), and scores that would pass.
     review({ verdict: "touch_up", reasons: [] }),
     review({ verdict: "dismiss", proportion: 5, reasons: [{ text: "Not needed." }] }),

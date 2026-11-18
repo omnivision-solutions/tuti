@@ -135,7 +135,9 @@ export function readReview(reply: string): Omit<EditCheck, "hints"> | null {
   // A claim that can't be read makes the whole reply unreadable: dropping it could let an unchecked claim through.
   const claims = (parsed.claims as unknown[]).map((c): Claim | null => {
     const { claim, check, evidence } = (c ?? {}) as Record<string, unknown>;
-    return typeof claim === "string" && (check === "confirmed" || check === "contradicted" || check === "not_found") ? { claim: short(claim, 300), check, evidence: short(evidence, 300) } : null;
+    // A claim says what it is, and where in the code it was seen or looked for: evidence is what a check is.
+    const read = { claim: short(claim, 300), evidence: short(evidence, 300) };
+    return read.claim && read.evidence && (check === "confirmed" || check === "contradicted" || check === "not_found") ? { ...read, check } : null;
   });
   if (claims.includes(null)) {
     return null;
