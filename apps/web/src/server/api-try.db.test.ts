@@ -274,6 +274,16 @@ describe("what it sends and answers", () => {
     expect(await prisma.apiTry.count({ where: { projectId: project.id } })).toBe(TRIES_PER_CLIENT_PER_MINUTE + 1);
   });
 
+  test("through the team's own site every reader has the site's address: only the project's limit counts them", async () => {
+    vi.stubEnv("TRUSTED_IP_HEADER", "x-test-ip");
+    const site = { "x-test-ip": "198.51.100.7", "x-tuti-base": "/portal" };
+    const client = await clientHash(new Headers(site));
+    await prisma.apiTry.createMany({ data: Array.from({ length: TRIES_PER_CLIENT_PER_MINUTE }, () => ({ projectId: project.id, clientHash: client })) });
+    expect((await send(input(local()), { headers: site })).status).toBe(200);
+    // Reached directly (no path), the same address is one reader, over its limit.
+    expect((await send(input(local()), { headers: { "x-test-ip": "198.51.100.7", "x-tuti-base": "" } })).status).toBe(429);
+  });
+
   test("rate limited per reader and per project", async () => {
     vi.stubEnv("TRUSTED_IP_HEADER", "x-test-ip");
     const reader = { "x-test-ip": "203.0.113.9" };

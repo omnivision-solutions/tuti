@@ -8,7 +8,9 @@ import { getDomain } from "tldts";
 import { Agent, fetch } from "undici";
 import { z } from "zod";
 
+import { appPortalMount } from "@/lib/app-portal";
 import { appUrl } from "@/lib/hosts";
+import { BASE_HEADER } from "@/lib/portal-base";
 
 import { apiReferencePage } from "./api-reference-queries";
 import { clientHash } from "./email-link-limits";
@@ -92,9 +94,11 @@ const registrable = (host: string) => getDomain(host, { allowPrivateDomains: tru
 /**
  * Counts the request against the limits (per reader, by an HMAC of their IP address when the proxy says it; per
  * project), or says which one it's over. One at a time per project, so requests at once can't overrun them together.
+ * A request that came through the team's own site (a portal under a path of it) has the site's server's address, the
+ * same for every reader there: only the project's limit counts it.
  */
-async function countTry(projectId: string, requestHeaders: Headers): Promise<"reader" | "project" | null> {
-  const client = await clientHash(requestHeaders);
+async function countTry(projectId: string, requestHeaders: Headers, viaSite: boolean): Promise<"reader" | "project" | null> {
+  const client = viaSite ? null : await clientHash(requestHeaders);
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
   await prisma.apiTry.deleteMany({ where: { createdAt: { lt: hourAgo } } });
   return prisma.$transaction(async (tx) => {
@@ -180,7 +184,10 @@ export async function sendTry(request: Request, projectSlug: string, referenceSl
       return refuse(403, `Tuti sends requests only to this help center's own sites, and ${url.hostname} isn't one`);
     }
   }
-  const over = await countTry(page.projectId, request.headers);
+  // proxy.ts always sets BASE_HEADER: a path when the request came through a site. Tuti's own portal is under a path of
+  // the app, which readers reach directly.
+  const viaSite = !!request.headers.get(BASE_HEADER) && projectSlug !== appPortalMount()?.slug;
+  const over = await countTry(page.projectId, request.headers, viaSite);
   if (over) {
     return refuse(
       429,
