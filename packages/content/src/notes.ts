@@ -168,7 +168,8 @@ function inline(text: string, allowedLinks: Set<string>): JSONContent[] {
       nodes.push(marks ? { type: "text", text: clean, marks } : { type: "text", text: clean });
     }
   };
-  const pattern = /\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*/g;
+  // Each part has a length limit, so a reply of nothing but "[" or "**" is read in linear time.
+  const pattern = /\[([^\]]{1,1000})\]\(([^)\s]{1,2000})\)|\*\*([^*]{1,2000})\*\*/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     push(text.slice(last, match.index));
