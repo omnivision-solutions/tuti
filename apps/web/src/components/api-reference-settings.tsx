@@ -363,7 +363,7 @@ export function ApiReferenceSettings({
             <Link href={`/app/${projectSlug}/docs/references/${reference.slug}`} className="p-[6px_8px] text-[13px] text-muted-foreground">
               Cancel
             </Link>
-            <Button type="submit" form="api-reference-settings" disabled={saving}>
+            <Button type="submit" form="api-reference-settings" disabled={saving} focusableWhenDisabled>
               {saving ? "Saving…" : "Save"}
             </Button>
           </>,
