@@ -122,6 +122,9 @@ export function defaultModel(feature: AiFeature): string {
 /** What a piece of a feature's work asks the AI with: the model, and the meter recording each request for its project. */
 export type Ai = { model: string; meter: Meter };
 
+/** What complete (and the docs agent) throw when the model's reply has no text. */
+export const EMPTY_REPLY = "The AI reply had no text";
+
 /** The model's reply to one system and one user message. Throws on any failure, with the reason. */
 export async function complete({
   system,
@@ -171,9 +174,30 @@ export async function complete({
   });
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim() === "") {
-    throw new Error("The AI reply had no text");
+    throw new Error(EMPTY_REPLY);
   }
   return content;
+}
+
+/**
+ * Whether `error`, thrown by complete, chat, decide or embed, means the AI provider didn't answer, so asking again later
+ * may get an answer: a time limit, no connection, a rate limit (429), an error on its side (408, 5xx), or a reply with
+ * no text. Not a key it refused (401, 403), credits it says are spent (402), a request it turned down (400), nor a reply
+ * that came but couldn't be read: asked again, those fail the same way.
+ */
+export function providerDidNotAnswer(error: unknown): boolean {
+  if (!(error instanceof Error) && !(error instanceof DOMException)) {
+    return false;
+  }
+  // AbortSignal.timeout's reason; fetch's own failures (no connection, the connection cut while the reply came).
+  if (error.name === "TimeoutError" || (error instanceof TypeError && /^(fetch failed|terminated)$/.test(error.message))) {
+    return true;
+  }
+  if (error.message === EMPTY_REPLY) {
+    return true;
+  }
+  const status = /^(?:AI request|Decision request|Embeddings) failed \((\d{3})\)/.exec(error.message)?.[1];
+  return status === "408" || status === "429" || status?.startsWith("5") === true;
 }
 
 /**

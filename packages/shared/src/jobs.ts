@@ -94,6 +94,12 @@ export const jobs = {
     // 5s, 25s, 2m, 10m: rides out GitHub's or the AI provider's hiccups.
     backoff: { factor: 5, maxSeconds: 15 * 60 },
   },
+  /** Queues again the code changes whose analysis the AI provider didn't answer, once their retry is due (`retryAt`). */
+  retryCodeChanges: {
+    name: "code-change-retries",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /**
    * Verify (docs/plan.md, V5): checks an article against its project's repository, the default branch at its latest
    * commit, and writes the fix for what's out of date. Tried once: a run that fails says why, and the team runs it again.

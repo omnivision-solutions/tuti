@@ -11,7 +11,7 @@ import { grantPlanLicenseCredits } from "./plan-licenses";
 export { historySince, inSomePlansHistory, pastConversations, visibleConversations, visibleConversationsSql } from "./history";
 import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
-import { codeChange } from "./code-changes";
+import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 export { replyRecipient, type ReplyRecipient } from "./conversations";
@@ -52,7 +52,7 @@ export { aiFor } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords } from "./code-change-docs";
-export { analysisOn, codeChange, writeChangelogLine } from "./code-changes";
+export { analysisOn, codeChange, GAVE_UP, RETRY_AFTER_MINUTES, retryCodeChanges, writeChangelogLine } from "./code-changes";
 export { continueVerifyAll, noAi, RUN_STALE_MS, settleStale, verifyAllRunSelect, verifyAllsSettled, verifyAllStuck, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { verifyAfterEdit } from "./verify-decision";
 export { addToRunningDraft, autopilotLines, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
@@ -103,6 +103,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   githubPullRequest,
   githubRelease,
   codeChange,
+  retryCodeChanges: () => retryCodeChanges(),
   verifyArticle,
   verifyAllArticle: verifyArticle,
   importStep,

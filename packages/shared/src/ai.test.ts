@@ -2,7 +2,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { resetCodeChangesSettings } from "./code-changes-settings";
-import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
+import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, providerDidNotAnswer, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
 
 let model: ModelFake;
@@ -42,6 +42,38 @@ test("sends the system and user messages to the model it's given, with the token
     { model: "acme/writer", system: "Be brief", user: "Hi", maxTokens: 4000 },
     { model: "acme/tiny", system: "Be brief", user: "Hi again", maxTokens: 300 },
   ]);
+});
+
+test("the provider didn't answer: a time limit, no connection, a rate limit, an error on its side, an empty reply; not a refusal or an unreadable reply", async () => {
+  useFake();
+  const failure = (run: () => Promise<unknown>) => run().then(() => null, (error: unknown) => error);
+  const asked = (timeoutMs?: number) => failure(() => complete({ system: "s", user: "u", timeoutMs, ...ai }));
+  for (const status of [408, 429, 500, 502, 503, 529]) {
+    model.fail(status);
+    expect(providerDidNotAnswer(await asked()), `${status}`).toBe(true);
+  }
+  for (const status of [400, 401, 402, 403, 404]) {
+    model.fail(status);
+    expect(providerDidNotAnswer(await asked()), `${status}`).toBe(false);
+  }
+  model.reply(" ");
+  expect(providerDidNotAnswer(await asked())).toBe(true);
+  // Its time limit passes before the reply comes.
+  model.reply("late", () => new Promise((resolve) => setTimeout(resolve, 300)));
+  expect(providerDidNotAnswer(await asked(50))).toBe(true);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Decisions and embeddings fail in the same words.
+  expect(providerDidNotAnswer(new Error("Decision request failed (503): overloaded"))).toBe(true);
+  expect(providerDidNotAnswer(new Error("Embeddings failed (429): slow down"))).toBe(true);
+  expect(providerDidNotAnswer(new Error("Decision request failed (402): no credits"))).toBe(false);
+  // Nothing listening there.
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
+  expect(providerDidNotAnswer(await asked())).toBe(true);
+  // Not the provider's: a reply that came but can't be read, our own mistakes.
+  expect(providerDidNotAnswer(new SyntaxError("Unexpected token"))).toBe(false);
+  expect(providerDidNotAnswer(new Error("The docs agent (acme/writer) didn't answer with the JSON asked for"))).toBe(false);
+  expect(providerDidNotAnswer(new Error("GitHub said 503"))).toBe(false);
+  expect(providerDidNotAnswer("503")).toBe(false);
 });
 
 test("OpenRouter's own fields (data policy, cost) go only through OpenRouter: another provider refuses unknown ones", async () => {

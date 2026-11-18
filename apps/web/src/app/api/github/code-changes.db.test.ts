@@ -1,6 +1,6 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, codeChange, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log, resetCodeChangesSettings } from "@tuti/shared";
 import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -1468,5 +1468,234 @@ describe("plans", () => {
     noDocs();
     expect(await merge(53)).toBe(200);
     expect(await changes()).toEqual([expect.objectContaining({ number: 53, state: "NOTHING_TO_DO" })]);
+  });
+});
+
+describe("retries when the AI provider didn't answer", () => {
+  // The sweep is the whole server's: other tests' failed analyses in this file's database aren't this test's to retry.
+  beforeEach(async () => {
+    await prisma.codeChange.updateMany({ data: { retryAt: null } });
+  });
+  const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+  const MINUTE = 60_000;
+  const row = (number: number) =>
+    prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number }, select: { id: true, state: true, reason: true, retryAt: true, retries: true } });
+  /** Minutes from now until the retry (rounded), or null. */
+  const retryIn = async (number: number) => {
+    const { retryAt } = await row(number);
+    return retryAt && Math.round((retryAt.getTime() - Date.now()) / MINUTE);
+  };
+  /** The sweep (`code-change-retries`), as it runs `minutes` from now. */
+  const sweep = (minutes: number) => retryCodeChanges(new Date(Date.now() + minutes * MINUTE));
+  /** The next request to the chat API fails this way before reaching the provider (the fake): a time limit, or no connection. */
+  const failFetch = (error: Error) => {
+    const fetch = globalThis.fetch;
+    let failed = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      if (!failed && String(input instanceof Request ? input.url : input).endsWith("/chat/completions")) {
+        failed = true;
+        return Promise.reject(error);
+      }
+      return fetch(input, init);
+    });
+  };
+  /** One analysis that goes through: users don't see it and the help center needs nothing (nothing to do). */
+  const analysed = () => {
+    model.decide(INTERNAL);
+    noDocs();
+  };
+
+  const PROVIDER_FAILURES: [string, () => void][] = [
+    ["a rate limit (429)", () => model.fail(429)],
+    ["an error on its side (503)", () => model.fail(503)],
+    ["an error on its side (500)", () => model.fail(500)],
+    ["an empty reply", () => model.reply("")],
+    ["a time limit", () => failFetch(new DOMException("The operation was aborted due to timeout", "TimeoutError"))],
+    ["no connection", () => failFetch(new TypeError("fetch failed"))],
+  ];
+
+  test.each(PROVIDER_FAILURES)("%s: tried again by itself an hour later, once, with one result", async (_, fail) => {
+    github.pullRequest(repo, pullRequest(60));
+    model.decide(INTERNAL);
+    fail();
+    // An empty reply is asked for once more, in words, before the agent gives up on it.
+    if (_ === "an empty reply") {
+      model.reply("");
+    }
+    expect(await merge(60)).toBe(503);
+    expect(await row(60)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer.", retries: 0 });
+    expect(await retryIn(60)).toBe(60);
+    // Its page says so.
+    const { id } = await row(60);
+    expect((await codeChangeDetail(project.id, id))!.retryAt).toBe((await row(60)).retryAt!.toISOString());
+
+    // Not due yet: nothing.
+    expect(await sweep(59)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
+    analysed();
+    expect(await sweep(61)).toEqual({ due: 1, queued: 1, dropped: 0, waiting: 0 });
+    expect(await row(60)).toMatchObject({ state: "NOTHING_TO_DO", retryAt: null, retries: 1 });
+    expect((await codeChangeDetail(project.id, id))!.retryAt).toBeNull();
+    // Done: no sweep analyses it again (the model fake has nothing more scripted, and nothing more is asked).
+    expect(await sweep(24 * 60)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
+  });
+
+  test("a retry that writes something is one result: its changelog line once, and the gate asked once per analysis", async () => {
+    github.pullRequest(repo, pullRequest(61));
+    model.decide(USERS);
+    model.fail(503);
+    await merge(61);
+    // Users see it: the retry goes the whole way, summary and changelog line included.
+    model.decide(USERS);
+    noDocs();
+    model.reply("You can now switch the app to a dark theme in Settings.");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await sweep(61)).toMatchObject({ queued: 1 });
+    const { id } = await row(61);
+    expect(await row(61)).toMatchObject({ state: "READY", retryAt: null });
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, status: true } })).toEqual([{ kind: "CHANGELOG_LINE", status: "APPLIED" }]);
+    expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(2);
+  });
+
+  test("two sweeps at once start a due retry once", async () => {
+    github.pullRequest(repo, pullRequest(62));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(62);
+    analysed();
+    const results = await Promise.all([sweep(61), sweep(61)]);
+    expect(results.map((result) => result.queued).sort()).toEqual([0, 1]);
+    expect(await row(62)).toMatchObject({ state: "NOTHING_TO_DO", retries: 1 });
+  });
+
+  const OTHER_FAILURES: [string, () => void][] = [
+    ["a key the provider refused (401)", () => model.fail(401)],
+    ["credits the provider says are spent (402)", () => model.fail(402)],
+    ["a request the provider turned down (400)", () => model.fail(400)],
+    ["a reply that isn't the decision asked for", () => model.reply("{}")],
+  ];
+
+  test.each(OTHER_FAILURES)("%s: not tried again", async (_, fail) => {
+    github.pullRequest(repo, pullRequest(63));
+    model.decide(INTERNAL);
+    fail();
+    expect(await merge(63)).toBe(503);
+    expect(await row(63)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer.", retryAt: null });
+    expect(await sweep(48 * 60)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
+  });
+
+  test("GitHub not giving the pull request isn't the provider's: not tried again by this", async () => {
+    expect(await merge(64)).toBe(503);
+    expect(await row(64)).toMatchObject({ state: "FAILED", reason: "GitHub didn't let Tuti read the pull request.", retryAt: null });
+  });
+
+  test("on Hatchet, a try with tries left schedules nothing: only its last try does", async () => {
+    github.pullRequest(repo, pullRequest(65));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(65);
+    const { id } = await row(65);
+    model.decide(INTERNAL);
+    model.fail(503);
+    await expect(codeChange({ codeChangeId: id, force: true, pastGate: false, resume: false }, log, { lastTry: false })).rejects.toThrow();
+    expect(await row(65)).toMatchObject({ state: "ANALYSING", retryAt: null });
+  });
+
+  test("after an hour, six hours and a day it gives up, saying so; asked again by a person, it has its retries again", async () => {
+    github.pullRequest(repo, pullRequest(66));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(66);
+    const waits = [await retryIn(66)];
+    for (let i = 0; i < 3; i++) {
+      model.decide(INTERNAL);
+      model.fail(503);
+      expect(await sweep(waits.at(-1)! + 1)).toMatchObject({ queued: 1 });
+      waits.push(await retryIn(66));
+    }
+    expect(waits).toEqual([60, 6 * 60, 24 * 60, null]);
+    expect(await row(66)).toMatchObject({ state: "FAILED", reason: `The AI provider didn't answer. ${GAVE_UP}`, retries: 3 });
+    expect(GAVE_UP).toBe("Autopilot tried again 3 times, then gave up.");
+    expect(await sweep(7 * 24 * 60)).toMatchObject({ queued: 0 });
+
+    const { id } = await row(66);
+    model.decide(INTERNAL);
+    model.fail(503);
+    await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 503 });
+    expect(await row(66)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer.", retries: 0 });
+    expect(await retryIn(66)).toBe(60);
+  });
+
+  test('a failed "Analyse anyway" is retried past the gate, as it was asked', async () => {
+    github.pullRequest(repo, pullRequest(67));
+    analysed();
+    await merge(67);
+    const { id } = await row(67);
+    model.fail(503);
+    await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 503 });
+    expect(await retryIn(67)).toBe(60);
+    // Past the gate: no decision asked; the docs agent finds nothing, and users "see it", so its summary and line are written.
+    noDocs();
+    model.reply("You can now switch the app to a dark theme in Settings.");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    const gates = model.decisions.length;
+    expect(await sweep(61)).toMatchObject({ queued: 1 });
+    expect(model.decisions).toHaveLength(gates);
+    expect(await row(67)).toMatchObject({ state: "READY" });
+  });
+
+  test("analysed again by a person before it's due: the retry is dropped", async () => {
+    github.pullRequest(repo, pullRequest(68));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(68);
+    const { id } = await row(68);
+    analysed();
+    expect(await call(analyseCodeChange, team(), { id })).toMatchObject({ state: "nothing_to_do" });
+    expect(await row(68)).toMatchObject({ retryAt: null });
+    expect(await sweep(61)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
+  });
+
+  test("Autopilot turned off meanwhile: the retry is dropped, nothing asked; the repository gone: the run says so, and isn't tried again", async () => {
+    github.pullRequest(repo, pullRequest(69));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(69);
+    await setCodeChangeAnalysis(project.slug, false);
+    expect(await sweep(61)).toEqual({ due: 1, queued: 0, dropped: 1, waiting: 0 });
+    expect(await row(69)).toMatchObject({ state: "FAILED", retryAt: null });
+
+    await setCodeChangeAnalysis(project.slug, true);
+    github.pullRequest(repo, pullRequest(70));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(70);
+    await prisma.githubRepository.delete({ where: { repoId: installationId } });
+    expect(await sweep(61)).toMatchObject({ queued: 1 });
+    expect(await row(70)).toMatchObject({ state: "FAILED", reason: "The repository isn't in this project any more.", retryAt: null });
+    expect(await sweep(48 * 60)).toMatchObject({ due: 0 });
+  });
+
+  test("out of AI credits, a retry waits until there are some; then it runs, and what it asks is charged like any analysis", async () => {
+    vi.stubEnv("AI_CREDITS", "on");
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    github.pullRequest(repo, pullRequest(71));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(71);
+    expect(await retryIn(71)).toBe(60);
+    // The credits run out (expired, say).
+    await prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } });
+    expect(await sweep(61)).toEqual({ due: 1, queued: 0, dropped: 0, waiting: 1 });
+    expect(await row(71)).toMatchObject({ state: "FAILED", retries: 0 });
+    expect(await sweep(120)).toMatchObject({ waiting: 1 });
+
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    const before = (await creditBalance(project.id)).balance;
+    const usage = await prisma.aiUsage.count({ where: { projectId: project.id } });
+    analysed();
+    expect(await sweep(121)).toMatchObject({ queued: 1 });
+    expect(await row(71)).toMatchObject({ state: "NOTHING_TO_DO", retries: 1 });
+    expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(usage + 2);
+    expect((await creditBalance(project.id)).balance).toBeLessThan(before);
   });
 });

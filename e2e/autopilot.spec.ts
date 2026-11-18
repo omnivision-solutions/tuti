@@ -5,7 +5,7 @@ import { expect, type Locator, type Page, type Request, test } from "./fixtures"
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduledDraft, setPostUpdate } from "./autopilot";
+import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduledDraft, setPostUpdate, setPullRequestState } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, fillSignUp, signUp } from "./helpers";
 import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
@@ -594,6 +594,33 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.keyboard.press("Escape");
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
   await expect(phoneList.getByRole("tab", { name: "To review 0" })).toBeInViewport();
+});
+
+test("an analysis the AI provider didn't answer says when Autopilot tries again, and after the last try that it gave up", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const installationId = await connectGithub(owner, slug);
+  const pr = `Tidy the theme store ${id}`;
+  await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, pr);
+  await nextDocsAgentAnswer(number, {});
+  await mergePullRequest(installationId, { number, title: pr });
+  // Its analysis failed, the provider not answering: tried again in an hour.
+  const codeChange = await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer.", 60);
+  await owner.goto(`/app/${slug}/autopilot/activity/${codeChange}`);
+  // When, in the reader's own time (an hour from now may be tomorrow).
+  await expect(owner.getByText(/^The analysis stopped\. The AI provider didn't answer\. Autopilot tries again (today|tomorrow) at \d{1,2}:\d{2}\s?[ap]m\.$/)).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Analyse again" })).toBeVisible();
+  await checkpoint(owner, "autopilot-retry-later");
+
+  await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer. Autopilot tried again 3 times, then gave up.");
+  await owner.reload();
+  await expect(owner.getByText("The analysis stopped. The AI provider didn't answer. Autopilot tried again 3 times, then gave up.", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Autopilot tries again", { exact: false })).toHaveCount(0);
+  await checkpoint(owner, "autopilot-gave-up");
 });
 
 test("a pull request that needs a new article: its draft shows formatted, as readers will see it", async ({ browser }, testInfo) => {

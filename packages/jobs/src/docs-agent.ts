@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type Ai, chat, type ChatMessage, codeChangesSettings, collectionName, log, type Meter } from "@tuti/shared";
+import { type Ai, chat, type ChatMessage, codeChangesSettings, collectionName, EMPTY_REPLY, log, type Meter } from "@tuti/shared";
 
 import { pullRequestState } from "./code-change-decisions";
 import { type ArticlePlace, type Ask, replyJson } from "./code-change-docs";
@@ -349,6 +349,10 @@ export async function decideDocs(
       signal,
       run: fixture?.run,
     });
+    // Asked twice and nothing said: the provider didn't answer (its analysis is tried again later), unlike a reply that can't be read.
+    if (!answer.trim()) {
+      throw new Error(EMPTY_REPLY);
+    }
     const reply = replyJson<Reply>(answer);
     // JSON, but not the decision asked for (`{}`, other names): not read as "nothing to do", it fails and is retried.
     if (!reply || typeof reply !== "object" || !["summary", "edits", "new_articles"].some((key) => key in reply)) {

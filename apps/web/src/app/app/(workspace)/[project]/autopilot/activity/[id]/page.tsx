@@ -146,7 +146,16 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
           {(change.state === "failed" || change.state === "nothing_to_do") && (
             <Alert variant={change.state === "failed" ? "destructive" : "default"}>
               <AlertDescription className="flex flex-col items-start gap-2">
-                {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
+                <span>
+                  {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
+                  {/* The provider didn't answer: tried again by itself, "today at 3:10 pm" in the reader's time. */}
+                  {change.retryAt && (
+                    <>
+                      {" "}
+                      <GoesOut at={change.retryAt} prefix="Autopilot tries again" />.
+                    </>
+                  )}
+                </span>
                 {included && (
                   <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
                 )}
