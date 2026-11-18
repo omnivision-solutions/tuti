@@ -19,7 +19,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { copyText } from "@/components/copy-button";
-import { usePortalHref } from "@/components/portal-base";
+import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -40,11 +40,14 @@ import type { TryAnswer } from "@/server/api-try";
 /** The most of an answer shown, as through Tuti. */
 const SHOWN_BYTES = 2_000_000;
 
+/** How a request went: from the browser, or through Tuti and why. */
+type Via = "browser" | "cors" | "cookies" | "redirect";
+
 type Result =
-  | { answer: TryAnswer; via: "browser" | "cors" | "cookies" }
-  | { error: string; via: "browser" | "cors" | "cookies" }
+  | { answer: TryAnswer; via: Via }
+  | { error: string; via: Via }
   /** Sent from the browser, which may not read the answer: the API may have run it, so Tuti sends it again only when asked. */
-  | { unread: true };
+  | { unread: "cors" | "redirect" };
 
 /** The shared select, the width of its field. */
 function Pick({ id, label, value, options, onChange }: { id?: string; label?: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
@@ -70,7 +73,9 @@ const keyLabel = (auth: ApiAuth) =>
 
 /** The keys typed for this reference, in this tab only. */
 function useKeys(reference: string) {
-  const storage = `tuti.try-it.${reference}`;
+  // The project's too: two projects' portals under paths of one site share its origin, and its session storage, and
+  // their references can share a slug. One API's key must never be another's.
+  const storage = `tuti.try-it.${usePortalSlug()}.${reference}`;
   const [keys, setKeys] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(sessionStorage.getItem(storage) ?? "{}") as Record<string, string>;
@@ -156,7 +161,8 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
   const input = tryInput(doc, operation, { server, variables, params, keys, body });
   const made = tryRequest(doc, operation, base, input);
 
-  async function send(through = false) {
+  /** `through`: sent through Tuti at the reader's word, after the browser couldn't show the answer (and why). */
+  async function send(through?: "cors" | "redirect") {
     if ("error" in made) {
       setResult({ error: made.error, via: "browser" });
       return;
@@ -183,7 +189,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
       return { signal: own.signal, timedOut: () => own.signal.reason instanceof DOMException && own.signal.reason.name === "TimeoutError" };
     };
 
-    async function throughTuti(via: "cors" | "cookies") {
+    async function throughTuti(via: Exclude<Via, "browser">) {
       // Its own clock, from when it starts: Tuti gives the API its 15 seconds, and says so itself when they run out.
       const { signal, timedOut } = limited(TUTI_TIMEOUT_MS);
       let response: Response;
@@ -212,7 +218,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
     try {
       // A browser doesn't send cookies it's given to another site: those go through Tuti.
       if (through || input.cookies.length > 0) {
-        await throughTuti(through ? "cors" : "cookies");
+        await throughTuti(through ?? "cookies");
         return;
       }
       const started = performance.now();
@@ -226,6 +232,8 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           body: made.body,
           credentials: "omit",
           referrerPolicy: "no-referrer",
+          // Not followed, as through Tuti: a browser keeps a key header (X-API-Key) on a redirect to another site.
+          redirect: "manual",
           signal,
         });
       } catch (error) {
@@ -238,7 +246,12 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         // reads, so Tuti sends it; anything else only when the reader asks.
         if (!(error instanceof TypeError)) throw error;
         if (made.method === "GET" || made.method === "HEAD") await throughTuti("cors");
-        else settle({ unread: true });
+        else settle({ unread: "cors" });
+        return;
+      }
+      // A redirect, not followed, can't be read in a browser (no status, no Location): said so, and Tuti can show it.
+      if (response.type === "opaqueredirect") {
+        settle({ unread: "redirect" });
         return;
       }
       let read;
@@ -367,7 +380,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         </p>
         {result && (
           <div ref={answer}>
-            <Answer result={result} onThrough={() => void send(true)} sending={sending} />
+            <Answer result={result} onThrough={(why) => void send(why)} sending={sending} />
           </div>
         )}
       </div>
@@ -421,7 +434,7 @@ function pretty(answer: TryAnswer) {
 }
 
 /** Why the request went through Tuti, when it did. */
-const throughLine = (result: Exclude<Result, { unread: true }>) =>
+const throughLine = (result: Exclude<Result, { unread: "cors" | "redirect" }>) =>
   // Only for what was sent: an error from Tuti (it refused, or couldn't be reached) sent nothing.
   "error" in result
     ? null
@@ -429,27 +442,32 @@ const throughLine = (result: Exclude<Result, { unread: true }>) =>
     ? "Sent through Tuti, since the API doesn't allow browser requests."
     : result.via === "cookies"
       ? "Sent through Tuti, since browsers don't send cookies to another site."
-      : null;
+      : result.via === "redirect"
+        ? "Sent through Tuti, which shows a redirect without following it."
+        : null;
 
-const UNREAD = "The API doesn't allow browser requests, so its answer can't be shown here. It may have run the request: send it through Tuti to see the answer, and it runs again.";
+const UNREAD = {
+  cors: "The API doesn't allow browser requests, so its answer can't be shown here. It may have run the request: send it through Tuti to see the answer, and it runs again.",
+  redirect: "The API answered with a redirect, which Try it doesn't follow. Send it through Tuti to see its status and where it points; the request runs again.",
+};
 
 /** The answer in a line, for screen readers. */
 function summary(result: Result) {
-  if ("unread" in result) return UNREAD;
+  if ("unread" in result) return UNREAD[result.unread];
   const what = "error" in result ? result.error : `${result.answer.status} ${result.answer.statusText}, ${result.answer.ms} ms, ${size(result.answer.size)}`;
   return [what, throughLine(result)].filter(Boolean).join(". ");
 }
 
 /** The answer: its status, time and size, its headers (closed), and its body. Or why it wasn't sent. */
-function Answer({ result, onThrough, sending }: { result: Result; onThrough: () => void; sending: boolean }) {
+function Answer({ result, onThrough, sending }: { result: Result; onThrough: (why: "cors" | "redirect") => void; sending: boolean }) {
   if ("unread" in result) {
     return (
       <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
         <h3 className="text-sm font-semibold">Response</h3>
         <p className="text-sm">
-          {UNREAD}
+          {UNREAD[result.unread]}
         </p>
-        <Button variant="outline" className="self-start" disabled={sending} focusableWhenDisabled onClick={onThrough}>
+        <Button variant="outline" className="self-start" disabled={sending} focusableWhenDisabled onClick={() => onThrough(result.unread)}>
           Send through Tuti
         </Button>
       </section>
@@ -496,7 +514,16 @@ function Answer({ result, onThrough, sending }: { result: Result; onThrough: () 
               </dl>
             </details>
           )}
-          {result.answer.body && <pre className="max-h-96 overflow-auto rounded-lg bg-secondary p-3 font-mono text-xs whitespace-pre-wrap break-all">{pretty(result.answer)}</pre>}
+          {result.answer.body && (
+            // Focusable, so a keyboard can scroll it (Safari doesn't reach one with nothing focusable inside).
+            <pre
+              tabIndex={0}
+              aria-label="Response body"
+              className="max-h-96 overflow-auto rounded-lg bg-secondary p-3 font-mono text-xs whitespace-pre-wrap break-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {pretty(result.answer)}
+            </pre>
+          )}
         </>
       )}
       {through && <p className="text-[0.8125rem] text-muted-foreground">{through}</p>}

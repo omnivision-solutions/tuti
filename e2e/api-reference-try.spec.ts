@@ -12,11 +12,13 @@ import { apiFor, createProject, newPerson, signUp } from "./helpers";
 /** Two local APIs: one that lets browsers call it (CORS), one that doesn't, which Tuti calls instead. */
 let open: ApiFake;
 let closed: ApiFake;
+/** Another site, which lets browsers call it: where a redirect points. */
+let elsewhere: ApiFake;
 test.beforeAll(async () => {
-  [open, closed] = await Promise.all([startApiFake({ cors: true }), startApiFake({ cors: false })]);
+  [open, closed, elsewhere] = await Promise.all([startApiFake({ cors: true }), startApiFake({ cors: false }), startApiFake({ cors: true })]);
 });
 test.afterAll(async () => {
-  await Promise.all([open.close(), closed.close()]);
+  await Promise.all([open.close(), closed.close(), elsewhere.close()]);
 });
 
 /** `site`: the portal's own origin, where a server of the spec's is too (an API on the same site as its help center). */
@@ -33,6 +35,7 @@ components:
     key: { type: http, scheme: bearer }
     session: { type: apiKey, in: cookie, name: session }
     query: { type: apiKey, in: query, name: api_key }
+    header: { type: apiKey, in: header, name: X-API-Key }
 security: [{ key: [] }]
 paths:
   /posts:
@@ -72,6 +75,13 @@ paths:
       summary: A large answer
       parameters: [{ name: size, in: query, schema: { type: integer }, example: 2500000 }]
       responses: { "201": { description: Text } }
+  /redirect:
+    get:
+      tags: [Posts]
+      summary: Moved
+      security: [{ header: [] }]
+      parameters: [{ name: to, in: query, schema: { type: string } }]
+      responses: { "302": { description: Elsewhere } }
   /ping:
     get:
       tags: [Posts]
@@ -121,6 +131,12 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(response.getByText("201 Created")).toBeVisible();
   await expect(response.getByText('"path": "/v1/posts"')).toBeVisible();
   await expect(response.getByText(/Sent through Tuti/)).toHaveCount(0);
+  // The body can be scrolled from the keyboard: it takes focus.
+  await response.getByLabel("Response body").focus();
+  await expect(response.getByLabel("Response body")).toBeFocused();
+  // The key is kept under this project's name as well as the reference's: another project's portal on the same site
+  // (another path of it, so the same session storage) with a reference of the same slug never gets it.
+  expect(await reader.evaluate(() => Object.keys(sessionStorage).filter((name) => name.startsWith("tuti.try-it.")))).toEqual([`tuti.try-it.${slug}.reference`]);
   // Straight from the browser, with the key.
   expect(open.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/posts", query: "?board=ideas", headers: { authorization: "Bearer sk_test_123" } });
   // Nothing of the reader's: no cookie, and no referrer (the page they're on).
@@ -227,6 +243,25 @@ test("a reader tries an operation with their key: from the browser, and through 
   const refused = get.getByRole("region", { name: "Response" });
   await expect(refused.getByText("Tuti sends requests only to this help center's own sites, and api.unverified.example isn't one")).toBeVisible();
   await expect(refused.getByText(/Sent through Tuti/)).toHaveCount(0);
+  await reader.unroute("https://api.unverified.example/**");
+
+  // A redirect to another site isn't followed: a browser would take the key header (X-API-Key) along. The console says
+  // so, and through Tuti (at the reader's word) shows the redirect, still not followed.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/moved");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const moved = reader.getByRole("dialog", { name: "Try it" });
+  await moved.getByLabel("API key (X-API-Key header)").fill("sk_header_1");
+  await moved.getByRole("textbox", { name: /^to\b/ }).fill(`${elsewhere.origin}/landed`);
+  await moved.getByRole("button", { name: "Send", exact: true }).click();
+  const redirected = moved.getByRole("region", { name: "Response" });
+  await expect(redirected.getByText(/^The API answered with a redirect, which Try it doesn't follow\./)).toBeVisible();
+  expect(open.requests.at(-1)).toMatchObject({ path: "/v1/redirect", headers: { "x-api-key": "sk_header_1" } });
+  expect(elsewhere.requests).toHaveLength(0);
+  await redirected.getByRole("button", { name: "Send through Tuti" }).click();
+  await expect(redirected.getByText("302 Found")).toBeVisible();
+  await expect(redirected.getByText("Sent through Tuti, which shows a redirect without following it.")).toBeVisible();
+  expect(elsewhere.requests).toHaveLength(0);
 
   // A key in a cookie goes through Tuti from the start: a browser sends no cookie it's given to another site.
   await reader.keyboard.press("Escape");
