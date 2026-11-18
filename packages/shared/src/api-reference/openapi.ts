@@ -331,6 +331,8 @@ function read(root: Obj): ApiDoc {
   /** The type a schema says it is, without "null", else what its keywords imply; and whether it may be null. */
   // Kept per schema, as its fields are: a long `enum`, `required` or `oneOf` is gone through once, not on every use.
   const typesOf = once(typesIn);
+  // One string per schema, shared by every place it's used: a long `pattern` isn't copied for each.
+  const limitsOf = once(constraints);
   const choicesOf = once(choicesIn);
   const firstOf = once((schema) => list(schema.enum).find((value) => value !== null));
   const requiredIn = new WeakMap<unknown[], Set<unknown>>();
@@ -354,7 +356,7 @@ function read(root: Obj): ApiDoc {
   }
 
   /** `stack`: the references it's inside. `folding`: the schemas above it that fold others in with `allOf`. */
-  type Place = { where: string; root: string; stack: string[]; named: number; folding: Obj[] };
+  type Place = { where: string; root: string; stack: Obj[]; named: number; folding: Obj[] };
 
   function toSchema(node: unknown, place: Place): ApiSchema {
     if (!isObj(node)) return { type: "any" };
@@ -364,13 +366,15 @@ function read(root: Obj): ApiDoc {
       if (!found) return { type: "object" };
       const { name } = found;
       // Only named: where it would contain itself, three named types down, or once there's too much to spell out.
-      if (place.stack.includes(node.$ref) || (name !== undefined && place.named >= NAMED_LEVELS) || !within) {
+      // By what it points at, not how the reference is spelled ("User%20Response").
+      const target = isObj(found.value) ? found.value : null;
+      if ((target && place.stack.includes(target)) || (name !== undefined && place.named >= NAMED_LEVELS) || !within) {
         return name === undefined ? { type: "object" } : { type: name, ref: name };
       }
       const inner = toSchema(found.value, {
         where: name === undefined ? place.where : `schemas › ${name}`,
         root: place.root,
-        stack: [...place.stack, node.$ref],
+        stack: target ? [...place.stack, target] : place.stack,
         named: place.named + (name === undefined ? 0 : 1),
         folding: place.folding,
       });
@@ -390,10 +394,14 @@ function read(root: Obj): ApiDoc {
     const parts = list(node.allOf);
     charge(parts.length);
     // (A schema that folds itself in adds nothing to itself.)
-    const folded = parts.flatMap((part) => (isObj(part) && typeof part.$ref === "string" && lookup(part.$ref)?.value !== node ? [part.$ref] : []));
+    const folded = parts.flatMap((part) => {
+      if (!isObj(part) || typeof part.$ref !== "string") return [];
+      const value = lookup(part.$ref)?.value;
+      return value === node ? [] : [{ pointer: part.$ref, value }];
+    });
     const words = [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && onlyWords(part, part === node ? "allOf" : undefined));
-    const alone = folded.length === 1 && words.length === parts.length ? folded[0] : undefined;
-    const inside = folded.find((pointer) => place.stack.includes(pointer)) ?? (place.folding.includes(node) ? folded[0] : undefined);
+    const alone = folded.length === 1 && words.length === parts.length ? folded[0]?.pointer : undefined;
+    const inside = (folded.find(({ value }) => isObj(value) && place.stack.includes(value)) ?? (place.folding.includes(node) ? folded[0] : undefined))?.pointer;
     const held = inside ?? alone;
     if (held !== undefined) {
       // Left out: fields and the like in a part of their own, or beside the reference.
@@ -406,7 +414,7 @@ function read(root: Obj): ApiDoc {
       // The schema's own words first, whatever else it has, then those in a part of their own.
       const said = (key: string) => [node, ...words].find((part) => Object.hasOwn(part, key))?.[key];
       const description = str(said("description")) || only.description;
-      const limits = constraints(node);
+      const limits = limitsOf(node);
       return {
         ...only,
         ...(description ? { description } : {}),
@@ -434,7 +442,7 @@ function read(root: Obj): ApiDoc {
     }
 
     if (typeof schema.format === "string") out.format = schema.format;
-    const limits = constraints(schema);
+    const limits = limitsOf(schema);
     if (limits) out.constraints = limits;
     const values = Object.hasOwn(schema, "const") ? [schema.const] : list(schema.enum);
     if (values.length > 0) out.enum = values;
@@ -521,7 +529,7 @@ function read(root: Obj): ApiDoc {
   }
 
   /** One schema as the pages show it; `named` is how many named types it's already inside. */
-  function schemaAt(node: unknown, where: string, stack: string[] = [], named = 0): ApiSchema {
+  function schemaAt(node: unknown, where: string, stack: Obj[] = [], named = 0): ApiSchema {
     rootNodes = 0;
     return toSchema(node, { where, root: where, stack, named, folding: [] });
   }
@@ -571,18 +579,24 @@ function read(root: Obj): ApiDoc {
 
   // Named types first: they're where a schema too deep to spell out elsewhere is read in full.
   const types: (Omit<ApiType, "slug"> & { slug?: string })[] = entries(own(root.components, "schemas")).map(([name, value]) => {
-    const schema = { ...schemaAt(value, `schemas › ${name}`, [`#/components/schemas/${name}`], 1), ref: name };
+    const schema = { ...schemaAt(value, `schemas › ${name}`, isObj(value) ? [value] : [], 1), ref: name };
     const kind = schema.enum ? "enum" : schema.properties || schema.type === "object" ? "object" : schema.oneOf ? "union" : "scalar";
     return { name, kind, schema };
   });
 
-  /** Where requests go: each address as the spec has it, with what may fill its variables. */
-  const serversOf = (servers: unknown, where: string): ApiServer[] =>
-    list(servers)
+  /** Where requests go: each address as the spec has it, with what may fill its variables. Made once per list, however many operations share it. */
+  function serversOf(servers: unknown, where: string): ApiServer[] {
+    const made = Array.isArray(servers) ? (serversMade.get(servers) ?? serversIn(servers)) : [];
+    if (Array.isArray(servers)) serversMade.set(servers, made);
+    // Relative ("/v1"): to wherever the spec was read from, which only what read it knows.
+    for (const server of made) if (!/^([a-z][a-z0-9+.-]*:|\{)/i.test(server.url)) warn("RELATIVE_SERVER", `${where} › ${server.url}`);
+    return made;
+  }
+  const serversMade = new WeakMap<unknown[], ApiServer[]>();
+  const serversIn = (servers: unknown[]): ApiServer[] =>
+    servers
       .filter((server): server is Obj => isObj(server) && typeof server.url === "string")
       .map((server) => {
-        // Relative ("/v1"): to wherever the spec was read from, which only what read it knows.
-        if (!/^([a-z][a-z0-9+.-]*:|\{)/i.test(str(server.url))) warn("RELATIVE_SERVER", `${where} › ${str(server.url)}`);
         const variables = entries(server.variables)
           .filter((entry): entry is [string, Obj] => isObj(entry[1]))
           .map(([name, variable]) => {
@@ -609,6 +623,11 @@ function read(root: Obj): ApiDoc {
     }
   }
 
+  /** An operation's title and the slug it makes, once per operation: a path item many paths point at has one of each. */
+  const titleOf = once((operation) => {
+    const title = str(operation.summary).trim() || inWords(str(operation.operationId));
+    return { title, slug: slugify(title) };
+  });
   const slugs = new Map<string, number>();
   const seen = new Map<string, number>();
   const operations: ApiOperation[] = [];
@@ -631,10 +650,12 @@ function read(root: Obj): ApiDoc {
       // An operation's lists count too, schemas or not: a shared path item's are read for every path that points at it.
       charge(1 + list(item.parameters).length + list(operation.parameters).length + list(operation.tags).length + list(operation.servers ?? item.servers).length);
 
-      const title = str(operation.summary).trim() || inWords(str(operation.operationId)) || key;
+      const named = titleOf(operation);
+      const title = named.title || key;
       if (!str(operation.summary).trim() && !str(operation.operationId)) warn("NO_TITLE", key);
-      const slug = unique(slugify(title) || slugify(key) || "operation", slugs);
-      if (slug !== (slugify(title) || slugify(key) || "operation")) warn("DUPLICATE_SLUG", key);
+      const proposed = named.slug || slugify(key) || "operation";
+      const slug = unique(proposed, slugs);
+      if (slug !== proposed) warn("DUPLICATE_SLUG", key);
 
       // The path's parameters, then the operation's: one of the same name and place replaces the path's.
       const params = new Map<string, ApiParam>();

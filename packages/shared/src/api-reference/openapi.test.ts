@@ -1059,6 +1059,13 @@ test("a path item that many paths point at counts for each of them", () => {
   // Parameters without a schema, and responses without content, are values like any other.
   expect(errorOf(pointing(400, item(3_000, 1)))).toMatch(/too large once its references are followed/);
   expect(errorOf(pointing(4_000, item(0, 300)))).toMatch(/too large once its references are followed/);
+  // So are a shared item's other keys, and an operation's tags and servers: each alone is too much.
+  const keys = Object.fromEntries(Array.from({ length: 5_000 }, (_, index) => [`x-${index}`, 1]));
+  expect(errorOf(pointing(300, { ...keys, get: { summary: "S" } }))).toMatch(/too large once its references are followed/);
+  const tags = Array.from({ length: 3_000 }, (_, index) => `T${index}`);
+  expect(errorOf(pointing(400, { get: { summary: "S", tags } }))).toMatch(/too large once its references are followed/);
+  const servers = Array.from({ length: 3_000 }, (_, index) => ({ url: `https://s${index}.example.com` }));
+  expect(errorOf(pointing(400, { get: { summary: "S", servers } }))).toMatch(/too large once its references are followed/);
   const few = read(pointing(50, item(20, 3)));
   expect(few.operations).toHaveLength(50);
   expect(few.operations[49]).toMatchObject({ key: "GET /49", group: "T", params: { length: 20 }, responses: { length: 3 } });
@@ -1097,6 +1104,34 @@ test("after many large types, an operation's own schemas are still read", () => 
   // The last types, read once the doc's room is spent, still list their fields.
   expect(doc.types[149]!.schema.properties).toHaveLength(30);
   expect(doc.types[149]!.schema.properties![29]).toMatchObject({ name: "f29", type: "S0", ref: "S0" });
+});
+
+test("what many places share is made once: a long pattern, a list of servers, a title", () => {
+  const paths = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`/${index}`, { $ref: "#/components/pathItems/Shared" }]));
+  const shared = {
+    servers: [{ url: "https://{v}.example.com", variables: { v: { default: "a", enum: ["a", "b"] } } }],
+    get: { operationId: "listAllTheThings", responses: { "200": json({ type: "object", properties: { a: ref("Code"), b: ref("Code") } }) } },
+  };
+  const doc = spec({ openapi: "3.1.0", paths, components: { pathItems: { Shared: shared }, schemas: { Code: { type: "string", pattern: "^[a-z]+$" } } } });
+  const [first, second] = doc.operations;
+  expect(second!.servers).toBe(first!.servers);
+  expect(first!.servers![0]!.variables).toEqual({ v: { default: "a", enum: ["a", "b"], description: "" } });
+  expect(doc.operations.map((one) => one.title)).toEqual(Array.from({ length: 30 }, () => "List all the things"));
+  expect(doc.operations[29]!.slug).toBe("list-all-the-things-30");
+  const [a, b] = first!.responses[0]!.schema!.properties!;
+  expect(a!.constraints).toBe("matches ^[a-z]+$");
+  expect(b!.constraints).toBe(a!.constraints);
+});
+
+test("a type whose reference is spelled another way is still not spelled out inside itself", () => {
+  const doc = spec({
+    components: { schemas: { "User Response": { type: "object", properties: { id: { type: "string" }, self: { $ref: "#/components/schemas/User%20Response" }, tilde: { $ref: "#/components/schemas/a~1b" } } }, "a/b": { type: "object", properties: { again: { $ref: "#/components/schemas/a%2Fb" } } } } },
+  });
+  expect(doc.types[0]!.schema.properties).toEqual([
+    { name: "id", required: false, type: "string" },
+    { name: "self", required: false, type: "User Response", ref: "User Response" },
+    { name: "tilde", required: false, type: "a/b", ref: "a/b", properties: [{ name: "again", required: false, type: "a/b", ref: "a/b" }] },
+  ]);
 });
 
 test("a spec that's too large once read is an error", () => {
