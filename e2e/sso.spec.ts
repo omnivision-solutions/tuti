@@ -241,7 +241,7 @@ test("a collection for one reader group: people the app signs in with that group
   await dialog.getByRole("radio", { name: "Specific groups" }).check();
   await dialog.getByRole("checkbox", { name: "Enterprise customers" }).check();
   await checkpoint(owner, "team-docs-collection-pick-group", { fullPage: false });
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(owner.getByText("Collection added")).toBeVisible();
   // Its page's Access says so.
   await owner.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Enterprise", exact: true }).click();
@@ -320,7 +320,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await expect(owner.getByText("Settings saved")).toBeVisible();
   // Unpublishing (behind "More actions") asks first; publishing again says who can read it.
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Unpublish" }).click();
+  await owner.getByRole("menuitem", { name: "Unpublish" }).click();
   const unpublishing = owner.getByRole("alertdialog", { name: "Unpublish “Pricing”?" });
   await expect(unpublishing).toContainText("Until you publish it again, readers can't open it and AI answers don't use it.");
   await checkpoint(owner, "team-docs-article-unpublish", { fullPage: false });

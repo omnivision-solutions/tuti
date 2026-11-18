@@ -6,8 +6,8 @@ import { toast } from "sonner";
 
 import { CopyButton } from "@/components/copy-button";
 import { CustomDomainSettings } from "@/components/custom-domain";
+import { SettingBlock, SettingsCard } from "@/components/settings-card";
 import { SiteMountSettings } from "@/components/site-mount";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 type Domain = ComponentProps<typeof CustomDomainSettings>["domain"];
@@ -65,12 +65,8 @@ export function OwnAddressSettings({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>How do you want to go live?</CardTitle>
-          <CardDescription>Where your portal and docs answer.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+      <SettingsCard title="How do you want to go live?" description="Where your portal and docs answer.">
+        <SettingBlock className="gap-3">
           <div role="radiogroup" aria-label="Where your portal goes live" className="flex flex-col gap-3">
             {options.map(({ value, title, example, icon: Icon, off }) => {
               const selected = choice === value;
@@ -112,11 +108,11 @@ export function OwnAddressSettings({
             })}
           </div>
           {connected && <p className="text-sm text-muted-foreground">To switch, remove {current} first.</p>}
-        </CardContent>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      <SettingsCard>
+        <SettingBlock className="text-sm">
           {/* Both, from before a portal could only have one: show both, so either can be removed. */}
           {domain && site ? (
             <>
@@ -146,8 +142,8 @@ export function OwnAddressSettings({
               <p className="text-sm text-muted-foreground">Every portal has one. It keeps working with a domain or a sub-folder too: the widget loads from it.</p>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
     </>
   );
 }
