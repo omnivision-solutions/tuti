@@ -78,6 +78,7 @@ export const APP_ROUTES = [
   "[project]/settings/ask-a-person",
   "[project]/settings/asking",
   "[project]/settings/autopilot",
+  "[project]/settings/autopilot/tuning",
   "[project]/settings/billing",
   "[project]/settings/branding",
   "[project]/settings/changelog",

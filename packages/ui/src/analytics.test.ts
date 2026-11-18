@@ -107,7 +107,7 @@ describe("analytics", () => {
   it("sends the app's addresses as routes, without customers' projects, people or content", () => {
     expect(safeAddress("https://tuti.so/app/acme/users/e2e-jane%40example.com")).toBe("https://tuti.so/app/[project]/users/[user]");
     expect(safeAddress("/app/acme/docs/getting-started/history")).toBe("/app/[project]/docs/[slug]/history");
-    expect(safeAddress("/app/acme/settings/ai-models/tuning")).toBe("/app/[project]/settings/ai-models/tuning");
+    expect(safeAddress("/app/acme/settings/autopilot/tuning")).toBe("/app/[project]/settings/autopilot/tuning");
     expect(safeAddress("/app/account")).toBe("/app/account");
     expect(safeAddress("/app/new")).toBe("/app/new");
     expect(safeAddress("/app/acme/no/such/page")).toBe("/app/[unknown]");

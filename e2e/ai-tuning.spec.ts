@@ -66,8 +66,12 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await prompt.getByRole("button", { name: "Not now" }).click();
   await expect(prompt).toBeHidden();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/settings/autopilot$`));
+  // With no values saved, nothing more is offered there.
+  await expect(owner.getByRole("link", { name: "See saved tuning values" })).toHaveCount(0);
   // The page is still at its address (an analysis that ran with tuning links to it): on Free it's shown, not changed.
+  // Its address under Settings → AI models, from before it moved, opens it too.
   await owner.goto(`/app/${slug}/settings/ai-models/tuning`);
+  await owner.waitForURL(`**/app/${slug}/settings/autopilot/tuning`);
   await expect(owner.getByRole("heading", { name: "Advanced tuning", level: 2 })).toBeVisible();
   // One way back, in the pane's header.
   await expect(owner.getByRole("region", { name: "Advanced tuning" }).getByRole("link", { name: /Autopilot/ })).toHaveAttribute("href", `/app/${slug}/settings/autopilot`);
@@ -86,7 +90,7 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await owner.goto(`/app/${slug}/settings/autopilot`);
   await expect(locked).toHaveCount(0);
   await owner.getByRole("link", { name: "Advanced tuning" }).click();
-  await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
+  await owner.waitForURL(`**/app/${slug}/settings/autopilot/tuning`);
   const fix = owner.getByRole("spinbutton", { name: "Fix an article from" });
   const deciding = owner.getByRole("spinbutton", { name: "Lookups before deciding" });
   const writing = owner.getByRole("spinbutton", { name: "Lookups before writing" });
@@ -181,6 +185,18 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await save.click();
   await second.answer;
   expect(await changedAt(slug)).toBe(before);
+
+  // Back on a plan without tuning, the values are kept and not used. The row opens the upgrade prompt again, so a link
+  // under it leads to the values: shown, not changed.
+  await query(`UPDATE project SET "planKey" = NULL WHERE slug = $1`, [slug]);
+  await owner.goto(`/app/${slug}/settings/autopilot`);
+  await expect(locked).toHaveAccessibleDescription("Advanced tuning needs the Business plan.");
+  await checkpoint(owner, "team-settings-autopilot-tuning-kept");
+  await owner.getByRole("link", { name: "See saved tuning values" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/autopilot/tuning`);
+  await expect(owner.getByText("This project's values are kept but not used; on a plan with Advanced tuning, they're used again.")).toBeVisible();
+  await expect(deciding).toHaveValue("8");
+  await expect(deciding).toBeDisabled();
 });
 
 // A server without plans: every project's tuning applies.
@@ -207,7 +223,7 @@ test("an analysis that ran with the project's tuning says so on its activity pag
 
   await owner.goto(activity);
   await expect(owner.getByText("Ran with this project's tuning: Fix an article from")).toBeVisible();
-  await expect(owner.getByRole("link", { name: "Ran with this project's tuning" })).toHaveAttribute("href", `/app/${slug}/settings/ai-models/tuning`);
+  await expect(owner.getByRole("link", { name: "Ran with this project's tuning" })).toHaveAttribute("href", `/app/${slug}/settings/autopilot/tuning`);
 
   // A member reads which values, with no link (Settings is for owners and admins).
   const member = await signUp(browser, APP_URL, "Mo Member");
