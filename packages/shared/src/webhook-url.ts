@@ -45,7 +45,8 @@ for (const [network, prefix] of [
   blocked.addSubnet(network, prefix, "ipv6");
 }
 
-function isPrivate(address: string): boolean {
+/** Whether an IP address is one of our own network's kind (private, loopback, link-local, …), never one to connect to. */
+export function isPrivate(address: string): boolean {
   // IPv4 written as IPv6 (::ffff:10.0.0.1) is checked as the IPv4 address it is.
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
   if (mapped) {

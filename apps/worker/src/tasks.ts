@@ -35,5 +35,7 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
         }
       : own && { concurrency: own }),
     ...(key === "importStep" && { executionTimeout: IMPORT_STEP_TIMEOUT }),
+    // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
+    ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
   };
 }

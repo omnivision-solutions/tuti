@@ -11,3 +11,15 @@ export async function forwardToPortal(path: string, portal: string) {
     throw new Error(`Couldn't make the site forward ${path} (${response.status})`);
   }
 }
+
+/** Makes the site answer `path` with `body` (200, text/plain); null: its own 404. */
+export async function siteAnswers(path: string, body: string | null) {
+  const response = await fetch(`${siteUrl()}/_fake/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, body }),
+  });
+  if (!response.ok) {
+    throw new Error(`Couldn't make the site answer ${path} (${response.status})`);
+  }
+}

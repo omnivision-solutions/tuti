@@ -37,11 +37,15 @@ export default async function ApiReferenceSettingsPage(props: PageProps<"/app/[p
         reference={{ slug: reference.slug, name: reference.name, baseUrl: reference.baseUrl, treeStyle: reference.treeStyle, tryIt: reference.tryIt }}
         source={{
           kind: reference.source,
+          url: reference.sourceUrl,
           rows: [
-            ["From", reference.source === "upload" ? "Uploaded file" : reference.source],
+            ["From", reference.source === "upload" ? "Uploaded file" : reference.source === "url" ? "A URL" : reference.source],
             ["Format", reference.version ? `${format} · version ${reference.version}` : format],
-            ["Last read", timeAgo(reference.syncedAt)],
+            // A URL's sync is tried every 6 hours: when it last was, and when one last worked.
+            ...(reference.source === "url" ? ([["Last tried", timeAgo(reference.syncTriedAt)]] as [string, string][]) : []),
+            [reference.source === "url" ? "Last synced" : "Last read", timeAgo(reference.syncedAt)],
             ["Last changed", timeAgo(reference.changedAt)],
+            ...(reference.syncError ? ([["Last sync failed", reference.syncError]] as [string, string][]) : []),
           ],
         }}
         groups={reference.groups.map((group) => ({ key: group.key, name: group.name, endpoints: reference.operations.filter((operation) => operation.group === group.key).length }))}

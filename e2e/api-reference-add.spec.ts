@@ -87,6 +87,9 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await team.getByRole("menuitem", { name: "API reference" }).click();
   const dialog = team.getByRole("dialog", { name: "Add API reference" });
   const add = dialog.getByRole("button", { name: "Add reference" });
+  // A URL is the first source: a file is the other.
+  await expect(dialog.getByRole("radio", { name: /From a URL/ })).toBeChecked();
+  await dialog.getByText("Upload a file", { exact: true }).click();
   await expect(dialog.getByText("OpenAPI 3.0 or 3.1 (JSON or YAML), or a GraphQL schema")).toBeVisible();
   // Nothing to add until there's a spec.
   await expect(add).toBeDisabled();
@@ -252,6 +255,7 @@ for (const where of ["on Tab", "typing in Name"] as const) {
     await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("button", { name: "Add to your docs" }).click();
     await team.getByRole("menuitem", { name: "API reference" }).click();
     const dialog = team.getByRole("dialog", { name: "Add API reference" });
+    await dialog.getByText("Upload a file", { exact: true }).click();
     const name = dialog.getByLabel("Name");
     const tab = dialog.getByRole("combobox", { name: "Tab" });
     await dialog.getByLabel("Spec file").setInputFiles(file("openapi.yaml", SPEC));

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { EyeIcon, EyeOffIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, RefreshCwIcon, Trash2Icon, UploadIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -22,7 +22,14 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { deleteApiReference, markApiReferenceSeen, replaceApiReferenceSpec, setApiReferencePublished, setApiReferenceShown } from "@/server/api-references";
+import {
+  deleteApiReference,
+  markApiReferenceSeen,
+  replaceApiReferenceSpec,
+  setApiReferencePublished,
+  setApiReferenceShown,
+  syncApiReferenceNow,
+} from "@/server/api-references";
 
 /** An API reference's page in the app (docs/plan.md, A8): its header's actions and its Endpoints. */
 
@@ -66,9 +73,50 @@ export function ApiReferenceTabs({ projectSlug, slug, endpoints }: { projectSlug
   );
 }
 
+/** What a new read of the spec did, for its toast: how many operations it added and removed, else whether anything changed. */
+const toastChanges = (result: { added?: number; removed?: number; changed?: boolean }) =>
+  toast.success([result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ") || (result.changed ? "Updated" : "No changes"));
+
+/** The header's Sync now, where focus goes when the failed sync's banner (and its own Sync now) goes. */
+const HEADER_SYNC = "api-reference-sync-now";
+
+/**
+ * "Sync now": a URL's reference read again. A failed read says why in a toast, and the page's banner keeps saying it.
+ * The banner's (`compact`) goes once a sync works: focus moves to the header's first, so it isn't lost. In the header
+ * its words go in a narrow pane; elsewhere (the banner, Settings' Source) they stay.
+ */
+export function SyncNow({ projectSlug, slug, compact, inHeader }: { projectSlug: string; slug: string; compact?: boolean; inHeader?: boolean }) {
+  const [pending, startTransition] = useTransition();
+  const sync = () =>
+    startTransition(async () => {
+      const result = await syncApiReferenceNow(projectSlug, slug).catch(() => ({ error: "Couldn't sync. Try again." }) as Awaited<ReturnType<typeof syncApiReferenceNow>>);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        if (compact) document.getElementById(HEADER_SYNC)?.focus();
+        toastChanges(result);
+      }
+    });
+  return (
+    <Button
+      id={inHeader ? HEADER_SYNC : undefined}
+      type="button"
+      variant="outline"
+      size={compact ? "sm" : "default"}
+      disabled={pending}
+      focusableWhenDisabled
+      onClick={sync}
+      className={cn(inHeader && "@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0")}
+    >
+      <RefreshCwIcon className={cn(pending && "animate-spin")} />
+      <span className={cn(inHeader && "@max-[44rem]/docs-page:sr-only")}>{pending ? "Syncing…" : "Sync now"}</span>
+    </Button>
+  );
+}
+
 /**
  * The header's button that reads the spec again. An uploaded file's is "Upload new version": pick the file, and the toast
- * says what it added and removed. A URL's or a repository's is read from where it lives ("Sync now"), with those sources.
+ * says what it added and removed. A URL's is "Sync now", read from where it lives; a repository's comes with that source.
  */
 export function ApiReferenceSync({
   projectSlug,
@@ -86,6 +134,9 @@ export function ApiReferenceSync({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  if (source === "url") {
+    return <SyncNow projectSlug={projectSlug} slug={slug} inHeader={inHeader} />;
+  }
   if (source !== "upload") {
     return null;
   }
@@ -101,7 +152,7 @@ export function ApiReferenceSync({
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success([result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ") || (result.changed ? "Updated" : "No changes"));
+        toastChanges(result);
       }
     });
   };
@@ -124,6 +175,18 @@ export function ApiReferenceSync({
         <span className={cn(inHeader && "@max-[44rem]/docs-page:sr-only")}>Upload new version</span>
       </Button>
     </>
+  );
+}
+
+/** A URL's last sync failed: why, and when one last worked (the pages are as that one left them), with Sync now. */
+export function ApiReferenceSyncError({ projectSlug, slug, error, lastSynced }: { projectSlug: string; slug: string; error: string; lastSynced: string }) {
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-muted px-3.5 py-2.5 text-sm">
+      <p className="min-w-0 flex-1 basis-64">
+        <span className="font-medium">Sync failed.</span> {error} <span className="text-muted-foreground">Last synced {lastSynced}: the pages are as it left them.</span>
+      </p>
+      <SyncNow projectSlug={projectSlug} slug={slug} compact />
+    </div>
   );
 }
 

@@ -96,6 +96,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "apiReferences.create": () => ({ name: "Public API", spec: MATRIX_SPEC }),
   "apiReferences.update": () => ({ slug: "matrix-reference", name: "Renamed by the matrix", hide: ["GET /matrix"] }),
   "apiReferences.replace": () => ({ slug: "matrix-reference", spec: MATRIX_SPEC.replace("List matrix", "List them") }),
+  "apiReferences.sync": () => ({ slug: "matrix-url-reference" }),
   "apiReferences.delete": () => ({ slug: "matrix-reference" }),
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
@@ -298,6 +299,14 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const reference = JSON.parse(JSON.stringify(settle(null, (readSpec(MATRIX_SPEC) as { doc: ApiDoc }).doc))) as { doc: object; state: object };
   await prisma.apiReference.create({
     data: { projectId: project.id, tabId: docs.id, slug: "matrix-reference", name: "Matrix reference", format: "OPENAPI", spec: MATRIX_SPEC, doc: reference.doc, state: reference.state, operationCount: 1, shownCount: 1 },
+  });
+  // And one read from a URL (the local site), to sync.
+  site.answer("/matrix-openapi.json", MATRIX_SPEC.replace("List matrix", "List them"));
+  await prisma.apiReference.create({
+    data: {
+      ...{ projectId: project.id, tabId: docs.id, slug: "matrix-url-reference", name: "Matrix URL reference", format: "OPENAPI", spec: MATRIX_SPEC, doc: reference.doc, state: reference.state },
+      ...{ source: "URL", sourceUrl: `${site.origin}/matrix-openapi.json`, operationCount: 1, shownCount: 1, order: 1 },
+    },
   });
   await prisma.article.createMany({
     data: [

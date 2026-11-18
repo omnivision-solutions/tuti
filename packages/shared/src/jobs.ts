@@ -277,6 +277,12 @@ export const jobs = {
     input: z.object({}),
     cron: "7 * * * *",
   },
+  /** Reads each API reference from a URL again 6 hours after its last try (docs/plan.md, API reference in Docs, A10). */
+  syncApiReferences: {
+    name: "sync-api-references",
+    input: z.object({}),
+    cron: "41 * * * *",
+  },
 } as const satisfies Record<string, JobOptions>;
 
 export type JobKey = keyof typeof jobs;
