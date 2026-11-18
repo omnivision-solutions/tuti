@@ -7,6 +7,7 @@ import { DOCS_HEADING } from "@/lib/portal-look";
 import { postNumberFromParam } from "@/lib/post-urls";
 import { publishedEntries } from "@/server/changelog-queries";
 import { portalAddress } from "@/server/custom-domains";
+import { type ApiReferencePage, apiReferencePage } from "@/server/api-reference-queries";
 import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
 import { canReadPortal, currentPostViewer, currentReader, mayRead } from "@/server/portal-access";
 import { portalSite } from "@/server/portal-metadata";
@@ -53,7 +54,13 @@ async function cardFor(slug: string, site: Site, path: string[]): Promise<ShareC
       // The portal itself: its search listing's description under its title, else its title.
       return site.brand.seo.description ? { eyebrow: site.name, title: site.brand.seo.description, picture: "page" } : { eyebrow: "", title: site.name, picture: "page" };
     case "docs":
-      return rest.length === 0 ? docsCard(site, await docsHome(slug)) : rest.length === 1 ? docsPageCard(site, await docsPage(slug, rest[0]!)) : null;
+      return rest.length === 0
+        ? docsCard(site, await docsHome(slug))
+        : rest.length === 1
+          ? docsPageCard(site, await docsPage(slug, rest[0]!))
+          : rest.length === 2
+            ? operationCard(await apiReferencePage(slug, rest[0]!), rest[1]!)
+            : null;
     case "feedback":
       return feedbackCard(site.project.id, rest);
     case "roadmap":
@@ -72,6 +79,12 @@ function docsCard(site: Site, home: Awaited<ReturnType<typeof docsHome>>): Share
 
 function landingCard(landing: TabLanding): ShareCard | null {
   return landing.kind === "overview" ? null : docsPageCard(null, landing);
+}
+
+/** An API reference's operation: its title under the reference's name (a locked one's too, as a locked article's). */
+function operationCard(page: ApiReferencePage | null, slug: string): ShareCard | null {
+  const title = page?.operations.find((operation) => operation.slug === slug)?.title;
+  return page && title !== undefined ? { eyebrow: `Documentation · ${page.reference.name}`, title, picture: "page" } : null;
 }
 
 function docsPageCard(site: Site | null, page: DocsPage | TabLanding | null): ShareCard | null {

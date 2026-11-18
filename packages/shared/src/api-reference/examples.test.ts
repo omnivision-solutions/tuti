@@ -64,6 +64,14 @@ describe("exampleRequest: where it goes", () => {
     expect(exampleRequest(doc(), operation(), { server: "/proxy" }).url).toBe("/proxy/posts");
   });
 
+  it("puts a server without a host, or no server, on the base it's given, and leaves a server with a host alone", () => {
+    const base = "https://acme.test/";
+    expect(exampleRequest(doc({ servers: [{ url: "/api/v3", description: "" }] }), operation(), { base }).url).toBe("https://acme.test/api/v3/posts");
+    expect(exampleRequest(doc({ servers: [{ url: ".", description: "" }] }), operation(), { base }).url).toBe("https://acme.test/posts");
+    expect(exampleRequest(doc({ servers: [] }), operation(), { base }).url).toBe("https://acme.test/posts");
+    expect(exampleRequest(doc(), operation(), { base }).url).toBe("https://api.acme.test/v1/posts");
+  });
+
   it("joins a server and a path with one slash, however many either has", () => {
     const many = "/".repeat(5000);
     expect(exampleRequest(doc({ servers: [{ url: `https://api.acme.test${many}`, description: "" }] }), operation({ path: `${many}posts` })).url).toBe("https://api.acme.test/posts");

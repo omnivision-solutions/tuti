@@ -22,21 +22,28 @@ function trimSlashes(text: string, at: "start" | "end"): string {
  * A spec's server as an address that can be called. One without a host ("/v1", "v1") goes on the
  * placeholder's, as nothing here knows where the spec is served; "//host/v1" only lacks its scheme.
  */
-function absolute(server: string): string {
+function absolute(server: string, base: string): string {
   if (server.startsWith("//")) return `https:${server}`;
   if (/^[a-z][a-z0-9+.-]*:/i.test(server)) return server;
-  // "./v1" and "." are relative to where the spec is: the placeholder's root here.
+  // "./v1" and "." are relative to where the spec is: the base's root here.
   const path = trimSlashes(server.startsWith("./") ? server.slice(2) : server === "." ? "" : server, "start");
-  return path ? `${PLACEHOLDER_HOST}/${path}` : PLACEHOLDER_HOST;
+  return path ? `${base}/${path}` : base;
 }
 
-export type ExampleOptions = { server?: string; token?: string };
+export type ExampleOptions = {
+  /** Where requests go, whatever the spec says. */
+  server?: string;
+  /** Where a spec's server without a host is (the reference's `baseUrl`), and where requests go when the spec names no server; the placeholder's host without it. */
+  base?: string;
+  token?: string;
+};
 
 /** The request an operation's page shows and the console starts from. */
 export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: ExampleOptions = {}): ExampleRequest {
   const spec = operation.servers?.[0] ?? doc.servers[0];
   // A server from the spec may have variables in its address; one asked for is used as it is.
-  const server = options.server ?? (spec ? absolute(spec.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder)) : PLACEHOLDER_HOST);
+  const base = options.base ? trimSlashes(options.base, "end") : PLACEHOLDER_HOST;
+  const server = options.server ?? (spec ? absolute(spec.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder), base) : base);
   const token = options.token ?? "YOUR_API_KEY";
   const headers: Record<string, string> = {};
   let query: [name: string, value: string][] = [];

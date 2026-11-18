@@ -1,0 +1,260 @@
+import { type NoAccess, prisma, type ReadAccess } from "@tuti/db";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
+import { beforeEach, describe, expect, test } from "vitest";
+
+import DocsOperationPage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/[operation]/page";
+import DocsSlugPage from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
+import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+
+import { apiReferencePage, markdownDoc } from "./api-reference-queries";
+import { createApiReference, updateApiReference } from "./operations/api-references";
+import { createArticle, createCollection, createTab, publishArticle } from "./operations/docs";
+import { call } from "./operations/run";
+
+/**
+ * The portal's page for an API reference's operation: only what's on the help center has one, for
+ * whoever may read the reference's tab, as an article in that tab.
+ */
+
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+
+/** In the operations' descriptions and fields and nowhere else: whatever has it shows what an operation says. */
+const SECRET = "zebra";
+
+const SPEC = `
+openapi: 3.1.0
+info: { title: Acme API, version: "1" }
+servers: [{ url: /v1 }]
+components:
+  securitySchemes:
+    key: { type: http, scheme: bearer }
+security: [{ key: [] }]
+paths:
+  /posts/{number}:
+    get:
+      tags: [Posts]
+      summary: Get a post
+      description: "Reads a **${SECRET}** post.\\n\\n<script>alert('pwned')</script><img src=x onerror=alert(1)>"
+      parameters:
+        - { name: number, in: path, required: true, description: The ${SECRET} number, schema: { type: integer, minimum: 1 } }
+        - { name: expand, in: query, schema: { type: string, enum: [author, votes], default: author } }
+      responses:
+        "200":
+          description: The post
+          content:
+            application/json:
+              schema: { type: object, properties: { title: { type: string }, author: { type: object, properties: { name: { type: string } } } } }
+              example: { title: "Dark ${SECRET} mode" }
+        "404": { description: No such post }
+  /posts:
+    post:
+      tags: [Posts]
+      summary: Create a post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [title], properties: { title: { type: string, description: What the ${SECRET} asks } } }
+      responses: { "201": { description: Created } }
+  /admin/purge:
+    delete:
+      tags: [Admin]
+      summary: Purge
+      responses: { "204": { description: Gone } }
+`;
+
+const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+
+/** Two tabs, Guides (first, with an article) and API, with the reference in API. */
+beforeEach(async () => {
+  owner = await signUp("Owner");
+  project = await createProject(owner);
+  await call(createTab, as(), { name: "Guides" });
+  await call(createTab, as(), { name: "API" });
+  await call(createCollection, as(), { name: "Basics", tab: "guides" });
+  const { slug } = await call(createArticle, as(), { title: "Getting started", body: "Hello.", collection: "basics" });
+  await call(publishArticle, as(), { slug });
+  await call(createApiReference, as(), { name: "Reference", spec: SPEC, tab: "api" });
+  actAs(null);
+});
+
+const setTab = (access: ReadAccess, noAccess: NoAccess = "INHERIT") =>
+  prisma.docsTab.update({ where: { projectId_slug: { projectId: project.id, slug: "api" } }, data: { access, noAccess } });
+
+const params = (operation: string, slug = "reference") => ({ params: Promise.resolve({ project: project.slug, slug, operation }) }) as never;
+
+/** A server component's output with the server components in it rendered too; a client component stays as its name and props. */
+async function rendered(node: ReactNode): Promise<unknown> {
+  if (Array.isArray(node)) {
+    return Promise.all(node.map((child: ReactNode) => rendered(child)));
+  }
+  if (!isValidElement(node)) {
+    return node;
+  }
+  const { type, props } = node as ReactElement<Record<string, unknown>>;
+  if (typeof type === "function") {
+    try {
+      return await rendered(await (type as (props: object) => ReactNode | Promise<ReactNode>)(props));
+    } catch {
+      // A client component: its props.
+    }
+  }
+  return { component: typeof type === "function" ? type.name : type, props: { ...props, children: await rendered(props.children as ReactNode) } };
+}
+
+/** All an operation's page sends this reader, and its metadata, as one string. */
+async function pageText(operation: string) {
+  // Each object once: props can share, or loop back to, objects.
+  const seen = new WeakSet();
+  return JSON.stringify([await rendered(await DocsOperationPage(params(operation))), await generateMetadata(params(operation))], (_, value: unknown) => {
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) {
+        return undefined;
+      }
+      seen.add(value);
+    }
+    return value;
+  });
+}
+
+/** The status of an operation's link card. */
+const card = async (operation: string) =>
+  (await shareImage(new Request("http://x"), { params: Promise.resolve({ project: project.slug, path: ["docs", "reference", operation] }) })).status;
+
+/** Whether the page is "not found". */
+const missing = async (operation: string, slug?: string) =>
+  ((await DocsOperationPage(params(operation, slug)).then(
+    () => null,
+    (error: { digest?: string }) => error.digest,
+  )) ?? "").startsWith("NEXT_HTTP_ERROR_FALLBACK;404");
+
+describe("an operation's page", () => {
+  test("shows a published reference's operation to everyone: its method and path, parameters, examples and its tab's tree", async () => {
+    const page = await apiReferencePage(project.slug, "reference");
+    expect(page).toMatchObject({ kind: "reference", tab: "api", restricted: false, reference: { name: "Reference", treeStyle: "FOLDERS" }, references: [{ slug: "reference" }] });
+    expect(page?.operations.map((o) => o.slug)).toEqual(["get-a-post", "create-a-post", "purge"]);
+    const text = await pageText("get-a-post");
+    for (const shown of ["Get a post", "/posts/", "{number}", "Path parameters", "Query parameters", "expand", "at least 1", "Bearer token", "No such post", "curl ", "import requests", `Dark ${SECRET} mode`, "Create a post", "Admin"]) {
+      expect(text).toContain(shown);
+    }
+    // A server without a host: the placeholder's, until the team says where the API is.
+    expect(text).toContain("https://api.example.com/v1/posts/1");
+    expect(await generateMetadata(params("get-a-post"))).toMatchObject({
+      title: "Get a post · Reference",
+      alternates: { canonical: expect.stringMatching(/\/docs\/reference\/get-a-post$/) },
+    });
+    expect((await generateMetadata(params("get-a-post"))).robots).toBeUndefined();
+    expect(await card("get-a-post")).toBe(200);
+    expect(await card("no-such-operation")).toBe(404);
+  });
+
+  test("renders the spec's Markdown as content, never as markup", async () => {
+    const text = await pageText("get-a-post");
+    expect(text).toContain(`{"component":"strong","props":{"children":"${SECRET}"}}`);
+    for (const markup of ["dangerouslySetInnerHTML", "pwned", "onerror", "<script"]) {
+      expect(text).not.toContain(markup);
+    }
+    // A plain sentence is a paragraph as it is.
+    expect(await markdownDoc("Plain words, 3-200 characters.")).toEqual({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Plain words, 3-200 characters." }] }] });
+    expect(JSON.stringify(await markdownDoc("- one\n- two"))).toContain("bulletList");
+  });
+
+  test("sends examples to the team's base address when the spec's server has no host", async () => {
+    await call(updateApiReference, as(), { slug: "reference", baseUrl: "https://acme.test" });
+    const text = await pageText("get-a-post");
+    expect(text).toContain("https://acme.test/v1/posts/1");
+    expect(text).not.toContain("api.example.com");
+  });
+
+  test("is a 404 for a hidden operation, one in a hidden group, an unknown slug and an unpublished reference", async () => {
+    await call(updateApiReference, as(), { slug: "reference", hide: ["POST /posts"], hideGroups: ["Admin"] });
+    expect((await apiReferencePage(project.slug, "reference"))?.operations.map((o) => o.slug)).toEqual(["get-a-post"]);
+    expect(await missing("create-a-post")).toBe(true);
+    expect(await missing("purge")).toBe(true);
+    expect(await missing("no-such-operation")).toBe(true);
+    expect(await missing("get-a-post", "no-such-reference")).toBe(true);
+    expect(await missing("get-a-post")).toBe(false);
+    // What's hidden isn't in the tree either.
+    const text = await pageText("get-a-post");
+    expect(text).not.toContain("Create a post");
+    expect(text).not.toContain("Purge");
+    // The team too: the portal shows what readers get.
+    actAs(owner);
+    expect(await missing("create-a-post")).toBe(true);
+    await call(updateApiReference, as(), { slug: "reference", published: false });
+    expect(await apiReferencePage(project.slug, "reference")).toBeNull();
+    expect(await missing("get-a-post")).toBe(true);
+  });
+
+  test("a reference with every operation hidden is a 404", async () => {
+    await call(updateApiReference, as(), { slug: "reference", hideGroups: ["Posts", "Admin"] });
+    expect(await apiReferencePage(project.slug, "reference")).toBeNull();
+  });
+
+  test("the reference's own address goes to its first operation on the help center", async () => {
+    const slugPage = (slug: string) => DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug }) } as never);
+    expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/get-a-post");
+    await call(updateApiReference, as(), { slug: "reference", hide: ["GET /posts/{}"] });
+    expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/create-a-post");
+    await setTab("SIGNED_IN");
+    await expect(redirectTarget(slugPage("reference"))).rejects.toThrow("Expected the action to redirect");
+  });
+});
+
+describe("in a tab for some readers only", () => {
+  test("it's a 404 for a visitor the tab isn't for, and read by those it's for and the team", async () => {
+    await setTab("SIGNED_IN");
+    expect(await apiReferencePage(project.slug, "reference")).toBeNull();
+    expect(await missing("get-a-post")).toBe(true);
+    expect(await generateMetadata(params("get-a-post"))).toEqual({});
+    expect(await card("get-a-post")).toBe(404);
+    actAs(await signUp("Reader"));
+    expect(await apiReferencePage(project.slug, "reference")).toMatchObject({ kind: "reference", restricted: true });
+    expect(await pageText("get-a-post")).toContain(SECRET);
+    // Not for search engines: not everyone may read it.
+    expect(await generateMetadata(params("get-a-post"))).toMatchObject({ robots: { index: false } });
+    // For a group nobody is in: the team's only.
+    await setTab("GROUPS");
+    expect(await missing("get-a-post")).toBe(true);
+    actAs(owner);
+    expect(await pageText("get-a-post")).toContain(SECRET);
+  });
+
+  test("a tab that shows what's in it with a lock: the operation's title and what to do, nothing it says", async () => {
+    await setTab("SIGNED_IN", "LOCK");
+    expect(await apiReferencePage(project.slug, "reference")).toEqual({
+      kind: "locked",
+      reference: { slug: "reference", name: "Reference" },
+      tab: "api",
+      operations: [
+        { slug: "get-a-post", title: "Get a post" },
+        { slug: "create-a-post", title: "Create a post" },
+        { slug: "purge", title: "Purge" },
+      ],
+      signedIn: false,
+    });
+    const text = await pageText("get-a-post");
+    expect(text).toContain("Get a post");
+    expect(text).toContain("Sign in to read this.");
+    for (const kept of [SECRET, "/posts", "curl", "Create a post", "Bearer"]) {
+      expect(text).not.toContain(kept);
+    }
+    expect(await generateMetadata(params("get-a-post"))).toMatchObject({ title: "Get a post · Reference", robots: { index: false } });
+    expect(await missing("no-such-operation")).toBe(true);
+    // Signed in, and still not for them (a group nobody is in).
+    await setTab("GROUPS", "LOCK");
+    actAs(await signUp("Stranger"));
+    const stranger = await pageText("get-a-post");
+    expect(stranger).toContain("You don't have access to this.");
+    expect(stranger).not.toContain(SECRET);
+  });
+
+  test("a reference in no tab is under the first, as an article in no collection is", async () => {
+    await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { tabId: null } });
+    expect(await apiReferencePage(project.slug, "reference")).toMatchObject({ kind: "reference", tab: null });
+    await prisma.docsTab.update({ where: { projectId_slug: { projectId: project.id, slug: "guides" } }, data: { access: "SIGNED_IN" } });
+    expect(await apiReferencePage(project.slug, "reference")).toBeNull();
+  });
+});
