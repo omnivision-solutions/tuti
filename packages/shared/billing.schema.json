@@ -99,6 +99,7 @@
                 "emailDomain",
                 "launcherIcon",
                 "reporting",
+                "aiLevels",
                 "aiTuning"
               ]
             },

@@ -47,6 +47,7 @@ export const serverEnv = {
   OPENAI_API_KEY: "",
   OPENAI_BASE_URL: "",
   AI_MODEL: "",
+  AI_LEVELS_CONFIG: "",
   AI_MODEL_ANSWERS: "",
   AI_MODEL_ESCALATIONS: "",
   AI_MODEL_SUPPORT: "",
