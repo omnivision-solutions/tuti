@@ -3,7 +3,6 @@
 import type { FormState } from "./form-state";
 import {
   deleteApiReference as deleteOperation,
-  getApiReference,
   replaceApiReference as replaceOperation,
   updateApiReference,
 } from "./operations/api-references";
@@ -21,9 +20,9 @@ export async function setApiReferenceShown(projectSlug: string, slug: string, wh
   );
 }
 
-/** The team has opened Endpoints: nothing there is new any more. */
-export async function markApiReferenceSeen(projectSlug: string, slug: string): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(updateApiReference, context, { slug: String(slug), seen: true }));
+/** The team has opened Endpoints and seen operations `keys` as new: they aren't any more. What a read added since still is. */
+export async function markApiReferenceSeen(projectSlug: string, slug: string, keys: string[]): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(updateApiReference, context, { slug: String(slug), seen: Array.isArray(keys) ? keys.map(String) : [] }));
 }
 
 /** "Unpublish" and "Publish" under More. */
@@ -33,20 +32,15 @@ export async function setApiReferencePublished(projectSlug: string, slug: string
 
 /**
  * "Upload new version": the form's `spec` file replaces the reference's spec. Says how many operations the new
- * one added and removed (by their keys), for the toast.
+ * one added and removed, and whether anything changed, for the toast.
  */
-export async function replaceApiReferenceSpec(projectSlug: string, slug: string, formData: FormData): Promise<FormState & { added?: number; removed?: number }> {
+export async function replaceApiReferenceSpec(projectSlug: string, slug: string, formData: FormData): Promise<FormState & { added?: number; removed?: number; changed?: boolean }> {
   const file = formData.get("spec");
-  const counts = { added: 0, removed: 0 };
+  let changes = {};
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    const keys = async () => new Set((await call(getApiReference, context, { slug: String(slug) })).operations.map((operation) => operation.key));
-    const before = await keys();
-    await call(replaceOperation, context, { slug: String(slug), spec: typeof file === "string" ? file : ((await file?.text()) ?? "") });
-    const after = await keys();
-    counts.added = [...after].filter((key) => !before.has(key)).length;
-    counts.removed = [...before].filter((key) => !after.has(key)).length;
+    ({ changes } = await call(replaceOperation, context, { slug: String(slug), spec: typeof file === "string" ? file : ((await file?.text()) ?? "") }));
   });
-  return result.error ? result : counts;
+  return result.error ? result : changes;
 }
 
 export async function deleteApiReference(projectSlug: string, slug: string): Promise<FormState> {

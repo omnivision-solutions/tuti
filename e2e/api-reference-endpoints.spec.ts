@@ -43,11 +43,11 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await expect(posts.getByRole("listitem").filter({ hasText: "List posts" })).toContainText("GET/posts");
 
   // One operation off, then a whole group: its operations' switches grey, keeping their own choice.
-  await team.getByRole("switch", { name: "Create a post: on the help center" }).uncheck();
+  await team.getByRole("switch", { name: "Create a post (POST /posts): on the help center" }).uncheck();
   await expect(team.getByText("2 of 3 on the help center")).toBeVisible();
   await team.getByRole("switch", { name: "Admin: on the help center" }).uncheck();
   await expect(team.getByText("1 of 3 on the help center")).toBeVisible();
-  const deletePost = team.getByRole("switch", { name: "Delete a post: on the help center" });
+  const deletePost = team.getByRole("switch", { name: "Delete a post (DELETE /posts/{id}): on the help center" });
   await expect(deletePost).toBeDisabled();
   await expect(deletePost).toBeChecked();
   await checkpoint(team, "endpoints");
@@ -56,7 +56,7 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await expect.poll(async () => (await saved()).counts.onHelpCenter).toBe(1);
   await team.reload();
   await expect(team.getByText("1 of 3 on the help center")).toBeVisible();
-  await expect(team.getByRole("switch", { name: "Create a post: on the help center" })).not.toBeChecked();
+  await expect(team.getByRole("switch", { name: "Create a post (POST /posts): on the help center" })).not.toBeChecked();
   await expect(team.getByRole("switch", { name: "Admin: on the help center" })).not.toBeChecked();
 
   // A new version adds an operation: New, and off the help center since the team has hidden something.
@@ -71,7 +71,7 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await expect(team.getByText("1 new endpoint was added hidden.")).toBeVisible();
   await expect(team.getByRole("link", { name: "Review it below." })).toHaveAttribute("href", "#endpoint-list-comments");
   await expect(team.getByText("1 of 4 on the help center")).toBeVisible();
-  await expect(team.getByRole("switch", { name: "List comments: on the help center" })).not.toBeChecked();
+  await expect(team.getByRole("switch", { name: "List comments (GET /comments): on the help center" })).not.toBeChecked();
   await checkpoint(team, "new-version");
 
   // Seen: on the next visit nothing is New.

@@ -232,7 +232,7 @@ export const createApiReference = defineOperation({
 export const updateApiReference = defineOperation({
   name: "apiReferences.update",
   summary:
-    "Change an API reference: its `name` (its address stays), its address (`newSlug`: one no tab, collection, article or other reference has; 409 otherwise), its `tab` (it goes last there), whether it's `published`, how it sits in the docs' tree (`treeStyle`: each group a folder, `folders`; a heading, `headings`; or one `entry`), the groups' order (`groupOrder`: groups' keys, the ones left out after them), and where requests go when the spec's servers have no host (`baseUrl`, an http(s) address; null removes it). `hide` and `show` take operations off and put them on the help center by their keys (\"GET /posts\"), `hideGroups` and `showGroups` whole groups by theirs; an operation is off when it's hidden or a group it's in is. `seen: true` says the team has looked: nothing is new any more. A key the reference doesn't have is refused",
+    "Change an API reference: its `name` (its address stays), its address (`newSlug`: one no tab, collection, article or other reference has; 409 otherwise), its `tab` (it goes last there), whether it's `published`, how it sits in the docs' tree (`treeStyle`: each group a folder, `folders`; a heading, `headings`; or one `entry`), the groups' order (`groupOrder`: groups' keys, the ones left out after them), and where requests go when the spec's servers have no host (`baseUrl`, an http(s) address; null removes it). `hide` and `show` take operations off and put them on the help center by their keys (\"GET /posts\"), `hideGroups` and `showGroups` whole groups by theirs; an operation is off when it's hidden or a group it's in is. `seen` says the team has looked: `true`, and nothing is new any more; or the keys of the operations it saw, and what a read added since is still new. A key the reference doesn't have is refused",
   method: "PATCH",
   path: "/api-references/{slug}",
   scope: "write",
@@ -250,7 +250,7 @@ export const updateApiReference = defineOperation({
     show: keys.optional(),
     hideGroups: keys.optional(),
     showGroups: keys.optional(),
-    seen: z.literal(true).optional(),
+    seen: z.union([z.literal(true), keys]).optional(),
   }),
   example: { hide: ["DELETE /posts/{}"], hideGroups: ["Internal"], treeStyle: "headings" },
   run: async ({ projectId }, input) =>
@@ -267,6 +267,8 @@ export const updateApiReference = defineOperation({
           throw notFound(input.slug);
         }
         const data: Prisma.ApiReferenceUncheckedUpdateInput = {};
+        const seen = input.seen;
+        const unseen = (state: ApiReferenceState) => (seen === undefined ? state.unseen : seen === true ? [] : state.unseen.filter((key) => !seen.includes(key)));
         if (choosing) {
           const doc = row.doc as unknown as ApiDoc;
           const state = row.state as unknown as ApiReferenceState;
@@ -287,12 +289,13 @@ export const updateApiReference = defineOperation({
             ...state,
             hiddenOperations: [...new Set([...state.hiddenOperations.filter((key) => !shown.has(key)), ...hide])],
             hiddenGroups: [...new Set([...state.hiddenGroups.filter((key) => !shownGroups.has(key)), ...hideGroups])],
-            unseen: input.seen ? [] : state.unseen,
+            unseen: unseen(state),
             groupOrder: [...new Set([...known(input.groupOrder, groups, "group"), ...state.groupOrder])],
           };
           Object.assign(data, { state: json(next), ...counts(doc, next) });
-        } else if (input.seen) {
-          Object.assign(data, { state: json({ ...(row.state as unknown as ApiReferenceState), unseen: [] }), unseenCount: 0 });
+        } else if (seen) {
+          const state = row.state as unknown as ApiReferenceState;
+          Object.assign(data, { state: json({ ...state, unseen: unseen(state) }), unseenCount: unseen(state).length });
         }
         if (input.tab !== undefined) {
           const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });
@@ -321,7 +324,7 @@ export const updateApiReference = defineOperation({
 export const replaceApiReference = defineOperation({
   name: "apiReferences.replace",
   summary:
-    "Replace an uploaded API reference's spec with a new one (`spec`, as in apiReferences.create). The team's choices stay: an operation there before (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center while any operation the spec had before is off it. A spec that can't be read, or has no operations, changes nothing and is refused with the reason",
+    "Replace an uploaded API reference's spec with a new one (`spec`, as in apiReferences.create). The team's choices stay: an operation there before (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center while any operation the spec had before is off it. The answer says what the new spec did, by operations' keys (`changes`: how many it `added` and `removed`, and whether anything at all `changed`). A spec that can't be read, or has no operations, changes nothing and is refused with the reason",
   method: "POST",
   path: "/api-references/{slug}/replace",
   scope: "write",
@@ -330,8 +333,7 @@ export const replaceApiReference = defineOperation({
   example: { spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '2'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
   run: async ({ projectId }, input) => {
     const next = read(input.spec);
-    return summary(
-      await prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx) => {
         // Locked, so a choice saved meanwhile (apiReferences.update) isn't written over.
         await lockProject(tx, projectId);
         const row = await tx.apiReference.findUnique({
@@ -346,7 +348,10 @@ export const replaceApiReference = defineOperation({
         }
         const { doc, state } = settle({ doc: row.doc as unknown as ApiDoc, state: row.state as unknown as ApiReferenceState }, next);
         const now = new Date();
-        return tx.apiReference.update({
+        const before = new Set((row.doc as unknown as ApiDoc).operations.map((operation) => operation.key));
+        const after = new Set(doc.operations.map((operation) => operation.key));
+        const changed = !isDeepStrictEqual(doc, row.doc);
+        const updated = await tx.apiReference.update({
           where: { id: row.id },
           data: {
             format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
@@ -355,13 +360,16 @@ export const replaceApiReference = defineOperation({
             state: json(state),
             ...counts(doc, state),
             syncedAt: now,
-            ...(!isDeepStrictEqual(doc, row.doc) && { changedAt: now }),
+            ...(changed && { changedAt: now }),
             syncError: null,
           },
           select: summarySelect,
         });
-      }),
-    );
+        return {
+          ...summary(updated),
+          changes: { added: [...after].filter((key) => !before.has(key)).length, removed: [...before].filter((key) => !after.has(key)).length, changed },
+        };
+    });
   },
 });
 

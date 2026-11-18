@@ -387,8 +387,10 @@ describe("the reference's page in the app", () => {
   });
 
   test("an upload says what it added and removed, and the same file again changes nothing", async () => {
-    expect(await upload(WITH_COMMENTS)).toEqual({ added: 1, removed: 1 });
-    expect(await upload(WITH_COMMENTS)).toEqual({ added: 0, removed: 0 });
+    expect(await upload(WITH_COMMENTS)).toEqual({ added: 1, removed: 1, changed: true });
+    expect(await upload(WITH_COMMENTS)).toEqual({ added: 0, removed: 0, changed: false });
+    // The same operations, one reworded.
+    expect(await upload(WITH_COMMENTS.replace("List comments", "Every comment"))).toEqual({ added: 0, removed: 0, changed: true });
     expect(await upload("{ nope")).toEqual({ error: expect.any(String) });
     expect((await get()).operations.map((o) => o.key)).toEqual(["GET /posts", "POST /posts", "GET /comments"]);
   });
@@ -397,8 +399,13 @@ describe("the reference's page in the app", () => {
     await upload(WITH_COMMENTS);
     await upload(spec({ "GET /posts": ["Posts", "List posts"], "GET /comments": ["Comments", "List comments"], "GET /users": ["Users", "List users"] }));
     expect(await operations()).toEqual(["GET /posts list-posts", "GET /comments list-comments new", "GET /users list-users new"]);
-    expect(await actions.markApiReferenceSeen(project.slug, "api-reference")).toEqual({});
+    // The page showed one of them as new; the other came while it was open, and is new on the next visit.
+    expect(await actions.markApiReferenceSeen(project.slug, "api-reference", ["GET /comments"])).toEqual({});
+    expect(await operations()).toEqual(["GET /posts list-posts", "GET /comments list-comments", "GET /users list-users new"]);
+    expect(await stored()).toMatchObject({ unseenCount: 1 });
+    await actions.markApiReferenceSeen(project.slug, "api-reference", ["GET /users"]);
     expect(await operations()).toEqual(["GET /posts list-posts", "GET /comments list-comments", "GET /users list-users"]);
+    expect(await stored()).toMatchObject({ unseenCount: 0 });
   });
 
   test("a switch takes an operation or a group off the help center; an operation keeps its own choice while its group is off", async () => {

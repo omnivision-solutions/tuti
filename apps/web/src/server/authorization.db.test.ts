@@ -288,7 +288,7 @@ const matrix: Matrix = {
   },
   "api-references": {
     setApiReferenceShown: { allowed: "MEMBER", call: (slug) => apiReferences.setApiReferenceShown(slug, "matrix-api", "operation", "GET /posts", false) },
-    markApiReferenceSeen: { allowed: "MEMBER", call: (slug) => apiReferences.markApiReferenceSeen(slug, "matrix-api") },
+    markApiReferenceSeen: { allowed: "MEMBER", call: (slug) => apiReferences.markApiReferenceSeen(slug, "matrix-api", ["GET /posts"]) },
     setApiReferencePublished: { allowed: "MEMBER", call: (slug) => apiReferences.setApiReferencePublished(slug, "matrix-api", false) },
     replaceApiReferenceSpec: { allowed: "MEMBER", call: (slug) => apiReferences.replaceApiReferenceSpec(slug, "matrix-api", form({ spec: MATRIX_SPEC.replace("List posts", "Every post") })) },
     deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },

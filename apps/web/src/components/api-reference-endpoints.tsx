@@ -73,7 +73,7 @@ export function ApiReferenceSync({ projectSlug, slug, source, maxBytes }: { proj
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success([result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ") || "No changes");
+        toast.success([result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ") || (result.changed ? "Updated" : "No changes"));
       }
     });
   };
@@ -176,11 +176,12 @@ export function ApiReferenceEndpoints({
   if (arrived.length > 0) {
     setFresh(new Map([...fresh, ...arrived.map((operation) => [operation.key, !shown(operation)] as const)]));
   }
-  const unseen = operations.some((operation) => operation.new);
+  // Seen: the ones this page shows, by their keys (what a teammate's upload adds meanwhile is still new). As text, so the effect runs when they change.
+  const unseen = JSON.stringify(operations.filter((operation) => operation.new).map((operation) => operation.key));
   useEffect(() => {
-    if (unseen) {
+    if (unseen !== "[]") {
       // Not saved: they're New again on the next visit.
-      void markApiReferenceSeen(projectSlug, slug).catch(() => undefined);
+      void markApiReferenceSeen(projectSlug, slug, JSON.parse(unseen) as string[]).catch(() => undefined);
     }
   }, [unseen, projectSlug, slug]);
 
@@ -196,7 +197,8 @@ export function ApiReferenceEndpoints({
         // Saved: as the page has it now. Refused: back as it was. Unless it was clicked again since (that save answers for it).
         setClicked((now) => {
           if (now[id] !== on) return now;
-          const { [id]: _, ...rest } = now;
+          const rest = { ...now };
+          delete rest[id];
           return rest;
         });
       });
@@ -218,12 +220,14 @@ export function ApiReferenceEndpoints({
       {addedHidden[0] && (
         <p role="status" className="rounded-lg bg-highlight px-3.5 py-2.5 text-sm text-highlight-foreground">
           {addedHidden.length === 1 ? "1 new endpoint was added hidden." : `${addedHidden.length} new endpoints were added hidden.`}{" "}
-          <a href={`#endpoint-${addedHidden[0].slug}`} className="font-medium underline underline-offset-2">
+          {/* Its row is in the list: not filtered out by a search. */}
+          <a href={`#endpoint-${addedHidden[0].slug}`} onClick={() => setQuery("")} className="font-medium underline underline-offset-2">
             {addedHidden.length === 1 ? "Review it below." : "Review them below."}
           </a>
         </p>
       )}
       {operations.length > 20 && <Input type="search" aria-label="Search endpoints" placeholder="Search endpoints" value={query} onChange={(event) => setQuery(event.currentTarget.value)} className="max-w-sm" />}
+      {words && !operations.some(matches) && <p className="text-sm text-muted-foreground">No endpoints match “{query.trim()}”.</p>}
       {groups.map((group) => {
         const rows = operations.filter((operation) => operation.group === group.key && matches(operation));
         if (rows.length === 0) return null;
@@ -252,7 +256,7 @@ export function ApiReferenceEndpoints({
                   </div>
                   {/* Greyed while a group it's in is off: its own choice is kept for when the group is back. */}
                   <Switch
-                    aria-label={`${operation.title || operation.path}: on the help center`}
+                    aria-label={`${operation.title} (${operation.kind} ${operation.path}): on the help center`}
                     checked={ownOn(operation)}
                     disabled={inOffGroup(operation)}
                     onChange={(event) => change("operation", operation.key, event.currentTarget.checked)}
