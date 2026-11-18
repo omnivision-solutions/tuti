@@ -27,8 +27,9 @@ export const SYNC_EVERY_MS = 6 * 60 * 60 * 1000;
  * hosts', so every host with something due gets a read before any gets a second), and no read started after 8 minutes,
  * so the last ends inside the job's 10; the hourly job takes the rest next time. A host is bounded by that time, not by
  * a count: one answering in a second or two gets a hundred or more of its references read a run. The run reads its
- * candidates per host in SQL, at most SYNC_ROWS_PER_HOST each (more than a host gets through in a run), so one host's
- * backlog never fills the window and keeps another host's reference waiting.
+ * candidates per host in SQL, at most SYNC_ROWS_PER_HOST each (more than a host gets through in a run), every host's
+ * first before any host's second, so no number of busy hosts' backlogs fills the window and keeps another host's
+ * reference waiting.
  */
 const HOSTS_AT_ONCE = 4;
 export const SYNC_BUDGET_MS = 8 * 60_000;
@@ -38,7 +39,7 @@ export const budget = (ms: number) => {
   return () => Date.now() >= until;
 };
 export const SYNC_ROWS_PER_HOST = 500;
-const SYNC_CANDIDATES = 5_000;
+export const SYNC_CANDIDATES = 5_000;
 
 export const SPEC_URL_TOO_LARGE = "The spec at this address is over 5 MB, the most an API reference reads.";
 
@@ -299,7 +300,13 @@ export async function syncApiReference(id: string, options: { allowLoopback?: bo
  * one reference at a time per host, so no team's server gets them all together. One that fails says so on its page
  * and is tried again next time it's due; it stops none of the others.
  */
-export async function syncApiReferences(_: unknown, log: JobLogger, now = new Date(), over = budget(SYNC_BUDGET_MS)): Promise<JobResult> {
+export async function syncApiReferences(
+  _: unknown,
+  log: JobLogger,
+  now = new Date(),
+  over = budget(SYNC_BUDGET_MS),
+  candidates = SYNC_CANDIDATES,
+): Promise<JobResult> {
   // The oldest due per host (its name, lowercased, as URL gives it: the port, credentials and path left off).
   const due = await prisma.$queryRaw<{ id: string; sourceUrl: string | null }[]>`
     SELECT id, "sourceUrl" FROM (
@@ -309,8 +316,9 @@ export async function syncApiReferences(_: unknown, log: JobLogger, now = new Da
       WHERE source = 'URL' AND "syncTriedAt" <= ${new Date(now.getTime() - SYNC_EVERY_MS)}
     ) due
     WHERE place <= ${SYNC_ROWS_PER_HOST}
-    ORDER BY "syncTriedAt", id
-    LIMIT ${SYNC_CANDIDATES}`;
+    -- Each host's first before any host's second: busy hosts can't fill the window between them.
+    ORDER BY place, "syncTriedAt", id
+    LIMIT ${candidates}`;
   const byHost = new Map<string, string[]>();
   for (const { id, sourceUrl } of due) {
     const host = URL.parse(sourceUrl ?? "")?.hostname ?? "";

@@ -468,6 +468,34 @@ describe("the 6-hourly job", () => {
     }
   });
 
+  test("a run's window takes each host's first before any host's second: busy hosts' older backlogs don't fill it", async () => {
+    const now = new Date();
+    await prisma.apiReference.updateMany({ data: { syncTriedAt: now } });
+    const made = await call(createApiReference, as(), { name: "Template", spec: POSTS });
+    const { doc, state, ...rest } = await prisma.apiReference.findUniqueOrThrow({
+      where: { projectId_slug: { projectId: project.id, slug: made.slug } },
+      select: { projectId: true, tabId: true, name: true, format: true, spec: true, doc: true, state: true },
+    });
+    // Four busy hosts, five due each and every one older than the single host's: more than a window of 6 holds.
+    const due = (minutes: number) => new Date(now.getTime() - SYNC_EVERY_MS - minutes * 60_000);
+    const busy = ["internal", "metadata", "busy", "other"].flatMap((host) =>
+      Array.from({ length: 5 }, (_, at) => ({ slug: `${host}-${at}`, sourceUrl: `https://${host}.acme.test/${at}.json`, syncTriedAt: due(100 - at) })),
+    );
+    await prisma.apiReference.createMany({
+      data: [...busy, { slug: "single", sourceUrl: "https://short.acme.test/openapi.json", syncTriedAt: due(1) }].map((row) => ({
+        ...rest,
+        ...row,
+        source: "URL" as const,
+        doc: doc as object,
+        state: state as object,
+      })),
+    });
+    expect(await syncApiReferences({}, log, new Date(), () => false, 6)).toEqual({ synced: 0, failed: 6 });
+    const tried = (await prisma.apiReference.findMany({ where: { projectId: project.id, source: "URL", syncTriedAt: { gt: now } }, select: { slug: true } })).map((row) => row.slug);
+    // Each host's oldest, and the oldest host's second.
+    expect(tried.sort()).toEqual(["busy-0", "internal-0", "internal-1", "metadata-0", "other-0", "single"]);
+  });
+
   test("a run starts no read past its time budget: the rest wait for the next", async () => {
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
     await prisma.apiReference.updateMany({ data: { syncTriedAt: new Date() } });
