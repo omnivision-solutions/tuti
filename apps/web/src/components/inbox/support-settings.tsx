@@ -82,27 +82,26 @@ export function DraftInstructionsForm({ projectSlug, instructions }: { projectSl
   }, {});
   return (
     <form {...keepingFields(action)}>
-      {/* Locked while saving: an edit made then wouldn't be in what's saved. */}
-      <fieldset disabled={pending} className="contents">
-        <FieldGroup>
-          <Field data-invalid={state.error ? true : undefined}>
-            <FieldLabel htmlFor="draft-instructions">Instructions for drafts</FieldLabel>
-            <Textarea
-              id="draft-instructions"
-              name="instructions"
-              defaultValue={instructions}
-              maxLength={2000}
-              placeholder="Keep replies short and friendly. End by asking whether that helped."
-              aria-invalid={state.error ? true : undefined}
-              aria-describedby={state.error ? "draft-instructions-error" : undefined}
-            />
-            {state.error && <FieldError id="draft-instructions-error">{state.error}</FieldError>}
-          </Field>
-          <Button type="submit" disabled={pending} focusableWhenDisabled className="self-end">
-            {pending ? "Saving…" : "Save"}
-          </Button>
-        </FieldGroup>
-      </fieldset>
+      <FieldGroup>
+        <Field data-invalid={state.error ? true : undefined}>
+          <FieldLabel htmlFor="draft-instructions">Instructions for drafts</FieldLabel>
+          <Textarea
+            id="draft-instructions"
+            name="instructions"
+            defaultValue={instructions}
+            // Read-only while saving: an edit made then wouldn't be in what's saved. Not disabled, which would drop focus.
+            readOnly={pending}
+            maxLength={2000}
+            placeholder="Keep replies short and friendly. End by asking whether that helped."
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "draft-instructions-error" : undefined}
+          />
+          {state.error && <FieldError id="draft-instructions-error">{state.error}</FieldError>}
+        </Field>
+        <Button type="submit" disabled={pending} focusableWhenDisabled className="self-end">
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </FieldGroup>
     </form>
   );
 }

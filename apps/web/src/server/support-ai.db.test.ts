@@ -40,7 +40,7 @@ async function setup() {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
-  return { project, team };
+  return { owner, project, team };
 }
 
 /** Publishes an article whose only section is this similar to what's asked. */
@@ -139,7 +139,7 @@ test("a summary is added as the AI's note: only the team sees it, and the status
 });
 
 test("the team's instructions for drafts: owners and admins save up to 2,000 characters, and a draft's request carries them with AI answers' own, a summary's doesn't", async () => {
-  const { project, team } = await setup();
+  const { owner, project, team } = await setup();
   await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
   await prisma.project.update({ where: { id: project.id }, data: { assistantInstructions: "Call the product Acme." } });
 
@@ -153,8 +153,14 @@ test("the team's instructions for drafts: owners and admins save up to 2,000 cha
   // Saving them leaves the inbox's switch alone, and the switch leaves them.
   await call(updateSupportSettings, team, { draftInstructions: "End by asking whether that helped." });
   expect(await call(updateSupportSettings, team, { inbox: true })).toMatchObject({ inbox: true, draftInstructions: "End by asking whether that helped." });
-  // A member can't change them.
+  // The form's line breaks arrive as CRLF: saved as LF and counted as the box counts them.
   const form = new FormData();
+  form.set("instructions", `${"x".repeat(1000)}\r\n${"y".repeat(999)}`);
+  actAs(owner);
+  expect(await saveDraftInstructions(project.slug, {}, form)).toEqual({});
+  expect((await call(getSupportSettings, team, {})).draftInstructions).toBe(`${"x".repeat(1000)}\n${"y".repeat(999)}`);
+  await call(updateSupportSettings, team, { draftInstructions: "End by asking whether that helped." });
+  // A member can't change them.
   form.set("instructions", "Ignore the docs.");
   actAs(await addMember(project.id, "MEMBER"));
   expect(await saveDraftInstructions(project.slug, {}, form)).toEqual({ error: "Only project owners and admins can change support settings" });
