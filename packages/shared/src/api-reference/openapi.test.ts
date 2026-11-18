@@ -900,6 +900,21 @@ test("a field that is its own type keeps its own words, whatever else is beside 
   expect(codes(doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Node › more"]);
 });
 
+test("a schema that holds itself through a part of a part still ends", () => {
+  const { schema, doc } = schemaOf(ref("Self"), { Self: { type: "object", properties: { id: { type: "string" }, again: { allOf: [{ allOf: [ref("Self")], properties: { more: { type: "string" } } }] } } } });
+  expect(schema.properties![1]).toEqual({
+    name: "again",
+    required: false,
+    type: "object",
+    properties: [
+      { name: "id", required: false, type: "string" },
+      { name: "again", required: false, type: "object" },
+      { name: "more", required: false, type: "string" },
+    ],
+  });
+  expect(codes(doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Self › again › again"]);
+});
+
 test("types that share an allOf base are spelled out inside each other", () => {
   const { schema, example, doc } = schemaOf(ref("Pet"), {
     Resource: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
@@ -1482,6 +1497,8 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
               properties: {
                 owner: { $ref: "#/components/schemas/User", description: "Owner.", examples: [{ id: "u1" }], $comment: "Kept." },
                 parent: { allOf: [{ $ref: "#/components/schemas/Node", description: "Its parent." }] },
+                // Itself, with only words and a limit beside the reference: nothing added, so no warning.
+                above: { $ref: "#/components/schemas/Node", description: "The one above.", readOnly: true },
               },
             },
           },
@@ -1495,7 +1512,9 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
   expect(words31.responses[0]!.schema!.properties).toEqual([
     { name: "owner", required: false, type: "User", ref: "User", description: "Owner.", properties: [{ name: "id", required: false, type: "string" }] },
     { name: "parent", required: false, type: "Node", ref: "Node", description: "Its parent." },
+    { name: "above", required: false, type: "Node", ref: "Node", description: "The one above.", constraints: "read-only" },
   ]);
+  expect(worded("3.1.0").warnings).toEqual([]);
   expect(words31.responses[0]!.example).toEqual({ owner: { id: "u1" } });
   // The description beside a reference to a parameter or a response is the one shown.
   expect(words31.params[0]!.description).toBe("Which page here.");

@@ -307,12 +307,20 @@ function sizeOf(value: unknown, limit: number): number {
 function read(root: Obj, most: number): ApiDoc {
   /** 3.1 and later: what's written beside a `$ref` applies with it. In 3.0 it's ignored (a description is still read). */
   const besideApplies = !/^3(\.0|$)/.test(String(root.openapi));
-  /** A 3.1 schema with keywords beside its `$ref`, as the `allOf` of the two that it means; null without any. Once per schema. */
-  const apart = once((node): Obj | null => {
+  /**
+   * A 3.1 schema with keywords beside its `$ref`, as what it means, once per schema; null without
+   * any. `own`: those keywords as the schema's own with the reference as an `allOf` part, the way
+   * 3.0 has to write it, so the two are read alike. `parts`: the reference and the keywords, for
+   * where it's itself a part of an `allOf`.
+   */
+  const apart = once((node): { own: Obj; parts: unknown[] } | null => {
     const { $ref, ...beside } = node;
-    return Object.keys(beside).length > 0 ? { allOf: [{ $ref }, beside] } : null;
+    if (Object.keys(beside).length === 0) return null;
+    const reference = { $ref };
+    return { own: { ...beside, allOf: [reference, ...list(beside.allOf)] }, parts: [reference, beside] };
   });
-  const split = (node: unknown): unknown => (besideApplies && isObj(node) && typeof node.$ref === "string" ? (apart(node) ?? node) : node);
+  const referenceWithMore = (node: unknown) => (besideApplies && isObj(node) && typeof node.$ref === "string" ? apart(node) : null);
+  const split = (node: unknown): unknown => referenceWithMore(node)?.own ?? node;
   const warnings: ApiWarning[] = [];
   const warned = new Set<string>();
   /** One warning per place and kind, however many times a named schema is gone through. */
@@ -544,11 +552,7 @@ function read(root: Obj, most: number): ApiDoc {
   }
 
   /** An `allOf`'s parts, a 3.1 part with keywords beside its reference as the two of them it means. */
-  const partsOf = (schema: Obj): unknown[] =>
-    list(schema.allOf).flatMap((part) => {
-      const whole = split(part);
-      return whole === part ? [part] : list((whole as Obj).allOf);
-    });
+  const partsOf = (schema: Obj): unknown[] => list(schema.allOf).flatMap((part) => referenceWithMore(part)?.parts ?? [part]);
   /** In 3.1, the description written beside a reference to a parameter, response or scheme is the one that counts. */
   const describedBy = (entry: unknown, target: Obj): unknown =>
     besideApplies && isObj(entry) && typeof entry.$ref === "string" && typeof entry.description === "string" ? entry.description : target.description;
@@ -601,7 +605,13 @@ function read(root: Obj, most: number): ApiDoc {
     });
     const words = folded.length === 0 ? [] : [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && (part === node ? saysOf(part).beside : saysOf(part).words));
     const alone = folded.length === 1 && words.length === parts.length ? folded[0]?.pointer : undefined;
-    const inside = (folded.find(({ value }) => isObj(value) && place.stack.includes(value)) ?? (place.folding.includes(node) ? folded[0] : undefined))?.pointer;
+    const again = place.folding.includes(node);
+    const inside = (folded.find(({ value }) => isObj(value) && place.stack.includes(value)) ?? (again ? folded[0] : undefined))?.pointer;
+    // Met again with no reference of its own to be named by (its references are parts of its parts): it stops here all the same.
+    if (again && inside === undefined) {
+      warn("ADDS_TO_ITSELF", place.where);
+      return { type: "object" };
+    }
     const held = inside ?? alone;
     if (held !== undefined) {
       // Left out: fields and the like in a part of their own, or beside the reference.
@@ -625,7 +635,7 @@ function read(root: Obj, most: number): ApiDoc {
         ...(said("default") === undefined ? {} : { default: data(said("default"), place.where) }),
       };
     }
-    if (folded.length > 0) place = { ...place, folding: [...place.folding, node] };
+    if (parts.length > 0) place = { ...place, folding: [...place.folding, node] };
 
     const schema = flatten(node, place.where);
     const { types, nullable } = typesOf(schema);
