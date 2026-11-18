@@ -10,6 +10,7 @@ import DocsHome, { generateMetadata as homeMetadata } from "@/app/portal/[projec
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { WidgetDocs } from "@/components/widget-docs";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { apiReferencePage, markdownDoc } from "./api-reference-queries";
@@ -200,6 +201,8 @@ describe("an operation's page", () => {
     expect(page).toMatchObject({ kind: "reference", tab: "api", restricted: false, reference: { name: "Reference", treeStyle: "FOLDERS" } });
     expect(page?.operations.map((o) => o.slug)).toEqual(["get-a-post", "create-a-post", "purge"]);
     const text = await pageText("get-a-post");
+    // The reference's name over the title links to its page.
+    expect(text).toContain('"href":"/docs/reference","className":"truncate hover:text-foreground","children":"Reference"');
     for (const shown of ["Get a post", "/posts/", "{number}", "Path parameters", "Query parameters", "expand", "at least 1", "Bearer token", "No such post", "curl ", "import requests", `Dark ${SECRET} mode`, "Create a post", "Admin"]) {
       expect(text).toContain(shown);
     }
@@ -782,6 +785,22 @@ paths:
     const hidden = await (await sitemap(new Request("http://x"), route)).text();
     for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
       expect(hidden).not.toContain(`<loc>${portal}${path}</loc>`);
+    }
+  });
+
+  test("the widget's panel leaves out a tab of references alone, readable or locked, and opens on the tab with articles", async () => {
+    const panel = async (docsTab?: string) => asText(await rendered(await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", docsTab })));
+    for (const lock of [false, true]) {
+      if (lock) {
+        await setTab("SIGNED_IN", "LOCK");
+      }
+      for (const docsTab of [undefined, "api"]) {
+        const text = await panel(docsTab);
+        // One tab left: no pills, and the API tab's address shows Guides'.
+        expect(text).not.toContain('"label":"Docs tabs"');
+        expect(text).not.toContain("docsTab=api");
+        expect(text).toContain("Basics");
+      }
     }
   });
 
