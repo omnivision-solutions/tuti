@@ -39,7 +39,10 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await expect(icon("New changelog entry")).toHaveClass(/lucide-plus/);
   await expect(icon("New post (on your portal)")).toHaveClass(/lucide-plus/);
   await expect(icon("Home")).toHaveClass(/lucide-house/);
-  await expect(icon("Inbox")).toHaveClass(/lucide-inbox/);
+  // The page, first; Settings has an Inbox of its own (the inbox's AI), with the settings' icon.
+  await expect(icon("Inbox")).toHaveCount(2);
+  await expect(icon("Inbox").first()).toHaveClass(/lucide-inbox/);
+  await expect(icon("Inbox").last()).toHaveClass(/lucide-settings/);
   await expect(icon("Feedback")).toHaveClass(/lucide-lightbulb/);
   await expect(icon("Roadmap")).toHaveClass(/lucide-map/);
   await expect(icon("Users")).toHaveClass(/lucide-contact-round/);

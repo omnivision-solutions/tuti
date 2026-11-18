@@ -198,6 +198,8 @@ model Project {
   conversationCount     Int          @default(0)
   /// The support inbox is on (Settings → Support): Messages in the widget, "Ask a person" starts a conversation.
   supportInbox          Boolean      @default(false)
+  /// The team's standing instructions for replies drafted by AI in the inbox (Settings → AI → Inbox; support.update).
+  supportDraftInstructions String    @default("")
   // "emailRequestedAt" and "emailApprovedAt" (projects were once approved before emailing their users) are
   // still in the database, unread, so the release before this one keeps working: a later release drops them.
   /// On a server selling plans, its email to its users is paused (its bounces or complaints went over,

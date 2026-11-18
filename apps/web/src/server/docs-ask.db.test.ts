@@ -297,7 +297,8 @@ describe("the team's assistant settings", () => {
     expect(request.maxTokens).toBe(400);
     expect(JSON.parse(request.user.slice(request.user.indexOf("{")))).toEqual({
       question: QUESTION,
-      teamSettings: { tone: "Cheerful", standingInstructions: "Call the product Acme.", offLimitsTopics: ["refund"] },
+      // A tone sent by an API client is part of the instructions.
+      teamSettings: { standingInstructions: "Cheerful\n\nCall the product Acme.", offLimitsTopics: ["refund"] },
       sections: [{ id: "s1", article: "Inviting your team", heading: "", text: "Owners invite people." }],
     });
 

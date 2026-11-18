@@ -89,6 +89,7 @@ export const APP_ROUTES = [
   "[project]/settings/general",
   "[project]/settings/groups",
   "[project]/settings/import",
+  "[project]/settings/inbox-ai",
   "[project]/settings/integrations",
   "[project]/settings/integrations/github",
   "[project]/settings/navigation",

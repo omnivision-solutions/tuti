@@ -86,7 +86,14 @@ export const suggestReply = defineOperation({
     }
     let reply: string;
     try {
-      reply = await complete({ ...answerPrompt(question, sections, await assistantSettings(projectId), []), timeoutMs: AI_TIMEOUT_MS, ...ai });
+      // The team's instructions for drafts (Settings → AI → Inbox) go with AI answers' own, as its standing instructions:
+      // the prompt follows them for tone and form, and never over its rule to say only what the sections say.
+      const [settings, { supportDraftInstructions }] = await Promise.all([
+        assistantSettings(projectId),
+        prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportDraftInstructions: true } }),
+      ]);
+      const instructions = [settings.instructions, supportDraftInstructions].filter(Boolean).join("\n\n");
+      reply = await complete({ ...answerPrompt(question, sections, { ...settings, instructions }, []), timeoutMs: AI_TIMEOUT_MS, ...ai });
     } catch (error) {
       log.warn("Drafting a support reply with AI failed", { projectId, error });
       return { status: "failed" as const, draft: null };

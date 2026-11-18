@@ -46,16 +46,16 @@ async function query(sql: string, values: unknown[]) {
 }
 
 // On Tuti's cloud, which sells plans: Advanced tuning is on Business.
-test("an owner sees a model for each role (Autopilot's three, the Inbox's two), finds Advanced tuning locked until Business, then changes values on its page and resets them", async ({ browser }, testInfo) => {
+test("an owner sees a model for each role (Autopilot's three), finds Advanced tuning locked until Business, then changes values on its page and resets them", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
 
-  // Each role has its own choice: the Inbox's drafts and summaries, and Autopilot's Decides, Checks (which can be off) and Writes.
+  // Each role has its own choice: Autopilot's Decides, Checks (which can be off) and Writes.
   await owner.goto(`/app/${slug}/settings/ai-models`);
-  await expect(owner.getByRole("radiogroup", { name: "Inbox drafts" })).toBeVisible();
-  await expect(owner.getByRole("radiogroup", { name: "Inbox summaries" })).toBeVisible();
+  // The Inbox's models are on their own page (Settings → Inbox).
+  await expect(owner.getByRole("radiogroup", { name: /^Inbox/ })).toHaveCount(0);
   const decides = owner.getByRole("radiogroup", { name: "Autopilot decides" });
   await expect(decides.getByRole("radio", { name: /^Fast/ })).toBeChecked();
   await expect(decides.getByText(/^About [\d.$]+ (credits? )?per merged pull request$/).first()).toBeVisible();
@@ -63,11 +63,13 @@ test("an owner sees a model for each role (Autopilot's three, the Inbox's two), 
   await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toBeVisible();
   // Picking a model is the Custom level, which Free lacks: the page says picks are kept and not used.
   await expect(owner.getByText(/Picking your own AI models needs the Business plan\. Models picked earlier are kept and not used until then\./)).toBeVisible();
-  await expect(owner.getByRole("radiogroup", { name: "AI answers" })).toHaveAccessibleDescription(/Picking your own AI models needs the Business plan/);
+  await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toHaveAccessibleDescription(/Picking your own AI models needs the Business plan/);
+  // AI answers' models are on their own page (Settings → AI answers).
+  await expect(owner.getByRole("radiogroup", { name: "AI answers" })).toHaveCount(0);
   // A level (set through the API for now) that Free lacks is kept and not used, and the page says so.
-  await query(`UPDATE project SET "aiLevels" = '{"answers":"best"}' WHERE slug = $1`, [slug]);
+  await query(`UPDATE project SET "aiLevels" = '{"code_changes":"best"}' WHERE slug = $1`, [slug]);
   await owner.reload();
-  await expect(owner.getByText("AI answers is on the best level, which isn't available here, so it runs on this server's default models.")).toBeVisible();
+  await expect(owner.getByText("Autopilot is on the best level, which isn't available here, so it runs on this server's default models.")).toBeVisible();
 
   // Advanced tuning is a page of its own; on Free it's locked, with the way to Business.
   const tuningLink = owner.getByRole("link", { name: /^Advanced tuning/ });
@@ -93,12 +95,12 @@ test("an owner sees a model for each role (Autopilot's three, the Inbox's two), 
   await owner.goto(`/app/${slug}/settings/ai-models`);
   await expect(tuningLink).not.toContainText("Available on Business");
   // Business has the level, and its own models: the page says what picking one does.
-  await expect(owner.getByText("AI answers is on the best level. Picking a different model below switches that feature to your own models, for every role it has.")).toBeVisible();
-  await expect(owner.getByRole("radiogroup", { name: "AI answers" })).toHaveAccessibleDescription(/AI answers is on the best level/);
+  await expect(owner.getByText("Autopilot is on the best level. Picking a different model below switches that feature to your own models, for every role it has.")).toBeVisible();
+  await expect(owner.getByRole("radiogroup", { name: "Autopilot writes" })).toHaveAccessibleDescription(/Autopilot is on the best level/);
   // Put back on Balanced with a model still picked, the pick isn't used, and the page says that too.
-  await query(`UPDATE project SET "aiLevels" = '{"answers":"balanced"}', "aiModels" = '{"answers":"anthropic/claude-sonnet-5.5"}' WHERE slug = $1`, [slug]);
+  await query(`UPDATE project SET "aiLevels" = '{"code_changes":"balanced"}', "aiModels" = '{"code_changes":"anthropic/claude-sonnet-5.5"}' WHERE slug = $1`, [slug]);
   await owner.reload();
-  await expect(owner.getByText("AI answers is on the balanced level, so the models picked below aren't used.", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Autopilot is on the balanced level, so the models picked below aren't used.", { exact: false })).toBeVisible();
   await tuningLink.click();
   await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
   const fix = owner.getByRole("spinbutton", { name: "Fix an article from" });

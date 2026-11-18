@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
-import { getSupportAddress, setSupportInbox } from "@/server/inbox";
+import { Textarea } from "@/components/ui/textarea";
+import { keepingFields } from "@/lib/forms";
+import type { FormState } from "@/server/form-state";
+import { getSupportAddress, saveDraftInstructions, setSupportInbox } from "@/server/inbox";
 
 /** Turns the support inbox on or off. */
 export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; on: boolean }) {
@@ -62,5 +66,42 @@ export function GetSupportAddressButton({ projectSlug }: { projectSlug: string }
     >
       Get a support address
     </Button>
+  );
+}
+
+/** Settings → AI → Inbox: the team's standing instructions for replies drafted by AI. */
+export function DraftInstructionsForm({ projectSlug, instructions }: { projectSlug: string; instructions: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveDraftInstructions(projectSlug, prev, formData);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success("Instructions saved");
+    }
+    return result;
+  }, {});
+  return (
+    <form {...keepingFields(action)}>
+      <FieldGroup>
+        <Field data-invalid={state.error ? true : undefined}>
+          <FieldLabel htmlFor="draft-instructions">Instructions for drafts</FieldLabel>
+          <Textarea
+            id="draft-instructions"
+            name="instructions"
+            defaultValue={instructions}
+            // Read-only while saving: an edit made then wouldn't be in what's saved. Not disabled, which would drop focus.
+            readOnly={pending}
+            maxLength={2000}
+            placeholder="Keep replies short and friendly. End by asking whether that helped."
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "draft-instructions-error" : undefined}
+          />
+          {state.error && <FieldError id="draft-instructions-error">{state.error}</FieldError>}
+        </Field>
+        <Button type="submit" disabled={pending} focusableWhenDisabled className="self-end">
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </FieldGroup>
+    </form>
   );
 }
