@@ -148,7 +148,8 @@ export function readReview(reply: string): Omit<EditCheck, "hints"> | null {
   const contradicted = read.filter((c) => c.check === "contradicted");
   // Every claim confirmed: one it couldn't find is unverified (the rubric's accuracy 4 at most), so not an accept.
   const unverified = read.filter((c) => c.check === "not_found");
-  if (verdict === "accept" && low.length === 0 && contradicted.length === 0 && unverified.length === 0) {
+  // And at least one: an accept that checked nothing in the code has nothing to stand on.
+  if (verdict === "accept" && low.length === 0 && read.length > 0 && contradicted.length === 0 && unverified.length === 0) {
     return { pass: true, reasons: [], claims: read, scores: graded, verdict };
   }
   const said = verdict === "accept" ? [] : (Array.isArray(parsed.reasons) ? parsed.reasons : []).map((r) => short(r, 500)).filter(Boolean);
@@ -159,6 +160,7 @@ export function readReview(reply: string): Omit<EditCheck, "hints"> | null {
           ...contradicted.map((c) => `The code says otherwise: ${c.claim}.`),
           ...unverified.map((c) => `The code doesn't show it: ${c.claim}.`),
           ...low.map((name) => `Its ${name} scored ${graded[name]} of 5.`),
+          ...(read.length === 0 ? ["It checked no claim in the code."] : []),
         ];
   // Turned down with nothing to say why (no reasons, and scores and claims that would pass): it can't be acted on.
   if (reasons.length === 0) {

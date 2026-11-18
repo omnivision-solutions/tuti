@@ -121,6 +121,8 @@ test("the review passes an edit only on accept, with scores and claims that agre
     pass: false,
     reasons: ["The code says otherwise: The tab is Display."],
   });
+  // So is one that checked no claim at all.
+  expect(readReview(review({ claims: [] }))).toMatchObject({ pass: false, reasons: ["It checked no claim in the code."] });
   // So is one with a claim it couldn't find in the code: unverified isn't accurate enough to go out by itself.
   expect(readReview(review({ claims: [{ claim: "The tab is Display", check: "not_found", evidence: "searched Display" }] }))).toMatchObject({
     pass: false,

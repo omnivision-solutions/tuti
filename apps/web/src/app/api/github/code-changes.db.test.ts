@@ -888,7 +888,7 @@ describe("deciding", () => {
 
     test("with the check on (E5), the edit written again on top of the other is checked again, and its check is kept", async () => {
       vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
-      const accept = JSON.stringify({ claims: [], accuracy: 5, needed: 5, placement: 5, voice: 5, proportion: 5, verdict: "accept", reasons: [] });
+      const accept = JSON.stringify({ claims: [{ claim: "The theme is Dark", check: "confirmed", evidence: "src/theme.ts:1" }], accuracy: 5, needed: 5, placement: 5, voice: 5, proportion: 5, verdict: "accept", reasons: [] });
       model.reply(accept, undefined, '"article_after"');
       model.reply(accept, undefined, '"article_after"');
       await analyse(33, ["The app has a light theme and a dark one.", other("Light", "The app has a light theme (default).")], ["The app has a light theme (default) and a dark one.", undefined]);
