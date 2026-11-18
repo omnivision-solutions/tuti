@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type { Page, Request, Route } from "@playwright/test";
+
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
@@ -21,6 +23,48 @@ paths:
 
 // A spec of about 2 MB: more than a server action takes by default.
 const LARGE_SPEC = `${SPEC}      description: ${"Every post. ".repeat(170_000)}\n`;
+
+/**
+ * Holds the page's requests that `holds` picks until `release()`; `started` settles once one is held. For what must
+ * happen while a request is on its way.
+ */
+async function hold(page: Page, holds: (request: Request) => boolean) {
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let begun = () => {};
+  const started = new Promise<void>((resolve) => {
+    begun = resolve;
+  });
+  // The requests being handled: `stop` lets them through before the route goes.
+  const handling = new Set<Promise<void>>();
+  const pass = async (route: Route) => {
+    if (holds(route.request())) {
+      begun();
+      await released;
+    }
+    await route.continue();
+  };
+  const handler = (route: Route) => {
+    const handled = pass(route).finally(() => handling.delete(handled));
+    handling.add(handled);
+    return handled;
+  };
+  await page.route("**/*", handler);
+  return {
+    started,
+    release,
+    stop: async () => {
+      await Promise.all(handling);
+      await page.unroute("**/*", handler);
+    },
+  };
+}
+/** A server action's request. */
+const isAction = (request: Request) => request.method() === "POST" && Boolean(request.headers()["next-action"]);
+/** The page's server components asked for again (a refresh), or another page's ahead of a visit. */
+const isRefresh = (request: Request) => request.method() === "GET" && Boolean(request.headers()["rsc"]);
 
 test("the team adds an API reference from a spec file: its name from the spec, a file that isn't one refused, its row in its tab's tree and on its tab's page", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -68,16 +112,7 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await dialog.getByLabel("Spec file").setInputFiles(file("empty.yaml", 'openapi: 3.1.0\ninfo:\n  title: Nothing yet\n  version: "1"\npaths: {}\n'));
   await expect(dialog.getByLabel("Name")).toHaveValue("Nothing yet");
   // While it adds (held here until released), focus stays on the button, which can't be pressed again.
-  let release = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await team.route("**/*", async (route) => {
-    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
-      await held;
-    }
-    await route.continue();
-  });
+  const held = await hold(team, isAction);
   // A name of only spaces adds nothing, from Enter in Name either.
   await dialog.getByLabel("Name").fill("   ");
   await expect(add).toBeDisabled();
@@ -88,10 +123,10 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await expect(adding).toBeFocused();
   await expect(adding).toBeDisabled();
   await expect(dialog.getByText("This spec has no operations to show.")).toHaveCount(0);
-  release();
+  held.release();
   await expect(dialog.getByText("This spec has no operations to show.")).toBeVisible();
   await expect(dialog.getByText("Name is required")).toHaveCount(0);
-  await team.unroute("**/*");
+  await held.stop();
   // Focus goes to the file, which the reason is about.
   await expect(dialog.getByRole("button", { name: /empty\.yaml/ })).toBeFocused();
   await expect(dialog.getByRole("button", { name: /empty\.yaml/ })).toHaveAccessibleDescription("This spec has no operations to show.");
@@ -104,8 +139,13 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   const tab = dialog.getByRole("combobox", { name: "Tab" });
   await tab.click();
   await team.getByRole("option", { name: "Scratch" }).click();
-  await api("/tabs/scratch", undefined, "DELETE");
+  // It's deleted once the add is on its way, so the page can't hear of it first.
+  const sent = await hold(team, isAction);
   await add.click();
+  await sent.started;
+  await api("/tabs/scratch", undefined, "DELETE");
+  sent.release();
+  await sent.stop();
   await expect(tab).toBeFocused();
   await expect(tab).toHaveAttribute("aria-invalid", "true");
   await expect(tab).toHaveAccessibleDescription("There's no tab “scratch”");
@@ -188,33 +228,53 @@ test("the team adds an API reference from a spec file: its name from the spec, a
   await expect(tree.getByRole("link", { name: "Public API" })).toHaveCount(0);
 });
 
-test("the docs' only tab is deleted while Add API reference is open: the reason is said under the file, and Add again adds it", async ({ browser }) => {
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const team = await signUp(browser, APP_URL, "Tess Team");
-  await createProject(team, "Acme", slug);
-  const api = await apiFor(team, slug);
-  await api("/tabs", { name: "Guides" });
-  await team.goto(`/app/${slug}/docs`);
-  await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("button", { name: "Add to your docs" }).click();
-  await team.getByRole("menuitem", { name: "API reference" }).click();
-  const dialog = team.getByRole("dialog", { name: "Add API reference" });
-  await dialog.getByLabel("Spec file").setInputFiles(file("openapi.yaml", SPEC));
-  await expect(dialog.getByLabel("Name")).toHaveValue("Acme API");
-  await expect(dialog.getByRole("combobox", { name: "Tab" })).toContainText("Guides");
+for (const where of ["on Tab", "typing in Name"] as const) {
+  test(`the docs' only tab is deleted while Add API reference is open, focus ${where}: the reason moves under the file, and Add again adds it`, async ({ browser }) => {
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Tess Team");
+    await createProject(team, "Acme", slug);
+    const api = await apiFor(team, slug);
+    await api("/tabs", { name: "Guides" });
+    await team.goto(`/app/${slug}/docs`);
+    await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("button", { name: "Add to your docs" }).click();
+    await team.getByRole("menuitem", { name: "API reference" }).click();
+    const dialog = team.getByRole("dialog", { name: "Add API reference" });
+    const name = dialog.getByLabel("Name");
+    const tab = dialog.getByRole("combobox", { name: "Tab" });
+    await dialog.getByLabel("Spec file").setInputFiles(file("openapi.yaml", SPEC));
+    await expect(name).toHaveValue("Acme API");
+    await expect(tab).toContainText("Guides");
 
-  // A teammate deletes the tab: the docs have none now.
-  await api("/tabs/guides", undefined, "DELETE");
-  await dialog.getByRole("button", { name: "Add reference" }).click();
-  // The page refreshes after the refusal and the Tab field goes with the tab: the reason is under the file, with focus.
-  const chosen = dialog.getByRole("button", { name: /openapi\.yaml/ });
-  await expect(chosen).toHaveAccessibleDescription("There's no tab “guides”");
-  await expect(chosen).toBeFocused();
-  await expect(dialog.getByRole("combobox", { name: "Tab" })).toHaveCount(0);
-  await expect(dialog.getByLabel("Name")).toHaveValue("Acme API");
+    // A teammate deletes the tab once the add is on its way: the docs have none now. The refresh that follows the
+    // refusal is held too, to see the dialog before and after it.
+    const sent = await hold(team, isAction);
+    await dialog.getByRole("button", { name: "Add reference" }).click();
+    await sent.started;
+    await api("/tabs/guides", undefined, "DELETE");
+    const refresh = await hold(team, isRefresh);
+    sent.release();
+    await sent.stop();
+    // Refused: the reason is under Tab, with focus.
+    await expect(tab).toHaveAccessibleDescription("There's no tab “guides”");
+    await expect(tab).toBeFocused();
+    if (where === "typing in Name") {
+      await name.focus();
+    }
+    await refresh.started;
+    refresh.release();
+    await refresh.stop();
+    // The page is refreshed and the Tab field goes with the tab: the reason is under the file. Focus goes there with
+    // it when it was on Tab; someone typing in Name is left there.
+    const chosen = dialog.getByRole("button", { name: /openapi\.yaml/ });
+    await expect(tab).toHaveCount(0);
+    await expect(chosen).toHaveAccessibleDescription("There's no tab “guides”");
+    await expect(where === "on Tab" ? chosen : name).toBeFocused();
+    await expect(name).toHaveValue("Acme API");
 
-  // Without a tab to name, it's added.
-  await dialog.getByRole("button", { name: "Add reference" }).click();
-  await expect(team.getByText("API reference added")).toBeVisible();
-  await team.waitForURL(`**/app/${slug}/docs/references/acme-api`);
-  await expect(team.getByRole("heading", { name: "Acme API", level: 1 })).toBeVisible();
-});
+    // Without a tab to name, it's added.
+    await dialog.getByRole("button", { name: "Add reference" }).click();
+    await expect(team.getByText("API reference added")).toBeVisible();
+    await team.waitForURL(`**/app/${slug}/docs/references/acme-api`);
+    await expect(team.getByRole("heading", { name: "Acme API", level: 1 })).toBeVisible();
+  });
+}

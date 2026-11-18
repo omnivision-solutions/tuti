@@ -135,11 +135,19 @@ export function ApiReferenceDialog({
   // How many adds the server refused: after each, focus goes to the field the reason is about, once it's shown
   // (the field is described by it).
   const [refused, setRefused] = useState(0);
+  // The refusals focus has gone to.
+  const answered = useRef(0);
   useEffect(() => {
-    if (refused > 0 && shown) {
+    if (refused === 0 || !shown) {
+      return;
+    }
+    // As a refusal arrives (its reason is set with it). When its field goes and the reason moves, only if focus went
+    // with the field (it's on nothing in the form now): someone typing in another field is left there.
+    const fresh = refused > answered.current;
+    answered.current = refused;
+    if (fresh || !document.activeElement?.closest("form")) {
       document.getElementById(FOCUS[shown])?.focus();
     }
-    // As a refusal arrives (its reason is set with it), and again if its field goes and the reason moves.
   }, [refused, shown]);
   // Its name: the spec's until the team types one.
   const [name, setName] = useState("");
