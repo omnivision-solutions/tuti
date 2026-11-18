@@ -2061,7 +2061,8 @@ model ApiReference {
   spec           String
   /// What the spec read into (`ApiDoc` in @tuti/shared/api-reference), with the slugs the pages keep.
   /// Large: lists never select it, or `spec`.
-  doc            Json
+  /// Plain json, not jsonb: jsonb reorders an object's keys, and an example shows them as the spec wrote them.
+  doc            Json @db.Json
   /// The team's choices, kept across reads (`ApiReferenceState`): slugs, what's hidden, what's new, the groups' order.
   state          Json
   /// For lists: how many operations `doc` has, how many of them are on the help center, and how many are new (`state.unseen`).

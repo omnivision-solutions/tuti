@@ -24,7 +24,7 @@ CREATE TABLE "api_reference" (
     "ref" TEXT,
     "baseUrl" TEXT,
     "spec" TEXT NOT NULL,
-    "doc" JSONB NOT NULL,
+    "doc" JSON NOT NULL,
     "state" JSONB NOT NULL,
     "operationCount" INTEGER NOT NULL DEFAULT 0,
     "shownCount" INTEGER NOT NULL DEFAULT 0,

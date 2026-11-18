@@ -58,6 +58,17 @@ const operations = async (slug = "api-reference") =>
 const stored = (slug = "api-reference") => prisma.apiReference.findUniqueOrThrow({ where: { projectId_slug: { projectId: project.id, slug } } });
 
 describe("adding and reading", () => {
+  test("an example's fields keep the spec's order", async () => {
+    const text = JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "Acme API", version: "1" },
+      paths: { "/posts": { get: { responses: { 200: { description: "OK", content: { "application/json": { example: { number: 128, title: "Dark mode" } } } } } } } },
+    });
+    await add("API reference", text);
+    const doc = (await stored()).doc as { operations: { responses: { example: unknown }[] }[] };
+    expect(Object.keys(doc.operations[0]!.responses[0]!.example as object)).toEqual(["number", "title"]);
+  });
+
   test("a spec's text becomes a published reference with its operations, groups and types", async () => {
     expect(await add()).toMatchObject({
       slug: "api-reference",
