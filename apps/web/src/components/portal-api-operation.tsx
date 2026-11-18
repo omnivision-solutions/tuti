@@ -16,11 +16,11 @@ type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
 
 /**
  * A method's colour, in hues the portal keeps whatever the project's accent (statuses', info blue, destructive red): the
- * accent itself isn't for labels. Reading in the Planned status's blue, adding in info blue, changing in orange, deleting in red.
+ * accent itself isn't for labels. Reading in the Planned status's blue, adding in the Completed status's green, changing in orange, deleting in red.
  */
 const METHOD_COLOUR: Partial<Record<ApiOperation["kind"], string>> = {
   GET: "text-status-planned",
-  POST: "text-info",
+  POST: "text-status-completed",
   PUT: "text-status-in-progress",
   PATCH: "text-status-in-progress",
   DELETE: "text-destructive",
