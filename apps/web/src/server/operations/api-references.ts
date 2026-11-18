@@ -1,12 +1,15 @@
 import { type Prisma, prisma } from "@tuti/db";
 import {
   dropHidden,
+  fetchGithubSpec,
   fetchSpec,
   freeDocsSlug,
+  GITHUB_NOT_ADDED,
   indexReference,
   lockProject,
   readStorable,
   referenceCounts,
+  repoPathRefusal,
   respec,
   specUrlRefusal,
   syncApiReference as syncReference,
@@ -38,6 +41,27 @@ const baseUrl = z
 /** Where a URL source's spec is (fetchSpec says what it may be: https, public). */
 const sourceUrl = z.string().trim().min(1, "Enter the spec's address").max(2000, "Keep the address to 2,000 characters");
 
+/** A file in a repository the project added on GitHub: GitHub's id for the repository, the file's path, and a branch. */
+const repoId = z.number().int().positive();
+const repoPath = z
+  .string()
+  .trim()
+  .transform((path) => path.replace(/^\/+/, ""))
+  .pipe(
+    z
+      .string()
+      .min(1, "Enter the file's path in the repository")
+      .max(1000, "Keep the path to 1,000 characters")
+      .refine((path) => !repoPathRefusal(path), "Enter the file's path in the repository, like openapi.yaml"),
+  );
+// What git allows in a branch's name, roughly: no spaces, control characters or ~^:?*[\ (GitHub answers the rest).
+const branch = z
+  .string()
+  .trim()
+  .min(1, "Enter a branch")
+  .max(255, "Keep the branch to 255 characters")
+  .regex(/^[^\s~^:?*[\\\x00-\x1f\x7f]+$/, "That isn't a branch's name");
+
 /** The spec as a doc to store; one that can't be read, or has nothing to show, is refused with the reader's sentence. */
 function read(text: string, from?: string): ApiDoc {
   const result = readStorable(text, from);
@@ -58,6 +82,23 @@ export async function fetched(url: string, context: { actor: Actor; projectId: s
   }
   await countSpecFetch(context);
   const result = await fetchSpec(url);
+  if ("error" in result) {
+    throw new OperationError(400, "invalid_input", result.error);
+  }
+  return result;
+}
+
+/**
+ * The file in a repository the project added on GitHub, and the branch it was read on (`ref` left out: the repository's
+ * default branch), or a refusal saying why it couldn't be read. Counted against the team's fetch limits as a URL is,
+ * unless the repository isn't the project's (nothing is read then).
+ */
+export async function fetchedFromGithub(source: { repoId: number; path: string; ref?: string | null }, context: { actor: Actor; projectId: string }) {
+  if (!(await prisma.githubRepository.count({ where: { repoId: source.repoId, connection: { projectId: context.projectId } } }))) {
+    throw new OperationError(400, "invalid_input", GITHUB_NOT_ADDED);
+  }
+  await countSpecFetch(context);
+  const result = await fetchGithubSpec(context.projectId, source);
   if ("error" in result) {
     throw new OperationError(400, "invalid_input", result.error);
   }
@@ -239,19 +280,29 @@ export const getApiReference = defineOperation({
 export const createApiReference = defineOperation({
   name: "apiReferences.create",
   summary:
-    "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), or the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it). Either is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
+    "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it), or a file in a repository the project added on GitHub (`github`: GitHub's id for the repository, `repoId`; the file's `path` in it; and a branch, `ref`, left out for the repository's default branch; 5 MB at most, read again when a pull request into the branch that changes the file merges, every 6 hours and on apiReferences.sync). Each is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL or GitHub, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
   method: "POST",
   path: "/api-references",
   scope: "write",
   access: "team",
   input: z
-    .object({ name, spec: spec.optional(), url: sourceUrl.optional(), tab: slug.optional() })
-    .refine((input) => (input.spec === undefined) !== (input.url === undefined), "Give the spec's text (spec) or its address (url), not both"),
+    .object({ name, spec: spec.optional(), url: sourceUrl.optional(), github: z.object({ repoId, path: repoPath, ref: branch.optional() }).optional(), tab: slug.optional() })
+    .refine(
+      (input) => [input.spec, input.url, input.github].filter((given) => given !== undefined).length === 1,
+      "Give one of the spec's text (spec), its address (url) or its file on GitHub (github)",
+    ),
   example: { name: "API reference", spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '1'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
   run: async (context, input) => {
     const { projectId } = context;
-    const { text, url: from } = input.url === undefined ? { text: input.spec!, url: undefined } : await fetched(input.url, context);
-    const { doc, state } = settle(null, read(text, from));
+    let text = input.spec;
+    let from: string | undefined;
+    let ref: string | undefined;
+    if (input.url !== undefined) {
+      ({ text, url: from } = await fetched(input.url, context));
+    } else if (input.github) {
+      ({ text, ref } = await fetchedFromGithub(input.github, context));
+    }
+    const { doc, state } = settle(null, read(text!, from));
     const { id, ...created } = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });
@@ -264,7 +315,8 @@ export const createApiReference = defineOperation({
           order: await lastIn(tx, projectId, tabId),
           format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
           ...(input.url !== undefined && { source: "URL", sourceUrl: stored(input.url) }),
-          spec: text,
+          ...(input.github && { source: "GITHUB", repoId: input.github.repoId, path: input.github.path, ref }),
+          spec: text!,
           doc: json(doc),
           state: json(state),
           ...counts(doc, state),
@@ -418,44 +470,57 @@ export const replaceApiReference = defineOperation({
 export const syncApiReference = defineOperation({
   name: "apiReferences.sync",
   summary:
-    "Read a URL's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `failure` says why (and `syncError`, the reference's page too, until a sync works). A sync that another (the 6-hourly one, a second Sync now, a change of address) overtook writes nothing, as that one's answer is newer: `changes` and `failure` are null. The rest of the answer is the reference as it is once this sync is done. With `url`, the reference is read from that address from now on: it's fetched and read first, with apiReferences.create's checks, and one that can't be is refused (400) with the address left as it was; so is one overtaken by another change of the address, or by a sync (409). The address is kept as a URL parser writes it. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
+    "Read a URL's or a GitHub file's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `failure` says why (and `syncError`, the reference's page too, until a sync works). A sync that another (the 6-hourly one, a second Sync now, a change of its source) overtook writes nothing, as that one's answer is newer: `changes` and `failure` are null. The rest of the answer is the reference as it is once this sync is done. With `url` (a URL's reference), or `github` (a GitHub file's: any of its `repoId`, `path` and `ref`, the rest kept), the reference is read from there from now on: it's read first, with apiReferences.create's checks, and one that can't be is refused (400) with the source left as it was; so is one overtaken by another change of the source, or by a sync (409). The address is kept as a URL parser writes it. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
   method: "POST",
   path: "/api-references/{slug}/sync",
   scope: "write",
   access: "team",
-  input: z.object({ slug, url: sourceUrl.optional() }),
+  input: z.object({ slug, url: sourceUrl.optional(), github: z.object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.optional() }).optional() }),
   example: { url: "https://api.example.com/openapi.json" },
   run: async (context, input) => {
     const { projectId } = context;
     const row = await prisma.apiReference.findUnique({
       where: { projectId_slug: { projectId, slug: input.slug } },
-      select: { id: true, source: true, sourceUrl: true, syncTriedAt: true },
+      select: { id: true, source: true, sourceUrl: true, repoId: true, path: true, ref: true, syncTriedAt: true },
     });
     if (!row) {
       throw notFound(input.slug);
     }
-    if (row.source !== "URL") {
-      throw new OperationError(409, "not_url", "This reference's spec isn't read from a URL: upload a new version instead");
+    if (row.source === "UPLOAD") {
+      throw new OperationError(409, "uploaded", "This reference's spec was uploaded: upload a new version instead");
     }
-    if (input.url !== undefined && stored(input.url) !== row.sourceUrl) {
-      // A new address: read whole before it's kept, so one that doesn't work leaves the reference as it was.
-      const { text, url: from } = await fetched(input.url, context);
+    if (input.url !== undefined && row.source !== "URL") {
+      throw new OperationError(409, "not_url", "This reference is read from GitHub: change its repository, path or branch instead");
+    }
+    if (input.github !== undefined && row.source !== "GITHUB") {
+      throw new OperationError(409, "not_github", "This reference is read from a URL: change its address instead");
+    }
+    const github = input.github && { repoId: input.github.repoId ?? row.repoId!, path: input.github.path ?? row.path!, ref: input.github.ref ?? row.ref! };
+    const elsewhere = input.url !== undefined ? stored(input.url) !== row.sourceUrl : github !== undefined && (github.repoId !== row.repoId || github.path !== row.path || github.ref !== row.ref);
+    if (elsewhere) {
+      // A new source: read whole before it's kept, so one that doesn't work leaves the reference as it was.
+      const { text, url: from } = input.url !== undefined ? await fetched(input.url, context) : { ...(await fetchedFromGithub(github!, context)), url: undefined };
       const next = read(text, from);
       const { id, ...moved } = await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         // Only over the reference as it started from: every change and sync moves syncTriedAt on, so a teammate's change
-        // that landed meanwhile stays, even one back to this address (A to C to A). A sync landing meanwhile refuses it
+        // that landed meanwhile stays, even one back to this source (A to C to A). A sync landing meanwhile refuses it
         // too: the rare price of telling those apart without a counter.
-        const current = await tx.apiReference.findFirst({ where: { id: row.id, sourceUrl: row.sourceUrl, syncTriedAt: row.syncTriedAt }, select: { doc: true, state: true } });
+        const { sourceUrl, repoId, path, ref, syncTriedAt } = row;
+        const current = await tx.apiReference.findFirst({ where: { id: row.id, sourceUrl, repoId, path, ref, syncTriedAt }, select: { doc: true, state: true } });
         if (!current) {
           if (await tx.apiReference.count({ where: { id: row.id } })) {
-            throw new OperationError(409, "source_changed", "The address changed or was synced meanwhile. Reload to see it, and try again.");
+            throw new OperationError(409, "source_changed", `The ${input.url !== undefined ? "address" : "file"} changed or was synced meanwhile. Reload to see it, and try again.`);
           }
           throw notFound(input.slug);
         }
-        // A sync of the old address still on its way finds the address changed, and writes nothing.
+        // A sync of the old source still on its way finds it changed, and writes nothing.
         const { data, changes, shown } = respec(current, text, next);
-        const updated = await tx.apiReference.update({ where: { id: row.id }, data: { ...data, sourceUrl: stored(input.url!) }, select: summarySelect });
+        const updated = await tx.apiReference.update({
+          where: { id: row.id },
+          data: { ...data, ...(input.url !== undefined ? { sourceUrl: stored(input.url) } : github) },
+          select: summarySelect,
+        });
         await dropHidden(tx, row.id, shown);
         return { id: row.id, ...summary(updated), changes, failure: null as string | null };
       });
@@ -464,9 +529,13 @@ export const syncApiReference = defineOperation({
       }
       return moved;
     }
-    // An address refused before anything is fetched costs nothing: the sync still says why, uncounted. The sync is of
-    // the address checked here: one changed or synced meanwhile is left alone (`expected`), unfetched.
-    if (!specUrlRefusal(row.sourceUrl ?? "")) {
+    // A source refused before anything is fetched costs nothing: the sync still says why, uncounted. The sync is of
+    // the source checked here: one changed or synced meanwhile is left alone (`expected`), unfetched.
+    const refused =
+      row.source === "URL"
+        ? specUrlRefusal(row.sourceUrl ?? "")
+        : !(await prisma.githubRepository.count({ where: { repoId: row.repoId ?? -1, connection: { projectId } } }));
+    if (!refused) {
       await countSpecFetch(context);
     }
     const result = await syncReference(row.id, { expected: row });

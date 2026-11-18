@@ -41,7 +41,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Couldn't handle the repositories" }, { status: 503 });
     }
   }
-  // Merged pull requests: the github-pull-request job adds them to the changelog's running draft and makes their code change.
+  // Merged pull requests: the github-pull-request job adds them to the changelog's running draft, makes their code change
+  // and syncs the API references read from the branch they merged into.
   if (event === "pull_request" && payload.action === "closed" && payload.installation) {
     const { pull_request: pr, repository } = payload as unknown as GithubPullRequestEvent;
     if (!pr.merged) {
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
         labels: (pr.labels ?? []).map((label) => label.name),
         author: pr.user?.login ?? "",
         mergedAt: pr.merged_at ?? undefined,
+        base: pr.base?.ref,
       });
     } catch (error) {
       log.error("Handling a GitHub pull request failed", { error, repo: repository.full_name, number: pr.number });
@@ -108,6 +110,7 @@ type GithubPullRequestEvent = {
     merged_at?: string | null;
     user?: { login: string } | null;
     labels?: { name: string }[];
+    base?: { ref: string };
   };
   repository: GithubRepository;
 };

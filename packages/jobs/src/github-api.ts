@@ -33,6 +33,8 @@ export type GithubApi = {
   send<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T | null>;
   /** The raw answer (redirects followed), for downloads such as a commit's archive; throws unless it's OK. */
   download(path: string, signal?: AbortSignal): Promise<Response>;
+  /** A file's bytes as stored (the contents API's raw media type, up to 100 MB), or null when GitHub answers 404; throws on other errors. */
+  raw(path: string, signal?: AbortSignal): Promise<Response | null>;
 };
 
 /** API access for one installation. */
@@ -85,6 +87,9 @@ export async function installationApi(installationId: number): Promise<GithubApi
     async download(path, signal) {
       // fetch drops the token on the redirect to another host (GitHub's codeload, whose link carries its own).
       return (await request(`${apiUrl()}${path}`, false, { signal }))!;
+    },
+    raw(path, signal) {
+      return request(`${apiUrl()}${path}`, true, { signal, headers: { accept: "application/vnd.github.raw" } });
     },
   };
 }

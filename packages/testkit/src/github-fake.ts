@@ -30,7 +30,8 @@ export type GithubFake = {
   /**
    * A repository's default branch at its latest commit, as Verify reads it: the repository (its default branch), the
    * branch's commit, the tree at that commit and each file's contents there; and the commit's archive, as the docs agent
-   * reads it (`/tarball/<commit>`, a gzipped tar like GitHub's, through a redirect). Also `POST /_fake/repository {repo, …}`,
+   * reads it (`/tarball/<commit>`, a gzipped tar like GitHub's, through a redirect). Contents are read at the commit or on
+   * the branch, as JSON or (`Accept: application/vnd.github.raw`) as the file's bytes. Also `POST /_fake/repository {repo, …}`,
    * from other processes.
    */
   repository(repo: string, snapshot: FakeRepository): void;
@@ -63,6 +64,8 @@ export type FakeRepository = {
   truncated?: boolean;
   /** Files whose contents GitHub fails to send (500). */
   failing?: string[];
+  /** In this process only: run as the next contents request arrives (once), which is answered when it's done (a test holding a read). */
+  during?: () => Promise<unknown>;
 };
 
 /** A GitHub user signing in to Tuti with GitHub; `verified` (default true) is whether GitHub verified `email`. */
@@ -242,15 +245,26 @@ export async function startGithubFake(): Promise<GithubFake> {
         }
         reads.push(url.pathname);
         const snapshot = contentsPath && repositories.get(contentsPath[1]!);
-        if (contentsPath && snapshot && url.searchParams.get("ref") === snapshot.commit) {
+        const ref = url.searchParams.get("ref");
+        if (contentsPath && snapshot && (ref === snapshot.commit || ref === (snapshot.branch ?? "main"))) {
           const path = decodeURIComponent(contentsPath[2]!);
-          if (snapshot.failing?.includes(path)) {
-            return send(500, { message: "Server Error" });
-          }
-          const content = snapshot.files[path];
-          return content !== undefined
-            ? send(200, { type: "file", encoding: "base64", content: Buffer.from(content).toString("base64").replace(/.{60}/g, "$&\n") })
-            : send(404, { message: "Not Found" });
+          void (async () => {
+            const during = snapshot.during;
+            snapshot.during = undefined;
+            await during?.();
+            if (snapshot.failing?.includes(path)) {
+              return send(500, { message: "Server Error" });
+            }
+            const content = snapshot.files[path];
+            if (content === undefined) {
+              return send(404, { message: "Not Found" });
+            }
+            if (req.headers.accept === "application/vnd.github.raw") {
+              return res.writeHead(200, { "content-type": "application/vnd.github.raw" }).end(content);
+            }
+            send(200, { type: "file", encoding: "base64", content: Buffer.from(content).toString("base64").replace(/.{60}/g, "$&\n") });
+          })();
+          return;
         }
         if (contentsPath) {
           const number = /^merge-(\d+)$/.exec(url.searchParams.get("ref") ?? "")?.[1];

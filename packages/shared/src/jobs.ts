@@ -84,6 +84,8 @@ export const jobs = {
       /** Its author's GitHub login, and when it merged. */
       author: z.string().default(""),
       mergedAt: z.string().optional(),
+      /** The branch it merged into: API references read from that branch of the repository are read again. */
+      base: z.string().optional(),
     }),
   },
   /**

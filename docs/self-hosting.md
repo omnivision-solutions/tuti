@@ -50,7 +50,8 @@ Requirements:
   retries, so a failed webhook delivery or "shipped" email isn't tried again, and the scheduled
   jobs never run: unused uploads aren't deleted (storage only grows), deleted docs articles
   stay in the trash, docs search counts aren't trimmed to a year, and an API reference read
-  from a URL is read again only on its Sync now, not every 6 hours.
+  from a URL is read again only on its Sync now (one from GitHub also when a pull request
+  changing its file merges), not every 6 hours.
 - Optional: an AI provider for duplicate detection, docs search by meaning, AI drafting and
   answers, and Autopilot (`OPENAI_API_KEY`: an [OpenRouter](https://openrouter.ai) key, or any
   OpenAI-compatible provider's with `OPENAI_BASE_URL`). Without it, similar posts are still
