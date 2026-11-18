@@ -147,3 +147,14 @@ test("a saved level that isn't in use: the one in use is selected, a line says s
   await act(async () => radio("Balanced").click());
   expect(saveAiModel).toHaveBeenCalledWith("acme", { levels: { support: "balanced" } });
 });
+
+test("a save that throws is over like one refused: the control takes choices again, and the same one can be sent again", async () => {
+  const { radio, checked } = await render();
+  saveAiModel.mockRejectedValueOnce(new Error("network"));
+  await act(async () => radio("Best").click());
+  expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
+  // Not saved, so what's in use is still selected.
+  expect(checked()).toEqual(["Balanced"]);
+  await act(async () => radio("Best").click());
+  expect(saveAiModel).toHaveBeenCalledTimes(2);
+});
