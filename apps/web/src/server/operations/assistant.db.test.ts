@@ -90,6 +90,10 @@ test("a tone sent to the API is folded into the instructions saved, and none is 
   // Nor over instructions stored with CRLF line breaks.
   await storeTone("", "Brief\r\n\r\nCall it Acme.");
   expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nCall it Acme." });
+  // Instructions sent with CRLF are saved with LF, and a tone they open with isn't added again.
+  expect(await update({ instructions: "a\r\nb" })).toMatchObject({ instructions: "a\nb" });
+  expect(await update({ tone: "Brief", instructions: "Brief\r\n\r\nCall it Acme." })).toMatchObject({ instructions: "Brief\n\nCall it Acme." });
+  expect(await stored()).toEqual({ assistantTone: "", assistantInstructions: "Brief\n\nCall it Acme." });
   // Alone, where the previous release left a tone: it takes that tone's place, as it did then.
   await storeTone("Cheerful", "Call it Acme.");
   expect(await update({ tone: "Formal" })).toMatchObject({ tone: "", instructions: "Formal\n\nCall it Acme." });
