@@ -425,7 +425,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const width = (await rangeButton.boundingBox())!.width;
   await team.getByRole("button", { name: "Date range: Past 30 days" }).click();
   // Each range says its days, in groups: a day, a month, the past days.
-  await expect(team.getByRole("menuitem", { name: "Last month" })).toHaveText(/^Last month[A-Z][a-z]{2} 1\s–\s(28|29|30|31)$/);
+  await expect(team.getByRole("menuitem", { name: "Last month" })).toHaveText(/^Last month1\s–\s(28|29|30|31) [A-Z][a-z]{2,3}$/);
   await expect(team.getByRole("menu").getByRole("separator")).toHaveCount(2);
   await team.getByRole("menuitem", { name: "Past 7 days" }).click();
   await team.waitForURL(`**/app/${slug}/reporting?range=7d`);

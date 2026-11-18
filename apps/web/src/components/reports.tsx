@@ -10,6 +10,7 @@ import { RovingList } from "@/components/roving-list";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatDay } from "@/lib/format";
 import { type RangeKey, RANGES, rangeDates, type ReportRange, reportRange } from "@/lib/report-range";
 
 /** Reporting's pages: a range's numbers, a chart of them over its days, then the lists behind them. */
@@ -28,8 +29,8 @@ export function duration(seconds: number) {
   return hours % 24 ? `${Math.floor(hours / 24)} d ${hours % 24} h` : `${Math.floor(hours / 24)} d`;
 }
 
-const dayLabel = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" });
-/** A Searches tile's line when the range reaches back past the searches kept: "Since Oct 5" (or null). */
+const dayLabel = (day: string) => formatDay(new Date(`${day}T00:00:00Z`));
+/** A Searches tile's line when the range reaches back past the searches kept: "Since 5 Oct" (or null). */
 export const searchesSince = (day: string | null) => (day ? `Since ${dayLabel(day)}` : null);
 
 const monthLabel = (day: string, month: "short" | "long") =>
@@ -317,7 +318,7 @@ function bars(days: string[]): { unit: "day" | "week" | "month"; bars: Bar[] } {
   for (const bar of bars) {
     const [first, last] = [days[bar.from]!, days[bar.to - 1]!];
     const monthEnd = new Date(Date.UTC(Number(first.slice(0, 4)), Number(first.slice(5, 7)), 0)).getUTCDate();
-    if (first.slice(8) !== "01" || Number(last.slice(8)) !== monthEnd) bar.title = `${dayLabel(first)} – ${dayLabel(last)}, ${first.slice(0, 4)}`;
+    if (first.slice(8) !== "01" || Number(last.slice(8)) !== monthEnd) bar.title = `${dayLabel(first)} – ${dayLabel(last)} ${first.slice(0, 4)}`;
   }
   return { unit: "month", bars };
 }

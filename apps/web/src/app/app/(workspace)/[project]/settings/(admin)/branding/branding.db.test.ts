@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { billingFile } from "@tuti/testkit";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { PoweredBySettings } from "@/components/branding-settings";
@@ -48,4 +49,11 @@ test("Powered by tuti quotes the add-on as billed on the project's plan, or what
   // Not sold for a yearly plan: no price.
   vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { delete badge!.year; }));
   expect(await offered()).toBeNull();
+});
+
+test("a licensed project's Powered by tuti says until when, the day first", () => {
+  const html = renderToStaticMarkup(
+    createElement(PoweredBySettings, { projectSlug: slug, poweredBy: false, licensedUntil: new Date("2026-11-17T12:00:00Z"), buyLicenseUrl: "https://tuti.example/app/license", plan: null }),
+  );
+  expect(html).toContain("Licensed until 17 November 2026.");
 });

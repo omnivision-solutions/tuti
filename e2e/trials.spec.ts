@@ -61,7 +61,7 @@ test("a new account's first project starts a free trial: every page says what's 
   await banner.getByRole("link", { name: "Choose a plan" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing`);
   await expect(owner.getByText("Pro trial", { exact: true })).toBeVisible();
-  await expect(owner.getByText(/^Ends on .+\. Choose a plan to keep going\.$/)).toBeVisible();
+  await expect(owner.getByText(/^Ends on \d{1,2} [A-Z][a-z]+ \d{4}\. Choose a plan to keep going\.$/)).toBeVisible();
   await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
   await expect(owner.getByText("After your trial", { exact: true })).toBeVisible();
   // Its trial's AI credits, until it ends.

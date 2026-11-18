@@ -65,9 +65,9 @@ export function withRange(href: string, key: RangeKey) {
   return `${href}${href.includes("?") ? "&" : "?"}range=${key}`;
 }
 
-/** The days a range covers, as the picker shows them: "Oct 5 – Nov 3", "Oct 1 – 31", "Nov 3"; the years when it spans two. */
+/** The days a range covers, as the picker shows them: "5 Oct – 3 Nov", "1 – 31 Oct", "3 Nov"; the years when it spans two. */
 export function rangeDates({ since, until }: ReportRange) {
   const last = new Date(until.getTime() - DAY);
   const year = since.getUTCFullYear() !== last.getUTCFullYear() ? { year: "numeric" as const } : {};
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC", ...year }).formatRange(since, last);
+  return new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", timeZone: "UTC", ...year }).formatRange(since, last);
 }
