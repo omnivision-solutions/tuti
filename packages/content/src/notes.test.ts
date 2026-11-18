@@ -164,6 +164,14 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(replacePassage(section, "Each plan has seats.", "Each plan has seats.\r\nAnd a price.")).toBeNull();
   });
 
+  test("a link as the editor stores it (target, rel and all) is a passage, and its replacement keeps the link's every attribute", () => {
+    const link = { type: "link", attrs: { href: "https://example.com/billing", target: "_blank", rel: "noopener noreferrer nofollow", class: null } };
+    const stored = [{ type: "paragraph", content: [{ type: "text", text: "See " }, { type: "text", text: "Billing", marks: [link] }, { type: "text", text: " for seats." }] }];
+    expect(passagesIn(stored).map((passage) => passage.text)).toEqual(["See [Billing](https://example.com/billing) for seats."]);
+    const next = replacePassage(stored, "See [Billing](https://example.com/billing) for seats.", "See [Plans](https://example.com/billing) for seats and prices.")!;
+    expect(next[0]!.content).toEqual([{ type: "text", text: "See " }, { type: "text", text: "Plans", marks: [link] }, { type: "text", text: " for seats and prices." }]);
+  });
+
   test("a replacement with an image's placeholder is refused: the image stays where it is, and the placeholder would be stored as text", () => {
     expect(replacePassage(section, "Each plan has seats.", "Each plan has seats. {{media 1}}")).toBeNull();
     expect(replacePassage(section, "Each plan has seats.", "Each plan has five seats.")).not.toBeNull();

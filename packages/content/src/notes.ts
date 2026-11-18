@@ -194,6 +194,10 @@ const passageText = (content: JSONContent[]) => toMarkdown({ type: "doc", conten
 /** A text block's content as its characters with their marks (spaces aside: Markdown moves those out of bold). */
 const marked = (content: JSONContent[]) => content.flatMap((node) => [...(node.text ?? "")].map((char) => (char.trim() ? char + JSON.stringify(node.marks ?? []) : char))).join("\u0000");
 
+/** The passage's own link marks by address: a stored link carries more than its address (target, rel), and a replacement keeps them. */
+const ownLinks = (content: JSONContent[]) =>
+  new Map(content.flatMap((node) => (node.marks ?? []).filter((mark) => mark.type === "link" && typeof mark.attrs?.href === "string").map((mark) => [mark.attrs!.href as string, mark] as const)));
+
 /**
  * The passages in these blocks: each text block whose text can be replaced by itself (replacePassage), as the Markdown
  * the model is shown and quotes back. Only text in bold, links and `code`: a block with anything else (italics, a line
@@ -271,11 +275,14 @@ function rewritten(target: JSONContent, replace: string): JSONContent | null {
     content.push(code);
     rest = rest.slice(at + span.length);
   }
-  const next = { ...target, content };
   // Each link the passage had, as often as it had it: one of two to the same address made plain text is a link lost.
   if (!text(rest) || content.length === 0) {
     return null;
   }
+  // A link the passage had comes back as the mark it was, every attribute: the reader makes one with the address alone.
+  const own = ownLinks(target.content ?? []);
+  const kept = content.map((node) => (node.marks?.some((mark) => mark.type === "link") ? { ...node, marks: node.marks.map((mark) => (mark.type === "link" && own.get(mark.attrs?.href as string)) || mark) } : node));
+  const next = { ...target, content: kept };
   const has = linkRuns(content);
   return [...linkRuns(target.content ?? [])].every(([href, count]) => (has.get(href) ?? 0) >= count) ? next : null;
 }
