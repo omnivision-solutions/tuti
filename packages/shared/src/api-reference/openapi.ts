@@ -354,7 +354,10 @@ function read(root: Obj): ApiDoc {
       if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
       parts.push(part);
       for (const inner of list(part.allOf)) add(follow(inner, where));
+      after.push(part);
     };
+    /** Each part after the parts it folds in, the schema last: the order their fields are laid down in. */
+    const after: Obj[] = [];
     add(schema);
     const merged = new Map<string, unknown>();
     const properties = new Map<string, unknown>();
@@ -364,8 +367,8 @@ function read(root: Obj): ApiDoc {
       for (const key of KEYWORDS) if (Object.hasOwn(part, key) && !merged.has(key)) merged.set(key, part[key]);
       for (const name of list(part.required)) required.add(name);
     }
-    // The schema's own fields last: its word on a field it shares with what it folds in is the one that counts.
-    for (const part of [...parts.slice(1), schema]) for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
+    // A part's own fields after those of what it folds in, at every level: its word on a field they share is the one that counts.
+    for (const part of after) for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
     merged.set("required", [...required]);
     const whole: Obj = Object.fromEntries(merged);

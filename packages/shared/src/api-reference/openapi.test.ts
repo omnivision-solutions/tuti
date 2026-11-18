@@ -1178,6 +1178,28 @@ test("a schema's own word on a field counts over the one it folds in", () => {
     ],
   });
   expect(example).toEqual({ kind: "dog", name: "string", barks: true });
+
+  // Two levels down too: what Pup folds in has Dog's word on `kind`, not Pet's.
+  const pup = schemaOf(ref("Pup"), {
+    Pet: { type: "object", description: "A pet.", properties: { kind: { type: "string", description: "The pet's kind." } } },
+    Dog: { allOf: [ref("Pet")], properties: { kind: { type: "string", enum: ["dog"] } } },
+    Pup: { allOf: [ref("Dog"), { properties: { age: { type: "integer" } } }] },
+  });
+  expect(pup.schema).toEqual({
+    type: "Pup",
+    ref: "Pup",
+    description: "A pet.",
+    properties: [
+      { name: "kind", required: false, type: "string", enum: ["dog"] },
+      { name: "age", required: false, type: "integer" },
+    ],
+  });
+  expect(pup.example).toEqual({ kind: "dog", age: 0 });
+  expect(pup.doc.types.map((type) => type.schema.properties![0])).toEqual([
+    { name: "kind", required: false, type: "string", description: "The pet's kind." },
+    { name: "kind", required: false, type: "string", enum: ["dog"] },
+    { name: "kind", required: false, type: "string", enum: ["dog"] },
+  ]);
 });
 
 test("a schema or parameter with thousands of other keys has them listed once, not on every use", () => {
