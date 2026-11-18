@@ -1388,6 +1388,44 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
   expect(response.example).toEqual({ owner: { id: "string", name: "string" }, admin: { id: "1", name: "Ada", role: "admin" }, short: "a" });
   expect(codes(later)).toEqual(["ADDS_TO_ITSELF @ schemas › Holder › twin"]);
 
+  // At the top of a response or a parameter, and as a part of an `allOf`, the same.
+  const pet = { type: "object", example: { name: "Rex" }, properties: { name: { type: "string" } } };
+  const top = (openapi: string) =>
+    read(
+      JSON.stringify({
+        openapi,
+        paths: {
+          "/x": {
+            get: {
+              summary: "X",
+              parameters: [{ name: "id", in: "query", schema: { $ref: "#/components/schemas/Id", example: "abc" } }],
+              responses: {
+                "200": json({ $ref: "#/components/schemas/Pet", example: { name: "Own" } }),
+                "201": json({ $ref: "#/components/schemas/Pet", properties: { age: { type: "integer" } } }),
+                "202": json(ref("Dog")),
+              },
+            },
+          },
+        },
+        components: { schemas: { Pet: pet, Id: { type: "string", example: "id-1" }, Dog: { allOf: [{ $ref: "#/components/schemas/Pet", properties: { bark: { type: "boolean" } } }] } } },
+      }),
+    ).operations[0]!;
+  const applied = top("3.1.0");
+  expect(applied.params[0]!.example).toBe("abc");
+  expect(applied.responses.map((one) => one.example)).toEqual([{ name: "Own" }, { name: "string", age: 0 }, { name: "string", bark: true }]);
+  expect(applied.responses[2]!.schema).toEqual({
+    type: "Dog",
+    ref: "Dog",
+    properties: [
+      { name: "name", required: false, type: "string" },
+      { name: "bark", required: false, type: "boolean" },
+    ],
+  });
+  const ignored = top("3.0.3");
+  expect(ignored.params[0]!.example).toBe("id-1");
+  expect(ignored.responses.map((one) => one.example)).toEqual([{ name: "Rex" }, { name: "Rex" }, { name: "Rex" }]);
+  expect(ignored.responses[2]!.schema).toMatchObject({ type: "Dog", ref: "Dog", properties: [{ name: "name", required: false, type: "string" }] });
+
   // 3.0: a reference is only the reference, with the description beside it read as before.
   const earlier = spec(parts);
   const before = earlier.operations[0]!.responses[0]!;

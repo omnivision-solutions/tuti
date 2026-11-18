@@ -559,7 +559,11 @@ function read(root: Obj, most: number): ApiDoc {
     // keeping its name. One this schema is already inside (a type's field that is the type and
     // more) is only named, as anywhere; so is a schema met again under itself. Any other is folded
     // in: a base two types share isn't either inside the other.
-    const parts = list(node.allOf);
+    // (A 3.1 part with keywords beside its reference is the two of them.)
+    const parts = list(node.allOf).flatMap((part) => {
+      const whole = split(part);
+      return whole === part ? [part] : list((whole as Obj).allOf);
+    });
     charge(parts.length);
     // (A schema that folds itself in adds nothing to itself.)
     const folded = parts.flatMap((part) => {
@@ -714,7 +718,9 @@ function read(root: Obj, most: number): ApiDoc {
     if (Object.hasOwn(holder, "example")) return data(holder.example, where);
     const first = follow(fieldsOf(holder.examples)[0]?.[1]);
     if (first && Object.hasOwn(first, "value")) return data(first.value, where);
-    const schema = follow(holder.schema);
+    // The schema's own example as the pages' fields have it: with what's beside a 3.1 reference, and what `allOf` folds in.
+    const target = follow(split(holder.schema));
+    const schema = target && flatten(target);
     if (schema && Object.hasOwn(schema, "example")) return data(schema.example, where);
     if (!make || holder.schema === undefined) return undefined;
     rootNodes = 0;
