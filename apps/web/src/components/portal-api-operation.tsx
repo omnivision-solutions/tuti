@@ -481,8 +481,9 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
               <Method kind={operation.kind} />
               <Path path={operation.path} />
-              {/* Only where there's somewhere to send it: never GraphQL (yet), nor servers without a host and no base address. */}
-              {tryable(page.doc, operation, page.reference.baseUrl) && (
+              {/* Only while the team lets readers try requests (Settings' Try it; the proxy refuses them too), and where there's
+                  somewhere to send it: never GraphQL (yet), nor servers without a host and no base address. */}
+              {page.reference.tryIt && tryable(page.doc, operation, page.reference.baseUrl) && (
                 <TryIt
                   // One per operation. Next.js already mounts each operation's page afresh (it keys a page by its route's
                   // params); this keeps a console's fields, answer and request on its way to its own operation should that change.

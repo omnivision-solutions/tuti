@@ -164,11 +164,22 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   // On the help center: groups as headings, in that order, and requests go to the base address.
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 1440, height: 900 });
-  await reader.goto("/docs/acme-api");
-  await expect(reader).toHaveURL(/\/docs\/acme-api\/[a-z-]+$/);
+  await reader.goto("/docs/acme-api/list-posts");
+  await expect(reader.getByRole("heading", { name: "List posts", level: 1 })).toBeVisible();
   const tree = reader.getByRole("navigation", { name: "Docs", exact: true });
   await expect(tree.getByRole("group")).toHaveText([/^Admin/, /^Posts/, /^Comments/]);
   await expect(reader.getByRole("region", { name: "Request example" }).getByText(/^curl '.*'/)).toHaveText(/^curl 'https:\/\/api\.acme\.example\/v1\//);
+
+  // Try it is off: the operation's page has no Try it. Switched back on, it's there.
+  await expect(reader.getByRole("button", { name: "Try it" })).toHaveCount(0);
+  await tabs.getByRole("link", { name: "Settings" }).click();
+  await team.waitForURL(`**/docs/references/acme-api/settings`);
+  await tryIt.check();
+  await expect(team.getByText("Try it switched on")).toBeVisible();
+  await reader.reload();
+  await expect(reader.getByRole("heading", { name: "List posts", level: 1 })).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Try it" })).toBeVisible();
+
   // Nothing is left at the old address.
   expect((await reader.goto("/docs/api-reference"))?.status()).toBe(404);
 
