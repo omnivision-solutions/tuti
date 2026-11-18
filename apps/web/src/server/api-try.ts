@@ -91,9 +91,9 @@ const registrable = (host: string) => getDomain(host, { allowPrivateDomains: tru
 
 /**
  * Counts the request against the limits (per reader, by an HMAC of their IP address when the proxy says it; per
- * project), or says it's over one. One at a time per project, so requests at once can't overrun them together.
+ * project), or says which one it's over. One at a time per project, so requests at once can't overrun them together.
  */
-async function countTry(projectId: string, requestHeaders: Headers): Promise<boolean> {
+async function countTry(projectId: string, requestHeaders: Headers): Promise<"reader" | "project" | null> {
   const client = await clientHash(requestHeaders);
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
   await prisma.apiTry.deleteMany({ where: { createdAt: { lt: hourAgo } } });
@@ -106,11 +106,15 @@ async function countTry(projectId: string, requestHeaders: Headers): Promise<boo
       client ? tx.apiTry.count({ where: { clientHash: client, createdAt: { gt: new Date(Date.now() - 60 * 1000) } } }) : 0,
       tx.apiTry.count({ where: { projectId, createdAt: { gt: hourAgo } } }),
     ]);
-    if (byClient >= TRIES_PER_CLIENT_PER_MINUTE || byProject >= TRIES_PER_PROJECT_PER_HOUR) {
-      return false;
+    // The reader's first, so one reader can't use up the project's hour for everyone.
+    if (byClient >= TRIES_PER_CLIENT_PER_MINUTE) {
+      return "reader";
+    }
+    if (byProject >= TRIES_PER_PROJECT_PER_HOUR) {
+      return "project";
     }
     await tx.apiTry.create({ data: { projectId, clientHash: client } });
-    return true;
+    return null;
   });
 }
 
@@ -176,8 +180,12 @@ export async function sendTry(request: Request, projectSlug: string, referenceSl
       return refuse(403, `Tuti sends requests only to this help center's own sites, and ${url.hostname} isn't one`);
     }
   }
-  if (!(await countTry(page.projectId, request.headers))) {
-    return refuse(429, "Too many requests through Tuti. Try again in a minute.");
+  const over = await countTry(page.projectId, request.headers);
+  if (over) {
+    return refuse(
+      429,
+      over === "reader" ? "Too many requests through Tuti. Try again in a minute." : "This help center sent a lot of requests through Tuti in the last hour. Try again later.",
+    );
   }
   const started = performance.now();
   try {

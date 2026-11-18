@@ -283,7 +283,10 @@ describe("what it sends and answers", () => {
     // Someone else still can, until the project's hour is used up.
     expect((await send(input(local()), { headers: { "x-test-ip": "203.0.113.10" } })).status).toBe(200);
     await prisma.apiTry.createMany({ data: Array.from({ length: TRIES_PER_PROJECT_PER_HOUR }, () => ({ projectId: project.id, clientHash: null })) });
-    expect((await send(input(local()), { headers: { "x-test-ip": "203.0.113.11" } })).status).toBe(429);
+    expect(await send(input(local()), { headers: { "x-test-ip": "203.0.113.11" } })).toMatchObject({
+      status: 429,
+      json: { error: "This help center sent a lot of requests through Tuti in the last hour. Try again later." },
+    });
     expect(fake.requests).toHaveLength(1);
     // Nothing of a request is kept: who and when, for the limits.
     expect(Object.keys((await prisma.apiTry.findFirstOrThrow()) as object).sort()).toEqual(["clientHash", "createdAt", "id", "projectId"]);
