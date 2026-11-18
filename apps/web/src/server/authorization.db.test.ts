@@ -187,7 +187,7 @@ const matrix: Matrix = {
   assistant: {
     saveAssistantSettings: {
       allowed: "ADMIN",
-      call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: "refund" })),
+      call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ length: "short", instructions: "Say hi", offLimits: "refund" })),
     },
   },
   branding: {

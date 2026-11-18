@@ -9,17 +9,14 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldTitle } from "@/c
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
 import { type Choice, choiceOf, costLabel, costPerUse, type ListedModel, pickedModel, TIER_NAMES, tiersFor } from "@/lib/model-tiers";
-import { AI_FEATURE_NAMES } from "@/lib/usage-format";
 import { saveAiModels } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
 import type { AiModels } from "@/server/operations/ai-models";
 
-/** A role with a row here: the changelog's and the Inbox's are on their own pages (Settings → Changelog, Inbox), as each feature's will be (docs/plan.md, R4–R7). */
-type RowRole = Exclude<AiRole, "changelog" | "support_draft" | "support_summary">;
+/** A role with a row here: Autopilot's. The other features' are on their own pages (Settings → AI answers, Inbox, Changelog), as Autopilot's will be (docs/plan.md, R4–R7). */
+type RowRole = Exclude<AiRole, "changelog" | "answers" | "escalations" | "support_draft" | "support_summary">;
 /** Each role's row, in the page's order: its title and what its model does. Every such role has one (the type says so). */
 const ROW_OF: Record<RowRole, { title: string; does: string }> = {
-  answers: { title: AI_FEATURE_NAMES.answers!, does: "Answers to questions in your docs, on the portal and in the widget." },
-  escalations: { title: AI_FEATURE_NAMES.escalations!, does: "The summary sent with a question passed to your team." },
   code_changes_decide: {
     title: "Autopilot decides",
     does: "Reads each merged pull request, its code and your help center, and decides which articles to fix and which new ones you need.",
