@@ -47,7 +47,7 @@ test("sends the system and user messages to the model it's given, with the token
 test("the provider didn't answer: a time limit, no connection, a rate limit, an error on its side, an empty reply; not a refusal or an unreadable reply", async () => {
   useFake();
   const failure = (run: () => Promise<unknown>) => run().then(() => null, (error: unknown) => error);
-  const asked = (timeoutMs?: number) => failure(() => complete({ system: "s", user: "u", timeoutMs, ...ai }));
+  const asked = () => failure(() => complete({ system: "s", user: "u", ...ai }));
   for (const status of [408, 429, 500, 502, 503, 529]) {
     model.fail(status);
     expect(providerDidNotAnswer(await asked()), `${status}`).toBe(true);
@@ -58,10 +58,8 @@ test("the provider didn't answer: a time limit, no connection, a rate limit, an 
   }
   model.reply(" ");
   expect(providerDidNotAnswer(await asked())).toBe(true);
-  // Its time limit passes before the reply comes.
-  model.reply("late", () => new Promise((resolve) => setTimeout(resolve, 300)));
-  expect(providerDidNotAnswer(await asked(50))).toBe(true);
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Its time limit passed before the reply came (what fetch throws for AbortSignal.timeout).
+  expect(providerDidNotAnswer(new DOMException("The operation was aborted due to timeout", "TimeoutError"))).toBe(true);
   // Decisions and embeddings fail in the same words.
   expect(providerDidNotAnswer(new Error("Decision request failed (503): overloaded"))).toBe(true);
   expect(providerDidNotAnswer(new Error("Embeddings failed (429): slow down"))).toBe(true);

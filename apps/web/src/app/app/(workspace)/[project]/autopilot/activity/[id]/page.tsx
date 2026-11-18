@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { aiPaused } from "@tuti/jobs";
-import { planIncludes, TUNING } from "@tuti/shared";
+import { codeChangesEnabled, planIncludes, TUNING } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -53,10 +53,12 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
     notFound();
   }
   // On a plan without Autopilot it's kept, but can't be analysed again (codeChanges.analyse refuses).
-  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
+  const { plan, analyseCodeChanges } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, analyseCodeChanges: true } });
   const included = planIncludes(plan, "codeChanges");
-  // A retry waiting: out of AI credits, it waits for some (the sweep skips it till then), whenever it's due.
-  const retryWaits = change.retryAt !== null && (await aiPaused(membership.project.id));
+  // A retry waiting, while Autopilot is on (turned off, the sweep drops it); out of AI credits, it waits for some (the
+  // sweep skips it till then), whenever it's due.
+  const retryAt = codeChangesEnabled() && analyseCodeChanges ? change.retryAt : null;
+  const retryWaits = retryAt !== null && (await aiPaused(membership.project.id));
   const param = (name: string) => (typeof searchParams[name] === "string" ? searchParams[name] : null);
   // Back from Publish now or Stop in Autopilot's email (the act page): what it did, or who did it first.
   const done = afterButton(change.actions, param("done"), param("button"), param("update"), {
@@ -152,13 +154,13 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
                 <span>
                   {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
                   {/* The provider didn't answer: tried again by itself, "today at 3:10 pm" in the reader's time; out of AI credits, once there are some. */}
-                  {change.retryAt &&
+                  {retryAt &&
                     (retryWaits ? (
                       " Autopilot tries again once the project has AI credits."
                     ) : (
                       <>
                         {" "}
-                        <GoesOut at={change.retryAt} prefix="Autopilot tries again" />.
+                        <GoesOut at={retryAt} prefix="Autopilot tries again" />.
                       </>
                     ))}
                 </span>

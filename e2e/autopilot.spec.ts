@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { spendCredits } from "./credits";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduledDraft, setPostUpdate, setPullRequestState } from "./autopilot";
+import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduledDraft, setAnalysis, setPostUpdate, setPullRequestState } from "./autopilot";
 import { latestEmailTo } from "./mail";
 import { apiFor, createProject, fillSignUp, signUp } from "./helpers";
 import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
@@ -616,6 +616,12 @@ test("an analysis the AI provider didn't answer says when Autopilot tries again,
   await expect(owner.getByText(/^The analysis stopped\. The AI provider didn't answer\. Autopilot tries again (today|tomorrow) at \d{1,2}:\d{2}\s?[ap]m\.$/)).toBeVisible();
   await expect(owner.getByRole("button", { name: "Analyse again" })).toBeVisible();
   await checkpoint(owner, "autopilot-retry-later");
+
+  // Autopilot turned off: no retry is promised (the sweep drops it).
+  await setAnalysis(slug, false);
+  await owner.reload();
+  await expect(owner.getByText("The analysis stopped. The AI provider didn't answer.", { exact: true })).toBeVisible();
+  await setAnalysis(slug, true);
 
   // Out of AI credits, it waits for some (whenever it was due).
   await spendCredits(slug);

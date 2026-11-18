@@ -1655,6 +1655,18 @@ describe("retries when the AI provider didn't answer", () => {
     expect(await sweep(61)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
   });
 
+  test('"Analyse again" that can\'t be queued on Hatchet keeps the retry as it was', async () => {
+    github.pullRequest(repo, pullRequest(74));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(74);
+    const before = await row(74);
+    vi.stubEnv("JOBS_DRIVER", "hatchet");
+    vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+    await expect(call(analyseCodeChange, team(), { id: before.id })).rejects.toMatchObject({ status: 503, code: "unavailable" });
+    expect(await row(74)).toEqual(before);
+  });
+
   test("Autopilot turned off meanwhile: the retry is dropped, nothing asked; the repository gone: the run says so, and isn't tried again", async () => {
     github.pullRequest(repo, pullRequest(69));
     model.decide(INTERNAL);

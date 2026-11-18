@@ -1133,7 +1133,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, retryAt: true, retries: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -1163,7 +1163,9 @@ export const analyseCodeChange = defineOperation({
         const stopped = change.state === "ANALYSING";
         await prisma.codeChange.updateMany({
           where: { id: change.id, state: "ANALYSING" },
-          data: stopped ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." } : { state: change.state, reason: change.reason },
+          data: stopped
+            ? { state: "FAILED", reason: "Its analysis couldn't be queued. Try again in a moment." }
+            : { state: change.state, reason: change.reason, retryAt: change.retryAt, retries: change.retries },
         });
       }
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");
