@@ -280,6 +280,10 @@ const matrix: Matrix = {
     saveCollection: { allowed: "MEMBER", call: (slug) => docs.saveCollection(slug, null, {}, form({ name: "Billing" })) },
     deleteCollection: { allowed: "MEMBER", call: (slug) => docs.deleteCollection(slug, "basics") },
     moveCollection: { allowed: "MEMBER", call: (slug) => docs.moveCollection(slug, "guides", "basics", 0) },
+    addApiReference: {
+      allowed: "MEMBER",
+      call: (slug) => docs.addApiReference(slug, form({ name: "API reference", spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '1'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" })),
+    },
     moveArticle: { allowed: "MEMBER", call: (slug) => docs.moveArticle(slug, "matrix-draft", "basics", 0) },
     saveTab: { allowed: "MEMBER", call: (slug) => docs.saveTab(slug, null, {}, form({ name: "API" })) },
     moveTab: { allowed: "MEMBER", call: (slug) => docs.moveTab(slug, "docs", 0) },

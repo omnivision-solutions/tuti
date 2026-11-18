@@ -5,6 +5,8 @@ import { freeDocsSlug, lockProject } from "@tuti/jobs";
 import { type ApiDoc, type ApiReferenceState, onHelpCenter, OPENAPI_MAX_BYTES, readSpec, settle } from "@tuti/shared/api-reference";
 import { z } from "zod";
 
+import { SPEC_TOO_LARGE } from "@/lib/api-reference";
+
 import { defineOperation, OperationError } from "./define";
 import { customDocsSlug, customSlug, tabFor } from "./docs";
 
@@ -16,7 +18,7 @@ import { customDocsSlug, customSlug, tabFor } from "./docs";
 
 const slug = z.string().trim().min(1).max(80);
 const name = z.string().trim().min(1, "Name is required").max(80);
-const spec = z.string().max(OPENAPI_MAX_BYTES, "This file is over 5 MB, the most an API reference reads.");
+const spec = z.string().max(OPENAPI_MAX_BYTES, SPEC_TOO_LARGE);
 const keys = z.array(z.string().max(2000)).max(10_000);
 const TREE_STYLES = ["folders", "headings", "entry"] as const;
 const baseUrl = z

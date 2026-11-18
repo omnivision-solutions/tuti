@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { cn } from "cn";
-import { ChevronRightIcon, ExternalLinkIcon, FilesIcon, FolderIcon, PlusIcon } from "lucide-react";
+import { BracesIcon, ChevronRightIcon, ExternalLinkIcon, FilesIcon, FolderIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { cache, type ReactNode } from "react";
 
@@ -278,7 +278,8 @@ export function TabContents({
   uncollected: TeamDocs["uncollected"];
 }) {
   const top = docs.collections.filter((c) => c.parent === null && c.tab === tab);
-  if (top.length === 0 && uncollected.length === 0) {
+  const references = docs.references.filter((r) => r.tab === tab);
+  if (top.length === 0 && uncollected.length === 0 && references.length === 0) {
     return null;
   }
   const { badge } = details;
@@ -293,7 +294,8 @@ export function TabContents({
   };
   return (
     <Card className="gap-0 py-0">
-      <ArticleColumns />
+      {/* The columns are the articles': none over references alone. */}
+      {(top.length > 0 || uncollected.length > 0) && <ArticleColumns />}
       {top.map((c, i) => (
         <ArticleGroup
           key={c.slug}
@@ -319,6 +321,27 @@ export function TabContents({
             ))}
         </ArticleGroup>
       ))}
+      {/* The tab's API references, after its collections as in the tree: a band each, like a collection's, that opens its page. */}
+      {references.length > 0 && (
+        <ul aria-label="API references" className="divide-y border-b last:border-b-0">
+          {references.map((r) => (
+            <li key={r.slug} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 bg-muted/50 px-5 py-2.5 dark:bg-muted/40">
+              {/* In line with the collections' names, past their chevrons. */}
+              <span aria-hidden className="size-4 shrink-0" />
+              <BracesIcon aria-hidden className="size-4 text-muted-foreground" />
+              <h3 className="min-w-0 text-sm font-semibold">
+                <Link href={`/app/${projectSlug}/docs/references/${r.slug}`} className="hover:underline">
+                  {r.name}
+                </Link>
+              </h3>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {r.count} {r.count === 1 ? "endpoint" : "endpoints"}
+              </span>
+              {!r.published && <Badge variant="outline">Draft</Badge>}
+            </li>
+          ))}
+        </ul>
+      )}
       {uncollected.length > 0 && (
         <ArticleGroup name="Not in a collection" count={`${uncollected.length} ${uncollected.length === 1 ? "article" : "articles"}`}>
           <DocsArticleRows projectSlug={projectSlug} details={details} articles={uncollected} />

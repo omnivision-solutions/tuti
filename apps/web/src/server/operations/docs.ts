@@ -316,7 +316,8 @@ export async function customDocsSlug(
   page?: { id: string; slug: string },
   kind: "article" | "reference" = "article",
 ) {
-  if (kind === "article" && RESERVED_ARTICLE_SLUGS.includes(slug)) {
+  // One an article already has (from before it was reserved) is still its own.
+  if (kind === "article" && slug !== page?.slug && RESERVED_ARTICLE_SLUGS.includes(slug)) {
     throw new OperationError(400, "invalid_input", `“${slug}” is reserved; pick another`);
   }
   const [taken] = await docsSlugsTaken(tx, projectId, slug, page);
