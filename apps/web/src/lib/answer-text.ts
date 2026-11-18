@@ -37,3 +37,9 @@ export function answerBlocks(text: string): AnswerBlock[] {
   flush();
   return blocks.filter((block) => block.type === "list" || block.text !== "");
 }
+
+/** A source's address when it's a web page (http or https), to link to; null for anything else (`javascript:`), shown as text. */
+export function webPage(url: string): string | null {
+  const parsed = URL.canParse(url) ? new URL(url) : null;
+  return parsed && (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.href : null;
+}

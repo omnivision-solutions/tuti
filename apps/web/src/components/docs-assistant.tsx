@@ -11,7 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useWidgetSignIn } from "@/components/widget-feedback";
-import { MAX_QUESTION } from "@/lib/widget-docs";
+import { MAX_QUESTION, widgetSourceHref } from "@/lib/widget-docs";
 import { WIDGET_ASK_MESSAGE, WIDGET_ASK_READY_MESSAGE } from "@/lib/widget-messages";
 import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
@@ -416,8 +416,11 @@ function AssistantReply({
       onLeave={onLeave}
     />
   );
-  // An article opens in the panel's Help center (the portal's page is a link away from there).
-  const sourceHref = (article: string) => at(`/widget?${new URLSearchParams({ tab: "docs", article })}`);
+  // An article opens in the panel's Help center, an API reference's operation on its page (widgetSourceHref).
+  const sourceHref = (slug: string) => {
+    const href = widgetSourceHref(slug);
+    return href === null ? null : at(href);
+  };
   if (answer.status === "failed") {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">

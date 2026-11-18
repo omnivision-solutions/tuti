@@ -31,7 +31,7 @@ paths:
           content: { application/json: { schema: { type: object, properties: { number: { type: integer } } }, example: { number: 128 } } }
 `;
 
-test("a reader copies an API operation's page as Markdown, and opens its .md", async ({ browser }, testInfo) => {
+test("a reader finds an API operation in the docs' search, copies its page as Markdown, and opens its .md", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -43,7 +43,15 @@ test("a reader copies an API operation's page as Markdown, and opens its .md", a
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 1440, height: 900 });
-  await reader.goto("/docs/reference/create-a-post");
+  // The docs' search finds it by its title, with its method, and opens its page.
+  await reader.goto("/docs");
+  await reader.getByRole("banner").getByRole("button", { name: "Search or ask AI" }).click();
+  await reader.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" }).fill("Create a post");
+  const result = reader.getByRole("dialog").getByRole("listbox", { name: "Search results" }).getByRole("option", { name: /POST\s*Create a post/ });
+  await expect(result).toContainText("Adds a post to a board.");
+  await checkpoint(reader, "api-operation-search", { fullPage: false });
+  await result.click();
+  await expect(reader).toHaveURL(/\/docs\/reference\/create-a-post$/);
   await expect(reader.getByRole("heading", { name: "Create a post", level: 1 })).toBeVisible();
 
   // Its Markdown, at the page's address with .md: what it is, takes and answers, and the request as cURL.

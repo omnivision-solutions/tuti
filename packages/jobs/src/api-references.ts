@@ -1,12 +1,16 @@
 import { isDeepStrictEqual } from "node:util";
 import { isIP } from "node:net";
 
+import { toPlainText } from "@tuti/content";
+import { htmlToContent } from "@tuti/content/html";
 import { type Prisma, prisma } from "@tuti/db";
-import { type ApiDoc, type ApiReferenceState, type ApiServer, onHelpCenter, OPENAPI_MAX_BYTES, readSpec, settle } from "@tuti/shared/api-reference";
+import { contentHash, embed, EMBEDDING_MODEL, embeddingsEnabled, type JobInput, log as serverLog, toVectorLiteral } from "@tuti/shared";
+import { type ApiDoc, type ApiReferenceState, type ApiServer, onHelpCenter, OPENAPI_MAX_BYTES, operationMarkdown, readSpec, settle } from "@tuti/shared/api-reference";
 import { isPrivate, publicOnlyLookup } from "@tuti/shared/webhook-url";
+import { marked } from "marked";
 import { Agent, fetch } from "undici";
 
-import type { JobLogger, JobResult } from "./index";
+import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockProject } from "./running-draft";
 
 /**
@@ -238,9 +242,15 @@ export type SpecChanges = { added: number; removed: number; changed: boolean };
 
 /**
  * A new read of a reference's spec over what it had: the team's choices carried across (`settle`), as columns to
- * write, and what changed. For an upload replaced by hand and a URL synced alike.
+ * write, what changed, and the keys of the operations on the help center after it (`shown`, for dropHidden). For an
+ * upload replaced by hand and a URL synced alike.
  */
-export function respec(row: { doc: unknown; state: unknown }, text: string, next: ApiDoc, now = new Date()): { data: Prisma.ApiReferenceUncheckedUpdateInput; changes: SpecChanges } {
+export function respec(
+  row: { doc: unknown; state: unknown },
+  text: string,
+  next: ApiDoc,
+  now = new Date(),
+): { data: Prisma.ApiReferenceUncheckedUpdateInput; changes: SpecChanges; shown: string[] } {
   const before = row.doc as ApiDoc;
   const { doc, state } = settle({ doc: before, state: row.state as ApiReferenceState }, next);
   const had = new Set(before.operations.map((operation) => operation.key));
@@ -259,7 +269,34 @@ export function respec(row: { doc: unknown; state: unknown }, text: string, next
       syncError: null,
     },
     changes: { added: [...has].filter((key) => !had.has(key)).length, removed: [...had].filter((key) => !has.has(key)).length, changed },
+    shown: onHelpCenter(doc, state).operations.map((operation) => operation.key),
   };
+}
+
+/**
+ * Takes what's no longer on the help center (`shown`: the keys of what is) out of the docs' search and AI answers at
+ * once, in the change's transaction, with the project locked: the job that indexes the rest (indexReference) may run
+ * late, or not be queued at all. The reference's row is locked here too, so a job writing (it holds both) finishes first
+ * and the delete sees what it wrote.
+ */
+export async function dropHidden(tx: Prisma.TransactionClient, referenceId: string, shown: string[]) {
+  await tx.$queryRaw`SELECT 1 FROM api_reference WHERE id = ${referenceId} FOR UPDATE`;
+  await tx.apiOperationEntry.deleteMany({ where: { referenceId, key: { notIn: shown } } });
+}
+
+/**
+ * Indexes a reference's operations for the docs' search and AI answers (apiReferenceChanged), once what's on the help
+ * center, or what an operation's page says, may have changed: when it's added, its spec replaced or synced with a change,
+ * what's hidden or its base address changed. Never fails the change: it's logged, and the next change indexes it again.
+ * ponytail: until that job runs, what a change added or reworded is searched as it was before (what it took off the
+ * help center is gone at once: dropHidden).
+ */
+export async function indexReference(referenceId: string) {
+  try {
+    await enqueue("apiReferenceChanged", { referenceId });
+  } catch (error) {
+    serverLog.error("Indexing an API reference for search failed", { referenceId, error });
+  }
 }
 
 /**
@@ -290,7 +327,7 @@ export async function syncApiReference(
   const url = found.sourceUrl;
   const fetched = await fetchSpec(url, options);
   const read = "error" in fetched ? fetched : readStorable(fetched.text, fetched.url);
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx): Promise<{ changes: SpecChanges } | { error: string } | null> => {
     // Locked, so a choice saved meanwhile (apiReferences.update) isn't written over.
     await lockProject(tx, found.projectId);
     // Every sync's write moves syncTriedAt on: unchanged, nothing has written since this one started.
@@ -303,10 +340,16 @@ export async function syncApiReference(
       await tx.apiReference.update({ where: { id }, data: { syncError: read.error, syncTriedAt: now } });
       return { error: read.error };
     }
-    const { data, changes } = respec(row, (fetched as { text: string }).text, read.doc, now);
+    const { data, changes, shown } = respec(row, (fetched as { text: string }).text, read.doc, now);
     await tx.apiReference.update({ where: { id }, data });
+    await dropHidden(tx, id, shown);
     return { changes };
   });
+  // A read that changed the doc: its operations in search as they now are. One that changed nothing needs nothing.
+  if (result && "changes" in result && result.changes.changed) {
+    await indexReference(id);
+  }
+  return result;
 }
 
 /**
@@ -389,4 +432,172 @@ export async function syncApiReferences(
   };
   await Promise.all(Array.from({ length: HOSTS_AT_ONCE }, worker));
   return { synced, failed };
+}
+
+/**
+ * How much of an operation's Markdown AI answers get and its meaning is embedded from: its start (title, method and path,
+ * description, parameters, then its body), an article section's length or so a few times over.
+ */
+export const OPERATION_TEXT_LENGTH = 4000;
+/** Texts per embeddings request. */
+const EMBED_BATCH = 100;
+
+const referenceSelect = { projectId: true, baseUrl: true, changedAt: true, doc: true, state: true } as const;
+
+/** Text with something Markdown would read: a mark, an entity, or an address or email it would link. */
+const MARKED = /[\\`*_[\]<>#|~&=@]|:\/\/|www\./;
+
+/**
+ * A spec's Markdown as plain words (as the portal shows it: through the same converter), for search's words and snippet.
+ * Most descriptions are a plain sentence or two: those are their own words, their lines joined, with no converter (it
+ * takes milliseconds an operation, and a spec may have thousands).
+ */
+async function plainWords(markdown: string): Promise<string> {
+  if (!markdown.trim()) {
+    return "";
+  }
+  if (!MARKED.test(markdown)) {
+    return markdown
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" ");
+  }
+  const content = await htmlToContent("article", marked.parse(markdown, { async: false, gfm: true }));
+  return "error" in content ? markdown : toPlainText(content.doc);
+}
+
+/** What a reference's entries should be: one per operation on the help center (onHelpCenter), never a hidden one. */
+async function entriesOf(reference: { baseUrl: string | null; doc: unknown; state: unknown }) {
+  const doc = reference.doc as ApiDoc;
+  const { operations } = onHelpCenter(doc, reference.state as ApiReferenceState);
+  return Promise.all(
+    operations.map(async (operation) => {
+      const text = operationMarkdown(doc, operation, { base: reference.baseUrl ?? undefined }).slice(0, OPERATION_TEXT_LENGTH);
+      const description = await plainWords(operation.description);
+      return {
+        key: operation.key,
+        slug: operation.slug,
+        kind: operation.kind,
+        path: operation.path,
+        title: operation.title,
+        description,
+        // What search matches besides its title: its method, path, description and parameters' names.
+        words: [operation.kind, operation.path, description, ...operation.params.map((param) => param.name)].join("\n"),
+        text,
+        hash: contentHash(text),
+      };
+    }),
+  );
+}
+
+/** Whether two reads of a reference index the same: its spec's last change, what's hidden and its base address (not what's new, say). */
+function sameAs(a: { changedAt: Date; state: unknown; baseUrl: string | null }, b: typeof a) {
+  const hidden = (state: unknown) => {
+    const { hiddenOperations, hiddenGroups } = state as ApiReferenceState;
+    return JSON.stringify([hiddenOperations, hiddenGroups]);
+  };
+  return a.changedAt.getTime() === b.changedAt.getTime() && a.baseUrl === b.baseUrl && hidden(a.state) === hidden(b.state);
+}
+
+/** How long the write may take (Prisma's default for a transaction is 5 seconds): one statement, but a spec of thousands of operations is a large one. */
+const WRITE_TIMEOUT_MS = 30_000;
+
+/**
+ * Keeps an API reference's operations in the docs' search and AI answers (`api_operation_entry`): one entry per operation
+ * on the help center, with its words and Markdown, and its embedding when embeddings are set up (one whose text is
+ * unchanged keeps its own, so only what changed is embedded again). Queued when a reference is added or replaced, and
+ * when what's hidden changes; a deleted reference's go with it. Whether a reader may see one (published, in a tab they may
+ * read) is checked when they search, so publishing and a tab's access need nothing here. Safe to run late, twice or out
+ * of order: entries are written only while the reference still reads as it did.
+ *
+ * Embedding comes first, outside the write's locks. When it fails, the entries are written anyway (word search needs
+ * them), those it didn't reach without a vector, and then it throws so the job is tried again for the vectors, as
+ * articles' embedding is.
+ */
+export async function apiReferenceChanged({ referenceId }: JobInput<"apiReferenceChanged">, log: JobLogger): Promise<JobResult> {
+  const reference = await prisma.apiReference.findUnique({ where: { id: referenceId }, select: referenceSelect });
+  if (!reference) {
+    return { skipped: true };
+  }
+  const entries = await entriesOf(reference);
+  // The ones whose stored embedding is of their text as it is: kept, never sent again.
+  const embedded = new Set(
+    (
+      await prisma.$queryRaw<{ key: string; contentHash: string }[]>`
+        SELECT key, "contentHash" FROM api_operation_entry WHERE "referenceId" = ${referenceId} AND embedding IS NOT NULL`
+    ).map((row) => `${row.contentHash} ${row.key}`),
+  );
+  const missing = entries.filter((entry) => !embedded.has(`${entry.hash} ${entry.key}`));
+  const vectors = new Map<string, string>();
+  let failure: unknown = null;
+  if (embeddingsEnabled()) {
+    try {
+      for (let at = 0; at < missing.length; at += EMBED_BATCH) {
+        const batch = missing.slice(at, at + EMBED_BATCH);
+        const made = await embed(batch.map((entry) => entry.text));
+        batch.forEach((entry, i) => vectors.set(entry.key, toVectorLiteral(made[i]!)));
+      }
+    } catch (error) {
+      failure = error;
+      log.warn(`API reference ${referenceId}: embedding failed, so ${missing.length - vectors.size} operation(s) are searched by their words only until it's tried again`);
+    }
+  }
+  const column = <K extends keyof (typeof entries)[number]>(key: K) => entries.map((entry) => entry[key]);
+  const written = await prisma.$transaction(
+    async (tx) => {
+      // Locked, so a change can't slip in between this check and the write: the project first, then the reference, the
+      // order a change to it takes them in (apiReferences.update and .replace), so neither waits on the other in turn
+      // (an entry's insert takes a key share of the project's row, which a change's project lock holds up).
+      await lockProject(tx, reference.projectId);
+      await tx.$queryRaw`SELECT 1 FROM api_reference WHERE id = ${referenceId} FOR UPDATE`;
+      const latest = await tx.apiReference.findUnique({ where: { id: referenceId }, select: referenceSelect });
+      if (!latest || !sameAs(latest, reference)) {
+        return false;
+      }
+      // What's gone goes; the rest is updated in place by its key, keeping its id: an answer being written cites operations
+      // by it (stillUsable), so a reindex meanwhile mustn't drop one that's still there.
+      const keys = column("key");
+      await tx.$executeRaw`DELETE FROM api_operation_entry WHERE "referenceId" = ${referenceId} AND NOT (key = ANY(${keys}::text[]))`;
+      // Every entry in one statement, so the locks are held for one round trip. An embedding is sent only when it's new: an
+      // entry with none sent keeps its own while its text is the same, and loses it once it isn't.
+      const embeddings = entries.map((entry) => vectors.get(entry.key) ?? null);
+      await tx.$executeRaw`
+        INSERT INTO api_operation_entry (id, "referenceId", "projectId", key, slug, kind, path, title, description, words, text, model, "contentHash", embedding)
+        SELECT gen_random_uuid()::text, ${referenceId}, ${reference.projectId}, e.key, e.slug, e.kind, e.path, e.title, e.description, e.words, e.text,
+          CASE WHEN e.embedding IS NULL THEN NULL ELSE ${EMBEDDING_MODEL} END, e.hash, e.embedding::vector
+        FROM unnest(${keys}::text[], ${column("slug")}::text[], ${column("kind")}::text[], ${column("path")}::text[], ${column("title")}::text[],
+          ${column("description")}::text[], ${column("words")}::text[], ${column("text")}::text[], ${column("hash")}::text[], ${embeddings}::text[])
+          AS e(key, slug, kind, path, title, description, words, text, hash, embedding)
+        ON CONFLICT ("referenceId", key) DO UPDATE SET slug = EXCLUDED.slug, kind = EXCLUDED.kind, path = EXCLUDED.path, title = EXCLUDED.title,
+          description = EXCLUDED.description, words = EXCLUDED.words, text = EXCLUDED.text, "contentHash" = EXCLUDED."contentHash",
+          model = CASE WHEN EXCLUDED.embedding IS NULL AND api_operation_entry."contentHash" = EXCLUDED."contentHash" THEN api_operation_entry.model ELSE EXCLUDED.model END,
+          embedding = CASE WHEN EXCLUDED.embedding IS NULL AND api_operation_entry."contentHash" = EXCLUDED."contentHash" THEN api_operation_entry.embedding ELSE EXCLUDED.embedding END`;
+      return true;
+    },
+    { timeout: WRITE_TIMEOUT_MS },
+  );
+  if (!written) {
+    log.info(`API reference ${referenceId} changed while it was being indexed; left to the newer job`);
+    return { skipped: true };
+  }
+  if (failure) {
+    throw failure;
+  }
+  return { skipped: false, entries: entries.length, embedded: vectors.size };
+}
+
+/** For the backfill: indexes every API reference (an unchanged operation keeps its embedding), carrying on past failures. */
+export async function indexApiReferences(log: JobLogger): Promise<{ references: number; failed: string[] }> {
+  const references = await prisma.apiReference.findMany({ orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true } });
+  const failed: string[] = [];
+  for (const { id } of references) {
+    try {
+      await apiReferenceChanged({ referenceId: id }, log);
+    } catch (error) {
+      log.warn(`API reference ${id} wasn't indexed: ${error instanceof Error ? error.message : String(error)}`);
+      failed.push(id);
+    }
+  }
+  return { references: references.length, failed };
 }

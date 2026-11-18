@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { useVisitor, visitorStore } from "@/components/widget-messages";
-import { answerBlocks } from "@/lib/answer-text";
+import { answerBlocks, webPage } from "@/lib/answer-text";
 import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
 import { widgetStartConversation } from "@/server/widget-inbox";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
@@ -187,7 +187,8 @@ export function AnswerSources({
   onOpen,
 }: {
   sources: Answer["sources"];
-  href?: (slug: string) => string;
+  /** Where a source opens in place; null: on its own page, in a new tab (the widget, for an API reference's operation). */
+  href?: (slug: string) => string | null;
   onOpen?: () => void;
 }) {
   const at = usePortalHref();
@@ -195,21 +196,26 @@ export function AnswerSources({
     <div className="flex flex-col gap-1">
       <h2 className="text-sm font-semibold">Sources</h2>
       <ul aria-label="Sources" className="flex flex-col gap-1 text-sm">
-        {sources.map((source) => (
-          <li key={source.slug}>
-            {source.url === null ? (
-              <span className="break-words">{source.title}</span>
-            ) : (
-              <Link
-                href={href ? href(source.slug) : at(`/docs/${source.slug}`)}
-                onClick={onOpen}
-                className="break-words text-primary hover:underline"
-              >
-                {source.title}
-              </Link>
-            )}
-          </li>
-        ))}
+        {sources.map((source) => {
+          const inPlace = href?.(source.slug);
+          // On its own page: only a web page's address is a link (never `javascript:` or another scheme).
+          const page = inPlace === null && source.url !== null ? webPage(source.url) : undefined;
+          return (
+            <li key={source.slug}>
+              {source.url === null || page === null ? (
+                <span className="break-words">{source.title}</span>
+              ) : page ? (
+                <a href={page} target="_blank" rel="noopener noreferrer" className="break-words text-primary hover:underline">
+                  {source.title}
+                </a>
+              ) : (
+                <Link href={inPlace ?? at(`/docs/${source.slug}`)} onClick={onOpen} className="break-words text-primary hover:underline">
+                  {source.title}
+                </Link>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

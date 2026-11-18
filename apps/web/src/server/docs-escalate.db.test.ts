@@ -13,6 +13,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { escalateDocs } from "./docs-readers";
+import { createApiReference, updateApiReference } from "./operations/api-references";
 import { askAPerson, escalateDocs as escalateOperation } from "./operations/docs-escalate";
 import { getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
@@ -108,6 +109,31 @@ describe("off", () => {
 
 describe("asking a person", () => {
   beforeEach(turnOn);
+
+  test("an answer citing an API reference's operation: the AI's message names it, with its method, path and page, while it's on the help center", async () => {
+    const article = await prisma.article.create({ data: { projectId: project.id, slug: "billing", title: "Billing", body: "Cards only.", publishedAt: new Date() } });
+    const spec = `openapi: 3.1.0\ninfo: { title: Acme API, version: "1" }\npaths:\n  /posts:\n    post:\n      summary: Create a post\n      responses: { "201": { description: Created } }\n`;
+    await call(createApiReference, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { name: "Reference", spec });
+    const entry = await prisma.apiOperationEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    const reader = asReader();
+    const answer = { status: "ANSWERED" as const, answer: "Send a POST to /posts.", articleIds: [article.id], operationIds: [entry.id], helpful: false };
+    const question = await asked(reader, answer);
+    model.reply("They want to create posts through the API.");
+    await escalateDocs(project.slug, question.id, newAddress(), "");
+    const [conversation] = await conversations();
+    expect(conversation!.messages[1]).toMatchObject({
+      author: "AI",
+      body: expect.stringMatching(/^Send a POST to \/posts\.\n\nSources: Billing \(http.*\/docs\/billing\), Create a post \(POST \/posts\) \(http.*\/docs\/reference\/create-a-post\)$/),
+    });
+
+    // Off the help center since: the article only.
+    await call(updateApiReference, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { slug: "reference", hide: ["POST /posts"] });
+    const again = await asked(asReader(), answer);
+    model.reply("They want to create posts through the API.");
+    await escalateDocs(project.slug, again.id, newAddress(), "");
+    const [, second] = await conversations();
+    expect(second!.messages[1]!.body).toMatch(/\n\nSources: Billing \(http.*\/docs\/billing\)$/);
+  });
 
   test("on the portal, signed out: a conversation with the address they typed, the AI's answer and a note with the summary, theirs in Messages", async () => {
     const article = await prisma.article.create({

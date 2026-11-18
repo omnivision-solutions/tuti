@@ -1,5 +1,6 @@
 "use client";
 
+import type { ApiOperation } from "@tuti/shared/api-reference";
 import { CornerDownLeftIcon, LoaderCircleIcon, LockIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -16,6 +17,7 @@ import { highlightParts } from "@/lib/highlight";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { logDocsSearch, searchDocsAsTyped } from "@/server/docs-readers";
 import type { DocsSearchResult } from "@/server/docs-search";
+import { Method } from "@/components/api-method";
 
 /** How long typing pauses before the box searches. */
 const SEARCH_DELAY_MS = 150;
@@ -177,7 +179,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
     const timer = setTimeout(async () => {
       let results: DocsSearchResult[] | null = null;
       try {
-        results = await searchDocsAsTyped(slug, q);
+        results = await searchDocsAsTyped(slug, q, { operations: true });
       } catch {
         // Offline, or the server failed: said below, and not counted as a search.
       }
@@ -306,7 +308,9 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                   {option.result ? (
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="flex items-center gap-1.5 break-words">
-                        {option.result.title}
+                        {/* An API reference's operation: its method first, as the reference's cards list them. */}
+                        {option.result.method && <Method kind={option.result.method as ApiOperation["kind"]} />}
+                        <span className="min-w-0 break-words">{option.result.title}</span>
                         {option.result.locked && <LockIcon aria-label="Locked" className="size-3.5 shrink-0 text-muted-foreground" />}
                       </span>
                       {option.result.snippet && (

@@ -1,6 +1,7 @@
 import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
+import { apiReferenceChanged } from "./api-references";
 import { articleChanged, purgeArticles } from "./articles";
 import { changelogEmailed, resubmitChangelogEmails } from "./changelog-email";
 export { changelogReach, type ChangelogReach, reached, subscriberCount, subscribersLeft } from "./changelog-email";
@@ -66,6 +67,8 @@ export { claimDocsSlug, docsSlugsTaken, freeDocsSlug, RESERVED_ARTICLE_SLUGS } f
 export { ARTICLE_REVISIONS_KEPT, docOf, recordRevision, versions, editName, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, revisionsPast, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
 
 export { applyPlanLicense, grantLicenseCredits, grantPlanLicenseCredits, lockPlanLicense, releasePlanLicense } from "./plan-licenses";
+export { apiReferenceChanged, dropHidden, indexApiReferences, indexReference } from "./api-references";
+export { backfillEmbeddings } from "./backfill";
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS, SEARCHES_KEPT_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
@@ -96,6 +99,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   wakeConversations,
   resubmitConversationNotices,
   articleChanged,
+  apiReferenceChanged,
   imageUploaded,
   cleanupMedia,
   releaseMedia,
