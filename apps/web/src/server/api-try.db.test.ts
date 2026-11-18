@@ -274,6 +274,48 @@ describe("what it sends and answers", () => {
     expect(await prisma.apiTry.count({ where: { projectId: project.id } })).toBe(TRIES_PER_CLIENT_PER_MINUTE + 1);
   });
 
+  test("requests at once can't go over a reader's limit or the project's together", async () => {
+    vi.stubEnv("TRUSTED_IP_HEADER", "x-test-ip");
+    const reader = { "x-test-ip": "203.0.113.20" };
+    const client = await clientHash(new Headers(reader));
+    await prisma.apiTry.createMany({ data: Array.from({ length: TRIES_PER_CLIENT_PER_MINUTE - 1 }, () => ({ projectId: project.id, clientHash: client })) });
+    const together = await Promise.all(Array.from({ length: 6 }, () => send(input(local()), { headers: reader })));
+    expect(together.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(together.filter((r) => r.status === 429)).toHaveLength(5);
+    // The project's hour: one left, asked for by six readers at once.
+    await prisma.apiTry.deleteMany({});
+    await prisma.apiTry.createMany({ data: Array.from({ length: TRIES_PER_PROJECT_PER_HOUR - 1 }, () => ({ projectId: project.id, clientHash: null })) });
+    const readers = await Promise.all(Array.from({ length: 6 }, (_, i) => send(input(local()), { headers: { "x-test-ip": `203.0.113.${30 + i}` } })));
+    expect(readers.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(fake.requests).toHaveLength(2);
+  });
+
+  test("waits on nothing else of the project's, and clears only its own old rows", async () => {
+    // Another project's hour-old rows stay: each project's go on its own next request (by its index).
+    const other = await createProject(owner);
+    await prisma.apiTry.create({ data: { projectId: other.id, createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) } });
+    // A change to the project in progress (its settings saved, holding its row) doesn't hold Try it up: its limits take
+    // a lock of their own, not the project's.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.project.update({ where: { id: project.id }, data: { name: "Renamed" } });
+        locked();
+        await held;
+      },
+      { timeout: 30_000 },
+    );
+    await lockTaken;
+    const answered = await Promise.race([send(input(local())), new Promise<"waited">((resolve) => setTimeout(() => resolve("waited"), 3_000))]);
+    release();
+    await holder;
+    expect(answered).toMatchObject({ status: 200 });
+    expect(await prisma.apiTry.count({ where: { projectId: other.id } })).toBe(1);
+  }, 15_000);
+
   test("through the team's own site every reader has the site's address: only the project's limit counts them", async () => {
     vi.stubEnv("TRUSTED_IP_HEADER", "x-test-ip");
     const site = { "x-test-ip": "198.51.100.7", "x-tuti-base": "/portal" };

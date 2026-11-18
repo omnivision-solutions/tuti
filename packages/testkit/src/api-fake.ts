@@ -11,16 +11,20 @@ export type ApiFake = {
   close(): Promise<void>;
 };
 
+/** The most `/large` sends: enough to pass Try it's 2 MB cut. */
+const LARGEST = 3_000_000;
+
 /**
  * A local stand-in for a team's API, for Try it: answers every request with JSON of what it got (201, its method,
- * path, query and body), except `/redirect` (a 302 to another site), `/large` (`size` bytes of text) and `/stall`
- * (never answers). With `cors` it lets browsers on any site call it, the key's header too; without, a browser's
- * request to it fails.
+ * path, query and body), except `/redirect` (a 302 to another site), `/large` (`size` bytes of text, up to LARGEST)
+ * and `/stall` (never answers). With `cors` it lets browsers on any site call it, the key's header too; without, a
+ * browser's request to it fails.
  */
 export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake> {
   const requests: ApiFakeRequest[] = [];
   const allow = cors
-    ? { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*", "access-control-expose-headers": "*" }
+    ? // "*" doesn't cover Authorization: browsers want it named.
+      { "access-control-allow-origin": "*", "access-control-allow-headers": "*, Authorization", "access-control-allow-methods": "*", "access-control-expose-headers": "*" }
     : {};
   const server = createServer(async (request, response) => {
     let body = "";
@@ -41,7 +45,12 @@ export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake
       return;
     }
     if (url.pathname.endsWith("/large")) {
-      response.writeHead(200, { ...allow, "content-type": "text/plain" }).end("x".repeat(Number(url.searchParams.get("size") ?? 0)));
+      const size = Number(url.searchParams.get("size") ?? 0);
+      if (!(size >= 0 && size <= LARGEST)) {
+        response.writeHead(400, allow).end();
+        return;
+      }
+      response.writeHead(200, { ...allow, "content-type": "text/plain" }).end("x".repeat(size));
       return;
     }
     response

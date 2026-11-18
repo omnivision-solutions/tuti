@@ -1,4 +1,4 @@
-import { absolute, hasHost } from "./examples";
+import { absolute, hasHost, trimSlashes } from "./examples";
 import type { ApiAuth, ApiDoc, ApiOperation, ApiServer } from "./types";
 
 /**
@@ -43,18 +43,38 @@ const NEVER = /^(host|connection|keep-alive|proxy-.*|te|trailer|transfer-encodin
 export function tryServers(doc: ApiDoc, operation: ApiOperation, base: string | null | undefined): TryServer[] {
   // A base may have a query ("https://gateway.example/proxy?tenant=acme"): a server's path goes before it.
   const [, basePath = "", baseQuery = ""] = /^([^?#]*)\??([^#]*)/.exec(base ?? "") ?? [];
-  const onBase = (path: string) => absolute(path, basePath.replace(/\/+$/, "")) + (baseQuery ? `?${baseQuery}` : "");
+  const onBase = (path: string) => absolute(path, trimSlashes(basePath, "end")) + (baseQuery ? `?${baseQuery}` : "");
   const specs = operation.servers?.length ? operation.servers : doc.servers;
   if (specs.length === 0) {
     return basePath ? [{ url: base!, description: "" }] : [];
   }
   return specs.flatMap((server) => {
-    const filled = server.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => server.variables?.[name]?.default ?? placeholder);
-    if (hasHost(filled)) {
+    const filled = fillServer(server, {});
+    if (hasHost("url" in filled ? filled.url : server.url)) {
       return [{ url: server.url, description: server.description, ...(server.variables && { variables: server.variables }) }];
     }
     return basePath ? [{ url: onBase(server.url), description: server.description, ...(server.variables && { variables: server.variables }) }] : [];
   });
+}
+
+/**
+ * A server's address with its variables filled: the reader's values, else the spec's defaults. What the spec gives
+ * (a default, or one of a variable's allowed values) goes in as it is, so `{baseUrl}` with the default
+ * "https://api.acme.com" is that address; anything else the reader typed is encoded, so it can't end the host or start
+ * a path, query or fragment of its own. One filling for the page's check and the request, so what's offered is what's sent.
+ */
+function fillServer(server: Pick<ApiServer, "url" | "variables">, values: Record<string, string>): { url: string } | { missing: string } {
+  let missing: string | null = null;
+  const url = server.url.replace(/\{([^{}]+)\}/g, (_, name: string) => {
+    const variable = server.variables?.[name];
+    const value = values[name] ?? variable?.default;
+    if (value === undefined || value === "") {
+      missing ??= name;
+      return "";
+    }
+    return value === variable?.default || variable?.enum?.includes(value) ? value : encodeURIComponent(value);
+  });
+  return missing === null ? { url } : { missing };
 }
 
 /** Whether an operation's page has Try it: an OpenAPI operation with somewhere to send it. */
@@ -90,19 +110,12 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
   if (!server) {
     return { error: "Pick one of the API's servers" };
   }
-  // Each variable's value is encoded, so none can end the host or start a path, query or fragment of its own.
-  let missing: string | null = null;
-  const filled = server.url.replace(/\{([^{}]+)\}/g, (_, name: string) => {
-    const value = input.variables[name] ?? server.variables?.[name]?.default;
-    if (value === undefined || value === "") {
-      missing ??= name;
-      return "";
-    }
-    return encodeURIComponent(value);
-  });
-  if (missing !== null) {
-    return { error: `Fill in the server's ${missing}` };
+  const address = fillServer(server, input.variables);
+  if ("missing" in address) {
+    return { error: `Fill in the server's ${address.missing}` };
   }
+  const filled = address.url;
+  let missing: string | null = null;
   let url: URL;
   try {
     url = new URL(filled.startsWith("//") ? `https:${filled}` : filled);
@@ -125,7 +138,7 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
   if (missing !== null) {
     return { error: `Fill in ${missing}` };
   }
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  url.pathname = `${trimSlashes(url.pathname, "end")}/${trimSlashes(path, "start")}`;
 
   const { schemes } = tryAuth(doc, operation);
   const declared = (place: "query" | "header" | "cookie") => operation.params.filter((param) => param.in === place).map((param) => param.name);

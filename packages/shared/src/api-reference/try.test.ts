@@ -95,3 +95,26 @@ test("refuses what the operation doesn't take", () => {
   const host = operation({ params: [...operation().params, { name: "Host", in: "header", required: false, description: "", schema: { type: "string" } }] });
   expect(tryRequest(doc(), host, null, input({ headers: [["Host", "evil.example"]] }))).toHaveProperty("error");
 });
+
+test("a server's own values (its default, one of its allowed values) go in as they are; the same for the check and the request", () => {
+  const whole = { url: "{baseUrl}", description: "", variables: { baseUrl: { default: "https://api.acme.test", enum: ["https://api.acme.test", "https://eu.acme.test/v2"], description: "" } } };
+  const spec = doc({ servers: [whole] });
+  expect(tryable(spec, operation(), null)).toBe(true);
+  const sent = (variables: Record<string, string>) => {
+    const made = tryRequest(spec, operation(), null, input({ server: "{baseUrl}", variables }));
+    return "url" in made ? made.url.href : made.error;
+  };
+  expect(sent({})).toBe("https://api.acme.test/posts/1");
+  expect(sent({ baseUrl: "https://eu.acme.test/v2" })).toBe("https://eu.acme.test/v2/posts/1");
+  // Anything else the reader types is encoded: never an address of its own.
+  expect(sent({ baseUrl: "https://evil.example" })).toBe("The server's address isn't valid");
+  // A default with a slash stays a path.
+  const path = { url: "https://api.acme.test/{basePath}", description: "", variables: { basePath: { default: "v1/beta", description: "" } } };
+  const made = tryRequest(doc({ servers: [path] }), operation(), null, input({ server: path.url }));
+  expect("url" in made && made.url.href).toBe("https://api.acme.test/v1/beta/posts/1");
+});
+
+test("slashes are trimmed where the server's path meets the operation's, however many", () => {
+  const made = tryRequest(doc({ servers: [{ url: `https://api.acme.test/v1${"/".repeat(50_000)}`, description: "" }] }), operation({ path: `${"/".repeat(50_000)}posts/{id}` }), null, input({ server: `https://api.acme.test/v1${"/".repeat(50_000)}` }));
+  expect("url" in made && made.url.href).toBe("https://api.acme.test/v1/posts/1");
+});

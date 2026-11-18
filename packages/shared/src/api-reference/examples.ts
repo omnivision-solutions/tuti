@@ -10,7 +10,7 @@ export type ExampleRequest = {
 const PLACEHOLDER_HOST = "https://api.example.com";
 
 /** Without the slashes at one end: a loop, as a pattern for it is slow on a long run of them. */
-function trimSlashes(text: string, at: "start" | "end"): string {
+export function trimSlashes(text: string, at: "start" | "end"): string {
   let from = 0;
   let to = text.length;
   if (at === "start") while (from < to && text[from] === "/") from++;

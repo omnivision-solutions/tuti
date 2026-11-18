@@ -1,7 +1,6 @@
 import { isIP } from "node:net";
 
 import { prisma } from "@tuti/db";
-import { lockProject } from "@tuti/jobs";
 import { type TryInput, tryRequest } from "@tuti/shared/api-reference";
 import { publicOnlyLookup } from "@tuti/shared/webhook-url";
 import { getDomain } from "tldts";
@@ -93,16 +92,18 @@ const registrable = (host: string) => getDomain(host, { allowPrivateDomains: tru
 
 /**
  * Counts the request against the limits (per reader, by an HMAC of their IP address when the proxy says it; per
- * project), or says which one it's over. One at a time per project, so requests at once can't overrun them together.
+ * project), or says which one it's over. One at a time per project and per reader, so requests at once can't overrun them together.
  * A request that came through the team's own site (a portal under a path of it) has the site's server's address, the
  * same for every reader there: only the project's limit counts it.
  */
 async function countTry(projectId: string, requestHeaders: Headers, viaSite: boolean): Promise<"reader" | "project" | null> {
   const client = viaSite ? null : await clientHash(requestHeaders);
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  await prisma.apiTry.deleteMany({ where: { createdAt: { lt: hourAgo } } });
+  // This project's old rows (its index): one with no Try it since keeps its last hour's until its next.
+  await prisma.apiTry.deleteMany({ where: { projectId, createdAt: { lt: hourAgo } } });
   return prisma.$transaction(async (tx) => {
-    await lockProject(tx, projectId);
+    // Locks of their own (classes 10 and 9), always in that order: Try it waits on nothing else of the project's.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(10, hashtext(${projectId}))`;
     if (client) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(9, hashtext(${client}))`;
     }
