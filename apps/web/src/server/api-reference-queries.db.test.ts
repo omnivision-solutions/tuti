@@ -1,4 +1,5 @@
 import { type NoAccess, prisma, type ReadAccess } from "@tuti/db";
+import type { ApiDoc } from "@tuti/shared/api-reference";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, test } from "vitest";
 
@@ -95,7 +96,14 @@ paths:
       tags: [Posts]
       summary: List the tags
       security: [{ key: [], mtls: [] }, { key: [] }]
-      responses: { "200": { description: The tags } }
+      parameters:
+        - { name: kinds, in: query, schema: { type: array, items: { type: string, description: A ${SECRET} kind, enum: [open, done], minLength: 2 } } }
+      responses:
+        "200":
+          description: The tags
+          content:
+            application/json:
+              schema: { type: object, description: One ${SECRET} page of them, default: { total: 0 }, properties: { total: { type: integer } } }
 `;
 const addTags = () => call(createApiReference, as(), { name: "Tags", spec: TAGS, tab: "api" });
 
@@ -221,6 +229,16 @@ describe("an operation's page", () => {
     const either = await pageText("list-the-tags", "tags");
     expect(either).toContain('"Bearer token"');
     expect(either).not.toContain('" or "');
+    // The same for a doc that names a scheme the reference doesn't have (the reader drops such a way; a doc from elsewhere may not).
+    const row = await prisma.apiReference.findFirstOrThrow({ where: { projectId: project.id, slug: "tags" }, select: { id: true, doc: true } });
+    const doc = row.doc as unknown as ApiDoc;
+    doc.operations.find((o) => o.slug === "list-the-tags")!.auth = [["key", "ghost"]];
+    await prisma.apiReference.update({ where: { id: row.id }, data: { doc: doc as never } });
+    const half = await pageText("list-the-tags", "tags");
+    expect(half).toContain("/tags");
+    expect(half).not.toContain("Bearer token");
+    // (The request example still sends the key: it's one of what the way needs.)
+    expect(half).not.toContain('"children":"Authorization"');
     // None listed: it needs none, or one the reference doesn't show, so the page says nothing either way.
     const unlisted = await pageText("purge");
     expect(unlisted).toContain("/admin/purge");
@@ -276,6 +294,11 @@ describe("a body or response that isn't an object", () => {
     // The body: an array of strings, each one of two.
     for (const shown of ["application/json · array of string · at most 5 items", `Every ${SECRET} tag`, '"Default: "', '[\\"bug\\"]', "Each item: ", "at most 20 characters", '"Each item one of"', '\\"idea\\"']) {
       expect(text).toContain(shown);
+    }
+    // A field that's such an array says the same of its items, and an object says what it is over its fields.
+    const list = await pageText("list-the-tags", "tags");
+    for (const shown of ['"children":"kinds"', "array of string", "Each item: ", "at least 2 characters", `A ${SECRET} kind`, '"Each item one of"', '\\"done\\"', `One ${SECRET} page of them`, '{\\"total\\":0}', '"children":"total"']) {
+      expect(list).toContain(shown);
     }
     // The response: a plain string, one of two.
     for (const shown of ["text/plain · string", `The ${SECRET} outcome`, '"One of"', '\\"saved\\"', '\\"unchanged\\"']) {
