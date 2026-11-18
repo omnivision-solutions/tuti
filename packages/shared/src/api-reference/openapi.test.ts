@@ -949,8 +949,8 @@ test("keywords beside a lone allOf reference are kept", () => {
       type: "object",
       description: "A thing.",
       properties: [
-        { name: "extra", required: false, type: "boolean" },
         { name: "a", required: false, type: "string" },
+        { name: "extra", required: false, type: "boolean" },
       ],
     },
     { name: "plain", required: false, type: "Text", ref: "Text", description: "Just words.", nullable: true, default: "x", constraints: "at least 1 character" },
@@ -1160,6 +1160,60 @@ test("a type whose reference is spelled another way is still not spelled out ins
     { name: "self", required: false, type: "User Response", ref: "User Response" },
     { name: "tilde", required: false, type: "a/b", ref: "a/b", properties: [{ name: "again", required: false, type: "a/b", ref: "a/b" }] },
   ]);
+});
+
+test("a schema's own word on a field counts over the one it folds in", () => {
+  const { schema, example } = schemaOf(ref("Dog"), {
+    Pet: { type: "object", description: "A pet.", required: ["kind"], properties: { kind: { type: "string", description: "The pet's kind." }, name: { type: "string" } } },
+    Dog: { allOf: [ref("Pet")], description: "A dog.", properties: { kind: { type: "string", enum: ["dog"] }, barks: { type: "boolean" } } },
+  });
+  expect(schema).toEqual({
+    type: "Dog",
+    ref: "Dog",
+    description: "A dog.",
+    properties: [
+      { name: "kind", required: true, type: "string", enum: ["dog"] },
+      { name: "name", required: false, type: "string" },
+      { name: "barks", required: false, type: "boolean" },
+    ],
+  });
+  expect(example).toEqual({ kind: "dog", name: "string", barks: true });
+});
+
+test("a schema or parameter with thousands of other keys has them listed once, not on every use", () => {
+  const junk = Object.fromEntries(Array.from({ length: 5_000 }, (_, index) => [`x-${index}`, 1]));
+  const wide = { "x-wide": true, ...junk, type: "string", description: "Wide." };
+  const param = { "x-wide": true, ...junk, name: "q", in: "query", example: "e", schema: { type: "string" } };
+  const fields = Object.fromEntries(Array.from({ length: 150 }, (_, index) => [`f${index}`, index % 2 ? ref("W") : { allOf: [ref("W"), { type: "string", maxLength: 5 }] }]));
+  const text = JSON.stringify({
+    openapi: "3.0.0",
+    paths: { "/a": { get: { summary: "A", parameters: Array.from({ length: 150 }, () => ({ $ref: "#/components/parameters/P" })), responses: { "200": json({ type: "object", properties: fields }) } } } },
+    components: { schemas: { W: wide }, parameters: { P: param } },
+  });
+  let listings = 0;
+  const wideOnes = (value: unknown) => typeof value === "object" && value !== null && Object.hasOwn(value, "x-wide");
+  const keys = Object.keys;
+  const all = Object.entries;
+  const listedKeys = vi.spyOn(Object, "keys").mockImplementation((value: object) => {
+    if (wideOnes(value)) listings++;
+    return keys(value);
+  });
+  const listedEntries = vi.spyOn(Object, "entries").mockImplementation((value: object) => {
+    if (wideOnes(value)) listings++;
+    return all(value);
+  });
+  const result = readOpenApi(text);
+  listedKeys.mockRestore();
+  listedEntries.mockRestore();
+  if ("error" in result) throw new Error(result.error);
+  const [get] = result.doc.operations;
+  expect(get!.params).toEqual([{ name: "q", in: "query", required: false, description: "", schema: { type: "string" }, example: "e" }]);
+  const [folded, named] = get!.responses[0]!.schema!.properties!;
+  // Folded in, a wide schema gives its keywords and none of its other keys.
+  expect(folded).toEqual({ name: "f0", required: false, type: "string", description: "Wide.", constraints: "at most 5 characters" });
+  expect(named).toEqual({ name: "f1", required: false, type: "W", ref: "W", description: "Wide." });
+  // W's keys once (what it says), P's never: nothing is listed per use.
+  expect(listings).toBeLessThanOrEqual(2);
 });
 
 test("a reference's fragment is percent-decoded, then split, then its parts unescaped", () => {

@@ -90,7 +90,8 @@ const LIMITS = new Set(
 const WARNINGS_MOST = 10_000;
 /** The most a YAML file may be once its aliases are filled in, in characters: one anchor can stand in a hundred places. */
 const YAML_SIZE = 4 * OPENAPI_MAX_BYTES;
-const onlyWords = (schema: Obj, also?: string) => Object.keys(schema).every((key) => WORDS.has(key) || key === also || key.startsWith("x-"));
+/** The keywords of a schema the reader reads, besides its fields: what's kept when `allOf` parts are folded into one. */
+const KEYWORDS = [...new Set([...WORDS, ...LIMITS, "enum", "const", "examples", "format", "items", "additionalProperties", "oneOf", "anyOf"])];
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 const PARAM_PLACES = new Set(["path", "query", "header", "cookie"]);
 
@@ -358,13 +359,13 @@ function read(root: Obj): ApiDoc {
     const merged = new Map<string, unknown>();
     const properties = new Map<string, unknown>();
     const required = new Set<unknown>();
+    // Only the keywords the reader reads, so a part with thousands of other keys costs what its fields do.
     for (const part of parts) {
-      for (const [key, value] of Object.entries(part)) {
-        if (key === "properties") for (const [name, property] of entries(value)) properties.set(name, property);
-        else if (key === "required") for (const name of list(value)) required.add(name);
-        else if (key !== "allOf" && key !== "$ref" && !merged.has(key)) merged.set(key, value);
-      }
+      for (const key of KEYWORDS) if (Object.hasOwn(part, key) && !merged.has(key)) merged.set(key, part[key]);
+      for (const name of list(part.required)) required.add(name);
     }
+    // The schema's own fields last: its word on a field it shares with what it folds in is the one that counts.
+    for (const part of [...parts.slice(1), schema]) for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
     merged.set("required", [...required]);
     const whole: Obj = Object.fromEntries(merged);
@@ -403,6 +404,16 @@ function read(root: Obj): ApiDoc {
   // One string per schema, shared by every place it's used: a long `pattern` isn't copied for each.
   const limitsOf = once(constraints);
   const choicesOf = once(choicesIn);
+  /** What a schema says, by its keys, listed once: only words; words beside an `allOf`; or those and limits, all of which are carried over. */
+  const saysOf = once((schema) => {
+    const keys = Object.keys(schema);
+    const extra = (key: string) => key.startsWith("x-");
+    return {
+      words: keys.every((key) => WORDS.has(key) || extra(key)),
+      beside: keys.every((key) => key === "allOf" || WORDS.has(key) || extra(key)),
+      carried: keys.every((key) => key === "allOf" || WORDS.has(key) || LIMITS.has(key) || extra(key)),
+    };
+  });
   const firstOf = once((schema) => list(schema.enum).find((value) => value !== null));
   const requiredIn = new WeakMap<unknown[], Set<unknown>>();
   function typesIn(schema: Obj): { types: string[]; nullable: boolean } {
@@ -469,14 +480,14 @@ function read(root: Obj): ApiDoc {
       const value = lookup(part.$ref)?.value;
       return value === node ? [] : [{ pointer: part.$ref, value }];
     });
-    const words = [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && onlyWords(part, part === node ? "allOf" : undefined));
+    const words = folded.length === 0 ? [] : [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && (part === node ? saysOf(part).beside : saysOf(part).words));
     const alone = folded.length === 1 && words.length === parts.length ? folded[0]?.pointer : undefined;
     const inside = (folded.find(({ value }) => isObj(value) && place.stack.includes(value)) ?? (place.folding.includes(node) ? folded[0] : undefined))?.pointer;
     const held = inside ?? alone;
     if (held !== undefined) {
       // Left out: fields and the like in a part of their own, or beside the reference.
       const kept = (part: unknown) => isObj(part) && (typeof part.$ref === "string" || words.includes(part));
-      if (!parts.every(kept) || !Object.keys(node).every((key) => key === "allOf" || WORDS.has(key) || LIMITS.has(key) || key.startsWith("x-"))) {
+      if (!parts.every(kept) || !saysOf(node).carried) {
         warn("ADDS_TO_ITSELF", place.where);
       }
       const name = lookup(held)?.name;
@@ -750,7 +761,9 @@ function read(root: Obj): ApiDoc {
         const where = `${key} › parameters › ${name}`;
         const schema = schemaAt(holder.schema, where);
         if (param.deprecated === true) schema.deprecated = true;
-        const example = exampleOf({ ...holder, ...param, schema: holder.schema }, false, where);
+        // The parameter's own example, else its content's; no copy of either, whatever else they hold.
+        const from = (key: string) => (Object.hasOwn(param, key) ? { [key]: param[key] } : Object.hasOwn(holder, key) ? { [key]: holder[key] } : {});
+        const example = exampleOf({ ...from("example"), ...from("examples"), schema: holder.schema }, false, where);
         params.set(`${place} ${name}`, {
           name,
           in: place,
