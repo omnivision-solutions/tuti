@@ -129,7 +129,7 @@ export function ApiReferenceDialog({
   const [error, setError] = useState<{ field: keyof typeof FOCUS; message: string }>();
   const tabItems = tabs.map((tab) => ({ value: tab.slug, label: tab.name }));
   // Without tabs there's no Tab field: what's wrong with the tab (the last one, deleted since the dialog opened; the
-  // page refreshes after a refusal, and it's gone then) is said under the file.
+  // page is refreshed after that refusal, and it's gone then) is said under the file.
   const shown = error?.field === "tab" && tabItems.length === 0 ? "spec" : error?.field;
   const about = (field: keyof typeof FOCUS) => (shown === field ? error?.message : undefined);
   // How many adds the server refused: after each, focus goes to the field the reason is about, once it's shown
@@ -168,6 +168,10 @@ export function ApiReferenceDialog({
       } else if (result.error) {
         setError({ field: result.field ?? "spec", message: result.error });
         setRefused((count) => count + 1);
+        // The tab is gone: the page's tabs are read again, so the dialog offers the ones there are.
+        if (result.field === "tab") {
+          router.refresh();
+        }
       }
     });
   }
@@ -218,8 +222,8 @@ export function ApiReferenceDialog({
                   name="tab"
                   items={tabItems}
                   value={tab}
-                  // Its reason stays until Add is pressed again: the page refreshes after a refusal, and a tab that's gone
-                  // leaves the list then, which changes the value by itself.
+                  // Its reason stays until Add is pressed again: the page is refreshed after its refusal, and a tab that's
+                  // gone leaves the list then, which changes the value by itself.
                   onValueChange={(value) => setTab(value as string | null)}
                 >
                   <SelectTrigger
