@@ -152,6 +152,17 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(panel.getByRole("textbox", { name: "Body" })).toHaveValue('{"title": "Edited"}');
   await expect(response.getByText("201 Created")).toBeVisible();
 
+  // Another operation, by the tree: its own console, with its own example and servers, not the last one's.
+  await reader.keyboard.press("Escape");
+  await reader.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Get a post GET", exact: true }).click();
+  await expect(reader.getByRole("heading", { name: "Get a post", level: 1 })).toBeVisible();
+  await reader.getByRole("button", { name: "Try it" }).click();
+  await expect(panel.getByLabel("id")).toHaveValue("7");
+  await expect(panel.getByLabel("board")).toHaveCount(0);
+  await expect(panel.getByRole("textbox", { name: "Body" })).toHaveCount(0);
+  await expect(panel.getByRole("combobox", { name: "Server" })).toHaveText(/^Production/);
+  await expect(panel.getByRole("region", { name: "Response" })).toHaveCount(0);
+
   // A request the browser sends without asking the API first (a POST with its key in the query, no body) reached the
   // API though its answer can't be read: it isn't sent again unless the reader asks.
   await reader.keyboard.press("Escape");
@@ -216,23 +227,31 @@ test("a reader tries an operation with their key: from the browser, and through 
   // A request still on its way when the console closes is still on its way when it opens again, and stops at 15
   // seconds (on the page's clock, run forward: no test waits for them).
   await reader.keyboard.press("Escape");
-  await reader.clock.install();
+  const t0 = new Date("2026-11-18T12:00:00Z");
+  await reader.clock.install({ time: t0 });
   await reader.goto("/docs/reference/wait-forever");
   await reader.getByRole("button", { name: "Try it" }).click();
   const waiting = reader.getByRole("dialog", { name: "Try it" });
+  await expect(waiting.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  // Paused: only runFor moves it, however long the steps take. The sheet's closing and opening wait on the page's
+  // timers, so each gets half a second of it, counted in the 15.
+  await reader.clock.pauseAt(new Date(t0.getTime() + 60 * 60_000));
   await waiting.getByRole("button", { name: "Send", exact: true }).click();
   await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
   await reader.keyboard.press("Escape");
+  await reader.clock.runFor(500);
+  await expect(waiting).toHaveCount(0);
   await reader.getByRole("button", { name: "Try it" }).click();
+  await reader.clock.runFor(500);
   await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
-  await reader.clock.runFor(14_000);
+  await reader.clock.runFor(13_000);
   await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
   await reader.clock.runFor(1_000);
   await expect(waiting.getByRole("region", { name: "Response" }).getByText("The API didn't answer within 15 seconds")).toBeVisible();
   await expect(waiting.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
 
   // Through Tuti, the request has a clock of its own from when it starts: Tuti gives the API its 15 seconds.
-  await reader.keyboard.press("Escape");
+  await reader.clock.resume();
   await reader.goto("/docs/reference/get-a-post");
   await reader.getByRole("button", { name: "Try it" }).click();
   const slow = reader.getByRole("dialog", { name: "Try it" });
@@ -246,6 +265,8 @@ test("a reader tries an operation with their key: from the browser, and through 
     await held;
     await route.fulfill({ json: { status: 200, statusText: "OK", headers: [], body: "{}", size: 2, cut: false, ms: 16_000 } });
   });
+  // Paused again (an hour on, before anything is sent): only runFor moves it from here.
+  await reader.clock.pauseAt(new Date(t0.getTime() + 2 * 60 * 60_000));
   await slow.getByRole("button", { name: "Send", exact: true }).click();
   // Once the browser's own attempt has been refused and the request is on its way through Tuti: the clock moves then.
   await atTuti;
@@ -254,6 +275,7 @@ test("a reader tries an operation with their key: from the browser, and through 
   release();
   await expect(slow.getByRole("region", { name: "Response" }).getByText("200 OK")).toBeVisible();
   await reader.unroute("**/docs/reference/get-a-post/try");
+  await reader.clock.resume();
 
   // On a phone, a sheet from the bottom that fits the width.
   await reader.goto("/docs/reference/create-a-post");

@@ -125,6 +125,11 @@ function useForm({ doc, operation, base }: Props) {
   const [sending, setSending] = useState(false);
   /** The latest send, and how to stop it: an answer to an earlier one is dropped. */
   const latestRef = useRef<{ id: number; stop?: AbortController }>({ id: 0 });
+  // Leaving the operation (another one's page) stops what it was sending.
+  useEffect(() => {
+    const latest = latestRef;
+    return () => latest.current.stop?.abort();
+  }, []);
   return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult, sending, setSending, latestRef };
 }
 

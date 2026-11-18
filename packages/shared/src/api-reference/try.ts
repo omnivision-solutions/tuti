@@ -77,9 +77,10 @@ function fillServer(server: Pick<ApiServer, "url" | "variables">, values: Record
   return missing === null ? { url } : { missing };
 }
 
-/** Whether an operation's page has Try it: an OpenAPI operation with somewhere to send it. */
+/** Whether an operation's page has Try it: an OpenAPI operation fetch can send, with somewhere to send it. */
 export const tryable = (doc: ApiDoc, operation: ApiOperation, base: string | null | undefined) =>
-  doc.format === "openapi" && !operation.query && tryServers(doc, operation, base).length > 0;
+  // Not TRACE: fetch, a browser's and Tuti's, refuses to send one.
+  doc.format === "openapi" && !operation.query && operation.kind !== "TRACE" && tryServers(doc, operation, base).length > 0;
 
 /**
  * The ways of signing the console asks a key for: the first of the operation's whose schemes are all known (as the
@@ -100,6 +101,15 @@ const lower = (names: (string | null)[]) => new Set(names.filter((name): name is
 
 /** A header's or cookie's value can't start another one. */
 const BREAKS = /[\r\n\0]/;
+/**
+ * A character a header can't carry: one beyond Latin-1 (a dash "–", a curly quote "’"). A browser refuses such a
+ * request before sending it, with the same error as a CORS refusal, so it's caught here, by name, first.
+ */
+const NOT_LATIN1 = /[^\x00-\xff]/;
+const unsendable = (name: string, value: string) => {
+  const found = NOT_LATIN1.exec(value)?.[0];
+  return found === undefined ? null : `${name} has a character a request can't carry in a header: ${found}`;
+};
 
 /** The request `input` makes of the operation, or why it can't be sent. Where it goes is checked by whoever sends it. */
 export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | null | undefined, input: TryInput): TryRequest | { error: string } {
@@ -166,6 +176,10 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     if (BREAKS.test(value)) {
       return { error: `${name} can't have a line break in it` };
     }
+    const wrong = unsendable(name, value);
+    if (wrong) {
+      return { error: wrong };
+    }
     sent.push([name, value]);
   }
   for (const [name, value] of input.cookies) {
@@ -174,6 +188,10 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     }
     if (BREAKS.test(value) || value.includes(";")) {
       return { error: `${name} can't have a line break or a semicolon in it` };
+    }
+    const wrong = unsendable(name, value);
+    if (wrong) {
+      return { error: wrong };
     }
   }
   if (input.cookies.length > 0) {

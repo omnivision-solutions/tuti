@@ -484,6 +484,9 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
               {/* Only where there's somewhere to send it: never GraphQL (yet), nor servers without a host and no base address. */}
               {tryable(page.doc, operation, page.reference.baseUrl) && (
                 <TryIt
+                  // One per operation: following the tree to another starts its console afresh (its fields, answer and
+                  // request on its way are the one before's otherwise, as the page stays mounted).
+                  key={`${page.reference.slug}/${operation.slug}`}
                   reference={page.reference.slug}
                   operationSlug={operation.slug}
                   // What the console reads, not the whole spec: its servers, its ways of signing, this operation.

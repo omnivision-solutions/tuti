@@ -51,6 +51,7 @@ const input = (over: Partial<TryInput> = {}): TryInput => ({
 test("Try it is on only for OpenAPI with a server that names a host, or the reference's base address", () => {
   expect(tryable(doc(), operation(), null)).toBe(true);
   expect(tryable(doc({ format: "graphql" }), operation(), null)).toBe(false);
+  expect(tryable(doc(), operation({ kind: "TRACE" }), null)).toBe(false);
   // All relative, no base: nowhere to send it.
   expect(tryable(doc({ servers: [{ url: "/v1", description: "" }] }), operation(), null)).toBe(false);
   expect(tryServers(doc({ servers: [{ url: "/v1", description: "" }] }), operation(), "https://acme.test/?tenant=a")).toEqual([{ url: "https://acme.test/v1?tenant=a", description: "" }]);
@@ -197,4 +198,13 @@ test("an array query parameter is sent once per item and an object one per field
 test("a key in the query is hidden in the address shown", () => {
   const made = tryRequest(doc(), operation(), null, input({ query: [["api_key", "sk_live_1"]] }));
   expect("url" in made && shownUrl(doc(), operation(), made)).toBe("https://api.acme.test/v1/posts/1?api_key=****");
+});
+
+test("a header or cookie with a character beyond Latin-1 is refused before sending, by name: a browser couldn't send it", () => {
+  const team = operation({ params: [...operation().params, header("X-Team")] });
+  expect(tryRequest(doc(), team, null, input({ headers: [["X-Team", "café–beta"]] }))).toEqual({ error: "X-Team has a character a request can't carry in a header: –" });
+  // Latin-1 itself is fine ("é").
+  expect(tryRequest(doc(), team, null, input({ headers: [["X-Team", "café"]] }))).not.toHaveProperty("error");
+  const cookie = doc({ auth: [{ key: "cookie", kind: "cookie", name: "session", description: "" }] });
+  expect(tryRequest(cookie, operation({ auth: [["cookie"]] }), null, input({ cookies: [["session", "it’s"]] }))).toEqual({ error: "session has a character a request can't carry in a header: ’" });
 });
