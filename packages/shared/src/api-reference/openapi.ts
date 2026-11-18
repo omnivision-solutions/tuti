@@ -389,6 +389,22 @@ function read(root: Obj, most: number): ApiDoc {
     return isObj(node) ? node : null;
   }
 
+  /**
+   * The schema a schema is, through its `$ref`s: in 3.1, one with keywords beside its reference is
+   * the two together at every step, so it stops there, to be folded in.
+   */
+  function followSchema(node: unknown, where?: string): Obj | null {
+    node = split(node);
+    for (let hops = 0; isObj(node) && typeof node.$ref === "string"; hops++) {
+      if (hops === 20) {
+        if (where !== undefined) warn("UNKNOWN_REF", where);
+        return null;
+      }
+      node = split(lookup(node.$ref, where)?.value);
+    }
+    return isObj(node) ? node : null;
+  }
+
   /** A schema with its `allOf` parts folded in: their fields together and their keywords, a later part's word over an earlier one's. */
   function flatten(schema: Obj, where?: string): Obj {
     if (!Array.isArray(schema.allOf)) return schema;
@@ -410,7 +426,7 @@ function read(root: Obj, most: number): ApiDoc {
       if (docNodes > most) throw TOO_LARGE;
       for (const inner of list(part.allOf)) {
         const whole = split(inner);
-        add(follow(whole, where), part, whole === inner && isObj(inner) && typeof inner.$ref === "string");
+        add(followSchema(whole, where), part, whole === inner && isObj(inner) && typeof inner.$ref === "string");
       }
       after.push(part);
     };
@@ -656,13 +672,12 @@ function read(root: Obj, most: number): ApiDoc {
   /** A value of the schema's shape, from its own examples where it has them; undefined when there's nothing to show. */
   function sample(node: unknown, stack: Obj[], where: string): unknown {
     const within = spend();
-    node = split(node);
-    const target = follow(node);
+    const target = followSchema(node);
     if (!target) return isObj(node) ? {} : undefined;
     // A field that folds in a type it's inside ("this type, or null") stops there. A base two types share doesn't.
     charge(list(target.allOf).length);
     const bases = list(target.allOf).flatMap((part): Obj[] => {
-      const base = follow(part);
+      const base = followSchema(part);
       return base ? [base] : [];
     });
     if (stack.includes(target) || bases.some((base) => base !== target && stack.includes(base)) || !within) return undefined;
@@ -719,7 +734,7 @@ function read(root: Obj, most: number): ApiDoc {
     const first = follow(fieldsOf(holder.examples)[0]?.[1]);
     if (first && Object.hasOwn(first, "value")) return data(first.value, where);
     // The schema's own example as the pages' fields have it: with what's beside a 3.1 reference, and what `allOf` folds in.
-    const target = follow(split(holder.schema));
+    const target = followSchema(holder.schema);
     const schema = target && flatten(target);
     if (schema && Object.hasOwn(schema, "example")) return data(schema.example, where);
     if (!make || holder.schema === undefined) return undefined;

@@ -1426,6 +1426,34 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
   expect(ignored.responses.map((one) => one.example)).toEqual([{ name: "Rex" }, { name: "Rex" }, { name: "Rex" }]);
   expect(ignored.responses[2]!.schema).toMatchObject({ type: "Dog", ref: "Dog", properties: [{ name: "name", required: false, type: "string" }] });
 
+  // And through a named schema that is itself a reference with more beside it.
+  const through = (openapi: string) =>
+    read(
+      JSON.stringify({
+        openapi,
+        paths: { "/x": { get: { summary: "X", responses: { "200": json(ref("Admin")), "201": json(ref("Rex")), "202": json({ allOf: [ref("Admin"), { properties: { since: { type: "string" } } }] }) } } } },
+        components: {
+          schemas: {
+            User: { type: "object", properties: { id: { type: "string" } } },
+            Admin: { $ref: "#/components/schemas/User", properties: { role: { type: "string" } } },
+            Pet: { type: "object", example: { name: "Any" }, properties: { name: { type: "string" } } },
+            Rex: { $ref: "#/components/schemas/Pet", example: { name: "Rex" } },
+          },
+        },
+      }),
+    ).operations[0]!.responses;
+  const [admin, rex, both] = through("3.1.0");
+  expect(admin!.schema!.properties!.map((property) => property.name)).toEqual(["id", "role"]);
+  expect(admin!.example).toEqual({ id: "string", role: "string" });
+  expect(rex!.example).toEqual({ name: "Rex" });
+  expect(both!.schema!.properties!.map((property) => property.name)).toEqual(["id", "role", "since"]);
+  expect(both!.example).toEqual({ id: "string", role: "string", since: "string" });
+  const [plain, any, fewer] = through("3.0.3");
+  expect(plain!.schema!.properties!.map((property) => property.name)).toEqual(["id"]);
+  expect(plain!.example).toEqual({ id: "string" });
+  expect(any!.example).toEqual({ name: "Any" });
+  expect(fewer!.schema!.properties!.map((property) => property.name)).toEqual(["id", "since"]);
+
   // 3.0: a reference is only the reference, with the description beside it read as before.
   const earlier = spec(parts);
   const before = earlier.operations[0]!.responses[0]!;
