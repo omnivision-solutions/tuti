@@ -165,6 +165,15 @@ test("An API reference's Endpoints: a group that's only a second tag has its swi
   await team.goto(`/app/${slug}/docs/references/api-reference`);
   await expect(team.getByText("21 of 21 on the help center")).toBeVisible();
 
+  // Everything off: nothing of it is on the help center, so there's no page there to open.
+  const helpCenter = team.getByRole("link", { name: "View on help center" });
+  await expect(helpCenter).toBeVisible();
+  await team.getByRole("switch", { name: "Things: on the help center" }).uncheck();
+  await expect(team.getByText("0 of 21 on the help center")).toBeVisible();
+  await expect(helpCenter).toBeHidden();
+  await team.getByRole("switch", { name: "Things: on the help center" }).check();
+  await expect(helpCenter).toBeVisible();
+
   // Internal off: the operation tagged with it is off too, its switch greyed, saying why.
   await team.getByRole("switch", { name: "Internal: on the help center" }).uncheck();
   await expect(team.getByText("20 of 21 on the help center")).toBeVisible();

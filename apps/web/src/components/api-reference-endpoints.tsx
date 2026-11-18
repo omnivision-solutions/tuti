@@ -40,10 +40,10 @@ type Operation = {
   new: boolean;
 };
 
-/** A method's colour, as on the help center's pages: GET green, POST blue, PUT and PATCH amber, DELETE red; the rest (GraphQL's kinds too) muted. */
+/** A method's colour, in the app's tokens for the hues the help center's pages use (portal-api-operation.tsx): GET blue, POST green, PUT and PATCH amber, DELETE red; the rest (GraphQL's kinds too) muted. */
 const METHOD_COLOURS: Record<string, string> = {
-  GET: "text-kind-new",
-  POST: "text-kind-progress",
+  GET: "text-kind-progress",
+  POST: "text-kind-new",
   PUT: "text-kind-edit",
   PATCH: "text-kind-edit",
   DELETE: "text-destructive-foreground",
