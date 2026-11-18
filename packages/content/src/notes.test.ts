@@ -137,6 +137,13 @@ describe("passages: a block's text replaced where it stands", () => {
     ]) {
       expect(replacePassage(block, find, refused)).toBeNull();
     }
+    // Code that's also a link or bold is written with the mark around it, so it couldn't be found as it was: no passage.
+    const config = { type: "link", attrs: { href: "https://example.com/c" } };
+    expect(passagesIn([para(text("Edit "), text("the ", config), text("config.yml", config, { type: "code" }), text(" file", config))])).toEqual([]);
+    expect(passagesIn([para(text("acme ", { type: "bold" }), text("theme", { type: "bold" }, { type: "code" }))])).toEqual([]);
+    // Bold beside code is one: every passage listed can be replaced by itself.
+    const beside = [para(text("Run", { type: "bold" }), text(" "), run, text(" "), text("now", { type: "bold" }))];
+    expect(replacePassage(beside, passagesIn(beside)[0]!.text, passagesIn(beside)[0]!.text)![0]).toEqual(beside[0]);
     // A passage without code can't gain any.
     expect(replacePassage(section, "Each plan has seats.", "Each plan has `seats`.")).toBeNull();
   });
