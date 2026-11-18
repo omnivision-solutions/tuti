@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { expect, type Locator, type Page, type Request, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
+import { spendCredits } from "./credits";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduledDraft, setPostUpdate, setPullRequestState } from "./autopilot";
@@ -615,6 +616,11 @@ test("an analysis the AI provider didn't answer says when Autopilot tries again,
   await expect(owner.getByText(/^The analysis stopped\. The AI provider didn't answer\. Autopilot tries again (today|tomorrow) at \d{1,2}:\d{2}\s?[ap]m\.$/)).toBeVisible();
   await expect(owner.getByRole("button", { name: "Analyse again" })).toBeVisible();
   await checkpoint(owner, "autopilot-retry-later");
+
+  // Out of AI credits, it waits for some (whenever it was due).
+  await spendCredits(slug);
+  await owner.reload();
+  await expect(owner.getByText("The analysis stopped. The AI provider didn't answer. Autopilot tries again once the project has AI credits.", { exact: true })).toBeVisible();
 
   await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer. Autopilot tried again 3 times, then gave up.");
   await owner.reload();

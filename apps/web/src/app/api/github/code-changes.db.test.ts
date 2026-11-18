@@ -1675,6 +1675,54 @@ describe("retries when the AI provider didn't answer", () => {
     expect(await sweep(48 * 60)).toMatchObject({ due: 0 });
   });
 
+  test("queueing on Hatchet failing puts the retry back as it was, for the next sweep", async () => {
+    github.pullRequest(repo, pullRequest(72));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(72);
+    const before = await row(72);
+    // Hatchet, unreachable (no token): queueing fails.
+    vi.stubEnv("JOBS_DRIVER", "hatchet");
+    vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+    expect(await sweep(61)).toMatchObject({ due: 1, queued: 0 });
+    expect(await row(72)).toEqual(before);
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    analysed();
+    expect(await sweep(61)).toMatchObject({ queued: 1 });
+    expect(await row(72)).toMatchObject({ state: "NOTHING_TO_DO", retries: 1 });
+  });
+
+  test("more retries waiting for credits than a sweep queues don't hold up another project's", async () => {
+    vi.stubEnv("AI_CREDITS", "on");
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    github.pullRequest(repo, pullRequest(73));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(73);
+    // Another project, out of credits, with more due before it than one sweep queues.
+    const other = await createProject(owner);
+    const long = new Date(Date.now() - 24 * 60 * MINUTE);
+    await prisma.codeChange.createMany({
+      data: Array.from({ length: 60 }, (_, i) => ({
+        projectId: other.id,
+        repoId: 1,
+        repo: "acme/other",
+        number: i + 1,
+        url: `https://github.com/acme/other/pull/${i + 1}`,
+        title: "Other",
+        author: "octo",
+        mergedAt: long,
+        state: "FAILED" as const,
+        reason: "The AI provider didn't answer.",
+        retryAt: long,
+      })),
+    });
+    await prisma.project.update({ where: { id: other.id }, data: { analyseCodeChanges: true } });
+    analysed();
+    expect(await sweep(61)).toEqual({ due: 61, queued: 1, dropped: 0, waiting: 60 });
+    expect(await row(73)).toMatchObject({ state: "NOTHING_TO_DO" });
+  });
+
   test("out of AI credits, a retry waits until there are some; then it runs, and what it asks is charged like any analysis", async () => {
     vi.stubEnv("AI_CREDITS", "on");
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });

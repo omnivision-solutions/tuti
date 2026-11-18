@@ -257,7 +257,7 @@ async function nextRetry(id: string): Promise<Date | null> {
   return minutes === undefined ? null : new Date(Date.now() + minutes * 60_000);
 }
 
-/** How many code changes one sweep queues again, so a long outage's backlog goes out over a few sweeps. */
+/** How many code changes one sweep queues again, so a long outage's backlog goes out over a few sweeps (those waiting for credits don't count). */
 const RETRIES_PER_SWEEP = 50;
 
 /**
@@ -267,24 +267,30 @@ const RETRIES_PER_SWEEP = 50;
  * again), and is counted then. The run itself checks the rest (the plan, the repository) as for any analysis.
  */
 export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
-  // ponytail: the oldest due first, so more than a sweep's worth waiting for credits holds up the rest; skip those in SQL if that happens.
+  // Every due one, oldest first: those waiting for credits are skipped without holding up the rest.
   const due = await prisma.codeChange.findMany({
     where: { state: "FAILED", retryAt: { lte: now } },
     orderBy: { retryAt: "asc" },
-    take: RETRIES_PER_SWEEP,
     select: { id: true, projectId: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true } } },
   });
   let queued = 0;
   let dropped = 0;
   let waiting = 0;
+  const paused = new Map<string, boolean>();
   for (const change of due) {
+    if (queued >= RETRIES_PER_SWEEP) {
+      break;
+    }
     // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
     const still = { id: change.id, state: "FAILED" as const, retryAt: change.retryAt };
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
       dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null } })).count;
       continue;
     }
-    if (await aiPaused(change.projectId)) {
+    if (!paused.has(change.projectId)) {
+      paused.set(change.projectId, await aiPaused(change.projectId));
+    }
+    if (paused.get(change.projectId)) {
       waiting++;
       continue;
     }
@@ -297,7 +303,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
       await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.retryPastGate, resume: false });
     } catch (error) {
       // Inline, the analysis itself failed (the code change says where, and when it's tried next). On Hatchet, queueing
-      // did: put back as it was, for the next sweep.
+      // did: put back as it was, and the rest left for the next sweep (they'd fail the same way).
       if (process.env.JOBS_DRIVER !== "inline") {
         queued--;
         await prisma.codeChange.updateMany({
@@ -305,6 +311,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
           data: { state: "FAILED", reason: change.reason, retryAt: change.retryAt, retries: change.retries },
         });
         log.error("Queueing a code change's retry failed", { error, codeChangeId: change.id });
+        break;
       }
     }
   }
