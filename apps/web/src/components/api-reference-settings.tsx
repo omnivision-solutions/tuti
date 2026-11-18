@@ -37,7 +37,10 @@ const SAVE_FAILED = { error: "Couldn't save that. Try again." };
  * doesn't work is said under the field and the reference stays as it was. The toast says what the new spec changed.
  */
 function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: string; url: string }) {
-  const [value, setValue] = useState(url);
+  // Only what's typed over what's stored: a field left alone shows the address the page has now (a teammate's change
+  // included), so Change can't put an old one back.
+  const [edited, setEdited] = useState<string | null>(null);
+  const value = edited ?? url;
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const next = value.trim();
@@ -54,6 +57,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
         document.getElementById("reference-source-url")?.focus();
         return;
       }
+      setEdited(null);
       const what = [result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ");
       toast.success(what ? `Address changed: ${what}` : "Address changed");
     });
@@ -72,7 +76,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
             aria-invalid={error ? true : undefined}
             aria-describedby="reference-source-url-note"
             onChange={(event) => {
-              setValue(event.target.value);
+              setEdited(event.target.value);
               setError(undefined);
             }}
           />

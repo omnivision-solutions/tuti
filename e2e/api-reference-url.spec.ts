@@ -5,6 +5,7 @@ import type { Request, Route } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
+import { query } from "./db";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { siteAnswers, siteUrl } from "./site";
@@ -146,4 +147,13 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   await source.getByRole("button", { name: "Sync now" }).click();
   await expect(team.getByText("No changes", { exact: true }).last()).toBeVisible();
   await expect(source).not.toContainText("Last sync failed");
+
+  // A teammate moves it on while this page is open: once the page refreshes, the field shows their address, not the
+  // one this page started from, so Change can't put the old one back.
+  const theirs = `/${slug}/v3/openapi.json`;
+  await siteAnswers(theirs, spec({ "GET /posts": ["Posts", "List posts"] }));
+  await query(`UPDATE api_reference SET "sourceUrl" = $1 WHERE slug = 'acme-api' AND "sourceUrl" = $2`, [`${siteUrl()}${theirs}`, `${siteUrl()}${moved}`]);
+  await source.getByRole("button", { name: "Sync now" }).click();
+  await expect(address).toHaveValue(`${siteUrl()}${theirs}`);
+  await expect(source.getByRole("button", { name: "Change" })).toBeDisabled();
 });
