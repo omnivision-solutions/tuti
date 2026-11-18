@@ -82,7 +82,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         </PlanNotice>
       )}
       <SettingsCard>
-        <AiModelSetting {...model} />
+        {/* Without the switch (this server runs no checks), a saved Off is Custom's empty box, where a model can be picked, not a row that only the switch could change. */}
+        <AiModelSetting {...model} roles={checks ? model.roles : model.roles.map((role) => (role.model === "off" ? { ...role, model: "" } : role))} />
         {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} />}
         <AdvancedTuningLink href={`/app/${slug}/settings/ai-models/tuning`} upgrade={planIncludes(project.plan, "aiTuning") ? null : upgradePrompt("aiTuning", slug, true)} />
       </SettingsCard>

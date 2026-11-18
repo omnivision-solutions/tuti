@@ -75,7 +75,9 @@ function levelUpgrade(level: AiLevel, projectSlug: string): UpgradePrompt {
 /**
  * Settings → Autopilot's Checks switch, from the page's AI model setting, so the two agree: on when the checks run on a
  * model now. Null where there's nothing to switch: the checks wouldn't run with the switch on either (the server's own
- * model for them is off, and the level in use has none), unless a saved Off is still there to undo.
+ * model for them is off, and the level in use has none), so it never says "on" while they're off.
+ * ponytail: on such a server under Custom, switching off a model picked for Checks leaves no switch (on would run
+ * nothing: Off replaced the pick), and the model is picked again in its box; store Off apart from the pick if that matters.
  */
 export function checksSwitch({ used, roles }: Pick<AiModelSettingProps, "used" | "roles">): { on: boolean } | null {
   const checks = roles.find(({ role }) => role === "code_changes_check");
@@ -84,5 +86,5 @@ export function checksSwitch({ used, roles }: Pick<AiModelSettingProps, "used" |
   }
   // What the checks run on with the switch on: the model in use, or, with Off saved, the level's (Custom's is the server's own until one is picked).
   const whenOn = checks.model !== "off" ? checks.used : ((used === "affordable" || used === "best" ? aiLevelRows()[used]?.code_changes_check : undefined) ?? checks.default);
-  return whenOn !== "off" || checks.model === "off" ? { on: checks.used !== "off" } : null;
+  return whenOn === "off" ? null : { on: checks.used !== "off" };
 }

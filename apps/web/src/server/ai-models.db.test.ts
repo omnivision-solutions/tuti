@@ -384,10 +384,8 @@ test("the Checks switch on a server whose own checks are off: none where they wo
   expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
   expect(checksSwitch(await setting())).toEqual({ on: true });
 
-  // Off saved, then back on Balanced: the switch stays, off, so the saved Off can be undone (the line then says what the server runs).
+  // Off saved, then back on Balanced, where on would run nothing either: no switch that could say "on" while they're off.
   expect(await saveAiModel(project.slug, { code_changes_check: "off", levels: { code_changes: "balanced" } })).toEqual({});
-  expect(checksSwitch(await setting())).toEqual({ on: false });
-  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
   expect(checksSwitch(await setting())).toBeNull();
 
   // Custom with a model picked for Checks: on, whatever the server's own is.

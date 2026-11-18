@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { aiEnabled, TUNING, TUNING_KEYS } from "@tuti/shared";
+import { aiEnabled, codeChangesEnabled, TUNING, TUNING_KEYS } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CodeChangesTuningSettings } from "@/components/code-changes-tuning";
@@ -24,7 +24,8 @@ export default async function CodeChangesTuningPage(props: PageProps<"/app/[proj
   const tuning = await codeChangesTuning(membership.project.id);
   const kept = Object.values(tuning.values).some((value) => value.saved !== null);
   return (
-    <SettingsPane title="Advanced tuning" back={{ href: `/app/${slug}/settings/autopilot`, label: "Autopilot" }}>
+    // Back to Autopilot's settings; where the server has AI but can't run Autopilot (that page isn't there), to the first of the AI pages.
+    <SettingsPane title="Advanced tuning" back={codeChangesEnabled() ? { href: `/app/${slug}/settings/autopilot`, label: "Autopilot" } : { href: `/app/${slug}/settings/ai-answers`, label: "AI answers" }}>
       <CodeChangesTuningSettings
         projectSlug={slug}
         tuning={tuning}
