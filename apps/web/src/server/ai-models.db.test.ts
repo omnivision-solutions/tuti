@@ -6,7 +6,8 @@ import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@t
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
-import { saveAiModels } from "@/server/ai-models";
+import { aiModelSetting } from "@/lib/ai-model-setting";
+import { saveAiModel, saveAiModels } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
 import { createArticle, publishArticle } from "@/server/operations/docs";
@@ -233,4 +234,69 @@ test("a model picked before levels, or through the release before them, keeps be
   expect(await answeredWith(project.id)).toBe("acme/tiny");
   // Balanced is saved, so the pick is kept and no longer used.
   expect(await call(updateAiModels, as(), { levels: { answers: "balanced" } })).toMatchObject({ answers: { model: "acme/tiny", used: DEFAULT_AI_MODEL }, levels: { answers: { level: "balanced" } } });
+});
+
+test("a settings page's AI model: every level the server offers, with the upgrade prompt on those the plan lacks; the models in use by name; a saved level that isn't used is said; it saves a level or a pick", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_fake");
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test_fake");
+  actAs(owner);
+  const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "answers", { answers: "Answers", escalations: "Summaries" });
+  const billingHref = `/app/${project.slug}/settings/billing`;
+  const levels = { title: "Choosing an AI level needs the Pro plan.", billingHref, note: null };
+  const custom = { title: "Picking your own AI models needs the Business plan.", billingHref, note: null };
+
+  // Free: every level is there, and all but Balanced open the prompt. The server refuses them too.
+  await onPlan("free");
+  const free = await setting();
+  expect(free).toMatchObject({ projectSlug: project.slug, group: "answers", saved: "balanced", used: "balanced", notice: null });
+  expect(free.levels).toEqual([
+    { level: "affordable", name: "Affordable", upgrade: levels },
+    { level: "balanced", name: "Balanced", upgrade: null },
+    { level: "best", name: "Best", upgrade: levels },
+    { level: "custom", name: "Custom", upgrade: custom },
+  ]);
+  expect(await saveAiModel(project.slug, { levels: { answers: "best" } })).toEqual({ error: "Choosing an AI level needs the Pro plan. See Settings → Billing." });
+
+  // Pro: Best saves, and the summary names its model as the endpoint does, without the provider.
+  await onPlan("pro");
+  expect(await saveAiModel(project.slug, { levels: { answers: "best" } })).toEqual({});
+  const pro = await setting();
+  expect(pro).toMatchObject({ saved: "best", used: "best", summary: "Answers Claude Sonnet 5.5 · Summaries Claude Sonnet 5.5", notice: null });
+  expect(pro.levels.map(({ level, upgrade }) => [level, upgrade?.title ?? null])).toEqual([["affordable", null], ["balanced", null], ["best", null], ["custom", custom.title]]);
+
+  // Business: Custom, and a pick for one role; the other runs on the server's own. Only models under the server's cap are offered.
+  await onPlan("business");
+  vi.stubEnv("AI_MODEL_MAX_PRICE", "15");
+  expect(await saveAiModel(project.slug, { levels: { answers: "custom" } })).toEqual({});
+  expect(await saveAiModel(project.slug, { escalations: "acme/tiny" })).toEqual({});
+  const business = await setting();
+  expect(business).toMatchObject({ saved: "custom", used: "custom", notice: null });
+  expect(business.summary).toMatch(/^Answers .+ · Summaries Tiny$/);
+  expect(business.roles).toEqual([
+    { role: "answers", label: "Answers", model: "", default: DEFAULT_AI_MODEL, agent: false },
+    { role: "escalations", label: "Summaries", model: "acme/tiny", default: DEFAULT_AI_MODEL, agent: false },
+  ]);
+  expect(business.listed.map((listed) => listed.id)).not.toContain("acme/no-price");
+  expect(business.levels.every((level) => level.upgrade === null)).toBe(true);
+
+  // Back on Free: Custom is kept and not used, so Balanced is the one shown, with a line saying so.
+  await onPlan("free");
+  expect(await setting()).toMatchObject({ saved: "custom", used: "balanced", notice: "Custom isn't available on this plan." });
+});
+
+test("a settings page's AI model on a server without plans: no prompts; a level over the server's cap isn't shown, and a saved one the server stopped offering is said", async () => {
+  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "changelog", { changelog: "Drafts" });
+  expect((await setting()).levels).toEqual([
+    { level: "affordable", name: "Affordable", upgrade: null },
+    { level: "balanced", name: "Balanced", upgrade: null },
+    { level: "custom", name: "Custom", upgrade: null },
+  ]);
+  await call(updateAiModels, as(), { levels: { changelog: "affordable" } });
+  expect(await setting()).toMatchObject({ used: "affordable", summary: "Drafts Claude Haiku 5.5" });
+  vi.stubEnv("AI_MODEL", "acme/tiny");
+  const own = await setting();
+  expect(own).toMatchObject({ saved: "affordable", used: "balanced", summary: "Drafts Tiny", notice: "Affordable isn't available on this server." });
+  expect(own.levels.map(({ level }) => level)).toEqual(["balanced", "custom"]);
 });

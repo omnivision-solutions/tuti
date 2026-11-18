@@ -118,10 +118,10 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
   return result;
 }
 
-/** Saves the writing style form: tone notes and the published entries picked as examples (see changelogStyle.update). */
+/** Saves Settings → Changelog's form: instructions (stored as tone notes) and the published entries picked as examples (see changelogStyle.update). */
 export async function saveChangelogStyle(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const input = { tone: String(formData.get("tone") ?? ""), examples: formData.getAll("examples").map(Number) };
-  // A setting (Settings → Writing style), like AI answers: owners and admins.
+  // A setting (Settings → Changelog), like AI answers: owners and admins.
   return asAdmin(projectSlug, "Only project owners and admins can change the writing style", (context) => call(updateChangelogStyle, context, input));
 }
 

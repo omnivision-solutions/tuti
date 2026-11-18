@@ -16,3 +16,8 @@ export async function saveAiModels(projectSlug: string, _state: FormState, formD
   );
   return asAdmin(projectSlug, "Only project owners and admins can change AI models", (context) => call(updateAiModels, context, input));
 }
+
+/** Saves a settings page's "AI model" setting as it's changed (see aiModels.update): its group's level, or the model of one of its roles. */
+export async function saveAiModel(projectSlug: string, input: Parameters<typeof updateAiModels.run>[1]): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can change AI models", (context) => call(updateAiModels, context, input));
+}

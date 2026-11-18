@@ -80,6 +80,7 @@ export const APP_ROUTES = [
   "[project]/settings/autopilot",
   "[project]/settings/billing",
   "[project]/settings/branding",
+  "[project]/settings/changelog",
   "[project]/settings/content-actions",
   "[project]/settings/custom-code",
   "[project]/settings/developers",

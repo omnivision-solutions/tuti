@@ -14,13 +14,14 @@ import { saveAiModels } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
 import type { AiModels } from "@/server/operations/ai-models";
 
-/** Each role's row, in the page's order: its title and what its model does. Every role has one (the type says so). */
-const ROW_OF: Record<AiRole, { title: string; does: string }> = {
+/** A role with a row here: the changelog's is on its own page (Settings → Changelog), as each feature's will be (docs/plan.md, R4–R7). */
+type RowRole = Exclude<AiRole, "changelog">;
+/** Each role's row, in the page's order: its title and what its model does. Every such role has one (the type says so). */
+const ROW_OF: Record<RowRole, { title: string; does: string }> = {
   answers: { title: AI_FEATURE_NAMES.answers!, does: "Answers to questions in your docs, on the portal and in the widget." },
   escalations: { title: AI_FEATURE_NAMES.escalations!, does: "The summary sent with a question passed to your team." },
   support_draft: { title: "Inbox drafts", does: "Replies drafted from your docs, in your Inbox." },
   support_summary: { title: "Inbox summaries", does: "Summaries of conversations, in your Inbox." },
-  changelog: { title: AI_FEATURE_NAMES.changelog!, does: "Draft with AI and Edit with AI on changelog entries." },
   code_changes_decide: {
     title: "Autopilot decides",
     does: "Reads each merged pull request, its code and your help center, and decides which articles to fix and which new ones you need.",
@@ -34,7 +35,7 @@ const ROW_OF: Record<AiRole, { title: string; does: string }> = {
     does: "Writes each fix and new article, the summary, the changelog line and updates on posts. Verify uses it too.",
   },
 };
-const ROLES = Object.keys(ROW_OF) as AiRole[];
+const ROLES = Object.keys(ROW_OF) as RowRole[];
 /** A row: its role's words, and (from the page, as AI_ROLES says) whether it's an agent's, so only models with tool calls, and whether it can be off. */
 type Row = { pick: AiRole; title: string; does: string; agent: boolean; off: boolean };
 
