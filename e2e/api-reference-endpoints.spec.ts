@@ -165,6 +165,37 @@ test("An API reference's Endpoints: a group that's only a second tag has its swi
   await team.goto(`/app/${slug}/docs/references/api-reference`);
   await expect(team.getByText("21 of 21 on the help center")).toBeVisible();
 
+  // Off, on, off in a hurry, the first save still on its way (held here): the last click is what's saved.
+  let release = () => {};
+  let held: Promise<void> | null = new Promise((resolve) => (release = resolve));
+  let saves = 0;
+  await team.route(`**/docs/references/api-reference`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    if (held) {
+      const until = held;
+      held = null;
+      await until;
+    }
+    await route.continue();
+  });
+  team.on("response", (response) => {
+    if (response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/docs/references/api-reference")) saves += 1;
+  });
+  const second = team.getByRole("switch", { name: "Read thing 2 (GET /things/2): on the help center" });
+  await second.click();
+  await second.click();
+  await second.click();
+  await expect(second).not.toBeChecked();
+  release();
+  // The first click's save and the last one's: the one between was never sent.
+  await expect.poll(() => saves).toBe(2);
+  await expect(second).not.toBeChecked();
+  await team.reload();
+  await expect(team.getByText("20 of 21 on the help center")).toBeVisible();
+  await expect(second).not.toBeChecked();
+  await second.check();
+  await expect(team.getByText("21 of 21 on the help center")).toBeVisible();
+
   // Everything off: nothing of it is on the help center, so there's no page there to open.
   const helpCenter = team.getByRole("link", { name: "View on help center" });
   await expect(helpCenter).toBeVisible();

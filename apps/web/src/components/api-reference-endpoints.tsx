@@ -190,23 +190,30 @@ export function ApiReferenceEndpoints({
     }
   }, [unseen, projectSlug, slug]);
 
+  // Each switch's saves, one after another, and how often it was clicked: the last click is what's saved, whatever order
+  // the answers would have come in, and its choice shows until that save has answered.
+  const saves = useRef(new Map<string, { last: Promise<void>; clicks: number }>());
   const change = (what: "operation" | "group", key: string, on: boolean) => {
     const id = `${what} ${key}`;
     setClicked((now) => ({ ...now, [id]: on }));
-    void setApiReferenceShown(projectSlug, slug, what, key, on)
-      .catch(() => SAVE_FAILED)
-      .then((result) => {
-        if (result.error) {
-          toast.error(result.error);
-        }
-        // Saved: as the page has it now. Refused: back as it was. Unless it was clicked again since (that save answers for it).
-        setClicked((now) => {
-          if (now[id] !== on) return now;
-          const rest = { ...now };
-          delete rest[id];
-          return rest;
-        });
+    const queue = saves.current.get(id) ?? { last: Promise.resolve(), clicks: 0 };
+    saves.current.set(id, queue);
+    const click = ++queue.clicks;
+    queue.last = queue.last.then(async () => {
+      // Clicked again while the save before was on its way: that click's save is the one to send.
+      if (queue.clicks !== click) return;
+      const result = await setApiReferenceShown(projectSlug, slug, what, key, on).catch(() => SAVE_FAILED);
+      if (result.error) {
+        toast.error(result.error);
+      }
+      if (queue.clicks !== click) return;
+      // Saved: as the page has it now. Refused: back as it was.
+      setClicked((now) => {
+        const rest = { ...now };
+        delete rest[id];
+        return rest;
       });
+    });
   };
 
   const addedHidden = operations.filter((operation) => fresh.get(operation.key) && !shown(operation));
