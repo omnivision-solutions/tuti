@@ -156,3 +156,16 @@ test("off-limits topics match whole words, ignoring case, accents and punctuatio
   expect(offLimitsTopic("Any advice on legal templates?", topics)).toBeUndefined();
   expect(offLimitsTopic("Can I get a refund?", [])).toBeUndefined();
 });
+
+test("a tone sent alone while instructions are being saved goes before the new ones, not over them", async () => {
+  await storeTone("", "Old.");
+  let pending!: ReturnType<typeof update>;
+  await prisma.$transaction(async (tx) => {
+    // Another save holds the project's row; the tone's update starts meanwhile and has to wait to read.
+    await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR UPDATE`;
+    pending = update({ tone: "Brief" });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await tx.project.update({ where: { id: project.id }, data: { assistantInstructions: "New." } });
+  });
+  expect(await pending).toMatchObject({ instructions: "Brief\n\nNew." });
+});
