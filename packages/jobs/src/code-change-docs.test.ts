@@ -222,6 +222,9 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
   // Its heading is a new one: one the article has already is refused (edit), so the rule can't ask for it.
   expect(ADD_RULE).toContain("under a new heading that says what the note corrects, never a heading the article already has");
   expect(ADD_RULE).not.toContain("under a heading that names that section");
+  // A passage for something that's gone can't be taken out or turned into something else: both rules send it to the end section.
+  expect(PASSAGES_RULE).toContain("don't reuse the passage for something else");
+  expect(ADD_RULE).toContain("or a passage describes something that's gone");
   // Something missing whose place is a section that only takes passages still has a way in.
   expect(ADD_RULE).toContain("there's no editable section to add it to");
   expect(NEW_SYSTEM).not.toContain('"add"');
