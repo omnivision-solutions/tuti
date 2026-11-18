@@ -855,7 +855,9 @@ widths, in light and dark (in development only).
   Its accessible description names the plan it needs, and choosing it opens the upgrade prompt.
 - A feature's AI settings page starts with **AI model** (`AiModelSetting`): the levels as a segmented control that
   saves as it's chosen, the model each role runs on in one muted line under the label, and under Custom a model for
-  each role. No paragraph explaining it.
+  each role. No paragraph explaining it. A model picked from Custom's list saves at once, like a select; an id typed
+  there saves on Enter or on leaving its box, with what the server refuses said under it (the one field that doesn't
+  wait for the page's Save, since it belongs to the control above the form).
 - Anything that can't be undone (delete, merge, remove) asks first in an
   `AlertDialog` that says what will happen.
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense

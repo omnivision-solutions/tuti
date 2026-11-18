@@ -140,6 +140,9 @@ test("a saved level that isn't in use: the one in use is selected, a line says s
   const { root, radio, checked } = await render({ saved: "custom", used: "balanced", notice: "Custom isn't available on this plan." });
   expect(checked()).toEqual(["Balanced"]);
   expect(root.textContent).toContain("Custom isn't available on this plan.");
+  // Read out with the control: the models in use, and why the level saved isn't the one selected.
+  const described = (root.querySelector('[role="radiogroup"]')!.getAttribute("aria-describedby") ?? "").split(" ").map((id) => root.querySelector(`[id="${id}"]`)?.textContent);
+  expect(described).toEqual([props.summary, "Custom isn't available on this plan."]);
   expect(root.querySelector("input")).toBeNull();
   await act(async () => radio("Balanced").click());
   expect(saveAiModel).toHaveBeenCalledWith("acme", { levels: { support: "balanced" } });

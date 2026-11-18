@@ -32,7 +32,8 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
         if (level) {
           setShown(level);
         }
-        const result = await saveAiModel(projectSlug, input);
+        // A save that throws (the network, the server) is told like one refused, so the same choice can be sent again.
+        const result = await saveAiModel(projectSlug, input).catch(() => ({ error: "Couldn't save. Try again." }));
         if (!result.error) {
           toast.success("AI model saved");
         } else if (level) {
@@ -44,9 +45,9 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
 
   return (
     <div>
-      <SettingRow label={<span id={`${id}-label`}>AI model</span>} description={summary}>
+      <SettingRow label={<span id={`${id}-label`}>AI model</span>} description={<span id={`${id}-summary`}>{summary}</span>}>
         {/* ponytail: each segment is a tab stop; arrow keys between them (roving focus) if anyone asks. */}
-        <div role="radiogroup" aria-labelledby={`${id}-label`} className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-muted-foreground @min-[34rem]/settings:flex @min-[34rem]/settings:w-fit">
+        <div role="radiogroup" aria-labelledby={`${id}-label`} aria-describedby={notice ? `${id}-summary ${id}-notice` : `${id}-summary`} className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-muted-foreground @min-[34rem]/settings:flex @min-[34rem]/settings:w-fit">
           {levels.map(({ level, name, upgrade }) => (
             <button
               key={level}
@@ -88,7 +89,11 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
       </SettingRow>
       {(notice || shown === "custom") && (
         <div className="-mt-1 flex flex-col gap-3 px-4 pb-4 text-sm @min-[34rem]/settings:px-5">
-          {notice && <p className="text-muted-foreground">{notice}</p>}
+          {notice && (
+            <p id={`${id}-notice`} className="text-muted-foreground">
+              {notice}
+            </p>
+          )}
           {shown === "custom" && (
             <div className="flex flex-col gap-3 border-l pl-4">
               {roles.map((role) => (
