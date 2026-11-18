@@ -105,8 +105,19 @@ const INTERNAL: FakeDecision = { audience: { users: 0.1, internal: 0.8, dependen
  * The docs agent's answer, on every analysis (its request names the merge commit): these edits and new articles (none
  * by default), and no summary of its own, so the summary is written as before.
  */
-const docsAgent = ({ edits = [], newArticles = [] }: { edits?: unknown[]; newArticles?: unknown[] } = {}) =>
-  model.reply(JSON.stringify({ user_facing: 0.9, summary: "", facts: [], edits, new_articles: newArticles }), undefined, '"merge_commit"');
+const docsAgent = ({ edits = [], newArticles = [] }: { edits?: object[]; newArticles?: object[] } = {}) =>
+  model.reply(
+    JSON.stringify({
+      user_facing: 0.9,
+      summary: "",
+      // One fact, which every edit and new article is for.
+      facts: [{ id: "f1", text: "Settings has a Theme menu with Light and Dark.", docs: "required" }],
+      edits: edits.map((edit) => ({ facts: ["f1"], ...edit })),
+      new_articles: newArticles.map((article) => ({ facts: ["f1"], ...article })),
+    }),
+    undefined,
+    '"merge_commit"',
+  );
 /** The docs agent finds nothing for the help center. */
 const noDocs = () => docsAgent();
 const USERS: FakeDecision = { audience: { users: 0.9, internal: 0.05, dependencies: 0.03, repository_docs: 0.02 } };

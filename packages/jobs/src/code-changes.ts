@@ -241,8 +241,8 @@ type Proposal = {
   payload?: Prisma.InputJsonValue;
   /** An article edit's document, and the text it was written on: saved into the article's unpublished changes (landEdit). */
   edit?: { writtenOn: Doc; doc: Doc };
-  /** For its writer, what the docs agent decided: what's wrong or missing in the article, or the new article, why and where it goes. Not saved. */
-  brief?: string | { title: string; reason: string; place?: ArticlePlace };
+  /** For its writer, what the docs agent decided: what's wrong or missing in the article and the facts to write into it, or the new article, why and where it goes. Not saved. */
+  brief?: { found: string; facts: string[] } | { title: string; reason: string; place?: ArticlePlace };
 };
 
 /** Another edit changed one of the same sections of these articles while theirs were written: they're written again on top of it. */
@@ -279,7 +279,7 @@ async function analyse(
     const proposals: Proposal[] = [
       ...docs.edits
         .filter((edit) => edit.probability >= thresholds().ARTICLE_EDIT.maybe)
-        .map((edit) => ({ kind: "ARTICLE_EDIT" as const, articleId: edit.articleId, probability: edit.probability, payload: { problem: edit.problem }, brief: edit.reason })),
+        .map((edit) => ({ kind: "ARTICLE_EDIT" as const, articleId: edit.articleId, probability: edit.probability, payload: { problem: edit.problem }, brief: { found: edit.reason, facts: edit.facts } })),
       // One new article per pull request, the surest, as saving an analysis keeps it (once the team decided one, it's
       // never proposed again). ponytail: tell them apart by title if a pull request often needs two.
       ...docs.newArticles
@@ -437,9 +437,9 @@ const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).orig
 async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, ask: Ask): Promise<boolean> {
   const { brief } = proposal;
   const written =
-    proposal.kind === "ARTICLE_EDIT"
-      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief as string)
-      : proposal.kind === "NEW_ARTICLE" && typeof brief === "object"
+    proposal.kind === "ARTICLE_EDIT" && brief && "facts" in brief
+      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief.found, brief.facts)
+      : proposal.kind === "NEW_ARTICLE" && brief && "title" in brief
         ? await writeNewArticle(pr, summary, { title: brief.title, reason: brief.reason }, ask)
         : undefined;
   if (written === undefined) {
@@ -448,7 +448,7 @@ async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposa
   if (written) {
     proposal.reason = written.reason;
     // A new article's place, where the docs agent said (D5): its update carries it to the review and Approve.
-    const place = typeof brief === "object" ? brief.place : undefined;
+    const place = brief && "title" in brief ? brief.place : undefined;
     proposal.payload = (place ? { ...written.payload, place } : written.payload) as unknown as Prisma.InputJsonValue;
     if ("writtenOn" in written) {
       proposal.edit = { writtenOn: written.writtenOn, doc: written.doc };
