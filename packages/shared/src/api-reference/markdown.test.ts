@@ -58,6 +58,32 @@ describe("operationMarkdown", () => {
     expect(text).toContain('## Response example (200)\n\n````json\n{\n  "code": "```"\n}\n````');
   });
 
+  it("keeps every row one row: lines joined in linear time, a pipe always the cell's text, a name as written", () => {
+    const doc = read(readOpenApi(SPEC));
+    const operation = doc.operations[0]!;
+    const row = (name: string, description: string) =>
+      operationMarkdown(doc, { ...operation, params: [{ ...operation.params[0]!, name, description }] })
+        .split("\n")
+        .find((line) => line.startsWith("| `") || line.startsWith("| ``"))!;
+    // Many spaces and line breaks: joined, and fast.
+    const started = performance.now();
+    expect(row("number", `a${" \n ".repeat(100_000)}  b \r\n c`)).toBe("| `number` | integer · at least 1 | Yes | a b c |");
+    expect(performance.now() - started).toBeLessThan(1000);
+    // An escaped pipe stays escaped (it reads as a pipe, as it did outside the table); an escaped backslash before one
+    // stays a backslash, and the pipe gets its own escape, so neither ends the cell.
+    expect(row("number", "a \\| b")).toContain("| a \\| b |");
+    expect(row("number", "C:\\\\| b")).toContain("| C:\\\\\\| b |");
+    expect(row("number", "a | b")).toContain("| a \\| b |");
+    // Other backslashes are the description's Markdown: kept.
+    expect(row("number", "\\*not emphasis\\*")).toContain("| \\*not emphasis\\* |");
+    // A name is code as written: its backslashes kept, a pipe escaped, backticks inside more of them.
+    expect(row("a\\b", "")).toMatch(/^\| `a\\b` \|/);
+    expect(row("a|b", "")).toMatch(/^\| `a\\\|b` \|/);
+    expect(row("a\\\\|b", "")).toMatch(/^\| `a\\\\\\\|b` \|/);
+    expect(row("a`b", "")).toMatch(/^\| ``a`b`` \|/);
+    expect(row("`a", "")).toMatch(/^\| `` `a `` \|/);
+  });
+
   it("writes a GraphQL operation: its signature, arguments, the type it returns, the query and an answer", () => {
     const result = readGraphql(`type Query {\n  "A post by its id."\n  post(id: ID!): Post\n}\ntype Post {\n  id: ID!\n  title: String\n}\n`);
     if ("error" in result) throw new Error(result.error);

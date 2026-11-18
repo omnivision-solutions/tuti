@@ -62,14 +62,51 @@ const typeLine = (schema: ApiSchema) => [schema.type, schema.format, schema.null
 /** Text in a line of Markdown: its marks escaped. */
 const inline = (text: string) => text.replace(/[\\`*_[\]<>#|~]/g, "\\$&").replace(/\s+/g, " ");
 
-/** Text in a table's cell: Markdown kept, on one line, its pipes escaped. */
-const cell = (text: string) => text.trim().replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|");
+/**
+ * Each pipe made one a table reads as text, not as the cell's end, in one pass. A table takes a pipe after an odd run of
+ * backslashes as escaped (and Markdown reads `\|` as a pipe), so that one stays as written; one after an even run (none,
+ * or an escaped backslash `\\`) gets a backslash of its own. Every other backslash stays: a cell keeps its Markdown, and
+ * its escapes read as they did outside the table.
+ */
+function escapePipes(text: string): string {
+  let escaped = "";
+  let backslashes = 0;
+  for (const char of text) {
+    if (char === "|" && backslashes % 2 === 0) escaped += "\\";
+    escaped += char;
+    backslashes = char === "\\" ? backslashes + 1 : 0;
+  }
+  return escaped;
+}
+
+/** Text in a table's cell: Markdown kept, its lines joined into one, its pipes escaped. */
+const cell = (text: string) =>
+  escapePipes(
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" "),
+  );
+
+/** The longest run of backticks in some text. */
+const longestTicks = (text: string) => Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
 
 /** Code in a fence longer than any run of backticks in it. */
 function fence(code: string, language: string) {
-  const longest = Math.max(2, ...(code.match(/`+/g) ?? []).map((run) => run.length));
-  const marks = "`".repeat(longest + 1);
+  const marks = "`".repeat(Math.max(2, longestTicks(code)) + 1);
   return `${marks}${language}\n${code}\n${marks}`;
+}
+
+/**
+ * A name as code in a table's cell, as written: between more backticks than any run in it (a space inside them when it
+ * starts or ends with one), its pipes escaped (escapePipes). A code span takes backslashes as they are, so the one place
+ * it reads differently is a backslash right before a pipe: the table takes the two as an escaped pipe.
+ */
+function codeCell(name: string) {
+  const marks = "`".repeat(longestTicks(name) + 1);
+  const pad = name.startsWith("`") || name.endsWith("`") ? " " : "";
+  return `${marks}${pad}${escapePipes(name)}${pad}${marks}`;
 }
 
 /** A schema's own words (description, default, allowed values), in a cell. */
@@ -91,7 +128,7 @@ const table = (first: string, rows: Row[]) =>
   [
     `| ${first} | Type | Required | Description |`,
     "| --- | --- | --- | --- |",
-    ...rows.map((row) => `| \`${row.name.replace(/[`|]/g, "\\$&")}\` | ${cell(row.type)} | ${row.required ? "Yes" : "No"} | ${row.about} |`),
+    ...rows.map((row) => `| ${codeCell(row.name)} | ${cell(row.type)} | ${row.required ? "Yes" : "No"} | ${row.about} |`),
   ].join("\n");
 
 const paramRow = (param: ApiParam): Row => ({
