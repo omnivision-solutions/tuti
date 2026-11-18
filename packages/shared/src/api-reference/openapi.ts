@@ -491,6 +491,14 @@ function read(root: Obj, most: number): ApiDoc {
         if (parent && (fieldsOf(parent.properties).length > 0 || (folds.get(parent) ?? []).some((other) => other !== part && adds(other)))) merged.delete(key);
       }
     }
+    // A base's list of choices that has this schema in it is the base saying what its subtypes are, not this one being one of several.
+    for (const key of ["oneOf", "anyOf"]) {
+      const from = said.get(key);
+      if (!from || written.has(from)) continue;
+      const choices = list(from[key]);
+      charge(choices.length);
+      if (choices.some((choice) => followSchema(choice) === schema)) merged.delete(key);
+    }
     // `example` and 3.1's `examples` are one choice: where the schema's own parts write one of them, the other isn't its own.
     if (own.has("example") !== own.has("examples")) merged.delete(own.has("example") ? "examples" : "example");
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
@@ -570,11 +578,13 @@ function read(root: Obj, most: number): ApiDoc {
     besideApplies && isObj(entry) && typeof entry.$ref === "string" && typeof entry.description === "string" ? entry.description : target.description;
 
   /** `stack`: the references it's inside. `folding`: the schemas above it that fold others in with `allOf`. */
-  type Place = { where: string; root: string; stack: Obj[]; named: number; folding: Obj[] };
+  /** `chosenFrom`: the schema this one is a choice of (its `oneOf` or `anyOf`), when it's read as one. */
+  type Place = { where: string; root: string; stack: Obj[]; named: number; folding: Obj[]; chosenFrom?: Obj };
 
   function toSchema(node: unknown, place: Place): ApiSchema {
     // Counted before anything else: a schema that's `true`, or anything else that isn't one, is a value too.
     const within = spend();
+    const written = node;
     node = split(node);
     if (!isObj(node)) return { type: "any" };
     if (typeof node.$ref === "string") {
@@ -593,6 +603,7 @@ function read(root: Obj, most: number): ApiDoc {
         stack: target ? [...place.stack, target] : place.stack,
         named: place.named + (name === undefined ? 0 : 1),
         folding: place.folding,
+        chosenFrom: place.chosenFrom,
       });
       const description = text(node.description, place.where) || inner.description;
       return { ...inner, ...(name === undefined ? {} : { type: name, ref: name }), ...(description ? { description } : {}) };
@@ -618,7 +629,9 @@ function read(root: Obj, most: number): ApiDoc {
     const words = folded.length === 0 ? [] : [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && (part === node ? saysOf(part).beside : saysOf(part).words));
     const alone = folded.length === 1 && words.length === parts.length ? folded[0]?.pointer : undefined;
     const again = place.folding.includes(node);
-    const inside = folded.find(({ value }) => isObj(value) && place.stack.includes(value))?.pointer;
+    // (A subtype that folds in the base it's listed as a choice of isn't inside that base: it's the usual way to write one.)
+    const inside = folded.find(({ value }) => isObj(value) && value !== place.chosenFrom && place.stack.includes(value))?.pointer;
+    place = { ...place, chosenFrom: undefined };
     // Met again under itself without being a type it's inside (it holds itself through a part of a
     // part): it stops here all the same, named after nothing, since no reference of its own is what it is.
     if (again && inside === undefined) {
@@ -661,7 +674,7 @@ function read(root: Obj, most: number): ApiDoc {
     if (Object.hasOwn(schema, "default")) out.default = data(schema.default, place.where);
     // "This or null" is this, nullable.
     if (choices.length === 1 && types.length === 0) {
-      const only = toSchema(choices[0], { ...place, where: under(place.where, "option 1") });
+      const only = toSchema(choices[0], { ...place, where: under(place.where, "option 1"), chosenFrom: isObj(written) ? written : undefined });
       return { ...only, ...out, type: only.type };
     }
 
@@ -687,7 +700,7 @@ function read(root: Obj, most: number): ApiDoc {
       }
     }
     if (schema.items !== undefined && types.includes("array")) out.items = toSchema(schema.items, { ...place, where: under(place.where, "items") });
-    if (choices.length > 0) out.oneOf = choices.slice(0, ROOT_NODES).map((choice, index) => toSchema(choice, { ...place, where: under(place.where, `option ${index + 1}`) }));
+    if (choices.length > 0) out.oneOf = choices.slice(0, ROOT_NODES).map((choice, index) => toSchema(choice, { ...place, where: under(place.where, `option ${index + 1}`), chosenFrom: isObj(written) ? written : undefined }));
 
     // An object that only lists its choices is one of them: it's named by them, as a `oneOf` with no type is.
     // (Choices that say no type, only which fields are required, leave it the object it says it is.)

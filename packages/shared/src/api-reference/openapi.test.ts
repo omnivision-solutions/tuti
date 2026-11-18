@@ -600,6 +600,28 @@ test("an object that only lists its choices is one of them", () => {
     Dog: { allOf: [ref("Pet"), { properties: { barks: { type: "boolean" } } }] },
   });
   expect(back.example).toEqual({ lives: 0, friend: {} });
+  // Each subtype is spelled out under the base, with its own fields, and the base inside it is only named.
+  expect(back.schema).toEqual({
+    type: "Pet",
+    ref: "Pet",
+    oneOf: [
+      {
+        type: "Cat",
+        ref: "Cat",
+        properties: [
+          { name: "lives", required: false, type: "integer" },
+          { name: "friend", required: false, type: "Pet", ref: "Pet" },
+        ],
+      },
+      { type: "Dog", ref: "Dog", properties: [{ name: "barks", required: false, type: "boolean" }] },
+    ],
+  });
+  // A subtype isn't "one of" its base's subtypes: its own page has its fields, and the base it refers to its choices.
+  const cat = back.doc.types[1]!.schema;
+  expect(cat).not.toHaveProperty("oneOf");
+  expect(cat.properties!.map((property) => property.name)).toEqual(["lives", "friend"]);
+  expect(cat.properties![1]).toMatchObject({ type: "Pet", ref: "Pet", oneOf: [{ type: "Cat", ref: "Cat" }, { type: "Dog", ref: "Dog" }] });
+  expect(back.doc.warnings).toEqual([]);
   expect(back.doc.types.map((type) => [type.name, type.kind])).toEqual([
     ["Pet", "union"],
     ["Cat", "object"],
