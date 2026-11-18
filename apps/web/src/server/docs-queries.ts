@@ -161,7 +161,13 @@ export type DocsTabView = {
   page: string | null;
   /** This reader may not read it, but sees its name with a lock (and nothing in it). */
   locked?: true;
+  /** Locked, and all that's in it is API references. */
+  onlyReferences?: true;
 };
+
+/** The tabs with articles in them for this reader (or locked with some): the widget lists articles, not API references. */
+export const articleTabs = (docs: DocsContents) =>
+  docs.tabs.filter((tab) => (tab.locked ? !tab.onlyReferences : tab.collections.length > 0 || tab.uncollected.length > 0));
 
 /**
  * The portal's /docs (and the widget's, and llms.txt): the top-level collections in order, each with
@@ -274,9 +280,10 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
       page: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
     };
     if (!readable(reader, level)) {
-      const hasSome =
-        rows.some((row) => row.parentId === null && row.tabId === id && hasArticles(row)) || (index === 0 && uncollected.length > 0) || referencesIn(id).length > 0;
-      return withLocks && locks(level) && hasSome ? [{ ...tab, collections: [], uncollected: [], references: [], locked: true }] : [];
+      const hasSome = rows.some((row) => row.parentId === null && row.tabId === id && hasArticles(row)) || (index === 0 && uncollected.length > 0);
+      return withLocks && locks(level) && (hasSome || referencesIn(id).length > 0)
+        ? [{ ...tab, collections: [], uncollected: [], references: [], locked: true, ...(!hasSome && { onlyReferences: true as const }) }]
+        : [];
     }
     const view = { ...tab, collections: top.filter((t) => t.tabId === id).map((t) => t.collection), uncollected: index === 0 ? loose : [], references: referencesIn(id) };
     return view.collections.length > 0 || view.uncollected.length > 0 || view.references.length > 0 ? [view] : [];

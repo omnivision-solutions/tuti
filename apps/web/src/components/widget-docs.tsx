@@ -14,7 +14,7 @@ import { WidgetLocked } from "@/components/widget-locked";
 import { WIDGET_LABEL, WIDGET_ROW, WIDGET_TILE } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
-import { articleCount, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { articleCount, articleTabs, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
 import { portalHref, portalLinks } from "@/server/portal-base";
@@ -121,7 +121,7 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
 async function Collections({ projectSlug, docsTab, collection: slug }: { projectSlug: string; docsTab?: string; collection?: string }) {
   const [contents, link] = await Promise.all([docsContents(projectSlug), portalLinks()]);
   // The widget lists articles: a tab of API references only isn't one of its tabs.
-  const docs = { ...contents, tabs: contents.tabs.filter((t) => t.locked || t.collections.length > 0 || t.uncollected.length > 0) };
+  const docs = { ...contents, tabs: articleTabs(contents) };
   // One this reader may read, else the top level.
   const found = slug ? findCollection(docs, slug) : null;
   const tab = found ? found.tab : (docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0]);

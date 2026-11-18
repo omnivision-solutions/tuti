@@ -128,7 +128,7 @@ export async function DocsSearchResults({ projectSlug, query }: { projectSlug: s
  */
 async function DocsOverview({ project, docs, tab }: { project: string; docs: DocsContents; tab: DocsTabView | null }) {
   const at = await portalLinks();
-  const { collections, uncollected } = tab ?? docs;
+  const { collections, uncollected, references } = tab ?? docs;
   // The docs' home (the first tab's overview, or all of the docs) has the team's heading.
   const home = !tab || tab.slug === docs.home;
   // The tab's own popular articles, not another tab's. Customize's preview shows them as its unsaved setting says, so it
@@ -153,7 +153,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
       ) : (
         <PortalPageHeader title={tab.name} />
       )}
-      {collections.length === 0 && uncollected.length === 0 && (
+      {collections.length === 0 && uncollected.length === 0 && references.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
       )}
       {collections.length > 0 && (
@@ -181,6 +181,21 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                     <ArticleCount count={articleCount(collection)} />
                   </div>
                 </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {references.length > 0 && (
+        <ul aria-label="API references" className="grid gap-4 sm:grid-cols-2">
+          {references.map((reference) => (
+            <li key={reference.slug}>
+              <Link
+                href={at(`/docs/${reference.slug}`)}
+                className="flex h-full flex-col gap-1 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md sm:px-6"
+              >
+                <h2 className="font-sans text-[1.0625rem] font-semibold break-words">{reference.name}</h2>
+                <p className="text-sm font-medium text-muted-foreground">API reference</p>
               </Link>
             </li>
           ))}
