@@ -186,7 +186,7 @@ function inline(text: string, allowedLinks: Set<string>): JSONContent[] {
 
 /** Blocks that hold text only, wherever they sit (a list's item, a table's cell, a step): what a passage can be. */
 const TEXT_BLOCKS = new Set(["paragraph", "heading", "detailsSummary", "stepTitle"]);
-const PASSAGE_MARKS = new Set(["bold", "link"]);
+const PASSAGE_MARKS = new Set(["bold", "link", "code"]);
 const isCode = (node: JSONContent) => (node.marks ?? []).some((mark) => mark.type === "code");
 /** A text block's content as Markdown, without what its block adds (a heading's #, an item's marker). */
 const passageText = (content: JSONContent[]) => toMarkdown({ type: "doc", content: [{ type: "paragraph", content }] }).trim();
@@ -195,8 +195,9 @@ const passageText = (content: JSONContent[]) => toMarkdown({ type: "doc", conten
  * The passages in these blocks: each text block whose text can be replaced by itself (replacePassage), as the Markdown
  * the model is shown and quotes back. Only text in bold, links and `code`: a block with anything else (italics, a line
  * break) isn't one, and nor is a code block (it holds no text block).
- * ponytail: nor is a block whose `code` is also bold or a link (the mark runs around the code in Markdown, so the code
- * can't be found in a reply as it was); read the reply's line whole if those are missed.
+ * ponytail: nor is a block with text in two of them at once (a bold link, linked code): the reply's reader (inline)
+ * keeps one mark per run of text, so the other would be lost, or the code not found as it was; teach it nesting if
+ * those are missed.
  */
 export function passagesIn(blocks: JSONContent[]): { text: string; node: JSONContent }[] {
   const found: { text: string; node: JSONContent }[] = [];
@@ -206,8 +207,8 @@ export function passagesIn(blocks: JSONContent[]): { text: string; node: JSONCon
       return;
     }
     const content = node.content ?? [];
-    const kept = (child: JSONContent) => (isCode(child) ? child.marks!.length === 1 : (child.marks ?? []).every((mark) => PASSAGE_MARKS.has(mark.type)));
-    const text = content.every((child) => child.type === "text" && kept(child)) ? passageText(content) : "";
+    const kept = (child: JSONContent) => child.type === "text" && (child.marks ?? []).length <= 1 && (child.marks ?? []).every((mark) => PASSAGE_MARKS.has(mark.type));
+    const text = content.every(kept) ? passageText(content) : "";
     if (text) {
       found.push({ text, node });
     }
