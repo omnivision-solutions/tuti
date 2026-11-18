@@ -137,6 +137,8 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   await expect(request.getByText("curl 'https://api.acme.example/v1/posts'")).toBeVisible();
   await expect(request.getByText("Authorization: Bearer YOUR_API_KEY")).toBeVisible();
   expect((await request.boundingBox())!.x).toBeGreaterThan((await page.boundingBox())!.x + (await page.boundingBox())!.width);
+  // From the top, for the picture.
+  await reader.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(reader, "operation-desktop", { fullPage: false });
   await request.getByText("Python", { exact: true }).click();
   await expect(request.getByRole("radio", { name: "Python", exact: true })).toBeChecked();
