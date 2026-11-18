@@ -750,7 +750,7 @@ test("More actions restores focus after cancelling article dialogs", async ({ br
   for (const action of ["Unpublish", "Delete"]) {
     for (const close of ["cancel", "escape"]) {
       await more.click();
-      await team.getByRole("button", { name: action, exact: true }).click();
+      await team.getByRole("menuitem", { name: action, exact: true }).click();
       const confirm = team.getByRole("alertdialog");
       await expect(confirm).toBeVisible();
       if (close === "cancel") await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -760,7 +760,7 @@ test("More actions restores focus after cancelling article dialogs", async ({ br
     }
   }
   await more.click();
-  await team.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await team.getByRole("menuitem", { name: "Unpublish", exact: true }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Unpublish", exact: true }).click();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
   await expect(more).toBeFocused();
@@ -786,7 +786,10 @@ test("the collection drag hint requires two articles and a mouse-sized layout", 
   await team.goto(`/app/${slug}/docs/collections/guides`);
   const more = team.getByRole("button", { name: "More actions", exact: true });
   await more.click();
-  await team.getByRole("button", { name: "Delete", exact: true }).click();
+  // "View on help center" is in the header at this width, so the menu doesn't repeat it.
+  await expect(team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "View on help center", exact: true })).toBeVisible();
+  await expect(team.getByRole("menuitem", { name: "View on help center", exact: true })).toHaveCount(0);
+  await team.getByRole("menuitem", { name: "Delete", exact: true }).click();
   const confirm = team.getByRole("alertdialog");
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(confirm).toBeHidden();

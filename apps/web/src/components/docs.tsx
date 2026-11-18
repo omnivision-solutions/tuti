@@ -4,7 +4,7 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
-import { CheckIcon, ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, DiffIcon, EyeOffIcon, PlusIcon, Trash2Icon, Undo2Icon } from "lucide-react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useEditorSlot } from "@/components/use-editor-slot";
@@ -29,6 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -500,8 +501,11 @@ export function ArticleActions({
 
   if (part === "delete") {
     return (
-      <AlertDialog>
-        <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <DropdownMenuItem variant="destructive" disabled={pending} onClick={() => setOpen(true)}>
+          <Trash2Icon />
+          Delete
+        </DropdownMenuItem>
         <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
@@ -520,28 +524,33 @@ export function ArticleActions({
       </AlertDialog>
     );
   }
+  const change = (next: boolean) => {
+    if (next) {
+      setUnpublishing(published);
+    }
+    setOpen(next);
+  };
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(next) => {
-        if (next) {
-          setUnpublishing(published);
-        }
-        setOpen(next);
-      }}
-    >
-      <AlertDialogTrigger
+    <AlertDialog open={open} onOpenChange={change}>
+      {published ? (
         // Unpublish is behind "More actions" with Delete; Publish is the bar's main button.
-        render={<Button ref={trigger} variant={published ? "ghost" : "default"} disabled={pending} focusableWhenDisabled />}
-        onClick={(event) => {
-          if (!published && unsaved) {
-            event.preventBaseUIHandler();
-            toast.error("Save your changes first");
-          }
-        }}
-      >
-        {published ? "Unpublish" : "Publish"}
-      </AlertDialogTrigger>
+        <DropdownMenuItem disabled={pending} onClick={() => change(true)}>
+          <EyeOffIcon />
+          Unpublish
+        </DropdownMenuItem>
+      ) : (
+        <AlertDialogTrigger
+          render={<Button ref={trigger} disabled={pending} focusableWhenDisabled />}
+          onClick={(event) => {
+            if (unsaved) {
+              event.preventBaseUIHandler();
+              toast.error("Save your changes first");
+            }
+          }}
+        >
+          Publish
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -616,16 +625,11 @@ export function ArticleChanges({
     </Button>
   );
 
-  const controls = (
-    <details open={compact ? undefined : true} className={compact ? "docs-change-menu relative right-[auto] top-[auto] z-20 [&:not([open])]:relative [&:not([open])]:top-[auto] [&:not([open])]:right-[auto] [&[open]]:w-auto [&[open]]:p-0 [&[open]]:bg-transparent [&[open]]:border-0 [&[open]]:rounded-[8px] [&[open]]:relative [&_>_button]:mt-2 [&[open]_>_button]:flex [&[open]_>_button]:w-47.5 [&[open]_>_button]:justify-start [&[open]_>_button]:m-0 [&[open]_>_button]:bg-popover [&[open]_>_button]:border [&[open]_>_button]:border-border [&[open]_>_button]:absolute [&[open]_>_button]:left-[0] [&[open]_>_button]:top-8 [&[open]_>_button]:z-30 [&[open]_>_button:last-child]:top-16.5" : "contents"}>
-      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-xs text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-highlight rounded-full max-sm:text-xs max-sm:gap-1 max-sm:px-2" : "hidden"}>
-        <span aria-hidden className="size-1.5 rounded-full bg-status-under-review" />
-        {/* In a narrow editor its dot: the header's row keeps room for Publish and More actions. */}
-        <span className="@max-[40rem]/editor:sr-only">Unpublished changes</span>
-        <ChevronDownIcon aria-hidden className="size-3" />
-      </summary>
-      <AlertDialog>
-        <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
+  const [discarding, setDiscarding] = useState(false);
+  const dialogs = (
+    <>
+      <AlertDialog open={discarding} onOpenChange={setDiscarding}>
+        {!compact && <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>}
         <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard changes?</AlertDialogTitle>
@@ -642,7 +646,7 @@ export function ArticleChanges({
         </AlertDialogContent>
       </AlertDialog>
       <Dialog open={reviewing} onOpenChange={setReviewing}>
-        <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>
+        {!compact && <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>}
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Review changes</DialogTitle>
@@ -657,7 +661,35 @@ export function ArticleChanges({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </details>
+    </>
+  );
+  const controls = compact ? (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Manage unpublished changes"
+          className="text-xs text-highlight-foreground cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-highlight rounded-full max-sm:gap-1 max-sm:px-2"
+        >
+          <span aria-hidden className="size-1.5 rounded-full bg-status-under-review" />
+          {/* In a narrow editor its dot: the header's row keeps room for Publish and More actions. */}
+          <span className="@max-[40rem]/editor:sr-only">Unpublished changes</span>
+          <ChevronDownIcon aria-hidden className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-auto min-w-44">
+          <DropdownMenuItem disabled={pending} onClick={() => setReviewing(true)}>
+            <DiffIcon />
+            Review changes
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={pending} onClick={() => setDiscarding(true)}>
+            <Undo2Icon />
+            Discard changes
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {dialogs}
+    </>
+  ) : (
+    dialogs
   );
 
   return (
@@ -1149,12 +1181,12 @@ export function CollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto p-5 sm:max-w-md sm:p-6">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-semibold">New collection</DialogTitle>
+        </DialogHeader>
         <form {...keepingFields(action)}>
-          <DialogHeader>
-            <DialogTitle>New collection</DialogTitle>
-          </DialogHeader>
-          <FieldGroup className="my-4">
+          <FieldGroup>
             <CollectionFields id="new" error={state.error} />
             {parents.length > 0 && <ParentField id="collection" parents={parents} value={parent} onValueChange={setParent} />}
             {tabItems.length > 0 && (
@@ -1185,12 +1217,15 @@ export function CollectionDialog({
                 shows: access.shows[parent ?? tab ?? ""] ?? "hide",
               }}
             />
+            <DialogFooter className="-mx-5 -mb-5 mt-1 bg-transparent px-5 pt-4 pb-5 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-6">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? "Creating…" : "Create collection"}
+              </Button>
+            </DialogFooter>
           </FieldGroup>
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              Add collection
-            </Button>
-          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -1213,9 +1248,17 @@ export function DeleteCollectionButton({
 }) {
   const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant={standalone ? "outline" : "ghost"} size="sm" disabled={pending} className={standalone ? "h-[30px] border-destructive/45 text-[13px] text-destructive-foreground" : undefined} />}>{standalone ? <><Trash2Icon className="size-3.5" />Delete collection</> : "Delete"}</AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      {standalone ? (
+        <AlertDialogTrigger render={<Button variant="destructive" size="sm" disabled={pending} />}><Trash2Icon />Delete collection</AlertDialogTrigger>
+      ) : (
+        <DropdownMenuItem variant="destructive" disabled={pending} onClick={() => setOpen(true)}>
+          <Trash2Icon />
+          Delete
+        </DropdownMenuItem>
+      )}
       <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
@@ -1479,11 +1522,13 @@ export function DeleteTabButton({
 }) {
   const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${tab.name}`} />}>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <DropdownMenuItem variant="destructive" disabled={pending} aria-label={`Delete ${tab.name}`} onClick={() => setOpen(true)}>
+        <Trash2Icon />
         Delete
-      </AlertDialogTrigger>
+      </DropdownMenuItem>
       <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>

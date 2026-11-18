@@ -151,7 +151,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
   await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
   // Its emails are the license's month's: what's left of them, and until when.
-  await expect(owner.getByText(/^4,000 of the license's 4,000 emails left until [A-Z][a-z]{2} \d{1,2}, \d{4}$/)).toBeVisible();
+  await expect(owner.getByText(/^4,000 of the license's 4,000 emails left until \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license");
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
@@ -334,9 +334,11 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await useUpLicenseEmails(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  const until = /^0 of the license's 4,000 emails left until ([A-Z][a-z]{2} \d{1,2}), \d{4}$/;
+  const until = /^0 of the license's 4,000 emails left until (\d{1,2}) ([A-Z][a-z]+) \d{4}$/;
   await expect(owner.getByText(until)).toBeVisible();
-  const day = until.exec((await owner.getByText(until).textContent())!)![1]!;
+  // Billing writes the month in full ("5 September 2026"), the inbox short as en-GB has it ("5 Sept").
+  const [, date, month] = until.exec((await owner.getByText(until).textContent())!)!;
+  const day = `${date} ${month === "September" ? "Sept" : month!.slice(0, 3)}`;
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.locator(".inbox-email-waits")).toHaveText(`This month's emails from your license are used: replies are emailed on ${day}. Billing`);
   await checkpoint(owner, "reply-waits-for-license-month");

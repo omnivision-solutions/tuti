@@ -48,6 +48,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog", { name: "New collection" });
+  // Cancel closes it and adds nothing, whatever was typed.
+  await dialog.getByLabel("Name").fill("Discarded");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(team.getByText("Collection added")).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Discarded" })).toHaveCount(0);
+  await team.getByRole("button", { name: "Add content" }).click();
+  await team.getByRole("menuitem", { name: "New collection" }).click();
+  await expect(dialog.getByLabel("Name")).toHaveValue("");
   await dialog.getByLabel("Name").fill("Getting started");
   await dialog.getByLabel("Description").fill("The basics, in five minutes.");
   // An icon, found by searching Lucide's names: the search box has focus, an arrow key reaches the icons, Enter picks one.
@@ -79,10 +88,13 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await dialog.getByRole("button", { name: "Add icon" }).click();
   await picker.getByRole("searchbox", { name: "Search icons" }).fill("rocket");
   await picker.getByRole("button", { name: "rocket", exact: true }).click();
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await checkpoint(team, "team-docs-new-collection", { fullPage: false });
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   // The tree keeps the collection and its icon reachable beside the overview and collection page.
   await expect(teamTree.getByRole("link", { name: "Getting started", exact: true }).locator("svg.lucide-rocket")).toBeVisible();
+  // By now a save the Cancel above had started would have come back: the tree has no trace of what was typed then.
+  await expect(teamTree.getByRole("link", { name: "Discarded" })).toHaveCount(0);
   const treeAtHome = await teamTree.boundingBox();
   await checkpoint(team, "team-docs");
   await teamTree.getByRole("link", { name: "Getting started", exact: true }).click();
@@ -180,7 +192,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("Published", { exact: true }).first()).toBeVisible();
   // Unpublish is behind "More actions", with Delete.
   await team.getByRole("button", { name: "More actions" }).click();
-  await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await expect(team.getByRole("menuitem", { name: "Unpublish" })).toBeVisible();
   await team.keyboard.press("Escape");
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
   await checkpoint(team, "team-docs-article-published");
@@ -413,7 +425,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const width = (await rangeButton.boundingBox())!.width;
   await team.getByRole("button", { name: "Date range: Past 30 days" }).click();
   // Each range says its days, in groups: a day, a month, the past days.
-  await expect(team.getByRole("menuitem", { name: "Last month" })).toHaveText(/^Last month[A-Z][a-z]{2} 1\s–\s(28|29|30|31)$/);
+  await expect(team.getByRole("menuitem", { name: "Last month" })).toHaveText(/^Last month1\s–\s(28|29|30|31) [A-Z][a-z]{2,3}$/);
   await expect(team.getByRole("menu").getByRole("separator")).toHaveCount(2);
   await team.getByRole("menuitem", { name: "Past 7 days" }).click();
   await team.waitForURL(`**/app/${slug}/reporting?range=7d`);
@@ -554,7 +566,7 @@ test("the team reviews article history, changes visibility and restores a delete
   });
   // Delete is behind the top bar's "More actions".
   await team.getByRole("button", { name: "More actions" }).click();
-  await team.getByRole("button", { name: "Delete" }).click();
+  await team.getByRole("menuitem", { name: "Delete" }).click();
   const deleting = team.getByRole("alertdialog");
   await expect(deleting).toContainText("Its articles stay, without a collection.");
   await deleting.getByRole("button", { name: "Delete" }).click();
@@ -615,9 +627,26 @@ test("the team reviews article history, changes visibility and restores a delete
   await expect(visitor.getByText(original, { exact: true })).toBeVisible();
   await expect(visitor.getByText(/Members can ask them/)).toHaveCount(0);
 
+  // Closing either of the pill's dialogs without acting puts the focus back on the pill.
+  const pill = team.getByRole("button", { name: "Manage unpublished changes" });
+  for (const [row, role, close] of [
+    ["Review changes", "dialog", "escape"],
+    ["Discard changes", "alertdialog", "escape"],
+    ["Discard changes", "alertdialog", "cancel"],
+  ] as const) {
+    await pill.click();
+    await team.getByRole("menuitem", { name: row, exact: true }).click();
+    const opened = team.getByRole(role);
+    await expect(opened).toBeVisible();
+    if (close === "cancel") await opened.getByRole("button", { name: "Cancel", exact: true }).click();
+    else await team.keyboard.press("Escape");
+    await expect(opened).toBeHidden();
+    await expect(pill).toBeFocused();
+  }
+
   // Reviewed against the published version, then published.
   await team.getByRole("button", { name: "Manage unpublished changes" }).click();
-  await team.getByRole("button", { name: "Review changes", exact: true }).click();
+  await team.getByRole("menuitem", { name: "Review changes", exact: true }).click();
   const review = team.getByRole("dialog", { name: "Review changes" });
   await expect(review.getByRole("deletion")).toHaveText(original);
   await expect(review.getByRole("insertion")).toHaveText(edited);
@@ -657,7 +686,7 @@ test("the team reviews article history, changes visibility and restores a delete
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   // From the keyboard: the menu opens in the header's row, where the toasts can cover it (they wait while the pointer is over them).
   await team.getByRole("button", { name: "Manage unpublished changes" }).press("Enter");
-  await team.getByRole("button", { name: "Discard changes", exact: true }).press("Enter");
+  await team.getByRole("menuitem", { name: "Discard changes", exact: true }).press("Enter");
   const discarding = team.getByRole("alertdialog");
   await expect(discarding).toContainText("The changes stay in its history");
   await discarding.getByRole("button", { name: "Discard changes" }).click();
@@ -735,7 +764,7 @@ test("the team reviews article history, changes visibility and restores a delete
 
   // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
   await team.getByRole("button", { name: "More actions" }).click();
-  await team.getByRole("button", { name: "Delete" }).click();
+  await team.getByRole("menuitem", { name: "Delete" }).click();
   const deletingArticle = team.getByRole("alertdialog");
   await expect(deletingArticle).toContainText("You can restore it from Recently deleted for 30 days.");
   await deletingArticle.getByRole("button", { name: "Delete" }).click();
@@ -795,7 +824,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   const dialog = team.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Invoices");
   await expect(dialog.getByRole("combobox", { name: "Parent collection" })).toContainText("Billing");
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(structure.getByRole("list", { name: "Collections in Billing" })).toContainText("Invoices");
 
@@ -968,7 +997,7 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   const dialog = team.getByRole("dialog", { name: "New collection" });
   await expect(dialog.getByRole("combobox", { name: "Parent collection" })).toContainText("Billing");
   await dialog.getByLabel("Name").fill("Invoices");
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(tree.getByRole("button", { name: "Billing", exact: true })).toHaveAttribute("aria-expanded", "true");
   await expect(rows("Collections in Billing")).toHaveText([/^Invoices/]);
@@ -1137,7 +1166,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Errors");
   await expect(dialog.getByRole("combobox", { name: "Tab" })).toContainText("API");
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(rows("Collections in API")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
 
@@ -1253,13 +1282,13 @@ test("the team splits the docs into tabs: the first takes the collections, other
 
   // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.
   await expect(team.getByRole("heading", { level: 1 })).toHaveText("API reference");
-  await expect(team.getByRole("button", { name: "Delete API reference" })).toHaveCount(0);
+  await expect(team.getByRole("menuitem", { name: "Delete API reference" })).toHaveCount(0);
   // Nothing behind "More actions" there, so there's none.
   await expect(team.getByRole("button", { name: "More actions" })).toHaveCount(0);
   await team.locator(".docs-tab-switcher").click();
   await team.getByRole("link", { name: "Guides", exact: true }).click();
   await team.getByRole("button", { name: "More actions" }).click();
-  await team.getByRole("button", { name: "Delete Guides" }).click();
+  await team.getByRole("menuitem", { name: "Delete Guides" }).click();
   const confirm = team.getByRole("alertdialog");
   await expect(confirm).toContainText("Its collections move to API reference");
   await confirm.getByRole("button", { name: "Delete" }).click();
@@ -1467,7 +1496,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   const bar = (name: string) => team.getByRole("button", { name, exact: true });
   await expect(team.locator("#article-toolbar").getByRole("button", { name: "Settings" })).toBeVisible();
   await expect(bar("Saved")).toBeVisible();
-  await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
+  await expect(team.getByRole("menuitem", { name: "Delete" })).toBeHidden();
   await expect(team.getByRole("combobox", { name: "Collection" })).toHaveCount(0);
   await expect(team.getByRole("checkbox", { name: /^Show the updated date/ })).toHaveCount(0);
   await checkpoint(team, "team-docs-article-editor", { fullPage: false });
@@ -1500,7 +1529,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(team.locator(".docs-editor-state").getByRole("link", { name: "Open on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
 
   await bar("More actions").click();
-  await expect(team.locator(".docs-more-menu").getByRole("link", { name: "View on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+  await expect(team.getByRole("menuitem", { name: "View on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
   await team.keyboard.press("Escape");
 
   // On a phone, the toolbar opens the same settings in a scrolling sheet.
@@ -2230,7 +2259,7 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   // An editor's own actions stay in a bar at the bottom (History, Verify, Save, Publish); the rest (Delete) are the top bar's menu.
   await expect(team.getByRole("button", { name: "History", exact: true })).toBeVisible();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toBeVisible();
-  const remove = team.getByRole("button", { name: "Delete" });
+  const remove = team.getByRole("menuitem", { name: "Delete" });
   await expect(remove).toBeHidden();
   const more = team.getByRole("button", { name: "More actions" });
   await more.click();
@@ -2254,8 +2283,8 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await team.locator('[data-slot="docs-page-header"]').getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await expect(team.getByRole("dialog", { name: "New collection" })).toBeVisible();
-  // The dialog hides the page from role queries, so both menus are checked by their markup.
-  await expect(team.locator('[role="menu"]')).toHaveCount(0);
+  // The dialog hides the page from role queries, so both menus are checked by their markup ("More actions" stays mounted, closed).
+  await expect(team.locator('[role="menu"]:visible')).toHaveCount(0);
 });
 
 test("a long article's History scrolls in its panel, its changes whole", async ({ browser }, testInfo) => {
