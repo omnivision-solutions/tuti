@@ -8,7 +8,7 @@ import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@t
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
-import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
+import { aiModelSetting, checksNotice, checksSwitch } from "@/lib/ai-model-setting";
 import { saveAiModel } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
@@ -373,15 +373,24 @@ test("the Checks switch on a server whose own checks are off: none where they wo
   const balanced = await setting();
   expect(balanced.summary).toContain("Checks Off");
   expect(checksSwitch(balanced)).toBeNull();
+  // Where the server checks the project's edits, the notice that they wait still shows, offering no switch.
+  const autopilot = { plan: null, analyseCodeChanges: true, autopilotArticleEdits: true, autopilotChecksNoticeDismissed: false };
+  expect(checksNotice(project.slug, balanced, autopilot)).toBeNull();
+  vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+  expect(checksNotice(project.slug, balanced, autopilot)).toEqual({ switchable: false });
 
   // Best has a model for them: they run, so the switch is there and on; off holds, and on is Best's model again.
   expect(await saveAiModel(project.slug, { levels: { code_changes: "best" } })).toEqual({});
   const best = await setting();
   expect(best.summary).toContain("Checks Claude Sonnet 5.5");
   expect(checksSwitch(best)).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
+  // On Best they run: no notice while Checks is on.
+  expect(checksNotice(project.slug, best, autopilot)).toBeNull();
   expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
   // Off, the switch still knows what they'd run on, so the page can price them.
   expect(checksSwitch(await setting())).toEqual({ on: false, model: "anthropic/claude-sonnet-5.5" });
+  // Off with a switch to offer: the notice can switch Checks on.
+  expect(checksNotice(project.slug, await setting(), autopilot)).toEqual({ switchable: true });
   expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
   expect(checksSwitch(await setting())).toEqual({ on: true, model: "anthropic/claude-sonnet-5.5" });
 

@@ -465,7 +465,7 @@ test("Autopilot's notice that edits wait shows only where they're reviewed, Chec
   for (const [name, value] of Object.entries(shown)) {
     expect(checksNoticeShown({ ...shown, [name]: !value })).toBe(false);
   }
-  // Where the server runs no Checks model there's no switch to turn it on: the notice says the server is why.
+  // Where the level in use has no model for Checks there's no switch to turn it on: the notice says how to get one.
   expect(checksNoticeText(true)).toBe("Article edits written while Checks is off don't go out by themselves: each one waits for your team.");
-  expect(checksNoticeText(false)).toBe("Article edits written while Checks is off don't go out by themselves: each one waits for your team. This server doesn't run Checks.");
+  expect(checksNoticeText(false)).toBe("Article edits written while Checks is off don't go out by themselves: each one waits for your team. Checks doesn't run on this AI model level: pick a level or a model for it below.");
 });

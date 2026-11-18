@@ -10,8 +10,8 @@ import { AdvancedTuningLink, AutopilotChecksNotice, AutopilotChecksSwitch, Autop
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
-import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
-import { autopilotRecordText, checksNoticeShown } from "@/lib/autopilot-words";
+import { aiModelSetting, checksNotice, checksSwitch } from "@/lib/ai-model-setting";
+import { autopilotRecordText } from "@/lib/autopilot-words";
 import { costLabel, costPerUse } from "@/lib/model-tiers";
 import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -62,17 +62,9 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
   ]);
   const checks = checksSwitch(model);
   // Where the server checks this project's article edits (docs/plan.md, E5): the switch says what it does and prices a
-  // review, and with Checks off a notice says edits wait (checksNoticeShown), until it's on or dismissed.
+  // review, and with Checks off a notice says edits wait (checksNotice), until it's on or dismissed.
   const reviews = checks && checksOn(slug) ? { price: costLabel(costPerUse("edit_review", model.listed.find((listed) => listed.id === checks.model)), model.creditsPerDollar) } : undefined;
-  const notice = checksNoticeShown({
-    // Where the server runs no Checks model there's no switch, and every edit still waits: the notice says so.
-    reviewed: checksOn(slug),
-    checks: checks?.on ?? false,
-    planHasIt: planIncludes(project.plan, "codeChanges"),
-    analyses: project.analyseCodeChanges,
-    publishesEdits: project.autopilotArticleEdits,
-    dismissed: project.autopilotChecksNoticeDismissed,
-  });
+  const notice = checksNotice(slug, model, project);
   const tuning = `/app/${slug}/settings/autopilot/tuning`;
   const tunable = planIncludes(project.plan, "aiTuning");
   // Values saved on a plan that had tuning, kept and not used on this one (the tuning page's own test): the row opens
@@ -96,7 +88,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         </>
       }
     >
-      {notice && <AutopilotChecksNotice projectSlug={slug} switchable={Boolean(checks)} />}
+      {notice && <AutopilotChecksNotice projectSlug={slug} switchable={notice.switchable} />}
       {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings. Admins can change its AI model and Checks.</p>}
       {!planIncludes(project.plan, "codeChanges") && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin>

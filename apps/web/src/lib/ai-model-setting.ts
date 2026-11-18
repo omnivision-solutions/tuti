@@ -1,4 +1,7 @@
-import { AI_GROUPS, AI_LEVELS, aiLevelRows, type AiGroup, type AiLevel, type AiRole, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, offeredLevels, planAllowsLevel, type PlanKey, roleNeedsTools, withinModelCap } from "@tuti/shared";
+import { checksOn } from "@tuti/jobs";
+import { AI_GROUPS, AI_LEVELS, aiLevelRows, type AiGroup, type AiLevel, type AiRole, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, offeredLevels, planAllowsLevel, planIncludes, type PlanKey, roleNeedsTools, withinModelCap } from "@tuti/shared";
+
+import { checksNoticeShown } from "@/lib/autopilot-words";
 
 import type { ListedModel } from "@/lib/model-tiers";
 import { type UpgradePrompt, upgradePrompt } from "@/lib/upgrade-prompt";
@@ -87,4 +90,26 @@ export function checksSwitch({ used, roles }: Pick<AiModelSettingProps, "used" |
   // What the checks run on with the switch on: the model in use, or, with Off saved, the level's (Custom's is the server's own until one is picked).
   const whenOn = checks.model !== "off" ? checks.used : ((used === "affordable" || used === "best" ? aiLevelRows()[used]?.code_changes_check : undefined) ?? checks.default);
   return whenOn === "off" ? null : { on: checks.used !== "off", model: whenOn };
+}
+
+/**
+ * Settings → Autopilot's notice that article edits wait while Checks is off (docs/plan.md, E5), or null: shown where
+ * the server checks the project's edits (checksOn), whether or not there's a switch (a level with no model for Checks
+ * has none, and its edits wait all the same); `switchable` says whether the notice can offer to switch Checks on.
+ */
+export function checksNotice(
+  slug: string,
+  setting: Pick<AiModelSettingProps, "used" | "roles">,
+  project: { plan: PlanKey | null; analyseCodeChanges: boolean; autopilotArticleEdits: boolean; autopilotChecksNoticeDismissed: boolean },
+): { switchable: boolean } | null {
+  const checks = checksSwitch(setting);
+  const shown = checksNoticeShown({
+    reviewed: checksOn(slug),
+    checks: checks?.on ?? false,
+    planHasIt: planIncludes(project.plan, "codeChanges"),
+    analyses: project.analyseCodeChanges,
+    publishesEdits: project.autopilotArticleEdits,
+    dismissed: project.autopilotChecksNoticeDismissed,
+  });
+  return shown ? { switchable: Boolean(checks) } : null;
 }
