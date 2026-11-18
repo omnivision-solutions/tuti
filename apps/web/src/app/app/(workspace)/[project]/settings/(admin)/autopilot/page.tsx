@@ -14,6 +14,7 @@ import { autopilotRecordText } from "@/lib/autopilot-words";
 import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
+import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
 
 export const metadata: Metadata = { title: "Autopilot · Settings" };
 
@@ -57,6 +58,11 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     autopilotRecord(membership.project.id),
   ]);
   const checks = checksSwitch(model);
+  const tuning = `/app/${slug}/settings/autopilot/tuning`;
+  const tunable = planIncludes(project.plan, "aiTuning");
+  // Values saved on a plan that had tuning, kept and not used on this one (the tuning page's own test): the row opens
+  // the upgrade prompt, so a link under the card is the way to see them.
+  const kept = !tunable && Object.values((await codeChangesTuning(membership.project.id)).values).some((value) => value.saved !== null);
   return (
     <SettingsPane
       title="Autopilot"
@@ -81,12 +87,21 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           Merged pull requests still go into the changelog&apos;s running draft.
         </PlanNotice>
       )}
-      <SettingsCard>
-        {/* Without the switch (this server runs no checks), a saved Off is Custom's empty box, where a model can be picked, not a row that only the switch could change. */}
-        <AiModelSetting {...model} roles={checks ? model.roles : model.roles.map((role) => (role.model === "off" ? { ...role, model: "" } : role))} />
-        {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} />}
-        <AdvancedTuningLink href={`/app/${slug}/settings/ai-models/tuning`} upgrade={planIncludes(project.plan, "aiTuning") ? null : upgradePrompt("aiTuning", slug, true)} />
-      </SettingsCard>
+      <div className="flex flex-col gap-2">
+        <SettingsCard>
+          {/* Without the switch (this server runs no checks), a saved Off is Custom's empty box, where a model can be picked, not a row that only the switch could change. */}
+          <AiModelSetting {...model} roles={checks ? model.roles : model.roles.map((role) => (role.model === "off" ? { ...role, model: "" } : role))} />
+          {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} />}
+          <AdvancedTuningLink href={tuning} upgrade={tunable ? null : upgradePrompt("aiTuning", slug, true)} />
+        </SettingsCard>
+        {kept && (
+          <p className="text-sm text-muted-foreground">
+            <Link href={tuning} className="underline underline-offset-4">
+              See saved tuning values
+            </Link>
+          </p>
+        )}
+      </div>
       <div className="flex flex-col gap-2">
         <SettingsCard>
           <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />

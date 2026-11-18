@@ -87,7 +87,9 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
   await owner.keyboard.press("Enter");
   await expect(checks).not.toBeChecked();
   await expect(box("Checks")).toHaveCount(0);
-  await checks.click();
+  // The box went with keyboard focus in it: focus is on the switch, which turns Checks on again.
+  await expect(checks).toBeFocused();
+  await owner.keyboard.press("Space");
   await expect(checks).toBeChecked();
   await expect(box("Checks")).toBeVisible();
 
@@ -115,7 +117,7 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
 
   // The way to Advanced tuning, a page of its own, with the way back.
   await owner.getByRole("link", { name: "Advanced tuning" }).click();
-  await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
+  await owner.waitForURL(`**/app/${slug}/settings/autopilot/tuning`);
   await owner.getByRole("region", { name: "Advanced tuning" }).getByRole("link", { name: /Autopilot/ }).click();
   await owner.waitForURL(`**/app/${slug}/settings/autopilot`);
 });
