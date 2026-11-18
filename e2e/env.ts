@@ -42,6 +42,8 @@ export const serverEnv = {
   AUTOPILOT_TIMER: "off",
   // Journeys receive webhooks on localhost.
   WEBHOOK_ALLOW_PRIVATE_URLS: "true",
+  // Try it through Tuti may send to a fake API on this machine (honoured only while APP_URL is on localhost).
+  TRY_IT_ALLOW_LOCALHOST: "true",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
   // (The global setup points OPENAI_* at the model fake; AI_MODEL stays the default.)
   OPENAI_API_KEY: "",

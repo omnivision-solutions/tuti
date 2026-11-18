@@ -1,5 +1,5 @@
 import { absolute, hasHost, trimSlashes } from "./examples";
-import type { ApiAuth, ApiDoc, ApiOperation, ApiServer } from "./types";
+import type { ApiAuth, ApiDoc, ApiOperation, ApiParam, ApiServer } from "./types";
 
 /**
  * Try it (docs/plan.md, API reference in Docs, A12): the request a reader fills in on an operation's page, made into
@@ -77,9 +77,10 @@ function fillServer(server: Pick<ApiServer, "url" | "variables">, values: Record
   return missing === null ? { url } : { missing };
 }
 
-/** Whether an operation's page has Try it: an OpenAPI operation with somewhere to send it. */
+/** Whether an operation's page has Try it: an OpenAPI operation fetch can send, with somewhere to send it. */
 export const tryable = (doc: ApiDoc, operation: ApiOperation, base: string | null | undefined) =>
-  doc.format === "openapi" && !operation.query && tryServers(doc, operation, base).length > 0;
+  // Not TRACE: fetch, a browser's and Tuti's, refuses to send one.
+  doc.format === "openapi" && !operation.query && operation.kind !== "TRACE" && tryServers(doc, operation, base).length > 0;
 
 /**
  * The ways of signing the console asks a key for: the first of the operation's whose schemes are all known (as the
@@ -100,6 +101,15 @@ const lower = (names: (string | null)[]) => new Set(names.filter((name): name is
 
 /** A header's or cookie's value can't start another one. */
 const BREAKS = /[\r\n\0]/;
+/**
+ * A character a header can't carry: one beyond Latin-1 (a dash "–", a curly quote "’"). A browser refuses such a
+ * request before sending it, with the same error as a CORS refusal, so it's caught here, by name, first.
+ */
+const NOT_LATIN1 = /[^\x00-\xff]/;
+const unsendable = (name: string, value: string) => {
+  const found = NOT_LATIN1.exec(value)?.[0];
+  return found === undefined ? null : `${name} has a character a request can't carry in a header: ${found}`;
+};
 
 /** The request `input` makes of the operation, or why it can't be sent. Where it goes is checked by whoever sends it. */
 export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | null | undefined, input: TryInput): TryRequest | { error: string } {
@@ -142,11 +152,18 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
 
   const { schemes } = tryAuth(doc, operation);
   const declared = (place: "query" | "header" | "cookie") => operation.params.filter((param) => param.in === place).map((param) => param.name);
-  const queries = lower([...declared("query"), ...schemes.filter((s) => s.kind === "query").map((s) => s.name)]);
+  // An object query parameter goes as its fields (`queryPairs`): theirs are its names, or any name when it lists none.
+  const objects = operation.params.filter((param) => param.in === "query" && isObject(param));
+  const anyName = objects.some((param) => !param.schema.properties?.length);
+  const queries = lower([
+    ...declared("query"),
+    ...objects.flatMap((param) => param.schema.properties?.map((field) => field.name) ?? []),
+    ...schemes.filter((s) => s.kind === "query").map((s) => s.name),
+  ]);
   const headers = lower([...declared("header"), ...schemes.map(authHeader), operation.body && "Content-Type", "Accept"]);
   const cookies = new Set([...declared("cookie"), ...schemes.filter((s) => s.kind === "cookie").map((s) => s.name)]);
   for (const [name, value] of input.query) {
-    if (!queries.has(name.toLowerCase())) {
+    if (!anyName && !queries.has(name.toLowerCase())) {
       return { error: `${name} isn't one of this operation's query parameters` };
     }
     url.searchParams.append(name, value);
@@ -159,6 +176,10 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     if (BREAKS.test(value)) {
       return { error: `${name} can't have a line break in it` };
     }
+    const wrong = unsendable(name, value);
+    if (wrong) {
+      return { error: wrong };
+    }
     sent.push([name, value]);
   }
   for (const [name, value] of input.cookies) {
@@ -167,6 +188,10 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     }
     if (BREAKS.test(value) || value.includes(";")) {
       return { error: `${name} can't have a line break or a semicolon in it` };
+    }
+    const wrong = unsendable(name, value);
+    if (wrong) {
+      return { error: wrong };
     }
   }
   if (input.cookies.length > 0) {
@@ -179,4 +204,120 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     return { error: "The body is over 1 MB" };
   }
   return { method, url, headers: sent, body };
+}
+
+/** What the console's fields hold: parameters by `<in>:<name>`; keys by their scheme's key (Basic's as `<key>:user` and `<key>:password`). */
+export type TryForm = { server: string; variables: Record<string, string>; params: Record<string, string>; keys: Record<string, string>; body: string };
+
+/**
+ * The parameters the console asks for: path, query and header ones, without the headers OpenAPI has ignored as
+ * parameters (Authorization, Accept, Content-Type: the key and the body set them), those never sent, and any named
+ * like where the key goes (specs often list the key as a parameter too): the key takes its place, as in the examples.
+ */
+export function tryParams(doc: ApiDoc, operation: ApiOperation): ApiParam[] {
+  const schemes = tryAuth(doc, operation).schemes;
+  const keyIn = (place: "header" | "query") => lower(schemes.filter((s) => s.kind === place).map((s) => s.name));
+  const [headers, queries] = [keyIn("header"), keyIn("query")];
+  return operation.params.filter((param) =>
+    param.in === "path"
+      ? true
+      : param.in === "query"
+        ? !queries.has(param.name.toLowerCase())
+        : param.in === "header" && !/^(authorization|accept|content-type)$/i.test(param.name) && !NEVER.test(param.name) && !headers.has(param.name.toLowerCase()),
+  );
+}
+
+/** Whether a query parameter is an object, sent as its fields. */
+const isObject = (param: ApiParam) => param.schema.type === "object" || !!param.schema.properties;
+
+/**
+ * A query parameter's field as its pairs, as OpenAPI sends one unless told otherwise (and as the examples show it): an
+ * array's items each under its name ("1,2" is `ids=1&ids=2`), an object's fields each under the field's name.
+ */
+function queryPairs(param: ApiParam, text: string): [string, string][] {
+  if (param.schema.type.startsWith("array")) {
+    return text.split(",").map((item): [string, string] => [param.name, item.trim()]).filter(([, item]) => item !== "");
+  }
+  if (isObject(param)) {
+    try {
+      const value: unknown = JSON.parse(text);
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        return Object.entries(value).map(([field, item]): [string, string] => [field, typeof item === "string" ? item : JSON.stringify(item)]);
+      }
+    } catch {
+      // Not JSON: as typed.
+    }
+  }
+  return [[param.name, text]];
+}
+
+/** Base64 of text as UTF-8, as Basic authentication sends a username and password. */
+const base64 = (text: string) => btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(""));
+
+/** What the console's fields make for `tryRequest`: the parameters filled in, the key where its scheme puts it, the body with its type. */
+export function tryInput(doc: ApiDoc, operation: ApiOperation, form: TryForm): TryInput {
+  const input: TryInput = { server: form.server, variables: form.variables, path: {}, query: [], headers: [], cookies: [], body: operation.body ? form.body : null };
+  for (const param of tryParams(doc, operation)) {
+    const value = form.params[`${param.in}:${param.name}`] ?? "";
+    if (param.in === "path") input.path[param.name] = value;
+    else if (value === "") continue;
+    else if (param.in === "query") input.query.push(...queryPairs(param, value));
+    else input.headers.push([param.name, value]);
+  }
+  for (const scheme of tryAuth(doc, operation).schemes) {
+    const value = form.keys[scheme.key] ?? "";
+    if (scheme.kind === "basic") {
+      const [user = "", password = ""] = [form.keys[`${scheme.key}:user`], form.keys[`${scheme.key}:password`]];
+      if (user || password) input.headers.push(["Authorization", `Basic ${base64(`${user}:${password}`)}`]);
+    } else if (value === "") continue;
+    else if (scheme.kind === "header") input.headers.push([scheme.name, value]);
+    else if (scheme.kind === "query") input.query.push([scheme.name, value]);
+    else if (scheme.kind === "cookie") input.cookies.push([scheme.name, value]);
+    else input.headers.push(["Authorization", `Bearer ${value}`]);
+  }
+  if (operation.body && input.body) input.headers.push(["Content-Type", operation.body.contentType]);
+  return input;
+}
+
+/** The request's address to show, a key in its query as "****": the key's own field hides it. */
+export function shownUrl(doc: ApiDoc, operation: ApiOperation, request: TryRequest): string {
+  const url = new URL(request.url);
+  for (const scheme of tryAuth(doc, operation).schemes) {
+    if (scheme.kind === "query" && url.searchParams.has(scheme.name)) url.searchParams.set(scheme.name, "****");
+  }
+  return url.href;
+}
+
+/**
+ * The start of an answer's body, up to `max` bytes, read as it arrives and the rest cancelled: a huge or endless one
+ * can't fill the tab. Its text is those bytes (a character cut at the end is dropped); `size` is how many were read.
+ */
+export async function readUpTo(stream: ReadableStream<Uint8Array> | null, max: number): Promise<{ text: string; size: number; cut: boolean }> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let cut = false;
+  if (stream) {
+    const reader = stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+      if (size > max) {
+        cut = true;
+        await reader.cancel().catch(() => {});
+        break;
+      }
+    }
+  }
+  const bytes = new Uint8Array(Math.min(size, max));
+  let at = 0;
+  for (const chunk of chunks) {
+    const part = chunk.subarray(0, bytes.length - at);
+    bytes.set(part, at);
+    at += part.length;
+  }
+  // Not fatal: a character the cut split in two is left off rather than refused.
+  const text = new TextDecoder().decode(bytes, { stream: cut });
+  return { text, size: Math.min(size, max), cut };
 }

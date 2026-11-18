@@ -16,7 +16,7 @@ const LARGEST = 3_000_000;
 
 /**
  * A local stand-in for a team's API, for Try it: answers every request with JSON of what it got (201, its method,
- * path, query and body), except `/redirect` (a 302 to another site), `/large` (`size` bytes of text, up to LARGEST)
+ * path, query and body), except `/redirect` (a 302 to another site: `to`, or elsewhere.example), `/large` (`size` bytes of text, up to LARGEST)
  * and `/stall` (never answers). With `cors` it lets browsers on any site call it, the key's header too; without, a
  * browser's request to it fails.
  */
@@ -38,7 +38,7 @@ export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake
     }
     requests.push({ method: request.method!, path: url.pathname, query: url.search, headers: request.headers, body });
     if (url.pathname.endsWith("/redirect")) {
-      response.writeHead(302, { ...allow, location: "https://elsewhere.example/" }).end();
+      response.writeHead(302, { ...allow, location: url.searchParams.get("to") ?? "https://elsewhere.example/" }).end();
       return;
     }
     if (url.pathname.endsWith("/stall")) {
