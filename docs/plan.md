@@ -502,7 +502,7 @@ Proposed, not decided yet:
 Lifetime deals sold elsewhere (AppSumo first) give a plan without Stripe. Not the self-hosted licence (Licences above), which hides "Powered by tuti": these are named plan licenses in the code and "licenses" on the account's screen.
 
 Decided:
-- A license is an account's (the person's Tuti account; plans are per project, so an account holds any number), each referencing a plan in the billing file, usually a hidden one nobody can buy. Its holder assigns it to one project they own or administer; a license is on one project at a time and a project has at most one
+- A license is an account's (the person's Tuti account; plans are per project, so an account holds any number), each referencing a plan in the billing file, usually a hidden one nobody can buy. Its holder assigns it to one project they own or administer (a project they make while they hold one and have no project it could go on, as after redeeming before having a project, gets it at once, in place of a trial); a license is on one project at a time and a project has at most one
 - The core is source-agnostic (`source`, its key there unique per source, plan, holder, project, revoked, metadata); only the webhook and sign-in layer is AppSumo's
 - A project paying through Stripe isn't given a license until its subscription ends (cancelling it isn't enough while it runs), so nobody pays twice; a project with a license can't buy a plan until it's unassigned
 - Each month a licensed project gets its plan's AI credits, as a paid month would

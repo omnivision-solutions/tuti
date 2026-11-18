@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { creditBalance, projectWith } from "@tuti/jobs";
-import { billingFile, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -25,6 +25,7 @@ beforeAll(async () => {
 afterAll(() => stripe.close());
 beforeEach(async () => {
   const billing = billingFile((config) => {
+    withAppsumoPlans(config);
     config.trial = { plan: "pro", days: 7, credits: 500, emails: 1000 };
   });
   for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billing, AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
@@ -64,6 +65,25 @@ const deliver = async (...events: FakeStripeEvent[]) => {
     expect((await webhook(new Request("https://app.tuti.example/api/stripe/webhook", { method: "POST", body, headers }))).status).toBe(200);
   }
 };
+
+test("a project made with a license on the account that's on no project gets that license, not a trial", async () => {
+  // AppSumo's buyer redeems before they have a project, then follows Licenses' "Create a project".
+  const held = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: randomUUID(), plan: "appsumo-1", userId: owner.id, claimedAt: new Date() } });
+  const first = await newProject();
+  expect(first.trialEndsAt).toBeNull();
+  expect(await call(getPlan, as(first.id), {})).toMatchObject({ plan: "appsumo-1", trial: null });
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id } })).toMatchObject({ projectId: first.id, assignedAt: expect.any(Date) });
+  const { grants } = await creditBalance(first.id);
+  expect(grants.filter(({ source }) => source === "PLAN")).toMatchObject([{ credits: 400 }]);
+  // The license is taken: the next project is on its own.
+  const second = await newProject();
+  expect(await prisma.planLicense.count({ where: { projectId: second.id } })).toBe(0);
+  // One left unassigned while there's a project it could go on (second) stays put: Licenses offers that project.
+  const spare = await prisma.planLicense.create({ data: { source: "appsumo", externalKey: randomUUID(), plan: "appsumo-2", userId: owner.id, claimedAt: new Date() } });
+  const third = await newProject();
+  expect(await prisma.planLicense.findUniqueOrThrow({ where: { id: spare.id } })).toMatchObject({ projectId: null });
+  expect(await prisma.planLicense.count({ where: { projectId: third.id } })).toBe(0);
+});
 
 test("an account's first project starts a trial of the trial's plan, with its credits until it ends; its next project doesn't", async () => {
   const first = await newProject();

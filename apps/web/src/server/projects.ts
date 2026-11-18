@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
+import { applyPlanLicense, grantLicenseCredits } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -50,6 +51,7 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
     return { error: "That URL is reserved" };
   }
 
+  let licensed: string | undefined;
   try {
     await prisma.$transaction(async (tx) => {
       const { id } = await tx.project.create({
@@ -61,13 +63,31 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
         },
         select: { id: true },
       });
-      await startTrial(tx, id, session.user.id);
+      // A license on the account with no project it could go on (what Licenses' "Create a project" is for: redeemed
+      // before there was one) goes on this one, in place of a trial. One unassigned while there's a project to move it
+      // to stays put. Locked, so assigning it elsewhere meanwhile waits and then finds it taken.
+      const [idle] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM plan_license WHERE "userId" = ${session.user.id} AND "projectId" IS NULL AND "revokedAt" IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM team_member tm WHERE tm."userId" = ${session.user.id} AND tm.role IN ('OWNER', 'ADMIN') AND tm."projectId" <> ${id}
+              AND NOT EXISTS (SELECT 1 FROM plan_license other WHERE other."projectId" = tm."projectId"))
+        ORDER BY "claimedAt", id LIMIT 1 FOR UPDATE`;
+      if (idle) {
+        licensed = idle.id;
+        await tx.planLicense.update({ where: { id: idle.id }, data: { projectId: id, assignedAt: new Date() } });
+        await applyPlanLicense(tx, idle.id);
+      } else {
+        await startTrial(tx, id, session.user.id);
+      }
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { error: "That URL is already taken" };
     }
     throw error;
+  }
+  if (licensed) {
+    await grantLicenseCredits(licensed);
   }
 
   // The /app layout lists your projects; refresh it before navigating. Then the first run's setup, every step skippable.
