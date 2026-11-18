@@ -1249,7 +1249,7 @@ export function DeleteCollectionButton({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       {standalone ? (
-        <AlertDialogTrigger render={<Button variant="outline" size="sm" disabled={pending} className="h-[30px] border-destructive/45 text-[13px] text-destructive-foreground" />}><Trash2Icon className="size-3.5" />Delete collection</AlertDialogTrigger>
+        <AlertDialogTrigger render={<Button variant="destructive" size="sm" disabled={pending} />}><Trash2Icon />Delete collection</AlertDialogTrigger>
       ) : (
         <DropdownMenuItem variant="destructive" disabled={pending} onClick={() => setOpen(true)}>
           <Trash2Icon />
