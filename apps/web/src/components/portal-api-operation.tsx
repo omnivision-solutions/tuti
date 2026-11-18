@@ -15,12 +15,12 @@ import { portalLinks } from "@/server/portal-base";
 type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
 
 /**
- * A method's colour: reading in blue, changing in orange, deleting in red (the portal's status hues), and adding in the
- * project's accent, never a green of Tuti's own on a team's portal.
+ * A method's colour, in hues the portal keeps whatever the project's accent (statuses', info blue, destructive red): the
+ * accent itself isn't for labels. Reading in the Planned status's blue, adding in info blue, changing in orange, deleting in red.
  */
 const METHOD_COLOUR: Partial<Record<ApiOperation["kind"], string>> = {
   GET: "text-status-planned",
-  POST: "text-soft-foreground",
+  POST: "text-info",
   PUT: "text-status-in-progress",
   PATCH: "text-status-in-progress",
   DELETE: "text-destructive",
@@ -270,7 +270,7 @@ function Field({ name, required = false, description, schema }: { name: string; 
         <span className="text-[0.8125rem] break-words text-muted-foreground">
           {typeLine(schema).filter(Boolean).join(" · ")}
         </span>
-        {required && <span className="text-xs font-medium text-highlight-foreground">required</span>}
+        {required && <span className="text-xs font-medium text-muted-foreground">required</span>}
         {schema.deprecated && <span className="text-xs font-medium text-muted-foreground">deprecated</span>}
       </div>
       <Details schema={schema} description={description} />
@@ -314,9 +314,9 @@ const PLACES: [ApiParam["in"], string][] = [
   ["argument", "Arguments"],
 ];
 
-/** A status's dot: the project's accent for success, orange for the caller's mistakes, red for the server's. */
+/** A status's dot: the Completed status's green for success, orange for the caller's mistakes, red for the server's. */
 const statusColour = (status: string) =>
-  status.startsWith("2") ? "bg-primary" : status.startsWith("4") ? "bg-status-in-progress" : status.startsWith("5") ? "bg-destructive" : "bg-muted-foreground";
+  status.startsWith("2") ? "bg-status-completed" : status.startsWith("4") ? "bg-status-in-progress" : status.startsWith("5") ? "bg-destructive" : "bg-muted-foreground";
 
 /** Code blocks as RichText shows an article's (tabs without scripts, and CodeCopyButtons' Copy): `tabs`, or one labelled block. */
 function codeDoc(tabs: { name: string; code: string }[]): Doc {
@@ -406,7 +406,7 @@ function Path({ path }: { path: string }) {
     <code className="min-w-0 font-mono text-sm font-medium break-all">
       {path.split(/(\{[^{}]+\})/).map((part, i) =>
         i % 2 ? (
-          <span key={i} className="rounded-sm bg-soft px-1 py-px text-soft-foreground">
+          <span key={i} className="rounded-sm bg-secondary px-1 py-px">
             {part}
           </span>
         ) : (
@@ -447,7 +447,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
               {operation.title}
             </h1>
-            {operation.deprecated && <span className="w-fit rounded-full bg-highlight px-2 py-0.5 text-xs font-medium text-highlight-foreground">Deprecated</span>}
+            {operation.deprecated && <span className="w-fit rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">Deprecated</span>}
             <Markdown text={operation.description} className="article-text gap-4 text-foreground" />
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
               <Method kind={operation.kind} />
