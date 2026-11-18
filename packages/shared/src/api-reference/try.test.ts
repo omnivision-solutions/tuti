@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { preflighted, shownUrl, tryable, tryAuth, type TryForm, tryInput, type TryInput, tryParams, tryRequest, tryServers } from "./try";
+import { shownUrl, tryable, tryAuth, type TryForm, tryInput, type TryInput, tryParams, tryRequest, tryServers } from "./try";
 import type { ApiDoc, ApiOperation } from "./types";
 
 const doc = (over: Partial<ApiDoc> = {}): ApiDoc => ({
@@ -155,15 +155,13 @@ test("an array query parameter is sent once per item and an object one per field
   });
   const input = tryInput(doc(), op, form({ params: { "path:id": "1", "query:ids": "1, 2", "query:filter": '{"status":"open"}' } }));
   expect(input.query).toEqual([["ids", "1"], ["ids", "2"], ["status", "open"]]);
-});
-
-test("a request the browser asks the API about first, and one it sends without asking", () => {
-  const request = (method: string, headers: [string, string][]) => ({ method, url: new URL("https://api.acme.test/"), headers, body: null });
-  expect(preflighted(request("GET", []))).toBe(false);
-  expect(preflighted(request("POST", [["Content-Type", "text/plain"]]))).toBe(false);
-  expect(preflighted(request("POST", [["Content-Type", "application/json"]]))).toBe(true);
-  expect(preflighted(request("POST", [["Authorization", "Bearer x"]]))).toBe(true);
-  expect(preflighted(request("DELETE", []))).toBe(true);
+  // And sent so: the object's fields are its names.
+  const made = tryRequest(doc(), op, null, input);
+  expect("url" in made && made.url.search).toBe("?ids=1&ids=2&status=open");
+  expect(tryRequest(doc(), op, null, { ...input, query: [["other", "1"]] })).toHaveProperty("error");
+  // An object that lists no fields takes any name.
+  const open = operation({ params: [...operation().params, { name: "filter", in: "query", required: false, description: "", schema: { type: "object" } }] });
+  expect(tryRequest(doc(), open, null, { ...input, query: [["anything", "1"]] })).not.toHaveProperty("error");
 });
 
 test("a key in the query is hidden in the address shown", () => {

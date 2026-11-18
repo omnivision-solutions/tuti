@@ -142,11 +142,18 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
 
   const { schemes } = tryAuth(doc, operation);
   const declared = (place: "query" | "header" | "cookie") => operation.params.filter((param) => param.in === place).map((param) => param.name);
-  const queries = lower([...declared("query"), ...schemes.filter((s) => s.kind === "query").map((s) => s.name)]);
+  // An object query parameter goes as its fields (`queryPairs`): theirs are its names, or any name when it lists none.
+  const objects = operation.params.filter((param) => param.in === "query" && isObject(param));
+  const anyName = objects.some((param) => !param.schema.properties?.length);
+  const queries = lower([
+    ...declared("query"),
+    ...objects.flatMap((param) => param.schema.properties?.map((field) => field.name) ?? []),
+    ...schemes.filter((s) => s.kind === "query").map((s) => s.name),
+  ]);
   const headers = lower([...declared("header"), ...schemes.map(authHeader), operation.body && "Content-Type", "Accept"]);
   const cookies = new Set([...declared("cookie"), ...schemes.filter((s) => s.kind === "cookie").map((s) => s.name)]);
   for (const [name, value] of input.query) {
-    if (!queries.has(name.toLowerCase())) {
+    if (!anyName && !queries.has(name.toLowerCase())) {
       return { error: `${name} isn't one of this operation's query parameters` };
     }
     url.searchParams.append(name, value);
@@ -193,6 +200,9 @@ export const tryParams = (operation: ApiOperation): ApiParam[] =>
     (param) => param.in === "path" || param.in === "query" || (param.in === "header" && !/^(authorization|accept|content-type)$/i.test(param.name) && !NEVER.test(param.name)),
   );
 
+/** Whether a query parameter is an object, sent as its fields. */
+const isObject = (param: ApiParam) => param.schema.type === "object" || !!param.schema.properties;
+
 /**
  * A query parameter's field as its pairs, as OpenAPI sends one unless told otherwise (and as the examples show it): an
  * array's items each under its name ("1,2" is `ids=1&ids=2`), an object's fields each under the field's name.
@@ -201,7 +211,7 @@ function queryPairs(param: ApiParam, text: string): [string, string][] {
   if (param.schema.type.startsWith("array")) {
     return text.split(",").map((item): [string, string] => [param.name, item.trim()]).filter(([, item]) => item !== "");
   }
-  if (param.schema.type === "object" || param.schema.properties) {
+  if (isObject(param)) {
     try {
       const value: unknown = JSON.parse(text);
       if (typeof value === "object" && value !== null && !Array.isArray(value)) {
@@ -240,20 +250,6 @@ export function tryInput(doc: ApiDoc, operation: ApiOperation, form: TryForm): T
   }
   if (operation.body && input.body) input.headers.push(["Content-Type", operation.body.contentType]);
   return input;
-}
-
-/**
- * Whether a browser asks the API first (a CORS preflight) before it sends the request: then a refusal means it was
- * never sent, and Tuti can send it. A request it doesn't ask about (a GET, or a POST with only plain headers) reaches
- * the API whether or not the answer may be read.
- */
-export function preflighted(request: TryRequest): boolean {
-  if (!["GET", "HEAD", "POST"].includes(request.method)) return true;
-  return request.headers.some(([name, value]) => {
-    const lowered = name.toLowerCase();
-    if (lowered === "content-type") return !/^(application\/x-www-form-urlencoded|multipart\/form-data|text\/plain)\s*(;|$)/i.test(value);
-    return !["accept", "accept-language", "content-language"].includes(lowered);
-  });
 }
 
 /** The request's address to show, a key in its query as "****": the key's own field hides it. */

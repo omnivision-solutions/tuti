@@ -7,7 +7,6 @@ import {
   curlCommand,
   exampleRequest,
   paramText,
-  preflighted,
   shownUrl,
   tryAuth,
   tryInput,
@@ -16,7 +15,7 @@ import {
   tryServers,
 } from "@tuti/shared/api-reference";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { usePortalHref } from "@/components/portal-base";
 import { Button } from "@/components/ui/button";
@@ -107,6 +106,11 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
   const chosen = servers.find((s) => s.url === server)!;
+  const answer = useRef<HTMLDivElement>(null);
+  // Below the fields, often out of sight (a phone's sheet): brought into view, focus left on Send.
+  useEffect(() => {
+    if (result) answer.current?.scrollIntoView({ block: "nearest" });
+  }, [result]);
 
   const input = tryInput(doc, operation, { server, variables, params, keys, body });
   const made = tryRequest(doc, operation, base, input);
@@ -142,12 +146,14 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
       const started = performance.now();
       let response: Response;
       try {
-        response = await fetch(made.url, { method: made.method, headers: made.headers, body: made.body });
+        // Nothing of the reader's own: no cookies of a site the API shares with the portal, no referrer.
+        response = await fetch(made.url, { method: made.method, headers: made.headers, body: made.body, credentials: "omit", referrerPolicy: "no-referrer" });
       } catch (error) {
-        // Refused by CORS, or no network: both a TypeError. Tuti sends it then only when the browser can't have: it asked
-        // the API first and was refused, or it's a GET or HEAD, which only reads. Otherwise the API may have run it.
+        // Refused by CORS, or no network: both a TypeError, and the API may have run it all the same (a browser only
+        // asks first about some requests, and an API may allow the asking and not the answer). A GET or HEAD only
+        // reads, so Tuti sends it; anything else only when the reader asks.
         if (!(error instanceof TypeError)) throw error;
-        if (preflighted(made) || made.method === "GET" || made.method === "HEAD") await throughTuti("cors");
+        if (made.method === "GET" || made.method === "HEAD") await throughTuti("cors");
         else setResult({ unread: true });
         return;
       }
@@ -224,7 +230,7 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
           </Group>
         )}
         {schemes.length > 0 && (
-          <Group title="Authorization" note={`Kept in this tab until you close it.${optional ? " Optional for this request." : ""}`}>
+          <Group title="Authorization" note={`Kept in this tab only.${optional ? " Optional for this request." : ""}`}>
             {schemes.map((scheme) =>
               scheme.kind === "basic" ? (
                 <div key={scheme.key} className="grid gap-3 sm:grid-cols-2">
@@ -276,8 +282,15 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
             <Textarea aria-label="Body" spellCheck={false} rows={10} className="font-mono text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
           </Group>
         )}
-        {/* Always there, so a screen reader reads the answer as it arrives. */}
-        <div aria-live="polite">{result && <Answer result={result} onThrough={() => void send(true)} sending={sending} />}</div>
+        {/* Always there, so a screen reader reads the answer's one line as it arrives (not its body). */}
+        <p aria-live="polite" className="sr-only">
+          {result && summary(result)}
+        </p>
+        {result && (
+          <div ref={answer}>
+            <Answer result={result} onThrough={() => void send(true)} sending={sending} />
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-divider px-4 py-3">
         <Button variant="outline" disabled={"error" in made} onClick={() => void copy()}>
@@ -328,6 +341,23 @@ function pretty(answer: TryAnswer) {
   }
 }
 
+/** Why the request went through Tuti, when it did. */
+const throughLine = (result: Exclude<Result, { unread: true }>) =>
+  result.via === "cors"
+    ? "Sent through Tuti, since the API doesn't allow browser requests."
+    : result.via === "cookies"
+      ? "Sent through Tuti, since browsers don't send cookies to another site."
+      : null;
+
+const UNREAD = "The API doesn't allow browser requests, so its answer can't be shown here. It may have run the request: send it through Tuti to see the answer, and it runs again.";
+
+/** The answer in a line, for screen readers. */
+function summary(result: Result) {
+  if ("unread" in result) return UNREAD;
+  const what = "error" in result ? result.error : `${result.answer.status} ${result.answer.statusText}, ${result.answer.ms} ms, ${size(result.answer.size)}`;
+  return [what, throughLine(result)].filter(Boolean).join(". ");
+}
+
 /** The answer: its status, time and size, its headers (closed), and its body. Or why it wasn't sent. */
 function Answer({ result, onThrough, sending }: { result: Result; onThrough: () => void; sending: boolean }) {
   if ("unread" in result) {
@@ -335,7 +365,7 @@ function Answer({ result, onThrough, sending }: { result: Result; onThrough: () 
       <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
         <h3 className="text-sm font-semibold">Response</h3>
         <p className="text-sm">
-          {"The API doesn't allow browser requests, so its answer can't be shown here. It may have run the request: send it through Tuti to see the answer, and it runs again."}
+          {UNREAD}
         </p>
         <Button variant="outline" className="self-start" disabled={sending} focusableWhenDisabled onClick={onThrough}>
           Send through Tuti
@@ -343,17 +373,12 @@ function Answer({ result, onThrough, sending }: { result: Result; onThrough: () 
       </section>
     );
   }
-  const through =
-    result.via === "cors"
-      ? "Sent through Tuti, since the API doesn't allow browser requests."
-      : result.via === "cookies"
-        ? "Sent through Tuti, since browsers don't send cookies to another site."
-        : null;
+  const through = throughLine(result);
   return (
     <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
       <h3 className="text-sm font-semibold">Response</h3>
       {"error" in result ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p className="text-sm text-destructive">
           {result.error}
         </p>
       ) : (

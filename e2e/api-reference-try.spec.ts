@@ -43,6 +43,12 @@ paths:
             schema: { type: object, properties: { title: { type: string } } }
             example: { title: Dark mode for the editor }
       responses: { "201": { description: The new post } }
+  /posts/{id}:
+    get:
+      tags: [Posts]
+      summary: Get a post
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer }, example: 7 }]
+      responses: { "201": { description: The post } }
   /posts/{id}/archive:
     post:
       tags: [Posts]
@@ -77,7 +83,7 @@ test("a reader tries an operation with their key: from the browser, and through 
   // Prefilled from the examples: the query parameter and the body.
   await expect(panel.getByLabel("board")).toHaveValue("ideas");
   await expect(panel.getByRole("textbox", { name: "Body" })).toHaveValue(/"title": "Dark mode for the editor"/);
-  await expect(panel.getByText("Kept in this tab until you close it.")).toBeVisible();
+  await expect(panel.getByText("Kept in this tab only.")).toBeVisible();
   await panel.getByLabel("Bearer token").fill("sk_test_123");
   await panel.getByRole("button", { name: "Send", exact: true }).click();
 
@@ -89,14 +95,20 @@ test("a reader tries an operation with their key: from the browser, and through 
   expect(open.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/posts", query: "?board=ideas", headers: { authorization: "Bearer sk_test_123" } });
   await checkpoint(reader, "console-desktop", { fullPage: false });
 
-  // An API that doesn't let browsers call it: through Tuti, which says so.
+  // An API that doesn't let browsers call it. A POST isn't sent again by itself (the API may have run it): the reader
+  // sends it through Tuti, which says so.
   await panel.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
   await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(response.getByText(/It may have run the request/)).toBeVisible();
+  // (This one the browser asked about first, and was refused: it never went.)
+  expect(closed.requests).toHaveLength(0);
+  await response.getByRole("button", { name: "Send through Tuti" }).click();
   await expect(response.getByText("Sent through Tuti, since the API doesn't allow browser requests.")).toBeVisible();
   await expect(response.getByText("201 Created")).toBeVisible();
   expect(closed.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/posts", headers: { authorization: "Bearer sk_test_123", "user-agent": "Tuti-Try-It/1" } });
   // None of the reader's own cookies went on.
   expect(closed.requests.at(-1)!.headers.cookie).toBeUndefined();
+  expect(closed.requests).toHaveLength(1);
   await checkpoint(reader, "console-through-tuti", { fullPage: false });
 
   // Copy as cURL: the request as filled in.
@@ -122,12 +134,22 @@ test("a reader tries an operation with their key: from the browser, and through 
   await archive.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
   const before = closed.requests.length;
   await archive.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(archive.getByText(/It may have run the request/)).toBeVisible();
+  await expect(archive.getByRole("region", { name: "Response" }).getByText(/It may have run the request/)).toBeVisible();
   expect(closed.requests.length).toBe(before + 1);
   await archive.getByRole("button", { name: "Send through Tuti" }).click();
-  await expect(archive.getByText("201 Created")).toBeVisible();
+  await expect(archive.getByRole("region", { name: "Response" }).getByText("201 Created")).toBeVisible();
   expect(closed.requests.length).toBe(before + 2);
   expect(closed.requests.at(-1)).toMatchObject({ path: "/v1/posts/7/archive", query: "?api_key=sk_query_1" });
+
+  // A GET only reads: refused, it goes through Tuti by itself.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/get-a-post");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const get = reader.getByRole("dialog", { name: "Try it" });
+  await get.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
+  await get.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(get.getByRole("region", { name: "Response" }).getByText("Sent through Tuti, since the API doesn't allow browser requests.")).toBeVisible();
+  expect(closed.requests.at(-1)).toMatchObject({ method: "GET", path: "/v1/posts/7", headers: { authorization: "Bearer sk_test_123" } });
 
   // A key in a cookie goes through Tuti from the start: a browser sends no cookie it's given to another site.
   await reader.keyboard.press("Escape");
@@ -136,7 +158,7 @@ test("a reader tries an operation with their key: from the browser, and through 
   const me = reader.getByRole("dialog", { name: "Try it" });
   await me.getByLabel("API key (session cookie)").fill("abc");
   await me.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(me.getByText("Sent through Tuti, since browsers don't send cookies to another site.")).toBeVisible();
+  await expect(me.getByRole("region", { name: "Response" }).getByText("Sent through Tuti, since browsers don't send cookies to another site.")).toBeVisible();
   expect(open.requests.at(-1)).toMatchObject({ path: "/v1/me", headers: { cookie: "session=abc" } });
 
   // On a phone, a sheet from the bottom that fits the width.
