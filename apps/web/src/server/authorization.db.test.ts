@@ -178,6 +178,7 @@ const matrix: Matrix = {
   },
   "ai-models": {
     saveAiModels: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModels(slug, {}, form({ answers: "", changelog: "" })) },
+    saveAiModel: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModel(slug, { levels: { changelog: "balanced" } }) },
   },
   // Owners only, like Autopilot's other settings (plans are off here, so every project has it).
   "code-changes-tuning": {

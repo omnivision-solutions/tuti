@@ -876,7 +876,7 @@ function AiHelpers({
   );
 }
 
-/** The team's writing style for AI drafts: tone notes, and up to 3 published entries as examples. */
+/** Settings → Changelog: the team's instructions for AI drafts (stored as tone notes), and up to 3 published entries as examples. */
 export function ChangelogStyleForm({
   projectSlug,
   tone,
@@ -894,21 +894,20 @@ export function ChangelogStyleForm({
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogStyle(projectSlug, prev, formData);
     if (result.error) {
-      // In a toast too: the dialog may have been closed while it saved.
       toast.error(result.error);
     } else {
-      toast.success("Style saved");
+      toast.success("Changelog saved");
     }
     return result;
   }, {});
 
   return (
     <form {...keepingFields(action)}>
-      {/* Locked while saving: an edit made then wouldn't be in what's saved, and the dialog closes after it. */}
+      {/* Locked while saving: an edit made then wouldn't be in what's saved. */}
       <fieldset disabled={pending} className="contents">
         <FieldGroup>
           <Field data-invalid={state.error ? true : undefined}>
-            <FieldLabel htmlFor="style-tone">Tone</FieldLabel>
+            <FieldLabel htmlFor="style-tone">Instructions</FieldLabel>
             <Textarea
               id="style-tone"
               name="tone"

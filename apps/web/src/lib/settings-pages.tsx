@@ -46,7 +46,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         { title: "AI answers", href: at("ai-answers"), icon: <SparklesIcon aria-hidden /> },
         ...(aiEnabled()
           ? [
-              { title: "Writing style", href: at("writing-style"), icon: <PenLineIcon aria-hidden /> },
+              { title: "Changelog", href: at("changelog"), icon: <PenLineIcon aria-hidden /> },
               // Analysing merged pull requests needs AI too (codeChangesEnabled).
               ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot"), icon: <GitPullRequestArrowIcon aria-hidden /> }] : []),
               { title: "AI models", href: at("ai-models"), icon: <CpuIcon aria-hidden /> },
