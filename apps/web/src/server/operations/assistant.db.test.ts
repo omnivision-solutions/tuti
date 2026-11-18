@@ -84,7 +84,8 @@ test("a tone sent to the API is folded into the instructions saved, and none is 
   expect(await stored()).toEqual({ assistantTone: "", assistantInstructions: "Friendly\n\nCall it Acme." });
   // Alone: before the instructions stored.
   expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
-  // The same tone sent again doesn't stack.
+  // The same tone sent again doesn't stack, whichever line breaks it's sent with.
+  expect(await update({ tone: "Brief\r\n\r\nFriendly" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
   expect(await update({ tone: "Brief" })).toMatchObject({ tone: "", instructions: "Brief\n\nFriendly\n\nCall it Acme." });
   // Alone, where the previous release left a tone: it takes that tone's place, as it did then.
   await storeTone("Cheerful", "Call it Acme.");
@@ -164,7 +165,10 @@ test("a tone sent alone while instructions are being saved goes before the new o
     // Another save holds the project's row; the tone's update starts meanwhile and has to wait to read.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR UPDATE`;
     pending = update({ tone: "Brief" });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Until it waits on the row: on its locking read, before it has read anything.
+    await expect
+      .poll(async () => (await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`)[0]?.waiting, { timeout: 10_000 })
+      .toBe(1);
     await tx.project.update({ where: { id: project.id }, data: { assistantInstructions: "New." } });
   });
   expect(await pending).toMatchObject({ instructions: "Brief\n\nNew." });

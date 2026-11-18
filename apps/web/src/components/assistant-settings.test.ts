@@ -40,6 +40,14 @@ test("saved topics are chips, each a field of the form; Add and Enter add one, t
   expect(box.value).toBe("");
   // Enter adds too, and doesn't submit the form.
   await type("pricing");
+  // Not the Enter that confirms an input method's candidate: composing, or Safari's after it (key code 229).
+  for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+    const confirming = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...init });
+    await act(async () => void box.dispatchEvent(confirming));
+    expect(confirming.defaultPrevented).toBe(false);
+    expect(chips()).toEqual(["refund", "legal advice"]);
+    expect(box.value).toBe("pricing");
+  }
   const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
   await act(async () => void box.dispatchEvent(enter));
   expect(enter.defaultPrevented).toBe(true);

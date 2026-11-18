@@ -1,4 +1,4 @@
-import { type AnswerLength, prisma } from "@tuti/db";
+import { type AnswerLength, type Prisma, prisma } from "@tuti/db";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -134,21 +134,15 @@ export const updateAssistantSettings = defineOperation({
   run: async ({ projectId }, input) => {
     // Instructions sent are the whole of them (a read gives the stored tone folded in, so written back it adds nothing).
     // A tone sent alone takes the stored tone's place, before the stored instructions.
-    // The project's row is locked first, so instructions saved meanwhile aren't overwritten with the ones read here.
-    await prisma.$transaction(async (tx) => {
-      let instructions = input.instructions;
-      if (input.tone !== undefined) {
-        if (instructions === undefined) {
-          const [row] = await tx.$queryRaw<{ instructions: string }[]>`
-            SELECT "assistantInstructions" AS instructions FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
-          instructions = row?.instructions ?? "";
-        }
-        instructions = foldTone(input.tone, instructions);
-        if (instructions.length > MAX_ASSISTANT_INSTRUCTIONS) {
-          throw new OperationError(400, "invalid_input", `Keep the instructions under ${MAX_ASSISTANT_INSTRUCTIONS.toLocaleString("en")} characters, the tone included`);
-        }
+    // Line breaks as LF, so a tone sent with CRLF is still found at the start of instructions a form saved.
+    const lf = (text: string | undefined) => text?.replace(/\r\n/g, "\n");
+    const tone = lf(input.tone);
+    const save = async (db: Prisma.TransactionClient, sent: string | undefined) => {
+      const instructions = tone === undefined ? sent : foldTone(tone, sent ?? "");
+      if (instructions !== undefined && instructions.length > MAX_ASSISTANT_INSTRUCTIONS) {
+        throw new OperationError(400, "invalid_input", `Keep the instructions under ${MAX_ASSISTANT_INSTRUCTIONS.toLocaleString("en")} characters, the tone included`);
       }
-      await tx.project.update({
+      await db.project.update({
         where: { id: projectId },
         data: {
           ...(input.length !== undefined && { assistantLength: input.length.toUpperCase() as AnswerLength }),
@@ -157,7 +151,17 @@ export const updateAssistantSettings = defineOperation({
           ...(input.offLimits !== undefined && { assistantOffLimits: [...new Set(input.offLimits)] }),
         },
       });
-    });
+    };
+    if (tone !== undefined && input.instructions === undefined) {
+      // The project's row is locked for the read, so instructions saved meanwhile aren't overwritten with the ones read here.
+      await prisma.$transaction(async (tx) => {
+        const [row] = await tx.$queryRaw<{ instructions: string }[]>`
+          SELECT "assistantInstructions" AS instructions FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
+        await save(tx, row?.instructions);
+      });
+    } else {
+      await save(prisma, lf(input.instructions));
+    }
     return assistantSettings(projectId);
   },
 });

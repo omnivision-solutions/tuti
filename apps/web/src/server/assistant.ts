@@ -16,7 +16,7 @@ export async function saveAssistantSettings(projectSlug: string, _state: FormSta
     instructions: text("instructions").replace(/\r\n/g, "\n"),
     offLimits: formData
       .getAll("offLimits")
-      .map((topic) => (typeof topic === "string" ? topic.trim() : ""))
+      .map((topic) => (typeof topic === "string" ? topic.replace(/\r\n/g, "\n").trim() : ""))
       .filter(Boolean),
   };
   return asAdmin(projectSlug, "Only project owners and admins can change AI answers", (context) =>

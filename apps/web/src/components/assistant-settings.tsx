@@ -121,8 +121,9 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            // Enter adds the topic; it doesn't save the form. Not the Enter that confirms an input method's candidate.
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            // Enter adds the topic; it doesn't save the form. Not the Enter that confirms an input method's candidate (Safari sends that one
+            // after the composition ends, with key code 229).
+            if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
               event.preventDefault();
               add();
             }
