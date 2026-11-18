@@ -574,6 +574,24 @@ test("a default over 10,000 characters isn't shown, with a warning, and the rest
   ]);
 }, 30_000);
 
+test("a default too long to show is read once, however many operations take it", () => {
+  const sdl = `type Query { ${many(300, (n) => `r${n}(f: F): Int`)} } input F { ids: [Int] = [${many(5_000, (n) => String(n))}] }`;
+  // Reading a list default maps over its items: counted here for lists as long as this one.
+  const map = Array.prototype.map;
+  let times = 0;
+  const mapped = vi.spyOn(Array.prototype, "map").mockImplementation(function (this: unknown[], ...args: Parameters<typeof map>) {
+    if (this.length === 5_000) times++;
+    return map.apply(this, args);
+  });
+  const result = readGraphql(sdl);
+  mapped.mockRestore();
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.warnings.filter((warning) => warning.code === "DEFAULT_LEFT_OUT").map((warning) => warning.where)).toEqual(["F › ids"]);
+  // Once for each attempt at most, not once for each of the 300 operations.
+  expect(times).toBeGreaterThan(0);
+  expect(times).toBeLessThanOrEqual(3);
+}, 30_000);
+
 test("many names of one slug each get the next number, without trying the ones before it again", () => {
   const sdl = `type Query { ${many(250, (n) => `a${"_".repeat(n + 1)}: Int`)} }`;
   const looked = vi.spyOn(Set.prototype, "has");

@@ -276,18 +276,16 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
     return slug;
   };
 
-  /** Each default's length as JSON, measured once however many times it's copied. */
-  const defaultLengths = new Map<object, number>();
+  /** The defaults too long to copy: found once, so one many operations take isn't read again for each. */
+  const leftOut = new Set<object>();
   /** An argument's or input field's default, counted as it's copied; one too long to copy is left out, with a warning. */
   const defaultOf = (input: GraphQLArgument | GraphQLInputField, where: string) => {
-    if (!input.default) return undefined;
+    if (!input.default || leftOut.has(input)) return undefined;
+    // Made anew for each copy (the doc is the caller's to change): at most `MAX_TEXT` of it, and counted.
     const value = "value" in input.default ? input.default.value : valueFromASTUntyped(input.default.literal);
-    let length = defaultLengths.get(input);
-    if (length === undefined) {
-      length = JSON.stringify(value)?.length ?? 0;
-      defaultLengths.set(input, length);
-    }
+    const length = JSON.stringify(value)?.length ?? 0;
     if (length > MAX_TEXT) {
+      leftOut.add(input);
       warnOnce("DEFAULT_LEFT_OUT", `A default over ${MAX_TEXT.toLocaleString("en-US")} characters isn't shown.`, where);
       return undefined;
     }
