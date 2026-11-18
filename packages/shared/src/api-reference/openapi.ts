@@ -606,8 +606,9 @@ function read(root: Obj, most: number): ApiDoc {
     const words = folded.length === 0 ? [] : [node, ...parts].filter((part): part is Obj => isObj(part) && typeof part.$ref !== "string" && (part === node ? saysOf(part).beside : saysOf(part).words));
     const alone = folded.length === 1 && words.length === parts.length ? folded[0]?.pointer : undefined;
     const again = place.folding.includes(node);
-    const inside = (folded.find(({ value }) => isObj(value) && place.stack.includes(value)) ?? (again ? folded[0] : undefined))?.pointer;
-    // Met again with no reference of its own to be named by (its references are parts of its parts): it stops here all the same.
+    const inside = folded.find(({ value }) => isObj(value) && place.stack.includes(value))?.pointer;
+    // Met again under itself without being a type it's inside (it holds itself through a part of a
+    // part): it stops here all the same, named after nothing, since no reference of its own is what it is.
     if (again && inside === undefined) {
       warn("ADDS_TO_ITSELF", place.where);
       return { type: "object" };

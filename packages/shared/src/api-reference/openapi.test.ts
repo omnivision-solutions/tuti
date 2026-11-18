@@ -913,6 +913,20 @@ test("a schema that holds itself through a part of a part still ends", () => {
     ],
   });
   expect(codes(doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Self › again › again"]);
+
+  // With a reference to another type beside the part that loops, it isn't named after that type.
+  const beside = schemaOf(ref("Self"), {
+    Other: { type: "object", properties: { other: { type: "string" } } },
+    Self: { type: "object", properties: { id: { type: "string" }, again: { allOf: [ref("Other"), { allOf: [ref("Self")] }] } } },
+  });
+  const again = beside.schema.properties![1]!;
+  expect(again.properties!.map((property) => [property.name, property.type])).toEqual([
+    ["other", "string"],
+    ["id", "string"],
+    ["again", "object"],
+  ]);
+  expect(again.properties![2]).toEqual({ name: "again", required: false, type: "object" });
+  expect(codes(beside.doc)).toEqual(["ADDS_TO_ITSELF @ schemas › Self › again › again"]);
 });
 
 test("types that share an allOf base are spelled out inside each other", () => {
