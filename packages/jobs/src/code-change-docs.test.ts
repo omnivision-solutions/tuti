@@ -164,5 +164,7 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
   // A correction is made where the old text stands: the section for the end isn't its way out any more.
   expect(ADD_RULE).toContain('Never use "add" to correct a sentence you can change where it stands.');
   expect(ADD_RULE).not.toContain("the statement that's wrong is in a section that isn't editable;");
+  // Something missing whose place is a section that only takes passages still has a way in.
+  expect(ADD_RULE).toContain("there's no editable section to add it to");
   expect(NEW_SYSTEM).not.toContain('"add"');
 });
