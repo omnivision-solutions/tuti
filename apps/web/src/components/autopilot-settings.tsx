@@ -2,7 +2,7 @@
 
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useActionState, useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
@@ -42,9 +42,20 @@ const SWITCHES = [
 export function AutopilotChecksSwitch({ projectSlug, on }: { projectSlug: string; on: boolean }) {
   const [, startTransition] = useTransition();
   const [checked, setChecked] = useOptimistic(on);
+  const ref = useRef<HTMLInputElement>(null);
+  const was = useRef(on);
+  // "off" typed in Custom's Checks box switches Checks off from there, and the box goes (its row says Off), taking
+  // keyboard focus with it: focus comes here, to what switches Checks on again.
+  useEffect(() => {
+    if (was.current && !on && document.activeElement === document.body) {
+      ref.current?.focus();
+    }
+    was.current = on;
+  }, [on]);
   return (
     <SettingRow label="Checks" htmlFor="autopilot-checks" inline>
       <Switch
+        ref={ref}
         id="autopilot-checks"
         checked={checked}
         // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
