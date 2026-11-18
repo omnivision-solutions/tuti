@@ -50,7 +50,20 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   const deletePost = team.getByRole("switch", { name: "Delete a post (DELETE /posts/{id}): on the help center" });
   await expect(deletePost).toBeDisabled();
   await expect(deletePost).toBeChecked();
-  await checkpoint(team, "endpoints");
+  // The header's actions fit beside the docs' tree at desktop widths, and on a phone below.
+  const more = team.getByRole("button", { name: "More actions" });
+  const fits = async (width: number) => {
+    const box = (await more.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  };
+  await fits(1280);
+  await checkpoint(team, "endpoints", { fullPage: false });
+  await team.setViewportSize({ width: 1024, height: 900 });
+  await fits(1024);
+  await expect(team.getByRole("button", { name: "Upload new version" })).toBeVisible();
+  await checkpoint(team, "endpoints-1024", { fullPage: false });
+  await team.setViewportSize({ width: 1280, height: 900 });
 
   // Kept. (Each switch saved before the next: the reload waits for nothing.)
   await expect.poll(async () => (await saved()).counts.onHelpCenter).toBe(1);
@@ -72,7 +85,7 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await expect(team.getByRole("link", { name: "Review it below." })).toHaveAttribute("href", "#endpoint-list-comments");
   await expect(team.getByText("1 of 4 on the help center")).toBeVisible();
   await expect(team.getByRole("switch", { name: "List comments (GET /comments): on the help center" })).not.toBeChecked();
-  await checkpoint(team, "new-version");
+  await checkpoint(team, "new-version", { fullPage: false });
 
   // Seen: on the next visit nothing is New.
   await expect.poll(async () => (await saved()).counts.new).toBe(0);
@@ -87,8 +100,8 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   const [path, title, toggle] = await Promise.all([row.getByText("/posts", { exact: true }).boundingBox(), row.getByText("List posts", { exact: true }).boundingBox(), row.getByRole("switch").boundingBox()]);
   expect(title!.y).toBeGreaterThanOrEqual(path!.y + path!.height - 1);
   expect(toggle!.x).toBeGreaterThan(title!.x + title!.width - 1);
-  expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await checkpoint(team, "phone");
+  await fits(390);
+  await checkpoint(team, "phone", { fullPage: false });
   await team.setViewportSize({ width: 1280, height: 900 });
 
   // Unpublishing under More: a draft, with no page on the help center to open.

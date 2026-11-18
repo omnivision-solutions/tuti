@@ -248,7 +248,7 @@ export function ApiReferenceEndpoints({
                 <li key={operation.key} id={`endpoint-${operation.slug}`} className="flex items-center gap-3 border-b py-2.5 last:border-b-0">
                   {/* A narrow pane: the method and path on one line, the title under them, the switch at the right. */}
                   <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                    <span className="flex min-w-0 items-baseline gap-2 @max-[44rem]/docs-page:basis-full">
+                    <span className="flex min-w-0 items-baseline gap-2 @max-[36rem]/docs-page:basis-full">
                       <span className={cn("min-w-13 shrink-0 font-mono text-xs font-semibold", METHOD_COLOURS[operation.kind] ?? "text-muted-foreground")}>{operation.kind}</span>
                       <code className="min-w-0 font-mono text-[13px] break-all">{operation.path}</code>
                     </span>
