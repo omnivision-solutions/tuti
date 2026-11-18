@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import {
@@ -91,10 +93,13 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       url: true,
       title: true,
       state: true,
+      rewriteDocsOnly: true,
+      claim: true,
       project: { select: { slug: true, analyseCodeChanges: true, plan: true, codeChangesTuning: true, aiModels: true, aiLevels: true } },
     },
   });
-  if (!change) {
+  // A queued job whose claim a later one replaced (a person's "Analyse again" while it waited, say): that one's job runs it.
+  if (!change || (input.claim && change.claim !== input.claim)) {
     return { skipped: true };
   }
   // Analysed once: a redelivery or a second run finds it done.
@@ -115,7 +120,13 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       const updates = await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } });
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
-        data: { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
+        // One being written again (its edits taken out): marked as before, for the rewrite's next run once Autopilot is on
+        // again, not the sweep's (no retry). Also one a person's "Analyse again" cleared the marker of: its edit taken out
+        // isn't written again yet, and the rewrite's next run wouldn't find it otherwise.
+        data:
+          change.rewriteDocsOnly || (await rewriteLeft(change.id))
+            ? { state: "FAILED", reason: REWRITING, retryAt: null, rewriteDocsOnly: true }
+          : { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
       await prisma.codeChange.deleteMany({ where: { ...waiting, actions: { none: {} } } });
@@ -162,14 +173,22 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, state: { in: [...claimable] } },
       // A person asked ("Resume all"): its retries start again.
-      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, retries: 0 },
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, retries: 0, claim: null },
     });
     if (count === 0) {
       return { skipped: true };
     }
   } else {
-    // Any analysis that starts is the one a retry waited for: none is left waiting.
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null } });
+    // Any analysis that starts is the one a retry waited for: none is left waiting. One queued under a claim, only while
+    // it's still the change's (its Hatchet retries keep it); any other takes the change over, and a job queued under an
+    // earlier claim then does nothing.
+    const { count } = await prisma.codeChange.updateMany({
+      where: { id: change.id, ...(input.claim && { claim: input.claim }) },
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, ...(!input.claim && { claim: null }) },
+    });
+    if (count === 0) {
+      return { skipped: true };
+    }
   }
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
   // its level gives Autopilot's roles (roleModel; Decides and Checks here, Writes is `ai`): every step below
@@ -185,7 +204,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
 
 /** codeChange's analysis, once every check passed, inside the project's settings. */
 async function analysePullRequest(
-  change: { id: string; projectId: string; repo: string; number: number; url: string; project: { slug: string } },
+  change: { id: string; projectId: string; repo: string; number: number; url: string; rewriteDocsOnly: boolean; project: { slug: string } },
   repository: { fullName: string; connection: { installationId: number } },
   ai: Ai,
   input: JobInput<"codeChange">,
@@ -219,7 +238,7 @@ async function analysePullRequest(
       pr,
       input.pastGate,
       ai,
-      { signal: deadline, repository: code, ranWith },
+      { signal: deadline, repository: code, ranWith, docsOnly: change.rewriteDocsOnly },
     );
     log.info(`Code change ${change.id}: ${outcome.state === "READY" ? `${outcome.actions} proposed` : "nothing to do"}`);
     return { files: pr.files.length, read, ...outcome };
@@ -227,7 +246,8 @@ async function analysePullRequest(
     // Retried (Hatchet): still analysing while tries are left, saying where it stopped; failed after the last (inline at once).
     let reason = deadline.aborted ? `The analysis took over ${limits.timeoutMinutes} minutes.` : failure;
     // Failed because the provider didn't answer: tried again by itself later, a few times (the analysis's own time
-    // limit isn't: a slow analysis would only take as long again, and be paid for again).
+    // limit isn't: a slow analysis would only take as long again, and be paid for again). The rewrite of waiting edits
+    // too: its marker (`rewriteDocsOnly`) keeps the retry to the help center's part.
     const unanswered = lastTry && failure === NO_ANSWER && !deadline.aborted && providerDidNotAnswer(error);
     const retryAt = unanswered ? await nextRetry(change.id) : null;
     if (unanswered && !retryAt) {
@@ -274,6 +294,7 @@ const CREDITS_WAIT_MINUTES = 60;
  * every 10 minutes; jobs inline, the web server does (instrumentation.ts).
  */
 export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
+  await releaseStoppedRewrites(now);
   // The oldest due first; each one looked at leaves the due ones (queued, dropped or put off), so the next sweep gets the next.
   const due = await prisma.codeChange.findMany({
     where: { state: "FAILED", retryAt: { lte: now } },
@@ -299,13 +320,14 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
       waiting += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: new Date(now.getTime() + CREDITS_WAIT_MINUTES * 60_000) } })).count;
       continue;
     }
-    const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 } } });
+    const claim = randomUUID();
+    const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 }, claim } });
     if (count === 0) {
       continue;
     }
     queued++;
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.retryPastGate, resume: false });
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.retryPastGate, resume: false, claim });
     } catch (error) {
       // Inline, the analysis itself failed (the code change says where, and when it's tried next). On Hatchet, queueing
       // did: put back as it was, and the rest left for the next sweep (they'd fail the same way).
@@ -339,6 +361,58 @@ type Proposal = {
   brief?: { found: string; facts: string[] } | { title: string; reason: string; place?: ArticlePlace };
 };
 
+/**
+ * Why a waiting edit the rewrite of waiting edits took out was dismissed (rewriteWaitingEdits, by nobody): its pull
+ * request is analysed again, and that analysis writes the article's edit again rather than counting it as decided.
+ */
+export const REWRITTEN = "Written again with the check";
+/**
+ * What a pull request whose waiting edits are written again says until its analysis starts (its page shows it beside
+ * "Autopilot tries again"). What keeps that analysis to the help center's part (`docsOnly`) is its marker,
+ * `rewriteDocsOnly`, kept through every outcome (paused, failed, retried) until one finishes.
+ */
+export const REWRITING = "Its edits are being written again with the check.";
+
+/**
+ * How long a pull request being written again may say analysing before its run counts as stopped: rewriteWaitingEdits
+ * analyses in its own process, so a run stopped mid-analysis (Ctrl-C, a crash) leaves it analysing with nothing to
+ * finish it. Well over an analysis's longest time limit (an hour, `timeoutMinutes`) plus Hatchet's retries' waits
+ * (about a quarter of an hour); each try marks it analysing afresh.
+ */
+export const REWRITE_STALE_MS = 2 * 3_600_000;
+/** How long a rewrite a queued job holds may wait before it's taken for lost: a day, far past any queue's wait. */
+export const QUEUED_REWRITE_STALE_MS = 24 * 3_600_000;
+
+/**
+ * Rewrites whose run stopped mid-analysis: failed, due now, for the retries' sweep or the next run to finish (docs-only).
+ * Not one queued under a claim (the sweep's, a person's): it may only be waiting its turn in Hatchet's queue, which
+ * doesn't mark it, for hours (analyses run a few at a time server-wide); its job, and Hatchet's retries, finish it.
+ */
+export async function releaseStoppedRewrites(now: Date) {
+  await prisma.codeChange.updateMany({
+    where: { rewriteDocsOnly: true, state: "ANALYSING", claim: null, updatedAt: { lt: new Date(now.getTime() - REWRITE_STALE_MS) } },
+    data: { state: "FAILED", reason: REWRITING, retryAt: now },
+  });
+  // A queued job's that never ran, or died without failing (its run cancelled or lost): released a day on, far past any
+  // queue's wait, its claim cleared so that job, if it starts after all, does nothing.
+  await prisma.codeChange.updateMany({
+    where: { rewriteDocsOnly: true, state: "ANALYSING", claim: { not: null }, updatedAt: { lt: new Date(now.getTime() - QUEUED_REWRITE_STALE_MS) } },
+    data: { state: "FAILED", reason: REWRITING, retryAt: now, claim: null },
+  });
+}
+const rewrittenEdit = { status: "DISMISSED", dismissReason: REWRITTEN, decidedById: null } satisfies Prisma.CodeChangeActionWhereInput;
+
+/** Whether the pull request has an edit the rewrite of waiting edits took out that no analysis has written again yet. */
+async function rewriteLeft(codeChangeId: string): Promise<boolean> {
+  const out = await prisma.codeChangeAction.findMany({ where: { codeChangeId, kind: "ARTICLE_EDIT", ...rewrittenEdit }, select: { articleId: true } });
+  for (const { articleId } of out) {
+    if ((await prisma.codeChangeAction.count({ where: { codeChangeId, kind: "ARTICLE_EDIT", articleId, NOT: rewrittenEdit } })) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Another edit changed one of the same sections of these articles while theirs were written: they're written again on top of it. */
 class EditConflict extends Error {
   constructor(readonly articleIds: string[]) {
@@ -360,11 +434,18 @@ async function analyse(
   pr: PullRequestRead,
   pastGate: boolean,
   use: Ai,
-  { signal, repository, ranWith }: { signal: AbortSignal; repository: Repository | { unavailable: string }; ranWith: Versions["settings"] },
+  {
+    signal,
+    repository,
+    ranWith,
+    docsOnly = false,
+  }: { signal: AbortSignal; repository: Repository | { unavailable: string }; ranWith: Versions["settings"]; docsOnly?: boolean },
 ) {
   // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
   const versions: Versions = { decider: decisionModel(), model: use.model, settings: ranWith };
-  const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr, DECISION_DIFF_CHARS), GATE, { meter: use.meter }));
+  // The rewrite of waiting edits (`docsOnly`, rewriteWaitingEdits) is past the gate (its pull request was analysed) and
+  // decides no posts: their updates stay as they are, and posts opened since aren't looked at.
+  const gate = pastGate || docsOnly ? null : gateResult(await decide(pullRequestState(pr, DECISION_DIFF_CHARS), GATE, { meter: use.meter }));
   // Users see it: the changelog hears about it, and its posts are decided.
   const seen = !gate || gate.users >= thresholds().gate;
   const tools: ToolContext = { projectId: change.projectId, repository };
@@ -387,7 +468,7 @@ async function analyse(
     }
     const summary = docs.summary || (await writeSummary(pr, use));
     let posts: PostCandidate[] = [];
-    if (seen) {
+    if (seen && !docsOnly) {
       const [embedding] = await embed([summary]);
       const portals = [...new Set([portalOrigin(change.slug), await portalAddress(change.slug)])];
       const named = namedPosts([pr.title, pr.body, ...pr.commits].join("\n"), portals);
@@ -412,7 +493,8 @@ async function analyse(
     const review: Review | null = checksOn(change.slug) ? { projectId: change.projectId, context: tools, signal } : null;
     const [{ why, line }, written] = await Promise.all([
       // Why, the posts' reasons and the changelog line: only for what users see (the gate).
-      seen ? writeProposals(pr, summary, proposals, posts, use) : { why: "", line: "" },
+      // Not for the rewrite of waiting edits: its why and changelog line stay as they were.
+      seen && !docsOnly ? writeProposals(pr, summary, proposals, posts, use) : { why: "", line: "" },
       Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, ask, review))),
     ]);
     let kept = proposals.filter((_, i) => written[i]);
@@ -426,11 +508,19 @@ async function analyse(
     let saved: Awaited<ReturnType<typeof finish>> | null = null;
     for (let tries = 1; !saved; tries++) {
       try {
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, ...versions }, kept, {
-          projectId: change.projectId,
-          pullRequest: change.pullRequest,
-          data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
-        });
+        saved = await finish(
+          change.id,
+          // Its marker goes (the rewrite of waiting edits done, or a whole analysis, which is one), and later analyses are
+          // whole ones again.
+          { state: "READY", reason: "", rewriteDocsOnly: false, ...(!docsOnly && { summary, why: told }), ...versions },
+          kept,
+          {
+            projectId: change.projectId,
+            pullRequest: change.pullRequest,
+            data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
+          },
+          docsOnly,
+        );
       } catch (error) {
         if (!(error instanceof EditConflict) || tries >= EDIT_TRIES) {
           throw error;
@@ -442,7 +532,9 @@ async function analyse(
       }
     }
     const { waiting, linked, scheduled, landed } = saved;
-    if (seen) {
+    if (docsOnly) {
+      // The changelog is as the pull request's analysis left it.
+    } else if (seen) {
       // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
       await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
     } else {
@@ -663,9 +755,10 @@ async function postCandidates(projectId: string, vector: string, named: number[]
  */
 async function finish(
   id: string,
-  data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string; settings?: Versions["settings"] },
+  data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary?: string; why?: string; rewriteDocsOnly?: false; decider: string | null; model: string; settings?: Versions["settings"] },
   proposals: Proposal[],
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
+  docsOnly = false,
 ): Promise<{ waiting: number; linked: number; scheduled: number; landed: string[] }> {
   const { waiting, linked, scheduled, deliveries, landed } = await prisma.$transaction(async (tx) => {
     // Articles' edits are saved into their unpublished changes one at a time (as the team's saves are), and posts'
@@ -676,11 +769,19 @@ async function finish(
     // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
     // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again. Not an article's
     // edit saved into its changes: it stays, the team's to approve or dismiss.
-    const replaced = { codeChangeId: id, revisions: { none: {} }, OR: [{ status: { in: ["STALE" as const, "SCHEDULED" as const] } }, { status: "PENDING" as const, decidedById: null }] };
-    // Posts whose update loses this pull request's part: the rest of it is checked again below.
-    const parted = (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
+    // The rewrite of waiting edits (`docsOnly`) replaces only the help center's: posts' updates and links stay.
+    const replaced = {
+      codeChangeId: id,
+      revisions: { none: {} },
+      OR: [{ status: { in: ["STALE" as const, "SCHEDULED" as const] } }, { status: "PENDING" as const, decidedById: null }],
+      ...(docsOnly && { kind: { in: ["ARTICLE_EDIT" as const, "NEW_ARTICLE" as const] } }),
+    };
+    // Posts whose update loses this pull request's part: the rest of it is checked again below. None in the rewrite of
+    // waiting edits: its posts' parts stay.
+    const parted = docsOnly ? [] : (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: { in: POST_UPDATE }, postId: { not: null } }, select: { postId: true } })).map((part) => part.postId!);
     await tx.codeChangeAction.deleteMany({ where: replaced });
-    const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
+    // Not an edit the rewrite of waiting edits took out (rewriteWaitingEdits): it's written again here.
+    const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id, NOT: rewrittenEdit }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
         (action) =>
@@ -714,7 +815,9 @@ async function finish(
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
     // A link not applied by itself isn't kept: it would wait where Autopilot's review never shows it (proposals are
     // only sure ones, but "Link posts by itself" may have been turned off since they were read).
-    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, kind: "LINKS", status: "PENDING" } });
+    if (!docsOnly) {
+      await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, kind: "LINKS", status: "PENDING" } });
+    }
     // What it's sure of goes out by itself (drafts at once, the rest after the hold; the web app applies them when due).
     const scheduled = ready ? await scheduleByItself(ready.projectId, id, tx) : 0;
     // A post whose part this analysis took out: what's left of its update goes out by itself if each part qualifies, at

@@ -68,6 +68,7 @@ const pr = (title: string, files: [string, string][], { body = "", labels = [] a
   commits,
   files: files.map(([path]) => ({ path, status: "modified", additions: 10, deletions: 2 })),
   diff: files.map(([path, patch]) => `--- ${path} (modified, +10 -2)\n${patch}`).join("\n"),
+  diffComplete: true,
 });
 
 export const CASES: EvalCase[] = [

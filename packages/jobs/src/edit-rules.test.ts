@@ -1,8 +1,10 @@
+import type { Doc } from "@tuti/content";
+import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
-import { APPENDED_FAILS, appendedAtEnd, changelogWords, headingOverLittle, leftContradictions, ruleChecks, sizeOf } from "./edit-rules";
-import { CHECK_UNCLEAR, checkFailed, checksOn, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
+import { APPENDED_FAILS, appendedAtEnd, changelogWords, editScope, headingOverLittle, leftContradictions, renamed, ruleChecks, sizeOf, SMALL_WORDS } from "./edit-rules";
+import { CHECK_UNCLEAR, checkedEdit, checkFailed, checksOn, readReview, REVIEW_SYSTEM, SCREENS_RULE } from "./edit-review";
 import { CHECK_SYSTEM } from "./verify";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -189,4 +191,130 @@ test("Verify and the Checks review read screens and routes, not code comments; t
   // Pass means accept, and the rule checks are weighed, not copied.
   expect(REVIEW_SYSTEM).toContain('"verdict": "accept" | "touch_up" | "rewrite" | "dismiss"');
   expect(REVIEW_SYSTEM).toContain("each may or may not be a real problem");
+});
+
+// What may go out by itself (E6): a rename or moved page the code change shows, or a small correction in place.
+const DIFF = '--- a/src/nav.tsx\n+++ b/src/nav.tsx\n-  <Link href="/settings/appearance">Customize</Link>\n+  <Link href="/settings/look">Look and feel</Link>';
+const NAV = "## Themes\n\nOpen **Customize** and pick a theme.\n\n## Fonts\n\nFonts are in **Customize** too, at `/settings/appearance`.";
+
+test("a rename: the old label in the diff's removed lines and the new one in its added lines, nothing else changed", () => {
+  const after = NAV.replaceAll("**Customize**", "**Look and feel**");
+  expect(renamed(NAV, after, DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
+  expect(editScope(NAV, after, DIFF)).toBe("rename");
+  // A moved page: its path in `code`, as the diff has it.
+  expect(renamed(NAV, NAV.replace("`/settings/appearance`", "`/settings/look`"), DIFF)).toEqual({ from: ["/settings/appearance"], to: ["/settings/look"] });
+  // Case and markup as the code has them: "customize" in quotes, a label in bold.
+  const lower = '-  label: "customize",\n+  label: "look and feel",';
+  expect(renamed(NAV, after, lower)).not.toBeNull();
+  // A heading renamed with it is still a rename.
+  const titled = "## Customize\n\nOpen **Customize** to pick a theme.";
+  expect(renamed(titled, "## Look and feel\n\nOpen **Look and feel** to pick a theme.", DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
+});
+
+test("not a rename: one side missing from the diff, a label in a longer word, only one side in the edit, or other words changed too", () => {
+  const after = NAV.replaceAll("**Customize**", "**Look and feel**");
+  // The new label isn't in the added lines, or the old one isn't in the removed lines.
+  expect(renamed(NAV, after, '-  <Link>Customize</Link>\n+  <Link>Settings</Link>')).toBeNull();
+  expect(renamed(NAV, after, '-  <Link>Settings</Link>\n+  <Link>Look and feel</Link>')).toBeNull();
+  // "Customize" only inside "Customized", in the context lines, or in a file's name: not removed.
+  expect(renamed(NAV, after, '-  <p>Customized</p>\n+  <Link>Look and feel</Link>')).toBeNull();
+  expect(renamed(NAV, after, '--- a/Customize.tsx\n+++ b/Customize.tsx\n   <Link>Customize</Link>\n+  <Link>Look and feel</Link>')).toBeNull();
+  // A label taken out with none put in.
+  expect(renamed(NAV, NAV.replace("Open **Customize** and pick a theme.", "Pick a theme."), DIFF)).toBeNull();
+  // More than one name for one: two labels swapped, or two old names to two new ones (which became which can't be told).
+  const TWO = "Open **Team** to send invites.\n\n**Members** lists who's in.";
+  const swapDiff = "-  <Tab>Team</Tab>\n-  <Tab>Members</Tab>\n+  <Tab>Members</Tab>\n+  <Tab>Team</Tab>";
+  expect(renamed(TWO, "Open **Members** to send invites.\n\n**Team** lists who's in.", swapDiff)).toBeNull();
+  const twoDiff = "-  <Tab>Team</Tab>\n-  <Tab>Members</Tab>\n+  <Tab>People</Tab>\n+  <Tab>Roster</Tab>";
+  expect(renamed(TWO, "Open **Roster** to send invites.\n\n**People** lists who's in.", twoDiff)).toBeNull();
+  expect(editScope(TWO, "Open **Roster** to send invites.\n\n**People** lists who's in.", twoDiff)).not.toBe("rename");
+  // Renamed, and a sentence changed besides.
+  expect(renamed(NAV, after.replace("and pick a theme", "and pick one of three themes"), DIFF)).toBeNull();
+});
+
+test("not a rename: both labels on lines the diff changed for something else (kept on both sides)", () => {
+  const before = "Open **Team** to send invites.";
+  const after = "Open **Members** to send invites.";
+  const icons = '-  <Tab>Team</Tab>\n-  <Tab>Members</Tab>\n+  <Tab icon="users">Team</Tab>\n+  <Tab icon="list">Members</Tab>';
+  expect(renamed(before, after, icons)).toBeNull();
+  expect(editScope(before, after, icons)).not.toBe("rename");
+  // Either name on its other side, whatever its case, isn't one either.
+  expect(renamed(before, after, "-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>\n+  <p>team</p>")).toBeNull();
+  expect(renamed(before, after, "-  <Tab>Team</Tab>\n-  <p>members</p>\n+  <Tab>Members</Tab>")).toBeNull();
+  // A longer word holding a name on the other side doesn't count.
+  expect(renamed(before, after, "-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>\n+  <p>Teams</p>")).toEqual({ from: ["Team"], to: ["Members"] });
+});
+
+test("a small correction: in place, no heading touched, nothing appended, at most a couple of sentences either way", () => {
+  const ARTICLE = "## Invites\n\nInvite links work for 3 days.\n\nSend a new one from **Team**.\n\n## Roles\n\nAdmins can invite people.";
+  expect(editScope(ARTICLE, ARTICLE.replace("work for 3 days", "work for 7 days"), "")).toBe("correction");
+  // Only adding text (a missing fact) isn't a correction in place.
+  expect(editScope(ARTICLE, ARTICLE.replace("Admins can invite people.", "Admins can invite people. Members can't."), "")).toBe("larger");
+  // A heading added, renamed or taken out.
+  expect(editScope(ARTICLE, ARTICLE.replace("Invite links work for 3 days.", "Invite links work for 7 days.\n\n### Expiry\n\nThey expire."), "")).toBe("larger");
+  expect(editScope(ARTICLE, ARTICLE.replace("## Roles", "## Who can invite").replace("Admins can", "Only admins can"), "")).toBe("larger");
+  // Text appended after the article's last line (a sentence before it corrected too).
+  expect(editScope(ARTICLE, `${ARTICLE.replace("3 days", "7 days")}\n\nOwners can too.`, "")).toBe("larger");
+  // Past the words a small correction writes.
+  const long = Array.from({ length: SMALL_WORDS + 1 }, (_, i) => `word${i}`).join(" ");
+  expect(editScope(ARTICLE, ARTICLE.replace("Invite links work for 3 days.", `${long}.`), "")).toBe("larger");
+  // Nothing taken out, or a rename the diff doesn't show and that rewrote more than a couple of sentences' words.
+  expect(editScope(ARTICLE, ARTICLE, "")).toBe("larger");
+});
+
+test("without all of the change (a file left out or cut short), no edit is a rename: the name's other side may be in what's missing", () => {
+  const before = "## Invite\n\nOpen **Team** to send invites.";
+  const after = "## Invite\n\nOpen **Members** to send invites.";
+  const diff = "--- src/tabs.tsx (modified, +1 -1)\n-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>";
+  expect(editScope(before, after, diff)).toBe("rename");
+  expect(renamed(before, after, null)).toBeNull();
+  expect(editScope(before, after, null)).toBe("correction");
+});
+
+test("a small correction counts what it takes out by occurrence: repeated sentences removed past the limit make it larger", () => {
+  const repeated = Array.from({ length: 6 }, () => "Each invite link expires after three days unless the owner resends it.").join(" ");
+  const before = `## Invite\n\nLinks last 3 days.\n\n${repeated}`;
+  // One sentence corrected, and five of the six copies taken out: more than a small correction takes out.
+  const after = "## Invite\n\nLinks last 7 days.\n\nEach invite link expires after three days unless the owner resends it.";
+  expect(editScope(before, after, "")).toBe("larger");
+  // The correction alone is still small.
+  expect(editScope(before, before.replace("Links last 3 days.", "Links last 7 days."), "")).toBe("correction");
+});
+
+test("an edit that moves or copies text the article had is neither a rename nor a small correction", () => {
+  const STEPS = "## Invite\n\n1. Remove the old member.\n2. Send the invite.\n\nLinks last 3 days.";
+  // Steps swapped with a sentence corrected, or swapped alone.
+  expect(editScope(STEPS, "## Invite\n\n1. Send the invite.\n2. Remove the old member.\n\nLinks last 7 days.", "")).toBe("larger");
+  expect(editScope(STEPS, "## Invite\n\n1. Send the invite.\n2. Remove the old member.\n\nLinks last 3 days.", "")).toBe("larger");
+  // A sentence the article already had, copied in with a correction.
+  expect(editScope(STEPS, STEPS.replace("Links last 3 days.", "Links last 7 days. Send the invite."), "")).toBe("larger");
+  // A label renamed, and a paragraph moved.
+  const moved = "## Fonts\n\nFonts are in **Look and feel** too, at `/settings/appearance`.\n\n## Themes\n\nOpen **Look and feel** and pick a theme.";
+  expect(renamed(NAV, moved, DIFF)).toBeNull();
+  expect(editScope(NAV, moved, DIFF)).toBe("larger");
+  // Two paragraphs that both carry the label, swapped while it's renamed; renamed in one place but left in another.
+  const BOTH = "Open **Customize** and pick a theme.\n\nFonts are in **Customize** too.";
+  expect(renamed(BOTH, "Fonts are in **Look and feel** too.\n\nOpen **Look and feel** and pick a theme.", DIFF)).toBeNull();
+  expect(renamed(BOTH, "Open **Look and feel** and pick a theme.\n\nFonts are in **Customize** too.", DIFF)).toBeNull();
+  // The same rename, one for one where they stand, is still one.
+  expect(renamed(BOTH, "Open **Look and feel** and pick a theme.\n\nFonts are in **Look and feel** too.", DIFF)).toEqual({ from: ["Customize"], to: ["Look and feel"] });
+});
+
+test("the check stores an edit's scope from the pull request's diff only when that diff is all of the change: a cut one makes no rename", async () => {
+  // Checks off: nothing is reviewed or asked, and the scope is stored all the same.
+  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+  resetCodeChangesSettings();
+  const paragraph = (label: string): Doc => ({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "Open " }, { type: "text", text: label, marks: [{ type: "bold" }] }, { type: "text", text: " to send invites." }] }],
+  });
+  const written = { writtenOn: paragraph("Team"), doc: paragraph("Members"), reason: "The tab is Members now.", payload: { problem: "wrong" as const, title: "Invite", body: "", before: "", overview: "", overviewOf: [] }, reply: "" };
+  const pr = { title: "Members", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files: [], diff: "--- src/tabs.tsx (modified, +1 -1)\n-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>" };
+  const review = { projectId: "p1", context: {} as never };
+  const scope = async (diffComplete?: boolean) => ((await checkedEdit(async () => written, { ...pr, diffComplete }, review))!.payload as unknown as { check: { scope: string } }).check.scope;
+  expect(await scope(true)).toBe("rename");
+  expect(await scope(false)).not.toBe("rename");
+  // A read from before the flag (unset) isn't known to be all of it.
+  expect(await scope(undefined)).not.toBe("rename");
+  resetCodeChangesSettings();
 });

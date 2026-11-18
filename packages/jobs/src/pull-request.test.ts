@@ -157,6 +157,8 @@ test("reads the pull request, its commits and its files; the diff without what's
       "--- src/old.ts (removed, +0 -3)",
       "-gone",
     ].join("\n"),
+    // Files left out and one sent as its start: not all of the change.
+    diffComplete: false,
   });
   expect(read.diff).not.toContain("lots: of lines");
 });
@@ -170,6 +172,7 @@ test("a big pull request: the diff stops at the cap, and the files after it are 
   });
   const read = await readPullRequest(await installationApi(42), "acme/app", 8);
   expect(read.files).toHaveLength(150);
+  expect(read.diffComplete).toBe(false);
   // 60,000 characters by default: about a dozen of the 5,000-character files.
   expect(read.diff.length).toBeGreaterThan(55_000);
   expect(read.diff.length).toBeLessThanOrEqual(60_000 + 100);
@@ -213,4 +216,11 @@ test("a quoted secret whose closing quote is past the cap is still masked", asyn
   const read = await readPullRequest(await installationApi(42), "acme/app", 10);
   expect(read.diff).not.toContain("AAAAAAAA");
   expect(read.diff).toContain('password = "[secret]";');
+});
+
+test("a small pull request's diff is all of it; one file's patch cut at its limit isn't", async () => {
+  github.pullRequest("acme/app", { number: 9, title: "Small", files: [{ filename: "src/tabs.tsx", patch: "-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>" }] });
+  expect((await readPullRequest(await installationApi(42), "acme/app", 9)).diffComplete).toBe(true);
+  github.pullRequest("acme/app", { number: 10, title: "Long file", files: [{ filename: "src/tabs.tsx", patch: `-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>\n${"+x\n".repeat(4_000)}+  <Tab>Team</Tab>` }] });
+  expect((await readPullRequest(await installationApi(42), "acme/app", 10)).diffComplete).toBe(false);
 });

@@ -137,7 +137,7 @@ test("the agent is told to list the facts a reader would miss, to give a missing
     systems.push((JSON.parse(String(init.body)) as { messages: { content: string }[] }).messages[0]!.content);
     return Response.json({ choices: [{ message: { content: JSON.stringify({ summary: "", facts: [], edits: [], new_articles: [] }) } }] });
   });
-  const pr = { title: "Members", body: "", labels: [], author: "octo", mergedAt: "2026-11-18T10:00:00Z", mergeCommit: "abc", commits: [], files: [], diff: "" };
+  const pr = { title: "Members", body: "", labels: [], author: "octo", mergedAt: "2026-11-18T10:00:00Z", mergeCommit: "abc", commits: [], files: [], diff: "", diffComplete: true };
   await decideDocs(pr, { projectId: "p1", repository: { unavailable: "test" } }, async () => {}, { fixture: { outline: "", ...HELP_CENTER, run: async () => "" } });
   expect(systems[0]).toContain("Which facts would a reader of the help center miss, or be misled about?");
   expect(systems[0]).toContain("A fact that's missing gets one home: the one article a reader would look in first.");

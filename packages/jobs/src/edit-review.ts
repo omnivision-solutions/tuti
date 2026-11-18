@@ -7,7 +7,7 @@ import { type ArticleEditPayload, replyJson } from "./code-change-docs";
 import { OutOfCredits } from "./credits";
 import { runAgent } from "./docs-agent";
 import type { ToolContext } from "./docs-agent-tools";
-import { ruleChecks } from "./edit-rules";
+import { editScope, ruleChecks } from "./edit-rules";
 import type { PullRequestRead } from "./pull-request";
 
 /**
@@ -33,6 +33,10 @@ export const CHECK_UNCLEAR = "The check didn't answer clearly";
 export const CHECK_NO_CREDITS = "It wasn't checked: AI credits ran out when it was written";
 /** Why an edit the check couldn't look at the code for waits: the analysis couldn't read the repository. */
 export const CHECK_NO_REPOSITORY = "It wasn't checked: the repository couldn't be read";
+/** Why an edit written before the check (or before it measured an edit's size) waits where the check is on (E6). */
+export const CHECK_BEFORE = "It was written before the check, so it asks first";
+/** Why an edit the check passed waits all the same: only a rename, a moved page or a small correction goes out by itself (E6). */
+export const CHECK_LARGER = "It isn't a rename or a small correction in place, so it asks first";
 /** The review's own reason, one short line. */
 export const checkFailed = (reason: string) => {
   const line = reason.replace(/\s+/g, " ").trim();
@@ -46,7 +50,9 @@ type Claim = { claim: string; check: "confirmed" | "contradicted" | "not_found";
 /**
  * What the check said, stored in the edit's payload: `pass` (only a review's accept, with scores that agree), the line
  * the edit waits with (`reason`) and what the writer was told (`reasons`), the rule checks' hints, and the review's
- * claims, scores and verdict when it gave them. `rewritten`: this is the writer's second go.
+ * claims, scores and verdict when it gave them. `rewritten`: this is the writer's second go. `scope`: how big the edit is
+ * (editScope: a rename or moved page, a small correction, or larger), which decides whether one that passed may go out by
+ * itself (E6); none on an edit checked before it was measured.
  */
 export type EditCheck = {
   pass: boolean;
@@ -57,6 +63,7 @@ export type EditCheck = {
   scores?: Record<(typeof SCORES)[number], number>;
   verdict?: (typeof VERDICTS)[number];
   rewritten?: true;
+  scope?: ReturnType<typeof editScope>;
 };
 
 /** How what users see is read in the code, for Verify and the Checks review alike. */
@@ -257,7 +264,10 @@ export async function checkedEdit<W extends Written & { reply: string }>(write: 
     return null;
   }
   const { rewrite, ...checked } = await checkOnce(first, pr, review);
-  const stored = (written: W, check: EditCheck) => ({ ...written, payload: { ...written.payload, check } });
+  const stored = (written: W, check: EditCheck) => ({
+    ...written,
+    payload: { ...written.payload, check: { ...check, scope: editScope(toMarkdown(written.writtenOn), toMarkdown(written.doc), pr.diffComplete === true ? pr.diff : null) } },
+  });
   if (!rewrite) {
     return stored(first, checked);
   }
