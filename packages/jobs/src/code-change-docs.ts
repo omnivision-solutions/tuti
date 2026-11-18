@@ -286,8 +286,10 @@ export function articleNotes(doc: Doc) {
     const content: Doc = { type: "doc", content: [...next.flat(), ...(added?.doc.content ?? [])] };
     // A section is known by its heading's text (keyed): a heading this edit renamed to one the article has already would
     // take that section's place, and taking the edit out later would fail. Headings it left alone may repeat.
+    // Nor to one the article had before the edit, wherever it's gone: two headings swapping titles swap their sections' places too.
     const all = titles(content.content!);
-    if (next.some((section, i) => titles(section).some((title, j) => title !== titles(parts[i]!)[j] && all.indexOf(title) !== all.lastIndexOf(title)))) {
+    const before = titles(parts.flat());
+    if (next.some((section, i) => titles(section).some((title) => !titles(parts[i]!).includes(title) && (before.includes(title) || all.indexOf(title) !== all.lastIndexOf(title))))) {
       return null;
     }
     const checked = parseDoc("article", content);
