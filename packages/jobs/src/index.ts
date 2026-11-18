@@ -55,6 +55,7 @@ export { type ArticlePlace, draftPlace, placeWords } from "./code-change-docs";
 export { analysisOn, codeChange, GAVE_UP, RETRY_AFTER_MINUTES, retryCodeChanges, writeChangelogLine } from "./code-changes";
 export { continueVerifyAll, noAi, RUN_STALE_MS, settleStale, verifyAllRunSelect, verifyAllsSettled, verifyAllStuck, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { verifyAfterEdit } from "./verify-decision";
+export { checksOn } from "./edit-review";
 export { addToRunningDraft, autopilotLines, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";

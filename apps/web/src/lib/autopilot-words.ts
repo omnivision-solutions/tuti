@@ -3,6 +3,21 @@ import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * Whether Settings → Autopilot shows its notice that article edits wait while Checks is off (docs/plan.md, E5): the
+ * server checks the project's edits (`reviewed`), Checks is off, edits would otherwise go out by themselves (the plan has
+ * Autopilot, it reads pull requests, Publish article edits is on), and no owner or admin dismissed it.
+ */
+export const checksNoticeShown = (project: { reviewed: boolean; checks: boolean; planHasIt: boolean; analyses: boolean; publishesEdits: boolean; dismissed: boolean }) =>
+  project.reviewed && !project.checks && project.planHasIt && project.analyses && project.publishesEdits && !project.dismissed;
+
+/**
+ * The Checks notice's words: what waits, and, where the AI model level in use has no model for Checks (so no switch to
+ * turn it on), how to get one.
+ */
+export const checksNoticeText = (switchable: boolean) =>
+  `Article edits written while Checks is off don't go out by themselves: each one waits for your team.${switchable ? "" : " Checks doesn't run on this AI model level: pick a level or a model for it below."}`;
+
 /** What an update is, as the review page names it. */
 export function updateKind(update: { kind: string; problem?: string }): string {
   switch (update.kind) {
