@@ -27,13 +27,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
-  },
   "dependencies": {
     "@hatchet-dev/typescript-sdk": "^1.33.2",
     "aws4fetch": "^1.0.20",
+    "graphql": "^17.1.0",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
-  },
   "devDependencies": {
     "@tuti/testkit": "workspace:*",
     "@tuti/typescript-config": "workspace:*",
