@@ -573,6 +573,24 @@ paths:
     expect(text.match(/"children":"https:\/\/api\.acme\.test"/g)).toHaveLength(1);
     expect(text).not.toContain("api.example.com");
     expect(text).not.toContain("A placeholder");
+    // An operation without one goes to the base, or the placeholder: listed too.
+    await call(createApiReference, as(), {
+      name: "Mixed",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Mixed, version: "1" }
+paths:
+  /uploads: { servers: [{ url: "https://upload.acme.test" }], post: { summary: Upload, responses: { "200": { description: ok } } } }
+  /posts: { get: { summary: Posts, responses: { "200": { description: ok } } } }
+`,
+    });
+    const mixed = await slugText("mixed");
+    expect(mixed).toContain('"children":"https://upload.acme.test"');
+    expect(mixed).toContain('"children":"https://api.example.com"');
+    expect(mixed).toContain("A placeholder");
+    await call(updateApiReference, as(), { slug: "mixed", baseUrl: "https://api.acme.test" });
+    expect(await slugText("mixed")).toContain('"children":"https://api.acme.test"');
   });
 
   test("a group with every operation hidden has no card, and signing no shown operation uses isn't listed", async () => {
