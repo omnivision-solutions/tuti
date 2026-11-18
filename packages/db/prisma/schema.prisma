@@ -432,6 +432,7 @@ model Project {
   collections             Collection[]
   docsTabs                DocsTab[]
   apiReferences           ApiReference[]
+  apiTries                ApiTry[]
   readerGroups            ReaderGroup[]
   docsRedirects           DocsRedirect[]
   portalReaders           PortalReader[]
@@ -2031,6 +2032,22 @@ enum DocsLanding {
   FIRST
   /// The article or collection the team picked (landingArticleId or landingCollectionId).
   PAGE
+}
+
+/// A request Try it sent through Tuti for a reader (docs/plan.md, API reference in Docs, A12), counted for its rate
+/// limits and nothing else: the project, who (an HMAC of their IP address, as sign-in links' limits keep it) and when.
+/// Nothing of the request or its answer is kept. Rows over an hour old are deleted as new ones come.
+model ApiTry {
+  id         String   @id @default(cuid())
+  projectId  String
+  clientHash String?
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([clientHash, createdAt])
+  @@map("api_try")
 }
 
 /// An API reference in the docs (docs/plan.md, API reference in Docs): a team's spec, read into

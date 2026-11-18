@@ -10,7 +10,7 @@ export type ExampleRequest = {
 const PLACEHOLDER_HOST = "https://api.example.com";
 
 /** Without the slashes at one end: a loop, as a pattern for it is slow on a long run of them. */
-function trimSlashes(text: string, at: "start" | "end"): string {
+export function trimSlashes(text: string, at: "start" | "end"): string {
   let from = 0;
   let to = text.length;
   if (at === "start") while (from < to && text[from] === "/") from++;
@@ -23,9 +23,9 @@ function trimSlashes(text: string, at: "start" | "end"): string {
  * placeholder's, as nothing here knows where the spec is served; "//host/v1" only lacks its scheme.
  */
 /** Whether a spec's server says which host it's on ("https://…", "//host/v1"), not only a path. */
-const hasHost = (server: string) => server.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(server);
+export const hasHost = (server: string) => server.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(server);
 
-function absolute(server: string, base: string): string {
+export function absolute(server: string, base: string): string {
   if (server.startsWith("//")) return `https:${server}`;
   if (hasHost(server)) return server;
   // "./v1" and "." are relative to where the spec is: the base's root here.
