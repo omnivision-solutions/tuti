@@ -39,10 +39,10 @@ test("An API reference's Endpoints: switches for the help center, a new version'
   await expect(team.getByText("3 of 3 on the help center", { exact: true })).toBeVisible();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(team.getByRole("link", { name: "View on help center" })).toHaveAttribute("href", /\/docs\/api-reference$/);
-  // It opens the reference on the help center, which shows its first operation's page.
+  // It opens the reference's page on the help center.
   const [helpCenter] = await Promise.all([team.context().waitForEvent("page"), team.getByRole("link", { name: "View on help center" }).click()]);
-  await expect(helpCenter.getByRole("heading", { name: "List posts", level: 1 })).toBeVisible();
-  await expect(helpCenter).toHaveURL(/\/docs\/api-reference\/list-posts$/);
+  await expect(helpCenter.getByRole("heading", { name: "API reference", level: 1 })).toBeVisible();
+  await expect(helpCenter).toHaveURL(/\/docs\/api-reference$/);
   await helpCenter.close();
   const posts = team.getByRole("region", { name: "Posts", exact: true });
   await expect(posts.getByText("What people asked for.")).toBeVisible();
