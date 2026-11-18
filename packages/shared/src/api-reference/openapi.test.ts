@@ -690,6 +690,11 @@ test("a made-up example keeps to the schema's limits", () => {
       both: { type: "integer", minimum: 10, exclusiveMinimum: 5 },
       bothOther: { type: "integer", minimum: 5, exclusiveMinimum: 10 },
       evens: { type: "integer", exclusiveMinimum: 2, exclusiveMaximum: 6, multipleOf: 2 },
+      tenths: { type: "number", minimum: 0.3, multipleOf: 0.1 },
+      position: { type: "array", items: { type: "number" }, minItems: 2 },
+      list: { type: "array", items: { type: "string" } },
+      crowd: { type: "array", items: { type: "boolean" }, minItems: 500 },
+      unknowns: { type: "array", items: {}, minItems: 1 },
     },
   });
   expect(example).toEqual({
@@ -712,7 +717,21 @@ test("a made-up example keeps to the schema's limits", () => {
     both: 10,
     bothOther: 11,
     evens: 4,
+    tenths: 0.3,
+    position: [0, 0],
+    list: ["string"],
+    crowd: Array.from({ length: 10 }, () => true),
+    unknowns: [],
   });
+
+  // What's sent has no read-only fields; what comes back has no write-only ones.
+  const user = { type: "object", properties: { id: { type: "string", readOnly: true }, name: { type: "string" }, password: { type: "string", writeOnly: true }, team: { allOf: [ref("Team")], readOnly: true } } };
+  const doc = spec({
+    paths: { "/users": { post: { summary: "Create", requestBody: json(ref("User")), responses: { "200": json(ref("User")) } } } },
+    components: { schemas: { User: user, Team: { type: "object", properties: { name: { type: "string" } } } } },
+  });
+  expect(doc.operations[0]!.body!.example).toEqual({ name: "string", password: "string" });
+  expect(doc.operations[0]!.responses[0]!.example).toEqual({ id: "string", name: "string", team: { name: "string" } });
 });
 
 test("the body is in JSON when it can be, else its first content type", () => {

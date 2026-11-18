@@ -184,7 +184,12 @@ function numberWithin(schema: Obj, whole: boolean): number {
   // Around each limit, and where there's a step, its multiples around each.
   const limits = [least, over, most, under].filter((value) => value !== undefined);
   const near = limits.flatMap((limit) => [limit, Math.ceil(limit), Math.floor(limit), Math.floor(limit) + 1, Math.ceil(limit) - 1]);
-  const stepped = step === undefined || step <= 0 ? [] : limits.flatMap((limit) => [Math.ceil(limit / step) * step, (Math.floor(limit / step) + 1) * step, Math.floor(limit / step) * step, (Math.ceil(limit / step) - 1) * step]);
+  // (Rounded to the step's own places: 3 × 0.1 isn't 0.30000000000000004 on a page.)
+  const places = Math.min((String(step).split(".")[1] ?? "").length, 12);
+  const stepped =
+    step === undefined || step <= 0
+      ? []
+      : limits.flatMap((limit) => [Math.ceil(limit / step), Math.floor(limit / step) + 1, Math.floor(limit / step), Math.ceil(limit / step) - 1, Math.round(limit / step)]).map((count) => Number((count * step).toFixed(places)));
   const between = (least ?? over) !== undefined && (most ?? under) !== undefined ? [((least ?? over ?? 0) + (most ?? under ?? 0)) / 2] : [];
   return [0, ...stepped, ...near, ...between].find(fits) ?? 0;
 }
@@ -761,7 +766,7 @@ function read(root: Obj, most: number): ApiDoc {
   /** A value of the schema's shape, from its own examples where it has them; undefined when there's nothing to show. */
   /** The objects whose choices are being gone through for an example, so one isn't picked from inside its own choice. */
   const picking = new Set<Obj>();
-  function sample(node: unknown, stack: Obj[], where: string): unknown {
+  function sample(node: unknown, stack: Obj[], where: string, sent: boolean): unknown {
     const within = spend();
     const target = followSchema(node);
     if (!target) return isObj(node) ? {} : undefined;
@@ -787,7 +792,7 @@ function read(root: Obj, most: number): ApiDoc {
       picking.add(target);
       try {
         for (const choice of choicesOf(schema).choices.slice(0, 8)) {
-          const made = sample(choice, stack, where);
+          const made = sample(choice, stack, where, sent);
           if (made !== undefined) return made;
         }
       } finally {
@@ -799,14 +804,19 @@ function read(root: Obj, most: number): ApiDoc {
       const made: [string, unknown][] = [];
       for (const [name, property] of fieldsOf(schema.properties)) {
         if (spent()) break;
-        const field = sample(property, inside, where);
+        // What's sent has no read-only fields, and what comes back no write-only ones.
+        const shape = followSchema(property);
+        if (shape && flatten(shape)[sent ? "readOnly" : "writeOnly"] === true) continue;
+        const field = sample(property, inside, where, sent);
         if (field !== undefined) made.push([named(name, "a field's name"), field]);
       }
       return Object.fromEntries(made);
     }
     if (type === "array") {
-      const item = sample(schema.items, inside, where);
-      return item === undefined ? [] : [item];
+      const item = sample(schema.items, inside, where, sent);
+      // As many as the schema says there are at least, up to a few. (Where they must all differ, they still don't.)
+      const count = typeof schema.minItems === "number" ? Math.min(Math.max(1, Math.ceil(schema.minItems)), 10) : 1;
+      return item === undefined ? [] : Array.from({ length: count }, () => item);
     }
     if (type === "string") {
       const formats: Record<string, string> = {
@@ -836,7 +846,8 @@ function read(root: Obj, most: number): ApiDoc {
   }
 
   /** The spec's example for a parameter, body or response, else one made from its schema. */
-  function exampleOf(holder: Obj, make: boolean, where: string): unknown {
+  /** `sent`: it's of a request (a body), not a response. */
+  function exampleOf(holder: Obj, make: boolean, where: string, sent = false): unknown {
     if (Object.hasOwn(holder, "example")) return data(holder.example, where);
     const first = follow(fieldsOf(holder.examples)[0]?.[1]);
     if (first && Object.hasOwn(first, "value")) return data(first.value, where);
@@ -848,7 +859,7 @@ function read(root: Obj, most: number): ApiDoc {
     if (schema && Array.isArray(schema.examples) && schema.examples.length > 0) return data(schema.examples[0], where);
     if (!make || holder.schema === undefined) return undefined;
     rootNodes = 0;
-    return sample(holder.schema, [], where);
+    return sample(holder.schema, [], where, sent);
   }
 
   /** A body's or response's content in the type the pages show: JSON when it's there, else the first. */
@@ -1014,7 +1025,7 @@ function read(root: Obj, most: number): ApiDoc {
         required: request.required === true,
         contentType: content.contentType,
         schema: schemaAt(content.media.schema, `${key} › body`),
-        example: exampleOf(content.media, true, `${key} › body`) ?? null,
+        example: exampleOf(content.media, true, `${key} › body`, true) ?? null,
       };
 
       const responses: ApiResponse[] = [];
