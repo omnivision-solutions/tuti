@@ -347,7 +347,8 @@ type Proposal = {
 export const REWRITTEN = "Written again with the check";
 /**
  * What a pull request whose waiting edits are written again says until its analysis starts (its page shows it beside
- * "Autopilot tries again"); the retries' sweep reads it to analyse only its help center's part (`docsOnly`).
+ * "Autopilot tries again"); rewriteWaitingEdits finds it by it, and so does the retries' sweep, which analyses only its
+ * help center's part (`docsOnly`).
  */
 export const REWRITING = "Its edits are being written again with the check.";
 const rewrittenEdit = { status: "DISMISSED", dismissReason: REWRITTEN, decidedById: null } satisfies Prisma.CodeChangeActionWhereInput;

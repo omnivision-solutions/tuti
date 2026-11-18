@@ -2,11 +2,11 @@ import { isDeepStrictEqual } from "node:util";
 
 import { toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { docOf, editsInChanges, hasTeammateEdit, recordRevision, scheduleArticle, takeOut, versions } from "./article-layers";
 import { autopilotSettingsSelect } from "./autopilot";
-import { REWRITING, REWRITTEN, retryCodeChanges } from "./code-changes";
+import { codeChange, REWRITING, REWRITTEN } from "./code-changes";
 import { checksOn } from "./edit-review";
 import { lockProject } from "./running-draft";
 
@@ -21,12 +21,16 @@ import { lockProject } from "./running-draft";
  * request's together, the newest merged first (an edit on top comes out before the one under it): under the project's
  * lock each is taken out of its article by section, as Dismiss does (one that can't be stays as it is), and dismissed
  * by nobody saying REWRITTEN; the article's other edits go out by themselves again if they qualify; and the pull
- * request is put to be analysed again at once, through the retries' sweep: queued here right after, or by the worker's
- * sweep within 10 minutes if this stops first. That analysis is the help center's part only (`docsOnly`: no gate, no
- * posts, its posts' updates and links left as they are); it writes its edits again (one of its edits left in an article
- * keeps a new one off it), and isn't retried by itself if the AI provider doesn't answer (the team's "Analyse again" is). Run again, it finds the rewritten edits measured and the rest as they were.
+ * request is marked to be written again (failed, saying REWRITING, its retry an hour away). Then each pull request so
+ * marked (this run's, and any a run that stopped left) is analysed here, one at a time, the oldest merged first, so
+ * each is written knowing the edits of those merged before it: claimed first, so the retries' sweep (which takes over
+ * the ones left if this stops) and this never both run one. That analysis is the help center's part only (`docsOnly`:
+ * no gate, no posts, its posts' updates, links and changelog line left as they are); it writes its edits again (one of
+ * its edits left in an article keeps a new one off it), tells the team as any analysis does (each person's in one
+ * email), and isn't retried by itself if the AI provider doesn't answer (the team's "Analyse again" is). Run again, it
+ * finds the rewritten edits measured and nothing marked, so it does nothing more.
  */
-export async function rewriteWaitingEdits(slug: string, now = new Date()): Promise<{ edits: number; pullRequests: number; queued: number }> {
+export async function rewriteWaitingEdits(slug: string, now = new Date()): Promise<{ edits: number; pullRequests: number; analysed: number }> {
   if (!checksOn(slug)) {
     throw new Error(`The check isn't on for ${slug}: list it in AUTOPILOT_CHECKS_PROJECTS first`);
   }
@@ -89,12 +93,10 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
       if (articles.length === 0) {
         return 0;
       }
-      // Due now, the oldest merged first (each one a millisecond before the next newer), so each is written knowing the
-      // edits of those merged before it. ponytail: it uses the first of the retries' tries, so a provider that doesn't
-      // answer is tried again 6 hours later, not after an hour.
+      // The sweep's, only if this run stops first: the oldest merged first then too (a millisecond before the next newer).
       await tx.codeChange.update({
         where: { id: codeChangeId },
-        data: { state: "FAILED", reason: REWRITING, retryAt: new Date(now.getTime() - pullRequests), retries: 0, retryPastGate: false },
+        data: { state: "FAILED", reason: REWRITING, retryAt: new Date(now.getTime() + SWEEP_AFTER_MS - pullRequests), retries: 0, retryPastGate: false },
       });
       // The edit that held the article's others back may be gone, as after a Dismiss.
       for (const articleId of new Set(articles)) {
@@ -109,6 +111,23 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
       pullRequests++;
     }
   }
-  const { queued } = pullRequests > 0 ? await retryCodeChanges(now) : { queued: 0 };
-  return { edits, pullRequests, queued: Number(queued) };
+  let analysed = 0;
+  const marked = await prisma.codeChange.findMany({ where: { projectId: project.id, state: "FAILED", reason: REWRITING }, orderBy: [{ mergedAt: "asc" }, { id: "asc" }], select: { id: true } });
+  for (const { id } of marked) {
+    const { count } = await prisma.codeChange.updateMany({ where: { id, state: "FAILED", reason: REWRITING }, data: { state: "ANALYSING", reason: "", retryAt: null } });
+    if (count === 0) {
+      continue;
+    }
+    analysed++;
+    // A failure is the code change's to say (failed, with why); the next one goes on.
+    await codeChange({ codeChangeId: id, force: true, pastGate: false, resume: false, docsOnly: true }, log).catch((error: unknown) => log.error("Writing a pull request's edits again failed", { error, codeChangeId: id }));
+  }
+  return { edits, pullRequests, analysed };
 }
+
+/**
+ * When the retries' sweep takes over a pull request marked to be written again, should the run that marked it stop.
+ * ponytail: a run still going after it (a few minutes a pull request, so more than a dozen or so marked) may see the
+ * sweep take the ones it hasn't reached yet, in parallel on Hatchet; run it on fewer, or longer, if that matters.
+ */
+const SWEEP_AFTER_MS = 3_600_000;
