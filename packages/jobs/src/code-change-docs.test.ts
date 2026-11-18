@@ -194,6 +194,10 @@ test("a heading can't be renamed to a title another heading in the article has: 
   const twice = articleNotes({ type: "doc", content: [head("Notes"), para("One."), head("Notes"), para("Two."), code] });
   expect(twice.edit({ sections: { "1": "## Notes\n\nFirst." } })).not.toBeNull();
   expect(twice.edit({ passages: [{ section: 2, find: "Two.", replace: "Second." }] })).not.toBeNull();
+  // Nor one more with their title added, in a section or at the end.
+  expect(twice.edit({ sections: { "1": "## Notes\n\nOne.\n\n## Notes\n\nMore." } })).toBeNull();
+  expect(twice.edit({ add: "## Notes\n\nThree." })).toBeNull();
+  expect(twice.edit({ add: "## Limits\n\nThree." })).not.toBeNull();
   // But one of the two can't be renamed: the other would be counted in its place.
   expect(twice.edit({ sections: { "1": "## Notes for admins\n\nOne." } })).toBeNull();
   expect(twice.edit({ passages: [{ section: 2, find: "Notes", replace: "Notes for admins" }] })).toBeNull();

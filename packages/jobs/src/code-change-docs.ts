@@ -284,16 +284,21 @@ export function articleNotes(doc: Doc) {
     }
     const added = typeof reply.add === "string" && reply.add.trim() ? readNotes(JSON.stringify({ notes: reply.add }), new Set(), []) : null;
     const content: Doc = { type: "doc", content: [...next.flat(), ...(added?.doc.content ?? [])] };
-    // A section is known by its heading's text (keyed): a heading this edit renamed to one the article has already would
-    // take that section's place, and taking the edit out later would fail. Headings it left alone may repeat.
-    // Nor to one the article had before the edit, wherever it's gone: two headings swapping titles swap their sections' places too.
-    const all = titles(content.content!);
+    // A section is known by its heading's text, counted from the top when titles repeat (keyed). So a title this edit
+    // brings into a section (a rename, a new heading, the section for the end) has to be new to the article and used
+    // once, and a title it takes out of one has to be one the article had once: anything else puts another section in
+    // this one's place, and taking the edit out later would fail. Headings it leaves alone may repeat.
+    const count = (list: string[], title: string) => list.filter((other) => other === title).length;
     const before = titles(parts.flat());
-    if (next.some((section, i) => titles(section).some((title) => !titles(parts[i]!).includes(title) && (before.includes(title) || all.indexOf(title) !== all.lastIndexOf(title))))) {
-      return null;
-    }
-    // Nor away from a title the article had twice: the other heading with it would be counted in this one's place.
-    if (parts.some((section, i) => titles(section).some((title) => !titles(next[i]!).includes(title) && before.indexOf(title) !== before.lastIndexOf(title)))) {
+    const after = titles(content.content!);
+    const moved = [...next, added?.doc.content ?? []].some((section, i) => {
+      const [was, is] = [titles(parts[i] ?? []), titles(section)];
+      return [...new Set([...was, ...is])].some((title) => {
+        const change = count(is, title) - count(was, title);
+        return change > 0 ? count(before, title) > 0 || count(after, title) > 1 : change < 0 && count(before, title) > 1;
+      });
+    });
+    if (moved) {
       return null;
     }
     const checked = parseDoc("article", content);
