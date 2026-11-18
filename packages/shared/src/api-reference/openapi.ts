@@ -1,4 +1,4 @@
-import { isAlias, isCollection, isPair, isScalar, parseDocument } from "yaml";
+import { isAlias, isCollection, isMap, isPair, isScalar, parseDocument } from "yaml";
 import type { ApiAuth, ApiDoc, ApiGroup, ApiOperation, ApiParam, ApiResponse, ApiSchema, ApiServer, ApiType, ApiWarning } from "./types";
 
 /** The most a spec's text may be, in bytes. */
@@ -213,7 +213,10 @@ function parse(text: string, bounds: OpenApiBounds): { value: unknown } | { erro
     const read: unknown = document.toJS({ maxAliasCount: -1 });
     const value: unknown = read === undefined ? null : JSON.parse(JSON.stringify(read));
     // An unquoted `version: 1.10` is the number 1.1 to YAML: the version is what the spec's text says.
-    const version: unknown = document.getIn(["info", "version"], true);
+    // From the last `info` and its last `version`, as the value is when a key is written twice.
+    const under = (node: unknown, key: string): unknown =>
+      isMap(node) ? node.items.findLast((pair) => (isScalar(pair.key) ? pair.key.value : pair.key) === key)?.value : undefined;
+    const version = under(under(document.contents, "info"), "version");
     if (isObj(value) && isObj(value.info) && typeof value.info.version === "number" && isScalar(version) && version.source) value.info.version = version.source;
     return { value };
   } catch (error) {

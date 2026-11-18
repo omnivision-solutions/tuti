@@ -280,6 +280,9 @@ test("text that isn't a spec is an error to act on", () => {
   // A key written twice is read as JSON reads it: the last one counts.
   expect(errorOf("openapi: 4.0.0\nopenapi: 3.0.0\n")).toBeNull();
   expect(errorOf('{"openapi": "4.0.0", "openapi": "3.0.0"}')).toBeNull();
+  // The version's text is the last one's too.
+  expect(read("openapi: 3.0.0\ninfo:\n  title: T\n  version: 1.0\n  version: 2.10\n").version).toBe("2.10");
+  expect(read("openapi: 3.0.0\ninfo: { version: 1.0 }\ninfo: { version: 3.10 }\n").version).toBe("3.10");
   expect(errorOf(`{"openapi": "3.0.0", "x": "${"a".repeat(5 * 1024 * 1024)}"}`)).toMatch(/over 5 MB/);
   expect(errorOf(`{"openapi": "3.0.0", "x": "${"é".repeat(3 * 1024 * 1024)}"}`)).toMatch(/over 5 MB/);
 });
@@ -1469,6 +1472,7 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
           },
         },
         components: {
+          securitySchemes: { key: { $ref: "#/components/securitySchemes/base", description: "Here." }, base: { type: "http", scheme: "bearer", description: "Base." } },
           parameters: { Page: { name: "page", in: "query", description: "Which page.", schema: { type: "integer" } } },
           responses: { NotFound: { description: "Not found." } },
           schemas: {
@@ -1483,8 +1487,11 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
           },
         },
       }),
-    ).operations[0]!;
-  const words31 = worded("3.1.0");
+    );
+  const schemes = (openapi: string) => worded(openapi).auth.map((scheme) => scheme.description);
+  expect(schemes("3.1.0")).toEqual(["Here.", "Base."]);
+  expect(schemes("3.0.3")).toEqual(["Base.", "Base."]);
+  const words31 = worded("3.1.0").operations[0]!;
   expect(words31.responses[0]!.schema!.properties).toEqual([
     { name: "owner", required: false, type: "User", ref: "User", description: "Owner.", properties: [{ name: "id", required: false, type: "string" }] },
     { name: "parent", required: false, type: "Node", ref: "Node", description: "Its parent." },
@@ -1493,7 +1500,7 @@ test("what's written beside a $ref applies in 3.1, and is ignored in 3.0", () =>
   // The description beside a reference to a parameter or a response is the one shown.
   expect(words31.params[0]!.description).toBe("Which page here.");
   expect(words31.responses[1]!.description).toBe("No such post.");
-  const words30 = worded("3.0.3");
+  const words30 = worded("3.0.3").operations[0]!;
   expect(words30.responses[0]!.example).toEqual({ owner: { id: "string" } });
   expect(words30.params[0]!.description).toBe("Which page.");
   expect(words30.responses[1]!.description).toBe("Not found.");
