@@ -3,6 +3,9 @@ import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/** Settings → Autopilot, where the AI model level in use has no model for Checks (so no switch): every article edit waits. */
+export const CHECKS_UNAVAILABLE = "Checks doesn't run on this AI model level, so every article edit waits for your team. Pick a level or a model for Checks above.";
+
 /** What an update is, as the review page names it. */
 export function updateKind(update: { kind: string; problem?: string }): string {
   switch (update.kind) {

@@ -10,7 +10,7 @@ import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
-import { autopilotRecordText } from "@/lib/autopilot-words";
+import { autopilotRecordText, CHECKS_UNAVAILABLE } from "@/lib/autopilot-words";
 import { costLabel, costPerUse } from "@/lib/model-tiers";
 import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -97,6 +97,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} price={price} />}
           <AdvancedTuningLink href={tuning} upgrade={tunable ? null : upgradePrompt("aiTuning", slug, true)} />
         </SettingsCard>
+        {/* No switch: Checks has no model on this level, so every article edit waits (docs/plan.md, E5). */}
+        {!checks && <p className="text-sm text-muted-foreground">{CHECKS_UNAVAILABLE}</p>}
         {kept && (
           <p className="text-sm text-muted-foreground">
             <Link href={tuning} className="underline underline-offset-4">
