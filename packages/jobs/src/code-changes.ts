@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import {
@@ -92,10 +94,12 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       title: true,
       state: true,
       rewriteDocsOnly: true,
+      claim: true,
       project: { select: { slug: true, analyseCodeChanges: true, plan: true, codeChangesTuning: true, aiModels: true, aiLevels: true } },
     },
   });
-  if (!change) {
+  // A queued job whose claim a later one replaced (a person's "Analyse again" while it waited, say): that one's job runs it.
+  if (!change || (input.claim && change.claim !== input.claim)) {
     return { skipped: true };
   }
   // Analysed once: a redelivery or a second run finds it done.
@@ -163,14 +167,22 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, state: { in: [...claimable] } },
       // A person asked ("Resume all"): its retries start again.
-      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, retries: 0 },
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, retries: 0, claim: null },
     });
     if (count === 0) {
       return { skipped: true };
     }
   } else {
-    // Any analysis that starts is the one a retry waited for: none is left waiting.
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null } });
+    // Any analysis that starts is the one a retry waited for: none is left waiting. One queued under a claim, only while
+    // it's still the change's (its Hatchet retries keep it); any other takes the change over, and a job queued under an
+    // earlier claim then does nothing.
+    const { count } = await prisma.codeChange.updateMany({
+      where: { id: change.id, ...(input.claim && { claim: input.claim }) },
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, ...(!input.claim && { claim: null }) },
+    });
+    if (count === 0) {
+      return { skipped: true };
+    }
   }
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
   // its level gives Autopilot's roles (roleModel; Decides and Checks here, Writes is `ai`): every step below
@@ -302,13 +314,14 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
       waiting += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: new Date(now.getTime() + CREDITS_WAIT_MINUTES * 60_000) } })).count;
       continue;
     }
-    const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 } } });
+    const claim = randomUUID();
+    const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 }, claim } });
     if (count === 0) {
       continue;
     }
     queued++;
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.retryPastGate, resume: false });
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.retryPastGate, resume: false, claim });
     } catch (error) {
       // Inline, the analysis itself failed (the code change says where, and when it's tried next). On Hatchet, queueing
       // did: put back as it was, and the rest left for the next sweep (they'd fail the same way).
@@ -362,10 +375,14 @@ export const REWRITING = "Its edits are being written again with the check.";
  */
 export const REWRITE_STALE_MS = 2 * 3_600_000;
 
-/** Rewrites whose run stopped mid-analysis: failed, due now, for the retries' sweep or the next run to finish (docs-only). */
+/**
+ * Rewrites whose run stopped mid-analysis: failed, due now, for the retries' sweep or the next run to finish (docs-only).
+ * Not one queued under a claim (the sweep's, a person's): it may only be waiting its turn in Hatchet's queue, which
+ * doesn't mark it, for hours (analyses run a few at a time server-wide); its job, and Hatchet's retries, finish it.
+ */
 export async function releaseStoppedRewrites(now: Date) {
   await prisma.codeChange.updateMany({
-    where: { rewriteDocsOnly: true, state: "ANALYSING", updatedAt: { lt: new Date(now.getTime() - REWRITE_STALE_MS) } },
+    where: { rewriteDocsOnly: true, state: "ANALYSING", claim: null, updatedAt: { lt: new Date(now.getTime() - REWRITE_STALE_MS) } },
     data: { state: "FAILED", reason: REWRITING, retryAt: now },
   });
 }
@@ -468,8 +485,9 @@ async function analyse(
       try {
         saved = await finish(
           change.id,
-          // The rewrite of waiting edits done: its marker goes, and later analyses are whole ones again.
-          { state: "READY", reason: "", ...(docsOnly ? { rewriteDocsOnly: false } : { summary, why: told }), ...versions },
+          // Its marker goes (the rewrite of waiting edits done, or a whole analysis, which is one), and later analyses are
+          // whole ones again.
+          { state: "READY", reason: "", rewriteDocsOnly: false, ...(!docsOnly && { summary, why: told }), ...versions },
           kept,
           {
             projectId: change.projectId,

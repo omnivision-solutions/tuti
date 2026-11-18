@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { type Doc, fromPlainText, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
 import { statusMoveEmails } from "@tuti/shared/status-emails";
@@ -1154,15 +1156,17 @@ export const analyseCodeChange = defineOperation({
     // at once queue it once: already being analysed (while a run could still be going), nothing more is queued. A retry
     // waiting (the provider didn't answer) is dropped, and this analysis gets retries of its own. A person's analysis is
     // a whole one: one whose edits were being written again (rewriteDocsOnly) is analysed whole, posts and changelog too.
+    // Its job carries the claim, so a job queued before (still waiting in the queue) does nothing.
+    const claim = randomUUID();
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
-      data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, rewriteDocsOnly: false },
+      data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, rewriteDocsOnly: false, claim },
     });
     if (count === 0) {
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
     }
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false, claim });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
       // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.

@@ -20,11 +20,13 @@ import { lockProject } from "./running-draft";
  * check measured it (no `check.scope`), that nobody stopped, whose pull request's analysis is ready, on an article with no
  * person's unpublished change (hasTeammateEdit: one anywhere in it leaves all its edits as they are). Each pull
  * request's together, the newest merged first (an edit on top comes out before the one under it): under the project's
- * lock each is taken out of its article by section, as Dismiss does (one that can't be stays as it is), and dismissed
- * by nobody saying REWRITTEN; the article's other edits go out by themselves again if they qualify; and the pull
- * request is marked to be written again (failed, saying REWRITING, its retry an hour away). Then each pull request so
- * marked (this run's, and any a run that stopped left: failed, paused, or analysing for over REWRITE_STALE_MS) is
- * analysed here, one at a time, the oldest merged first, so each is written knowing the edits of those merged before
+ * lock and the pull request's (a person's "Analyse again" meanwhile waits for it, then is the only analysis, a whole
+ * one), while its analysis is still ready, each is taken out of its article by section, as Dismiss does (one that
+ * can't be stays as it is), and dismissed by nobody saying REWRITTEN; the article's other edits go out by themselves
+ * again if they qualify; and the pull request is marked to be written again (failed, saying REWRITING, its retry an hour
+ * away). Then each pull request so marked (this run's, and any a run that stopped left: failed, paused, or analysing in
+ * its process for over REWRITE_STALE_MS; not one a queued job holds, see releaseStoppedRewrites) is analysed here, one
+ * at a time, the oldest merged first, so each is written knowing the edits of those merged before
  * it: claimed first, so the retries' sweep (which takes over the ones left if this stops) and this never both run one.
  * That analysis is the help center's part only (`docsOnly`: no gate, no posts, its posts' updates, links and changelog
  * line left as they are), whichever path runs it, by its marker (`rewriteDocsOnly`), which only its finishing or a
@@ -71,7 +73,10 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
   for (const [codeChangeId, its] of byChange) {
     const taken = await prisma.$transaction(async (tx) => {
       await lockProject(tx, project.id);
-      // Being analysed again meanwhile (a person's "Analyse again"): that analysis is the rewrite.
+      // Being analysed again meanwhile (a person's "Analyse again"): that analysis is the rewrite. Under the change's lock
+      // (as writeChangelogLine takes it), so a person's claim meanwhile waits for this and then finds it marked (failed):
+      // their analysis, a whole one, is the only one.
+      await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
       if ((await tx.codeChange.count({ where: { id: codeChangeId, state: "READY" } })) === 0) {
         return 0;
       }
@@ -104,10 +109,14 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
         return 0;
       }
       // The sweep's, only if this run stops first: the oldest merged first then too (a millisecond before the next newer).
-      await tx.codeChange.update({
-        where: { id: codeChangeId },
+      // Still ready, or nothing taken out (rolled back).
+      const marked = await tx.codeChange.updateMany({
+        where: { id: codeChangeId, state: "READY" },
         data: { state: "FAILED", reason: REWRITING, retryAt: new Date(now.getTime() + SWEEP_AFTER_MS - pullRequests), retries: 0, retryPastGate: false, rewriteDocsOnly: true },
       });
+      if (marked.count === 0) {
+        throw new NotReady();
+      }
       // The edit that held the article's others back may be gone, as after a Dismiss.
       for (const articleId of new Set(articles)) {
         if ((await tx.codeChangeAction.count({ where: { articleId, kind: "ARTICLE_EDIT", status: "PENDING", decidedById: null, revisions: { some: {} } } })) > 0) {
@@ -115,6 +124,11 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
         }
       }
       return articles.length;
+    }).catch((error: unknown) => {
+      if (error instanceof NotReady) {
+        return 0;
+      }
+      throw error;
     });
     if (taken > 0) {
       edits += taken;
@@ -126,7 +140,8 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
   const left = { projectId: project.id, rewriteDocsOnly: true, state: { in: ["FAILED" as const, "PAUSED" as const] } };
   const marked = await prisma.codeChange.findMany({ where: left, orderBy: [{ mergedAt: "asc" }, { id: "asc" }], select: { id: true } });
   for (const { id } of marked) {
-    const { count } = await prisma.codeChange.updateMany({ where: { ...left, id }, data: { state: "ANALYSING", reason: "", retryAt: null } });
+    // Claimed in this process (no claim for a queued job): stopped mid-analysis, it's released after REWRITE_STALE_MS.
+    const { count } = await prisma.codeChange.updateMany({ where: { ...left, id }, data: { state: "ANALYSING", reason: "", retryAt: null, claim: null } });
     if (count === 0) {
       continue;
     }
@@ -143,3 +158,6 @@ export async function rewriteWaitingEdits(slug: string, now = new Date()): Promi
  * sweep take the ones it hasn't reached yet, in parallel on Hatchet; run it on fewer, or longer, if that matters.
  */
 const SWEEP_AFTER_MS = 3_600_000;
+
+/** The pull request wasn't ready any more when it was to be marked: the transaction's edits are rolled back. */
+class NotReady extends Error {}

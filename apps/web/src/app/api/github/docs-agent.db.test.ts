@@ -1741,6 +1741,49 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await change(106)).toMatchObject({ state: "READY" });
   });
 
+  test("a person's “Analyse again” while the rewrite takes its edit out waits for it, then is the one analysis, a whole one", async () => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    proposeEdit(107);
+    await merge(107);
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    const codeChangeId = (await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 107 }, select: { id: true } })).id;
+    // The person's whole analysis: the gate, the agent, the writer and the check.
+    proposeEdit(107);
+    model.reply(ACCEPT, undefined, '"article_after"');
+    const decided = model.decisions.length;
+    // The person asks once the rewrite has found it ready, under its lock, before it marks it.
+    let person: Promise<unknown> = Promise.resolve();
+    type Run = (tx: Prisma.TransactionClient) => Promise<unknown>;
+    const transaction = prisma.$transaction.bind(prisma) as unknown as (fn: Run) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (fn: Run) => {
+      const result = await transaction((tx) => {
+        const codeChange = new Proxy(tx.codeChange, {
+          get: (delegate, key) =>
+            key === "count"
+              ? async (args: Prisma.CodeChangeCountArgs) => {
+                  const found = await delegate.count(args);
+                  person = call(analyseCodeChange, team(), { id: codeChangeId });
+                  // Until the person's claim (or, without the change's lock, their analysis) waits on a lock.
+                  for (let i = 0; i < 50 && (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock'`)[0]!.n === 0; i++) {
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                  }
+                  return found;
+                }
+              : (Reflect.get(delegate, key) as unknown),
+        });
+        return fn(new Proxy(tx, { get: (client, key) => (key === "codeChange" ? codeChange : (Reflect.get(client, key) as unknown)) }));
+      });
+      await person;
+      return result;
+    }) as never);
+    // The rewrite took the edit out and marked it; the person's analysis then claimed it, so the rewrite analysed nothing.
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 1, pullRequests: 1, analysed: 0 });
+    // One analysis, a whole one (the gate decided), its marker cleared, its edit written again and checked.
+    expect(model.decisions.length).toBeGreaterThan(decided);
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: codeChangeId }, select: { state: true, reason: true, rewriteDocsOnly: true } })).toEqual({ state: "READY", reason: "", rewriteDocsOnly: false });
+    expect(await rewritten(107)).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true } } }]);
+  });
+
   test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
     vi.stubEnv("AI_CREDITS", "on");
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });

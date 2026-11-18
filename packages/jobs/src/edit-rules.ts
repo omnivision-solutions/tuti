@@ -190,10 +190,11 @@ const wholeName = (name: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escaped(nam
 const hasName = (text: string, name: string) => wholeName(name).test(text);
 
 /**
- * A rename or a moved page (docs/plan.md, E6): the labels, quoted words and `code` paths the edit took out (`from`) and
- * put in (`to`), when that's all it did (each sentence it changed reads as one it replaced, with those names masked, as
- * a heading renamed does too), and the pull request's diff removed each old one and added each new one (any case). Null
- * otherwise: one side missing, other words changed too, or a name the code change doesn't show.
+ * A rename or a moved page (docs/plan.md, E6): the label, quoted word or `code` path the edit took out (`from`) and the
+ * one it put in (`to`), when that's all it did (each sentence it changed reads as one it replaced, with those names masked, as
+ * a heading renamed does too), and the pull request's diff removed the old one and added the new one (any case). Null
+ * otherwise: one side missing, more than one name either side, other words changed too, or a name the code change
+ * doesn't show.
  */
 export function renamed(before: string, after: string, diff: string): { from: string[]; to: string[] } | null {
   const edit = editOf(before, after);
@@ -202,7 +203,9 @@ export function renamed(before: string, after: string, diff: string): { from: st
   const added = namesIn(edit.added.join("\n"));
   const from = [...new Map(removed.filter((name) => !lower(added).has(name.toLowerCase())).map((name) => [name.toLowerCase(), name])).values()];
   const to = [...new Map(added.filter((name) => !lower(removed).has(name.toLowerCase())).map((name) => [name.toLowerCase(), name])).values()];
-  if (from.length === 0 || to.length === 0) {
+  // One name for one: with more, which old name became which new one can't be told (a swap, or names mapped to the
+  // wrong places, masks the same), so it's measured as a correction or larger.
+  if (from.length !== 1 || to.length !== 1) {
     return null;
   }
   // Longest first, so a name inside another ("Team" in "Team settings") doesn't split it.

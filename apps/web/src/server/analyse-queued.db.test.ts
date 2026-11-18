@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, retryCodeChanges, REWRITING } from "@tuti/jobs";
 import { FAKE_MODEL_KEY } from "@tuti/testkit";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -12,6 +12,9 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 // On Hatchet the analysis only queues: the job runs later. Here it's queued and never run.
 const jobs = vi.hoisted(() => ({ enqueue: vi.fn<(name: string, input: unknown) => Promise<void>>(async () => {}) }));
 vi.mock("@tuti/jobs", async (importOriginal) => ({ ...(await importOriginal<typeof import("@tuti/jobs")>()), enqueue: jobs.enqueue }));
+// What the jobs package queues itself (the retries' sweep) goes to Hatchet: queued there, and never run either.
+const hatchet = vi.hoisted(() => ({ runNoWait: vi.fn<(name: string, input: unknown) => Promise<void>>(async () => {}) }));
+vi.mock("@tuti/shared/hatchet", async (importOriginal) => ({ ...(await importOriginal<typeof import("@tuti/shared/hatchet")>()), getHatchet: () => hatchet }));
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -142,4 +145,43 @@ test("a stopped run retried when queueing fails: failed, saying so, and retried 
   await call(analyseCodeChange, team(), { id: change.id });
   expect(jobs.enqueue.mock.calls.length).toBe(queued + 1);
   expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).state).toBe("ANALYSING");
+});
+
+/** A pull request whose edits are being written again (E6), its retry due: the sweep's to queue. Only this one is due. */
+const markedForRewrite = async (number: number) => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  const change = await pullRequest(number);
+  await prisma.codeChange.updateMany({ where: { projectId: { not: project.id } }, data: { retryAt: null } });
+  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: REWRITING, retryAt: new Date(Date.now() - 1000), rewriteDocsOnly: true } });
+  return change;
+};
+/** Its jobs queued, the sweep's (on Hatchet) and a person's, in order. */
+const queuedFor = (codeChangeId: string) =>
+  [...hatchet.runNoWait.mock.calls, ...jobs.enqueue.mock.calls]
+    .map(([, input]) => input as Parameters<typeof handlers.codeChange>[0])
+    .filter((input) => input.codeChangeId === codeChangeId);
+
+test("a rewrite the sweep queued, still waiting in Hatchet's queue hours later, isn't taken for stopped and queued again", async () => {
+  const change = await markedForRewrite(10);
+  expect(await retryCodeChanges()).toMatchObject({ queued: 1 });
+  // Its job hasn't started: nothing has touched it for three hours (analyses run a few at a time, server-wide).
+  await prisma.codeChange.update({ where: { id: change.id }, data: { updatedAt: new Date(Date.now() - 3 * 3_600_000) } });
+  expect(await retryCodeChanges()).toMatchObject({ queued: 0 });
+  expect(queuedFor(change.id)).toHaveLength(1);
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "ANALYSING", rewriteDocsOnly: true });
+});
+
+test("a queued job whose claim a later one replaced (a person's “Analyse again” while it waited) does nothing when it starts", async () => {
+  const change = await markedForRewrite(11);
+  await retryCodeChanges();
+  // Waiting past the half hour, a person asks: their claim, their job.
+  await prisma.codeChange.update({ where: { id: change.id }, data: { updatedAt: new Date(Date.now() - 31 * 60_000) } });
+  await call(analyseCodeChange, team(), { id: change.id });
+  const [stale, theirs] = queuedFor(change.id);
+  // The sweep's job starts late: it analyses nothing (it would fail here, reading nothing), and the person's is left to run.
+  expect(await handlers.codeChange(stale!, quiet)).toEqual({ skipped: true });
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "ANALYSING", reason: "", rewriteDocsOnly: false });
+  expect(stale!.claim).toBeTruthy();
+  expect((await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).claim).toBe(theirs!.claim);
+  expect(theirs!.claim).not.toBe(stale!.claim);
 });

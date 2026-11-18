@@ -219,6 +219,13 @@ test("not a rename: one side missing from the diff, a label in a longer word, on
   expect(renamed(NAV, after, '--- a/Customize.tsx\n+++ b/Customize.tsx\n   <Link>Customize</Link>\n+  <Link>Look and feel</Link>')).toBeNull();
   // A label taken out with none put in.
   expect(renamed(NAV, NAV.replace("Open **Customize** and pick a theme.", "Pick a theme."), DIFF)).toBeNull();
+  // More than one name for one: two labels swapped, or two old names to two new ones (which became which can't be told).
+  const TWO = "Open **Team** to send invites.\n\n**Members** lists who's in.";
+  const swapDiff = "-  <Tab>Team</Tab>\n-  <Tab>Members</Tab>\n+  <Tab>Members</Tab>\n+  <Tab>Team</Tab>";
+  expect(renamed(TWO, "Open **Members** to send invites.\n\n**Team** lists who's in.", swapDiff)).toBeNull();
+  const twoDiff = "-  <Tab>Team</Tab>\n-  <Tab>Members</Tab>\n+  <Tab>People</Tab>\n+  <Tab>Roster</Tab>";
+  expect(renamed(TWO, "Open **Roster** to send invites.\n\n**People** lists who's in.", twoDiff)).toBeNull();
+  expect(editScope(TWO, "Open **Roster** to send invites.\n\n**People** lists who's in.", twoDiff)).not.toBe("rename");
   // Renamed, and a sentence changed besides.
   expect(renamed(NAV, after.replace("and pick a theme", "and pick one of three themes"), DIFF)).toBeNull();
 });

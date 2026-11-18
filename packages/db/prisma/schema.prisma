@@ -2566,6 +2566,10 @@ model CodeChange {
   /// (docsOnly), whichever path runs it (a retry, Resume all, a run that stopped), until one finishes; a person's
   /// "Analyse again" clears it (a full analysis).
   rewriteDocsOnly Boolean       @default(false)
+  /// The claim of the analysis queued for it (the retries' sweep's, a person's "Analyse again"): its job carries it, and
+  /// starts only while it's still the change's (a queued job a later claim replaced does nothing). Null for a run that
+  /// claimed it as it started, or the rewrite of waiting edits analysing it in its own process.
+  claim           String?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
