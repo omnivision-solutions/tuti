@@ -79,7 +79,8 @@ export function appendedAtEnd(before: string, after: string): { lines: string[];
   // A new section's heading is at the level of the article's last section heading or above (any heading, in an article
   // without one); a deeper one is a subsection of that last section, where the text may well belong.
   const level = (line: string) => /^#+/.exec(line)![0].length;
-  const lastSection = was.findLast(isHeading);
+  // A title (#) isn't a section: what's under it is its sections (as headingOverLittle reads it).
+  const lastSection = was.findLast((line) => isHeading(line) && !/^#\s/.test(line));
   const first = tail[0]!;
   const section = isHeading(first) && (lastSection === undefined || level(first) <= level(lastSection));
   return { lines: tail, heading: section ? first.replace(/^#+\s*/, "") : null, subsection: isHeading(first) && !section };

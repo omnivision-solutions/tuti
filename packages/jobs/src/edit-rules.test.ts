@@ -26,6 +26,8 @@ test("text after the article's old last line is appended at the end; the last pa
   const sub = appendedAtEnd(ARTICLE, `${ARTICLE}\n\n### System font\n\nOr the system's.`);
   expect(sub).toEqual({ lines: ["### System font", "Or the system's."], heading: null, subsection: true });
   expect(ruleChecks(ARTICLE, `${ARTICLE}\n\n### System font\n\nOr the system's.`, { diff: "", added: false })).toMatchObject({ fails: null, hints: expect.arrayContaining([expect.stringContaining("Adds a subsection after the article's last line")]) });
+  // Under a title (#) alone, a ## after the last line is a new section, not a subsection of the title.
+  expect(appendedAtEnd("# Themes\n\nOne.", "# Themes\n\nOne.\n\n## Dark\n\nTwo.")).toMatchObject({ heading: "Dark", subsection: false });
   // In an article with no heading, any heading after its last line is a new section.
   expect(appendedAtEnd("One.\n\nTwo.", "One.\n\nTwo.\n\n### More\n\nThree.")).toMatchObject({ heading: "More" });
   expect(appendedAtEnd(ARTICLE, ARTICLE.replace("The app uses one font.", "The app uses one font, or the system's."))).toBeNull();
