@@ -7,7 +7,9 @@ import DocsOperationPage, { generateMetadata } from "@/app/portal/[project]/(sit
 import DocsPageTabs from "@/app/portal/[project]/(site)/@docsTabs/docs/[slug]/page";
 import DocsSlugPage, { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import DocsHome, { generateMetadata as homeMetadata } from "@/app/portal/[project]/(site)/docs/page";
+import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { apiReferencePage, markdownDoc } from "./api-reference-queries";
@@ -195,7 +197,7 @@ const missing = async (operation: string, slug?: string) =>
 describe("an operation's page", () => {
   test("shows a published reference's operation to everyone: its method and path, parameters, examples and its tab's tree", async () => {
     const page = await apiReferencePage(project.slug, "reference");
-    expect(page).toMatchObject({ kind: "reference", tab: "api", restricted: false, reference: { name: "Reference", treeStyle: "FOLDERS" }, references: [{ slug: "reference" }] });
+    expect(page).toMatchObject({ kind: "reference", tab: "api", restricted: false, reference: { name: "Reference", treeStyle: "FOLDERS" } });
     expect(page?.operations.map((o) => o.slug)).toEqual(["get-a-post", "create-a-post", "purge"]);
     const text = await pageText("get-a-post");
     for (const shown of ["Get a post", "/posts/", "{number}", "Path parameters", "Query parameters", "expand", "at least 1", "Bearer token", "No such post", "curl ", "import requests", `Dark ${SECRET} mode`, "Create a post", "Admin"]) {
@@ -724,6 +726,46 @@ describe("a tab holding a reference", () => {
     await call(publishArticle, as(), { slug });
     expect(articleTabs(await docsContents(project.slug))).toMatchObject([{ slug: "guides" }, { slug: "api", locked: true }]);
     expect(articleTabs(await docsContents(project.slug))[1]).not.toHaveProperty("onlyReferences");
+  });
+
+  test("a reference in no tab and one in the first tab: each one's pages list the other in the tree", async () => {
+    await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { tabId: null } });
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "guides" });
+    expect((await docsContents(project.slug)).tabs[0]!.references.map((r) => r.slug)).toEqual(["reference", "webhooks"]);
+    // Both on the reference in no tab's own page and on an operation's.
+    expect(await slugText("reference")).toContain('"href":"/docs/webhooks","title":"Webhooks"');
+    expect(await pageText("get-a-post")).toContain('"href":"/docs/webhooks","title":"Webhooks"');
+    // And the other way round.
+    expect(await slugText("webhooks")).toContain('"href":"/docs/reference","title":"Reference"');
+    expect(await pageText("get-a-post", "webhooks")).toContain('"href":"/docs/reference","title":"Reference"');
+  });
+
+  test("llms.txt lists each tab's references under its heading, and the sitemap their pages; neither a tab for some readers only", async () => {
+    await call(createApiReference, as(), {
+      name: "Regions",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Regions, version: "1", description: "Everything **regional**.\\n\\nMore about them." }
+paths:
+  /a: { get: { summary: One, responses: { "200": { description: ok } } } }
+`,
+    });
+    const route = { params: Promise.resolve({ project: project.slug }) };
+    const portal = `http://${project.slug}.localhost:3100`;
+    const text = await (await llms(new Request("http://x"), route)).text();
+    expect(text).toContain(`## [API](${portal}/docs/api)\n\n- [Reference](${portal}/docs/reference)\n- [Regions](${portal}/docs/regions): Everything regional.\n`);
+    expect(text).not.toContain("More about them");
+    const xml = await (await sitemap(new Request("http://x"), route)).text();
+    for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
+      expect(xml).toContain(`<loc>${portal}${path}</loc>`);
+    }
+    await setTab("SIGNED_IN");
+    expect(await (await llms(new Request("http://x"), route)).text()).not.toContain("/docs/reference");
+    const hidden = await (await sitemap(new Request("http://x"), route)).text();
+    for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
+      expect(hidden).not.toContain(`<loc>${portal}${path}</loc>`);
+    }
   });
 
   test("an article's tree lists its tab's references, each a link to its page", async () => {

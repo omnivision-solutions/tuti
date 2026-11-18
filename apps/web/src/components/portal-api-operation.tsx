@@ -9,8 +9,8 @@ import { Fragment, type ReactNode } from "react";
 import { CodeCopyButtons } from "@/components/code-copy-buttons";
 import { DocsLayout, LockedMessage } from "@/components/portal-docs";
 import { cn } from "@/lib/utils";
-import { type ApiReferencePage, apiReferencePage, markdownDoc } from "@/server/api-reference-queries";
-import { docsContents, docsTree } from "@/server/docs-queries";
+import { type ApiReferencePage, apiReferencePage, firstLine, markdownDoc } from "@/server/api-reference-queries";
+import { docsContents, type DocsTree, docsTree } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 
 type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
@@ -43,10 +43,10 @@ async function Markdown({ text, className }: { text: string | undefined; classNa
 /**
  * The reference's part of the docs' tree, as the team set it to sit there: its page ("Overview"), then each group a
  * folder (the current operation's open), each group a heading over its operations, or the reference as one entry
- * that opens to them. The tab's other references are a link each. `current`: the operation's slug, null on the
- * reference's own page.
+ * that opens to them. The tab's other references (`references`, the tree's) are a link each. `current`: the
+ * operation's slug, null on the reference's own page.
  */
-async function ReferenceTree({ page, current }: { page: Reference; current: string | null }) {
+async function ReferenceTree({ page, references, current }: { page: Reference; references: DocsTree["references"]; current: string | null }) {
   const at = await portalLinks();
   const { reference, groups, operations } = page;
   const rest = "rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground";
@@ -113,7 +113,9 @@ async function ReferenceTree({ page, current }: { page: Reference; current: stri
               {headings}
             </div>,
           );
-  return page.references.map((other) =>
+  // Itself in its place among them; last, should the tree not have it.
+  const listed = references.some((other) => other.slug === reference.slug) ? references : [...references, reference];
+  return listed.map((other) =>
     other.slug === reference.slug ? (
       <Fragment key={other.slug}>{own}</Fragment>
     ) : (
@@ -455,7 +457,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
   const group = page.groups.find((g) => g.key === operation.group);
   const openapi = page.doc.format === "openapi";
   return (
-    <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} current={operation.slug} />}>
+    <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} references={tree.references} current={operation.slug} />}>
       <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start">
         <article className="flex min-w-0 flex-col gap-8" aria-labelledby={ARTICLE_TITLE_ID}>
           <div className="flex flex-col gap-3">
@@ -541,11 +543,6 @@ export function LockedOperation({ page, title }: { page: Extract<ApiReferencePag
 /** How many operations a group's card names before "+ N more". */
 const CARD_OPERATIONS = 3;
 
-/** A spec's Markdown as plain words, its first line only: a card's or a search listing's description. */
-export async function firstLine(text: string | undefined): Promise<string> {
-  return text?.trim() ? (toPlainText(await markdownDoc(text)).split("\n").find((line) => line.trim()) ?? "").trim() : "";
-}
-
 /** One of the overview's two boxes: a small label over a list. */
 function Box({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -576,7 +573,7 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
   const servers = [...listed, ...(doc.servers.length === 0 && operations.some((operation) => !operation.servers?.length) ? [undefined] : [])];
   const descriptions = new Map(await Promise.all(groups.map(async (group) => [group.key, await firstLine(group.description)] as const)));
   return (
-    <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} current={null} />}>
+    <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} references={tree.references} current={null} />}>
       <article className="flex min-w-0 flex-col gap-8" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
