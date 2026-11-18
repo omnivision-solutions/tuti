@@ -1687,6 +1687,33 @@ describe("retries when the AI provider didn't answer", () => {
     expect(await sweep(48 * 60)).toMatchObject({ due: 0 });
   });
 
+  test("on a plan without Autopilot now, the retry is dropped, nothing asked", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    github.pullRequest(repo, pullRequest(75));
+    model.decide(INTERNAL);
+    model.fail(503);
+    await merge(75);
+    expect(await retryIn(75)).toBe(60);
+    vi.stubEnv("BILLING_CONFIG", billingFile((_, plans) => (plans.free.features = [])));
+    expect(await sweep(61)).toEqual({ due: 1, queued: 0, dropped: 1, waiting: 0 });
+    expect(await row(75)).toMatchObject({ state: "FAILED", retryAt: null, retries: 0 });
+  });
+
+  test("\"Resume all\" is a person asking: the analysis it resumes has its retries again", async () => {
+    vi.stubEnv("AI_CREDITS", "on");
+    github.pullRequest(repo, pullRequest(76));
+    // Out of credits: paused, after its retries were used (say).
+    await merge(76);
+    const { id } = await row(76);
+    await prisma.codeChange.update({ where: { id }, data: { retries: 3 } });
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    model.decide(INTERNAL);
+    model.fail(503);
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 1 });
+    expect(await row(76)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer.", retries: 0 });
+    expect(await retryIn(76)).toBe(60);
+  });
+
   test("queueing on Hatchet failing puts the retry back as it was, for the next sweep", async () => {
     github.pullRequest(repo, pullRequest(72));
     model.decide(INTERNAL);

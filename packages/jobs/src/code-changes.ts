@@ -160,7 +160,8 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     const claimable = process.env.JOBS_DRIVER === "inline" ? (["PAUSED", "FAILED"] as const) : (["PAUSED", "FAILED", "ANALYSING"] as const);
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, state: { in: [...claimable] } },
-      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null },
+      // A person asked ("Resume all"): its retries start again.
+      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, retries: 0 },
     });
     if (count === 0) {
       return { skipped: true };
@@ -263,15 +264,17 @@ const RETRIES_PER_SWEEP = 50;
 /**
  * Queues the analyses whose retry is due (the `code-change-retries` job), each as "Analyse again" would: claimed as
  * analysing first, so a sweep and a person (or two sweeps) start it once, and the retry counted. Where Autopilot is off
- * now, the retry is dropped; where the project is out of AI credits, it waits until there are some (each sweep looks
- * again), and is counted then. The run itself checks the rest (the plan, the repository) as for any analysis.
+ * now, or the plan doesn't include it, the retry is dropped (the team analyses it again once it's back); where the
+ * project is out of AI credits, it waits until there are some (each sweep looks again), and is counted then. The run
+ * itself checks the rest (the repository) as for any analysis. The worker runs it every 10 minutes; jobs inline, the
+ * web server does (instrumentation.ts).
  */
 export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
   // Every due one, oldest first: those waiting for credits are skipped without holding up the rest.
   const due = await prisma.codeChange.findMany({
     where: { state: "FAILED", retryAt: { lte: now } },
     orderBy: { retryAt: "asc" },
-    select: { id: true, projectId: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true } } },
+    select: { id: true, projectId: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true, plan: true } } },
   });
   let queued = 0;
   let dropped = 0;
@@ -283,7 +286,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
     }
     // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
     const still = { id: change.id, state: "FAILED" as const, retryAt: change.retryAt };
-    if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
+    if (!codeChangesEnabled() || !change.project.analyseCodeChanges || !planIncludes(change.project.plan, "codeChanges")) {
       dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null } })).count;
       continue;
     }

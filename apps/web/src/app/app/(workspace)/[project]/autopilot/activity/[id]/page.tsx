@@ -55,9 +55,9 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
   // On a plan without Autopilot it's kept, but can't be analysed again (codeChanges.analyse refuses).
   const { plan, analyseCodeChanges } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, analyseCodeChanges: true } });
   const included = planIncludes(plan, "codeChanges");
-  // A retry waiting, while Autopilot is on (turned off, the sweep drops it); out of AI credits, it waits for some (the
-  // sweep skips it till then), whenever it's due.
-  const retryAt = codeChangesEnabled() && analyseCodeChanges ? change.retryAt : null;
+  // A retry waiting, while Autopilot is on and in the plan (else the sweep drops it); out of AI credits, it waits for some
+  // (the sweep skips it till then), whenever it's due.
+  const retryAt = codeChangesEnabled() && analyseCodeChanges && included ? change.retryAt : null;
   const retryWaits = retryAt !== null && (await aiPaused(membership.project.id));
   const param = (name: string) => (typeof searchParams[name] === "string" ? searchParams[name] : null);
   // Back from Publish now or Stop in Autopilot's email (the act page): what it did, or who did it first.
