@@ -1,12 +1,14 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { prisma } from "@tuti/db";
-import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
+import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL, resetCodeChangesSettings } from "@tuti/shared";
 import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
-import { aiModelSetting } from "@/lib/ai-model-setting";
+import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
 import { saveAiModel } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
@@ -35,6 +37,8 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
+  // A test that set Autopilot's variables: the next one reads the server's own again.
+  resetCodeChangesSettings();
   model.done();
 });
 
@@ -270,8 +274,8 @@ test("a settings page's AI model: every level the server offers, with the upgrad
   expect(business).toMatchObject({ saved: "custom", used: "custom", notice: null });
   expect(business.summary).toMatch(/^Answers .+ · Summaries Tiny$/);
   expect(business.roles).toEqual([
-    { role: "answers", label: "Answers", model: "", default: DEFAULT_AI_MODEL, agent: false },
-    { role: "escalations", label: "Summaries", model: "acme/tiny", default: DEFAULT_AI_MODEL, agent: false },
+    { role: "answers", label: "Answers", model: "", default: DEFAULT_AI_MODEL, used: DEFAULT_AI_MODEL, agent: false },
+    { role: "escalations", label: "Summaries", model: "acme/tiny", default: DEFAULT_AI_MODEL, used: "acme/tiny", agent: false },
   ]);
   expect(business.listed.map((listed) => listed.id)).not.toContain("acme/no-price");
   expect(business.levels.every((level) => level.upgrade === null)).toBe(true);
@@ -311,6 +315,8 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
   /** What Settings → Autopilot shows: the line under AI model, Custom's row for Checks, and the model the checks run on. */
   const shown = async () => {
     const setting = await aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
+    // The switch is on exactly when the line above it names a model for Checks.
+    expect(checksSwitch(setting)).toEqual({ on: !setting.summary.includes("Checks Off") });
     return { summary: setting.summary, used: setting.used, checks: setting.roles[1]!.model, runsOn: (await call(getAiModels, as(), {})).code_changes_check.used };
   };
   actAs(owner);
@@ -352,4 +358,39 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
   actAs(await addMember(project.id, "MEMBER"));
   expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({ error: "Only project owners and admins can change AI models" });
   expect((await call(getAiModels, as(), {})).code_changes_check).toMatchObject({ model: null, used: SONNET });
+});
+
+test("the Checks switch on a server whose own checks are off: none where they wouldn't run anyway; where the level in use has a model for them it's there, on, and switches them off and on", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "tuti-levels-")), "levels.json");
+  writeFileSync(path, JSON.stringify({ best: { code_changes_check: "anthropic/claude-sonnet-5.5" } }));
+  vi.stubEnv("AI_LEVELS_CONFIG", path);
+  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+  resetCodeChangesSettings();
+  const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
+  actAs(owner);
+
+  // Balanced is the server's own: no checks, said in the line, and no switch that could only claim otherwise.
+  const balanced = await setting();
+  expect(balanced.summary).toContain("Checks Off");
+  expect(checksSwitch(balanced)).toBeNull();
+
+  // Best has a model for them: they run, so the switch is there and on; off holds, and on is Best's model again.
+  expect(await saveAiModel(project.slug, { levels: { code_changes: "best" } })).toEqual({});
+  const best = await setting();
+  expect(best.summary).toContain("Checks Claude Sonnet 5.5");
+  expect(checksSwitch(best)).toEqual({ on: true });
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({});
+  expect(checksSwitch(await setting())).toEqual({ on: false });
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
+  expect(checksSwitch(await setting())).toEqual({ on: true });
+
+  // Off saved, then back on Balanced: the switch stays, off, so the saved Off can be undone (the line then says what the server runs).
+  expect(await saveAiModel(project.slug, { code_changes_check: "off", levels: { code_changes: "balanced" } })).toEqual({});
+  expect(checksSwitch(await setting())).toEqual({ on: false });
+  expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
+  expect(checksSwitch(await setting())).toBeNull();
+
+  // Custom with a model picked for Checks: on, whatever the server's own is.
+  expect(await saveAiModel(project.slug, { code_changes_check: "acme/tiny" })).toEqual({});
+  expect(checksSwitch(await setting())).toEqual({ on: true });
 });

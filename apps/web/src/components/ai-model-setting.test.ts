@@ -26,8 +26,8 @@ const props: AiModelSettingProps = {
   summary: "Drafts Claude Haiku 5.5 · Summaries Claude Haiku 5.5",
   notice: null,
   roles: [
-    { role: "support_draft", label: "Drafts", model: "", default: "anthropic/claude-haiku-5.5", agent: false },
-    { role: "support_summary", label: "Summaries", model: "acme/tiny", default: "anthropic/claude-haiku-5.5", agent: false },
+    { role: "support_draft", label: "Drafts", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: false },
+    { role: "support_summary", label: "Summaries", model: "acme/tiny", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: false },
   ],
   listed: [{ id: "acme/tiny", name: "Acme: Tiny", input: 1e-7, output: 4e-7, tools: true }],
   creditsPerDollar: null,
@@ -194,9 +194,9 @@ test("a role switched off (Autopilot's Checks) is said to be off under Custom, w
     levels: props.levels.map((level) => ({ ...level, upgrade: null })),
     summary: "Decides Claude Haiku 5.5 · Checks Off · Writes Claude Haiku 5.5",
     roles: [
-      { role: "code_changes_decide", label: "Decides", model: "", default: "anthropic/claude-haiku-5.5", agent: true },
-      { role: "code_changes_check", label: "Checks", model: "off", default: "anthropic/claude-sonnet-5.5", agent: true },
-      { role: "code_changes", label: "Writes", model: "", default: "anthropic/claude-haiku-5.5", agent: true },
+      { role: "code_changes_decide", label: "Decides", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+      { role: "code_changes_check", label: "Checks", model: "off", default: "anthropic/claude-sonnet-5.5", used: "off", agent: true },
+      { role: "code_changes", label: "Writes", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
     ],
   });
   const boxes = [...root.querySelectorAll("input")];

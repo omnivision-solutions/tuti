@@ -108,7 +108,9 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
     await expect(owner.getByRole("switch", { name, exact: true })).toHaveAccessibleDescription("");
   }
   await expect(owner.getByRole("switch", { name: "Complete posts" })).toHaveAccessibleDescription("Completing a post emails the people who asked for it.");
-  await expect(owner.getByText(/After the hold|Only your team sees it|Sent to /)).toHaveCount(0);
+  await expect(owner.getByText(/After the hold|Only your team sees it|Off, Autopilot makes no links/)).toHaveCount(0);
+  // What's sent where stays on the page, by the switch that sends it.
+  await expect(owner.getByText(/^Sent to .+: each merged pull request's title, description, commits and diff/)).toBeVisible();
   await checkpoint(owner, "team-settings-autopilot");
 
   // The way to Advanced tuning, a page of its own, with the way back.

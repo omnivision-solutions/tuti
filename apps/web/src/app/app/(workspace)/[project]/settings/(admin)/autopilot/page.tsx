@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -9,7 +9,7 @@ import { AdvancedTuningLink, AutopilotChecksSwitch, AutopilotRecipientsForm, Aut
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
-import { aiModelSetting } from "@/lib/ai-model-setting";
+import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
 import { autopilotRecordText } from "@/lib/autopilot-words";
 import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Autopilot · Settings" };
 
 /**
  * Settings → AI → Autopilot: its AI model (Decides, Checks, Writes), whether Checks run and the way to Advanced tuning,
- * which owners and admins change; then whether it reads merged pull requests, what it does by itself, and how it's
+ * which owners and admins change; then whether it reads merged pull requests (and what's sent where), what it does by itself, and how it's
  * doing, which owners change and admins see. Only where the server has AI.
  */
 export default async function AutopilotSettingsPage(props: PageProps<"/app/[project]/settings/autopilot">) {
@@ -56,7 +56,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     prisma.githubInstallation.findUnique({ where: { projectId: membership.project.id }, select: { projectId: true } }),
     autopilotRecord(membership.project.id),
   ]);
-  const checks = model.roles.find(({ role }) => role === "code_changes_check")!;
+  const checks = checksSwitch(model);
   return (
     <SettingsPane
       title="Autopilot"
@@ -83,13 +83,20 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
       )}
       <SettingsCard>
         <AiModelSetting {...model} />
-        {/* Off is the role's model saved as "off", on every level and plan. Where the server itself runs no checks, there's nothing to switch (unless a saved Off is still to undo). */}
-        {(checks.default !== "off" || checks.model === "off") && <AutopilotChecksSwitch projectSlug={slug} on={checks.model !== "off"} />}
+        {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} />}
         <AdvancedTuningLink href={`/app/${slug}/settings/ai-models/tuning`} upgrade={planIncludes(project.plan, "aiTuning") ? null : upgradePrompt("aiTuning", slug, true)} />
       </SettingsCard>
-      <SettingsCard>
-        <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />
-      </SettingsCard>
+      <div className="flex flex-col gap-2">
+        <SettingsCard>
+          <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />
+        </SettingsCard>
+        {/* What leaves, said where it's switched on (docs/plan.md: the team knows what's sent where). The page's, not a hint of the switch's. */}
+        <p className="text-sm text-muted-foreground">
+          Sent to {aiProvider()}: each merged pull request&apos;s title, description, commits and diff, the repository files Autopilot reads at its merge commit
+          and your help center&apos;s articles and drafts (to find what to fix), and the files Verify reads when it checks an article. Lockfiles, generated
+          files and files that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
+        </p>
+      </div>
       {project.analyseCodeChanges && (
         <SettingsCard title="What it does by itself">
           <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} owner={owner} />
