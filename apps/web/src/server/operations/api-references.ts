@@ -1,13 +1,11 @@
-import { isDeepStrictEqual } from "node:util";
-
 import { type Prisma, prisma } from "@tuti/db";
-import { freeDocsSlug, lockProject } from "@tuti/jobs";
-import { type ApiDoc, type ApiReferenceState, onHelpCenter, OPENAPI_MAX_BYTES, readSpec, settle } from "@tuti/shared/api-reference";
+import { fetchSpec, freeDocsSlug, lockProject, readStorable, referenceCounts, respec, specUrlRefusal, syncApiReference as syncReference } from "@tuti/jobs";
+import { type ApiDoc, type ApiReferenceState, onHelpCenter, OPENAPI_MAX_BYTES, settle } from "@tuti/shared/api-reference";
 import { z } from "zod";
 
 import { SPEC_TOO_LARGE } from "@/lib/api-reference";
 
-import { defineOperation, OperationError } from "./define";
+import { type Actor, defineOperation, OperationError } from "./define";
 import { customDocsSlug, customSlug, tabFor } from "./docs";
 
 /**
@@ -26,44 +24,75 @@ const baseUrl = z
   .trim()
   .max(2000)
   .refine((value) => /^https:\/\//i.test(value) && URL.canParse(value), "Enter an address that starts with https://");
+/** Where a URL source's spec is (fetchSpec says what it may be: https, public). */
+const sourceUrl = z.string().trim().min(1, "Enter the spec's address").max(2000, "Keep the address to 2,000 characters");
 
 /** The spec as a doc to store; one that can't be read, or has nothing to show, is refused with the reader's sentence. */
-function read(text: string): ApiDoc {
-  const result = readSpec(text);
+function read(text: string, from?: string): ApiDoc {
+  const result = readStorable(text, from);
   if ("error" in result) {
     throw new OperationError(400, "invalid_input", result.error);
   }
-  if (result.doc.operations.length === 0) {
-    throw new OperationError(400, "invalid_input", "This spec has no operations to show.");
-  }
-  // As it's stored (no undefined values), so a doc read again compares equal to the stored one.
-  const doc = JSON.parse(JSON.stringify(result.doc)) as ApiDoc;
-  if (UNSTORABLE.test(text) || unstorable(doc)) {
-    throw new OperationError(
-      400,
-      "invalid_input",
-      "This spec has a character that can't be stored: a null character (\\u0000) or half of a surrogate pair (\\ud800–\\udfff). Remove it and try again.",
-    );
-  }
-  return doc;
+  return result.doc;
 }
 
-/** What PostgreSQL stores in neither text nor JSON: a null character, or a surrogate without its other half. */
-const UNSTORABLE = /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/** Whether a string anywhere in `value` (JSON; a key too) has one. */
-function unstorable(value: unknown): boolean {
-  if (typeof value === "string") return UNSTORABLE.test(value);
-  if (typeof value !== "object" || value === null) return false;
-  return Array.isArray(value) ? value.some(unstorable) : Object.entries(value).some(([key, inner]) => UNSTORABLE.test(key) || unstorable(inner));
+/**
+ * The text at a URL source's address and the address that served it (fetchSpec's limits), or a refusal saying why it
+ * couldn't be read. Counted against the team's fetch limits (`context`) unless it's refused before anything is fetched.
+ */
+export async function fetched(url: string, context: { actor: Actor; projectId: string }): Promise<{ text: string; url: string }> {
+  const refused = specUrlRefusal(url);
+  if (refused) {
+    throw new OperationError(400, "invalid_input", refused);
+  }
+  await countSpecFetch(context);
+  const result = await fetchSpec(url);
+  if ("error" in result) {
+    throw new OperationError(400, "invalid_input", result.error);
+  }
+  return result;
 }
 
-/** The columns lists read, kept beside the state they count. */
-const counts = (doc: ApiDoc, state: ApiReferenceState) => ({
-  operationCount: doc.operations.length,
-  shownCount: onHelpCenter(doc, state).operations.length,
-  unseenCount: state.unseen.length,
-});
+/** Specs the team may have Tuti fetch: per member (across their projects; an API key counts as whoever made it) a minute, and per project an hour. */
+export const FETCHES_PER_MEMBER_PER_MINUTE = 10;
+export const FETCHES_PER_PROJECT_PER_HOUR = 120;
+
+/**
+ * Counts a fetch the team asked for (Fetch, adding from a URL, Sync now) against its limits, or refuses it: each one
+ * makes our server wait up to 15 seconds for an address the team picks. One at a time per project, so fetches at once
+ * can't overrun the limits together. The 6-hourly sync isn't counted.
+ */
+export async function countSpecFetch({ actor, projectId }: { actor: Actor; projectId: string }): Promise<void> {
+  const userId = actor.kind === "user" ? actor.userId : actor.createdById;
+  const hourAgo = new Date(Date.now() - 60 * 60_000);
+  const over = await prisma.$transaction(async (tx) => {
+    // Locks of their own (classes 11 and 12), always in that order: they wait on nothing else of the project's.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(11, hashtext(${projectId}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(12, hashtext(${userId}))`;
+    await tx.apiReferenceFetch.deleteMany({ where: { projectId, createdAt: { lt: hourAgo } } });
+    const [byMember, byProject] = await Promise.all([
+      // Across their projects: being on many is no more fetches a minute.
+      tx.apiReferenceFetch.count({ where: { userId, createdAt: { gt: new Date(Date.now() - 60_000) } } }),
+      tx.apiReferenceFetch.count({ where: { projectId, createdAt: { gt: hourAgo } } }),
+    ]);
+    if (byMember >= FETCHES_PER_MEMBER_PER_MINUTE) return "That's a lot of fetches. Try again in a minute.";
+    if (byProject >= FETCHES_PER_PROJECT_PER_HOUR) return "This project fetched a lot of specs in the last hour. Try again later.";
+    await tx.apiReferenceFetch.create({ data: { projectId, userId } });
+    return null;
+  });
+  if (over) {
+    throw new OperationError(429, "rate_limited", over);
+  }
+}
+
+const counts = referenceCounts;
+
+/**
+ * A URL source's address as it's kept: as a URL parser writes it ("https:Example.com/x" is "https://example.com/x"),
+ * so the 6-hourly job's grouping by host, in SQL, sees the host its reads go to. An address that doesn't parse is
+ * kept as given (it's refused before it would be).
+ */
+const stored = (url: string) => URL.parse(url.trim())?.href ?? url;
 
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 
@@ -86,6 +115,7 @@ const summarySelect = {
   unseenCount: true,
   publishedAt: true,
   syncedAt: true,
+  syncTriedAt: true,
   changedAt: true,
   syncError: true,
 } as const;
@@ -198,15 +228,19 @@ export const getApiReference = defineOperation({
 export const createApiReference = defineOperation({
   name: "apiReferences.create",
   summary:
-    "Add an API reference to the docs from a spec's text (`spec`, 5 MB at most): OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read, or has no operations, is refused with the reason",
+    "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), or the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it). Either is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
   method: "POST",
   path: "/api-references",
   scope: "write",
   access: "team",
-  input: z.object({ name, spec, tab: slug.optional() }),
+  input: z
+    .object({ name, spec: spec.optional(), url: sourceUrl.optional(), tab: slug.optional() })
+    .refine((input) => (input.spec === undefined) !== (input.url === undefined), "Give the spec's text (spec) or its address (url), not both"),
   example: { name: "API reference", spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '1'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
-  run: async ({ projectId }, input) => {
-    const { doc, state } = settle(null, read(input.spec));
+  run: async (context, input) => {
+    const { projectId } = context;
+    const { text, url: from } = input.url === undefined ? { text: input.spec!, url: undefined } : await fetched(input.url, context);
+    const { doc, state } = settle(null, read(text, from));
     return summary(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
@@ -219,7 +253,8 @@ export const createApiReference = defineOperation({
             name: input.name,
             order: await lastIn(tx, projectId, tabId),
             format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
-            spec: input.spec,
+            ...(input.url !== undefined && { source: "URL", sourceUrl: stored(input.url) }),
+            spec: text,
             doc: json(doc),
             state: json(state),
             ...counts(doc, state),
@@ -341,42 +376,80 @@ export const replaceApiReference = defineOperation({
   run: async ({ projectId }, input) => {
     const next = read(input.spec);
     return prisma.$transaction(async (tx) => {
-        // Locked, so a choice saved meanwhile (apiReferences.update) isn't written over.
+      // Locked, so a choice saved meanwhile (apiReferences.update) isn't written over.
+      await lockProject(tx, projectId);
+      const row = await tx.apiReference.findUnique({
+        where: { projectId_slug: { projectId, slug: input.slug } },
+        select: { id: true, source: true, doc: true, state: true },
+      });
+      if (!row) {
+        throw notFound(input.slug);
+      }
+      if (row.source !== "UPLOAD") {
+        throw new OperationError(409, "not_uploaded", "This reference's spec is read from where it lives, so it can't be replaced by hand");
+      }
+      const { data, changes } = respec(row, input.spec, next);
+      return { ...summary(await tx.apiReference.update({ where: { id: row.id }, data, select: summarySelect })), changes };
+    });
+  },
+});
+
+export const syncApiReference = defineOperation({
+  name: "apiReferences.sync",
+  summary:
+    "Read a URL's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `failure` says why (and `syncError`, the reference's page too, until a sync works). A sync that another (the 6-hourly one, a second Sync now, a change of address) overtook writes nothing, as that one's answer is newer: `changes` and `failure` are null. The rest of the answer is the reference as it is once this sync is done. With `url`, the reference is read from that address from now on: it's fetched and read first, with apiReferences.create's checks, and one that can't be is refused (400) with the address left as it was; so is one overtaken by another change of the address, or by a sync (409). The address is kept as a URL parser writes it. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
+  method: "POST",
+  path: "/api-references/{slug}/sync",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug, url: sourceUrl.optional() }),
+  example: { url: "https://api.example.com/openapi.json" },
+  run: async (context, input) => {
+    const { projectId } = context;
+    const row = await prisma.apiReference.findUnique({
+      where: { projectId_slug: { projectId, slug: input.slug } },
+      select: { id: true, source: true, sourceUrl: true, syncTriedAt: true },
+    });
+    if (!row) {
+      throw notFound(input.slug);
+    }
+    if (row.source !== "URL") {
+      throw new OperationError(409, "not_url", "This reference's spec isn't read from a URL: upload a new version instead");
+    }
+    if (input.url !== undefined && stored(input.url) !== row.sourceUrl) {
+      // A new address: read whole before it's kept, so one that doesn't work leaves the reference as it was.
+      const { text, url: from } = await fetched(input.url, context);
+      const next = read(text, from);
+      return prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        const row = await tx.apiReference.findUnique({
-          where: { projectId_slug: { projectId, slug: input.slug } },
-          select: { id: true, source: true, doc: true, state: true },
-        });
-        if (!row) {
+        // Only over the reference as it started from: every change and sync moves syncTriedAt on, so a teammate's change
+        // that landed meanwhile stays, even one back to this address (A to C to A). A sync landing meanwhile refuses it
+        // too: the rare price of telling those apart without a counter.
+        const current = await tx.apiReference.findFirst({ where: { id: row.id, sourceUrl: row.sourceUrl, syncTriedAt: row.syncTriedAt }, select: { doc: true, state: true } });
+        if (!current) {
+          if (await tx.apiReference.count({ where: { id: row.id } })) {
+            throw new OperationError(409, "source_changed", "The address changed or was synced meanwhile. Reload to see it, and try again.");
+          }
           throw notFound(input.slug);
         }
-        if (row.source !== "UPLOAD") {
-          throw new OperationError(409, "not_uploaded", "This reference's spec is read from where it lives, so it can't be replaced by hand");
-        }
-        const { doc, state } = settle({ doc: row.doc as unknown as ApiDoc, state: row.state as unknown as ApiReferenceState }, next);
-        const now = new Date();
-        const before = new Set((row.doc as unknown as ApiDoc).operations.map((operation) => operation.key));
-        const after = new Set(doc.operations.map((operation) => operation.key));
-        const changed = !isDeepStrictEqual(doc, row.doc);
-        const updated = await tx.apiReference.update({
-          where: { id: row.id },
-          data: {
-            format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
-            spec: input.spec,
-            doc: json(doc),
-            state: json(state),
-            ...counts(doc, state),
-            syncedAt: now,
-            ...(changed && { changedAt: now }),
-            syncError: null,
-          },
-          select: summarySelect,
-        });
-        return {
-          ...summary(updated),
-          changes: { added: [...after].filter((key) => !before.has(key)).length, removed: [...before].filter((key) => !after.has(key)).length, changed },
-        };
-    });
+        // A sync of the old address still on its way finds the address changed, and writes nothing.
+        const { data, changes } = respec(current, text, next);
+        const updated = await tx.apiReference.update({ where: { id: row.id }, data: { ...data, sourceUrl: stored(input.url!) }, select: summarySelect });
+        return { ...summary(updated), changes, failure: null };
+      });
+    }
+    // An address refused before anything is fetched costs nothing: the sync still says why, uncounted. The sync is of
+    // the address checked here: one changed or synced meanwhile is left alone (`expected`), unfetched.
+    if (!specUrlRefusal(row.sourceUrl ?? "")) {
+      await countSpecFetch(context);
+    }
+    const result = await syncReference(row.id, { expected: row });
+    // The reference as it is now; what this sync did is `changes` and `failure`, its own, whatever landed since.
+    const now = await prisma.apiReference.findUnique({ where: { id: row.id }, select: summarySelect });
+    if (!now) {
+      throw notFound(input.slug);
+    }
+    return { ...summary(now), changes: result && "changes" in result ? result.changes : null, failure: result && "error" in result ? result.error : null };
   },
 });
 

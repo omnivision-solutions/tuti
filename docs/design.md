@@ -848,7 +848,9 @@ widths, in light and dark (in development only).
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline
-  button.
+  button. An API reference's address (Settings' Source, for a URL) has its own outline Change, beside its field:
+  changing it fetches and reads the new address first, a request out that can fail by itself, so it isn't held for
+  the page's Save.
 - A control's parts read at 3:1 or more on what's under them, in light and dark: a switch's
   off track and its thumb, a progress bar's empty track (outlined, so one at 0 is seen to be empty).
   A setting or menu item the plan doesn't include looks like any other: no lock, no badge, not faded.

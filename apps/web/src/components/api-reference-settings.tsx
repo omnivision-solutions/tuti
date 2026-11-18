@@ -11,11 +11,11 @@ import { MoveMenu } from "@/components/docs-tree";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useEditorSlot } from "@/components/use-editor-slot";
-import { type ApiReferenceSettings as Changes, saveApiReferenceSettings } from "@/server/api-references";
+import { type ApiReferenceSettings as Changes, changeApiReferenceUrl, saveApiReferenceSettings } from "@/server/api-references";
 
 /**
  * An API reference's Settings (docs/plan.md, A9). Its name, address and base address share one Save, in the
@@ -32,6 +32,70 @@ const TREE_STYLES: [TreeStyle, string, string][] = [
 
 const SAVE_FAILED = { error: "Couldn't save that. Try again." };
 
+/**
+ * A URL source's address, changed here: the new one is read before it's kept (as adding one reads it), so one that
+ * doesn't work is said under the field and the reference stays as it was. The toast says what the new spec changed.
+ */
+function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: string; url: string }) {
+  // Only what's typed over what's stored: a field left alone shows the address the page has now (a teammate's change
+  // included), so Change can't put an old one back.
+  const [edited, setEdited] = useState<string | null>(null);
+  const value = edited ?? url;
+  const [error, setError] = useState<string>();
+  const [pending, startTransition] = useTransition();
+  const next = value.trim();
+  const change = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!next || next === url || pending) {
+      return;
+    }
+    setError(undefined);
+    startTransition(async () => {
+      const result = await changeApiReferenceUrl(projectSlug, slug, next).catch(() => SAVE_FAILED as Awaited<ReturnType<typeof changeApiReferenceUrl>>);
+      if (result.error) {
+        setError(result.error);
+        document.getElementById("reference-source-url")?.focus();
+        return;
+      }
+      // Back to following the stored address, unless something else was typed while this one was read: that stays.
+      setEdited((now) => (now !== null && now.trim() === next ? null : now));
+      const what = [result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ");
+      toast.success(what ? `Address changed: ${what}` : "Address changed");
+    });
+  };
+  return (
+    <form onSubmit={change}>
+      <Field data-invalid={error ? true : undefined}>
+        <FieldLabel htmlFor="reference-source-url">Spec URL</FieldLabel>
+        <div className="flex gap-2">
+          <Input
+            id="reference-source-url"
+            type="url"
+            inputMode="url"
+            value={value}
+            maxLength={2000}
+            aria-invalid={error ? true : undefined}
+            aria-describedby="reference-source-url-note"
+            onChange={(event) => {
+              // The stored address typed back is the field left alone: it follows the stored one again.
+              setEdited(event.target.value.trim() === url ? null : event.target.value);
+              setError(undefined);
+            }}
+          />
+          <Button type="submit" variant="outline" disabled={pending || !next || next === url} focusableWhenDisabled>
+            {pending ? "Changing…" : "Change"}
+          </Button>
+        </div>
+        {error ? (
+          <FieldError id="reference-source-url-note">{error}</FieldError>
+        ) : (
+          <FieldDescription id="reference-source-url-note">A new address is read before it’s kept, and fetched every 6 hours from then on.</FieldDescription>
+        )}
+      </Field>
+    </form>
+  );
+}
+
 export function ApiReferenceSettings({
   projectSlug,
   host,
@@ -45,8 +109,8 @@ export function ApiReferenceSettings({
   /** The help center's host, before the reference's address: "acme.tuti.so". */
   host: string;
   reference: { slug: string; name: string; baseUrl: string | null; treeStyle: TreeStyle; tryIt: boolean };
-  /** Where the spec is read from, as rows of words ("From", "Uploaded file"), and its kind ("upload"). */
-  source: { kind: string; rows: [string, string][] };
+  /** Where the spec is read from, as rows of words ("From", "Uploaded file"), and its kind ("upload"); a URL's address. */
+  source: { kind: string; rows: [string, string][]; url?: string | null };
   /** In the team's order, with how many endpoints are listed under each. */
   groups: { key: string; name: string; endpoints: number }[];
   /** What the reader couldn't read, by kind: the first places of each. */
@@ -210,6 +274,7 @@ export function ApiReferenceSettings({
                 </div>
               ))}
             </dl>
+            {source.kind === "url" && <SourceUrl projectSlug={projectSlug} slug={reference.slug} url={source.url ?? ""} />}
             <div className="flex justify-end">
               <ApiReferenceSync projectSlug={projectSlug} slug={reference.slug} source={source.kind} maxBytes={maxBytes} inHeader={false} />
             </div>

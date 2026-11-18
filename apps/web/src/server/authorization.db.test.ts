@@ -296,6 +296,9 @@ const matrix: Matrix = {
     setApiReferencePublished: { allowed: "MEMBER", call: (slug) => apiReferences.setApiReferencePublished(slug, "matrix-api", false) },
     replaceApiReferenceSpec: { allowed: "MEMBER", call: (slug) => apiReferences.replaceApiReferenceSpec(slug, "matrix-api", form({ spec: MATRIX_SPEC.replace("List posts", "Every post") })) },
     saveApiReferenceSettings: { allowed: "MEMBER", call: (slug) => apiReferences.saveApiReferenceSettings(slug, "matrix-api", { name: "Renamed API", baseUrl: "https://api.example.com", tryIt: false }) },
+    syncApiReferenceNow: { allowed: "MEMBER", call: (slug) => apiReferences.syncApiReferenceNow(slug, "matrix-url-api") },
+    previewApiReferenceUrl: { allowed: "MEMBER", call: (slug) => apiReferences.previewApiReferenceUrl(slug, `${site.origin}/matrix-openapi.json`) },
+    changeApiReferenceUrl: { allowed: "MEMBER", call: (slug) => apiReferences.changeApiReferenceUrl(slug, "matrix-url-api", `${site.origin}/matrix-openapi-2.json`) },
     deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },
   },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
@@ -927,6 +930,12 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
   await call(createApiReference, { actor: { kind: "user", userId: users.OWNER.id }, projectId }, { name: "Matrix API", spec: MATRIX_SPEC });
+  // One read from a URL (the local site), to sync.
+  site.answer("/matrix-openapi.json", MATRIX_SPEC);
+  site.answer("/matrix-openapi-2.json", MATRIX_SPEC);
+  await call(createApiReference, { actor: { kind: "user", userId: users.OWNER.id }, projectId }, { name: "Matrix URL API", url: `${site.origin}/matrix-openapi.json` });
+  // Set up, not something the matrix checks: it doesn't count against the owner's fetch limit (one a project, over many).
+  await prisma.apiReferenceFetch.deleteMany({ where: { userId: users.OWNER.id } });
   // A reader group no collection is for.
   await prisma.readerGroup.create({ data: { projectId, key: "beta", name: "Beta", conditions: inGroupNamed("beta") } });
   await prisma.article.createMany({

@@ -375,12 +375,14 @@ export async function deleteCollection(projectSlug: string, slug: string): Promi
 export async function addApiReference(
   projectSlug: string,
   formData: FormData,
-): Promise<FormState & { field?: "name" | "spec" | "tab"; slug?: string }> {
+): Promise<FormState & { field?: "name" | "spec" | "url" | "tab"; slug?: string }> {
   let slug: string | undefined;
-  const spec = formData.get("spec") ?? "";
+  const spec = formData.get("spec");
+  const url = formData.get("url");
   const input = {
     name: String(formData.get("name") ?? ""),
-    spec: typeof spec === "string" ? spec : await spec.text(),
+    // A spec's text (a file), or the address it's read from.
+    ...(typeof url === "string" ? { url } : { spec: spec === null ? "" : typeof spec === "string" ? spec : await spec.text() }),
     tab: String(formData.get("tab") ?? "") || undefined,
   };
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -390,11 +392,12 @@ export async function addApiReference(
     return { ...result, slug };
   }
   // The field the input's check names (the operation's message is that check's); past the check, the tab when the
-  // operation says it's gone (deleted since the dialog opened; tabFor's words), and otherwise the spec: what can't be
-  // read or has nothing to show.
+  // operation says it's gone (deleted since the dialog opened; tabFor's words), and otherwise the spec or its address:
+  // what can't be fetched, read or has nothing to show.
   const checked = createApiReference.input.safeParse(input);
   const named = checked.success ? undefined : checked.error.issues[0]?.path[0];
-  const field = named === "name" || named === "tab" ? named : checked.success && result.error === `There's no tab “${input.tab}”` ? "tab" : "spec";
+  const source = "url" in input ? "url" : "spec";
+  const field = named === "name" || named === "tab" ? named : checked.success && result.error === `There's no tab “${input.tab}”` ? "tab" : source;
   return { ...result, field };
 }
 

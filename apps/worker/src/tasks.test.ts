@@ -37,3 +37,7 @@ test("other jobs keep Hatchet's time limits, and their own key's one run at a ti
 test("an import's page may take five minutes (Featurebase's rate limit can hold it up), one at a time per import", () => {
   expect(taskOptions("importStep")).toMatchObject({ name: "import-step", retries: 0, executionTimeout: "5m", concurrency: { expression: "input.importId", maxRuns: 1 } });
 });
+
+test("syncing API references from their URLs may take ten minutes", () => {
+  expect(taskOptions("syncApiReferences")).toMatchObject({ name: "sync-api-references", executionTimeout: "10m", on: { cron: "41 * * * *" } });
+});

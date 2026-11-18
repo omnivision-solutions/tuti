@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { BracesIcon } from "lucide-react";
 
-import { ApiReferenceEndpoints, ApiReferenceMore, ApiReferenceSync, ApiReferenceTabs } from "@/components/api-reference-endpoints";
+import { ApiReferenceEndpoints, ApiReferenceMore, ApiReferenceSync, ApiReferenceSyncError, ApiReferenceTabs } from "@/components/api-reference-endpoints";
 import { ArticleStateBadge } from "@/components/docs-article-rows";
 import { DocsPageHeader } from "@/components/docs-page-header";
+import { timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 
 import { loadReference } from "./load";
@@ -32,6 +33,9 @@ export default async function ApiReferencePage(props: PageProps<"/app/[project]/
         more={<ApiReferenceMore projectSlug={slug} slug={reference.slug} name={reference.name} published={reference.published} />}
         filters={<ApiReferenceTabs projectSlug={slug} slug={reference.slug} endpoints={reference.counts.operations} />}
       />
+      {reference.syncError && reference.source !== "upload" && (
+        <ApiReferenceSyncError projectSlug={slug} slug={reference.slug} error={reference.syncError} lastSynced={timeAgo(reference.syncedAt)} />
+      )}
       <ApiReferenceEndpoints
         // Another reference's page is another list: nothing of this one's New or unsaved switches carries over.
         key={reference.slug}

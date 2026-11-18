@@ -436,6 +436,7 @@ model Project {
   docsTabs                DocsTab[]
   apiReferences           ApiReference[]
   apiTries                ApiTry[]
+  apiReferenceFetches     ApiReferenceFetch[]
   readerGroups            ReaderGroup[]
   docsRedirects           DocsRedirect[]
   portalReaders           PortalReader[]
@@ -2053,6 +2054,22 @@ model ApiTry {
   @@map("api_try")
 }
 
+/// A spec Tuti fetched from a URL because someone on the team asked (Fetch in the add dialog, adding one, Sync now),
+/// counted for its rate limits and nothing else: the project, who, and when (docs/plan.md, API reference in Docs, A10).
+/// The 6-hourly sync isn't counted. Rows over an hour old are deleted as new ones come.
+model ApiReferenceFetch {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([userId, createdAt])
+  @@map("api_reference_fetch")
+}
+
 /// An API reference in the docs (docs/plan.md, API reference in Docs): a team's spec, read into
 /// pages at /docs/<slug> and /docs/<slug>/<operation>. Listed in its tab after the collections, and
 /// read by whoever may read that tab: it has no access of its own.
@@ -2099,6 +2116,9 @@ model ApiReference {
   changedAt      DateTime              @default(now())
   /// Why the last sync kept the pages as they were (it failed, or read no operations); null once one works.
   syncError      String?
+  /// When its source was last read, whether that worked or not: a URL is read again 6 hours after (the
+  /// `sync-api-references` job). `syncedAt` is the last read that worked.
+  syncTriedAt    DateTime              @default(now())
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
@@ -2108,6 +2128,7 @@ model ApiReference {
 
   @@unique([projectId, slug])
   @@index([tabId])
+  @@index([source, syncTriedAt])
   @@map("api_reference")
 }
 
