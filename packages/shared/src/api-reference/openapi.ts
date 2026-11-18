@@ -807,7 +807,12 @@ function read(root: Obj, most: number): ApiDoc {
         if (spent()) break;
         // What's sent has no read-only fields, and what comes back no write-only ones.
         const shape = followSchema(property);
-        if (shape && flatten(shape)[sent ? "readOnly" : "writeOnly"] === true) continue;
+        // A field left out is counted as one made: a wide schema that leaves all of its fields out
+        // is otherwise gone through in full on every use, for nothing.
+        if (shape && flatten(shape)[sent ? "readOnly" : "writeOnly"] === true) {
+          charge(1);
+          continue;
+        }
         const field = sample(property, inside, where, sent);
         if (field !== undefined) made.push([named(name, "a field's name"), field]);
       }

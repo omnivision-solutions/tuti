@@ -2042,3 +2042,12 @@ test("what's left out is warned about", () => {
   ]);
   for (const warning of doc.warnings) expect(warning.code).toMatch(/^[A-Z]+(_[A-Z]+)*$/);
 });
+
+test("the fields a made-up example leaves out count towards the read's limit", () => {
+  // Read-only and write-only at once: left out of what's sent and of what comes back.
+  const hidden = { type: "object", properties: Object.fromEntries(Array.from({ length: 2_000 }, (_, index) => [`f${index}`, { readOnly: true, writeOnly: true }])) };
+  const paths = Object.fromEntries(Array.from({ length: 100 }, (_, index) => [`/${index}`, { post: { requestBody: json(ref("H")), responses: { "200": json(ref("H")) } } }]));
+  const text = JSON.stringify({ openapi: "3.0.0", paths, components: { schemas: { H: hidden } } });
+  expect(errorOf(text, { values: 250_000 })).toMatch(/too large once its references are followed/);
+  expect(errorOf(text)).toBeNull();
+});
