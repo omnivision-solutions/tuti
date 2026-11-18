@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { afterButton, autopilotRecordText, undoQuestion, changeRow, draftPick, partState, plainWhy, completingWarning, progressWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
+import { afterButton, autopilotRecordText, checksNoticeShown, undoQuestion, changeRow, draftPick, partState, plainWhy, completingWarning, progressWarning, dismissOrder, goesLive, lookAgainIn, nothingToShow, outcomeOf, postWaits, publishFirst, commentToApprove, reviewItem, statusChange, undoWarning, updateChips, withPostUpdate } from "./autopilot-words";
 
 const progress = (status: string, waitReason: string | null = null) =>
   ({ id: "u1", kind: "moves_forward", status, waitReason, auto: false, decidedBy: null, decidedAt: null, post: { title: "Dark mode" } }) as unknown as Parameters<typeof afterButton>[0][number];
@@ -457,4 +457,12 @@ test("Undo on a new article's draft says the collection approving made goes too,
   const draft = { id: "a1", kind: "new_article", number: 12 } as unknown as Parameters<typeof undoQuestion>[0];
   expect(undoQuestion(draft, []).description).toBe("The draft is deleted.");
   expect(undoQuestion({ ...draft, undoRemovesCollection: "Exports" }, []).description).toBe("The draft is deleted, and so is Exports, the collection approving it made.");
+});
+
+test("Autopilot's notice that edits wait shows only where they're reviewed, Checks is off, they'd go out by themselves and it wasn't dismissed", () => {
+  const shown = { reviewed: true, checks: false, planHasIt: true, analyses: true, publishesEdits: true, dismissed: false };
+  expect(checksNoticeShown(shown)).toBe(true);
+  for (const [name, value] of Object.entries(shown)) {
+    expect(checksNoticeShown({ ...shown, [name]: !value })).toBe(false);
+  }
 });

@@ -3,6 +3,14 @@ import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * Whether Settings → Autopilot shows its notice that article edits wait while Checks is off (docs/plan.md, E5): the
+ * server checks the project's edits (`reviewed`), Checks is off, edits would otherwise go out by themselves (the plan has
+ * Autopilot, it reads pull requests, Publish article edits is on), and no owner or admin dismissed it.
+ */
+export const checksNoticeShown = (project: { reviewed: boolean; checks: boolean; planHasIt: boolean; analyses: boolean; publishesEdits: boolean; dismissed: boolean }) =>
+  project.reviewed && !project.checks && project.planHasIt && project.analyses && project.publishesEdits && !project.dismissed;
+
 /** What an update is, as the review page names it. */
 export function updateKind(update: { kind: string; problem?: string }): string {
   switch (update.kind) {
