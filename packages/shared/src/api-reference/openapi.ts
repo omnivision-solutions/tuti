@@ -416,6 +416,20 @@ function read(root: Obj, most: number): ApiDoc {
     return isObj(node) ? node : null;
   }
 
+  /** The schema a schema is, also through a reference that only has words about it (`allOf: [{ $ref }]` with a description). */
+  function whatItIs(node: unknown): Obj | null {
+    let schema = followSchema(node);
+    for (let hops = 0; schema && hops < 20; hops++) {
+      const parts = partsOf(schema);
+      const references = parts.filter((part) => isObj(part) && typeof part.$ref === "string");
+      const words = parts.every((part) => isObj(part) && (typeof part.$ref === "string" || saysOf(part).words));
+      if (references.length !== 1 || !words || !saysOf(schema).beside) break;
+      charge(parts.length);
+      schema = followSchema(references[0]);
+    }
+    return schema;
+  }
+
   /** A schema with its `allOf` parts folded in: their fields together and their keywords, a later part's word over an earlier one's. */
   function flatten(schema: Obj, where?: string): Obj {
     if (!Array.isArray(schema.allOf)) return schema;
@@ -497,7 +511,7 @@ function read(root: Obj, most: number): ApiDoc {
       if (!from || written.has(from)) continue;
       const choices = list(from[key]);
       charge(choices.length);
-      if (choices.some((choice) => followSchema(choice) === schema)) merged.delete(key);
+      if (choices.some((choice) => whatItIs(choice) === schema)) merged.delete(key);
     }
     // `example` and 3.1's `examples` are one choice: where the schema's own parts write one of them, the other isn't its own.
     if (own.has("example") !== own.has("examples")) merged.delete(own.has("example") ? "examples" : "example");
@@ -631,6 +645,7 @@ function read(root: Obj, most: number): ApiDoc {
     const again = place.folding.includes(node);
     // (A subtype that folds in the base it's listed as a choice of isn't inside that base: it's the usual way to write one.)
     const inside = folded.find(({ value }) => isObj(value) && value !== place.chosenFrom && place.stack.includes(value))?.pointer;
+    const { chosenFrom } = place;
     place = { ...place, chosenFrom: undefined };
     // Met again under itself without being a type it's inside (it holds itself through a part of a
     // part): it stops here all the same, named after nothing, since no reference of its own is what it is.
@@ -646,7 +661,8 @@ function read(root: Obj, most: number): ApiDoc {
         warn("ADDS_TO_ITSELF", place.where);
       }
       const name = lookup(held)?.name;
-      const only = inside === undefined ? toSchema({ $ref: held }, place) : name === undefined ? { type: "object" } : { type: name, ref: name };
+      // (Read as the reference it is, it's still the choice it was listed as.)
+      const only = inside === undefined ? toSchema({ $ref: held }, { ...place, chosenFrom }) : name === undefined ? { type: "object" } : { type: name, ref: name };
       // The schema's own words first, whatever else it has, then those in a part of their own.
       const said = (key: string) => [node, ...words].find((part) => Object.hasOwn(part, key))?.[key];
       const description = text(said("description"), place.where) || only.description;
@@ -743,13 +759,10 @@ function read(root: Obj, most: number): ApiDoc {
     const value = firstOf(schema);
     if (value !== undefined) return data(value, where);
     const inside = [...stack, target];
-    if (type === undefined) {
-      const { choices } = choicesOf(schema);
-      return choices.length > 0 ? sample(choices[0], inside, where) : undefined;
-    }
-    // An object that only lists its choices is the first of them that gives a value. The choice isn't
-    // inside it (a subtype that folds its base in is still that subtype), and it's picked for once only.
-    if (type === "object" && fieldsOf(schema.properties).length === 0 && !picking.has(target)) {
+    // What only lists its choices, saying it's an object or nothing, is the first of them that gives
+    // a value. The choice isn't inside it (a subtype that folds its base in is still that subtype),
+    // and it's picked for once only.
+    if ((type === undefined || (type === "object" && fieldsOf(schema.properties).length === 0)) && !picking.has(target)) {
       picking.add(target);
       try {
         for (const choice of choicesOf(schema).choices.slice(0, 8)) {
@@ -760,6 +773,7 @@ function read(root: Obj, most: number): ApiDoc {
         picking.delete(target);
       }
     }
+    if (type === undefined) return undefined;
     if (type === "object") {
       const made: [string, unknown][] = [];
       for (const [name, property] of fieldsOf(schema.properties)) {

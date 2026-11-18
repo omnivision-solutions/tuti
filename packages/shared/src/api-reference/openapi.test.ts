@@ -628,6 +628,39 @@ test("an object that only lists its choices is one of them", () => {
     ["Dog", "object"],
   ]);
 
+  // The same with no `type` on the base, and with words beside each choice's reference, in 3.0's way and 3.1's.
+  const worded = (openapi: string, choice: (name: string, description: string) => object) =>
+    read(
+      JSON.stringify({
+        openapi,
+        paths: { "/x": { get: { summary: "X", responses: { "200": json(ref("Pet")) } } } },
+        components: {
+          schemas: {
+            Pet: { discriminator: { propertyName: "kind" }, oneOf: [choice("Cat", "A cat."), choice("Dog", "A dog.")] },
+            Cat: { allOf: [ref("Pet"), { properties: { lives: { type: "integer" } } }] },
+            Dog: { allOf: [ref("Pet"), { properties: { barks: { type: "boolean" } } }] },
+          },
+        },
+      }),
+    );
+  for (const doc of [
+    worded("3.0.3", (name, description) => ({ allOf: [ref(name)], description })),
+    worded("3.1.0", (name, description) => ({ $ref: `#/components/schemas/${name}`, description })),
+  ]) {
+    const response = doc.operations[0]!.responses[0]!;
+    expect(response.schema).toEqual({
+      type: "Pet",
+      ref: "Pet",
+      oneOf: [
+        { type: "Cat", ref: "Cat", description: "A cat.", properties: [{ name: "lives", required: false, type: "integer" }] },
+        { type: "Dog", ref: "Dog", description: "A dog.", properties: [{ name: "barks", required: false, type: "boolean" }] },
+      ],
+    });
+    expect(response.example).toEqual({ lives: 0 });
+    expect(doc.types[1]!.schema).toEqual({ type: "object", ref: "Cat", properties: [{ name: "lives", required: false, type: "integer" }] });
+    expect(doc.warnings).toEqual([]);
+  }
+
   // Choices that only say which fields are required leave it an object.
   const required = schemaOf({ type: "object", oneOf: [{ required: ["email"] }, { required: ["phone"] }] });
   expect(required.schema).toEqual({ type: "object", oneOf: [{ type: "any" }, { type: "any" }] });
