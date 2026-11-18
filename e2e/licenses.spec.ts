@@ -36,30 +36,23 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   await buyer.getByRole("button", { name: "Add to my account" }).click();
   await buyer.waitForURL("**/app/licenses");
 
-  // No project yet: make one, then come back and assign the license to it.
+  // No project yet: the project they make next gets the license, not a trial.
   await expect(buyer.getByText("AppSumo Tier 2 plan")).toBeVisible();
   await expect(buyer.getByText(key)).toBeVisible();
   await expect(buyer.getByText("Not assigned to a project")).toBeVisible();
   await checkpoint(buyer, "licenses-no-project");
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   await createProject(buyer, "Acme", slug, cloudPortalUrl);
+  await buyer.goto(`/app/${slug}/settings/billing`);
+  await expect(buyer.getByText("AppSumo Tier 2 plan")).toBeVisible();
+  await expect(buyer.getByText(/left in your trial/)).toBeHidden();
   // In their menu now that they hold one.
   await buyer.getByRole("button", { name: /Bea Buyer/ }).click();
   await buyer.getByRole("menuitem", { name: "Licenses" }).click();
   await buyer.waitForURL("**/app/licenses");
   const license = `AppSumo Tier 2 license ${key}`;
-  await expect(buyer.getByRole("combobox", { name: `Project for ${license}` })).toContainText("Acme");
-  await checkpoint(buyer, "licenses-unassigned");
-  await buyer.getByRole("button", { name: `Assign ${license}`, exact: true }).click();
-  await expect(buyer.getByText("License assigned")).toBeVisible();
   await expect(buyer.getByText("On Acme")).toBeVisible();
-  // The keyboard's place moves to the row's new control.
-  await expect(buyer.getByRole("button", { name: `Unassign ${license}` })).toBeFocused();
   await checkpoint(buyer, "licenses-assigned");
-
-  // Its plan is the project's.
-  await buyer.goto(`/app/${slug}/settings/billing`);
-  await expect(buyer.getByText("AppSumo Tier 2 plan")).toBeVisible();
 
   // Unassigned, the project is back on its own plan (its trial's, or the default).
   await buyer.goto("/app/licenses");
@@ -72,8 +65,12 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   const stale = await buyer.context().newPage();
   await stale.goto("/app/licenses");
   await expect(stale.getByRole("button", { name: `Assign ${license}`, exact: true })).toBeVisible();
+  await checkpoint(buyer, "licenses-unassigned");
   await buyer.getByRole("button", { name: `Assign ${license}`, exact: true }).click();
+  await expect(buyer.getByText("License assigned")).toBeVisible();
   await expect(buyer.getByText("On Acme")).toBeVisible();
+  // The keyboard's place moves to the row's new control.
+  await expect(buyer.getByRole("button", { name: `Unassign ${license}` })).toBeFocused();
 
   // Refunded on AppSumo: deactivated, still on its project until unassigned, which only Unassign offers.
   const refund = appsumoWebhook({ event: "deactivate", license_key: key });
