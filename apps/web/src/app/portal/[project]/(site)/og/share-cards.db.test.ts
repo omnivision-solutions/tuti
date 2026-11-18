@@ -10,7 +10,8 @@ import { metadata as signInMetadata } from "@/app/portal/[project]/(site)/sign-i
 import { portalUrl } from "@/lib/hosts";
 import { PREVIEW } from "@/lib/portal-base";
 import { request } from "@/test/next-headers";
-import { createArticle, createCollection, publishArticle } from "@/server/operations/docs";
+import { createApiReference } from "@/server/operations/api-references";
+import { createArticle, createCollection, createTab, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -141,6 +142,35 @@ test("the docs' cards follow who may read them: a collection for people signed i
   await prisma.collection.update({ where: { projectId_slug: { projectId: project.id, slug: collection } }, data: { access: "SIGNED_IN", noAccess: "HIDE" } });
   expect((await image(project.slug, ["docs", collection])).status).toBe(404);
   expect((await image(project.slug, ["docs", slug])).status).toBe(404);
+});
+
+test("a tab showing its one API reference, and /docs when the first tab or the docs without tabs hold one alone: the reference's name under Documentation", async () => {
+  const { owner, project } = await portalWithPost();
+  const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+  const spec = "openapi: 3.1.0\ninfo: { title: Acme, version: '1' }\npaths:\n  /a: { get: { summary: One, responses: { '200': { description: ok } } } }\n";
+  // Guides has an article; API holds the reference alone.
+  await call(createTab, as(), { name: "Guides" });
+  await call(createTab, as(), { name: "API" });
+  const { slug: collection } = await call(createCollection, as(), { name: "Basics", tab: "guides" });
+  const { slug } = await call(createArticle, as(), { title: "Welcome", body: "Hello.", collection });
+  await call(publishArticle, as(), { slug });
+  await call(createApiReference, as(), { name: "Acme API", spec, tab: "api" });
+  const card = async (path: string[]) => {
+    vi.mocked(shareCard).mockClear();
+    expect((await image(project.slug, path)).status).toBe(200);
+    return vi.mocked(shareCard).mock.calls[0]?.[1];
+  };
+  const reference = { eyebrow: "Documentation", title: "Acme API", picture: "page" };
+  expect(await card(["docs", "api"])).toEqual(reference);
+  // The first tab holding it alone: /docs.
+  await prisma.article.deleteMany({ where: { projectId: project.id } });
+  await prisma.collection.deleteMany({ where: { projectId: project.id } });
+  const guides = await prisma.docsTab.findFirstOrThrow({ where: { projectId: project.id, slug: "guides" } });
+  await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { tabId: guides.id } });
+  expect(await card(["docs"])).toEqual(reference);
+  // The docs without tabs.
+  await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
+  expect(await card(["docs"])).toEqual(reference);
 });
 
 test("the portal's own card, its sections' and a title in any script: made here, with nothing fetched", async () => {

@@ -5,7 +5,8 @@ import { portalAddress } from "@/server/custom-domains";
 import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
-import { type DocsCollection, docsContents, docsTabPath } from "@/server/docs-queries";
+import { referenceDescriptions } from "@/server/api-reference-queries";
+import { type DocsCollection, type DocsReferenceLink, docsContents, docsTabPath } from "@/server/docs-queries";
 import { PORTAL_BOARDS } from "@/server/post-visibility";
 
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
@@ -22,7 +23,7 @@ const DEEPEST_HEADING = 4;
 
 /**
  * The portal for AI tools (llmstxt.org): what it is, then links to every docs
- * article's Markdown (by tab, if the docs have them, under links to the tabs' and collections' pages;
+ * article's Markdown and every API reference's page (by tab, if the docs have them, under links to the tabs' and collections' pages;
  * collections nest as headings to ####, then as lists), the changelog and its newest entries' Markdown, and the
  * feedback boards. Built as
  * a document so names and titles are escaped like any Markdown we serve.
@@ -51,7 +52,11 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // For AI tools, like search engines: what's for everyone (nothing for signed-in readers or some groups only),
   // and not the articles whose team blocked search indexing.
   const docs = await docsContents(slug, { reader: SIGNED_OUT, indexable: true, locks: false });
-  const { collections, uncollected, tabs } = docs;
+  const { collections, uncollected, tabs, references } = docs;
+  // An API reference's page, with its description's first line (its operations come with A14).
+  const descriptions = await referenceDescriptions(slug, references.map((reference) => reference.slug));
+  const referenceLinks = (list: DocsReferenceLink[]) =>
+    list.length > 0 ? [links(list.map((reference) => ({ name: reference.name, url: `${portal}/docs/${reference.slug}`, note: descriptions.get(reference.slug) })))] : [];
   const articleItem = (article: { slug: string; title: string }) => ({
     type: "listItem",
     content: [linkParagraph({ name: article.title, url: `${portal}/docs/${article.slug}.md` })],
@@ -99,10 +104,13 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       ? // A tab's heading, then its collections a level down; the first has the articles in none.
         tabs.flatMap((tab) => [
           heading(2, tab.name, `${portal}${docsTabPath(docs, tab.slug)}`),
+          ...referenceLinks(tab.references),
           ...tab.collections.flatMap((collection) => collectionBlocks(collection, 3)),
           ...(tab.uncollected.length > 0 ? [heading(3, "More articles"), articleLinks(tab.uncollected)] : []),
         ])
       : [
+          // Under a heading of their own: llms.txt's links are the lists under one.
+          ...(references.length > 0 ? [heading(2, "API references"), ...referenceLinks(references)] : []),
           ...collections.flatMap((collection) => collectionBlocks(collection, 2)),
           ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Docs"), articleLinks(uncollected)] : []),
         ]),

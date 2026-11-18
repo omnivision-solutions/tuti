@@ -4,12 +4,18 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import DocsOperationPage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/[operation]/page";
-import DocsSlugPage from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import DocsPageTabs from "@/app/portal/[project]/(site)/@docsTabs/docs/[slug]/page";
+import DocsSlugPage, { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import DocsHome, { generateMetadata as homeMetadata } from "@/app/portal/[project]/(site)/docs/page";
+import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
-import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { WidgetDocs } from "@/components/widget-docs";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { apiReferencePage, markdownDoc } from "./api-reference-queries";
 import { createApiReference, updateApiReference } from "./operations/api-references";
+import { articleTabs, docsContents } from "./docs-queries";
 import { createArticle, createCollection, createTab, publishArticle } from "./operations/docs";
 import { call } from "./operations/run";
 
@@ -155,10 +161,19 @@ async function rendered(node: ReactNode): Promise<unknown> {
 }
 
 /** All an operation's page sends this reader, and its metadata, as one string. */
-async function pageText(operation: string, slug?: string) {
-  // Each object once: props can share, or loop back to, objects.
+const pageText = async (operation: string, slug?: string) =>
+  asText([await rendered(await DocsOperationPage(params(operation, slug))), await generateMetadata(params(operation, slug))]);
+
+/** All /docs/<slug> sends this reader (a reference's page, a tab's, an article's), its tabs' row and its metadata, as one string. */
+async function slugText(slug: string) {
+  const props = { params: Promise.resolve({ project: project.slug, slug }) } as never;
+  return asText([await rendered(await DocsSlugPage(props)), await rendered(await DocsPageTabs(props)), await slugMetadata(props)]);
+}
+
+/** As one string, each object once: props can share, or loop back to, objects. */
+function asText(value: unknown) {
   const seen = new WeakSet();
-  return JSON.stringify([await rendered(await DocsOperationPage(params(operation, slug))), await generateMetadata(params(operation, slug))], (_, value: unknown) => {
+  return JSON.stringify(value, (_, value: unknown) => {
     if (typeof value === "object" && value !== null) {
       if (seen.has(value)) {
         return undefined;
@@ -183,9 +198,11 @@ const missing = async (operation: string, slug?: string) =>
 describe("an operation's page", () => {
   test("shows a published reference's operation to everyone: its method and path, parameters, examples and its tab's tree", async () => {
     const page = await apiReferencePage(project.slug, "reference");
-    expect(page).toMatchObject({ kind: "reference", tab: "api", restricted: false, reference: { name: "Reference", treeStyle: "FOLDERS" }, references: [{ slug: "reference" }] });
+    expect(page).toMatchObject({ kind: "reference", tab: "api", restricted: false, reference: { name: "Reference", treeStyle: "FOLDERS" } });
     expect(page?.operations.map((o) => o.slug)).toEqual(["get-a-post", "create-a-post", "purge"]);
     const text = await pageText("get-a-post");
+    // The reference's name over the title links to its page.
+    expect(text).toContain('"href":"/docs/reference","className":"truncate hover:text-foreground","children":"Reference"');
     for (const shown of ["Get a post", "/posts/", "{number}", "Path parameters", "Query parameters", "expand", "at least 1", "Bearer token", "No such post", "curl ", "import requests", `Dark ${SECRET} mode`, "Create a post", "Admin"]) {
       expect(text).toContain(shown);
     }
@@ -287,16 +304,6 @@ describe("an operation's page", () => {
     await call(updateApiReference, as(), { slug: "reference", hideGroups: ["Posts", "Admin"] });
     expect(await apiReferencePage(project.slug, "reference")).toBeNull();
   });
-
-  test("the reference's own address goes to its first operation on the help center", async () => {
-    const slugPage = (slug: string) => DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug }) } as never);
-    expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/get-a-post");
-    await call(updateApiReference, as(), { slug: "reference", hide: ["GET /posts/{}"] });
-    expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/create-a-post");
-    await setTab("SIGNED_IN");
-    // Not for this visitor: a 404, not a redirect, a page or an error of another kind.
-    await expect(slugPage("reference")).rejects.toMatchObject({ digest: expect.stringMatching(/^NEXT_HTTP_ERROR_FALLBACK;404/) });
-  });
 });
 
 describe("a body or response that isn't an object", () => {
@@ -338,10 +345,9 @@ describe("a response", () => {
 });
 
 describe("the tree", () => {
-  test("lists the groups in the team's order, and the reference's own address opens the first operation listed", async () => {
+  test("lists the groups in the team's order", async () => {
     await call(updateApiReference, as(), { slug: "reference", groupOrder: ["Admin", "Posts"] });
     expect((await apiReferencePage(project.slug, "reference"))?.operations.map((o) => o.slug)).toEqual(["purge", "get-a-post", "create-a-post"]);
-    expect(await redirectTarget(DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug: "reference" }) } as never))).toBe("/docs/reference/purge");
     const text = await pageText("get-a-post");
     expect(text.indexOf('"children":"Admin"')).toBeGreaterThan(-1);
     expect(text.indexOf('"children":"Admin"')).toBeLessThan(text.indexOf('"children":"Posts"'));
@@ -355,6 +361,9 @@ describe("the tree", () => {
     const folder = '"component":"details","props":{"open":true,"className":"group/collection","children":[{"component":"summary"';
     const heading = '"role":"group","aria-label":"Posts"';
     const folders = await pageText("get-a-post");
+    // Each style starts the reference's part with its own page.
+    expect(folders).toContain('"href":"/docs/reference","className"');
+    expect(folders).toContain('"children":"Overview"');
     expect(folders).toContain(folder);
     expect(folders).not.toContain(heading);
     // The tab's other published reference by name, at its own address; no draft, and none of another tab's.
@@ -363,11 +372,13 @@ describe("the tree", () => {
     expect(folders).not.toContain("Elsewhere");
     await call(updateApiReference, as(), { slug: "reference", treeStyle: "headings" });
     const headings = await pageText("get-a-post");
+    expect(headings).toContain('"children":"Overview"');
     expect(headings).toContain(heading);
     expect(headings).not.toContain(folder);
     expect(headings).toContain('"href":"/docs/reference/purge"');
     await call(updateApiReference, as(), { slug: "reference", treeStyle: "entry" });
     const entry = await pageText("get-a-post");
+    expect(entry).toContain('"children":"Overview"');
     // One folder, the reference's, open on its own pages, with the groups as headings in it.
     expect(entry).toContain(`${folder},"props":{"className":"flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 font-medium hover:bg-muted [&::-webkit-details-marker]:hidden","children":[{"component":"span","props":{"className":"min-w-0 break-words","children":"Reference"}}`);
     expect(entry).toContain(heading);
@@ -465,5 +476,341 @@ describe("in a tab for some readers only", () => {
     expect(await apiReferencePage(project.slug, "reference")).toMatchObject({ kind: "reference", tab: null });
     await prisma.docsTab.update({ where: { projectId_slug: { projectId: project.id, slug: "guides" } }, data: { access: "SIGNED_IN" } });
     expect(await apiReferencePage(project.slug, "reference")).toBeNull();
+  });
+});
+
+/** The status of /docs/<slug>'s link card. */
+const referenceCard = async (slug = "reference") =>
+  (await shareImage(new Request("http://x"), { params: Promise.resolve({ project: project.slug, path: ["docs", slug] }) })).status;
+
+describe("a reference's page", () => {
+  /** Whether /docs/<slug> is "not found" for this reader. */
+  const slugMissing = async (slug: string) =>
+    ((await DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug }) } as never).then(
+      () => null,
+      (error: { digest?: string }) => error.digest,
+    )) ?? "").startsWith("NEXT_HTTP_ERROR_FALLBACK;404");
+
+  test("shows its name, version and description, where requests go, how they're signed, and a card per group linking its operations", async () => {
+    const text = await slugText("reference");
+    for (const shown of [
+      '"children":"Reference"',
+      "Version 1 · OpenAPI",
+      "Where requests go",
+      // A server without a host: the examples' placeholder, said to be one.
+      "https://api.example.com/v1",
+      "A placeholder: the spec doesn",
+      "How requests are signed",
+      '"Bearer token"',
+      '"children":"Authorization"',
+      "Endpoints",
+      '"children":"Posts"',
+      '"children":"Admin"',
+      '"href":"/docs/reference/get-a-post"',
+      '"href":"/docs/reference/purge"',
+      // Its tab's row, with this tab active.
+      '"name":"API","active":true',
+    ]) {
+      expect(text).toContain(shown);
+    }
+    // Only titles and methods: nothing an operation says.
+    expect(text).not.toContain(SECRET);
+    expect(await slugMetadata({ params: Promise.resolve({ project: project.slug, slug: "reference" }) } as never)).toMatchObject({
+      title: "Reference",
+      alternates: { canonical: expect.stringMatching(/\/docs\/reference$/) },
+    });
+    expect(await referenceCard()).toBe(200);
+    // On the team's base address, and no longer a placeholder.
+    await call(updateApiReference, as(), { slug: "reference", baseUrl: "https://acme.test" });
+    const based = await slugText("reference");
+    expect(based).toContain("https://acme.test/v1");
+    expect(based).not.toContain("api.example.com");
+    expect(based).not.toContain("A placeholder");
+  });
+
+  test("lists a server's variables, each scheme's description, and a card's first few operations with how many more", async () => {
+    await call(createApiReference, as(), {
+      name: "Regions",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Regions, version: "2", description: "Everything **regional**." }
+servers: [{ url: "https://{region}.acme.test/v1", description: Production, variables: { region: { default: us, enum: [us, eu], description: Where your data lives } } }]
+tags: [{ name: Sites, description: "Places you run.\\n\\nMore about them." }]
+components:
+  securitySchemes:
+    key: { type: apiKey, in: header, name: X-Key, description: From your settings }
+    unused: { type: http, scheme: basic }
+security: [{ key: [] }]
+paths:
+  /a: { get: { tags: [Sites], summary: One, responses: { "200": { description: ok } } } }
+  /b: { get: { tags: [Sites], summary: Two, responses: { "200": { description: ok } } } }
+  /c: { get: { tags: [Sites], summary: Three, responses: { "200": { description: ok } } } }
+  /d: { get: { tags: [Sites], summary: Four, responses: { "200": { description: ok } } } }
+  /e: { get: { tags: [Sites], summary: Five, responses: { "200": { description: ok } } } }
+`,
+    });
+    const text = await slugText("regions");
+    for (const shown of ["https://{region}.acme.test/v1", "Production", '"children":"{region}"', '"children":"us"', '\\"eu\\"', "Where your data lives", "X-Key", "From your settings", '"regional"', "Places you run.", '"+ ",2," more"', '"/docs/regions/three"']) {
+      expect(text).toContain(shown);
+    }
+    // A card's description is its first line; the rest is on the group's pages.
+    expect(text).not.toContain("More about them.");
+    // A scheme no operation on the help center uses isn't listed.
+    expect(text).not.toContain("Basic authentication");
+    expect(text).not.toContain("A placeholder");
+  });
+
+  test("with no server for the whole spec, lists the operations' own, not the placeholder", async () => {
+    await call(createApiReference, as(), {
+      name: "Paths",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Paths, version: "1" }
+paths:
+  /a: { servers: [{ url: "https://api.acme.test" }], get: { summary: One, responses: { "200": { description: ok } } } }
+  /b: { servers: [{ url: "https://api.acme.test" }], get: { summary: Two, responses: { "200": { description: ok } } } }
+`,
+    });
+    const text = await slugText("paths");
+    expect(text).toContain('"children":"https://api.acme.test"');
+    expect(text.match(/"children":"https:\/\/api\.acme\.test"/g)).toHaveLength(1);
+    expect(text).not.toContain("api.example.com");
+    expect(text).not.toContain("A placeholder");
+    // An operation without one goes to the base, or the placeholder: listed too.
+    await call(createApiReference, as(), {
+      name: "Mixed",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Mixed, version: "1" }
+paths:
+  /uploads: { servers: [{ url: "https://upload.acme.test" }], post: { summary: Upload, responses: { "200": { description: ok } } } }
+  /posts: { get: { summary: Posts, responses: { "200": { description: ok } } } }
+`,
+    });
+    const mixed = await slugText("mixed");
+    expect(mixed).toContain('"children":"https://upload.acme.test"');
+    expect(mixed).toContain('"children":"https://api.example.com"');
+    expect(mixed).toContain("A placeholder");
+    await call(updateApiReference, as(), { slug: "mixed", baseUrl: "https://api.acme.test" });
+    expect(await slugText("mixed")).toContain('"children":"https://api.acme.test"');
+    // Beside the spec's servers too.
+    await call(createApiReference, as(), {
+      name: "Both",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Both, version: "1" }
+servers: [{ url: "https://api.acme.test" }]
+paths:
+  /uploads: { servers: [{ url: "https://upload.acme.test" }], post: { summary: Upload, responses: { "200": { description: ok } } } }
+  /posts: { get: { summary: Posts, responses: { "200": { description: ok } } } }
+`,
+    });
+    const both = await slugText("both");
+    expect(both).toContain('"children":"https://api.acme.test"');
+    expect(both).toContain('"children":"https://upload.acme.test"');
+    expect(both).not.toContain("A placeholder");
+  });
+
+  test("a group with every operation hidden has no card, and signing no shown operation uses isn't listed", async () => {
+    await call(updateApiReference, as(), { slug: "reference", hide: ["GET /posts/{}", "POST /posts"] });
+    const text = await slugText("reference");
+    expect(text).toContain('"children":"Admin"');
+    expect(text).not.toContain('"children":"Posts"');
+    expect(text).not.toContain("Get a post");
+    expect(text).not.toContain("How requests are signed");
+  });
+
+  test("is a 404 unpublished, with every operation hidden, and for a visitor its tab isn't for", async () => {
+    expect(await slugMissing("reference")).toBe(false);
+    expect(await slugMissing("no-such-reference")).toBe(true);
+    await setTab("SIGNED_IN");
+    expect(await slugMissing("reference")).toBe(true);
+    expect(await referenceCard()).toBe(404);
+    actAs(await signUp("Reader"));
+    expect(await slugText("reference")).toContain("Where requests go");
+    // Not for search engines: not everyone may read it.
+    expect(await slugMetadata({ params: Promise.resolve({ project: project.slug, slug: "reference" }) } as never)).toMatchObject({ robots: { index: false } });
+    actAs(null);
+    await setTab("INHERIT");
+    await call(updateApiReference, as(), { slug: "reference", hideGroups: ["Posts", "Admin"] });
+    expect(await slugMissing("reference")).toBe(true);
+    await call(updateApiReference, as(), { slug: "reference", hideGroups: [], published: false });
+    expect(await slugMissing("reference")).toBe(true);
+    // The team too: the portal shows what readers get.
+    actAs(owner);
+    expect(await slugMissing("reference")).toBe(true);
+  });
+
+  test("in a tab that shows what's in it with a lock: its name and what to do, nothing it says", async () => {
+    await setTab("SIGNED_IN", "LOCK");
+    const text = await slugText("reference");
+    expect(text).toContain('"children":"Reference"');
+    expect(text).toContain("Sign in to read this.");
+    for (const kept of ["Get a post", "/v1", "Bearer", "Posts"]) {
+      expect(text).not.toContain(kept);
+    }
+    expect(await slugMetadata({ params: Promise.resolve({ project: project.slug, slug: "reference" }) } as never)).toMatchObject({ title: "Reference", robots: { index: false } });
+  });
+});
+
+describe("a tab holding a reference", () => {
+  test("is in the tabs' row with nothing else in it, and its address shows the reference", async () => {
+    // API holds the reference alone.
+    expect((await docsContents(project.slug)).tabs.map((tab) => [tab.slug, tab.references.map((r) => r.slug)])).toEqual([
+      ["guides", []],
+      ["api", ["reference"]],
+    ]);
+    const tab = await slugText("api");
+    expect(tab).toContain("Where requests go");
+    expect(tab).toContain('"href":"/docs/reference/get-a-post"');
+    expect(tab).toContain('"name":"API","active":true');
+    expect(await slugMetadata({ params: Promise.resolve({ project: project.slug, slug: "api" }) } as never)).toMatchObject({
+      title: "Reference",
+      alternates: { canonical: expect.stringMatching(/\/docs\/api$/) },
+    });
+    expect(await referenceCard("api")).toBe(200);
+    // With something else in it, its overview.
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "api" });
+    const two = await slugText("api");
+    expect(two).not.toContain("Where requests go");
+    // A card for each: the tab's overview is the way to them.
+    expect(two).toContain('"href":"/docs/reference"');
+    expect(two).toContain('"href":"/docs/webhooks"');
+    expect(two).toContain('"aria-label":"API references"');
+    expect(two).not.toContain("Nothing here yet");
+    // A tab of references for some readers only: not in the row for those it isn't for, locked when it says so.
+    await setTab("SIGNED_IN");
+    expect((await docsContents(project.slug)).tabs.map((t) => t.slug)).toEqual(["guides"]);
+    await setTab("SIGNED_IN", "LOCK");
+    expect((await docsContents(project.slug)).tabs).toMatchObject([{ slug: "guides" }, { slug: "api", locked: true, references: [] }]);
+  });
+
+  test("the first tab holding one reference alone: /docs shows it, not the next tab; with two, its overview with a card each", async () => {
+    const guides = await prisma.docsTab.findFirstOrThrow({ where: { projectId: project.id, slug: "guides" } });
+    await prisma.article.deleteMany({ where: { projectId: project.id } });
+    await prisma.collection.deleteMany({ where: { projectId: project.id } });
+    await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { tabId: guides.id } });
+    await call(createCollection, as(), { name: "Concepts", tab: "api" });
+    const { slug } = await call(createArticle, as(), { title: "Keys", body: "Hello.", collection: "concepts" });
+    await call(publishArticle, as(), { slug });
+    const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never;
+    const home = asText(await rendered(await DocsHome(props)));
+    expect(home).toContain("Where requests go");
+    expect(home).not.toContain("Concepts");
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "guides" });
+    const two = asText(await rendered(await DocsHome(props)));
+    expect(two).not.toContain("Where requests go");
+    expect(two).toContain('"href":"/docs/reference"');
+    expect(two).toContain('"href":"/docs/webhooks"');
+  });
+
+  test("llms.txt without tabs lists the references under a heading of their own", async () => {
+    await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
+    const portal = `http://${project.slug}.localhost:3100`;
+    const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(text).toContain(`## API references\n\n- [Reference](${portal}/docs/reference)\n`);
+  });
+
+  test("the docs without tabs holding one reference alone: /docs shows it", async () => {
+    await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
+    await prisma.article.deleteMany({ where: { projectId: project.id } });
+    await prisma.collection.deleteMany({ where: { projectId: project.id } });
+    const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never;
+    const home = asText([await rendered(await DocsHome(props)), await homeMetadata(props)]);
+    expect(home).toContain("Where requests go");
+    expect(home).toContain('"title":"Reference"');
+  });
+
+  test("the widget's tabs are those with articles: not one of references alone, readable or locked", async () => {
+    expect(articleTabs(await docsContents(project.slug)).map((tab) => tab.slug)).toEqual(["guides"]);
+    await setTab("SIGNED_IN", "LOCK");
+    expect((await docsContents(project.slug)).tabs).toMatchObject([{ slug: "guides" }, { slug: "api", locked: true, onlyReferences: true }]);
+    expect(articleTabs(await docsContents(project.slug)).map((tab) => tab.slug)).toEqual(["guides"]);
+    // A locked one with articles in it stays, locked.
+    await call(createCollection, as(), { name: "Concepts", tab: "api" });
+    const { slug } = await call(createArticle, as(), { title: "Keys", body: "Hello.", collection: "concepts" });
+    await call(publishArticle, as(), { slug });
+    expect(articleTabs(await docsContents(project.slug))).toMatchObject([{ slug: "guides" }, { slug: "api", locked: true }]);
+    expect(articleTabs(await docsContents(project.slug))[1]).not.toHaveProperty("onlyReferences");
+  });
+
+  test("a reference in no tab and one in the first tab: each one's pages list the other in the tree", async () => {
+    await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { tabId: null } });
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "guides" });
+    expect((await docsContents(project.slug)).tabs[0]!.references.map((r) => r.slug)).toEqual(["reference", "webhooks"]);
+    // Both on the reference in no tab's own page and on an operation's.
+    expect(await slugText("reference")).toContain('"href":"/docs/webhooks","title":"Webhooks"');
+    expect(await pageText("get-a-post")).toContain('"href":"/docs/webhooks","title":"Webhooks"');
+    // And the other way round.
+    expect(await slugText("webhooks")).toContain('"href":"/docs/reference","title":"Reference"');
+    expect(await pageText("get-a-post", "webhooks")).toContain('"href":"/docs/reference","title":"Reference"');
+  });
+
+  test("llms.txt lists each tab's references under its heading, and the sitemap their pages; neither a tab for some readers only", async () => {
+    await call(createApiReference, as(), {
+      name: "Regions",
+      tab: "api",
+      spec: `
+openapi: 3.1.0
+info: { title: Regions, version: "1", description: "Everything **regional**.\\n\\nMore about them." }
+paths:
+  /a: { get: { summary: One, responses: { "200": { description: ok } } } }
+`,
+    });
+    const route = { params: Promise.resolve({ project: project.slug }) };
+    const portal = `http://${project.slug}.localhost:3100`;
+    const text = await (await llms(new Request("http://x"), route)).text();
+    expect(text).toContain(`## [API](${portal}/docs/api)\n\n- [Reference](${portal}/docs/reference)\n- [Regions](${portal}/docs/regions): Everything regional.\n`);
+    expect(text).not.toContain("More about them");
+    const xml = await (await sitemap(new Request("http://x"), route)).text();
+    for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
+      expect(xml).toContain(`<loc>${portal}${path}</loc>`);
+    }
+    // A tab, and /docs for the first's, date from their references' last change too.
+    const later = new Date("2030-01-01T00:00:00.000Z");
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "regions" } }, data: { updatedAt: later } });
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "guides" });
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "webhooks" } }, data: { updatedAt: later } });
+    const dated = await (await sitemap(new Request("http://x"), route)).text();
+    for (const path of ["/docs", "/docs/api", "/docs/regions", "/docs/webhooks"]) {
+      expect(dated).toContain(`<loc>${portal}${path}</loc><lastmod>${later.toISOString()}</lastmod>`);
+    }
+    expect(dated).not.toContain(`<loc>${portal}/docs/reference</loc><lastmod>${later.toISOString()}</lastmod>`);
+    await setTab("SIGNED_IN");
+    expect(await (await llms(new Request("http://x"), route)).text()).not.toContain("/docs/reference");
+    const hidden = await (await sitemap(new Request("http://x"), route)).text();
+    for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
+      expect(hidden).not.toContain(`<loc>${portal}${path}</loc>`);
+    }
+  });
+
+  test("the widget's panel leaves out a tab of references alone, readable or locked, and opens on the tab with articles", async () => {
+    const panel = async (docsTab?: string) => asText(await rendered(await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", docsTab })));
+    for (const lock of [false, true]) {
+      if (lock) {
+        await setTab("SIGNED_IN", "LOCK");
+      }
+      for (const docsTab of [undefined, "api"]) {
+        const text = await panel(docsTab);
+        // One tab left: no pills, and the API tab's address shows Guides'.
+        expect(text).not.toContain('"label":"Docs tabs"');
+        expect(text).not.toContain("docsTab=api");
+        expect(text).toContain("Basics");
+      }
+    }
+  });
+
+  test("an article's tree lists its tab's references, each a link to its page", async () => {
+    await call(createApiReference, as(), { name: "Webhooks", spec: SPEC, tab: "guides" });
+    const article = await slugText("getting-started");
+    expect(article).toContain('"href":"/docs/webhooks"');
+    // Another tab's isn't in it.
+    expect(article).not.toContain('"href":"/docs/reference"');
+    // An article's row has the tab of references in it.
+    expect(article).toContain('"name":"API"');
   });
 });

@@ -26,8 +26,9 @@ const newest = (dates: (Date | undefined)[]) => dates.reduce<Date | undefined>((
 
 /**
  * The portal's public pages for search engines: home, boards, posts, the
- * roadmap, the changelog and the docs (with their tabs' and collections' pages), each with when it
- * last changed (a tab's or collection's: the newest of itself, the collections in it and the articles listed here in them). Merged posts
+ * roadmap, the changelog and the docs (with their tabs', collections' and API references' pages), each with when it
+ * last changed (a tab's or collection's: the newest of itself, the collections in it and the articles listed here in them, and a tab's
+ * references). Merged posts
  * (they redirect), drafts, articles that aren't listed everywhere or block search indexing,
  * pages for signed-in readers or some groups only (and tabs with nothing else), sample content (server/sample-content.ts)
  * and the sign-in pages are left out.
@@ -49,6 +50,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       // Not sample collections: the portal shows no name or text of theirs, so their edits change no page.
       collections: { where: { sample: false }, select: { slug: true, updatedAt: true } },
       docsTabs: { select: { slug: true, updatedAt: true } },
+      apiReferences: { select: { slug: true, updatedAt: true } },
       changelogEntries: { where: { publishedAt: { not: null }, sample: false }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
     },
   });
@@ -84,6 +86,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const articleDates = new Map(articles.map((article) => [article.slug, article.updatedAt]));
   const collectionDates = new Map(project.collections.map((collection) => [collection.slug, collection.updatedAt]));
   const tabDates = new Map(project.docsTabs.map((tab) => [tab.slug, tab.updatedAt]));
+  // Only the ones docsContents lists (published, with something on the help center, in a tab for everyone).
+  const referenceDates = new Map(project.apiReferences.map((reference) => [reference.slug, reference.updatedAt]));
+  const referencesDates = (list: { slug: string }[]) => list.map((reference) => referenceDates.get(reference.slug));
+  const homeReferences = (docs.tabs.find((tab) => tab.slug === docs.home) ?? (docs.tabs.length === 0 ? docs : null))?.references ?? [];
   const datesOf = (links: DocsArticleLink[]) => links.flatMap((link) => articleDates.get(link.slug) ?? []);
   // A collection's own and the ones in it: their pages show the names and descriptions of the collections in them.
   const datesIn = (collection: DocsCollection): (Date | undefined)[] => [
@@ -101,13 +107,14 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     { path: "/roadmap", lastmod: latestPost },
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
     ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt })),
-    { path: "/docs", lastmod: newest(articles.map((article) => article.updatedAt)) },
+    { path: "/docs", lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]) },
     ...docs.tabs
       .filter((tab) => tab.slug !== docs.home)
       .map((tab) => ({
         path: docsTabPath(docs, tab.slug),
-        lastmod: newest([tabDates.get(tab.slug), landingDate(tab), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected)]),
+        lastmod: newest([tabDates.get(tab.slug), landingDate(tab), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected), ...referencesDates(tab.references)]),
       })),
+    ...docs.references.map((reference) => ({ path: `/docs/${reference.slug}`, lastmod: referenceDates.get(reference.slug) })),
     ...everyCollection(docs.collections)
       .filter((collection) => !collection.sample)
       .map((collection) => ({
