@@ -28,9 +28,9 @@ export function checksOn(slug: string): boolean {
 }
 
 /** The reasons an edit waits, as the review screen shows them (waitsBecause); checksSay knows them by their first words. */
-export const CHECKS_OFF = "Checks is off";
+export const CHECKS_OFF = "It wasn't checked: Checks was off when it was written";
 export const CHECK_UNCLEAR = "The check didn't answer clearly";
-export const CHECK_NO_CREDITS = "The check needs AI credits, so it waits for you";
+export const CHECK_NO_CREDITS = "It wasn't checked: AI credits ran out when it was written";
 /** The review's own reason, one short line. */
 export const checkFailed = (reason: string) => {
   const line = reason.replace(/\s+/g, " ").trim();

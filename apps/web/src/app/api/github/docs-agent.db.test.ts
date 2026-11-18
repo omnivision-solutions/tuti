@@ -1377,7 +1377,7 @@ describe("the check before an edit is proposed (E5)", () => {
     proposeEdit(87);
     await merge(87);
     expect(reviews()).toEqual([]);
-    expect(await edit(87)).toMatchObject({ status: "PENDING", waitReason: "Checks is off" });
+    expect(await edit(87)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: Checks was off when it was written" });
   });
 
   test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
@@ -1391,6 +1391,6 @@ describe("the check before an edit is proposed (E5)", () => {
     model.reply(EDIT, () => prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } }), '"problem"');
     await merge(88);
     expect(reviews()).toEqual([]);
-    expect(await edit(88)).toMatchObject({ status: "PENDING", waitReason: "The check needs AI credits, so it waits for you" });
+    expect(await edit(88)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: AI credits ran out when it was written" });
   });
 });

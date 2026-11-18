@@ -63,7 +63,7 @@ export function changelogWords(before: string, after: string): { word: string; s
  * Lines the edit put after the article's old last line, which stays where it was (an article whose last paragraph was
  * rewritten in place has none), or null. Lines the article already had, only moved to the end, aren't an addition.
  */
-export function appendedAtEnd(before: string, after: string): { lines: string[]; heading: string | null } | null {
+export function appendedAtEnd(before: string, after: string): { lines: string[]; heading: string | null; subsection: boolean } | null {
   const was = lines(before);
   const is = lines(after);
   const last = was.at(-1);
@@ -76,7 +76,13 @@ export function appendedAtEnd(before: string, after: string): { lines: string[];
   if (tail.every((line) => wasSet.has(line))) {
     return null;
   }
-  return { lines: tail, heading: isHeading(tail[0]!) ? tail[0]!.replace(/^#+\s*/, "") : null };
+  // A new section's heading is at the level of the article's last section heading or above (any heading, in an article
+  // without one); a deeper one is a subsection of that last section, where the text may well belong.
+  const level = (line: string) => /^#+/.exec(line)![0].length;
+  const lastSection = was.findLast(isHeading);
+  const first = tail[0]!;
+  const section = isHeading(first) && (lastSection === undefined || level(first) <= level(lastSection));
+  return { lines: tail, heading: section ? first.replace(/^#+\s*/, "") : null, subsection: isHeading(first) && !section };
 }
 
 /** A new heading over less than this many words: where the evaluation lined up best with the graders' "heading over a sentence or two". */
@@ -178,7 +184,7 @@ export function ruleChecks(before: string, after: string, { diff, added }: { dif
   const appended = added ? null : appendedAtEnd(before, after);
   const size = sizeOf(before, after);
   const hints = [
-    ...(appended && !appended.heading ? [`Adds text after the article's last line: ${quote(appended.lines.join(" "))}.`] : []),
+    ...(appended && !appended.heading ? [`Adds ${appended.subsection ? "a subsection" : "text"} after the article's last line: ${quote(appended.lines.join(" "))}.`] : []),
     ...changelogWords(before, after).map(({ word, sentence }) => `Says how the product changed ("${word}") in ${quote(sentence)}.`),
     ...headingOverLittle(before, after).map(({ heading, words: count }) => `Adds the heading ${quote(heading)} over ${count} words.`),
     ...(size.overBudget ? [`Writes ${size.net} words more than it takes out: past the budget for a label or a changed behaviour.`] : []),

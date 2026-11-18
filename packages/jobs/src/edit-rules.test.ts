@@ -21,7 +21,13 @@ test("changelog words in what the edit wrote are found; the screen's own words, 
 });
 
 test("text after the article's old last line is appended at the end; the last paragraph rewritten in place isn't", () => {
-  expect(appendedAtEnd(ARTICLE, `${ARTICLE}\n\n## Dark theme\n\nThere's a dark theme too.`)).toEqual({ lines: ["## Dark theme", "There's a dark theme too."], heading: "Dark theme" });
+  expect(appendedAtEnd(ARTICLE, `${ARTICLE}\n\n## Dark theme\n\nThere's a dark theme too.`)).toEqual({ lines: ["## Dark theme", "There's a dark theme too."], heading: "Dark theme", subsection: false });
+  // A subsection of the article's last section is no new section: a hint for the review, not a fail by itself.
+  const sub = appendedAtEnd(ARTICLE, `${ARTICLE}\n\n### System font\n\nOr the system's.`);
+  expect(sub).toEqual({ lines: ["### System font", "Or the system's."], heading: null, subsection: true });
+  expect(ruleChecks(ARTICLE, `${ARTICLE}\n\n### System font\n\nOr the system's.`, { diff: "", added: false })).toMatchObject({ fails: null, hints: expect.arrayContaining([expect.stringContaining("Adds a subsection after the article's last line")]) });
+  // In an article with no heading, any heading after its last line is a new section.
+  expect(appendedAtEnd("One.\n\nTwo.", "One.\n\nTwo.\n\n### More\n\nThree.")).toMatchObject({ heading: "More" });
   expect(appendedAtEnd(ARTICLE, ARTICLE.replace("The app uses one font.", "The app uses one font, or the system's."))).toBeNull();
   expect(appendedAtEnd(ARTICLE, ARTICLE.replace("The app has a light theme.", "The app has a light theme and a dark one."))).toBeNull();
   // Lines it had, only moved to the end, aren't an addition.
