@@ -30,9 +30,11 @@ export function readSpec(text: string, options: { endpoint?: string } = {}): { d
     let mapping = false;
     let spec = false;
     try {
-      const top = parseDocument(clean, { logLevel: "silent", uniqueKeys: false }).contents;
-      mapping = isMap(top);
+      const parsed = parseDocument(clean, { logLevel: "silent", uniqueKeys: false });
+      const top = parsed.contents;
       spec = isMap(top) && top.items.some((pair) => isScalar(pair.key) && (pair.key.value === "openapi" || pair.key.value === "swagger"));
+      // Text that isn't YAML still comes back as what was read of it: that's no mapping.
+      mapping = isMap(top) && (spec || parsed.errors.length === 0);
     } catch {
       // Not YAML either.
     }

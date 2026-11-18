@@ -63,6 +63,8 @@ describe("readSpec", () => {
   it("says what's wrong in the reader's words", () => {
     expect(readSpec(JSON.stringify({ name: "package" }))).toEqual({ error: expect.stringContaining("isn't an OpenAPI spec") });
     expect(readSpec("name: package\nversion: 1\n")).toEqual({ error: expect.stringContaining("isn't an OpenAPI spec") });
+    // Half a mapping to YAML, with an error: a schema file with a mistake, not a spec.
+    expect(readSpec("schema: { query: Query\ntype Query { posts: String }\n")).toEqual({ error: expect.stringContaining("isn't a GraphQL schema file") });
     expect(readSpec("hello there")).toEqual({ error: expect.stringContaining("isn't a GraphQL schema file") });
     expect(readSpec("")).toEqual({ error: expect.any(String) });
     expect(readSpec("x".repeat(5 * 1024 * 1024 + 1))).toEqual({ error: expect.stringContaining("5 MB") });
