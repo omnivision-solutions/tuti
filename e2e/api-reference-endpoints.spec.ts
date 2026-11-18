@@ -169,8 +169,12 @@ test("An API reference's Endpoints: a group that's only a second tag has its swi
   let release = () => {};
   let held: Promise<void> | null = new Promise((resolve) => (release = resolve));
   let saves = 0;
+  // What each of this switch's saves asked for, in the order they were sent (an action's arguments end with `on`).
+  const sent: string[] = [];
   await team.route(`**/docs/references/api-reference`, async (route) => {
     if (route.request().method() !== "POST") return route.continue();
+    const body = route.request().postData() ?? "";
+    if (body.includes("GET /things/2")) sent.push(/true\]\s*$/.test(body) ? "on" : "off");
     if (held) {
       const until = held;
       held = null;
@@ -190,6 +194,9 @@ test("An API reference's Endpoints: a group that's only a second tag has its swi
   // The first click's save and the last one's: the one between was never sent.
   await expect.poll(() => saves).toBe(2);
   await expect(second).not.toBeChecked();
+  // Until the last save sent asks for off: a save per click would have sent off, on, off.
+  await expect.poll(() => sent.length >= 2 && sent.at(-1) === "off").toBe(true);
+  expect(sent).toEqual(["off", "off"]);
   await team.reload();
   await expect(team.getByText("20 of 21 on the help center")).toBeVisible();
   await expect(second).not.toBeChecked();
