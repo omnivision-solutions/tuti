@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { changedSections, type Doc, fromPlainText, mergeSections, sameDoc, toPlainText } from "@tuti/content";
+import { changedSections, type Doc, fromPlainText, keyed, mergeSections, sameDoc, sameSection, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
 import { articleVersionsStored } from "@tuti/shared";
 
@@ -136,6 +136,26 @@ export async function taggedEdits(articleId: string, statuses: CodeChangeActionS
       doc: docOf(revision),
     };
   });
+}
+
+/**
+ * The article's newest text (`now`) by section, in order, against the edits waiting in it (`edits`, as taggedEdits lists
+ * them): the edits that wrote each section (`by`, named), and whether it's `held`: one of those edits was changed by a
+ * person since, so a later edit leaves all of that edit's sections as they are (docs/plan.md, E4). An edit was changed
+ * by a person when a section it was the last to write doesn't read as it wrote it. One whose base is gone (what it
+ * changed isn't known) names no section.
+ */
+export function waitingSections(now: Doc, edits: TaggedEdit[]): { by: string[]; held: boolean }[] {
+  const changed = edits.map((edit) => (edit.base ? changedSections(edit.base, edit.doc) : new Set<string>()));
+  const current = new Map(keyed(now));
+  const personChanged = edits.map((edit, i) => {
+    const wrote = new Map(keyed(edit.doc));
+    return [...changed[i]!].some((key) => changed.findLastIndex((keys) => keys.has(key)) === i && !sameSection(current.get(key), wrote.get(key)));
+  });
+  return [...current.keys()].map((key) => ({
+    by: edits.filter((_, i) => changed[i]!.has(key)).map(editName),
+    held: edits.some((_, i) => personChanged[i] && changed[i]!.has(key)),
+  }));
 }
 
 /**
