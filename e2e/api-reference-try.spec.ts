@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { type ApiFake, startApiFake } from "@tuti/testkit";
 
+import type { Locator } from "@playwright/test";
+
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { expect, test } from "./fixtures";
@@ -57,6 +59,17 @@ paths:
       security: [{ query: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: integer }, example: 7 }]
       responses: { "201": { description: Archived } }
+  /stall:
+    get:
+      tags: [Posts]
+      summary: Wait forever
+      responses: { "201": { description: Never } }
+  /large:
+    get:
+      tags: [Posts]
+      summary: A large answer
+      parameters: [{ name: size, in: query, schema: { type: integer }, example: 2500000 }]
+      responses: { "201": { description: Text } }
   /me:
     get:
       tags: [Posts]
@@ -65,8 +78,14 @@ paths:
       responses: { "201": { description: You } }
 `;
 
+/** Picks a server in the console's menu (the shared Select: its options open outside the dialog). */
+async function pickServer(panel: Locator, label: string) {
+  await panel.getByRole("combobox", { name: "Server" }).click();
+  await panel.page().getByRole("option", { name: label }).click();
+}
+
 test("a reader tries an operation with their key: from the browser, and through Tuti when the API doesn't allow browsers", async ({ browser }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -86,6 +105,8 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(panel.getByRole("textbox", { name: "Body" })).toHaveValue(/"title": "Dark mode for the editor"/);
   await expect(panel.getByText("Kept in this tab only.")).toBeVisible();
   await panel.getByLabel("Bearer token").fill("sk_test_123");
+  // A cookie the browser holds for the API's site: the request carries none of the reader's own.
+  await reader.context().addCookies([{ name: "reader", value: "theirs", url: open.origin }]);
   await panel.getByRole("button", { name: "Send", exact: true }).click();
 
   const response = panel.getByRole("region", { name: "Response" });
@@ -94,11 +115,14 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(response.getByText(/Sent through Tuti/)).toHaveCount(0);
   // Straight from the browser, with the key.
   expect(open.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/posts", query: "?board=ideas", headers: { authorization: "Bearer sk_test_123" } });
+  // Nothing of the reader's: no cookie, and no referrer (the page they're on).
+  expect(open.requests.at(-1)!.headers.cookie).toBeUndefined();
+  expect(open.requests.at(-1)!.headers.referer).toBeUndefined();
   await checkpoint(reader, "console-desktop", { fullPage: false });
 
   // An API that doesn't let browsers call it. A POST isn't sent again by itself (the API may have run it): the reader
   // sends it through Tuti, which says so.
-  await panel.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
+  await pickServer(panel, `Legacy (${closed.origin}/v1)`);
   await panel.getByRole("button", { name: "Send", exact: true }).click();
   await expect(response.getByText(/It may have run the request/)).toBeVisible();
   // (This one the browser asked about first, and was refused: it never went.)
@@ -137,7 +161,7 @@ test("a reader tries an operation with their key: from the browser, and through 
   await archive.getByLabel("API key (api_key query parameter)").fill("sk_query_1");
   // Hidden in the address shown.
   await expect(archive.getByText(/\/v1\/posts\/7\/archive\?api_key=\*\*\*\*$/)).toBeVisible();
-  await archive.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
+  await pickServer(archive, `Legacy (${closed.origin}/v1)`);
   const before = closed.requests.length;
   await archive.getByRole("button", { name: "Send", exact: true }).click();
   await expect(archive.getByRole("region", { name: "Response" }).getByText(/It may have run the request/)).toBeVisible();
@@ -152,12 +176,14 @@ test("a reader tries an operation with their key: from the browser, and through 
   await reader.goto("/docs/reference/get-a-post");
   await reader.getByRole("button", { name: "Try it" }).click();
   const get = reader.getByRole("dialog", { name: "Try it" });
-  await get.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
+  await pickServer(get, `Legacy (${closed.origin}/v1)`);
   await get.getByRole("button", { name: "Send", exact: true }).click();
   await expect(get.getByRole("region", { name: "Response" }).getByText("Sent through Tuti, since the API doesn't allow browser requests.")).toBeVisible();
   expect(closed.requests.at(-1)).toMatchObject({ method: "GET", path: "/v1/posts/7", headers: { authorization: "Bearer sk_test_123" } });
   // A server off the help center's sites: Tuti refuses it, and says why; nothing says it was sent.
-  await get.getByRole("combobox", { name: "Server" }).selectOption({ label: "Elsewhere (https://api.unverified.example/v1)" });
+  // Offline: the browser's request to it fails as an unknown host's would, without looking it up.
+  await reader.route("https://api.unverified.example/**", (route) => route.abort("namenotresolved"));
+  await pickServer(get, "Elsewhere (https://api.unverified.example/v1)");
   await get.getByRole("button", { name: "Send", exact: true }).click();
   const refused = get.getByRole("region", { name: "Response" });
   await expect(refused.getByText("Tuti sends requests only to this help center's own sites, and api.unverified.example isn't one")).toBeVisible();
@@ -169,9 +195,36 @@ test("a reader tries an operation with their key: from the browser, and through 
   await reader.getByRole("button", { name: "Try it" }).click();
   const me = reader.getByRole("dialog", { name: "Try it" });
   await me.getByLabel("API key (session cookie)").fill("abc");
+  // Something in front of Tuti answering with a page of its own (a 502): its status, not "couldn't reach".
+  await reader.route("**/docs/reference/who-am-i/try", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "<h1>Bad gateway</h1>" }));
+  await me.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(me.getByRole("region", { name: "Response" }).getByText(/^Tuti couldn't send it: it answered 502/)).toBeVisible();
+  await reader.unroute("**/docs/reference/who-am-i/try");
   await me.getByRole("button", { name: "Send", exact: true }).click();
   await expect(me.getByRole("region", { name: "Response" }).getByText("Sent through Tuti, since browsers don't send cookies to another site.")).toBeVisible();
   expect(open.requests.at(-1)).toMatchObject({ path: "/v1/me", headers: { cookie: "session=abc" } });
+
+  // An answer over 2 MB: read as it comes, cut at 2 MB, and said so.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/a-large-answer");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const large = reader.getByRole("dialog", { name: "Try it" }).getByRole("region", { name: "Response" });
+  await reader.getByRole("dialog", { name: "Try it" }).getByRole("button", { name: "Send", exact: true }).click();
+  await expect(large.getByText("Showing the first 2 MB.")).toBeVisible();
+  await expect(large.getByText("2.0 MB", { exact: true })).toBeVisible();
+
+  // A request still on its way when the console closes is still on its way when it opens again, and stops at 15 seconds.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/wait-forever");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const waiting = reader.getByRole("dialog", { name: "Try it" });
+  await waiting.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
+  await reader.keyboard.press("Escape");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  await expect(waiting.getByRole("button", { name: "Sending…" })).toBeDisabled();
+  await expect(waiting.getByRole("region", { name: "Response" }).getByText("The API didn't answer within 15 seconds")).toBeVisible({ timeout: 20_000 });
+  await expect(waiting.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
 
   // On a phone, a sheet from the bottom that fits the width.
   await reader.goto("/docs/reference/create-a-post");

@@ -7,6 +7,7 @@ import {
   curlCommand,
   exampleRequest,
   paramText,
+  readUpTo,
   shownUrl,
   tryAuth,
   tryInput,
@@ -20,6 +21,7 @@ import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "rea
 import { usePortalHref } from "@/components/portal-base";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -43,8 +45,23 @@ type Result =
   /** Sent from the browser, which may not read the answer: the API may have run it, so Tuti sends it again only when asked. */
   | { unread: true };
 
-// 16px on phones, as the inputs: smaller, and iPhones zoom the page in when one's tapped.
-const field = "h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-base md:text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+/** The shared select, the width of its field. */
+function Pick({ id, label, value, options, onChange }: { id?: string; label?: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
+  return (
+    <Select items={Object.fromEntries(options.map((o) => [o.value, o.label]))} value={value} onValueChange={(next) => onChange(String(next))}>
+      <SelectTrigger id={id} aria-label={label} className="w-full min-w-0">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** What a scheme's key is called by the input that asks for it. */
 const keyLabel = (auth: ApiAuth) =>
@@ -95,26 +112,31 @@ export function TryIt(props: Props) {
 
 type Props = { reference: string; operationSlug: string; doc: ApiDoc; operation: ApiOperation; base: string | null };
 
-/** The console's fields, prefilled as the examples are, and its last answer. */
+/** The console's fields, prefilled as the examples are, its last answer and the request on its way. */
 function useForm({ doc, operation, base }: Props) {
   const servers = useMemo(() => tryServers(doc, operation, base), [doc, operation, base]);
   const [server, setServer] = useState(servers[0]!.url);
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [params, setParams] = useState<Record<string, string>>(() =>
-    Object.fromEntries(tryParams(operation).map((param) => [`${param.in}:${param.name}`, param.required || param.example !== undefined ? paramText(param) : ""])),
+    Object.fromEntries(tryParams(doc, operation).map((param) => [`${param.in}:${param.name}`, param.required || param.example !== undefined ? paramText(param) : ""])),
   );
   const [body, setBody] = useState(() => exampleRequest(doc, operation).body ?? "");
   const [result, setResult] = useState<Result | null>(null);
-  return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult };
+  const [sending, setSending] = useState(false);
+  /** The latest send, and how to stop it: an answer to an earlier one is dropped. */
+  const latestRef = useRef<{ id: number; stop?: AbortController }>({ id: 0 });
+  return { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult, sending, setSending, latestRef };
 }
+
+/** How long a request from the browser may take, as through Tuti. */
+const TIMEOUT_MS = 15_000;
 
 function Console({ reference, operationSlug, doc, operation, base, form }: Props & { form: ReturnType<typeof useForm> }) {
   const href = usePortalHref();
-  const { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult } = form;
+  const { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, result, setResult, sending, setSending, latestRef } = form;
   const { schemes, optional } = tryAuth(doc, operation);
-  const shown = tryParams(operation);
+  const shown = tryParams(doc, operation);
   const [keys, setKeys] = useKeys(reference);
-  const [sending, setSending] = useState(false);
   const sendButton = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
   const chosen = servers.find((s) => s.url === server)!;
@@ -127,30 +149,51 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
   const input = tryInput(doc, operation, { server, variables, params, keys, body });
   const made = tryRequest(doc, operation, base, input);
 
-  async function throughTuti(via: "cors" | "cookies") {
-    try {
-      const response = await fetch(href(`/docs/${reference}/${operationSlug}/try`), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      const json = (await response.json()) as TryAnswer | { error: string };
-      setResult("error" in json ? { error: json.error, via } : { answer: json, via });
-    } catch {
-      setResult({ error: "Couldn't reach Tuti to send it. Check your connection and try again.", via });
-    }
-  }
-
   async function send(through = false) {
     if ("error" in made) {
       setResult({ error: made.error, via: "browser" });
       return;
     }
+    // A send replaces any still on its way (with the console closed and opened again, say): that one is stopped, and
+    // whatever it answers is dropped.
+    latestRef.current.stop?.abort();
+    const stop = new AbortController();
+    const id = (latestRef.current = { id: latestRef.current.id + 1, stop }).id;
+    const settle = (next: Result) => {
+      if (latestRef.current.id === id) setResult(next);
+    };
     setSending(true);
     // "Send through Tuti" goes with the answer it's in: focus moves to Send, which stays.
     if (through) sendButton.current?.focus();
     // Emptied, so the answer's arrival is read out even when it's the same as the last.
     setResult(null);
+    const timer = setTimeout(() => stop.abort(new DOMException("Timed out", "TimeoutError")), TIMEOUT_MS);
+    const timedOut = () => stop.signal.reason instanceof DOMException && stop.signal.reason.name === "TimeoutError";
+
+    async function throughTuti(via: "cors" | "cookies") {
+      let response: Response;
+      try {
+        response = await fetch(href(`/docs/${reference}/${operationSlug}/try`), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          signal: stop.signal,
+        });
+      } catch {
+        settle({ error: timedOut() ? "The API didn't answer within 15 seconds" : "Couldn't reach Tuti to send it. Check your connection and try again.", via });
+        return;
+      }
+      let json: TryAnswer | { error: string };
+      try {
+        json = (await response.json()) as TryAnswer | { error: string };
+      } catch {
+        // Not Tuti's answer: a page from something in between (a proxy's 502 or 413, say).
+        settle({ error: `Tuti couldn't send it: it answered ${[response.status, response.statusText].filter(Boolean).join(" ")}.`, via });
+        return;
+      }
+      settle("error" in json ? { error: json.error, via } : { answer: json, via });
+    }
+
     try {
       // A browser doesn't send cookies it's given to another site: those go through Tuti.
       if (through || input.cookies.length > 0) {
@@ -161,38 +204,53 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
       let response: Response;
       try {
         // Nothing of the reader's own: no cookies of a site the API shares with the portal, no referrer.
-        response = await fetch(made.url, { method: made.method, headers: made.headers, body: made.body, credentials: "omit", referrerPolicy: "no-referrer" });
+        response = await fetch(made.url, {
+          method: made.method,
+          headers: made.headers,
+          body: made.body,
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          signal: stop.signal,
+        });
       } catch (error) {
+        if (stop.signal.aborted) {
+          settle({ error: "The API didn't answer within 15 seconds", via: "browser" });
+          return;
+        }
         // Refused by CORS, or no network: both a TypeError, and the API may have run it all the same (a browser only
         // asks first about some requests, and an API may allow the asking and not the answer). A GET or HEAD only
         // reads, so Tuti sends it; anything else only when the reader asks.
         if (!(error instanceof TypeError)) throw error;
         if (made.method === "GET" || made.method === "HEAD") await throughTuti("cors");
-        else setResult({ unread: true });
+        else settle({ unread: true });
         return;
       }
-      let text: string;
+      let read;
       try {
-        text = await response.text();
+        // As it arrives, up to the limit: a huge or endless answer can't fill the tab.
+        read = await readUpTo(response.body, SHOWN_BYTES);
       } catch {
-        setResult({ error: `The API answered ${response.status}, and the connection dropped before the rest arrived.`, via: "browser" });
+        settle({
+          error: timedOut() ? `The API answered ${response.status}, and the rest didn't arrive within 15 seconds.` : `The API answered ${response.status}, and the connection dropped before the rest arrived.`,
+          via: "browser",
+        });
         return;
       }
-      const bytes = new TextEncoder().encode(text).length;
-      setResult({
+      settle({
         via: "browser",
         answer: {
           status: response.status,
           statusText: response.statusText,
           headers: [...response.headers],
-          body: text.slice(0, SHOWN_BYTES),
-          size: bytes,
-          cut: bytes > SHOWN_BYTES,
+          body: read.text,
+          size: read.size,
+          cut: read.cut,
           ms: Math.round(performance.now() - started),
         },
       });
     } finally {
-      setSending(false);
+      clearTimeout(timer);
+      if (latestRef.current.id === id) setSending(false);
     }
   }
 
@@ -218,23 +276,18 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           <Group title="Server">
             {servers.length > 1 && (
               // The group's heading names it.
-              <select aria-label="Server" className={field} value={server} onChange={(event) => setServer(event.target.value)}>
-                {servers.map((s) => (
-                  <option key={s.url} value={s.url}>
-                    {s.description ? `${s.description} (${s.url})` : s.url}
-                  </option>
-                ))}
-              </select>
+              <Pick label="Server" value={server} options={servers.map((s) => ({ value: s.url, label: s.description ? `${s.description} (${s.url})` : s.url }))} onChange={setServer} />
             )}
             {Object.entries(chosen.variables ?? {}).map(([name, variable]) => (
               <Labelled key={name} label={name} mono>
                 {(id) =>
                   variable.enum?.length ? (
-                    <select id={id} className={field} value={variables[name] ?? variable.default} onChange={(event) => setVariables({ ...variables, [name]: event.target.value })}>
-                      {variable.enum.map((value) => (
-                        <option key={value}>{value}</option>
-                      ))}
-                    </select>
+                    <Pick
+                      id={id}
+                      value={variables[name] ?? variable.default}
+                      options={variable.enum.map((value) => ({ value, label: value }))}
+                      onChange={(value) => setVariables({ ...variables, [name]: value })}
+                    />
                   ) : (
                     <Input id={id} value={variables[name] ?? variable.default} onChange={(event) => setVariables({ ...variables, [name]: event.target.value })} />
                   )

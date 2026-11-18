@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { shownUrl, tryable, tryAuth, type TryForm, tryInput, type TryInput, tryParams, tryRequest, tryServers } from "./try";
+import { readUpTo, shownUrl, tryable, tryAuth, type TryForm, tryInput, type TryInput, tryParams, tryRequest, tryServers } from "./try";
 import type { ApiDoc, ApiOperation } from "./types";
 
 const doc = (over: Partial<ApiDoc> = {}): ApiDoc => ({
@@ -124,7 +124,37 @@ const header = (name: string) => ({ name, in: "header" as const, required: true,
 
 test("the console asks for path, query and header parameters, but not the headers the key and body set, nor a connection's", () => {
   const op = operation({ params: [...operation().params, header("Authorization"), header("Accept"), header("Content-Type"), header("X-Forwarded-For"), header("X-Team")] });
-  expect(tryParams(op).map((param) => param.name)).toEqual(["id", "X-Team"]);
+  expect(tryParams(doc(), op).map((param) => param.name)).toEqual(["id", "X-Team"]);
+});
+
+test("a parameter named like where the key goes isn't asked for: the key takes its place, not beside it", () => {
+  const keyed = doc({ auth: [{ key: "key", kind: "header", name: "X-Key", description: "" }, ...doc().auth] });
+  const params = [...operation().params, header("x-key"), { name: "api_key", in: "query" as const, required: true, description: "", schema: { type: "string" } }];
+  expect(tryParams(keyed, operation({ auth: [["key"]], params })).map((param) => param.name)).toEqual(["id", "api_key"]);
+  expect(tryParams(keyed, operation({ auth: [["query"]], params })).map((param) => param.name)).toEqual(["id", "x-key"]);
+  // Prefilled as the examples would be, the parameter still goes nowhere: the key alone is sent.
+  const input = tryInput(keyed, operation({ auth: [["key"]], params }), form({ params: { "path:id": "1", "header:x-key": "string" }, keys: { key: "sk_1" } }));
+  expect(input.headers).toEqual([["X-Key", "sk_1"]]);
+});
+
+test("an answer is read up to its limit in bytes, the rest cancelled; a character cut in two is left off", async () => {
+  let cancelled = false;
+  const stream = (chunks: string[]) =>
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = chunks.shift();
+        if (next === undefined) controller.close();
+        else controller.enqueue(new TextEncoder().encode(next));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+  // "é" is two bytes: four of them are eight, and the limit (7) cuts the last in two.
+  expect(await readUpTo(stream(["éé", "éé", "never read"]), 7)).toEqual({ text: "ééé", size: 7, cut: true });
+  expect(cancelled).toBe(true);
+  expect(await readUpTo(stream(["ab", "c"]), 7)).toEqual({ text: "abc", size: 3, cut: false });
+  expect(await readUpTo(null, 7)).toEqual({ text: "", size: 0, cut: false });
 });
 
 test("the key goes where its scheme puts it; Basic is the username and password in base64 of UTF-8", () => {
