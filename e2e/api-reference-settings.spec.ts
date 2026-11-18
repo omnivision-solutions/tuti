@@ -114,6 +114,17 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   const admin = team.getByRole("button", { name: "Move Admin", exact: true });
   const groups = team.getByRole("region", { name: "Group order" }).getByRole("listitem");
   await expect(groups).toHaveText([/^Posts/, /^Comments/, /^Admin/]);
+  // Every order the list shows from here, to check below that a saved move never shows the order before it again (the
+  // page refreshes after the save answers: a move made in between would start from the old order).
+  await team.getByRole("region", { name: "Group order" }).locator("ol").evaluate((list) => {
+    const shown = ((window as unknown as { groupOrders: string[] }).groupOrders = [] as string[]);
+    const record = () => {
+      const order = [...list.querySelectorAll<HTMLElement>("[data-group-key]")].map((row) => row.dataset.groupKey).join(", ");
+      if (shown.at(-1) !== order) shown.push(order);
+    };
+    record();
+    new MutationObserver(record).observe(list, { childList: true, subtree: true });
+  });
   for (const order of [
     [/^Posts/, /^Admin/, /^Comments/],
     [/^Admin/, /^Posts/, /^Comments/],
@@ -133,6 +144,8 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   await tryIt.uncheck();
   await expect(team.getByText("Try it switched off")).toBeVisible();
   await expect.poll(async () => ((await api("/api-references/acme-api", undefined, "GET")) as unknown as { tryIt: boolean }).tryIt).toBe(false);
+  // By now the moves' refreshes have come (Try it's came after them): each order showed once, in turn.
+  expect(await team.evaluate(() => (window as unknown as { groupOrders: string[] }).groupOrders)).toEqual(["Posts, Comments, Admin", "Posts, Admin, Comments", "Admin, Posts, Comments"]);
 
   // All kept.
   await team.reload();

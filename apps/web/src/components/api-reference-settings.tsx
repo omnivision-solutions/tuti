@@ -113,9 +113,14 @@ function usePicked<T>(saved: T) {
   return {
     value: picked ? picked.value : saved,
     saving: picked?.saving ?? false,
-    pick: (value: T) => setPicked({ value, saving: true }),
-    /** Saved: kept until the page has it. Refused: back as the page has it. */
-    settle: (ok: boolean) => setPicked((current) => (ok && current ? { ...current, saving: false } : null)),
+    /** Picked: what `settle` takes once its save answers. */
+    pick: (value: T) => {
+      const made = { value, saving: true };
+      setPicked(made);
+      return made;
+    },
+    /** Pick `made`'s save answered: saved, it's kept until the page has it; refused, it's back as the page has it. A later pick's own save settles that one. */
+    settle: (made: { value: T; saving: boolean }, ok: boolean) => setPicked((current) => (current !== made ? current : ok ? { ...made, saving: false } : null)),
   };
 }
 
@@ -186,12 +191,12 @@ export function ApiReferenceSettings({
   const order = usePicked(groups.map((group) => group.key));
   const [, startChange] = useTransition();
   const change = <T,>(picked: ReturnType<typeof usePicked<T>>, value: T, changes: Changes, done: string) => {
-    picked.pick(value);
+    const made = picked.pick(value);
     startChange(async () => {
       const result = await save(changes);
       if (result.error) toast.error(result.error);
       else toast.success(done);
-      picked.settle(!result.error);
+      picked.settle(made, !result.error);
     });
   };
 
