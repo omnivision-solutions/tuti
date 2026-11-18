@@ -118,8 +118,8 @@ const short = (value: unknown, max: number) => (typeof value === "string" ? valu
 /**
  * The review's reply as a check, or null when it can't be read as one: not JSON, a score that isn't a whole number from
  * 1 to 5, a verdict the rubric hasn't, claims that aren't a list, or a fail that says nothing a rewrite could act on. It passes only on accept, and only when its own
- * scores and claims agree (accuracy 5, every other score 4 or more, no claim it found contradicted: the rubric's rule
- * for accept); an accept they contradict is a fail. A fail says what to change: its reasons, else the claims it found
+ * scores and claims agree (accuracy 5, every other score 4 or more, every claim confirmed: the rubric's rule for
+ * accept); an accept they contradict is a fail. A fail says what to change: its reasons, else the claims it found
  * contradicted and the scores under the rule's.
  */
 export function readReview(reply: string): Omit<EditCheck, "hints"> | null {
@@ -132,24 +132,37 @@ export function readReview(reply: string): Omit<EditCheck, "hints"> | null {
   if (!verdict || Object.values(scores).some((s) => s === null)) {
     return null;
   }
-  const claims = (parsed.claims as unknown[]).flatMap((c): Claim[] => {
+  // A claim that can't be read makes the whole reply unreadable: dropping it could let an unchecked claim through.
+  const claims = (parsed.claims as unknown[]).map((c): Claim | null => {
     const { claim, check, evidence } = (c ?? {}) as Record<string, unknown>;
-    return typeof claim === "string" && (check === "confirmed" || check === "contradicted" || check === "not_found") ? [{ claim: short(claim, 300), check, evidence: short(evidence, 300) }] : [];
+    return typeof claim === "string" && (check === "confirmed" || check === "contradicted" || check === "not_found") ? { claim: short(claim, 300), check, evidence: short(evidence, 300) } : null;
   });
+  if (claims.includes(null)) {
+    return null;
+  }
+  const read = claims as Claim[];
   const graded = scores as Record<(typeof SCORES)[number], number>;
   const low = SCORES.filter((name) => graded[name] < (name === "accuracy" ? 5 : 4));
-  const contradicted = claims.filter((c) => c.check === "contradicted");
-  if (verdict === "accept" && low.length === 0 && contradicted.length === 0) {
-    return { pass: true, reasons: [], claims, scores: graded, verdict };
+  const contradicted = read.filter((c) => c.check === "contradicted");
+  // Every claim confirmed: one it couldn't find is unverified (the rubric's accuracy 4 at most), so not an accept.
+  const unverified = read.filter((c) => c.check === "not_found");
+  if (verdict === "accept" && low.length === 0 && contradicted.length === 0 && unverified.length === 0) {
+    return { pass: true, reasons: [], claims: read, scores: graded, verdict };
   }
   const said = verdict === "accept" ? [] : (Array.isArray(parsed.reasons) ? parsed.reasons : []).map((r) => short(r, 500)).filter(Boolean);
   const reasons =
-    said.length > 0 ? said : [...contradicted.map((c) => `The code says otherwise: ${c.claim}.`), ...low.map((name) => `Its ${name} scored ${graded[name]} of 5.`)];
+    said.length > 0
+      ? said
+      : [
+          ...contradicted.map((c) => `The code says otherwise: ${c.claim}.`),
+          ...unverified.map((c) => `The code doesn't show it: ${c.claim}.`),
+          ...low.map((name) => `Its ${name} scored ${graded[name]} of 5.`),
+        ];
   // Turned down with nothing to say why (no reasons, and scores and claims that would pass): it can't be acted on.
   if (reasons.length === 0) {
     return null;
   }
-  return { pass: false, reason: checkFailed(reasons[0]!), reasons, claims, scores: graded, verdict };
+  return { pass: false, reason: checkFailed(reasons[0]!), reasons, claims: read, scores: graded, verdict };
 }
 
 /** The edit as the lines it changed, two around each: "+" added, "-" removed. */

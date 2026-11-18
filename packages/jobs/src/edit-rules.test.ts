@@ -121,6 +121,11 @@ test("the review passes an edit only on accept, with scores and claims that agre
     pass: false,
     reasons: ["The code says otherwise: The tab is Display."],
   });
+  // So is one with a claim it couldn't find in the code: unverified isn't accurate enough to go out by itself.
+  expect(readReview(review({ claims: [{ claim: "The tab is Display", check: "not_found", evidence: "searched Display" }] }))).toMatchObject({
+    pass: false,
+    reasons: ["The code doesn't show it: The tab is Display."],
+  });
 });
 
 test("a review that can't be read is no review (the edit waits, it isn't rewritten)", () => {
@@ -133,6 +138,9 @@ test("a review that can't be read is no review (the edit waits, it isn't rewritt
     review({ accuracy: 4.5 }),
     review({ needed: "5" }),
     review({ claims: "none" }),
+    // A claim that can't be read isn't dropped: the reply as a whole can't be trusted.
+    review({ claims: [{ claim: "The tab is Display", check: "confirmed", evidence: "a:1" }, { claim: "The tab moved", check: "likely" }] }),
+    review({ claims: [{ claim: "The tab is Display", check: "confirmed", evidence: "a:1" }, "the tab moved"] }),
     // Turned down with nothing a rewrite could act on: no reasons (or none readable), and scores that would pass.
     review({ verdict: "touch_up", reasons: [] }),
     review({ verdict: "dismiss", proportion: 5, reasons: [{ text: "Not needed." }] }),
