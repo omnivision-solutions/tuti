@@ -209,7 +209,7 @@ function ArticleCount({ count }: { count: number }) {
  * What a page this reader may not read, but sees with a lock, says in place of what's on it: to
  * sign in (and come back here), or that they don't have access.
  */
-function LockedMessage({ signedIn }: { signedIn: boolean }) {
+export function LockedMessage({ signedIn }: { signedIn: boolean }) {
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border p-5">
       <p className="flex items-center gap-2 font-medium">
@@ -531,7 +531,7 @@ export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active
  * (`<details>`, so it works without JavaScript), then the articles in none under "More".
  * `current` is the page's slug (one name per page under /docs), marked as the current page.
  */
-async function DocsTree({ tree, current }: { tree: DocsTree; current: string | null }) {
+async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: string | null; extra?: React.ReactNode }) {
   const at = await portalLinks();
   // One line each, a long name cut short (in full on hover).
   const link = (slug: string, title: string, name: React.ReactNode, className?: string) => (
@@ -591,8 +591,10 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
           <div className="my-1 ml-[1.0625rem] pl-2.5">{contents(collection)}</div>
         </details>
       ))}
+      {/* The tab's API references, after its collections. */}
+      {extra && <div className={cn("flex flex-col gap-1", tree.collections.length > 0 && "mt-3 border-t pt-4")}>{extra}</div>}
       {tree.uncollected.length > 0 && (
-        <ul className={cn("flex flex-col gap-0.5", tree.collections.length > 0 && "mt-4 border-t pt-4")}>{articles(tree.uncollected)}</ul>
+        <ul className={cn("flex flex-col gap-0.5", (tree.collections.length > 0 || extra) && "mt-4 border-t pt-4")}>{articles(tree.uncollected)}</ul>
       )}
     </nav>
   );
@@ -615,6 +617,8 @@ export function DocsLayout({
   overview = false,
   headings = [],
   reading = false,
+  extra,
+  wide = false,
   children,
 }: {
   /** Null for none (a tab's overview, whose cards are its collections). */
@@ -625,11 +629,15 @@ export function DocsLayout({
   headings?: Heading[];
   /** An article's page with sections: in reading mode (ReadingModeToggle) the tree and "On this page" go. */
   reading?: boolean;
+  /** In the tree after the collections: the tab's API references (an operation's page). */
+  extra?: React.ReactNode;
+  /** An operation's page: from desktop width the page takes the room "On this page" would, for its examples beside it. */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
-  const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0) ? tree : null;
+  const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0 || extra) ? tree : null;
   // Without a tree (a tab's overview), the team's sidebar links alone, where it has some.
-  const nav = shown ? <DocsTree tree={shown} current={current} /> : <DocsSidebarLinks />;
+  const nav = shown ? <DocsTree tree={shown} current={current} extra={extra} /> : <DocsSidebarLinks />;
   const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
   // Keep the desktop columns (and header) in place when moving between articles. Short articles keep their 43rem
   // measure, aligned to the longer article's left edge, with empty space where its outline would be.
@@ -648,7 +656,7 @@ export function DocsLayout({
       )}
       {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines.
           Only the overview takes the container's width; tree-less search results and short articles keep their cap. */}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem] xl:[:root:not([data-docs-reading])_&]:ml-0" : shown ? "max-w-[43rem] xl:ml-0" : overview ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem] xl:ml-0")}>
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem] xl:[:root:not([data-docs-reading])_&]:ml-0" : wide ? "max-w-[43rem] xl:ml-0 xl:max-w-none" : shown ? "max-w-[43rem] xl:ml-0" : overview ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem] xl:ml-0")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
@@ -664,7 +672,7 @@ export function DocsLayout({
         {children}
         <PortalFooter docs />
       </div>
-      {(sections || shown) && (
+      {(sections || shown) && !wide && (
         <aside aria-hidden={sections ? undefined : true} className={cn("hidden w-52 shrink-0 xl:block", reading && READING_HIDES)}>
           {/* Stays in view as the article scrolls, under the header. */}
           {sections && (

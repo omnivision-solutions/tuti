@@ -91,6 +91,14 @@ describe("settle", () => {
     expect(again.doc.operations[0]!.title).toBe("List all posts");
   });
 
+  it("no page takes the address of a docs page's Markdown: an operation or a type proposing \"md\" gets a number", () => {
+    const first = settle(null, doc({ groups: [group("Posts")], operations: [operation("GET /md", { slug: "md" })], types: [type("MD")] }));
+    expect(slugsOf(first)).toEqual({ "GET /md": "md-2", MD: "md-3" });
+    // And keeps it when the spec is read again.
+    expect(slugsOf(settle(first, first.doc))).toEqual({ "GET /md": "md-2", MD: "md-3" });
+    expect(slugsOf(settle(null, doc({ types: [type("Md")] })))).toEqual({ Md: "md-2" });
+  });
+
   it("a new operation or type proposing a kept slug gets a number", () => {
     const first = settle(null, doc({ operations: [operation("GET /posts", { slug: "posts" })], types: [{ ...type("Post"), slug: "post" }] }));
     const again = settle(
