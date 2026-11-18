@@ -41,11 +41,7 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
     return null;
   }
   const doc = row.doc as unknown as ApiDoc;
-  const shown = onHelpCenter(doc, row.state as unknown as ApiReferenceState);
-  const { groups } = shown;
-  // As the tree lists them: by group in the team's order (the sort is stable: the spec's order within one). The first is where the reference's own address goes.
-  const place = new Map(groups.map((group, at) => [group.key, at]));
-  const operations = shown.operations.toSorted((a, b) => place.get(a.group)! - place.get(b.group)!);
+  const { groups, operations } = shownInOrder(doc, row.state);
   const level = row.tab ?? (await firstTabLevel(row.projectId));
   const isRestricted = restricted([level]);
   const reader = isRestricted ? await currentReader(row.projectId) : null;
@@ -71,6 +67,37 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
   };
 });
 
+/**
+ * What `onHelpCenter` gives, its operations as the tree lists them: by group in the team's order (the sort is stable: the
+ * spec's order within one). The first is where the reference's own address goes.
+ */
+function shownInOrder(doc: ApiDoc, state: unknown) {
+  const { groups, operations } = onHelpCenter(doc, state as ApiReferenceState);
+  const place = new Map(groups.map((group, at) => [group.key, at]));
+  return { groups, operations: operations.toSorted((a, b) => place.get(a.group)! - place.get(b.group)!) };
+}
+
+/**
+ * These references' docs, by slug, with the operations on the help center in the tree's order and when the spec last
+ * changed them (llms.txt, llms-full.txt and the sitemap). Only references `docsContents` listed to the reader go in: this
+ * checks nothing itself. ponytail: loads each one's whole doc; read the operations from inside it if docs get huge.
+ */
+export async function shownOperations(projectSlug: string, slugs: string[]) {
+  const rows =
+    slugs.length === 0
+      ? []
+      : await prisma.apiReference.findMany({
+          where: { project: { slug: projectSlug }, slug: { in: slugs }, publishedAt: { not: null } },
+          select: { slug: true, baseUrl: true, changedAt: true, doc: true, state: true },
+        });
+  return new Map(
+    rows.map((row) => {
+      const doc = row.doc as unknown as ApiDoc;
+      return [row.slug, { doc, baseUrl: row.baseUrl, changedAt: row.changedAt, operations: shownInOrder(doc, row.state).operations }] as const;
+    }),
+  );
+}
+
 export type ApiReferencePage = NonNullable<Awaited<ReturnType<typeof apiReferencePage>>>;
 
 /** A line with none of Markdown's marks: no address or email Markdown would link, and no two spaces at its end (a line break). */
@@ -95,19 +122,4 @@ export const markdownDoc = cache(async (text: string): Promise<Doc> => {
 /** A spec's Markdown as plain words, its first line only: a card's, a search listing's or llms.txt's description. */
 export async function firstLine(text: string | undefined): Promise<string> {
   return text?.trim() ? (toPlainText(await markdownDoc(text)).split("\n").find((line) => line.trim()) ?? "").trim() : "";
-}
-
-/**
- * The first line of each of these references' descriptions, by slug (llms.txt). Read from inside the stored doc, as lists
- * never load a whole one.
- */
-export async function referenceDescriptions(projectSlug: string, slugs: string[]): Promise<Map<string, string>> {
-  if (slugs.length === 0) {
-    return new Map();
-  }
-  const rows = await prisma.$queryRaw<{ slug: string; description: string | null }[]>`
-    SELECT r.slug, r.doc->>'description' AS description
-    FROM api_reference r JOIN project p ON p.id = r."projectId"
-    WHERE p.slug = ${projectSlug} AND r.slug = ANY(${slugs})`;
-  return new Map(await Promise.all(rows.map(async (row) => [row.slug, await firstLine(row.description ?? undefined)] as const)));
 }

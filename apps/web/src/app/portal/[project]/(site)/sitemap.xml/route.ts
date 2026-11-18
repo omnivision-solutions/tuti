@@ -3,6 +3,7 @@ import { prisma } from "@tuti/db";
 import { portalAddress } from "@/server/custom-domains";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
+import { shownOperations } from "@/server/api-reference-queries";
 import {
   type DocsArticleLink,
   type DocsCollection,
@@ -26,7 +27,8 @@ const newest = (dates: (Date | undefined)[]) => dates.reduce<Date | undefined>((
 
 /**
  * The portal's public pages for search engines: home, boards, posts, the
- * roadmap, the changelog and the docs (with their tabs', collections' and API references' pages), each with when it
+ * roadmap, the changelog and the docs (with their tabs', collections' and API references' pages, and each operation's,
+ * dated by when its reference's spec last changed), each with when it
  * last changed (a tab's or collection's: the newest of itself, the collections in it and the articles listed here in them, and a tab's
  * references). Merged posts
  * (they redirect), drafts, articles that aren't listed everywhere or block search indexing,
@@ -89,6 +91,9 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // Only the ones docsContents lists (published, with something on the help center, in a tab for everyone).
   const referenceDates = new Map(project.apiReferences.map((reference) => [reference.slug, reference.updatedAt]));
   const referencesDates = (list: { slug: string }[]) => list.map((reference) => referenceDates.get(reference.slug));
+  const operations = [...(await shownOperations(slug, docs.references.map((reference) => reference.slug)))].flatMap(([reference, shown]) =>
+    shown.operations.map((operation) => ({ path: `/docs/${reference}/${operation.slug}`, lastmod: shown.changedAt })),
+  );
   const homeReferences = (docs.tabs.find((tab) => tab.slug === docs.home) ?? (docs.tabs.length === 0 ? docs : null))?.references ?? [];
   const datesOf = (links: DocsArticleLink[]) => links.flatMap((link) => articleDates.get(link.slug) ?? []);
   // A collection's own and the ones in it: their pages show the names and descriptions of the collections in them.
@@ -115,6 +120,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         lastmod: newest([tabDates.get(tab.slug), landingDate(tab), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected), ...referencesDates(tab.references)]),
       })),
     ...docs.references.map((reference) => ({ path: `/docs/${reference.slug}`, lastmod: referenceDates.get(reference.slug) })),
+    ...operations,
     ...everyCollection(docs.collections)
       .filter((collection) => !collection.sample)
       .map((collection) => ({

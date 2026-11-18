@@ -7,6 +7,8 @@ import DocsOperationPage, { generateMetadata } from "@/app/portal/[project]/(sit
 import DocsPageTabs from "@/app/portal/[project]/(site)/@docsTabs/docs/[slug]/page";
 import DocsSlugPage, { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import DocsHome, { generateMetadata as homeMetadata } from "@/app/portal/[project]/(site)/docs/page";
+import { GET as operationMd } from "@/app/portal/[project]/(site)/docs/[slug]/[operation]/md/route";
+import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
@@ -170,10 +172,16 @@ async function slugText(slug: string) {
   return asText([await rendered(await DocsSlugPage(props)), await rendered(await DocsPageTabs(props)), await slugMetadata(props)]);
 }
 
-/** As one string, each object once: props can share, or loop back to, objects. */
+/**
+ * As one string, each object once: props can share, or loop back to, objects. Without Copy page's `markdown`: the spec's
+ * text as written, a string for the clipboard (the .md's tests read it), never rendered.
+ */
 function asText(value: unknown) {
   const seen = new WeakSet();
-  return JSON.stringify(value, (_, value: unknown) => {
+  return JSON.stringify(value, (key, value: unknown) => {
+    if (key === "markdown") {
+      return undefined;
+    }
     if (typeof value === "object" && value !== null) {
       if (seen.has(value)) {
         return undefined;
@@ -714,7 +722,7 @@ describe("a tab holding a reference", () => {
     await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
     const portal = `http://${project.slug}.localhost:3100`;
     const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
-    expect(text).toContain(`## API references\n\n- [Reference](${portal}/docs/reference)\n`);
+    expect(text).toContain(`## API references\n\n- [Reference](${portal}/docs/reference)\n  - [Get a post](${portal}/docs/reference/get-a-post.md)`);
   });
 
   test("the docs without tabs holding one reference alone: /docs shows it", async () => {
@@ -766,7 +774,8 @@ paths:
     const route = { params: Promise.resolve({ project: project.slug }) };
     const portal = `http://${project.slug}.localhost:3100`;
     const text = await (await llms(new Request("http://x"), route)).text();
-    expect(text).toContain(`## [API](${portal}/docs/api)\n\n- [Reference](${portal}/docs/reference)\n- [Regions](${portal}/docs/regions): Everything regional.\n`);
+    expect(text).toContain(`## [API](${portal}/docs/api)\n\n- [Reference](${portal}/docs/reference)\n`);
+    expect(text).toContain(`- [Regions](${portal}/docs/regions): Everything regional.\n  - [One](${portal}/docs/regions/one.md): GET /a\n`);
     expect(text).not.toContain("More about them");
     const xml = await (await sitemap(new Request("http://x"), route)).text();
     for (const path of ["/docs/api", "/docs/reference", "/docs/regions"]) {
@@ -814,5 +823,68 @@ paths:
     expect(article).not.toContain('"href":"/docs/reference"');
     // An article's row has the tab of references in it.
     expect(article).toContain('"name":"API"');
+  });
+});
+
+describe("reach (A14)", () => {
+  const route = () => ({ params: Promise.resolve({ project: project.slug }) });
+  const portal = () => `http://${project.slug}.localhost:3100`;
+  const markdown = (operation: string) => operationMd(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug: "reference", operation }) });
+
+  test("an operation's .md: its Markdown for whoever may read its page; a 404 hidden, unpublished, or in a tab they can't read", async () => {
+    const response = await markdown("get-a-post");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(response.headers.get("cache-control")).toBe("private, max-age=300");
+    expect(response.headers.get("link")).toBe(`<${portal()}/docs/reference/get-a-post>; rel="canonical"`);
+    const text = await response.text();
+    for (const shown of ["# Get a post\n", "`GET /posts/{number}`", "## Path parameters", "| `number` | integer · at least 1 | Yes |", "## Responses", "### 404", "curl '", `Dark ${SECRET} mode`]) {
+      expect(text).toContain(shown);
+    }
+    // The page's Copy page has the same Markdown, and its menu the .md.
+    expect(await pageText("get-a-post")).toContain(`"markdownUrl":"${portal()}/docs/reference/get-a-post.md"`);
+    expect((await markdown("no-such-operation")).status).toBe(404);
+    await call(updateApiReference, as(), { slug: "reference", hide: ["POST /posts"] });
+    expect((await markdown("create-a-post")).status).toBe(404);
+    await setTab("SIGNED_IN", "LOCK");
+    expect((await markdown("get-a-post")).status).toBe(404);
+    actAs(await signUp("Reader"));
+    const restricted = await markdown("get-a-post");
+    expect(restricted.status).toBe(200);
+    expect(restricted.headers.get("cache-control")).toBe("private, no-store");
+    await setTab("GROUPS");
+    expect((await markdown("get-a-post")).status).toBe(404);
+    actAs(owner);
+    await call(updateApiReference, as(), { slug: "reference", published: false });
+    expect((await markdown("get-a-post")).status).toBe(404);
+  });
+
+  test("a GraphQL operation's .md: its signature, arguments, the type it returns and the query", async () => {
+    await call(createApiReference, as(), { name: "Graph", spec: `type Query {\n  post(id: ID!): Post\n}\ntype Post {\n  title: String\n}\n`, tab: "api" });
+    const text = await (await operationMd(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug: "graph", operation: "post" }) })).text();
+    for (const shown of ["`query post(id): Post`", "## Arguments", "## Returns", "## Query\n\n```graphql\n"]) {
+      expect(text).toContain(shown);
+    }
+  });
+
+  test("llms.txt lists each operation under its reference, linking its .md; llms-full.txt has its Markdown; the sitemap its page, dated by its spec's last change", async () => {
+    await call(updateApiReference, as(), { slug: "reference", hide: ["POST /posts"] });
+    const changed = new Date("2030-02-01T00:00:00.000Z");
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "reference" } }, data: { changedAt: changed } });
+    const text = await (await llms(new Request("http://x"), route())).text();
+    expect(text).toContain(`- [Reference](${portal()}/docs/reference)\n  - [Get a post](${portal()}/docs/reference/get-a-post.md): GET /posts/{number}. Reads a ${SECRET} post.\n`);
+    expect(text).toContain(`  - [Purge](${portal()}/docs/reference/purge.md): DELETE /admin/purge\n`);
+    expect(text).not.toContain("create-a-post");
+    const full = await (await llmsFull(new Request("http://x"), route())).text();
+    expect(full).toContain(`# Get a post\nSource: ${portal()}/docs/reference/get-a-post\n`);
+    expect(full).not.toContain("# Create a post");
+    const xml = await (await sitemap(new Request("http://x"), route())).text();
+    expect(xml).toContain(`<loc>${portal()}/docs/reference/get-a-post</loc><lastmod>${changed.toISOString()}</lastmod>`);
+    expect(xml).not.toContain("/docs/reference/create-a-post");
+    // A tab for some readers only: none of it.
+    await setTab("SIGNED_IN");
+    expect(await (await llms(new Request("http://x"), route())).text()).not.toContain("get-a-post");
+    expect(await (await llmsFull(new Request("http://x"), route())).text()).not.toContain("Get a post");
+    expect(await (await sitemap(new Request("http://x"), route())).text()).not.toContain("get-a-post");
   });
 });

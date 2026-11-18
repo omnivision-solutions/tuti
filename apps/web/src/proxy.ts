@@ -19,7 +19,8 @@ import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
  * - portal hosts (<project>.tuti.so, or a verified custom domain like help.acme.com):
  *   rewritten to /portal/<project>/…, so
  *   acme.tuti.so/b/ideas renders app/portal/[project]/(site)/b/[board].
- *   An article's Markdown, /docs/<slug>.md, goes to docs/[slug]/md, a changelog
+ *   An article's Markdown, /docs/<slug>.md, goes to docs/[slug]/md, an API operation's,
+ *   /docs/<reference>/<operation>.md, to docs/[slug]/[operation]/md, a changelog
  *   entry's, /changelog/<number>.md, to changelog/[number]/md, and a post's,
  *   <its path>.md, to feedback/[board]/[post]/md (a route segment can't be part
  *   dynamic, part ".md").
@@ -205,16 +206,17 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
   // An article's page asked for as Markdown (an AI agent's Accept header): its .md, the same route. A tab's or
   // collection's page (the same kind of path) has no Markdown: the page.
   // A changelog entry's page likewise (one that isn't published: its Markdown is a 404 as the page is), and a post's: every
-  // /feedback/<board>/<post> is one.
+  // /feedback/<board>/<post> is one, as every /docs/<reference>/<operation> is an API operation's.
   const docsPage = /^\/docs\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
+  const operationPage = /^\/docs\/[^/]+\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
   const entryPage = /^\/changelog\/\d+$/.test(pathname);
   const postPage = /^\/feedback\/[^/]+\/[^/]+$/.test(pathname) && !pathname.endsWith(".md");
   const markdown =
-    (docsPage || entryPage || postPage) &&
+    (docsPage || entryPage || postPage || operationPage) &&
     (request.method === "GET" || request.method === "HEAD") &&
     prefersMarkdown(request.headers.get("accept")) &&
-    (entryPage || postPage || (await isArticleSlug(slug, decodeURIComponent(pathname.slice("/docs/".length)))));
-  const path = markdown ? `${pathname}/md` : pathname.replace(/^\/(docs\/[^/]+|changelog\/\d+|feedback\/[^/]+\/[^/]+)\.md$/, "/$1/md");
+    (entryPage || postPage || operationPage || (await isArticleSlug(slug, decodeURIComponent(pathname.slice("/docs/".length)))));
+  const path = markdown ? `${pathname}/md` : pathname.replace(/^\/(docs\/[^/]+(?:\/[^/]+)?|changelog\/\d+|feedback\/[^/]+\/[^/]+)\.md$/, "/$1/md");
   url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
   // Always set, so a request can't say a path of its own.
   const forwarded = mount ? fromSite(request, mount) : new Headers(request.headers);
@@ -232,7 +234,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     // (Set here, it wins over the routes' own public cache-control.)
     response.headers.set("cache-control", "private, no-store");
   }
-  if (docsPage || entryPage || postPage) {
+  if (docsPage || entryPage || postPage || operationPage) {
     // HTML or Markdown by the Accept header: caches keep them apart.
     response.headers.set("vary", "Accept");
   }

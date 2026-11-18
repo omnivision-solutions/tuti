@@ -5,7 +5,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
-import { referenceDescriptions } from "@/server/api-reference-queries";
+import { firstLine, shownOperations } from "@/server/api-reference-queries";
 import { type DocsCollection, type DocsReferenceLink, docsContents, docsTabPath } from "@/server/docs-queries";
 import { PORTAL_BOARDS } from "@/server/post-visibility";
 
@@ -23,7 +23,7 @@ const DEEPEST_HEADING = 4;
 
 /**
  * The portal for AI tools (llmstxt.org): what it is, then links to every docs
- * article's Markdown and every API reference's page (by tab, if the docs have them, under links to the tabs' and collections' pages;
+ * article's Markdown and every API reference's page with its operations' Markdown (by tab, if the docs have them, under links to the tabs' and collections' pages;
  * collections nest as headings to ####, then as lists), the changelog and its newest entries' Markdown, and the
  * feedback boards. Built as
  * a document so names and titles are escaped like any Markdown we serve.
@@ -53,10 +53,37 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // and not the articles whose team blocked search indexing.
   const docs = await docsContents(slug, { reader: SIGNED_OUT, indexable: true, locks: false });
   const { collections, uncollected, tabs, references } = docs;
-  // An API reference's page, with its description's first line (its operations come with A14).
-  const descriptions = await referenceDescriptions(slug, references.map((reference) => reference.slug));
-  const referenceLinks = (list: DocsReferenceLink[]) =>
-    list.length > 0 ? [links(list.map((reference) => ({ name: reference.name, url: `${portal}/docs/${reference.slug}`, note: descriptions.get(reference.slug) })))] : [];
+  // An API reference's page with its description's first line, and under it a line per operation on the help center
+  // linking its Markdown, with its method, path and its description's first line.
+  const shown = await shownOperations(slug, references.map((reference) => reference.slug));
+  const lines = new Map(
+    await Promise.all(
+      [...shown].map(async ([referenceSlug, { doc, operations }]) => {
+        const items = await Promise.all(
+          operations.map(async (operation) => {
+            const line = await firstLine(operation.description);
+            const url = `${portal}/docs/${referenceSlug}/${operation.slug}.md`;
+            return { type: "listItem", content: [linkParagraph({ name: operation.title, url, note: `${operation.kind} ${operation.path}${line && `. ${line}`}` })] };
+          }),
+        );
+        return [referenceSlug, { note: await firstLine(doc.description), items }] as const;
+      }),
+    ),
+  );
+  const referenceLinks = (references: DocsReferenceLink[]) =>
+    references.length > 0
+      ? [
+          list(
+            references.map((reference) => {
+              const { note, items = [] } = lines.get(reference.slug) ?? {};
+              return {
+                type: "listItem",
+                content: [linkParagraph({ name: reference.name, url: `${portal}/docs/${reference.slug}`, note }), ...(items.length > 0 ? [list(items)] : [])],
+              };
+            }),
+          ),
+        ]
+      : [];
   const articleItem = (article: { slug: string; title: string }) => ({
     type: "listItem",
     content: [linkParagraph({ name: article.title, url: `${portal}/docs/${article.slug}.md` })],

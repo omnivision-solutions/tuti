@@ -89,6 +89,18 @@ test("an article's page asked for as Markdown (an AI agent's Accept header) is s
   expect(await served("text/markdown", "/docs/billing", "POST")).toEqual(["/docs/billing", "Accept"]);
 });
 
+test("an API operation's .md URL, or its page asked for as Markdown, is served by its Markdown route; browsers get the page", async () => {
+  const served = async (accept: string | null, path: string, method = "GET") => {
+    const response = await proxy(new NextRequest(`http://acme.tuti.example${path}`, { method, headers: { host: "acme.tuti.example", ...(accept && { accept }) } }));
+    return [response.headers.get("x-middleware-rewrite")?.replace("http://acme.tuti.example/portal/acme", ""), response.headers.get("vary")];
+  };
+  expect(await served(null, "/docs/api/create-a-post.md")).toEqual(["/docs/api/create-a-post/md", null]);
+  expect(await served("text/markdown", "/docs/api/create-a-post")).toEqual(["/docs/api/create-a-post/md", "Accept"]);
+  expect(await served("text/html,*/*;q=0.8", "/docs/api/create-a-post")).toEqual(["/docs/api/create-a-post", "Accept"]);
+  // Not Try it's requests, posted under the page's address.
+  expect(await served("text/markdown", "/docs/api/create-a-post/try", "POST")).toEqual(["/docs/api/create-a-post/try", null]);
+});
+
 test("a changelog entry's .md URL and its page asked for as Markdown are served by its Markdown route; browsers get the page", async () => {
   const served = async (accept: string | null, path: string, method = "GET") => {
     const response = await proxy(new NextRequest(`http://acme.tuti.example${path}`, { method, headers: { host: "acme.tuti.example", ...(accept && { accept }) } }));
