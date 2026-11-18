@@ -522,6 +522,8 @@ test("the toolbar's Insert menu opens over the article and inserts where the cur
   await team.keyboard.press("End");
   const insert = formatting.getByRole("button", { name: "Insert" });
   await insert.click();
+  // Escape is for the open menu: pressed before it's up, it closes nothing and the focus stays where it was.
+  await expect(team.getByRole("menuitem", { name: "Divider", exact: true })).toBeVisible();
   await team.keyboard.press("Escape");
   await expect(insert).toBeFocused();
   await insert.click();
