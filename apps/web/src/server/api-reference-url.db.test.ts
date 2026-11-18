@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { fetchSpec, handlers, SPEC_FETCH_TIMEOUT_MS, SPEC_URL_TOO_LARGE, syncApiReferences, SYNC_EVERY_MS, SYNC_ROWS_PER_HOST } from "@tuti/jobs";
+import { fetchSpec, handlers, syncBudget, SPEC_FETCH_TIMEOUT_MS, SPEC_URL_TOO_LARGE, syncApiReferences, SYNC_EVERY_MS, SYNC_ROWS_PER_HOST } from "@tuti/jobs";
 import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { type ApiFake, type SiteFake, startApiFake, startSiteFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -31,6 +31,7 @@ const CONNECT: Record<string, string> = {
   "metadata.acme.test": "169.254.169.254",
   "busy.acme.test": "10.0.0.6",
   "other.acme.test": "10.0.0.7",
+  "short.acme.test": "10.0.0.8",
 };
 vi.mock("node:dns", async (importOriginal) => {
   const dns = await importOriginal<typeof import("node:dns")>();
@@ -286,6 +287,28 @@ describe("a sync", () => {
     expect(await prisma.apiReferenceFetch.count({ where: { userId: owner.id } })).toBe(before + 3);
   });
 
+  test("of two address changes at once, the one that finishes second is refused: the other's address and spec stay", async () => {
+    site.answer("/a.json", spec({ "GET /posts": "Posts", "GET /a": "A" }));
+    site.answer("/b.json", spec({ "GET /posts": "Posts", "GET /b": "B" }));
+    const change = (path: string) => call(syncApiReference, as(), { slug: "acme-api", url: `${site.origin}${path}` });
+    // The change to A waits at the site while a teammate's change to B runs whole.
+    let second: Awaited<ReturnType<typeof change>> | undefined;
+    site.during(async () => {
+      second = await change("/b.json");
+    });
+    await expect(change("/a.json")).rejects.toMatchObject({ status: 409, message: "Someone changed the address meanwhile. Reload to see it, and try again." });
+    expect(second).toMatchObject({ sourceUrl: `${site.origin}/b.json`, changes: { added: 1, removed: 1, changed: true } });
+    expect(await stored()).toMatchObject({ sourceUrl: `${site.origin}/b.json`, spec: spec({ "GET /posts": "Posts", "GET /b": "B" }) });
+  });
+
+  test("Settings' Change to the address it already has syncs it, and says so when that fails", async () => {
+    actAs(owner);
+    site.answer("/openapi.json", null);
+    expect(await actions.changeApiReferenceUrl(project.slug, "acme-api", `${site.origin}/openapi.json`)).toEqual({ error: "The address answered 404 Not Found." });
+    site.answer("/openapi.json", POSTS);
+    expect(await actions.changeApiReferenceUrl(project.slug, "acme-api", `${site.origin}/openapi.json`)).toEqual({ added: 0, removed: 0, changed: false });
+  });
+
   test("an uploaded reference isn't synced, and a URL's isn't replaced by hand", async () => {
     await call(createApiReference, as(), { name: "Uploaded", spec: POSTS });
     await expect(call(syncApiReference, as(), { slug: "uploaded" })).rejects.toMatchObject({ status: 409 });
@@ -412,12 +435,45 @@ describe("the 6-hourly job", () => {
     expect(new Set(tried.map((row) => row.syncError))).toEqual(new Set([PRIVATE]));
   }, 60_000);
 
+  test("hosts share a run: one with a single reference is read though busy hosts' backlogs outlast the budget", async () => {
+    const now = new Date();
+    await prisma.apiReference.updateMany({ data: { syncTriedAt: now } });
+    const made = await call(createApiReference, as(), { name: "Template", spec: POSTS });
+    const { doc, state, ...rest } = await prisma.apiReference.findUniqueOrThrow({
+      where: { projectId_slug: { projectId: project.id, slug: made.slug } },
+      select: { projectId: true, tabId: true, name: true, format: true, spec: true, doc: true, state: true },
+    });
+    // Four busy hosts, 20 due each and all older than the single host's one: every read refused at once by the fixed answers.
+    const due = (minutes: number) => new Date(now.getTime() - SYNC_EVERY_MS - minutes * 60_000);
+    const busy = ["internal", "metadata", "busy", "other"].flatMap((host) =>
+      Array.from({ length: 20 }, (_, at) => ({ slug: `${host}-${at}`, sourceUrl: `https://${host}.acme.test/${at}.json`, syncTriedAt: due(100 - at) })),
+    );
+    await prisma.apiReference.createMany({
+      data: [...busy, { slug: "single", sourceUrl: "https://short.acme.test/openapi.json", syncTriedAt: due(1) }].map((row) => ({
+        ...rest,
+        ...row,
+        source: "URL" as const,
+        doc: doc as object,
+        state: state as object,
+      })),
+    });
+    // A budget of 8 reads: far less than the backlog, and the single host still gets one.
+    let reads = 0;
+    expect(await syncApiReferences({}, log, new Date(), () => reads++ >= 8)).toEqual({ synced: 0, failed: 8 });
+    const tried = await prisma.apiReference.findMany({ where: { projectId: project.id, syncTriedAt: { gt: now } }, select: { slug: true } });
+    expect(tried.map((row) => row.slug)).toContain("single");
+    // And each busy host had its turns, two reads each at most.
+    for (const host of ["internal", "metadata", "busy", "other"]) {
+      expect(tried.filter((row) => row.slug.startsWith(`${host}-`)).length).toBeLessThanOrEqual(2);
+    }
+  });
+
   test("a run starts no read past its time budget: the rest wait for the next", async () => {
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
     await prisma.apiReference.updateMany({ data: { syncTriedAt: new Date() } });
     await addFromUrl();
     await prisma.apiReference.updateMany({ where: { projectId: project.id }, data: { syncTriedAt: new Date(0) } });
-    expect(await syncApiReferences({}, log, new Date(), 0)).toEqual({ synced: 0, failed: 0 });
+    expect(await syncApiReferences({}, log, new Date(), syncBudget(0))).toEqual({ synced: 0, failed: 0 });
     expect((await stored()).syncTriedAt).toEqual(new Date(0));
     expect(await syncApiReferences({}, log)).toEqual({ synced: 1, failed: 0 });
   });

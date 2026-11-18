@@ -64,11 +64,15 @@ export async function syncApiReferenceNow(projectSlug: string, slug: string): Pr
 
 /** Settings' Source: the reference is read from `url` from now on, once it's read there (the toast says what that changed). */
 export async function changeApiReferenceUrl(projectSlug: string, slug: string, url: string): Promise<FormState & { added?: number; removed?: number; changed?: boolean }> {
-  let changes: { added: number; removed: number; changed: boolean } | null = null;
+  let answer: Awaited<ReturnType<typeof syncOperation.run>> | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    ({ changes } = await call(syncOperation, context, { slug: String(slug), url: String(url) }));
+    answer = await call(syncOperation, context, { slug: String(slug), url: String(url) });
   });
-  return result.error ? result : (changes ?? {});
+  if (result.error || !answer) {
+    return result;
+  }
+  // The address it already had is synced as it is: its failure is said, as Sync now's is.
+  return answer.changes ?? { error: answer.syncError ?? "Another sync finished first. The page shows what it read." };
 }
 
 /**

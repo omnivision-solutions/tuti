@@ -22,15 +22,21 @@ export const SPEC_MAX_REDIRECTS = 3;
 /** How long after its last try a URL's reference is read again. */
 export const SYNC_EVERY_MS = 6 * 60 * 60 * 1000;
 /**
- * How a run spreads its reads: each host's references one at a time (no host gets two of Tuti's reads at once), 4 hosts
- * at once, the hosts with the most due first so their turns start early, and no read started after 8 minutes, so the
- * last ends inside the job's 10; the hourly job takes the rest next time. A host is bounded by that time, not by a count:
- * one answering in a second or two gets a few hundred of its references read a run. The run reads its candidates per
- * host in SQL, at most SYNC_ROWS_PER_HOST each (more than a host gets through in a run), so one host's backlog never
- * fills the window and keeps another host's reference waiting.
+ * How a run spreads its reads: each host's references one at a time (no host gets two of Tuti's reads at once), 4 at
+ * once, the hosts taking turns in the order of their oldest due reference (a host's next read waits behind the other
+ * hosts', so every host with something due gets a read before any gets a second), and no read started after 8 minutes,
+ * so the last ends inside the job's 10; the hourly job takes the rest next time. A host is bounded by that time, not by
+ * a count: one answering in a second or two gets a hundred or more of its references read a run. The run reads its
+ * candidates per host in SQL, at most SYNC_ROWS_PER_HOST each (more than a host gets through in a run), so one host's
+ * backlog never fills the window and keeps another host's reference waiting.
  */
 const HOSTS_AT_ONCE = 4;
 export const SYNC_BUDGET_MS = 8 * 60_000;
+/** Whether a run's time is up: `ms` from now. Tests pass their own, counted in reads. */
+export const budget = (ms: number) => {
+  const until = Date.now() + ms;
+  return () => Date.now() >= until;
+};
 export const SYNC_ROWS_PER_HOST = 500;
 const SYNC_CANDIDATES = 5_000;
 
@@ -293,8 +299,7 @@ export async function syncApiReference(id: string, options: { allowLoopback?: bo
  * one reference at a time per host, so no team's server gets them all together. One that fails says so on its page
  * and is tried again next time it's due; it stops none of the others.
  */
-export async function syncApiReferences(_: unknown, log: JobLogger, now = new Date(), budgetMs = SYNC_BUDGET_MS): Promise<JobResult> {
-  const until = Date.now() + budgetMs;
+export async function syncApiReferences(_: unknown, log: JobLogger, now = new Date(), over = budget(SYNC_BUDGET_MS)): Promise<JobResult> {
   // The oldest due per host (its name, lowercased, as URL gives it: the port, credentials and path left off).
   const due = await prisma.$queryRaw<{ id: string; sourceUrl: string | null }[]>`
     SELECT id, "sourceUrl" FROM (
@@ -311,25 +316,31 @@ export async function syncApiReferences(_: unknown, log: JobLogger, now = new Da
     const host = URL.parse(sourceUrl ?? "")?.hostname ?? "";
     byHost.set(host, [...(byHost.get(host) ?? []), id]);
   }
-  const hosts = [...byHost.values()].sort((a, b) => b.length - a.length);
+  // Ranked by each host's oldest due reference (the rows come oldest first), not by how many: a busy host's backlog
+  // never puts a host with one reference behind it.
+  const hosts = [...byHost.values()];
   let [synced, failed] = [0, 0];
+  // A host goes back at the end of the queue after each read, never into it twice: one read at a time per host, and
+  // hosts with long backlogs take turns with the rest rather than holding every worker to the end of the budget.
   const worker = async () => {
     for (let ids = hosts.shift(); ids; ids = hosts.shift()) {
-      for (const id of ids) {
-        if (Date.now() >= until) {
-          return;
-        }
-        try {
-          const result = await syncApiReference(id);
-          if (result && "error" in result) {
-            failed++;
-          } else {
-            synced++;
-          }
-        } catch (error) {
+      if (over()) {
+        return;
+      }
+      const id = ids.shift()!;
+      try {
+        const result = await syncApiReference(id);
+        if (result && "error" in result) {
           failed++;
-          log.warn(`Syncing an API reference failed: ${String(error)}`);
+        } else {
+          synced++;
         }
+      } catch (error) {
+        failed++;
+        log.warn(`Syncing an API reference failed: ${String(error)}`);
+      }
+      if (ids.length > 0) {
+        hosts.push(ids);
       }
     }
   };

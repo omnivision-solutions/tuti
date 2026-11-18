@@ -390,7 +390,7 @@ export const replaceApiReference = defineOperation({
 export const syncApiReference = defineOperation({
   name: "apiReferences.sync",
   summary:
-    "Read a URL's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `syncError` says why (the reference's page says so too, until a sync works). A sync that another (the 6-hourly one, or a second Sync now) overtook writes nothing, as that one's answer is newer: `changes` is null. With `url`, the reference is read from that address from now on: it's fetched and read first, with apiReferences.create's checks, and one that can't be is refused (400) with the address left as it was. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
+    "Read a URL's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `syncError` says why (the reference's page says so too, until a sync works). A sync that another (the 6-hourly one, or a second Sync now) overtook writes nothing, as that one's answer is newer: `changes` is null. With `url`, the reference is read from that address from now on: it's fetched and read first, with apiReferences.create's checks, and one that can't be is refused (400) with the address left as it was; so is one overtaken by another change of the address (409). An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
   method: "POST",
   path: "/api-references/{slug}/sync",
   scope: "write",
@@ -412,8 +412,12 @@ export const syncApiReference = defineOperation({
       const next = read(text, from);
       return prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        const current = await tx.apiReference.findUnique({ where: { id: row.id }, select: { doc: true, state: true } });
+        // Only over the address it started from: a teammate's change that landed meanwhile is newer, and stays.
+        const current = await tx.apiReference.findFirst({ where: { id: row.id, sourceUrl: row.sourceUrl }, select: { doc: true, state: true } });
         if (!current) {
+          if (await tx.apiReference.count({ where: { id: row.id } })) {
+            throw new OperationError(409, "source_changed", "Someone changed the address meanwhile. Reload to see it, and try again.");
+          }
           throw notFound(input.slug);
         }
         // A sync of the old address still on its way finds the address changed, and writes nothing.
