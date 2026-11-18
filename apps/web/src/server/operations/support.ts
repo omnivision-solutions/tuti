@@ -8,18 +8,22 @@ import { mailSubdomain, supportAddress, supportDomain } from "../inbound";
 import { defineOperation, OperationError } from "./define";
 import { requirePlan } from "./plan";
 
-/** The support inbox's settings (Settings → Inbox and email; docs/plan.md, Support inbox). */
+/** The support inbox's settings (Settings → Inbox and email, and Settings → AI → Inbox; docs/plan.md, Support inbox). */
+
+export const MAX_DRAFT_INSTRUCTIONS = 2000;
 
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
   const [project, subdomain, last, own] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, emailPausedAt: true, emailPausedReason: true, plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, emailPausedAt: true, emailPausedReason: true, plan: true } }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
     prisma.emailDomain.findUnique({ where: { projectId } }),
   ]);
   return {
     inbox: project.supportInbox,
+    // The team's standing instructions for replies drafted by AI (conversations.suggestReply).
+    draftInstructions: project.supportDraftInstructions,
     // Email: whether this server receives it, the project's address (once it has one) and the latest email's time.
     email: domain
       ? {
@@ -150,7 +154,7 @@ export const removeEmailDomain = defineOperation({
 export const getSupportSettings = defineOperation({
   name: "support.get",
   summary:
-    "Get the support inbox's settings: whether it's on (Messages in the widget; \"Ask a person\" starts a conversation), and its email address (null until it has one; `email` is null where the server doesn't receive email)",
+    "Get the support inbox's settings: whether it's on (Messages in the widget; \"Ask a person\" starts a conversation), the team's instructions for replies drafted by AI (`draftInstructions`), and its email address (null until it has one; `email` is null where the server doesn't receive email)",
   method: "GET",
   path: "/support",
   scope: "read",
@@ -161,15 +165,19 @@ export const getSupportSettings = defineOperation({
 
 export const updateSupportSettings = defineOperation({
   name: "support.update",
-  summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate; turning it on gives the project its support email address where the server receives email), or (`email: true`) give the project its support email address, which is its for good",
+  summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate; turning it on gives the project its support email address where the server receives email), or (`email: true`) give the project its support email address, which is its for good, or (`draftInstructions`) set the team's standing instructions for replies drafted by AI (conversations.suggestReply): their tone and form, up to 2,000 characters; a draft still says only what the docs say",
   method: "PATCH",
   path: "/support",
   scope: "write",
   access: "admin",
   input: z
-    .object({ inbox: z.boolean().optional(), email: z.literal(true).optional() })
-    .refine((input) => input.inbox !== undefined || input.email !== undefined, "Send inbox or email")
-    .meta({ anyOf: [{ required: ["inbox"] }, { required: ["email"] }] }),
+    .object({
+      inbox: z.boolean().optional(),
+      email: z.literal(true).optional(),
+      draftInstructions: z.string().trim().max(MAX_DRAFT_INSTRUCTIONS, "Keep the instructions under 2,000 characters").optional(),
+    })
+    .refine((input) => input.inbox !== undefined || input.email !== undefined || input.draftInstructions !== undefined, "Send inbox, email or draftInstructions")
+    .meta({ anyOf: [{ required: ["inbox"] }, { required: ["email"] }, { required: ["draftInstructions"] }] }),
   example: { inbox: true },
   run: async ({ projectId }, input) => {
     if (input.email && !supportDomain()) {
@@ -180,8 +188,11 @@ export const updateSupportSettings = defineOperation({
     if (input.email || (input.inbox && supportDomain())) {
       await mailSubdomain(projectId);
     }
-    if (input.inbox !== undefined) {
-      await prisma.project.update({ where: { id: projectId }, data: { supportInbox: input.inbox } });
+    if (input.inbox !== undefined || input.draftInstructions !== undefined) {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { ...(input.inbox !== undefined && { supportInbox: input.inbox }), ...(input.draftInstructions !== undefined && { supportDraftInstructions: input.draftInstructions }) },
+      });
     }
     return supportSettings(projectId);
   },

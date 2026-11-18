@@ -13,12 +13,10 @@ import { saveAiModels } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
 import type { AiModels } from "@/server/operations/ai-models";
 
-/** A role with a row here: the changelog's and AI answers' are on their own pages (Settings → Changelog, AI answers), as each feature's will be (docs/plan.md, R4–R7). */
-type RowRole = Exclude<AiRole, "changelog" | "answers" | "escalations">;
+/** A role with a row here: Autopilot's. The other features' are on their own pages (Settings → AI answers, Inbox, Changelog), as Autopilot's will be (docs/plan.md, R4–R7). */
+type RowRole = Exclude<AiRole, "changelog" | "answers" | "escalations" | "support_draft" | "support_summary">;
 /** Each role's row, in the page's order: its title and what its model does. Every such role has one (the type says so). */
 const ROW_OF: Record<RowRole, { title: string; does: string }> = {
-  support_draft: { title: "Inbox drafts", does: "Replies drafted from your docs, in your Inbox." },
-  support_summary: { title: "Inbox summaries", does: "Summaries of conversations, in your Inbox." },
   code_changes_decide: {
     title: "Autopilot decides",
     does: "Reads each merged pull request, its code and your help center, and decides which articles to fix and which new ones you need.",

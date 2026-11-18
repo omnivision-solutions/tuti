@@ -34,9 +34,9 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
   const listed = all.filter(withinModelCap);
   const cap = modelMaxPrice();
   // The groups whose level, not the choices below, decides their models: on Affordable or Best, or on Balanced with models still picked.
-  // Not the changelog's or AI answers': their levels are on their own pages (Settings → Changelog, AI answers).
+  // Only Autopilot's: the other features' levels are on their own pages (Settings → AI answers, Inbox, Changelog).
   const onLevel = AI_GROUP_NAMES.filter(
-    (group) => group !== "changelog" && group !== "answers" && models.levels[group].level !== "custom" && (models.levels[group].level !== "balanced" || AI_GROUPS[group].some((role) => models[role].model !== null && models[role].model !== "off")),
+    (group) => group === "code_changes" && models.levels[group].level !== "custom" && (models.levels[group].level !== "balanced" || AI_GROUPS[group].some((role) => models[role].model !== null && models[role].model !== "off")),
   );
   const notices = [...(planIncludes(project.plan, "aiTuning") ? [] : ["ai-models-plan"]), ...(onLevel.length > 0 ? ["ai-models-level"] : [])];
   return (
