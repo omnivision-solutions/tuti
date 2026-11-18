@@ -5,6 +5,8 @@ import { isValidElement } from "react";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { createApiReference } from "@/server/operations/api-references";
+import { call } from "@/server/operations/run";
 
 import FeedbackPage from "./[project]/feedback/page";
 
@@ -28,7 +30,7 @@ let member: TestUser;
 let owner: TestUser;
 
 /** One of each record the pages open, so a page that doesn't check would find it. */
-let records: { post: { id: string; number: number }; article: { id: string; slug: string }; change: { id: string }; entry: number; conversation: number; collection: string; tab: string; user: string };
+let records: { post: { id: string; number: number }; article: { id: string; slug: string }; change: { id: string }; entry: number; conversation: number; collection: string; tab: string; reference: string; user: string };
 
 beforeAll(async () => {
   owner = await signUp("Owner");
@@ -65,7 +67,12 @@ beforeAll(async () => {
   await prisma.conversation.create({ data: { projectId, number: 1, subject: "Help", status: "OPEN", origin: "API", lastMessageAt: new Date() } });
   const customer = await signUp("Customer");
   await prisma.ssoIdentity.create({ data: { projectId, externalId: "user-1", userId: customer.id, email: customer.email } });
-  records = { post, article, change, entry: 1, conversation: 1, collection: collection.slug, tab: tab.slug, user: "user-1" };
+  const reference = await call(
+    createApiReference,
+    { actor: { kind: "user", userId: owner.id }, projectId },
+    { name: "API", spec: JSON.stringify({ openapi: "3.1.0", info: { title: "API", version: "1" }, paths: { "/posts": { get: { summary: "List posts", responses: { 200: { description: "OK" } } } } } }) },
+  );
+  records = { post, article, change, entry: 1, conversation: 1, collection: collection.slug, tab: tab.slug, reference: reference.slug, user: "user-1" };
 });
 
 // AI and Autopilot on, so their pages get as far as their checks. Nothing here gets past one to call it.
@@ -77,7 +84,7 @@ function props(file: string) {
   const id = file.includes("/feedback/[id]/") ? post.id : file.includes("/articles/[id]/") ? article.id : change.id;
   const number = file.includes("/changelog/") ? records.entry : file.includes("/inbox/") ? records.conversation : post.number;
   return {
-    params: Promise.resolve({ project: project.slug, id, number: String(number), slug: article.slug, collection: records.collection, tab: records.tab, user: records.user }),
+    params: Promise.resolve({ project: project.slug, id, number: String(number), slug: article.slug, collection: records.collection, tab: records.tab, reference: records.reference, user: records.user }),
     searchParams: Promise.resolve({}),
   };
 }

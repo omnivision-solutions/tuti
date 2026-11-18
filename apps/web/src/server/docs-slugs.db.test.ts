@@ -161,4 +161,24 @@ describe("the migration", () => {
     // A tab may be called that: only articles are renamed.
     expect((await prisma.docsTab.findFirstOrThrow({ where: { projectId: other.id } })).slug).toBe("tabs");
   });
+
+  test("renames an article called “references” (the app's page of an API reference now): its settings save again, and its old address redirects", async () => {
+    const sql = readFileSync(
+      new URL("../../../../packages/db/prisma/migrations/20261118140000_docs_references_page_slug/migration.sql", import.meta.url),
+      "utf8",
+    );
+    // As the app let it be made before: "references" wasn't reserved.
+    const created = await call(createArticle, as(), { title: "References" });
+    const { id } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug, deletedAt: null } });
+    await prisma.article.update({ where: { id }, data: { slug: "references", publishedAt: new Date() } });
+    // The slug it would take is a collection's.
+    await call(createCollection, as(), { name: "References 2" });
+
+    await prisma.$executeRawUnsafe(sql);
+
+    expect((await prisma.article.findUniqueOrThrow({ where: { id } })).slug).toBe("references-3");
+    expect(await prisma.docsRedirect.findMany({ where: { projectId: project.id }, select: { slug: true, articleId: true } })).toEqual([{ slug: "references", articleId: id }]);
+    // Saved with the address it has, as its settings' form sends it.
+    expect(await call(updateArticle, as(), { slug: "references-3", newSlug: "references-3", description: "Where to look things up" })).toMatchObject({ slug: "references-3" });
+  });
 });

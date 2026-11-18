@@ -303,12 +303,13 @@ export function DocsWorkspace({
   /** Whether collection `slug` is collection `of` or one inside it. */
   const within = (slug: string, of: string) => chains.get(slug)?.some((c) => c.id === of) ?? false;
 
-  // The page shown: /tabs/<slug>, /collections/<slug>, or an article's /<slug> (and its /history).
+  // The page shown: /tabs/<slug>, /collections/<slug>, or an article's /<slug> (and its /history). An API reference's
+  // (/references/<slug>) is a page in the pane like those, no article's editor.
   const [at, slug] = pathname.startsWith(`${base}/`) ? pathname.slice(base.length + 1).split("/") : [];
   const current =
     at === "tabs" || at === "collections"
       ? { kind: at === "tabs" ? "tab" : "collection", slug: slug ?? "" }
-      : at && at !== "new" && at !== "insights"
+      : at && at !== "new" && at !== "insights" && !(at === "references" && slug)
         ? { kind: "article", slug: at }
         : null;
   // An article's editor, a new one's too.

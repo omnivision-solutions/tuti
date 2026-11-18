@@ -1,8 +1,9 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import * as actions from "./api-references";
 import {
   createApiReference,
   deleteApiReference,
@@ -95,6 +96,7 @@ describe("adding and reading", () => {
       alsoIn: [],
       deprecated: false,
       onHelpCenter: true,
+      hidden: false,
       new: false,
     });
     expect(reference.types).toEqual([{ name: "Post", slug: "post", kind: "object", onHelpCenter: true }]);
@@ -368,5 +370,60 @@ describe("tabs", () => {
     await add("Partner API", POSTS, "partners");
     await call(deleteTab, as(), { slug: "partners" });
     expect(await places()).toEqual(["guides:partner-api (draft)"]);
+  });
+});
+
+describe("the reference's page in the app", () => {
+  const upload = (text: string) => {
+    const data = new FormData();
+    data.set("spec", new File([text], "openapi.json"));
+    return actions.replaceApiReferenceSpec(project.slug, "api-reference", data);
+  };
+  const WITH_COMMENTS = spec({ "GET /posts": ["Posts", "List posts"], "POST /posts": ["Posts", "Create a post"], "GET /comments": ["Comments", "List comments"] });
+
+  beforeEach(async () => {
+    await add();
+    actAs(owner);
+  });
+
+  test("an upload says what it added and removed, and the same file again changes nothing", async () => {
+    expect(await upload(WITH_COMMENTS)).toEqual({ added: 1, removed: 1, changed: true });
+    expect(await upload(WITH_COMMENTS)).toEqual({ added: 0, removed: 0, changed: false });
+    // The same operations, one reworded.
+    expect(await upload(WITH_COMMENTS.replace("List comments", "Every comment"))).toEqual({ added: 0, removed: 0, changed: true });
+    expect(await upload("{ nope")).toEqual({ error: expect.any(String) });
+    expect((await get()).operations.map((o) => o.key)).toEqual(["GET /posts", "POST /posts", "GET /comments"]);
+  });
+
+  test("what uploads add stays new across uploads until the team opens the page", async () => {
+    await upload(WITH_COMMENTS);
+    await upload(spec({ "GET /posts": ["Posts", "List posts"], "GET /comments": ["Comments", "List comments"], "GET /users": ["Users", "List users"] }));
+    expect(await operations()).toEqual(["GET /posts list-posts", "GET /comments list-comments new", "GET /users list-users new"]);
+    // The page showed one of them as new; the other came while it was open, and is new on the next visit.
+    expect(await actions.markApiReferenceSeen(project.slug, "api-reference", ["GET /comments"])).toEqual({});
+    expect(await operations()).toEqual(["GET /posts list-posts", "GET /comments list-comments", "GET /users list-users new"]);
+    expect(await stored()).toMatchObject({ unseenCount: 1 });
+    await actions.markApiReferenceSeen(project.slug, "api-reference", ["GET /users"]);
+    expect(await operations()).toEqual(["GET /posts list-posts", "GET /comments list-comments", "GET /users list-users"]);
+    expect(await stored()).toMatchObject({ unseenCount: 0 });
+  });
+
+  test("a switch takes an operation or a group off the help center; an operation keeps its own choice while its group is off", async () => {
+    await actions.setApiReferenceShown(project.slug, "api-reference", "operation", "POST /posts", false);
+    await actions.setApiReferenceShown(project.slug, "api-reference", "group", "Posts", false);
+    const off = (await get()).operations.map((o) => `${o.key} ${o.onHelpCenter} ${o.hidden}`);
+    expect(off).toEqual(["GET /posts false false", "POST /posts false true", "DELETE /posts true false"]);
+    await actions.setApiReferenceShown(project.slug, "api-reference", "group", "Posts", true);
+    expect(await operations()).toEqual(["GET /posts list-posts", "POST /posts create-a-post off", "DELETE /posts delete-every-post"]);
+    expect(await actions.setApiReferenceShown(project.slug, "api-reference", "operation", "GET /nope", false)).toEqual({ error: "This reference has no operation “GET /nope”" });
+  });
+
+  test("unpublishing, publishing and deleting", async () => {
+    await actions.setApiReferencePublished(project.slug, "api-reference", false);
+    expect(await get()).toMatchObject({ published: false });
+    await actions.setApiReferencePublished(project.slug, "api-reference", true);
+    expect(await get()).toMatchObject({ published: true });
+    expect(await actions.deleteApiReference(project.slug, "api-reference")).toEqual({});
+    await expect(get()).rejects.toMatchObject({ status: 404 });
   });
 });

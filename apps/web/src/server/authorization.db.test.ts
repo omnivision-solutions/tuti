@@ -19,6 +19,7 @@ import { request } from "@/test/next-headers";
 
 import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
+import * as apiReferences from "./api-references";
 import * as appSearch from "./app-search";
 import * as appWidget from "./app-widget";
 import * as assistant from "./assistant";
@@ -56,6 +57,8 @@ import * as team from "./team";
 import * as webhooks from "./webhooks";
 import * as widget from "./widget";
 import * as widgetInbox from "./widget-inbox";
+import { createApiReference } from "./operations/api-references";
+import { call } from "./operations/run";
 
 /**
  * Every server action, who may call it, and a valid call. The type lists each
@@ -75,6 +78,7 @@ const modules = {
   credits,
   "ai-models": aiModels,
   "api-keys": apiKeys,
+  "api-references": apiReferences,
   "app-search": appSearch,
   "app-widget": appWidget,
   assistant,
@@ -107,6 +111,8 @@ const modules = {
   widget,
   "widget-inbox": widgetInbox,
 };
+
+const MATRIX_SPEC = JSON.stringify({ openapi: "3.1.0", info: { title: "Matrix", version: "1" }, paths: { "/posts": { get: { summary: "List posts", responses: { 200: { description: "OK" } } } } } });
 
 type Level = "public" | "signed in" | TeamRole;
 
@@ -279,6 +285,13 @@ const matrix: Matrix = {
     moveTab: { allowed: "MEMBER", call: (slug) => docs.moveTab(slug, "docs", 0) },
     deleteTab: { allowed: "MEMBER", call: (slug) => docs.deleteTab(slug, "docs") },
     dismissDocsGap: { allowed: "MEMBER", call: (slug) => docs.dismissDocsGap(slug, "How do I invite?") },
+  },
+  "api-references": {
+    setApiReferenceShown: { allowed: "MEMBER", call: (slug) => apiReferences.setApiReferenceShown(slug, "matrix-api", "operation", "GET /posts", false) },
+    markApiReferenceSeen: { allowed: "MEMBER", call: (slug) => apiReferences.markApiReferenceSeen(slug, "matrix-api", ["GET /posts"]) },
+    setApiReferencePublished: { allowed: "MEMBER", call: (slug) => apiReferences.setApiReferencePublished(slug, "matrix-api", false) },
+    replaceApiReferenceSpec: { allowed: "MEMBER", call: (slug) => apiReferences.replaceApiReferenceSpec(slug, "matrix-api", form({ spec: MATRIX_SPEC.replace("List posts", "Every post") })) },
+    deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },
   },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
   "docs-readers": {
@@ -907,6 +920,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const tab = await prisma.docsTab.create({ data: { projectId, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
+  await call(createApiReference, { actor: { kind: "user", userId: users.OWNER.id }, projectId }, { name: "Matrix API", spec: MATRIX_SPEC });
   // A reader group no collection is for.
   await prisma.readerGroup.create({ data: { projectId, key: "beta", name: "Beta", conditions: inGroupNamed("beta") } });
   await prisma.article.createMany({
