@@ -309,10 +309,13 @@ describe("what it sends and answers", () => {
       { timeout: 30_000 },
     );
     await lockTaken;
-    const answered = await Promise.race([send(input(local())), new Promise<"waited">((resolve) => setTimeout(() => resolve("waited"), 3_000))]);
-    release();
-    await holder;
-    expect(answered).toMatchObject({ status: 200 });
+    // Sent while the row is held: waiting on it would run into the test's time limit.
+    try {
+      expect(await send(input(local()))).toMatchObject({ status: 200 });
+    } finally {
+      release();
+      await holder;
+    }
     expect(await prisma.apiTry.count({ where: { projectId: other.id } })).toBe(1);
   }, 15_000);
 
