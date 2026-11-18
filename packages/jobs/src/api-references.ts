@@ -200,14 +200,10 @@ export async function fetchGithubSpec(projectId: string, source: { repoId: numbe
     return { error: GITHUB_NOT_ADDED };
   }
   const { fullName } = repo;
+  // One limit for all of it: the token, the default branch, the file, and the reads saying what's missing.
   const signal = AbortSignal.timeout(SPEC_FETCH_TIMEOUT_MS);
-  let api: Awaited<ReturnType<typeof installationApi>>;
   try {
-    api = await installationApi(repo.connection.installationId);
-  } catch {
-    return { error: "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations." };
-  }
-  try {
+    const api = await installationApi(repo.connection.installationId, signal);
     // ponytail: the default branch costs a read of its own; only when none is given (adding one without a branch).
     const ref = source.ref || (await api.find<{ default_branch: string }>(`/repos/${fullName}`))?.default_branch;
     if (!ref) {
@@ -235,6 +231,9 @@ export async function fetchGithubSpec(projectId: string, source: { repoId: numbe
     const { name, cause } = error as { name?: string; cause?: { name?: string } };
     if (name === "TimeoutError" || cause?.name === "TimeoutError" || signal.aborted) {
       return { error: `GitHub didn't answer within ${SPEC_FETCH_TIMEOUT_MS / 1000} seconds.` };
+    }
+    if (String((error as Error).message).startsWith("GitHub refused an installation token")) {
+      return { error: "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations." };
     }
     return { error: "Couldn't read the file from GitHub. Try again later." };
   }
@@ -455,6 +454,7 @@ export async function syncMergedApiReferences(
   projectId: string,
   { repoId, base }: { repoId: number; base: string },
   files: () => Promise<{ filename: string; previous_filename?: string }[]>,
+  log: JobLogger,
 ): Promise<{ synced: number; failed: number }> {
   const references = await prisma.apiReference.findMany({
     where: { projectId, source: "GITHUB", repoId, ref: base },
@@ -470,9 +470,27 @@ export async function syncMergedApiReferences(
     if (changed.length < 3_000 && !paths.has(reference.path!)) {
       continue;
     }
-    const result = await syncApiReference(reference.id, { expected: reference });
-    if (result && "error" in result) failed++;
-    else if (result) synced++;
+    try {
+      // Overtaken by another sync (Sync now, the 6-hourly one, another merge's) that may have read the file before this
+      // merge: read again while the file is where it was, a few times at most.
+      let at: typeof reference | null = reference;
+      for (let tries = 0; at && tries < 3; tries++) {
+        const result = await syncApiReference(at.id, { expected: at });
+        if (result) {
+          if ("error" in result) failed++;
+          else synced++;
+          break;
+        }
+        at = await prisma.apiReference.findFirst({
+          where: { id: reference.id, source: "GITHUB", repoId: reference.repoId, path: reference.path, ref: reference.ref },
+          select: { id: true, sourceUrl: true, repoId: true, path: true, ref: true, syncTriedAt: true },
+        });
+      }
+    } catch (error) {
+      // One that can't be written stops none of the others.
+      failed++;
+      log.warn(`Syncing an API reference after a merge failed: ${String(error)}`);
+    }
   }
   return { synced, failed };
 }

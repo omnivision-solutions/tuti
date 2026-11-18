@@ -110,7 +110,9 @@ describe("added from GitHub", () => {
     for (const path of ["../../user", "docs/../openapi.json", "docs//openapi.json", "./openapi.json"]) {
       await expect(add({ path })).rejects.toMatchObject({ status: 400 });
     }
-    await expect(add({ ref: "main branch" })).rejects.toMatchObject({ status: 400 });
+    for (const ref of ["main branch", "..", "a/../b"]) {
+      await expect(add({ ref })).rejects.toMatchObject({ status: 400 });
+    }
     expect(github.reads.length).toBe(reads);
   });
 
@@ -220,9 +222,9 @@ describe("a pull request merging", () => {
     await add();
   });
   /** Pull request `number` merging into `base`, changing `files`, delivered to the webhook as GitHub signs it. */
-  async function merge(base: string, files: string[]) {
+  async function merge(base: string, files: (string | { filename: string; previous_filename: string })[]) {
     number++;
-    github.pullRequest(repo.fullName, { number, title: `PR ${number}`, files: files.map((filename) => ({ filename })) });
+    github.pullRequest(repo.fullName, { number, title: `PR ${number}`, files: files.map((file) => (typeof file === "string" ? { filename: file } : file)) });
     const { body, headers } = github.webhook("pull_request", {
       action: "closed",
       installation: { id: installationId },
@@ -243,6 +245,32 @@ describe("a pull request merging", () => {
     expect(await stored()).toMatchObject({ spec: MORE, unseenCount: 1 });
     // The merge's read isn't one the team asked for.
     expect(await fetches()).toBe(before);
+  });
+
+  test("a file renamed away, or a pull request with GitHub's 3,000 files or more, syncs it", async () => {
+    commit({ "docs/api.json": MORE });
+    await merge("main", [{ filename: "docs/api.json", previous_filename: "docs/openapi.json" }]);
+    expect(await stored()).toMatchObject({ spec: POSTS, syncError: `There's no file at docs/openapi.json on main in ${repo.fullName}.` });
+    commit({ "docs/openapi.json": MORE });
+    // GitHub lists no more than 3,000: the file may be past them.
+    await merge("main", Array.from({ length: 3_000 }, (_, at) => `src/${at}.ts`));
+    expect(await stored()).toMatchObject({ spec: MORE, syncError: null });
+  });
+
+  test("a merge's sync overtaken by one that read the file before it reads it again", async () => {
+    commit({ "docs/openapi.json": MORE });
+    // The merge's read waits at GitHub while a teammate's Sync now reads (and writes) the file as it was before the merge.
+    github.repository(repo.fullName, {
+      commit: "merged",
+      files: { "docs/openapi.json": MORE },
+      during: async () => {
+        commit({ "docs/openapi.json": POSTS });
+        expect(await sync()).toMatchObject({ changes: { changed: false } });
+        commit({ "docs/openapi.json": MORE });
+      },
+    });
+    await merge("main", ["docs/openapi.json"]);
+    expect(await stored()).toMatchObject({ spec: MORE });
   });
 
   test("a merge that breaks the file says so on the reference's page", async () => {

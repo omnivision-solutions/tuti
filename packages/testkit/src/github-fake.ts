@@ -51,7 +51,7 @@ export type FakePullRequest = {
   mergedAt?: string;
   /** Commit messages, oldest first. */
   commits?: string[];
-  files?: { filename: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
+  files?: { filename: string; previous_filename?: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
   /** Its merge commit's archive is there too (`/tarball/merge-<number>`), holding its files' contents; without it, only a `repository` snapshot's commit has one. */
   archived?: boolean;
 };
@@ -292,8 +292,9 @@ export async function startGithubFake(): Promise<GithubFake> {
         const items: unknown[] =
           pullPath![3] === "/commits"
             ? (pr.commits ?? []).map((message, i) => ({ sha: `c${i}`, commit: { message } }))
-            : (pr.files ?? []).map(({ filename, status = "modified", additions = 1, deletions = 0, patch }) => ({
+            : (pr.files ?? []).map(({ filename, previous_filename, status = "modified", additions = 1, deletions = 0, patch }) => ({
                 filename,
+                ...(previous_filename !== undefined && { previous_filename }),
                 status,
                 additions,
                 deletions,

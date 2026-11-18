@@ -39,7 +39,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
         type File = { filename: string; previous_filename?: string };
         // GitHub lists at most 3,000 files for a pull request, 100 a page.
         return (await installationApi(input.installationId)).list<File>(`/repos/${input.repo}/pulls/${input.number}/files`, (page) => page as File[], 30);
-      });
+      }, log);
     } catch (error) {
       log.warn(`Syncing API references after ${input.repo}#${input.number} failed: ${String(error)}`);
     }

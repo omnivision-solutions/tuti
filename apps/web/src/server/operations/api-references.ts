@@ -60,7 +60,9 @@ const branch = z
   .trim()
   .min(1, "Enter a branch")
   .max(255, "Keep the branch to 255 characters")
-  .regex(/^[^\s~^:?*[\\\x00-\x1f\x7f]+$/, "That isn't a branch's name");
+  .regex(/^[^\s~^:?*[\\\x00-\x1f\x7f]+$/, "That isn't a branch's name")
+  // Nor ".." (git refuses it), which would move the branch's lookup elsewhere on GitHub's API.
+  .refine((ref) => !ref.includes(".."), "That isn't a branch's name");
 
 /** The spec as a doc to store; one that can't be read, or has nothing to show, is refused with the reader's sentence. */
 function read(text: string, from?: string): ApiDoc {

@@ -37,10 +37,11 @@ export type GithubApi = {
   raw(path: string, signal?: AbortSignal): Promise<Response | null>;
 };
 
-/** API access for one installation. */
-export async function installationApi(installationId: number): Promise<GithubApi> {
+/** API access for one installation; `signal`, when given, ends every request of it (the token's too). */
+export async function installationApi(installationId: number, signal?: AbortSignal): Promise<GithubApi> {
   const response = await fetch(`${apiUrl()}/app/installations/${installationId}/access_tokens`, {
     method: "POST",
+    signal,
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${appJwt()}`, "user-agent": "Tuti" },
   });
   if (!response.ok) {
@@ -49,7 +50,7 @@ export async function installationApi(installationId: number): Promise<GithubApi
   const { token } = (await response.json()) as { token: string };
   const headers = { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" };
   const request = async (url: string, notFoundIsNull = false, init: RequestInit = {}) => {
-    const res = await fetch(url, { ...init, headers: { ...headers, ...init.headers } });
+    const res = await fetch(url, { ...init, signal: init.signal ?? signal, headers: { ...headers, ...init.headers } });
     if (notFoundIsNull && res.status === 404) {
       return null;
     }
