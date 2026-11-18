@@ -374,6 +374,8 @@ export const REWRITING = "Its edits are being written again with the check.";
  * (about a quarter of an hour); each try marks it analysing afresh.
  */
 export const REWRITE_STALE_MS = 2 * 3_600_000;
+/** How long a rewrite a queued job holds may wait before it's taken for lost: a day, far past any queue's wait. */
+export const QUEUED_REWRITE_STALE_MS = 24 * 3_600_000;
 
 /**
  * Rewrites whose run stopped mid-analysis: failed, due now, for the retries' sweep or the next run to finish (docs-only).
@@ -384,6 +386,12 @@ export async function releaseStoppedRewrites(now: Date) {
   await prisma.codeChange.updateMany({
     where: { rewriteDocsOnly: true, state: "ANALYSING", claim: null, updatedAt: { lt: new Date(now.getTime() - REWRITE_STALE_MS) } },
     data: { state: "FAILED", reason: REWRITING, retryAt: now },
+  });
+  // A queued job's that never ran, or died without failing (its run cancelled or lost): released a day on, far past any
+  // queue's wait, its claim cleared so that job, if it starts after all, does nothing.
+  await prisma.codeChange.updateMany({
+    where: { rewriteDocsOnly: true, state: "ANALYSING", claim: { not: null }, updatedAt: { lt: new Date(now.getTime() - QUEUED_REWRITE_STALE_MS) } },
+    data: { state: "FAILED", reason: REWRITING, retryAt: now, claim: null },
   });
 }
 const rewrittenEdit = { status: "DISMISSED", dismissReason: REWRITTEN, decidedById: null } satisfies Prisma.CodeChangeActionWhereInput;

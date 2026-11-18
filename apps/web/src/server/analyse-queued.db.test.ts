@@ -169,6 +169,13 @@ test("a rewrite the sweep queued, still waiting in Hatchet's queue hours later, 
   expect(await retryCodeChanges()).toMatchObject({ queued: 0 });
   expect(queuedFor(change.id)).toHaveLength(1);
   expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "ANALYSING", rewriteDocsOnly: true });
+  // A day on, its job is taken for lost (cancelled, or died without failing): released, its claim cleared, and queued again.
+  await prisma.codeChange.update({ where: { id: change.id }, data: { updatedAt: new Date(Date.now() - 25 * 3_600_000) } });
+  expect(await retryCodeChanges()).toMatchObject({ queued: 1 });
+  const [lost, again] = queuedFor(change.id);
+  expect(again!.claim).not.toBe(lost!.claim);
+  // The lost job, if it starts after all, does nothing.
+  expect(await handlers.codeChange(lost!, quiet)).toEqual({ skipped: true });
 });
 
 test("a queued job whose claim a later one replaced (a person's “Analyse again” while it waited) does nothing when it starts", async () => {

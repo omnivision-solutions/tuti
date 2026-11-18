@@ -1796,8 +1796,14 @@ describe("the check before an edit is proposed (E5)", () => {
                   const found = await delegate.count(args);
                   person = call(analyseCodeChange, team(), { id: codeChangeId });
                   // Until the person's claim (or, without the change's lock, their analysis) waits on a lock.
-                  for (let i = 0; i < 50 && (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock'`)[0]!.n === 0; i++) {
+                  // In this test's own database, up to 15s; never seen, the race wasn't set up and the test says so.
+                  const waiting = async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`)[0]!.n > 0;
+                  let seen = false;
+                  for (let i = 0; i < 750 && !(seen = await waiting()); i++) {
                     await new Promise((resolve) => setTimeout(resolve, 20));
+                  }
+                  if (!seen) {
+                    throw new Error("The person's claim never waited on a lock: the race wasn't set up");
                   }
                   return found;
                 }
