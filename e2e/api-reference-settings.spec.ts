@@ -142,6 +142,20 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   await expect(tryIt).not.toBeChecked();
   await shoot("settings-saved", 1280, 1400);
 
+  // Dragged: a row dropped on one above goes before it, on one below after it.
+  const row = (name: string) => groups.filter({ hasText: name });
+  await row("Comments").dragTo(row("Admin"));
+  await expect(groups).toHaveText([/^Comments/, /^Admin/, /^Posts/]);
+  await expect(row("Comments").getByRole("button")).toBeEnabled();
+  await row("Comments").dragTo(row("Posts"));
+  await expect(groups).toHaveText([/^Admin/, /^Posts/, /^Comments/]);
+  await expect(row("Comments").getByRole("button")).toBeEnabled();
+  await expect.poll(async () => ((await api("/api-references/acme-api", undefined, "GET")) as unknown as { groups: { key: string }[] }).groups.map((group) => group.key)).toEqual([
+    "Admin",
+    "Posts",
+    "Comments",
+  ]);
+
   // Endpoints lists the groups in that order.
   await tabs.getByRole("link", { name: /^Endpoints/ }).click();
   await team.waitForURL(`**/docs/references/acme-api`);
