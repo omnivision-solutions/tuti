@@ -96,6 +96,7 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   await expect(reader.getByRole("region", { name: "Request example" }).getByText(/^query Post\(\$number: Int!, \$board: BoardInput\)/)).toBeVisible();
   await expect(reader.getByRole("region", { name: "Variables" }).getByText(/"number": 1/)).toBeVisible();
   await expect(reader.getByRole("region", { name: "Response example" }).getByText(/"data": \{/)).toBeVisible();
+  await reader.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(reader, "query-desktop", { fullPage: false });
 
   await reader.getByRole("button", { name: "Try it" }).click();
@@ -109,6 +110,9 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   await expect(response.getByText("200 OK")).toBeVisible();
   await expect(response.getByLabel("Response body")).toContainText('"number": 42');
   await expect(response.getByRole("group", { name: "Errors" })).toHaveCount(0);
+  // What a screen reader hears: the status, and no errors.
+  const heard = panel.locator("[aria-live=polite]");
+  await expect(heard).toHaveText(/^200 OK, \d+ ms, [\d.]+ [KM]?B$/);
   // Straight from the browser, as JSON of the query and variables, with the key.
   expect(received.at(-1)).toMatchObject({ variables: { number: 42 }, authorization: "Bearer sk_graph_1" });
   await checkpoint(reader, "console-data", { fullPage: false });
@@ -120,6 +124,7 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   const errors = response.getByRole("group", { name: "Errors" });
   await expect(errors.getByText("1 error")).toBeVisible();
   await expect(errors.getByText('Cannot query field "nope" on type "Post".')).toBeVisible();
+  await expect(heard).toHaveText(/^200 OK, .*, 1 error$/);
   await checkpoint(reader, "console-errors", { fullPage: false });
 
   // Variables that aren't JSON aren't sent.

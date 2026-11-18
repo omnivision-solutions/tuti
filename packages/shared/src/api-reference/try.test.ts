@@ -270,6 +270,10 @@ describe("GraphQL", () => {
     refused({ ...body({ query: "{ a }" }), body: "query { a }" });
     refused({ ...body({ query: "{ a }" }), body: null });
     refused({ ...body({ query: "{ a }" }), body: JSON.stringify({ query: "x".repeat(1_000_001) }) });
+    // Under 1 MB as sent to Tuti, over it as written again.
+    const grows = `{"query":"{ a }","variables":{"n":[${Array(120_000).fill("1E20").join(",")}]}}`;
+    expect(new TextEncoder().encode(grows).length).toBeLessThan(1_000_000);
+    expect(tryRequest(graphql, query, null, { ...body({}), body: grows })).toEqual({ error: "The body is over 1 MB" });
     // Nothing but the key's header: no others, no query parameters, cookies or path.
     refused({ ...body({ query: "{ a }" }), headers: [["X-Team", "1"]] });
     refused({ ...body({ query: "{ a }" }), headers: [["Host", "evil.example"]] });

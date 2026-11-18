@@ -266,7 +266,12 @@ function graphqlRequest(url: URL, input: TryInput): TryRequest | { error: string
   if (operationName !== undefined && operationName !== null && typeof operationName !== "string") {
     return { error: "The operation's name must be text" };
   }
-  return { method: "POST", url, headers, body: JSON.stringify({ query, variables: variables ?? {}, ...(typeof operationName === "string" && { operationName }) }) };
+  const body = JSON.stringify({ query, variables: variables ?? {}, ...(typeof operationName === "string" && { operationName }) });
+  // Written anew, it can be longer than what was checked ("1E20" is "100000000000000000000"): the limit is on what's sent.
+  if (new TextEncoder().encode(body).length > TRY_MAX_BODY_BYTES) {
+    return { error: "The body is over 1 MB" };
+  }
+  return { method: "POST", url, headers, body };
 }
 
 /** What the console's fields hold: parameters by `<in>:<name>`; keys by their scheme's key (Basic's as `<key>:user` and `<key>:password`). */
