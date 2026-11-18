@@ -111,6 +111,18 @@ test("Custom lists a model for each role; one picked from the list saves at once
   await type(summaries!, "");
   await leave(summaries!);
   expect(saveAiModel).toHaveBeenLastCalledWith("acme", { support_summary: "" });
+  // Typed a letter at a time, an id that's the start of a longer one isn't saved on the way.
+  const sentBefore = saveAiModel.mock.calls.length;
+  for (const typed of ["acme/tin", "acme/tiny", "acme/tiny-pro"]) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(summaries!, typed);
+      summaries!.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    });
+  }
+  expect(saveAiModel).toHaveBeenCalledTimes(sentBefore);
+  await leave(summaries!);
+  expect(saveAiModel).toHaveBeenCalledTimes(sentBefore + 1);
+  expect(saveAiModel).toHaveBeenLastCalledWith("acme", { support_summary: "acme/tiny-pro" });
   // One the server refused is sent again when asked again.
   saveAiModel.mockResolvedValueOnce({ error: "Couldn't check the models just now. Try again in a moment." });
   await type(summaries!, "acme/later");

@@ -103,7 +103,7 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
   );
 }
 
-/** One role's model under Custom: an id from the endpoint's list, or typed; saved when one is picked, or on Enter or leaving the box. Empty is the server's own. */
+/** One role's model under Custom: an id from the endpoint's list, or typed; saved when one is picked from the list, a typed one on Enter or leaving the box. Empty is the server's own. */
 function RoleModel({
   role,
   label,
@@ -139,7 +139,9 @@ function RoleModel({
           value={value}
           onChange={(event) => {
             setValue(event.target.value);
-            if (listed.some((listing) => listing.id === event.target.value)) {
+            // Chosen from the list (browsers mark it so, or don't mark it at all), not typed: an id typed may be the start of a longer one.
+            const how = (event.nativeEvent as InputEvent).inputType;
+            if ((how === undefined || how === "insertReplacementText") && listed.some((listing) => listing.id === event.target.value)) {
               void pick(event.target.value);
             }
           }}

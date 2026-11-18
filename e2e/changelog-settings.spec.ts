@@ -74,7 +74,7 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await customPrompt.getByRole("button", { name: "Not now" }).click();
   await expect(level("Best")).toBeChecked();
 
-  // Business: Custom lists the page's one role, Drafts, and a model picked there saves at once.
+  // Business: Custom lists the page's one role, Drafts, and a model picked there saves without a Save button.
   // (Bought from Free, as ai-tuning.spec.ts does: Pro was set in the database, with no subscription to change.)
   await query(`UPDATE project SET "planKey" = NULL WHERE slug = $1`, [slug]);
   await owner.goto(`/app/${slug}/settings/billing`);
@@ -90,7 +90,9 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   // Until a model is picked, drafts run on the server's own.
   await expect(owner.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
   await expect(owner.getByText("AI model saved")).toBeHidden({ timeout: 15_000 });
+  // Typed, it's saved on Enter (or on leaving the box); chosen from the list, at once.
   await drafts.fill("acme/tiny");
+  await drafts.press("Enter");
   await expect(owner.getByText("AI model saved")).toBeVisible();
   await expect(owner.getByText("Drafts Tiny", { exact: true })).toBeVisible();
   await checkpoint(owner, "team-settings-changelog-custom");
