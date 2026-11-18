@@ -191,13 +191,17 @@ const isCode = (node: JSONContent) => (node.marks ?? []).some((mark) => mark.typ
 /** A text block's content as Markdown, without what its block adds (a heading's #, an item's marker). */
 const passageText = (content: JSONContent[]) => toMarkdown({ type: "doc", content: [{ type: "paragraph", content }] }).trim();
 
+/** A text block's content as its characters with their marks (spaces aside: Markdown moves those out of bold). */
+const marked = (content: JSONContent[]) => content.flatMap((node) => [...(node.text ?? "")].map((char) => (char.trim() ? char + JSON.stringify(node.marks ?? []) : char))).join("\u0000");
+
 /**
  * The passages in these blocks: each text block whose text can be replaced by itself (replacePassage), as the Markdown
  * the model is shown and quotes back. Only text in bold, links and `code`: a block with anything else (italics, a line
- * break) isn't one, and nor is a code block (it holds no text block).
- * ponytail: nor is a block with text in two of them at once (a bold link, linked code): the reply's reader (inline)
- * keeps one mark per run of text, so the other would be lost, or the code not found as it was; teach it nesting if
- * those are missed.
+ * break) isn't one, and nor is a code block (it holds no text block). And only a block that comes back as it is when
+ * replaced with its own text, so every passage listed can be replaced: one the reply's reader (inline) can't read back
+ * isn't listed (a bold link or linked code, as it keeps one mark per run of text; a link whose address or text Markdown
+ * has to escape; a backtick outside code).
+ * ponytail: those are left to the note at the end; teach the reader nesting and escapes if they're missed.
  */
 export function passagesIn(blocks: JSONContent[]): { text: string; node: JSONContent }[] {
   const found: { text: string; node: JSONContent }[] = [];
@@ -207,9 +211,9 @@ export function passagesIn(blocks: JSONContent[]): { text: string; node: JSONCon
       return;
     }
     const content = node.content ?? [];
-    const kept = (child: JSONContent) => child.type === "text" && (child.marks ?? []).length <= 1 && (child.marks ?? []).every((mark) => PASSAGE_MARKS.has(mark.type));
-    const text = content.every(kept) ? passageText(content) : "";
-    if (text) {
+    const text = content.every((child) => child.type === "text" && (child.marks ?? []).every((mark) => PASSAGE_MARKS.has(mark.type))) ? passageText(content) : "";
+    const back = text && rewritten(node, text);
+    if (back && marked(back.content!) === marked(content)) {
       found.push({ text, node });
     }
   };
@@ -226,21 +230,12 @@ function swap(node: JSONContent, target: JSONContent, next: JSONContent): JSONCo
   return content?.some((child, i) => child !== node.content![i]) ? { ...node, content } : node;
 }
 
-/**
- * These blocks with one passage's text replaced: the block whose text is exactly `find` (see passagesIn) gets
- * `replace` as its content, and keeps its type and attributes; every other node is the object it was. Null when it
- * can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is empty or more than one line;
- * it loses a link the passage had; or its `code` isn't the passage's own, each once, in order and exactly as it was
- * (code is never written here, only kept: those nodes come back as they were). The rest is read like any reply (inline):
- * text, **bold** and the links the passage had.
- */
-export function replacePassage(blocks: JSONContent[], find: string, replace: string): JSONContent[] | null {
-  const matches = passagesIn(blocks).filter((passage) => passage.text === find.trim());
+/** A text block with `replace` as its content (see replacePassage), or null when it can't be used. */
+function rewritten(target: JSONContent, replace: string): JSONContent | null {
   let rest = replace.trim();
-  if (matches.length !== 1 || rest === "" || rest.includes("\n")) {
+  if (rest === "" || rest.includes("\n")) {
     return null;
   }
-  const target = matches[0]!.node;
   const links = new Set([...factsIn([target]).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
   const content: JSONContent[] = [];
   // Text outside the passage's own code can't hold a backtick: it would be code made up, or changed.
@@ -258,8 +253,19 @@ export function replacePassage(blocks: JSONContent[], find: string, replace: str
     rest = rest.slice(at + span.length);
   }
   const next = { ...target, content };
-  if (!text(rest) || content.length === 0 || droppedFacts([target], [next]).length > 0) {
-    return null;
-  }
-  return blocks.map((block) => swap(block, target, next));
+  return text(rest) && content.length > 0 && droppedFacts([target], [next]).length === 0 ? next : null;
+}
+
+/**
+ * These blocks with one passage's text replaced: the block whose text is exactly `find` (see passagesIn) gets
+ * `replace` as its content, and keeps its type and attributes; every other node is the object it was. Null when it
+ * can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is empty or more than one line;
+ * it loses a link the passage had; or its `code` isn't the passage's own, each once, in order and exactly as it was
+ * (code is never written here, only kept: those nodes come back as they were). The rest is read like any reply (inline):
+ * text, **bold** and the links the passage had.
+ */
+export function replacePassage(blocks: JSONContent[], find: string, replace: string): JSONContent[] | null {
+  const matches = passagesIn(blocks).filter((passage) => passage.text === find.trim());
+  const next = matches.length === 1 ? rewritten(matches[0]!.node, replace) : null;
+  return next && blocks.map((block) => swap(block, matches[0]!.node, next));
 }

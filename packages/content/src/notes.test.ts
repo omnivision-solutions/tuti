@@ -143,6 +143,15 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(passagesIn([para(text("acme ", { type: "bold" }), text("theme", { type: "bold" }, { type: "code" }))])).toEqual([]);
     // So is a bold link: read back, it would keep its link and lose its bold.
     expect(passagesIn([para(text("Open "), text("Settings", config, { type: "bold" }), text("."))])).toEqual([]);
+    // Nor is text Markdown writes in a way the reply's reader doesn't read back: a link with a bracket in its address or
+    // its words, a backtick outside code. Listed, it could only ever be refused.
+    const wiki = { type: "link", attrs: { href: "https://example.com/wiki/Theme_(app)" } };
+    expect(passagesIn([para(text("See "), text("themes", wiki), text("."))])).toEqual([]);
+    expect(passagesIn([para(text("See "), text("the [new] themes", config), text("."))])).toEqual([]);
+    expect(passagesIn([para(text("Press the ` key."))])).toEqual([]);
+    // Other escaped text is: it's read back as it was.
+    const escaped = [para(text("1. Use snake_case, *not* <b> or [x] | y & z."))];
+    expect(replacePassage(escaped, passagesIn(escaped)[0]!.text, passagesIn(escaped)[0]!.text)).toEqual(escaped);
     // Bold beside code is one: every passage listed can be replaced by itself.
     const beside = [para(text("Run", { type: "bold" }), text(" "), run, text(" "), text("now", { type: "bold" }))];
     expect(replacePassage(beside, passagesIn(beside)[0]!.text, passagesIn(beside)[0]!.text)![0]).toEqual(beside[0]);
