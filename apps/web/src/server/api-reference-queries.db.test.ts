@@ -63,6 +63,7 @@ paths:
     delete:
       tags: [Admin]
       summary: Purge
+      security: []
       responses: { "204": { description: Gone } }
 `;
 
@@ -178,7 +179,10 @@ describe("an operation's page", () => {
     const optional = await pageText("create-a-post");
     expect(optional).toContain('"Bearer token"');
     expect(optional).toContain(", or none");
-    expect(await pageText("purge")).not.toContain(", or none");
+    // None listed: it needs none, or one the reference doesn't show, so the page says nothing either way.
+    const unlisted = await pageText("purge");
+    expect(unlisted).toContain("/admin/purge");
+    expect(unlisted).not.toContain("Authorization");
   });
 
   test("sends examples to the team's base address when the spec's server has no host", async () => {

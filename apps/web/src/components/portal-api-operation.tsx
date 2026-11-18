@@ -128,14 +128,14 @@ function authLabel(auth: ApiAuth): ReactNode {
 
 /**
  * How the operation is signed: any one of its ways, each the schemes it needs together, and "or none" when unsigned
- * is one of them. Nothing when the spec declares none.
+ * is one of them. Nothing for an operation with no way listed: it needs none, or only one the reference doesn't show
+ * (digest, mutual TLS), and the shape doesn't say which, so the page never says "none needed".
  */
 function Signing({ operation, schemes }: { operation: ApiOperation; schemes: ApiAuth[] }) {
-  if (schemes.length === 0) {
+  const ways = operation.auth.map((keys) => keys.flatMap((key) => schemes.find((scheme) => scheme.key === key) ?? [])).filter((way) => way.length > 0);
+  if (ways.length === 0) {
     return null;
   }
-  const ways = operation.auth.map((keys) => keys.flatMap((key) => schemes.find((scheme) => scheme.key === key) ?? [])).filter((way) => way.length > 0);
-  const optional = operation.auth.some((keys) => keys.length === 0);
   return (
     <p className="text-sm text-muted-foreground">
       <span className="font-medium text-foreground">Authorization</span>{" "}
@@ -150,7 +150,7 @@ function Signing({ operation, schemes }: { operation: ApiOperation; schemes: Api
           ))}
         </Fragment>
       ))}
-      {ways.length === 0 ? "None needed" : optional && ", or none"}
+      {operation.auth.some((keys) => keys.length === 0) && ", or none"}
     </p>
   );
 }
