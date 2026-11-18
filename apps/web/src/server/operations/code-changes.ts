@@ -82,6 +82,12 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
   if (action.kind === "CHANGELOG_LINE") {
     return true;
   }
+  // An edit the check turned down (or couldn't check) isn't likely, however sure Decides was: it's never approved, or
+  // ticked, without someone opening it.
+  const check = ((action.payload ?? {}) as { check?: { pass?: boolean } }).check;
+  if (action.kind === "ARTICLE_EDIT" && check && check.pass !== true) {
+    return false;
+  }
   const comment = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
   return action.probability >= thresholds()[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
 }
