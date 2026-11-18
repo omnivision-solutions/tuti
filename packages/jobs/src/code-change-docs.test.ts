@@ -1,6 +1,7 @@
+import { storedArticle } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { ADD_RULE, articleNotes, EDIT_SYSTEM, NEW_SYSTEM, WRITING_RULES } from "./code-change-docs";
+import { ADD_RULE, articleNotes, EDIT_SYSTEM, NEW_SYSTEM, PASSAGES_RULE, WRITING_RULES } from "./code-change-docs";
 import { CHECK_SYSTEM } from "./verify";
 
 const text = (value: string) => [{ type: "text", text: value }];
@@ -97,21 +98,71 @@ test("an edit that drops, repeats, moves or makes up a {{media N}} isn't used", 
   expect(edit({ add: "## More\n\nSee below.\n\n{{media 1}}" })).toBeNull();
 });
 
-test("a section with a table or code beside its image still isn't edited", () => {
-  const { notes } = articleNotes({
+const cell = (value: string) => ({ type: "tableCell", attrs: { colspan: 1, rowspan: 1 }, content: [para(value)] });
+const table = { type: "table", content: [{ type: "tableRow", content: [cell("Plan"), cell("Seats")] }, { type: "tableRow", content: [cell("Free"), cell("3")] }] };
+const code = { type: "codeBlock", attrs: { language: "bash" }, content: text("npm run export") };
+
+test("a section with a table or code isn't rewritten whole: it lists its passages, and one is replaced where it stands, everything beside it untouched", () => {
+  // As the article is stored (every attribute spelled out), so what comes back can be compared with it node by node.
+  const { content } = storedArticle({
     type: "doc",
-    content: [para("Run it."), image("a".repeat(24), "The terminal"), { type: "codeBlock", content: text("npm run export") }],
+    content: [{ type: "heading", attrs: { level: 2 }, content: text("Export") }, para("Run it from Settings."), image("a".repeat(24), "The terminal"), code, table, para("Free"), para("It takes a minute.")],
+  }) as { content: { type: string; attrs?: object; content: { content: { content: object[] }[] }[] }[] };
+  const { notes, edit } = articleNotes({ type: "doc", content });
+  expect(notes[0]).toMatchObject({
+    editable: false,
+    // "Free" is there twice (a cell and a paragraph), so it can't be named: it isn't offered.
+    passages: ["Export", "Run it from Settings.", "Plan", "Seats", "3", "It takes a minute."],
   });
-  expect(notes[0]!.editable).toBe(false);
+  // Its whole text can't be sent back.
+  expect(edit({ sections: { "1": "## Export\n\nRun it from Team." } })).toBeNull();
+  const next = edit({ passages: [{ section: 1, find: "Run it from Settings.", replace: "Run it from **Workspace settings**." }, { section: 1, find: "3", replace: "5" }] })!;
+  const [head, intro, shot, block, grid, ...rest] = content;
+  const [free, seats] = grid!.content[1]!.content;
+  expect(next.content).toEqual([
+    head,
+    { ...intro, content: [...text("Run it from "), { type: "text", text: "Workspace settings", marks: [{ type: "bold" }] }, ...text(".")] },
+    shot,
+    block,
+    { ...grid, content: [grid!.content[0], { ...grid!.content[1], content: [free, { ...seats, content: [para("5")] }] }] },
+    ...rest,
+  ]);
 });
 
-test("the three writers (an edit, a new article, Verify's fix) share one set of writing rules, and the two with a section for the end share when it may be used", () => {
+test("a passage that can't be replaced refuses the whole edit, as a section that can't be used does", () => {
+  const { edit } = articleNotes({ type: "doc", content: [para("Run it from Settings."), code, para("Free"), para("Free"), { type: "heading", attrs: { level: 2 }, content: text("More") }, para("See below.")] });
+  const good = { section: 1, find: "Run it from Settings.", replace: "Run it from Team." };
+  expect(edit({ passages: [good] })).not.toBeNull();
+  for (const refused of [
+    { section: 1, find: "Run it from settings.", replace: "Run it from Team." },
+    { section: 1, find: "Free", replace: "Starter" },
+    { section: 1, find: "npm run export", replace: "npm run exports" },
+    { section: 1, find: "Run it from Settings.", replace: "Run `npm run exports`." },
+    // Another section's passage, a section that isn't there, and a reply that isn't a passage.
+    { section: 1, find: "See below.", replace: "See above." },
+    { section: 9, find: "Run it from Settings.", replace: "Run it from Team." },
+    { section: 1, find: "Run it from Settings." },
+    "Run it from Team.",
+  ]) {
+    expect(edit({ passages: [good, refused] })).toBeNull();
+    expect(edit({ sections: { "2": "## More\n\nSee above." }, passages: [refused] })).toBeNull();
+  }
+  // The same passage named twice: the second isn't found any more.
+  expect(edit({ passages: [good, good] })).toBeNull();
+});
+
+test("the three writers (an edit, a new article, Verify's fix) share one set of writing rules, and the two with a section for the end share when it may be used and how passages are replaced", () => {
   for (const prompt of [EDIT_SYSTEM, NEW_SYSTEM, CHECK_SYSTEM]) {
     expect(prompt).toContain(WRITING_RULES);
     expect(prompt).not.toMatch(/as little as you can/);
   }
   for (const prompt of [EDIT_SYSTEM, CHECK_SYSTEM]) {
     expect(prompt).toContain(ADD_RULE);
+    expect(prompt).toContain(PASSAGES_RULE);
+    expect(prompt).toContain('"passages": [{"section": <number>, "find"');
   }
+  // A correction is made where the old text stands: the section for the end isn't its way out any more.
+  expect(ADD_RULE).toContain('Never use "add" to correct a sentence you can change where it stands.');
+  expect(ADD_RULE).not.toContain("the statement that's wrong is in a section that isn't editable;");
   expect(NEW_SYSTEM).not.toContain('"add"');
 });

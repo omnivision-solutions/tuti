@@ -183,3 +183,80 @@ function inline(text: string, allowedLinks: Set<string>): JSONContent[] {
   push(text.slice(last));
   return nodes;
 }
+
+/** Blocks that hold text only, wherever they sit (a list's item, a table's cell, a step): what a passage can be. */
+const TEXT_BLOCKS = new Set(["paragraph", "heading", "detailsSummary", "stepTitle"]);
+const PASSAGE_MARKS = new Set(["bold", "link", "code"]);
+const isCode = (node: JSONContent) => (node.marks ?? []).some((mark) => mark.type === "code");
+/** A text block's content as Markdown, without what its block adds (a heading's #, an item's marker). */
+const passageText = (content: JSONContent[]) => toMarkdown({ type: "doc", content: [{ type: "paragraph", content }] }).trim();
+
+/**
+ * The passages in these blocks: each text block whose text can be replaced by itself (replacePassage), as the Markdown
+ * the model is shown and quotes back. Only text in bold, links and `code`: a block with anything else (italics, a line
+ * break) isn't one, and nor is a code block (it holds no text block).
+ */
+export function passagesIn(blocks: JSONContent[]): { text: string; node: JSONContent }[] {
+  const found: { text: string; node: JSONContent }[] = [];
+  const visit = (node: JSONContent) => {
+    if (!TEXT_BLOCKS.has(node.type ?? "")) {
+      node.content?.forEach(visit);
+      return;
+    }
+    const content = node.content ?? [];
+    const text = content.every((child) => child.type === "text" && (child.marks ?? []).every((mark) => PASSAGE_MARKS.has(mark.type))) ? passageText(content) : "";
+    if (text) {
+      found.push({ text, node });
+    }
+  };
+  blocks.forEach(visit);
+  return found;
+}
+
+/** `node` with `target` (that very object, anywhere under it) as `next`; everything else the same objects. */
+function swap(node: JSONContent, target: JSONContent, next: JSONContent): JSONContent {
+  if (node === target) {
+    return next;
+  }
+  const content = node.content?.map((child) => swap(child, target, next));
+  return content?.some((child, i) => child !== node.content![i]) ? { ...node, content } : node;
+}
+
+/**
+ * These blocks with one passage's text replaced: the block whose text is exactly `find` (see passagesIn) gets
+ * `replace` as its content, and keeps its type and attributes; every other node is the object it was. Null when it
+ * can't be used, never a guess: `find` isn't the text of exactly one passage; `replace` is empty or more than one line;
+ * it loses a link the passage had; or its `code` isn't the passage's own, each once, in order and exactly as it was
+ * (code is never written here, only kept: those nodes come back as they were). The rest is read like any reply (inline):
+ * text, **bold** and the links the passage had.
+ * ponytail: bold or a link running across a `code` span comes back without it; parse the line whole if that's missed.
+ */
+export function replacePassage(blocks: JSONContent[], find: string, replace: string): JSONContent[] | null {
+  const matches = passagesIn(blocks).filter((passage) => passage.text === find.trim());
+  let rest = replace.trim();
+  if (matches.length !== 1 || rest === "" || rest.includes("\n")) {
+    return null;
+  }
+  const target = matches[0]!.node;
+  const links = new Set([...factsIn([target]).keys()].filter((fact) => fact.startsWith("link ")).map((fact) => fact.slice("link ".length)));
+  const content: JSONContent[] = [];
+  // Text outside the passage's own code can't hold a backtick: it would be code made up, or changed.
+  const text = (value: string) => {
+    content.push(...inline(value, links));
+    return !value.includes("`");
+  };
+  for (const code of (target.content ?? []).filter(isCode)) {
+    const span = passageText([code]);
+    const at = rest.indexOf(span);
+    if (at === -1 || !text(rest.slice(0, at))) {
+      return null;
+    }
+    content.push(code);
+    rest = rest.slice(at + span.length);
+  }
+  const next = { ...target, content };
+  if (!text(rest) || content.length === 0 || droppedFacts([target], [next]).length > 0) {
+    return null;
+  }
+  return blocks.map((block) => swap(block, target, next));
+}
