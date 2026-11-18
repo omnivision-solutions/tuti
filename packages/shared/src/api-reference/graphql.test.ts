@@ -650,3 +650,9 @@ test("a scalar named as something every object has is read like any other", () =
   if ("error" in result) throw new Error(result.error);
   expect(result.doc.operations[0]?.query?.variables).toEqual({ by: "string" });
 });
+
+test("a description cut in the middle of an emoji loses the whole emoji, never half of it", () => {
+  const result = readGraphql(`type Query { """${"a".repeat(9_999)}😀 and more""" ok: Int }`);
+  if ("error" in result) throw new Error(result.error);
+  expect(result.doc.operations[0]?.description).toBe("a".repeat(9_999));
+});

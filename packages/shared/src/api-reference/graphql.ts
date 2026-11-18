@@ -254,7 +254,9 @@ function toDoc(schema: GraphQLSchema, endpoint: string | undefined, levels: numb
   const words = (text: string | null | undefined, where: string) => {
     if (!text || text.length <= MAX_TEXT) return text ?? "";
     warnOnce("DESCRIPTION_CUT", `A description over ${MAX_TEXT.toLocaleString("en-US")} characters is cut there.`, where);
-    return text.slice(0, MAX_TEXT);
+    // Never half of a character written as two (an emoji): a database refuses the half left over.
+    const cut = text.slice(0, MAX_TEXT);
+    return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
   };
   const slugs = new Set<string>();
   /** The next number to try for a slug that's taken, so many names of one slug aren't each counted up from 2. */
