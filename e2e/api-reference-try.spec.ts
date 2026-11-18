@@ -26,6 +26,8 @@ servers:
 components:
   securitySchemes:
     key: { type: http, scheme: bearer }
+    session: { type: apiKey, in: cookie, name: session }
+    query: { type: apiKey, in: query, name: api_key }
 security: [{ key: [] }]
 paths:
   /posts:
@@ -41,6 +43,19 @@ paths:
             schema: { type: object, properties: { title: { type: string } } }
             example: { title: Dark mode for the editor }
       responses: { "201": { description: The new post } }
+  /posts/{id}/archive:
+    post:
+      tags: [Posts]
+      summary: Archive a post
+      security: [{ query: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer }, example: 7 }]
+      responses: { "201": { description: Archived } }
+  /me:
+    get:
+      tags: [Posts]
+      summary: Who am I
+      security: [{ session: [] }]
+      responses: { "201": { description: You } }
 `;
 
 test("a reader tries an operation with their key: from the browser, and through Tuti when the API doesn't allow browsers", async ({ browser }, testInfo) => {
@@ -52,7 +67,9 @@ test("a reader tries an operation with their key: from the browser, and through 
   const api = await apiFor(team, slug);
   await api("/api-references", { name: "Reference", spec: spec() });
 
-  const reader = await newPerson(browser, portalUrl(slug));
+  // Not newPerson: the headers it adds to every request (Playwright's extraHTTPHeaders) make the browser ask the API
+  // first about every request, as a reader's browser wouldn't for a plain POST.
+  const reader = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
   await reader.setViewportSize({ width: 1440, height: 900 });
   await reader.goto("/docs/reference/create-a-post");
   await reader.getByRole("button", { name: "Try it" }).click();
@@ -62,7 +79,7 @@ test("a reader tries an operation with their key: from the browser, and through 
   await expect(panel.getByRole("textbox", { name: "Body" })).toHaveValue(/"title": "Dark mode for the editor"/);
   await expect(panel.getByText("Kept in this tab until you close it.")).toBeVisible();
   await panel.getByLabel("Bearer token").fill("sk_test_123");
-  await panel.getByRole("button", { name: "Send" }).click();
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
 
   const response = panel.getByRole("region", { name: "Response" });
   await expect(response.getByText("201 Created")).toBeVisible();
@@ -74,7 +91,7 @@ test("a reader tries an operation with their key: from the browser, and through 
 
   // An API that doesn't let browsers call it: through Tuti, which says so.
   await panel.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
-  await panel.getByRole("button", { name: "Send" }).click();
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
   await expect(response.getByText("Sent through Tuti, since the API doesn't allow browser requests.")).toBeVisible();
   await expect(response.getByText("201 Created")).toBeVisible();
   expect(closed.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/posts", headers: { authorization: "Bearer sk_test_123", "user-agent": "Tuti-Try-It/1" } });
@@ -82,12 +99,49 @@ test("a reader tries an operation with their key: from the browser, and through 
   expect(closed.requests.at(-1)!.headers.cookie).toBeUndefined();
   await checkpoint(reader, "console-through-tuti", { fullPage: false });
 
+  // Copy as cURL: the request as filled in.
+  await reader.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await panel.getByRole("button", { name: "Copy as cURL" }).click();
+  await expect.poll(() => reader.evaluate(() => navigator.clipboard.readText())).toContain(`curl '${closed.origin}/v1/posts?board=ideas'`);
+  expect(await reader.evaluate(() => navigator.clipboard.readText())).toContain("Authorization: Bearer sk_test_123");
+
   // The key stays for this tab: closed and opened again, it's still there.
   await reader.keyboard.press("Escape");
   await reader.getByRole("button", { name: "Try it" }).click();
   await expect(reader.getByRole("dialog", { name: "Try it" }).getByLabel("Bearer token")).toHaveValue("sk_test_123");
 
+  // A request the browser sends without asking the API first (a POST with its key in the query, no body) reached the
+  // API though its answer can't be read: it isn't sent again unless the reader asks.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/archive-a-post");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const archive = reader.getByRole("dialog", { name: "Try it" });
+  await archive.getByLabel("API key (api_key query parameter)").fill("sk_query_1");
+  // Hidden in the address shown.
+  await expect(archive.getByText(/\/v1\/posts\/7\/archive\?api_key=\*\*\*\*$/)).toBeVisible();
+  await archive.getByRole("combobox", { name: "Server" }).selectOption({ label: `Legacy (${closed.origin}/v1)` });
+  const before = closed.requests.length;
+  await archive.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(archive.getByText(/It may have run the request/)).toBeVisible();
+  expect(closed.requests.length).toBe(before + 1);
+  await archive.getByRole("button", { name: "Send through Tuti" }).click();
+  await expect(archive.getByText("201 Created")).toBeVisible();
+  expect(closed.requests.length).toBe(before + 2);
+  expect(closed.requests.at(-1)).toMatchObject({ path: "/v1/posts/7/archive", query: "?api_key=sk_query_1" });
+
+  // A key in a cookie goes through Tuti from the start: a browser sends no cookie it's given to another site.
+  await reader.keyboard.press("Escape");
+  await reader.goto("/docs/reference/who-am-i");
+  await reader.getByRole("button", { name: "Try it" }).click();
+  const me = reader.getByRole("dialog", { name: "Try it" });
+  await me.getByLabel("API key (session cookie)").fill("abc");
+  await me.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(me.getByText("Sent through Tuti, since browsers don't send cookies to another site.")).toBeVisible();
+  expect(open.requests.at(-1)).toMatchObject({ path: "/v1/me", headers: { cookie: "session=abc" } });
+
   // On a phone, a sheet from the bottom that fits the width.
+  await reader.goto("/docs/reference/create-a-post");
+  await reader.getByRole("button", { name: "Try it" }).click();
   await reader.setViewportSize({ width: 390, height: 844 });
   await expect(reader.getByRole("dialog", { name: "Try it" })).toBeVisible();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);

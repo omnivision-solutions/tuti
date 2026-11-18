@@ -1,5 +1,5 @@
 import { absolute, hasHost, trimSlashes } from "./examples";
-import type { ApiAuth, ApiDoc, ApiOperation, ApiServer } from "./types";
+import type { ApiAuth, ApiDoc, ApiOperation, ApiParam, ApiServer } from "./types";
 
 /**
  * Try it (docs/plan.md, API reference in Docs, A12): the request a reader fills in on an operation's page, made into
@@ -179,4 +179,88 @@ export function tryRequest(doc: ApiDoc, operation: ApiOperation, base: string | 
     return { error: "The body is over 1 MB" };
   }
   return { method, url, headers: sent, body };
+}
+
+/** What the console's fields hold: parameters by `<in>:<name>`; keys by their scheme's key (Basic's as `<key>:user` and `<key>:password`). */
+export type TryForm = { server: string; variables: Record<string, string>; params: Record<string, string>; keys: Record<string, string>; body: string };
+
+/**
+ * The parameters the console asks for: path, query and header ones, without the headers OpenAPI has ignored as
+ * parameters (Authorization, Accept, Content-Type: the key and the body set them) and those never sent.
+ */
+export const tryParams = (operation: ApiOperation): ApiParam[] =>
+  operation.params.filter(
+    (param) => param.in === "path" || param.in === "query" || (param.in === "header" && !/^(authorization|accept|content-type)$/i.test(param.name) && !NEVER.test(param.name)),
+  );
+
+/**
+ * A query parameter's field as its pairs, as OpenAPI sends one unless told otherwise (and as the examples show it): an
+ * array's items each under its name ("1,2" is `ids=1&ids=2`), an object's fields each under the field's name.
+ */
+function queryPairs(param: ApiParam, text: string): [string, string][] {
+  if (param.schema.type.startsWith("array")) {
+    return text.split(",").map((item): [string, string] => [param.name, item.trim()]).filter(([, item]) => item !== "");
+  }
+  if (param.schema.type === "object" || param.schema.properties) {
+    try {
+      const value: unknown = JSON.parse(text);
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        return Object.entries(value).map(([field, item]): [string, string] => [field, typeof item === "string" ? item : JSON.stringify(item)]);
+      }
+    } catch {
+      // Not JSON: as typed.
+    }
+  }
+  return [[param.name, text]];
+}
+
+/** Base64 of text as UTF-8, as Basic authentication sends a username and password. */
+const base64 = (text: string) => btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(""));
+
+/** What the console's fields make for `tryRequest`: the parameters filled in, the key where its scheme puts it, the body with its type. */
+export function tryInput(doc: ApiDoc, operation: ApiOperation, form: TryForm): TryInput {
+  const input: TryInput = { server: form.server, variables: form.variables, path: {}, query: [], headers: [], cookies: [], body: operation.body ? form.body : null };
+  for (const param of tryParams(operation)) {
+    const value = form.params[`${param.in}:${param.name}`] ?? "";
+    if (param.in === "path") input.path[param.name] = value;
+    else if (value === "") continue;
+    else if (param.in === "query") input.query.push(...queryPairs(param, value));
+    else input.headers.push([param.name, value]);
+  }
+  for (const scheme of tryAuth(doc, operation).schemes) {
+    const value = form.keys[scheme.key] ?? "";
+    if (scheme.kind === "basic") {
+      const [user = "", password = ""] = [form.keys[`${scheme.key}:user`], form.keys[`${scheme.key}:password`]];
+      if (user || password) input.headers.push(["Authorization", `Basic ${base64(`${user}:${password}`)}`]);
+    } else if (value === "") continue;
+    else if (scheme.kind === "header") input.headers.push([scheme.name, value]);
+    else if (scheme.kind === "query") input.query.push([scheme.name, value]);
+    else if (scheme.kind === "cookie") input.cookies.push([scheme.name, value]);
+    else input.headers.push(["Authorization", `Bearer ${value}`]);
+  }
+  if (operation.body && input.body) input.headers.push(["Content-Type", operation.body.contentType]);
+  return input;
+}
+
+/**
+ * Whether a browser asks the API first (a CORS preflight) before it sends the request: then a refusal means it was
+ * never sent, and Tuti can send it. A request it doesn't ask about (a GET, or a POST with only plain headers) reaches
+ * the API whether or not the answer may be read.
+ */
+export function preflighted(request: TryRequest): boolean {
+  if (!["GET", "HEAD", "POST"].includes(request.method)) return true;
+  return request.headers.some(([name, value]) => {
+    const lowered = name.toLowerCase();
+    if (lowered === "content-type") return !/^(application\/x-www-form-urlencoded|multipart\/form-data|text\/plain)\s*(;|$)/i.test(value);
+    return !["accept", "accept-language", "content-language"].includes(lowered);
+  });
+}
+
+/** The request's address to show, a key in its query as "****": the key's own field hides it. */
+export function shownUrl(doc: ApiDoc, operation: ApiOperation, request: TryRequest): string {
+  const url = new URL(request.url);
+  for (const scheme of tryAuth(doc, operation).schemes) {
+    if (scheme.kind === "query" && url.searchParams.has(scheme.name)) url.searchParams.set(scheme.name, "****");
+  }
+  return url.href;
 }

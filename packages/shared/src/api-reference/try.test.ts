@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { tryable, tryAuth, type TryInput, tryRequest, tryServers } from "./try";
+import { preflighted, shownUrl, tryable, tryAuth, type TryForm, tryInput, type TryInput, tryParams, tryRequest, tryServers } from "./try";
 import type { ApiDoc, ApiOperation } from "./types";
 
 const doc = (over: Partial<ApiDoc> = {}): ApiDoc => ({
@@ -117,4 +117,56 @@ test("a server's own values (its default, one of its allowed values) go in as th
 test("slashes are trimmed where the server's path meets the operation's, however many", () => {
   const made = tryRequest(doc({ servers: [{ url: `https://api.acme.test/v1${"/".repeat(50_000)}`, description: "" }] }), operation({ path: `${"/".repeat(50_000)}posts/{id}` }), null, input({ server: `https://api.acme.test/v1${"/".repeat(50_000)}` }));
   expect("url" in made && made.url.href).toBe("https://api.acme.test/v1/posts/1");
+});
+
+const form = (over: Partial<TryForm> = {}): TryForm => ({ server: "https://api.acme.test/v1", variables: {}, params: { "path:id": "1" }, keys: {}, body: "", ...over });
+const header = (name: string) => ({ name, in: "header" as const, required: true, description: "", schema: { type: "string" } });
+
+test("the console asks for path, query and header parameters, but not the headers the key and body set, nor a connection's", () => {
+  const op = operation({ params: [...operation().params, header("Authorization"), header("Accept"), header("Content-Type"), header("X-Forwarded-For"), header("X-Team")] });
+  expect(tryParams(op).map((param) => param.name)).toEqual(["id", "X-Team"]);
+});
+
+test("the key goes where its scheme puts it; Basic is the username and password in base64 of UTF-8", () => {
+  const schemes = doc({
+    auth: [
+      { key: "basic", kind: "basic", name: "Authorization", description: "" },
+      { key: "cookie", kind: "cookie", name: "session", description: "" },
+    ],
+  });
+  const basic = tryInput(schemes, operation({ auth: [["basic"]] }), form({ keys: { "basic:user": "zoë", "basic:password": "p:w" } }));
+  expect(basic.headers).toEqual([["Authorization", `Basic ${Buffer.from("zoë:p:w").toString("base64")}`]]);
+  expect(tryInput(schemes, operation({ auth: [["cookie"]] }), form({ keys: { cookie: "abc" } })).cookies).toEqual([["session", "abc"]]);
+  // No key typed: none sent.
+  expect(tryInput(schemes, operation({ auth: [["cookie"]] }), form()).cookies).toEqual([]);
+  // The body's type goes with a body only.
+  const post = operation({ kind: "POST", body: { required: true, contentType: "application/json", schema: { type: "object" }, example: {} } });
+  expect(tryInput(doc(), post, form({ body: "{}" })).headers).toContainEqual(["Content-Type", "application/json"]);
+  expect(tryInput(doc(), post, form({ body: "" })).headers).toEqual([]);
+});
+
+test("an array query parameter is sent once per item and an object one per field, as the examples show them", () => {
+  const op = operation({
+    params: [
+      ...operation().params,
+      { name: "ids", in: "query", required: false, description: "", schema: { type: "array of integer", items: { type: "integer" } } },
+      { name: "filter", in: "query", required: false, description: "", schema: { type: "object", properties: [{ name: "status", required: false, type: "string" }] } },
+    ],
+  });
+  const input = tryInput(doc(), op, form({ params: { "path:id": "1", "query:ids": "1, 2", "query:filter": '{"status":"open"}' } }));
+  expect(input.query).toEqual([["ids", "1"], ["ids", "2"], ["status", "open"]]);
+});
+
+test("a request the browser asks the API about first, and one it sends without asking", () => {
+  const request = (method: string, headers: [string, string][]) => ({ method, url: new URL("https://api.acme.test/"), headers, body: null });
+  expect(preflighted(request("GET", []))).toBe(false);
+  expect(preflighted(request("POST", [["Content-Type", "text/plain"]]))).toBe(false);
+  expect(preflighted(request("POST", [["Content-Type", "application/json"]]))).toBe(true);
+  expect(preflighted(request("POST", [["Authorization", "Bearer x"]]))).toBe(true);
+  expect(preflighted(request("DELETE", []))).toBe(true);
+});
+
+test("a key in the query is hidden in the address shown", () => {
+  const made = tryRequest(doc(), operation(), null, input({ query: [["api_key", "sk_live_1"]] }));
+  expect("url" in made && shownUrl(doc(), operation(), made)).toBe("https://api.acme.test/v1/posts/1?api_key=****");
 });

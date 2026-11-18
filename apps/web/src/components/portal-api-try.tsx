@@ -7,8 +7,11 @@ import {
   curlCommand,
   exampleRequest,
   paramText,
+  preflighted,
+  shownUrl,
   tryAuth,
-  type TryInput,
+  tryInput,
+  tryParams,
   tryRequest,
   tryServers,
 } from "@tuti/shared/api-reference";
@@ -37,16 +40,15 @@ const SHOWN_BYTES = 2_000_000;
 
 type Result =
   | { answer: TryAnswer; via: "browser" | "cors" | "cookies" }
-  | { error: string; via: "browser" | "cors" | "cookies" };
+  | { error: string; via: "browser" | "cors" | "cookies" }
+  /** Sent from the browser, which may not read the answer: the API may have run it, so Tuti sends it again only when asked. */
+  | { unread: true };
 
 const field = "h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** What a scheme's key is called by the input that asks for it. */
 const keyLabel = (auth: ApiAuth) =>
   auth.kind === "header" ? `API key (${auth.name} header)` : auth.kind === "query" ? `API key (${auth.name} query parameter)` : auth.kind === "cookie" ? `API key (${auth.name} cookie)` : auth.kind === "bearer" ? "Bearer token" : "Access token";
-
-/** Base64 of text as UTF-8, as Basic authentication sends a username and password. */
-const base64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 
 /** The keys typed for this reference, in this tab only. */
 function useKeys(reference: string) {
@@ -93,7 +95,7 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
   const href = usePortalHref();
   const servers = useMemo(() => tryServers(doc, operation, base), [doc, operation, base]);
   const { schemes, optional } = tryAuth(doc, operation);
-  const shown = operation.params.filter((param) => param.in === "path" || param.in === "query" || param.in === "header");
+  const shown = tryParams(operation);
   const [server, setServer] = useState(servers[0]!.url);
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [params, setParams] = useState<Record<string, string>>(() =>
@@ -106,24 +108,7 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
   const [copied, setCopied] = useState(false);
   const chosen = servers.find((s) => s.url === server)!;
 
-  const input: TryInput = { server, variables, path: {}, query: [], headers: [], cookies: [], body: operation.body ? body : null };
-  for (const param of shown) {
-    const value = params[`${param.in}:${param.name}`] ?? "";
-    if (param.in === "path") input.path[param.name] = value;
-    else if (value !== "") (param.in === "query" ? input.query : input.headers).push([param.name, value]);
-  }
-  for (const scheme of schemes) {
-    const value = keys[scheme.key] ?? "";
-    if (scheme.kind === "basic") {
-      const [user = "", password = ""] = [keys[`${scheme.key}:user`], keys[`${scheme.key}:password`]];
-      if (user || password) input.headers.push(["Authorization", `Basic ${base64(`${user}:${password}`)}`]);
-    } else if (value === "") continue;
-    else if (scheme.kind === "header") input.headers.push([scheme.name, value]);
-    else if (scheme.kind === "query") input.query.push([scheme.name, value]);
-    else if (scheme.kind === "cookie") input.cookies.push([scheme.name, value]);
-    else input.headers.push(["Authorization", `Bearer ${value}`]);
-  }
-  if (operation.body && input.body !== null && input.body !== "") input.headers.push(["Content-Type", operation.body.contentType]);
+  const input = tryInput(doc, operation, { server, variables, params, keys, body });
   const made = tryRequest(doc, operation, base, input);
 
   async function throughTuti(via: "cors" | "cookies") {
@@ -140,41 +125,52 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
     }
   }
 
-  async function send() {
+  async function send(through = false) {
     if ("error" in made) {
       setResult({ error: made.error, via: "browser" });
       return;
     }
     setSending(true);
+    // Emptied, so the answer's arrival is read out even when it's the same as the last.
     setResult(null);
     try {
       // A browser doesn't send cookies it's given to another site: those go through Tuti.
-      if (input.cookies.length > 0) {
-        await throughTuti("cookies");
+      if (through || input.cookies.length > 0) {
+        await throughTuti(through ? "cors" : "cookies");
         return;
       }
       const started = performance.now();
+      let response: Response;
       try {
-        const response = await fetch(made.url, { method: made.method, headers: made.headers, body: made.body });
-        const text = await response.text();
-        const bytes = new TextEncoder().encode(text).length;
-        setResult({
-          via: "browser",
-          answer: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: [...response.headers],
-            body: text.slice(0, SHOWN_BYTES),
-            size: bytes,
-            cut: bytes > SHOWN_BYTES,
-            ms: Math.round(performance.now() - started),
-          },
-        });
+        response = await fetch(made.url, { method: made.method, headers: made.headers, body: made.body });
       } catch (error) {
-        // Refused by CORS, or no network: both a TypeError, and Tuti may get through either way.
+        // Refused by CORS, or no network: both a TypeError. Tuti sends it then only when the browser can't have: it asked
+        // the API first and was refused, or it's a GET or HEAD, which only reads. Otherwise the API may have run it.
         if (!(error instanceof TypeError)) throw error;
-        await throughTuti("cors");
+        if (preflighted(made) || made.method === "GET" || made.method === "HEAD") await throughTuti("cors");
+        else setResult({ unread: true });
+        return;
       }
+      let text: string;
+      try {
+        text = await response.text();
+      } catch {
+        setResult({ error: `The API answered ${response.status}, and the connection dropped before the rest arrived.`, via: "browser" });
+        return;
+      }
+      const bytes = new TextEncoder().encode(text).length;
+      setResult({
+        via: "browser",
+        answer: {
+          status: response.status,
+          statusText: response.statusText,
+          headers: [...response.headers],
+          body: text.slice(0, SHOWN_BYTES),
+          size: bytes,
+          cut: bytes > SHOWN_BYTES,
+          ms: Math.round(performance.now() - started),
+        },
+      });
     } finally {
       setSending(false);
     }
@@ -194,7 +190,7 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
         <SheetDescription className="sr-only">Send a request to {operation.title}, with your own key.</SheetDescription>
         <p className="flex min-w-0 items-baseline gap-2 font-mono text-xs">
           <span className="shrink-0 font-semibold">{operation.kind}</span>
-          <span className="min-w-0 break-all text-muted-foreground">{"url" in made ? made.url.href : operation.path}</span>
+          <span className="min-w-0 break-all text-muted-foreground">{"url" in made ? shownUrl(doc, operation, made) : operation.path}</span>
         </p>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
@@ -280,13 +276,14 @@ function Console({ reference, operationSlug, doc, operation, base }: { reference
             <Textarea aria-label="Body" spellCheck={false} rows={10} className="font-mono text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
           </Group>
         )}
-        {result && <Answer result={result} />}
+        {/* Always there, so a screen reader reads the answer as it arrives. */}
+        <div aria-live="polite">{result && <Answer result={result} onThrough={() => void send(true)} sending={sending} />}</div>
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-divider px-4 py-3">
         <Button variant="outline" disabled={"error" in made} onClick={() => void copy()}>
           {copied ? "Copied" : "Copy as cURL"}
         </Button>
-        <Button disabled={sending} onClick={() => void send()}>
+        <Button disabled={sending} focusableWhenDisabled onClick={() => void send()}>
           {sending ? "Sending…" : "Send"}
         </Button>
       </div>
@@ -332,7 +329,20 @@ function pretty(answer: TryAnswer) {
 }
 
 /** The answer: its status, time and size, its headers (closed), and its body. Or why it wasn't sent. */
-function Answer({ result }: { result: Result }) {
+function Answer({ result, onThrough, sending }: { result: Result; onThrough: () => void; sending: boolean }) {
+  if ("unread" in result) {
+    return (
+      <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
+        <h3 className="text-sm font-semibold">Response</h3>
+        <p className="text-sm">
+          {"The API doesn't allow browser requests, so its answer can't be shown here. It may have run the request: send it through Tuti to see the answer, and it runs again."}
+        </p>
+        <Button variant="outline" className="self-start" disabled={sending} focusableWhenDisabled onClick={onThrough}>
+          Send through Tuti
+        </Button>
+      </section>
+    );
+  }
   const through =
     result.via === "cors"
       ? "Sent through Tuti, since the API doesn't allow browser requests."
@@ -340,7 +350,7 @@ function Answer({ result }: { result: Result }) {
         ? "Sent through Tuti, since browsers don't send cookies to another site."
         : null;
   return (
-    <section aria-label="Response" aria-live="polite" className="flex flex-col gap-2 border-t border-divider pt-4">
+    <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
       <h3 className="text-sm font-semibold">Response</h3>
       {"error" in result ? (
         <p role="alert" className="text-sm text-destructive">
