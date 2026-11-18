@@ -6,12 +6,9 @@ import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 
 import { docOf, editsInChanges, hasTeammateEdit, recordRevision, scheduleArticle, takeOut, versions } from "./article-layers";
 import { autopilotSettingsSelect } from "./autopilot";
-import { REWRITTEN, retryCodeChanges } from "./code-changes";
+import { REWRITING, REWRITTEN, retryCodeChanges } from "./code-changes";
 import { checksOn } from "./edit-review";
 import { lockProject } from "./running-draft";
-
-/** What a pull request whose edits are written again says until its analysis starts (its page shows it beside "Autopilot tries again"). */
-export const REWRITING = "Its edits are being written again with the check.";
 
 /**
  * Once the check is on for a project (docs/plan.md, E6), its waiting article edits nobody changed are written again by
@@ -25,8 +22,9 @@ export const REWRITING = "Its edits are being written again with the check.";
  * lock each is taken out of its article by section, as Dismiss does (one that can't be stays as it is), and dismissed
  * by nobody saying REWRITTEN; the article's other edits go out by themselves again if they qualify; and the pull
  * request is put to be analysed again at once, through the retries' sweep: queued here right after, or by the worker's
- * sweep within 10 minutes if this stops first. That analysis writes its edits again (one of its edits left in an
- * article keeps a new one off it). Run again, it finds the rewritten edits measured and the rest as they were.
+ * sweep within 10 minutes if this stops first. That analysis is the help center's part only (`docsOnly`: no gate, no
+ * posts, its posts' updates and links left as they are); it writes its edits again (one of its edits left in an article
+ * keeps a new one off it), and isn't retried by itself if the AI provider doesn't answer (the team's "Analyse again" is). Run again, it finds the rewritten edits measured and the rest as they were.
  */
 export async function rewriteWaitingEdits(slug: string, now = new Date()): Promise<{ edits: number; pullRequests: number; queued: number }> {
   if (!checksOn(slug)) {

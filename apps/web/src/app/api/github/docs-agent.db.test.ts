@@ -5,6 +5,7 @@ import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type M
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { publishCodeChangesNow } from "@/server/code-changes";
+import { createPost } from "@/server/operations/create";
 import { publishArticle as publishFromDocs } from "@/server/docs";
 import {
   analyseCodeChange,
@@ -1426,6 +1427,12 @@ describe("the check before an edit is proposed (E5)", () => {
     model.reply(JSON.stringify({ reason: "One font.", overview: "Two fonts.", sections: { "1": "The app uses two fonts." } }), undefined, '"problem"');
     await merge(93);
     await call(updateArticle, team(), { slug: "fonts", title: "Fonts, our way" });
+    // A progress update of PR #92's waiting on a post: only the help center's part is written again.
+    const post = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+    const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } })).id;
+    const progress = await prisma.codeChangeAction.create({
+      data: { codeChange: { connect: { id: (await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 92 } })).id } }, kind: "MOVES_FORWARD", post: { connect: { id: postId } }, probability: 0.97, payload: { comment: "Dark is on its way." } },
+    });
     const before = await edit(92);
     const theirs = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 93 } , kind: "ARTICLE_EDIT" }, select: { id: true, status: true, payload: true } });
     expect(before).toMatchObject({ status: "PENDING", check: undefined });
@@ -1437,11 +1444,11 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await waitsBecause({ ...(await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 92 }, kind: "ARTICLE_EDIT" } })) }, await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect }))).toBe(
       "It was written before the check, so it asks first",
     );
-    // PR #92 analysed again (its retry, queued at once): its edit written again and checked.
+    // PR #92 analysed again (its retry, queued at once), its help center's part only (no gate, no posts): its edit
+    // written again and checked.
     pullRequest(92);
-    model.decide(USERS);
+    const decided = model.decisions.length;
     model.reply(EDIT_AT, undefined, '"merge-92"');
-    model.reply(PROPOSALS, undefined, '"proposals"');
     model.reply(REWRITE, undefined, '"problem"');
     model.reply(ACCEPT, undefined, '"article_after"');
     expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 1, pullRequests: 1, queued: 1 });
@@ -1454,7 +1461,10 @@ describe("the check before an edit is proposed (E5)", () => {
       { status: "DISMISSED", dismissReason: "Written again with the check", decidedById: null },
       { status: "PENDING", payload: expect.objectContaining({ check: expect.objectContaining({ pass: true, scope: "correction" }) }) as unknown },
     ]);
-    expect(await change(92)).toMatchObject({ state: "READY" });
+    expect(await change(92)).toMatchObject({ state: "READY", summary: SUMMARY, why: "It adds a dark theme." });
+    // No gate and no post decided (both are decisions).
+    expect(model.decisions.length).toBe(decided);
+    expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: progress.id }, select: { status: true, payload: true } })).toEqual({ status: "PENDING", payload: { comment: "Dark is on its way." } });
     // The article's changes are the new edit's alone, the old one taken out.
     expect(await changes()).toBe("The app has a light theme and a dark one.");
     // The person's article and its edit as they were.
@@ -1462,11 +1472,44 @@ describe("the check before an edit is proposed (E5)", () => {
     expect(await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: fonts.id }, select: { title: true, body: true } })).toEqual({ title: "Fonts, our way", body: "The app uses two fonts." });
 
     // Again: nothing more to do, and nothing asked of the model.
-    const asked = model.requests.length;
+    const askedBefore = model.requests.length;
     const rows = await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id } }, orderBy: { id: "asc" } });
     expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 0, pullRequests: 0, queued: 0 });
-    expect(model.requests.length).toBe(asked);
+    expect(model.requests.length).toBe(askedBefore);
     expect(await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id } }, orderBy: { id: "asc" } })).toEqual(rows);
+  });
+
+  test("the operator's rewrite takes stacked edits out newest first and writes them again oldest first, each knowing the one before", async () => {
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", "other");
+    const FIRST = JSON.stringify({ reason: "Only light.", overview: "It names Dark.", sections: { "1": "The app has a light theme and a dark one." } });
+    const SECOND = JSON.stringify({ reason: "Not where.", overview: "It says where.", sections: { "1": "The app has a light theme and a dark one: pick one in **Settings**." } });
+    proposeEdit(94, FIRST);
+    await merge(94);
+    proposeEdit(95, SECOND);
+    model.decide({ verify: 0.1 }, '"pull_requests_edits_waiting":2');
+    await merge(95);
+    expect(await changes()).toBe("The app has a light theme and a dark one: pick one in Settings.");
+
+    vi.stubEnv("AUTOPILOT_CHECKS_PROJECTS", project.slug);
+    // One repository commit at a time (the fake's): #95's once #94's review has read #94's.
+    pullRequest(94);
+    for (const [number, reply] of [[94, FIRST], [95, SECOND]] as const) {
+      model.reply(EDIT_AT, undefined, `"merge-${number}"`);
+      model.reply(reply, undefined, '"problem"');
+      model.reply(ACCEPT, number === 94 ? async () => pullRequest(95) : undefined, '"article_after"');
+    }
+    model.decide({ verify: 0.1 }, '"pull_requests_edits_waiting":2');
+    expect(await rewriteWaitingEdits(project.slug)).toEqual({ edits: 2, pullRequests: 2, queued: 2 });
+    // PR #94's writer first, on the article without either edit; PR #95's then, knowing #94's new one.
+    const writers = writes().slice(-2).map((request) => JSON.parse(request.user) as { pull_request: { title: string }; edits_already_waiting?: string[] });
+    expect(writers.map((writer) => writer.pull_request.title)).toEqual(["Dark mode 94", "Dark mode 95"]);
+    expect(writers[1]!.edits_already_waiting).toHaveLength(1);
+    for (const number of [94, 95]) {
+      expect(
+        await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" }, orderBy: { createdAt: "asc" }, select: { status: true, payload: true } }),
+      ).toMatchObject([{ status: "DISMISSED" }, { status: "PENDING", payload: { check: { pass: true, scope: "correction" } } }]);
+    }
+    expect(await changes()).toBe("The app has a light theme and a dark one: pick one in Settings.");
   });
 
   test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {

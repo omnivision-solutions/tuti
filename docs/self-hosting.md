@@ -211,7 +211,7 @@ There, an edit goes out by itself (after the hold, with the owner's switches and
 passed it and it's a rename or a moved page (the old and new words both in the pull request's diff) or a small
 correction in place; anything larger asks first, saying so. Edits written before the project was listed ask
 first too: `pnpm --filter @tuti/worker rewrite:waiting-edits <slug>`, run by hand with the worker's
-environment, writes those nobody changed again with the check.
+environment, writes those nobody changed again with the check (their pull requests' help center part only).
 Unset, no project's edits are checked and Autopilot works as before.
 
 ## Scripts
