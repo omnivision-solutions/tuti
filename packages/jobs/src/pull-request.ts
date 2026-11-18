@@ -20,6 +20,8 @@ export type PullRequestRead = {
   /** Every changed file; `left` says why its diff isn't in `diff`. */
   files: { path: string; status: string; additions: number; deletions: number; left?: LeftOut }[];
   diff: string;
+  /** Whether `diff` is all of the change: no file left out, none sent as its start, none cut at the limits. Unset: not known to be. */
+  diffComplete?: boolean;
 };
 
 export type LeftOut = "lockfile" | "generated" | "binary" | "secrets" | "size";
@@ -148,6 +150,7 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
     commits: commits.slice(-COMMITS_CAP).map((c) => maskedStart(c.commit.message.split("\n")[0]!, 200)),
     files: [],
     diff: "",
+    diffComplete: true,
   };
   const parts: string[] = [];
   let size = 0;
@@ -171,11 +174,18 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
       entry.left = "size";
       continue;
     }
-    const part = `--- ${file.filename} (${file.status}, +${file.additions} -${file.deletions})${file.patch === undefined ? ", whole file" : ""}\n${maskedStart(text, Math.min(fileChars, diffChars - size))}`;
+    const limit = Math.min(fileChars, diffChars - size);
+    if (file.patch === undefined || maskSecrets(text).length > limit) {
+      read.diffComplete = false;
+    }
+    const part = `--- ${file.filename} (${file.status}, +${file.additions} -${file.deletions})${file.patch === undefined ? ", whole file" : ""}\n${maskedStart(text, limit)}`;
     parts.push(part);
     size += part.length;
   }
   read.diff = parts.join("\n");
+  if (read.files.some((file) => file.left)) {
+    read.diffComplete = false;
+  }
   return read;
 }
 

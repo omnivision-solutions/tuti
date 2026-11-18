@@ -266,7 +266,7 @@ export async function checkedEdit<W extends Written & { reply: string }>(write: 
   const { rewrite, ...checked } = await checkOnce(first, pr, review);
   const stored = (written: W, check: EditCheck) => ({
     ...written,
-    payload: { ...written.payload, check: { ...check, scope: editScope(toMarkdown(written.writtenOn), toMarkdown(written.doc), pr.diff) } },
+    payload: { ...written.payload, check: { ...check, scope: editScope(toMarkdown(written.writtenOn), toMarkdown(written.doc), pr.diffComplete === true ? pr.diff : null) } },
   });
   if (!rewrite) {
     return stored(first, checked);

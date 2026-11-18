@@ -260,6 +260,15 @@ test("a small correction: in place, no heading touched, nothing appended, at mos
   expect(editScope(ARTICLE, ARTICLE, "")).toBe("larger");
 });
 
+test("without all of the change (a file left out or cut short), no edit is a rename: the name's other side may be in what's missing", () => {
+  const before = "## Invite\n\nOpen **Team** to send invites.";
+  const after = "## Invite\n\nOpen **Members** to send invites.";
+  const diff = "--- src/tabs.tsx (modified, +1 -1)\n-  <Tab>Team</Tab>\n+  <Tab>Members</Tab>";
+  expect(editScope(before, after, diff)).toBe("rename");
+  expect(renamed(before, after, null)).toBeNull();
+  expect(editScope(before, after, null)).toBe("correction");
+});
+
 test("a small correction counts what it takes out by occurrence: repeated sentences removed past the limit make it larger", () => {
   const repeated = Array.from({ length: 6 }, () => "Each invite link expires after three days unless the owner resends it.").join(" ");
   const before = `## Invite\n\nLinks last 3 days.\n\n${repeated}`;

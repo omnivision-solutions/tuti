@@ -207,7 +207,11 @@ const hasName = (text: string, name: string) => wholeName(name).test(text);
  * either side, other words changed too, text moved or copied, the old name left anywhere, or a name the code change
  * doesn't show as renamed.
  */
-export function renamed(before: string, after: string, diff: string): { from: string[]; to: string[] } | null {
+export function renamed(before: string, after: string, diff: string | null): { from: string[]; to: string[] } | null {
+  // Without all of the change (a file left out or cut short), a name's other side may be in what's missing.
+  if (diff === null) {
+    return null;
+  }
   const edit = editOf(before, after);
   const lower = (list: string[]) => new Set(list.map((name) => name.toLowerCase()));
   const removed = namesIn(edit.removed.join("\n"));
@@ -243,7 +247,7 @@ export const SMALL_WORDS = 40;
  * (none added, renamed or taken out), moves and copies nothing (inPlace), appends nothing at the end, and writes and takes out at most SMALL_WORDS words
  * within sizeOf's budget; or `larger`, everything else, which asks first.
  */
-export function editScope(before: string, after: string, diff: string): "rename" | "correction" | "larger" {
+export function editScope(before: string, after: string, diff: string | null): "rename" | "correction" | "larger" {
   if (renamed(before, after, diff)) {
     return "rename";
   }
