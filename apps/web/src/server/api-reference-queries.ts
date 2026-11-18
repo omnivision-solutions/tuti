@@ -77,8 +77,8 @@ export const apiReferencePage = cache(async (projectSlug: string, slug: string) 
 
 export type ApiReferencePage = NonNullable<Awaited<ReturnType<typeof apiReferencePage>>>;
 
-/** A line with none of Markdown's marks, and no address Markdown would link. */
-const PLAIN = /^(?![ \t]*(?:[-+]|\d+[.)])[ \t]|[ \t]*-{3,}[ \t]*$| {4}|\t|.*(?::\/\/|www\.))[^\\`*_[\]<>#|~&=]*$/;
+/** A line with none of Markdown's marks: no address or email Markdown would link, and no two spaces at its end (a line break). */
+const PLAIN = /^(?![ \t]*(?:[-+]|\d+[.)])[ \t]|[ \t]*-{3,}[ \t]*$| {4}|\t|.*(?::\/\/|www\.|@| {2,}\r?$))[^\\`*_[\]<>#|~&=]*$/;
 
 /**
  * A spec's Markdown (a description) as content for RichText. A spec is untrusted: its Markdown becomes

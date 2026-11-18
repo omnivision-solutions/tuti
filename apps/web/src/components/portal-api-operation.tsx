@@ -1,6 +1,6 @@
-import { ARTICLE_TITLE_ID, type Doc, MAX_CODE_TABS } from "@tuti/content";
+import { ARTICLE_TITLE_ID, type Doc, MAX_CODE_TABS, toPlainText } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
-import { type ApiAuth, type ApiOperation, type ApiParam, type ApiProperty, type ApiSchema, requestExamples } from "@tuti/shared/api-reference";
+import { type ApiAuth, type ApiOperation, type ApiParam, type ApiProperty, type ApiResponse, type ApiSchema, requestExamples } from "@tuti/shared/api-reference";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
@@ -48,11 +48,10 @@ async function ReferenceTree({ page, current }: { page: Reference; current: stri
   const at = await portalLinks();
   const { reference, groups, operations } = page;
   const rest = "rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground";
+  const byGroup = Map.groupBy(operations, (operation) => operation.group);
   const inGroup = (key: string) => (
     <ul className="flex flex-col gap-0.5">
-      {operations
-        .filter((operation) => operation.group === key)
-        .map((operation) => (
+      {(byGroup.get(key) ?? []).map((operation) => (
           <li key={operation.slug}>
             <Link
               href={at(`/docs/${reference.slug}/${operation.slug}`)}
@@ -325,8 +324,9 @@ function codeDoc(tabs: { name: string; code: string }[]): Doc {
   return { type: "doc", content: blocks.length > 1 ? [{ type: "codeTabs", content: blocks }] : blocks };
 }
 
-/** An example value as it's sent: JSON, or text as it is. */
-const exampleText = (example: unknown) => (typeof example === "string" ? example : JSON.stringify(example, null, 2));
+/** A response's example as it's sent: JSON under a JSON content type (a string in its quotes), else text as it is. */
+const exampleText = (example: unknown, contentType: string | null) =>
+  typeof example === "string" && !/json/i.test(contentType ?? "") ? example : JSON.stringify(example, null, 2);
 
 /** Beside the page: the request as cURL, JavaScript and Python, and each response's example by status. */
 function Examples({ page, operation }: { page: Reference; operation: ApiOperation }) {
@@ -340,7 +340,7 @@ function Examples({ page, operation }: { page: Reference; operation: ApiOperatio
     .filter((response) => response.example !== undefined)
     // ponytail: the tabs' styles show eight (MAX_CODE_TABS); a ninth status's example is in no tab, its fields still under Responses.
     .slice(0, MAX_CODE_TABS)
-    .map((response) => ({ name: response.status === "data" ? "Response" : response.status, code: exampleText(response.example) }));
+    .map((response) => ({ name: response.status === "data" ? "Response" : response.status, code: exampleText(response.example, response.contentType) }));
   return (
     <>
       <div className="flex min-w-0 flex-col gap-4">
@@ -355,6 +355,45 @@ function Examples({ page, operation }: { page: Reference; operation: ApiOperatio
       </div>
       <CodeCopyButtons />
     </>
+  );
+}
+
+/**
+ * A response: its status and description, opening to its schema when it has one. The description is Markdown. A row
+ * that opens has it as words alone in its summary (a link inside a control that toggles couldn't be followed by
+ * itself), and whole, links and all, once it's open, when it has a link.
+ */
+async function ResponseRow({ response }: { response: ApiResponse }) {
+  const description = response.description.trim() ? await markdownDoc(response.description) : null;
+  const text = "gap-2 text-[0.9375rem]";
+  const status = (
+    <>
+      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", statusColour(response.status))} />
+      <code className="font-mono text-sm font-semibold">{response.status}</code>
+    </>
+  );
+  return (
+    <li className="border-t border-divider">
+      {response.schema ? (
+        <details className="group/response">
+          <summary className="flex cursor-pointer list-none items-center gap-2.5 py-3 [&::-webkit-details-marker]:hidden">
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open/response:rotate-90" />
+            {status}
+            {description && <span className="min-w-0 text-[0.9375rem] break-words">{toPlainText(description)}</span>}
+          </summary>
+          <div className="flex flex-col gap-2 pb-3 pl-6.5">
+            {description && JSON.stringify(description).includes('"type":"link"') && <RichText doc={description} className={cn("rich-text break-words", text)} />}
+            <p className="text-[0.8125rem] text-muted-foreground">{[response.contentType, ...typeLine(response.schema)].filter(Boolean).join(" · ")}</p>
+            <Root schema={response.schema} />
+          </div>
+        </details>
+      ) : (
+        <div className="flex items-baseline gap-2.5 py-3 pl-6.5">
+          {status}
+          {description && <RichText doc={description} className={cn("rich-text min-w-0 break-words", text)} />}
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -435,33 +474,9 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
           {openapi && operation.responses.length > 0 && (
             <Section title="Responses">
               <ul className="mt-2 flex flex-col">
-                {operation.responses.map((response) => {
-                  const row = (
-                    <>
-                      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", statusColour(response.status))} />
-                      <code className="font-mono text-sm font-semibold">{response.status}</code>
-                      <span className="min-w-0 text-[0.9375rem] break-words">{response.description}</span>
-                    </>
-                  );
-                  return (
-                    <li key={response.status} className="border-t border-divider">
-                      {response.schema ? (
-                        <details className="group/response">
-                          <summary className="flex cursor-pointer list-none items-center gap-2.5 py-3 [&::-webkit-details-marker]:hidden">
-                            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open/response:rotate-90" />
-                            {row}
-                          </summary>
-                          <div className="pb-3 pl-6.5">
-                            <p className="mb-2 text-[0.8125rem] text-muted-foreground">{[response.contentType, ...typeLine(response.schema)].filter(Boolean).join(" · ")}</p>
-                            <Root schema={response.schema} />
-                          </div>
-                        </details>
-                      ) : (
-                        <div className="flex items-center gap-2.5 py-3 pl-6.5">{row}</div>
-                      )}
-                    </li>
-                  );
-                })}
+                {operation.responses.map((response) => (
+                  <ResponseRow key={response.status} response={response} />
+                ))}
               </ul>
             </Section>
           )}

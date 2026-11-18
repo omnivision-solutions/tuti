@@ -22,9 +22,12 @@ function trimSlashes(text: string, at: "start" | "end"): string {
  * A spec's server as an address that can be called. One without a host ("/v1", "v1") goes on the
  * placeholder's, as nothing here knows where the spec is served; "//host/v1" only lacks its scheme.
  */
+/** Whether a spec's server says which host it's on ("https://…", "//host/v1"), not only a path. */
+const hasHost = (server: string) => server.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(server);
+
 function absolute(server: string, base: string): string {
   if (server.startsWith("//")) return `https:${server}`;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(server)) return server;
+  if (hasHost(server)) return server;
   // "./v1" and "." are relative to where the spec is: the base's root here.
   const path = trimSlashes(server.startsWith("./") ? server.slice(2) : server === "." ? "" : server, "start");
   return path ? `${base}/${path}` : base;
@@ -42,7 +45,10 @@ export type ExampleOptions = {
 export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: ExampleOptions = {}): ExampleRequest {
   const spec = operation.servers?.[0] ?? doc.servers[0];
   // A server from the spec may have variables in its address; one asked for is used as it is.
-  const base = options.base ? trimSlashes(options.base, "end") : PLACEHOLDER_HOST;
+  // A base may have a query of its own ("https://gateway.example/proxy?tenant=acme"): paths go before it, and it's kept.
+  const [, basePath = "", baseQuery = ""] = /^([^?#]*)\??([^#]*)/.exec(options.base ?? "") ?? [];
+  const base = basePath ? trimSlashes(basePath, "end") : PLACEHOLDER_HOST;
+  const onBase = options.server === undefined && !(spec && hasHost(spec.url));
   const server = options.server ?? (spec ? absolute(spec.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => spec.variables?.[name]?.default ?? placeholder), base) : base);
   const token = options.token ?? "YOUR_API_KEY";
   const headers: Record<string, string> = {};
@@ -111,7 +117,8 @@ export function exampleRequest(doc: ApiDoc, operation: ApiOperation, options: Ex
   const taken = new Set(Object.keys(signed).map((name) => name.toLowerCase()));
   for (const [name, value] of Object.entries(headers)) if (!taken.has(name.toLowerCase())) signed[name] = value;
   if (cookies.length) signed.Cookie = cookies.map(([name, value]) => `${name}=${value}`).join("; ");
-  if (query.length) url += (url.includes("?") ? "&" : "?") + query.map(([name, value]) => `${encodeURIComponent(name)}=${value}`).join("&");
+  const search = [...(onBase && baseQuery ? [baseQuery] : []), ...query.map(([name, value]) => `${encodeURIComponent(name)}=${value}`)];
+  if (search.length) url += (url.includes("?") ? "&" : "?") + search.join("&");
   return { method, url, headers: signed, body };
 }
 

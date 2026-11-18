@@ -62,13 +62,16 @@ export type ApiReferenceState = {
 
 const typeKey = (name: string) => `type:${name}`;
 
+/** Addresses under a reference that aren't a page's to take: /docs/<slug>/md is the Markdown of the docs page <slug>. */
+const RESERVED_SLUGS = ["md"];
+
 /**
  * A newly read doc, with the team's choices carried over from the one before (`previous`; null: the
  * first read):
  *
  * - An operation seen before (by its key) and a type (by its name) keep the slug they first had. Every
  *   slug ever given stays taken, by keys that left the spec too (one that comes back is where it was),
- *   so anything else proposing it gets a number.
+ *   so anything else proposing it gets a number, as does one proposing an address that's another route's ("md").
  * - Operations the doc before didn't have are `unseen`, and start hidden while any operation of the
  *   doc before is off the help center: a renamed tag or a moved path never publishes what was hidden. A first read hides nothing
  *   and marks nothing.
@@ -80,7 +83,7 @@ const typeKey = (name: string) => `type:${name}`;
 export function settle(previous: { doc: ApiDoc; state: ApiReferenceState } | null, next: ApiDoc): { doc: ApiDoc; state: ApiReferenceState } {
   const before = previous?.state;
   const slugs: Record<string, string> = { ...before?.slugs };
-  const taken = new Set(Object.values(slugs));
+  const taken = new Set([...Object.values(slugs), ...RESERVED_SLUGS]);
   const slugFor = (key: string, proposed: string) => {
     let slug = slugs[key];
     if (slug === undefined) {

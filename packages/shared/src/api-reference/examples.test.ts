@@ -72,6 +72,15 @@ describe("exampleRequest: where it goes", () => {
     expect(exampleRequest(doc(), operation(), { base }).url).toBe("https://api.acme.test/v1/posts");
   });
 
+  it("joins the server and path before a base's query, and keeps its parameters before the operation's", () => {
+    const base = "https://gateway.example/proxy/?tenant=acme#top";
+    const listing = operation({ params: [{ name: "board", in: "query", required: true, description: "", schema: { type: "string" }, example: "ideas" }] });
+    expect(exampleRequest(doc({ servers: [{ url: "/v1", description: "" }] }), operation(), { base }).url).toBe("https://gateway.example/proxy/v1/posts?tenant=acme");
+    expect(exampleRequest(doc({ servers: [] }), listing, { base }).url).toBe("https://gateway.example/proxy/posts?tenant=acme&board=ideas");
+    // A server with a host of its own isn't on the base: none of its query either.
+    expect(exampleRequest(doc(), listing, { base }).url).toBe("https://api.acme.test/v1/posts?board=ideas");
+  });
+
   it("joins a server and a path with one slash, however many either has", () => {
     const many = "/".repeat(5000);
     expect(exampleRequest(doc({ servers: [{ url: `https://api.acme.test${many}`, description: "" }] }), operation({ path: `${many}posts` })).url).toBe("https://api.acme.test/posts");

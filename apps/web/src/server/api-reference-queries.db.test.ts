@@ -88,10 +88,15 @@ paths:
             schema: { type: array, description: Every ${SECRET} tag, maxItems: 5, default: [bug], items: { type: string, enum: [bug, idea], maxLength: 20 } }
       responses:
         "200":
-          description: How it went
+          description: "How it **went**, see [limits](https://acme.example/limits)"
           content:
             text/plain:
               schema: { type: string, description: The ${SECRET} outcome, enum: [saved, unchanged], default: saved }
+              example: saved
+        "202":
+          description: Taken
+          content: { application/json: { schema: { type: string }, example: accepted } }
+        "204": { description: "Nothing **changed**" }
     get:
       tags: [Posts]
       summary: List the tags
@@ -210,6 +215,9 @@ describe("an operation's page", () => {
       ],
     });
     expect(JSON.stringify(await markdownDoc("See https://acme.example/docs for more."))).toContain('"href":"https://acme.example/docs"');
+    // So do an email address, and two spaces at a line's end: a line break.
+    expect(JSON.stringify(await markdownDoc("Write to help@acme.example for more."))).toContain('"href":"mailto:help@acme.example"');
+    expect(JSON.stringify(await markdownDoc("First line  \nsecond line"))).toContain('"type":"hardBreak"');
   });
 
   test("says how it's signed: the scheme, and that unsigned works too when the spec says so", async () => {
@@ -283,7 +291,8 @@ describe("an operation's page", () => {
     await call(updateApiReference, as(), { slug: "reference", hide: ["GET /posts/{}"] });
     expect(await redirectTarget(slugPage("reference"))).toBe("/docs/reference/create-a-post");
     await setTab("SIGNED_IN");
-    await expect(redirectTarget(slugPage("reference"))).rejects.toThrow("Expected the action to redirect");
+    // Not for this visitor: a 404, not a redirect, a page or an error of another kind.
+    await expect(slugPage("reference")).rejects.toMatchObject({ digest: expect.stringMatching(/^NEXT_HTTP_ERROR_FALLBACK;404/) });
   });
 });
 
@@ -304,6 +313,22 @@ describe("a body or response that isn't an object", () => {
     for (const shown of ["text/plain · string", `The ${SECRET} outcome`, '"One of"', '\\"saved\\"', '\\"unchanged\\"']) {
       expect(text).toContain(shown);
     }
+  });
+});
+
+describe("a response", () => {
+  test("has its description's Markdown rendered: words alone in a row that opens, the link once it's open; and its example as its content type sends it", async () => {
+    await addTags();
+    const text = await pageText("set-the-tags", "tags");
+    expect(text).not.toContain("**");
+    // A row that opens: no link inside its toggle, the whole description under it.
+    expect(text).toContain('"children":"How it went, see limits"');
+    expect(text).toContain('"href":"https://acme.example/limits"');
+    // One that doesn't: rendered where it is.
+    expect(text).toContain('{"component":"strong","props":{"children":"changed"}}');
+    // A string is text under text/plain, and JSON (in its quotes) under application/json.
+    expect(text).toContain('"text":"saved"');
+    expect(text).toContain('"text":"\\"accepted\\""');
   });
 });
 
