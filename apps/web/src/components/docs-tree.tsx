@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { BracesIcon, ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
@@ -11,6 +11,7 @@ import { useInsetBreakpoint } from "@/hooks/use-inset-breakpoint";
 import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { ApiReferenceDialog } from "@/components/api-reference-dialog";
 import { CollectionDialog, TabDialog } from "@/components/docs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PaneResize } from "@/components/pane-resize";
@@ -44,6 +45,8 @@ export type TreeCollection = {
   icon: ReactNode;
   articles: TreeArticle[];
 };
+/** An API reference: at the top level of its tab (null without tabs), after the collections; `count` is how many of its operations are on the help center. */
+export type TreeReference = { slug: string; name: string; tab: string | null; published: boolean; count: number };
 export type TreeTab = { slug: string; name: string };
 
 type Kind = "tab" | "collection" | "article";
@@ -68,12 +71,14 @@ const DocsWorkspaceContext = createContext<{
   projectSlug: string;
   depthOf: (slug: string) => number;
   newCollection: (at: NewCollection) => void;
+  /** Opens "Add API reference", for tab `tab`. */
+  newReference: (tab?: string) => void;
 } | null>(null);
 
 /**
  * "+" on a tab or a collection, and its page's "Add content": a new article (in collection `article`;
  * null: in none; false: none here) or a new collection (in `parent`, else in tab `tab`), unless
- * `parent` is as deep as collections go.
+ * `parent` is as deep as collections go; at a tab's top level, an API reference too.
  */
 export function AddContentMenu({
   label,
@@ -108,6 +113,7 @@ export function AddContentMenu({
       <DropdownMenuContent align="end" className="w-auto min-w-40">
         {article !== false && <DropdownMenuItem render={<Link href={href} />}>New article</DropdownMenuItem>}
         {nests && <DropdownMenuItem onClick={() => workspace.newCollection({ parent, tab })}>New collection</DropdownMenuItem>}
+        {parent === null && <DropdownMenuItem onClick={() => workspace.newReference(tab)}>API reference</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -210,7 +216,13 @@ function Row({
       {children}
       {count !== undefined && (
         // From laptop width up its buttons show on hover or focus, in the room they keep: its count sits there till then.
-        <span className="hidden px-1.5 text-xs text-muted-foreground tabular-nums @min-[61rem]/app:absolute @min-[61rem]/app:top-1/2 @min-[61rem]/app:right-2 @min-[61rem]/app:block @min-[61rem]/app:-translate-y-1/2 @min-[61rem]/app:group-focus-within/row:hidden @min-[61rem]/app:group-hover/row:hidden @min-[61rem]/app:group-has-data-popup-open/row:hidden">
+        <span
+          className={cn(
+            "hidden px-1.5 text-xs text-muted-foreground tabular-nums @min-[61rem]/app:absolute @min-[61rem]/app:top-1/2 @min-[61rem]/app:right-2 @min-[61rem]/app:block @min-[61rem]/app:-translate-y-1/2",
+            // A row without buttons keeps it.
+            actions && "@min-[61rem]/app:group-focus-within/row:hidden @min-[61rem]/app:group-hover/row:hidden @min-[61rem]/app:group-has-data-popup-open/row:hidden",
+          )}
+        >
           {count}
         </span>
       )}
@@ -226,7 +238,7 @@ const rowLink =
 
 /**
  * The team's docs beside a tab's, a collection's and an article's page in the app: each tab with its collections
- * (5 levels deep at most, each with its articles, then the collections in it) and the articles in none
+ * (5 levels deep at most, each with its articles, then the collections in it), its API references and the articles in none
  * (on the first tab), in the order readers see them, then "Recently deleted". Tabs are managed in the switcher. A tab or a
  * collection opens its page, an article its editor; the page's own row is marked and its branch open.
  *
@@ -241,6 +253,7 @@ export function DocsWorkspace({
   projectSlug,
   tabs,
   collections,
+  references,
   uncollected,
   access,
   parents,
@@ -252,6 +265,8 @@ export function DocsWorkspace({
   tabs: TreeTab[];
   /** Each top-level collection (by tab), then the ones in it. */
   collections: TreeCollection[];
+  /** The API references, in order. */
+  references: TreeReference[];
   uncollected: TreeArticle[];
   /** For a new collection's "Who can read" and where it can go (collections less than 5 levels deep, named with the ones they're in). */
   access: AccessChoices;
@@ -278,6 +293,8 @@ export function DocsWorkspace({
   const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.
   const [adding, setAdding] = useState<NewCollection | null>(null);
+  // The tab "API reference" adds one to, while its dialog is open.
+  const [addingReference, setAddingReference] = useState<{ tab?: string } | null>(null);
   // The handle to focus again once the move is done, moved or refused: it's disabled while the move runs
   // (some browsers then drop its focus), and its row may have moved.
   const refocus = useRef<string | null>(null);
@@ -303,13 +320,16 @@ export function DocsWorkspace({
   /** Whether collection `slug` is collection `of` or one inside it. */
   const within = (slug: string, of: string) => chains.get(slug)?.some((c) => c.id === of) ?? false;
 
-  // The page shown: /tabs/<slug>, /collections/<slug>, or an article's /<slug> (and its /history). An API reference's
-  // (/references/<slug>) is a page in the pane like those, no article's editor.
+  // The page shown: /tabs/<slug>, /collections/<slug>, /references/<slug> (an API reference's: a page in the pane like
+  // those, no article's editor), or an article's /<slug> (and its /history).
   const [at, slug] = pathname.startsWith(`${base}/`) ? pathname.slice(base.length + 1).split("/") : [];
   const current =
     at === "tabs" || at === "collections"
       ? { kind: at === "tabs" ? "tab" : "collection", slug: slug ?? "" }
-      : at && at !== "new" && at !== "insights" && !(at === "references" && slug)
+      : // An article can be named "references": only what's under it is a reference's page.
+        at === "references" && slug
+        ? { kind: "reference", slug }
+      : at && at !== "new" && at !== "insights"
         ? { kind: "article", slug: at }
         : null;
   // An article's editor, a new one's too.
@@ -590,6 +610,32 @@ export function DocsWorkspace({
     );
   };
 
+  /** A tab's API references, after its collections: each opens its page. They aren't moved from here. */
+  const referenceRows = (list: TreeReference[]) =>
+    list.length > 0 && (
+      <ul aria-label="API references">
+        {list.map((reference) => (
+          <li key={reference.slug}>
+            <Row draggable={false} drop={undefined} handlers={{}} count={reference.count} className="@min-[61rem]/app:pr-9">
+              {/* In line with the collections' names, past their chevrons. */}
+              <span aria-hidden className="size-6 shrink-0" />
+              <Link
+                href={`${base}/references/${reference.slug}`}
+                aria-current={current?.kind === "reference" && current.slug === reference.slug ? "page" : undefined}
+                className={rowLink}
+              >
+                <BracesIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <span title={reference.name} className={cn("min-w-0 truncate", !reference.published && "text-muted-foreground")}>
+                  {reference.name}
+                </span>
+                {!reference.published && <span className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
+              </Link>
+            </Row>
+          </li>
+        ))}
+      </ul>
+    );
+
   // The articles in no collection: under the first tab, where readers find them. While an article is dragged, a row to drop it there.
   const uncollectedRows = () => {
     const over: Over = { kind: "uncollected", slug: "" };
@@ -610,7 +656,14 @@ export function DocsWorkspace({
     );
   };
 
-  const activeTab = tabs.find((tab) => current?.kind === "tab" ? tab.slug === current.slug : collections.find((c) => c.slug === branch.at(-1))?.tab === tab.slug) ?? tabs[0];
+  // The tab of the page shown: the tab itself, a reference's, or the one its collection is in.
+  const currentTab =
+    current?.kind === "tab"
+      ? current.slug
+      : current?.kind === "reference"
+        ? references.find((r) => r.slug === current.slug)?.tab
+        : collections.find((c) => c.slug === branch.at(-1))?.tab;
+  const activeTab = tabs.find((tab) => tab.slug === currentTab) ?? tabs[0];
   const sectionHeader = "flex min-w-0 flex-1 items-center py-1.5 pl-2 group-label";
   const tabSections = tabs
     .map((tab, index) => {
@@ -701,6 +754,7 @@ export function DocsWorkspace({
                   <span className={sectionHeader}>Collections</span>
                 </Row>
                 {collectionRows(childrenOf(null).filter((c) => !activeTab || c.tab === activeTab.slug), activeTab ? `Collections in ${activeTab.name}` : "Collections")}
+                {referenceRows(references.filter((r) => !activeTab || r.tab === activeTab.slug))}
                 {(!activeTab || activeTab === tabs[0]) && uncollectedRows()}
               </div>
             </nav>
@@ -717,7 +771,7 @@ export function DocsWorkspace({
     </div>
   </>;
   return (
-    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
+    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding, newReference: (tab) => setAddingReference({ tab }) }}>
       <PaneLayout className="docs-workspace relative">
         <aside className="docs-tree-pane relative w-(--docs-tree-width,274px) shrink-0 flex flex-col @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:w-12 @max-[61rem]/app:hidden min-w-0 min-h-0 rounded-2xl bg-card ring-1 ring-border">
           <div className="docs-tree-folded hidden p-[10px_6px] @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:flex @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
@@ -769,6 +823,7 @@ export function DocsWorkspace({
           defaultTab={adding.tab}
         />
       )}
+      {addingReference && <ApiReferenceDialog projectSlug={projectSlug} tabs={tabs} defaultTab={addingReference.tab} onClose={() => setAddingReference(null)} />}
     </DocsWorkspaceContext>
   );
 }

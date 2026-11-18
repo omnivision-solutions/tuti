@@ -16,10 +16,11 @@ const articleSelect = { slug: true, title: true, publishedAt: true, order: true,
 /**
  * The team's docs as the app's Docs pages show them (the tree beside them, a tab's or a collection's
  * page): the tabs, every collection in tree order (each top-level one by tab, then the ones in it)
- * with its articles in reading order, and the articles in no collection. Deleted articles aren't in it.
+ * with its articles in reading order, the API references in order, and the articles in no collection.
+ * Deleted articles aren't in it.
  */
 export const teamDocs = cache(async (projectId: string) => {
-  const [tabs, rows, uncollected] = await Promise.all([
+  const [tabs, rows, uncollected, references] = await Promise.all([
     prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: tabSelect }).then((list) => list.map(tabView)),
     prisma.collection.findMany({
       where: { projectId },
@@ -38,6 +39,11 @@ export const teamDocs = cache(async (projectId: string) => {
       },
     }),
     prisma.article.findMany({ where: { projectId, deletedAt: null, collectionId: null }, select: articleSelect }).then(inArticleOrder),
+    prisma.apiReference.findMany({
+      where: { projectId },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+      select: { slug: true, name: true, shownCount: true, publishedAt: true, tab: { select: { slug: true } } },
+    }),
   ]);
   const slugOf = new Map(rows.map((c) => [c.id, c.slug]));
   const collections = inTreeOrder(rows).map((c) => ({
@@ -56,6 +62,8 @@ export const teamDocs = cache(async (projectId: string) => {
     tabs,
     collections,
     uncollected,
+    /** Each API reference: its tab (null without tabs), whether it's published, and how many of its operations are on the help center (`count`). */
+    references: references.map((r) => ({ slug: r.slug, name: r.name, tab: r.tab?.slug ?? null, published: r.publishedAt !== null, count: r.shownCount })),
     /** Collection `id` named with the ones it's in ("Billing › Invoices"). */
     pathOf: (id: string) => collectionPath(rows, id),
   };

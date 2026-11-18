@@ -38,7 +38,7 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
   const top = inTab.filter((c) => c.parent === null);
   const uncollected = first ? docs.uncollected : [];
   // The rows' details, only when there's something to list.
-  const rowDetails = top.length > 0 || uncollected.length > 0 ? await articleRowDetails(projectId) : null;
+  const rowDetails = top.length > 0 || uncollected.length > 0 || docs.references.some((r) => r.tab === tab.slug) ? await articleRowDetails(projectId) : null;
 
   return (
     <>
@@ -59,7 +59,7 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
         (rowDetails ? (
           <TabContents projectSlug={slug} docs={docs} details={rowDetails} tab={tab.slug} uncollected={uncollected} />
         ) : (
-          <EmptyState title="Nothing in this tab yet" description="Add a collection to it, or move one here in the tree." />
+          <EmptyState title="Nothing in this tab yet" description="Add a collection or an API reference to it, or move a collection here in the tree." />
         ))}
       {shown === "access" && (
         <Card>

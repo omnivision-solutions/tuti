@@ -35,6 +35,7 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
         icon: c.knownIcon ? <CollectionIcon name={c.icon} /> : null,
         articles: c.articles.map(treeArticle),
       }))}
+      references={docs.references}
       uncollected={docs.uncollected.map(treeArticle)}
       access={access}
       parents={newCollectionParents(docs)}

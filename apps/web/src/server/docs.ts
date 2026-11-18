@@ -12,6 +12,7 @@ import { displayDoc } from "./content";
 import { mediaUrls } from "./media-urls";
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
+import { createApiReference } from "./operations/api-references";
 import {
   createArticle,
   createCollection,
@@ -364,6 +365,37 @@ export async function moveArticle(projectSlug: string, slug: string, collection:
 
 export async function deleteCollection(projectSlug: string, slug: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(deleteCollectionOperation, context, { slug: String(slug) }));
+}
+
+/**
+ * "Add API reference": one named `name` from its spec (`spec`: its text as a file, so it arrives as it was
+ * written), in tab `tab` (see apiReferences.create). `slug` is the new one's, for its page. A refusal says which
+ * of the dialog's fields it's about (`field`), so the reason shows there.
+ */
+export async function addApiReference(
+  projectSlug: string,
+  formData: FormData,
+): Promise<FormState & { field?: "name" | "spec" | "tab"; slug?: string }> {
+  let slug: string | undefined;
+  const spec = formData.get("spec") ?? "";
+  const input = {
+    name: String(formData.get("name") ?? ""),
+    spec: typeof spec === "string" ? spec : await spec.text(),
+    tab: String(formData.get("tab") ?? "") || undefined,
+  };
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    slug = (await call(createApiReference, context, input)).slug;
+  });
+  if (!result.error || result.error === DENIED) {
+    return { ...result, slug };
+  }
+  // The field the input's check names (the operation's message is that check's); past the check, the tab when the
+  // operation says it's gone (deleted since the dialog opened; tabFor's words), and otherwise the spec: what can't be
+  // read or has nothing to show.
+  const checked = createApiReference.input.safeParse(input);
+  const named = checked.success ? undefined : checked.error.issues[0]?.path[0];
+  const field = named === "name" || named === "tab" ? named : checked.success && result.error === `There's no tab “${input.tab}”` ? "tab" : "spec";
+  return { ...result, field };
 }
 
 /** "Dismiss" on a gap in the docs' insights (see docs.dismissGap). */
