@@ -230,7 +230,8 @@ function yamlSize(node: unknown, anchors: Map<string, object>, sizes: Map<object
   // Known by its anchor from here on, sized once it's whole: an alias to it met before then is inside it.
   if (node.anchor) anchors.set(node.anchor, node);
   let size = 2;
-  if (isScalar(node)) size += typeof node.value === "string" ? node.value.length : 6;
+  // A number or the like is short; bytes (YAML 1.1's `!!binary`) come out as a number for each.
+  if (isScalar(node)) size += typeof node.value === "string" ? node.value.length : ArrayBuffer.isView(node.value) ? node.value.byteLength * 16 : 30;
   else for (const item of node.items) size += yamlSize(item, anchors, sizes);
   sizes.set(node, size);
   return size;
@@ -370,30 +371,45 @@ function read(root: Obj): ApiDoc {
     const done = flattened.get(schema);
     if (done) return done;
     const seen = new Set<Obj>();
-    const add = (part: Obj | null) => {
+    /** `base`: the type referenced at the top that the part came in with; null for the schema and what's written in it. */
+    const add = (part: Obj | null, base: Obj | null) => {
       if (!part || seen.has(part)) return;
       seen.add(part);
+      bases.set(part, base);
       // Folding in a wide schema is work and memory like spelling it out, so it counts the same.
       docNodes += 1 + fieldsOf(part.properties).length + list(part.required).length;
       if (docNodes > DOC_NODES_MOST) throw TOO_LARGE;
-      for (const inner of list(part.allOf)) add(follow(inner, where));
+      for (const inner of list(part.allOf)) {
+        const folded = follow(inner, where);
+        add(folded, base ?? (isObj(inner) && typeof inner.$ref === "string" ? folded : null));
+      }
       after.push(part);
     };
     /** Each part after the parts it folds in, the schema itself last: the order they're laid down in. */
     const after: Obj[] = [];
-    add(schema);
+    const bases = new Map<Obj, Obj | null>();
+    add(schema, null);
     const merged = new Map<string, unknown>();
     const properties = new Map<string, unknown>();
     const required = new Set<unknown>();
     // One rule for keywords and fields, at every level: a later part's word counts over an earlier
     // one's, and a schema's own over all it folds in. Only the keywords the reader reads, so a part
     // with thousands of other keys costs what its fields do.
+    const said = new Map<string, Obj>();
     for (const part of after) {
-      // An example or a default is of the fields so far: a part that adds fields leaves it behind, unless it has its own.
-      if (fieldsOf(part.properties).length > 0) for (const key of ["example", "examples", "default"]) merged.delete(key);
-      for (const key of KEYWORDS) if (Object.hasOwn(part, key)) merged.set(key, part[key]);
+      for (const key of KEYWORDS) {
+        if (!Object.hasOwn(part, key)) continue;
+        merged.set(key, part[key]);
+        said.set(key, part);
+      }
       for (const name of list(part.required)) required.add(name);
       for (const [name, property] of fieldsOf(part.properties)) properties.set(name, property);
+    }
+    // A base's example or default is of the base: where anything outside that base adds fields,
+    // in whatever order, it isn't of the whole, and the example is made from all the fields.
+    for (const key of ["example", "examples", "default"]) {
+      const base = bases.get(said.get(key) ?? schema);
+      if (base && after.some((part) => bases.get(part) !== base && fieldsOf(part.properties).length > 0)) merged.delete(key);
     }
     if (properties.size > 0) merged.set("properties", Object.fromEntries(properties));
     merged.set("required", [...required]);

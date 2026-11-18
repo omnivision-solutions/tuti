@@ -1056,6 +1056,11 @@ test("a YAML file that's too large once its aliases are filled in is an error", 
   const wide = Array.from({ length: 20_000 }, (_, index) => `k${index}: 1`).join(", ");
   const merged = Array.from({ length: 200 }, (_, index) => `  m${index}: { <<: *wide }`).join("\n");
   expect(errorOf(`openapi: 3.0.0\nx-wide: &wide { ${wide} }\nx-uses:\n${merged}\n`)).toBe("This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.");
+  // Bytes count as what they become, not as a short value.
+  const bytes = Buffer.alloc(150_000, 7).toString("base64");
+  expect(errorOf(`%YAML 1.1\n---\nopenapi: 3.0.0\nx-b: &b !!binary ${bytes}\nx-uses: [${Array.from({ length: 20 }, () => "*b").join(", ")}]\n`)).toBe(
+    "This file is too large once its YAML aliases are filled in. Use fewer aliases of its largest anchors.",
+  );
   // A few uses of an anchor are what anchors are for.
   expect(errorOf(`openapi: 3.0.0\nx-big: &big "${"x".repeat(300_000)}"\nx-uses: [*big, *big, *big]\n`)).toBeNull();
 });
@@ -1256,6 +1261,18 @@ test("one rule when parts are folded in: a later part's word counts, and a schem
   });
   expect(based.example).toEqual({ name: "string", lives: 0 });
   expect(based.schema).not.toHaveProperty("default");
+  // In either order, and with the base's example in a part of the base's own.
+  const reversed = schemaOf(ref("Cat"), {
+    Animal: { type: "object", properties: { name: { type: "string" } } },
+    Pet: { allOf: [ref("Animal"), { example: { name: "Rex" } }] },
+    Cat: { allOf: [{ required: ["lives"], properties: { lives: { type: "integer" } } }, ref("Pet")] },
+    Wrapped: { allOf: [ref("Pet")] },
+  });
+  expect(reversed.example).toEqual({ lives: 0, name: "string" });
+  // Pet's own example is of all of Pet, whatever Pet is made of.
+  expect(reversed.doc.types.map((type) => type.name)).toEqual(["Animal", "Pet", "Cat", "Wrapped"]);
+  const wrapped = schemaOf(ref("Pet"), { Animal: { type: "object", properties: { name: { type: "string" } } }, Pet: { allOf: [ref("Animal"), { example: { name: "Rex" } }] } });
+  expect(wrapped.example).toEqual({ name: "Rex" });
   expect(based.doc.types[2]!.schema).toMatchObject({ type: "Pet", ref: "Same", default: { name: "Rex" }, description: "A pet by another name." });
 });
 
