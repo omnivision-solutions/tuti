@@ -241,7 +241,7 @@ test("a collection for one reader group: people the app signs in with that group
   await dialog.getByRole("radio", { name: "Specific groups" }).check();
   await dialog.getByRole("checkbox", { name: "Enterprise customers" }).check();
   await checkpoint(owner, "team-docs-collection-pick-group", { fullPage: false });
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(owner.getByText("Collection added")).toBeVisible();
   // Its page's Access says so.
   await owner.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Enterprise", exact: true }).click();

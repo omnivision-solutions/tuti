@@ -48,6 +48,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog", { name: "New collection" });
+  // Cancel closes it and adds nothing, whatever was typed.
+  await dialog.getByLabel("Name").fill("Discarded");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(team.getByText("Collection added")).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Discarded" })).toHaveCount(0);
+  await team.getByRole("button", { name: "Add content" }).click();
+  await team.getByRole("menuitem", { name: "New collection" }).click();
+  await expect(dialog.getByLabel("Name")).toHaveValue("");
   await dialog.getByLabel("Name").fill("Getting started");
   await dialog.getByLabel("Description").fill("The basics, in five minutes.");
   // An icon, found by searching Lucide's names: the search box has focus, an arrow key reaches the icons, Enter picks one.
@@ -79,10 +88,13 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await dialog.getByRole("button", { name: "Add icon" }).click();
   await picker.getByRole("searchbox", { name: "Search icons" }).fill("rocket");
   await picker.getByRole("button", { name: "rocket", exact: true }).click();
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await checkpoint(team, "team-docs-new-collection", { fullPage: false });
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   // The tree keeps the collection and its icon reachable beside the overview and collection page.
   await expect(teamTree.getByRole("link", { name: "Getting started", exact: true }).locator("svg.lucide-rocket")).toBeVisible();
+  // By now a save the Cancel above had started would have come back: the tree has no trace of what was typed then.
+  await expect(teamTree.getByRole("link", { name: "Discarded" })).toHaveCount(0);
   const treeAtHome = await teamTree.boundingBox();
   await checkpoint(team, "team-docs");
   await teamTree.getByRole("link", { name: "Getting started", exact: true }).click();
@@ -812,7 +824,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   const dialog = team.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Invoices");
   await expect(dialog.getByRole("combobox", { name: "Parent collection" })).toContainText("Billing");
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(structure.getByRole("list", { name: "Collections in Billing" })).toContainText("Invoices");
 
@@ -985,7 +997,7 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   const dialog = team.getByRole("dialog", { name: "New collection" });
   await expect(dialog.getByRole("combobox", { name: "Parent collection" })).toContainText("Billing");
   await dialog.getByLabel("Name").fill("Invoices");
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(tree.getByRole("button", { name: "Billing", exact: true })).toHaveAttribute("aria-expanded", "true");
   await expect(rows("Collections in Billing")).toHaveText([/^Invoices/]);
@@ -1154,7 +1166,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Errors");
   await expect(dialog.getByRole("combobox", { name: "Tab" })).toContainText("API");
-  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await dialog.getByRole("button", { name: "Create collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(rows("Collections in API")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
 
