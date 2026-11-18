@@ -187,6 +187,9 @@ test("a heading can't be renamed to a title another heading in the article has: 
   // Two headings swapping titles: unique afterwards, and still each in the other's place.
   expect(edit({ sections: { "1": "## Export\n\nInstall it.", "2": "## Setup\n\nRun it." } })).toBeNull();
   expect(edit({ passages: [{ section: 3, find: "Files", replace: "Setup" }], sections: { "1": "## Files\n\nInstall it." } })).toBeNull();
+  // A section keeps its heading at its top: dropped, or with text before it, its text would join the section above.
+  expect(edit({ sections: { "2": "Run it from Team." } })).toBeNull();
+  expect(edit({ sections: { "2": "Intro.\n\n## Export\n\nRun it." } })).toBeNull();
   // A title no other heading has is a rename like any other.
   expect(edit({ sections: { "2": "## Export to CSV\n\nRun it." } })).not.toBeNull();
   expect(edit({ passages: [{ section: 3, find: "Files", replace: "File formats" }] })).not.toBeNull();

@@ -298,7 +298,8 @@ export function articleNotes(doc: Doc) {
         return change > 0 ? count(before, title) > 0 || count(after, title) > 1 : change < 0 && count(before, title) > 1;
       });
     });
-    if (moved) {
+    // And a section that opened with its heading still does: without it, or with text put before it, its text would join the section above.
+    if (moved || next.some((section, i) => parts[i]![0]?.type === "heading" && section[0]?.type !== "heading")) {
       return null;
     }
     const checked = parseDoc("article", content);
