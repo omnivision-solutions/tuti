@@ -80,6 +80,8 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   await expect(tree.getByRole("link", { name: "post query", exact: true })).toBeVisible();
   await tree.getByText("Mutations", { exact: true }).click();
   await expect(tree.getByRole("link", { name: "createPost mutation", exact: true })).toBeVisible();
+  // Shown short, to fit the tree: "mut" (in capitals), the word itself only for screen readers.
+  await expect(tree.getByRole("link", { name: "createPost mutation", exact: true }).locator("[aria-hidden]")).toHaveText("mut");
   // The field, its arguments and what it returns, in GraphQL's notation.
   await expect(reader.getByText("post(number, board): Post", { exact: true })).toBeVisible();
   const args = reader.getByRole("region", { name: "Arguments" });
@@ -158,4 +160,8 @@ test("a reader reads a GraphQL operation and tries it: the answer's data, then i
   await reader.goto("/docs/reference/post");
   await expect(reader.getByRole("heading", { name: "post", level: 1 })).toBeVisible();
   await expect(reader.getByRole("button", { name: "Try it" })).toHaveCount(0);
+  // Nothing can be tried, so a subscription isn't singled out as the one that can't.
+  await reader.goto("/docs/reference/posted");
+  await expect(reader.getByRole("heading", { name: "posted", level: 1 })).toBeVisible();
+  await expect(reader.getByText(/can't be tried here/)).toHaveCount(0);
 });

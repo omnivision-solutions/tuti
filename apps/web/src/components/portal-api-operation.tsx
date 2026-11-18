@@ -12,6 +12,7 @@ import {
   requestExamples,
   serverAddress,
   tryable,
+  tryServers,
 } from "@tuti/shared/api-reference";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
@@ -544,7 +545,8 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
               )}
             </div>
             {openapi && <Signing operation={operation} schemes={page.doc.auth} />}
-            {operation.kind === "subscription" && <p className="text-[0.8125rem] text-muted-foreground">A subscription stays open over a websocket, so it can&apos;t be tried here.</p>}
+            {/* Only where its queries and mutations can be tried: elsewhere nothing is, and the note would single it out. */}
+            {operation.kind === "subscription" && page.reference.tryIt && tryServers(page.doc, operation, page.reference.baseUrl).length > 0 && <p className="text-[0.8125rem] text-muted-foreground">A subscription stays open over a websocket, so it can&apos;t be tried here.</p>}
           </div>
           {PLACES.map(([place, title]) => {
             const params = operation.params.filter((param) => param.in === place);
