@@ -1487,12 +1487,12 @@ describe("retries when the AI provider didn't answer", () => {
   };
   /** The sweep (`code-change-retries`), as it runs `minutes` from now. */
   const sweep = (minutes: number) => retryCodeChanges(new Date(Date.now() + minutes * MINUTE));
-  /** The next request to the chat API fails this way before reaching the provider (the fake): a time limit, or no connection. */
-  const failFetch = (error: Error) => {
+  /** The next request to `path` (the chat API's by default) fails this way before reaching its fake: a time limit, or no connection. */
+  const failFetch = (error: Error, path = "/chat/completions") => {
     const fetch = globalThis.fetch;
     let failed = false;
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-      if (!failed && String(input instanceof Request ? input.url : input).endsWith("/chat/completions")) {
+      if (!failed && String(input instanceof Request ? input.url : input).includes(path)) {
         failed = true;
         return Promise.reject(error);
       }
@@ -1509,7 +1509,6 @@ describe("retries when the AI provider didn't answer", () => {
     ["a rate limit (429)", () => model.fail(429)],
     ["an error on its side (503)", () => model.fail(503)],
     ["an error on its side (500)", () => model.fail(500)],
-    ["an empty reply", () => model.reply("")],
     ["a time limit", () => failFetch(new DOMException("The operation was aborted due to timeout", "TimeoutError"))],
     ["no connection", () => failFetch(new TypeError("fetch failed"))],
   ];
@@ -1518,10 +1517,6 @@ describe("retries when the AI provider didn't answer", () => {
     github.pullRequest(repo, pullRequest(60));
     model.decide(INTERNAL);
     fail();
-    // An empty reply is asked for once more, in words, before the agent gives up on it.
-    if (_ === "an empty reply") {
-      model.reply("");
-    }
     expect(await merge(60)).toBe(503);
     expect(await row(60)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer.", retries: 0 });
     expect(await retryIn(60)).toBe(60);
@@ -1572,6 +1567,15 @@ describe("retries when the AI provider didn't answer", () => {
     ["credits the provider says are spent (402)", () => model.fail(402)],
     ["a request the provider turned down (400)", () => model.fail(400)],
     ["a reply that isn't the decision asked for", () => model.reply("{}")],
+    // Answered and paid for: an empty answer (only tool calls, its tokens spent on thinking) is most likely empty again.
+    // The docs agent asks once more, in words, before it gives up on it.
+    [
+      "an empty reply",
+      () => {
+        model.reply("");
+        model.reply("");
+      },
+    ],
   ];
 
   test.each(OTHER_FAILURES)("%s: not tried again", async (_, fail) => {
@@ -1580,6 +1584,17 @@ describe("retries when the AI provider didn't answer", () => {
     fail();
     expect(await merge(63)).toBe(503);
     expect(await row(63)).toMatchObject({ state: "FAILED", reason: "The AI provider didn't answer.", retryAt: null });
+    expect(await sweep(48 * 60)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
+  });
+
+  test.each([
+    ["no connection", new TypeError("fetch failed")],
+    ["a time limit", new DOMException("The operation was aborted due to timeout", "TimeoutError")],
+  ])("GitHub's request failing (%s) isn't the provider not answering: said as GitHub's, not tried again by this", async (_, error) => {
+    github.pullRequest(repo, pullRequest(77));
+    failFetch(error, "/pulls/77");
+    expect(await merge(77)).toBe(503);
+    expect(await row(77)).toMatchObject({ state: "FAILED", reason: "GitHub didn't let Tuti read the pull request.", retryAt: null });
     expect(await sweep(48 * 60)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
   });
 
@@ -1758,8 +1773,13 @@ describe("retries when the AI provider didn't answer", () => {
     });
     await prisma.project.update({ where: { id: other.id }, data: { analyseCodeChanges: true } });
     analysed();
-    expect(await sweep(61)).toEqual({ due: 61, queued: 1, dropped: 0, waiting: 60 });
+    // A sweep looks at a bounded batch, oldest first: the waiting ones it looks at are put off an hour, so the next
+    // sweep reaches the rest, and this one.
+    expect(await sweep(61)).toEqual({ due: 50, queued: 0, dropped: 0, waiting: 50 });
+    expect(await sweep(71)).toEqual({ due: 11, queued: 1, dropped: 0, waiting: 10 });
     expect(await row(73)).toMatchObject({ state: "NOTHING_TO_DO" });
+    // Nothing is looked at again until its hour is up.
+    expect(await sweep(81)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
   });
 
   test("out of AI credits, a retry waits until there are some; then it runs, and what it asks is charged like any analysis", async () => {
@@ -1774,13 +1794,17 @@ describe("retries when the AI provider didn't answer", () => {
     await prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } });
     expect(await sweep(61)).toEqual({ due: 1, queued: 0, dropped: 0, waiting: 1 });
     expect(await row(71)).toMatchObject({ state: "FAILED", retries: 0 });
-    expect(await sweep(120)).toMatchObject({ waiting: 1 });
+    // Looked at again an hour later, not every sweep (each would work out the project's credits again).
+    expect(await retryIn(71)).toBe(121);
+    expect(await sweep(71)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
+    expect(await sweep(122)).toEqual({ due: 1, queued: 0, dropped: 0, waiting: 1 });
 
+    // Credits back: tried within the hour.
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     const before = (await creditBalance(project.id)).balance;
     const usage = await prisma.aiUsage.count({ where: { projectId: project.id } });
     analysed();
-    expect(await sweep(121)).toMatchObject({ queued: 1 });
+    expect(await sweep(183)).toMatchObject({ queued: 1 });
     expect(await row(71)).toMatchObject({ state: "NOTHING_TO_DO", retries: 1 });
     expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(usage + 2);
     expect((await creditBalance(project.id)).balance).toBeLessThan(before);

@@ -258,22 +258,26 @@ async function nextRetry(id: string): Promise<Date | null> {
   return minutes === undefined ? null : new Date(Date.now() + minutes * 60_000);
 }
 
-/** How many code changes one sweep queues again, so a long outage's backlog goes out over a few sweeps (those waiting for credits don't count). */
+/** How many due code changes one sweep looks at, so a long outage's backlog goes out over a few sweeps. */
 const RETRIES_PER_SWEEP = 50;
+
+/** How long a retry waiting for AI credits waits before a sweep looks at it again. */
+const CREDITS_WAIT_MINUTES = 60;
 
 /**
  * Queues the analyses whose retry is due (the `code-change-retries` job), each as "Analyse again" would: claimed as
  * analysing first, so a sweep and a person (or two sweeps) start it once, and the retry counted. Where Autopilot is off
  * now, or the plan doesn't include it, the retry is dropped (the team analyses it again once it's back); where the
- * project is out of AI credits, it waits until there are some (each sweep looks again), and is counted then. The run
- * itself checks the rest (the repository) as for any analysis. The worker runs it every 10 minutes; jobs inline, the
- * web server does (instrumentation.ts).
+ * project is out of AI credits, it waits until there are some, looked at again an hour later (so it isn't loaded every
+ * sweep), and is counted then. The run itself checks the rest (the repository) as for any analysis. The worker runs it
+ * every 10 minutes; jobs inline, the web server does (instrumentation.ts).
  */
 export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
-  // Every due one, oldest first: those waiting for credits are skipped without holding up the rest.
+  // The oldest due first; each one looked at leaves the due ones (queued, dropped or put off), so the next sweep gets the next.
   const due = await prisma.codeChange.findMany({
     where: { state: "FAILED", retryAt: { lte: now } },
     orderBy: { retryAt: "asc" },
+    take: RETRIES_PER_SWEEP,
     select: { id: true, projectId: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true, plan: true } } },
   });
   let queued = 0;
@@ -281,9 +285,6 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
   let waiting = 0;
   const paused = new Map<string, boolean>();
   for (const change of due) {
-    if (queued >= RETRIES_PER_SWEEP) {
-      break;
-    }
     // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
     const still = { id: change.id, state: "FAILED" as const, retryAt: change.retryAt };
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges || !planIncludes(change.project.plan, "codeChanges")) {
@@ -294,7 +295,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
       paused.set(change.projectId, await aiPaused(change.projectId));
     }
     if (paused.get(change.projectId)) {
-      waiting++;
+      waiting += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: new Date(now.getTime() + CREDITS_WAIT_MINUTES * 60_000) } })).count;
       continue;
     }
     const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 } } });

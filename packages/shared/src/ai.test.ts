@@ -2,6 +2,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { resetCodeChangesSettings } from "./code-changes-settings";
+import { embed } from "./embeddings";
 import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, providerDidNotAnswer, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
 
@@ -44,7 +45,7 @@ test("sends the system and user messages to the model it's given, with the token
   ]);
 });
 
-test("the provider didn't answer: a time limit, no connection, a rate limit, an error on its side, an empty reply; not a refusal or an unreadable reply", async () => {
+test("the provider didn't answer: a time limit, no connection, a rate limit, an error on its side; not a refusal, nor a reply that came empty or unreadable", async () => {
   useFake();
   const failure = (run: () => Promise<unknown>) => run().then(() => null, (error: unknown) => error);
   const asked = () => failure(() => complete({ system: "s", user: "u", ...ai }));
@@ -56,21 +57,35 @@ test("the provider didn't answer: a time limit, no connection, a rate limit, an 
     model.fail(status);
     expect(providerDidNotAnswer(await asked()), `${status}`).toBe(false);
   }
+  // Answered (and paid for), but empty: asked again, it would most likely be empty again.
   model.reply(" ");
-  expect(providerDidNotAnswer(await asked())).toBe(true);
-  // Its time limit passed before the reply came (what fetch throws for AbortSignal.timeout).
-  expect(providerDidNotAnswer(new DOMException("The operation was aborted due to timeout", "TimeoutError"))).toBe(true);
-  // Decisions and embeddings fail in the same words.
-  expect(providerDidNotAnswer(new Error("Decision request failed (503): overloaded"))).toBe(true);
-  expect(providerDidNotAnswer(new Error("Embeddings failed (429): slow down"))).toBe(true);
-  expect(providerDidNotAnswer(new Error("Decision request failed (402): no credits"))).toBe(false);
-  // Nothing listening there.
-  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
-  expect(providerDidNotAnswer(await asked())).toBe(true);
-  // Not the provider's: a reply that came but can't be read, our own mistakes.
+  expect(providerDidNotAnswer(await asked())).toBe(false);
+  // Its time limit, no connection, the connection cut: thrown by fetch, before any answer (mocked: no socket is opened).
+  const fetch = vi.spyOn(globalThis, "fetch");
+  for (const error of [new DOMException("The operation was aborted due to timeout", "TimeoutError"), new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED") }), new TypeError("terminated")]) {
+    fetch.mockRejectedValueOnce(error);
+    const thrown = await asked();
+    expect(providerDidNotAnswer(thrown), error.message).toBe(true);
+    expect(thrown).toMatchObject({ message: error.message, cause: error });
+  }
+  // A 200 whose body isn't JSON came back: not retried.
+  fetch.mockResolvedValueOnce(new Response("<html>", { status: 200 }));
+  expect(providerDidNotAnswer(await asked())).toBe(false);
+  // Decisions and embeddings fail the same way.
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "overloaded" } }), { status: 503 }));
+  expect(providerDidNotAnswer(await failure(() => decide({}, {}, { meter })))).toBe(true);
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "no credits" } }), { status: 402 }));
+  expect(providerDidNotAnswer(await failure(() => decide({}, {}, { meter })))).toBe(false);
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "slow down" } }), { status: 429 }));
+  expect(providerDidNotAnswer(await failure(() => embed(["hi"])))).toBe(true);
+  fetch.mockRejectedValueOnce(new TypeError("fetch failed"));
+  expect(providerDidNotAnswer(await failure(() => embed(["hi"])))).toBe(true);
+  fetch.mockRestore();
+  // Only the AI clients' own failures: the same errors from anywhere else (GitHub's requests) aren't the provider's.
+  expect(providerDidNotAnswer(new TypeError("fetch failed"))).toBe(false);
+  expect(providerDidNotAnswer(new DOMException("The operation was aborted due to timeout", "TimeoutError"))).toBe(false);
+  expect(providerDidNotAnswer(new Error("AI request failed (503): overloaded"))).toBe(false);
   expect(providerDidNotAnswer(new SyntaxError("Unexpected token"))).toBe(false);
-  expect(providerDidNotAnswer(new Error("The docs agent (acme/writer) didn't answer with the JSON asked for"))).toBe(false);
-  expect(providerDidNotAnswer(new Error("GitHub said 503"))).toBe(false);
   expect(providerDidNotAnswer("503")).toBe(false);
 });
 

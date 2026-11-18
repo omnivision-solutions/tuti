@@ -1,7 +1,7 @@
 import { CODE_CHANGES_SETTINGS, codeChangesSettings, serverCodeChangesSettings } from "./code-changes-settings";
 import { embed, EMBEDDING_MODEL, embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
-import { aiSetup, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, throughOpenRouter, webAddress } from "./provider";
+import { aiSetup, askProvider, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, ProviderDidNotAnswer, requestFailed, throughOpenRouter, webAddress } from "./provider";
 import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
 
 /**
@@ -122,9 +122,6 @@ export function defaultModel(feature: AiFeature): string {
 /** What a piece of a feature's work asks the AI with: the model, and the meter recording each request for its project. */
 export type Ai = { model: string; meter: Meter };
 
-/** What complete (and the docs agent) throw when the model's reply has no text. */
-export const EMPTY_REPLY = "The AI reply had no text";
-
 /** The model's reply to one system and one user message. Throws on any failure, with the reason. */
 export async function complete({
   system,
@@ -140,7 +137,12 @@ export async function complete({
   timeoutMs?: number;
 } & Ai): Promise<string> {
   const apiKey = chatKey();
-  const response = await fetch(`${baseUrl()}/chat/completions`, {
+  const { response, json } = await askProvider<{
+    model?: unknown;
+    choices?: { message?: { content?: unknown } }[];
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
+    error?: { message?: string };
+  }>(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -155,14 +157,8 @@ export async function complete({
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = (await response.json().catch(() => null)) as {
-    model?: unknown;
-    choices?: { message?: { content?: unknown } }[];
-    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
-    error?: { message?: string };
-  } | null;
   if (!response.ok) {
-    throw new Error(`AI request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
+    throw requestFailed("AI request failed", response.status, json?.error?.message ?? "no details");
   }
   // Answered, so paid for, whatever the reply says.
   await meter({
@@ -174,30 +170,14 @@ export async function complete({
   });
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim() === "") {
-    throw new Error(EMPTY_REPLY);
+    throw new Error("The AI reply had no text");
   }
   return content;
 }
 
-/**
- * Whether `error`, thrown by complete, chat, decide or embed, means the AI provider didn't answer, so asking again later
- * may get an answer: a time limit, no connection, a rate limit (429), an error on its side (408, 5xx), or a reply with
- * no text. Not a key it refused (401, 403), credits it says are spent (402), a request it turned down (400), nor a reply
- * that came but couldn't be read: asked again, those fail the same way.
- */
+/** Whether `error`, thrown by complete, chat, decide or embed, means the AI provider didn't answer (ProviderDidNotAnswer). */
 export function providerDidNotAnswer(error: unknown): boolean {
-  if (!(error instanceof Error) && !(error instanceof DOMException)) {
-    return false;
-  }
-  // AbortSignal.timeout's reason; fetch's own failures (no connection, the connection cut while the reply came).
-  if (error.name === "TimeoutError" || (error instanceof TypeError && /^(fetch failed|terminated)$/.test(error.message))) {
-    return true;
-  }
-  if (error.message === EMPTY_REPLY) {
-    return true;
-  }
-  const status = /^(?:AI request|Decision request|Embeddings) failed \((\d{3})\)/.exec(error.message)?.[1];
-  return status === "408" || status === "429" || status?.startsWith("5") === true;
+  return error instanceof ProviderDidNotAnswer;
 }
 
 /**
@@ -383,20 +363,19 @@ export async function decide(
   { timeoutMs = 30_000, meter }: { timeoutMs?: number; meter: Meter },
 ): Promise<Record<string, DecisionAnswer>> {
   const apiKey = chatKey();
-  const response = await fetch(new URL("../alpha/decisions", `${baseUrl()}/`), {
+  const { response, json } = await askProvider<{
+    model?: unknown;
+    answers?: Record<string, unknown>;
+    usage?: { input_tokens?: unknown; output_tokens?: unknown } & Parameters<typeof replyCost>[0];
+    error?: { message?: string };
+  }>(new URL("../alpha/decisions", `${baseUrl()}/`), {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: decisionModel(), state, questions, provider: PROVIDER }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = (await response.json().catch(() => null)) as {
-    model?: unknown;
-    answers?: Record<string, unknown>;
-    usage?: { input_tokens?: unknown; output_tokens?: unknown } & Parameters<typeof replyCost>[0];
-    error?: { message?: string };
-  } | null;
   if (!response.ok) {
-    throw new Error(`Decision request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
+    throw requestFailed("Decision request failed", response.status, json?.error?.message ?? "no details");
   }
   await meter({
     kind: "decision",
