@@ -690,7 +690,9 @@ function read(root: Obj, most: number): ApiDoc {
     if (choices.length > 0) out.oneOf = choices.slice(0, ROOT_NODES).map((choice, index) => toSchema(choice, { ...place, where: under(place.where, `option ${index + 1}`) }));
 
     // An object that only lists its choices is one of them: it's named by them, as a `oneOf` with no type is.
-    const kinds = out.oneOf && !out.properties && !isObj(schema.additionalProperties) ? types.filter((type) => type !== "object") : types;
+    // (Choices that say no type, only which fields are required, leave it the object it says it is.)
+    const chosen = out.oneOf?.some((choice) => choice.type !== "any") && !out.properties && !isObj(schema.additionalProperties);
+    const kinds = chosen ? types.filter((type) => type !== "object") : types;
     const names = kinds.map((type) => {
       if (type === "array" && out.items) return `array of ${out.items.type}`;
       // ponytail: a map's values are only named in its type; give ApiSchema a field for them if pages need their fields.
@@ -707,6 +709,8 @@ function read(root: Obj, most: number): ApiDoc {
   }
 
   /** A value of the schema's shape, from its own examples where it has them; undefined when there's nothing to show. */
+  /** The objects whose choices are being gone through for an example, so one isn't picked from inside its own choice. */
+  const picking = new Set<Obj>();
   function sample(node: unknown, stack: Obj[], where: string): unknown {
     const within = spend();
     const target = followSchema(node);
@@ -730,8 +734,19 @@ function read(root: Obj, most: number): ApiDoc {
       const { choices } = choicesOf(schema);
       return choices.length > 0 ? sample(choices[0], inside, where) : undefined;
     }
-    // An object that only lists its choices is the first of them.
-    if (type === "object" && fieldsOf(schema.properties).length === 0 && choicesOf(schema).choices.length > 0) return sample(choicesOf(schema).choices[0], inside, where);
+    // An object that only lists its choices is the first of them that gives a value. The choice isn't
+    // inside it (a subtype that folds its base in is still that subtype), and it's picked for once only.
+    if (type === "object" && fieldsOf(schema.properties).length === 0 && !picking.has(target)) {
+      picking.add(target);
+      try {
+        for (const choice of choicesOf(schema).choices.slice(0, 8)) {
+          const made = sample(choice, stack, where);
+          if (made !== undefined) return made;
+        }
+      } finally {
+        picking.delete(target);
+      }
+    }
     if (type === "object") {
       const made: [string, unknown][] = [];
       for (const [name, property] of fieldsOf(schema.properties)) {
@@ -817,7 +832,7 @@ function read(root: Obj, most: number): ApiDoc {
   // Named types first: they're where a schema too deep to spell out elsewhere is read in full.
   const types: (Omit<ApiType, "slug"> & { slug?: string })[] = entries(own(root.components, "schemas")).map(([name, value]) => {
     const schema = { ...schemaAt(value, `schemas › ${named(name, "a schema's name")}`, isObj(value) ? [value] : [], 1), ref: name };
-    const kind = schema.enum ? "enum" : schema.properties ? "object" : schema.oneOf ? "union" : schema.type === "object" ? "object" : "scalar";
+    const kind = schema.enum ? "enum" : schema.properties || schema.type === "object" ? "object" : schema.oneOf ? "union" : "scalar";
     return { name, kind, schema };
   });
 

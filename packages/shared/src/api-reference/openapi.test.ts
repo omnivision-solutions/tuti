@@ -592,6 +592,24 @@ test("an object that only lists its choices is one of them", () => {
     ["Pet", "union", "Cat or Dog"],
     ["Tagged", "object", "object"],
   ]);
+
+  // The usual layout: each subtype folds the base in, and the base lists the subtypes.
+  const back = schemaOf(ref("Pet"), {
+    Pet: { type: "object", discriminator: { propertyName: "kind" }, oneOf: [ref("Cat"), ref("Dog")] },
+    Cat: { allOf: [ref("Pet"), { properties: { lives: { type: "integer" }, friend: ref("Pet") } }] },
+    Dog: { allOf: [ref("Pet"), { properties: { barks: { type: "boolean" } } }] },
+  });
+  expect(back.example).toEqual({ lives: 0, friend: {} });
+  expect(back.doc.types.map((type) => [type.name, type.kind])).toEqual([
+    ["Pet", "union"],
+    ["Cat", "object"],
+    ["Dog", "object"],
+  ]);
+
+  // Choices that only say which fields are required leave it an object.
+  const required = schemaOf({ type: "object", oneOf: [{ required: ["email"] }, { required: ["phone"] }] });
+  expect(required.schema).toEqual({ type: "object", oneOf: [{ type: "any" }, { type: "any" }] });
+  expect(required.example).toEqual({});
 });
 
 test("the body is in JSON when it can be, else its first content type", () => {
