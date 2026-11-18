@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 import { prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { type TryInput, tryRequest } from "@tuti/shared/api-reference";
@@ -98,7 +100,7 @@ async function countTry(projectId: string, requestHeaders: Headers): Promise<boo
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     if (client) {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(4, hashtext(${client}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(9, hashtext(${client}))`;
     }
     const [byClient, byProject] = await Promise.all([
       client ? tx.apiTry.count({ where: { clientHash: client, createdAt: { gt: new Date(Date.now() - 60 * 1000) } } }) : 0,
@@ -168,7 +170,8 @@ export async function sendTry(request: Request, projectSlug: string, referenceSl
     if (url.protocol !== "https:") {
       return refuse(403, "Tuti sends requests only over https");
     }
-    const domain = registrable(url.hostname);
+    // An IP address is no site's, and a connection to one looks nothing up (publicOnlyLookup never sees it).
+    const domain = isIP(url.hostname.replace(/^\[|\]$/g, "")) ? null : registrable(url.hostname);
     if (!domain || !(await verifiedDomains(page.projectId)).has(domain)) {
       return refuse(403, `Tuti sends requests only to this help center's own sites, and ${url.hostname} isn't one`);
     }

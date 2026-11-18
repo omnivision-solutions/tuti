@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { POST } from "@/app/portal/[project]/(site)/docs/[slug]/[operation]/try/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { TRIES_PER_CLIENT_PER_MINUTE, TRIES_PER_PROJECT_PER_HOUR, TRY_MAX_RESPONSE_BYTES, type TryAnswer } from "./api-try";
+import { TRIES_PER_CLIENT_PER_MINUTE, TRIES_PER_PROJECT_PER_HOUR, TRY_MAX_RESPONSE_BYTES, TRY_TIMEOUT_MS, type TryAnswer } from "./api-try";
 import { clientHash } from "./email-link-limits";
 import { createTab } from "./operations/docs";
 import { createApiReference, updateApiReference } from "./operations/api-references";
@@ -76,6 +76,8 @@ paths:
       responses: { "201": { description: Updated } }
   /redirect:
     get: { tags: [Posts], summary: Moved, responses: { "302": { description: Elsewhere } } }
+  /stall:
+    get: { tags: [Posts], summary: Stall, responses: { "200": { description: Never } } }
   /large:
     get:
       tags: [Posts]
@@ -249,6 +251,27 @@ describe("what it sends and answers", () => {
     expect(json.body).toHaveLength(TRY_MAX_RESPONSE_BYTES);
     const whole = await send(input(local(), { path: {}, query: [["size", "10"]] }), { operation: "large" });
     expect(whole.json).toMatchObject({ cut: false, size: 10, body: "x".repeat(10) });
+  });
+
+  test("gives up on an API that doesn't answer within the time limit", async () => {
+    // The limit as asked for, run short so the test needn't wait 15 seconds.
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    const asked = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(200));
+    expect(await send(input(local(), { path: {} }), { operation: "stall" })).toMatchObject({ status: 504, json: { error: "The API didn't answer within 15 seconds" } });
+    expect(asked).toHaveBeenCalledWith(TRY_TIMEOUT_MS);
+    asked.mockRestore();
+  });
+
+  test("rate limits count the last minute per reader and the last hour per project; older rows go", async () => {
+    vi.stubEnv("TRUSTED_IP_HEADER", "x-test-ip");
+    const reader = { "x-test-ip": "203.0.113.9" };
+    const client = await clientHash(new Headers(reader));
+    const ago = (seconds: number) => new Date(Date.now() - seconds * 1000);
+    await prisma.apiTry.createMany({ data: Array.from({ length: TRIES_PER_CLIENT_PER_MINUTE }, () => ({ projectId: project.id, clientHash: client, createdAt: ago(61) })) });
+    await prisma.apiTry.createMany({ data: Array.from({ length: TRIES_PER_PROJECT_PER_HOUR }, () => ({ projectId: project.id, clientHash: null, createdAt: ago(61 * 60) })) });
+    expect((await send(input(local()), { headers: reader })).status).toBe(200);
+    // The hour-old rows are gone; the minute-old ones stay for the project's hour.
+    expect(await prisma.apiTry.count({ where: { projectId: project.id } })).toBe(TRIES_PER_CLIENT_PER_MINUTE + 1);
   });
 
   test("rate limited per reader and per project", async () => {

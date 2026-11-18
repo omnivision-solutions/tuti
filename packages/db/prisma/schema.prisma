@@ -2034,9 +2034,6 @@ enum DocsLanding {
   PAGE
 }
 
-/// An API reference in the docs (docs/plan.md, API reference in Docs): a team's spec, read into
-/// pages at /docs/<slug> and /docs/<slug>/<operation>. Listed in its tab after the collections, and
-/// read by whoever may read that tab: it has no access of its own.
 /// A request Try it sent through Tuti for a reader (docs/plan.md, API reference in Docs, A12), counted for its rate
 /// limits and nothing else: the project, who (an HMAC of their IP address, as sign-in links' limits keep it) and when.
 /// Nothing of the request or its answer is kept. Rows over an hour old are deleted as new ones come.
@@ -2053,6 +2050,9 @@ model ApiTry {
   @@map("api_try")
 }
 
+/// An API reference in the docs (docs/plan.md, API reference in Docs): a team's spec, read into
+/// pages at /docs/<slug> and /docs/<slug>/<operation>. Listed in its tab after the collections, and
+/// read by whoever may read that tab: it has no access of its own.
 model ApiReference {
   id             String                @id @default(cuid())
   projectId      String

@@ -13,8 +13,9 @@ export type ApiFake = {
 
 /**
  * A local stand-in for a team's API, for Try it: answers every request with JSON of what it got (201, its method,
- * path, query and body), except `/redirect` (a 302 to another site) and `/large` (`size` bytes of text). With `cors`
- * it lets browsers on any site call it, the key's header too; without, a browser's request to it fails.
+ * path, query and body), except `/redirect` (a 302 to another site), `/large` (`size` bytes of text) and `/stall`
+ * (never answers). With `cors` it lets browsers on any site call it, the key's header too; without, a browser's
+ * request to it fails.
  */
 export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake> {
   const requests: ApiFakeRequest[] = [];
@@ -36,6 +37,9 @@ export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake
       response.writeHead(302, { ...allow, location: "https://elsewhere.example/" }).end();
       return;
     }
+    if (url.pathname.endsWith("/stall")) {
+      return;
+    }
     if (url.pathname.endsWith("/large")) {
       response.writeHead(200, { ...allow, "content-type": "text/plain" }).end("x".repeat(Number(url.searchParams.get("size") ?? 0)));
       return;
@@ -49,6 +53,11 @@ export async function startApiFake({ cors }: { cors: boolean }): Promise<ApiFake
   return {
     origin: `http://127.0.0.1:${port}`,
     requests,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise((resolve) => {
+        server.close(() => resolve());
+        // A stalled request's connection too.
+        server.closeAllConnections();
+      }),
   };
 }
