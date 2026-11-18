@@ -48,6 +48,7 @@ export const serverEnv = {
   OPENAI_BASE_URL: "",
   AI_MODEL: "",
   AI_LEVELS_CONFIG: "",
+  AUTOPILOT_CHECKS_PROJECTS: "",
   AI_MODEL_ANSWERS: "",
   AI_MODEL_ESCALATIONS: "",
   AI_MODEL_SUPPORT: "",
