@@ -148,7 +148,7 @@ async function accessChange(tx: Prisma.TransactionClient, projectId: string, inp
   if (access !== "groups" && input.groups?.length) {
     throw new OperationError(400, "invalid_input", "Groups go with access “groups”");
   }
-  // Content for reader groups is on Business, where plans are sold; taking it off them always works.
+  // Content for reader groups needs a plan with private portals, where plans are sold; taking it off them always works.
   if (access === "groups") {
     await requirePlan(projectId, "privatePortal");
   }

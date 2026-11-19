@@ -44,7 +44,7 @@ export const getPortal = defineOperation({
 export const updatePortal = defineOperation({
   name: "portal.update",
   summary:
-    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in; where plans are sold, on Business: 402 otherwise, and on a lower plan a private portal is its team's only); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs)",
+    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in; where plans are sold, on a plan with private portals: 402 otherwise, and on a lower plan a private portal is its team's only); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs)",
   method: "PATCH",
   path: "/portal",
   scope: "write",

@@ -228,7 +228,7 @@ export const dismissDocsGap = defineOperation({
 
 export const getDocsInsights = defineOperation({
   name: "docs.insights",
-  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate). Where plans are sold, on Pro and Business, as Reporting (402 otherwise)`,
+  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate). Where plans are sold, on a plan with Reporting (402 otherwise)`,
   method: "GET",
   path: "/docs/insights",
   scope: "read",

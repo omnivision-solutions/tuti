@@ -60,7 +60,7 @@ const domainAndParents = (domain: string) =>
 export const setEmailDomain = defineOperation({
   name: "support.setEmailDomain",
   summary:
-    "Send replies by email from your own address (`support@yourcompany.com`): adds its domain to Amazon SES, whose 3 DKIM CNAMEs (`support.get`, `email.ownDomain.records`) go in your DNS. Replies come from it once SES finds them (`support.checkEmailDomain`); until then, from the project's support address. A domain is one project's alone. Pro plan",
+    "Send replies by email from your own address (`support@yourcompany.com`): adds its domain to Amazon SES, whose 3 DKIM CNAMEs (`support.get`, `email.ownDomain.records`) go in your DNS. Replies come from it once SES finds them (`support.checkEmailDomain`); until then, from the project's support address. A domain is one project's alone. Where plans are sold, on a plan with email from your own domain (402 otherwise)",
   method: "POST",
   path: "/support/email-domain",
   scope: "write",
