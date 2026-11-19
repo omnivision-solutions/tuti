@@ -274,6 +274,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
 });
 
 test("who's asking: Feedback totals the property the team picks over each post's voters, and lists what a group voted for", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -375,6 +376,30 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toContainText("USD");
   await expect(plan.getByRole("combobox", { name: "Format of plan" })).toContainText("Text");
   await expect(plan).toContainText("Tier");
+  // A format picked right after a rename is saved with the new name: both are there after a reload.
+  const company = properties.getByRole("listitem").filter({ hasText: "company" });
+  await company.getByRole("button", { name: "Actions for company" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("Employer");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog).toBeHidden();
+  await company.getByRole("combobox", { name: "Format of company" }).click();
+  await owner.getByRole("option", { name: "Date" }).click();
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toContainText("Date");
+  await expect(owner.getByText("Saved how company shows")).toHaveCount(2);
+  await owner.reload();
+  await expect(company).toContainText("Employer");
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toContainText("Date");
+  await company.getByRole("combobox", { name: "Format of company" }).click();
+  await owner.getByRole("option", { name: "Text" }).click();
+  await expect(owner.getByText("Saved how company shows")).toBeVisible();
+  // A save that doesn't get through says so and puts the format back to what's kept.
+  await owner.route(`**/app/${slug}/settings/properties`, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await mrr.getByRole("combobox", { name: "Format of mrr" }).click();
+  await owner.getByRole("option", { name: "Date" }).click();
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Money");
+  await owner.unroute(`**/app/${slug}/settings/properties`);
   // Beside its name on a wide card, a row's key and format are level with it; on a phone they go under it, and nothing runs past the edge.
   const label = mrr.getByText("MRR", { exact: true });
   const format = mrr.getByRole("combobox", { name: "Format of mrr" });

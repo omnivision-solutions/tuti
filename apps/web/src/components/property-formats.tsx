@@ -51,8 +51,16 @@ export function PropertyFormatsList({ projectSlug, properties, numbers, formats 
 /** Left as they are, the name and format that show without the team's aren't saved, so they follow the values. */
 function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string; name: string; saved: PropertyFormat; amount: boolean }) {
   const router = useRouter();
+  // What this row last saved, until the page brings what's saved: a format picked right after a rename is sent with
+  // the new name, not the one the page still has.
+  const [kept, setKept] = useState(saved);
+  const [seen, setSeen] = useState(JSON.stringify(saved));
+  if (seen !== JSON.stringify(saved)) {
+    setSeen(JSON.stringify(saved));
+    setKept(saved);
+  }
   // What was picked shows while it saves; a save that fails puts back what's kept.
-  const [format, setFormat] = useOptimistic(saved);
+  const [format, setFormat] = useOptimistic(kept);
   const [renaming, setRenaming] = useState(false);
   const shown = format.format ?? (amount ? "number" : "text");
   const offered = amount ? AMOUNT_FORMATS : FORMATS;
@@ -67,6 +75,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
       const next = { ...format, ...change };
       setFormat(next);
       if (await saveProperty(projectSlug, name, next)) {
+        setKept(next);
         startSaving(() => router.refresh());
       }
     });
@@ -113,7 +122,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
         </DropdownMenu>
         {/* Mounted as it opens: each time, the name kept now. */}
         <Dialog open={renaming} onOpenChange={setRenaming}>
-          <DialogContent>{renaming && <RenameForm projectSlug={projectSlug} name={name} format={format} close={() => setRenaming(false)} />}</DialogContent>
+          <DialogContent>{renaming && <RenameForm projectSlug={projectSlug} name={name} format={format} keep={setKept} close={() => setRenaming(false)} />}</DialogContent>
         </Dialog>
       </div>
     </SettingRow>
@@ -121,7 +130,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
 }
 
 /** The team's own name for a property, saved with the format it has. */
-function RenameForm({ projectSlug, name, format, close }: { projectSlug: string; name: string; format: PropertyFormat; close: () => void }) {
+function RenameForm({ projectSlug, name, format, keep, close }: { projectSlug: string; name: string; format: PropertyFormat; keep: (saved: PropertyFormat) => void; close: () => void }) {
   const router = useRouter();
   const [label, setLabel] = useState(format.label ?? "");
   const [pending, startSaving] = useTransition();
@@ -132,6 +141,7 @@ function RenameForm({ projectSlug, name, format, close }: { projectSlug: string;
         event.preventDefault();
         startSaving(async () => {
           if (await saveProperty(projectSlug, name, { ...format, label })) {
+            keep({ ...format, label });
             close();
             router.refresh();
           }
