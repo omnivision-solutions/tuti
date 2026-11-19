@@ -2,7 +2,7 @@
 
 import { MoreHorizontalIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { startTransition, useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
@@ -57,14 +57,20 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
   const shown = format.format ?? (amount ? "number" : "text");
   const offered = amount ? AMOUNT_FORMATS : FORMATS;
 
-  const pick = (change: PropertyFormat) =>
-    startTransition(async () => {
+  const [saving, startSaving] = useTransition();
+  // One save at a time: a pick made while another saves is ignored, as it would be sent with what may not be kept.
+  const pick = (change: PropertyFormat) => {
+    if (saving) {
+      return;
+    }
+    startSaving(async () => {
       const next = { ...format, ...change };
       setFormat(next);
       if (await saveProperty(projectSlug, name, next)) {
-        startTransition(() => router.refresh());
+        startSaving(() => router.refresh());
       }
     });
+  };
 
   return (
     <SettingRow label={<span className="break-all">{format.label || readableName(name)}</span>}>
