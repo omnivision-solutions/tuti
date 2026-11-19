@@ -69,7 +69,7 @@ export const suggestReply = defineOperation({
       draft: z
         .string()
         .nullable()
-        .describe("The reply, then a link to each article it used; null unless suggested")
+        .describe("The reply, then each article it used, with a link to its page (an AI-only article: its title only); null unless suggested")
         .meta({ examples: ["Use Export on the reports page.\n\n- Exporting reports: https://acme.example.com/docs/exporting-reports"] }),
     })
     .describe("The drafted reply, or why there isn't one"),
