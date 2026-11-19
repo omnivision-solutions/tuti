@@ -70,7 +70,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
   // What it sends: the docs agent reads the repository and the help center on every merged pull request.
+  await owner.getByRole("button", { name: "See details" }).click();
   await expect(owner.getByText("the repository files Autopilot reads at its merge commit and your help center's articles and drafts", { exact: false })).toBeVisible();
+  await owner.keyboard.press("Escape");
   await analysis.click();
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
@@ -99,21 +101,21 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Autopilot doesn't link posts")).toBeVisible();
   await expect(autoLinks).not.toBeChecked();
   await expect(autoLinks).toBeFocused();
-  // The page saves one way: switches and ticks as they change, the numbers (what always waits, and the hold) with its one Save.
+  // The page saves one way: switches and who's emailed as they change, the numbers (what always waits, and the hold) with the header's one Save.
   await expect(owner.getByRole("switch", { name: "Complete posts" })).not.toBeChecked();
   await owner.getByRole("switch", { name: "Complete posts" }).click();
   await expect(owner.getByText("Complete posts: on")).toBeVisible();
-  await owner.getByLabel("The hold (hours)").fill("12");
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await owner.getByLabel("Hold before anything goes out").fill("12");
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
-  // Who's told: owners always; the owner adds admins.
-  await owner.getByLabel("Admins too").check();
-  await expect(owner.getByText("Who's told saved")).toBeVisible();
+  // Emails: owners always; the owner adds admins.
+  await owner.getByRole("switch", { name: "Admins", exact: true }).click();
+  await expect(owner.getByText("Emails saved")).toBeVisible();
   await expect(owner.getByRole("button", { name: /^Save/ })).toHaveCount(1);
   await owner.reload();
   await expect(owner.getByRole("switch", { name: "Complete posts" })).toBeChecked();
-  await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
-  await expect(owner.getByLabel("Admins too")).toBeChecked();
+  await expect(owner.getByLabel("Hold before anything goes out")).toHaveValue("12");
+  await expect(owner.getByRole("switch", { name: "Admins", exact: true })).toBeChecked();
   await checkpoint(owner, "settings-autopilot");
   // A refused save shows what's saved: here the owner stops being one (their row only), and Complete posts comes back on.
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });

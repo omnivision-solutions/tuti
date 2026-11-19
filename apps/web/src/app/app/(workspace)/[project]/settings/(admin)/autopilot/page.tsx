@@ -8,6 +8,7 @@ import { AiModelSetting } from "@/components/ai-model-setting";
 import { AdvancedTuningLink, AutopilotChecksSwitch, AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
 import { autopilotRecordText, CHECKS_UNAVAILABLE } from "@/lib/autopilot-words";
@@ -20,9 +21,10 @@ import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
 export const metadata: Metadata = { title: "Autopilot · Settings" };
 
 /**
- * Settings → AI → Autopilot: its AI model (Decides, Checks, Writes), whether Checks run and the way to Advanced tuning,
- * which owners and admins change; then whether it reads merged pull requests (and what's sent where), what it does by itself, and how it's
- * doing, which owners change and admins see. Only where the server has AI.
+ * Settings → AI → Autopilot: whether it reads merged pull requests (what's sent where is behind "See details"), which
+ * owners change; its AI model (Decides, Checks, Writes), whether Checks run and the way to Advanced tuning, which owners
+ * and admins change; then what it does by itself, what waits for the team, who gets its emails and how it's doing,
+ * which owners change and admins see. Only where the server has AI.
  */
 export default async function AutopilotSettingsPage(props: PageProps<"/app/[project]/settings/autopilot">) {
   const { project: slug } = await props.params;
@@ -67,23 +69,16 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
   // the upgrade prompt, so a link under the card is the way to see them.
   const kept = !tunable && Object.values((await codeChangesTuning(membership.project.id)).values).some((value) => value.saved !== null);
   return (
-    <SettingsPane
-      title="Autopilot"
-      description={
-        <>
-          When a pull request merges, Autopilot reads it and finds the posts it completes, the docs it changes and its changelog line.{" "}
-          {!github && (
-            <>
-              It reads the repositories you add in{" "}
-              <Link href={`/app/${slug}/settings/integrations`} className="underline">
-                Integrations
-              </Link>
-              .
-            </>
-          )}
-        </>
-      }
-    >
+    <SettingsPane title="Autopilot" description="Turns merged pull requests into post, docs and changelog updates">
+      {!github && (
+        <p className="text-sm text-muted-foreground">
+          It reads the repositories you add in{" "}
+          <Link href={`/app/${slug}/settings/integrations`} className="underline">
+            Integrations
+          </Link>
+          .
+        </p>
+      )}
       {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings. Admins can change its AI model and Checks.</p>}
       {!planIncludes(project.plan, "codeChanges") && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin>
@@ -92,6 +87,21 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
       )}
       <div className="flex flex-col gap-2">
         <SettingsCard>
+          <div>
+            <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />
+            {/* What leaves, said where it's switched on (docs/plan.md: the team knows what's sent where), one press away. Under the switch's label, as a row's line is. */}
+            <p className="-mt-3 px-4 pb-3.5 text-sm text-muted-foreground @min-[34rem]/settings:px-5">
+              What&apos;s sent to the AI provider{" "}
+              <Popover>
+                <PopoverTrigger className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">See details</PopoverTrigger>
+                <PopoverContent className="w-96 p-3 text-sm">
+                  Sent to {aiProvider()}: each merged pull request&apos;s title, description, commits and diff, the repository files Autopilot reads at its merge
+                  commit and your help center&apos;s articles and drafts (to find what to fix), and the files Verify reads when it checks an article. Lockfiles,
+                  generated files and files that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
+                </PopoverContent>
+              </Popover>
+            </p>
+          </div>
           {/* Without the switch (this server runs no checks), a saved Off is Custom's empty box, where a model can be picked, not a row that only the switch could change. */}
           <AiModelSetting {...model} roles={checks ? model.roles : model.roles.map((role) => (role.model === "off" ? { ...role, model: "" } : role))} />
           {checks && <AutopilotChecksSwitch projectSlug={slug} on={checks.on} price={price} />}
@@ -107,19 +117,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           </p>
         )}
       </div>
-      <div className="flex flex-col gap-2">
-        <SettingsCard>
-          <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} owner={owner} />
-        </SettingsCard>
-        {/* What leaves, said where it's switched on (docs/plan.md: the team knows what's sent where). The page's, not a hint of the switch's. */}
-        <p className="text-sm text-muted-foreground">
-          Sent to {aiProvider()}: each merged pull request&apos;s title, description, commits and diff, the repository files Autopilot reads at its merge commit
-          and your help center&apos;s articles and drafts (to find what to fix), and the files Verify reads when it checks an article. Lockfiles, generated
-          files and files that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
-        </p>
-      </div>
       {project.analyseCodeChanges && (
-        <SettingsCard title="What it does by itself">
+        <SettingsCard title="Does by itself">
           <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} owner={owner} />
           <AutopilotSwitches
             projectSlug={slug}
@@ -131,33 +130,30 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
               complete: project.autopilotComplete,
             }}
           />
-          <SettingBlock>
-            <AutopilotSettingsForm
-              projectSlug={slug}
-              owner={owner}
-              settings={{
-                minSure: project.autopilotMinSure,
-                maxReach: project.autopilotMaxReach,
-                maxViews: project.autopilotMaxViews,
-                holdHours: project.autopilotHoldHours,
-              }}
-            />
-          </SettingBlock>
         </SettingsCard>
       )}
       {project.analyseCodeChanges && (
-        <SettingsCard
-          title="Who's told"
-          description="Owners and the people below get emails about merged pull requests, as often as each picks in their account settings. Owners always hear when something customers see goes out by itself."
-        >
-          <SettingBlock>
-            <AutopilotRecipientsForm
-              projectSlug={slug}
-              owner={owner}
-              admins={project.autopilotTellAdmins}
-              members={team.map((member) => ({ userId: member.userId, name: member.user.name, role: member.role as "ADMIN" | "MEMBER", told: member.autopilotTold }))}
-            />
-          </SettingBlock>
+        <SettingsCard title="Waits for your team when">
+          <AutopilotSettingsForm
+            projectSlug={slug}
+            owner={owner}
+            settings={{
+              minSure: project.autopilotMinSure,
+              maxReach: project.autopilotMaxReach,
+              maxViews: project.autopilotMaxViews,
+              holdHours: project.autopilotHoldHours,
+            }}
+          />
+        </SettingsCard>
+      )}
+      {project.analyseCodeChanges && (
+        <SettingsCard title="Emails">
+          <AutopilotRecipientsForm
+            projectSlug={slug}
+            owner={owner}
+            admins={project.autopilotTellAdmins}
+            members={team.map((member) => ({ userId: member.userId, name: member.user.name, role: member.role as "ADMIN" | "MEMBER", told: member.autopilotTold }))}
+          />
         </SettingsCard>
       )}
       <SettingsCard title="How it's doing">

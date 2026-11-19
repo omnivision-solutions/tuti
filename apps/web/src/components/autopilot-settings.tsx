@@ -1,20 +1,21 @@
 "use client";
 
-import { ChevronRightIcon } from "lucide-react";
+import { cn } from "cn";
+import { ChevronRightIcon, PlusIcon, XIcon } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
-import { SettingRow } from "@/components/settings-card";
+import { useCustomizeForm } from "@/components/customize-shell";
+import { SettingBlock, SettingRow } from "@/components/settings-card";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
-import { keepingFields } from "@/lib/forms";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { saveAiModel } from "@/server/ai-models";
-import type { FormState } from "@/server/form-state";
 import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails, setAutopilotSwitch } from "@/server/github";
 
 export type AutopilotSwitchValues = Record<(typeof SWITCHES)[number][0], boolean>;
@@ -28,11 +29,13 @@ export type AutopilotSettingsValues = {
 
 /** Each switch's name and label. One has a hint: what it sends can't be taken back. */
 const SWITCHES = [
-  ["drafts", "Write drafts at once", undefined],
+  ["drafts", "Write drafts", undefined],
   ["articleEdits", "Publish article edits", undefined],
   ["progress", "Post progress updates", undefined],
-  ["complete", "Complete posts", "Completing a post emails the people who asked for it."],
+  ["complete", "Complete posts", "Emails the people who asked."],
 ] as const;
+
+const CHECKS_DOES = "Reviews every article edit and double-checks new articles. Off, edits written from then on wait for your team.";
 
 /**
  * Settings → Autopilot → Checks (owners and admins, like the AI model above it): off saves "off" as the role's model,
@@ -55,13 +58,15 @@ export function AutopilotChecksSwitch({ projectSlug, on, price }: { projectSlug:
   }, [on]);
   return (
     <SettingRow
-      label="Checks"
+      label="Check its own edits"
       htmlFor="autopilot-checks"
       inline
+      info={CHECKS_DOES}
+      // What it does is behind the ⓘ, and still read out with the switch; a review's price stays in sight.
       description={
         <>
-          Reviews every article edit and double-checks new articles. Off, edits written from then on wait for your team.{" "}
-          {price && <span className="block">{price}</span>}
+          <span className="sr-only">{CHECKS_DOES} </span>
+          {price}
         </>
       }
     >
@@ -162,64 +167,93 @@ export function AutopilotSwitches({ projectSlug, settings, owner }: { projectSlu
 }
 
 /**
- * Settings → Autopilot's limits (owners; `owner` false: shown, not changed): what always waits for
- * someone, and how long the rest waits first. One Save.
+ * The limits: each a row that reads as a sentence, its unit in the field. `info`: what takes longer to say. `field`:
+ * the field's width and the room kept for its unit, so the largest number it takes shows whole beside it.
+ */
+const LIMITS = [
+  { name: "minSure", id: "autopilot-min-sure", label: "It's less sure than", unit: "%", min: 50, max: 100, field: "w-28 pr-8", info: undefined },
+  { name: "maxReach", id: "autopilot-max-reach", label: "A post has at least", unit: "people", min: 1, max: undefined, field: "w-36 pr-16", info: "Its author, voters, commenters and subscribers." },
+  { name: "maxViews", id: "autopilot-max-views", label: "An article has at least", unit: "reads / 30 days", min: 1, max: undefined, field: "w-52 pr-28", info: undefined },
+  {
+    name: "holdHours",
+    id: "autopilot-hold",
+    label: "Hold before anything goes out",
+    unit: "hours",
+    min: 0,
+    max: 336,
+    field: "w-28 pr-16",
+    info: "What goes out by itself waits this long first, so your team can stop it. Drafts don't wait.",
+  },
+] as const;
+
+function LimitRows({ settings, disabled, error }: { settings: AutopilotSettingsValues; disabled: boolean; error?: string }) {
+  return (
+    <>
+      {LIMITS.map(({ name, id, label, unit, min, max, field, info }) => (
+        // Beside its label on phones too: the row reads as one sentence ("A post has at least 25 people").
+        <SettingRow key={name} label={label} htmlFor={id} info={info} inline>
+          <span className="relative block">
+            <Input
+              id={id}
+              name={name}
+              type="number"
+              inputMode="numeric"
+              min={min}
+              max={max}
+              required
+              disabled={disabled}
+              defaultValue={settings[name]}
+              aria-describedby={`${id}-unit`}
+              aria-invalid={error ? true : undefined}
+              // No arrows in the field: they'd take the room its number needs (the arrow keys still step it).
+              className={cn("[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none", field)}
+            />
+            <span id={`${id}-unit`} className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-muted-foreground">
+              {unit}
+            </span>
+          </span>
+        </SettingRow>
+      ))}
+      {error && (
+        <SettingBlock>
+          <FieldError>{error}</FieldError>
+        </SettingBlock>
+      )}
+    </>
+  );
+}
+
+/**
+ * Settings → Autopilot's limits (owners; `owner` false: shown, not changed, and no form for "Save changes" to wait
+ * on): what always waits for someone, and how long the rest waits first. Saved by the page's "Save changes".
  */
 export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projectSlug: string; settings: AutopilotSettingsValues; owner: boolean }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveAutopilotSettings(projectSlug, prev, formData);
-    if (!result.error) {
-      toast.success("Autopilot's settings saved");
-    }
-    return result;
-  }, {});
+  return owner ? <LimitsForm projectSlug={projectSlug} settings={settings} /> : <LimitRows settings={settings} disabled />;
+}
 
+function LimitsForm({ projectSlug, settings }: { projectSlug: string; settings: AutopilotSettingsValues }) {
+  const { state, pending, form } = useCustomizeForm({
+    save: async (prev, formData) => {
+      const result = await saveAutopilotSettings(projectSlug, prev, formData);
+      if (!result.error) {
+        toast.success("Autopilot's settings saved");
+      }
+      return result;
+    },
+  });
   return (
-    <form {...keepingFields(action)}>
-      <fieldset disabled={pending || !owner} className="contents">
-        <FieldGroup>
-          <fieldset className="flex flex-col gap-3">
-            <legend className="mb-1 text-sm font-medium">Always waits for someone</legend>
-            <p className="text-sm text-muted-foreground">Whatever the switches, an update waits for your team when it&apos;s:</p>
-            <Field orientation="horizontal">
-              <FieldLabel htmlFor="autopilot-min-sure" className="flex-1 font-normal">
-                Less sure than (%)
-              </FieldLabel>
-              <Input id="autopilot-min-sure" name="minSure" type="number" min={50} max={100} required defaultValue={settings.minSure} className="w-24 shrink-0" />
-            </Field>
-            <Field orientation="horizontal">
-              <FieldLabel htmlFor="autopilot-max-reach" className="flex-1 font-normal">
-                About a post with this many people or more (author, voters, commenters, subscribers)
-              </FieldLabel>
-              <Input id="autopilot-max-reach" name="maxReach" type="number" min={1} required defaultValue={settings.maxReach} className="w-24 shrink-0" />
-            </Field>
-            <Field orientation="horizontal">
-              <FieldLabel htmlFor="autopilot-max-views" className="flex-1 font-normal">
-                About an article read this often or more in 30 days
-              </FieldLabel>
-              <Input id="autopilot-max-views" name="maxViews" type="number" min={1} required defaultValue={settings.maxViews} className="w-24 shrink-0" />
-            </Field>
-          </fieldset>
-          <Field orientation="horizontal">
-            <div className="flex flex-1 flex-col gap-0.5">
-              <FieldLabel htmlFor="autopilot-hold">The hold (hours)</FieldLabel>
-              <FieldDescription>What goes out by itself waits this long first, so your team can stop it. Drafts don&apos;t wait.</FieldDescription>
-            </div>
-            <Input id="autopilot-hold" name="holdHours" type="number" min={0} max={336} required defaultValue={settings.holdHours} className="w-24 shrink-0" />
-          </Field>
-          {state.error && <FieldError>{state.error}</FieldError>}
-          {owner && (
-            <Button type="submit" disabled={pending} className="self-end">
-              {pending ? "Saving…" : "Save"}
-            </Button>
-          )}
-        </FieldGroup>
-      </fieldset>
+    // Locked while saving. `inert`, not disabled fields: those would drop out of what the form holds, which "Save
+    // changes" compares with what's saved.
+    <form {...form} inert={pending} className="flex flex-col divide-y">
+      <LimitRows settings={settings} disabled={false} error={state.error} />
     </form>
   );
 }
 
-/** Settings → Autopilot → Who's told (owners change it, saved as each is ticked): owners always; admins too, or chosen team members. */
+/**
+ * Settings → Autopilot → Emails (owners change it, saved as each changes): owners always; admins too, by their switch;
+ * and the team members picked, as chips, with "Add" listing the rest.
+ */
 export function AutopilotRecipientsForm({
   projectSlug,
   owner,
@@ -232,39 +266,95 @@ export function AutopilotRecipientsForm({
   /** The team past its owners: each one's name, role and whether they're told. */
   members: { userId: string; name: string; role: "ADMIN" | "MEMBER"; told: boolean }[];
 }) {
-  const [state, action] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveAutopilotRecipients(projectSlug, prev, formData);
-    if (!result.error) {
-      toast.success("Who's told saved");
+  const [, startTransition] = useTransition();
+  const [picked, setPicked] = useState(() => ({ admins, told: members.filter((member) => member.told).map((member) => member.userId) }));
+  // What's saved, and the latest change: a refused save shows what's saved, unless something changed again since.
+  const saved = useRef(picked);
+  const changes = useRef(0);
+  const add = useRef<HTMLButtonElement>(null);
+  // Not disabled while saving, which would drop keyboard focus: each change sends all of it, one save after another.
+  const save = (next: typeof picked) => {
+    setPicked(next);
+    const change = ++changes.current;
+    const formData = new FormData();
+    if (next.admins) {
+      formData.set("admins", "on");
     }
-    return result;
-  }, {});
+    for (const userId of next.told) {
+      formData.append("told", userId);
+    }
+    startTransition(async () => {
+      const result = await saveAutopilotRecipients(projectSlug, {}, formData).catch(() => ({ error: "Couldn't save. Try again." }));
+      if (result.error) {
+        if (changes.current === change) {
+          setPicked(saved.current);
+        }
+        toast.error(result.error);
+      } else {
+        saved.current = next;
+        toast.success("Emails saved");
+      }
+    });
+  };
+  const told = members.filter((member) => picked.told.includes(member.userId));
+  const rest = members.filter((member) => !picked.told.includes(member.userId));
   return (
-    // Saved as each box is ticked, as a switch is: the page's one Save is for its numbers.
-    // Not disabled while saving, which would drop keyboard focus: each tick sends the boxes as they are, one save after another.
-    <form {...keepingFields(action)} onChange={(event) => event.currentTarget.requestSubmit()}>
-      <fieldset disabled={!owner} className="contents">
-        <FieldGroup>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="admins" defaultChecked={admins} className="size-4 accent-primary" />
-            Admins too
-          </label>
-          {members.length > 0 && (
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-sm font-medium">And these people on the team</legend>
-              {members.map((member) => (
-                <label key={member.userId} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="told" value={member.userId} defaultChecked={member.told} className="size-4 accent-primary" />
-                  {member.name}
-                  <span className="text-muted-foreground">{member.role === "ADMIN" ? "Admin" : "Member"}</span>
-                </label>
+    <>
+      <SettingRow label="Owners" info="Owners always hear when something customers see goes out by itself. Everyone picks how often they get these emails in their account settings." inline>
+        <span className="text-sm text-muted-foreground">Always</span>
+      </SettingRow>
+      <SettingRow label="Admins" htmlFor="autopilot-tell-admins" inline>
+        <Switch id="autopilot-tell-admins" checked={picked.admins} disabled={!owner} onChange={(event) => save({ ...picked, admins: event.currentTarget.checked })} />
+      </SettingRow>
+      {members.length > 0 && (
+        <SettingRow label="Others">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
+            <ul aria-label="Others who get Autopilot's emails" className="contents">
+              {told.map((member) => (
+                <li key={member.userId} className={cn("flex max-w-full items-center gap-0.5 rounded-2xl bg-muted py-0.5 pl-2.5 text-sm", owner ? "pr-0.5" : "pr-2.5")}>
+                  <span className="min-w-0 break-words">{member.name}</span>
+                  {owner && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${member.name}`}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      onClick={() => {
+                        save({ ...picked, told: picked.told.filter((userId) => userId !== member.userId) });
+                        // Its button is gone: focus goes to Add, not to the top of the page.
+                        add.current?.focus();
+                      }}
+                    >
+                      <XIcon aria-hidden className="size-3.5" />
+                    </button>
+                  )}
+                </li>
               ))}
-            </fieldset>
-          )}
-          {state.error && <FieldError>{state.error}</FieldError>}
-        </FieldGroup>
-      </fieldset>
-    </form>
+            </ul>
+            {!owner && told.length === 0 && <span className="text-sm text-muted-foreground">No one</span>}
+            {owner && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  // Focusable with no one left to add (removing a chip sends focus here).
+                  render={<Button ref={add} type="button" variant="outline" size="sm" className="rounded-full" disabled={rest.length === 0} focusableWhenDisabled />}
+                  aria-label="Add someone to Autopilot's emails"
+                >
+                  <PlusIcon />
+                  Add
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-max">
+                  {rest.map((member) => (
+                    <DropdownMenuItem key={member.userId} onClick={() => save({ ...picked, told: [...picked.told, member.userId] })}>
+                      {member.name}{" "}
+                      <span className="text-muted-foreground">{member.role === "ADMIN" ? "Admin" : "Member"}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </SettingRow>
+      )}
+    </>
   );
 }
 
