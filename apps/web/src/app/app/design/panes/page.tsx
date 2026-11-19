@@ -11,6 +11,7 @@ import { SettingRow, SettingsCard } from "@/components/settings-card";
 import { StatStrip } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 
 export const metadata: Metadata = { title: "Panes" };
@@ -189,8 +190,11 @@ function Settings({ id }: { id: string }) {
               ]}
             />
             <SettingsCard>
-              <SettingRow label="Project name" description="Shown on your portal, in its emails and in the app." htmlFor={`${id}-name`}>
-                <Input id={`${id}-name`} defaultValue="Acme Calendar" aria-describedby={`${id}-name-description`} className="sm:w-60" />
+              <SettingRow label="Project name" htmlFor={`${id}-name`}>
+                <Input id={`${id}-name`} defaultValue="Acme Calendar" className="sm:w-60" />
+              </SettingRow>
+              <SettingRow label={<span id={`${id}-theme`}>Default theme</span>} info="What readers see first. They can switch it in the portal's footer.">
+                <Segmented name={`${id}-theme`} aria-labelledby={`${id}-theme`} defaultValue="light" options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "System" }]} />
               </SettingRow>
               <SettingRow label="Portal address" description="acme-calendar.tuti.so" inline>
                 <Button variant="outline" size="sm">

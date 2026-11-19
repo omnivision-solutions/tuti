@@ -174,14 +174,14 @@ test("an owner renames the project in Settings → General, and the app and its 
   await olive.goto(`/app/${slug}/settings/general`);
   await expect(olive.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
   await olive.getByLabel("Project name").fill("A");
-  await olive.getByRole("button", { name: "Save" }).click();
+  await olive.getByRole("button", { name: "Save changes" }).click();
   await expect(olive.getByText("Give the project a name of 2 characters or more")).toBeVisible();
   await olive.getByLabel("Project name").fill("  Acme Help  ");
   // Saved from the keyboard, focus stays on Save while it saves and after.
-  await olive.getByRole("button", { name: "Save" }).focus();
+  await olive.getByRole("button", { name: "Save changes" }).focus();
   await olive.keyboard.press("Enter");
   await expect(olive.getByText("Project renamed")).toBeVisible();
-  await expect(olive.getByRole("button", { name: "Save" })).toBeFocused();
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeFocused();
   // The field shows the name as saved.
   await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
   await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
