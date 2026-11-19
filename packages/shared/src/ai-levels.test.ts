@@ -33,7 +33,17 @@ test("a level gives each role the server's model for it; Balanced is the server'
   const project = (level: string) => ({ plan: null, aiLevels: { answers: level }, aiModels: { answers: "acme/own" } });
   expect(["affordable", "balanced", "best", "custom"].map((level) => roleModel(project(level), "answers"))).toEqual(["anthropic/claude-haiku-5.5", DEFAULT_AI_MODEL, "anthropic/claude-opus-5.5", "acme/own"]);
   // Best is the largest model only where it writes: the same group's judging role stays on the middle one.
-  expect(roleModel(project("best"), "escalations")).toBe("anthropic/claude-sonnet-5.5");
+  const onBest = { plan: null, aiLevels: Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, "best"])), aiModels: {} };
+  expect(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, roleModel(onBest, role).replace("anthropic/claude-", "")]))).toEqual({
+    answers: "opus-5.5",
+    escalations: "sonnet-5.5",
+    support_draft: "opus-5.5",
+    support_summary: "sonnet-5.5",
+    changelog: "opus-5.5",
+    code_changes_decide: "sonnet-5.5",
+    code_changes_check: "opus-5.5",
+    code_changes: "opus-5.5",
+  });
   // A group with no level saved is on Custom where it has a model picked (one from before levels), else on Balanced.
   expect(roleModel({ plan: null, aiLevels: {}, aiModels: { answers: "acme/own" } }, "answers")).toBe("acme/own");
   expect(roleModel({ plan: null, aiLevels: {}, aiModels: {} }, "answers")).toBe(DEFAULT_AI_MODEL);
