@@ -98,6 +98,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "apiReferences.replace": () => ({ slug: "matrix-reference", spec: MATRIX_SPEC.replace("List matrix", "List them") }),
   "apiReferences.sync": () => ({ slug: "matrix-url-reference" }),
   "apiReferences.delete": () => ({ slug: "matrix-reference" }),
+  "githubRepositories.list": () => ({}),
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
   "groups.create": () => ({ name: "Enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] }),

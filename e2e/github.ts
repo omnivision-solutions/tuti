@@ -45,28 +45,29 @@ export async function nextInstall(admin: TestPage, installation: { id: number; a
 }
 
 /**
- * A pull request on acme/app (as connectGithub set it up) merging: GitHub (the fake) has it for the
- * App to read, and Tuti gets the signed webhook delivery.
+ * A pull request on acme/app (as connectGithub set it up; or `repo`, whose id is the installation's too) merging into
+ * `base` (main): GitHub (the fake) has it for the App to read, and Tuti gets the signed webhook delivery.
  */
 export async function mergePullRequest(
   installationId: number,
-  pr: { number: number; title: string; body?: string; files?: { filename: string; patch?: string }[] },
+  { repo = "acme/app", base = "main", ...pr }: { number: number; title: string; body?: string; files?: { filename: string; patch?: string }[]; repo?: string; base?: string },
 ) {
   const fake = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/pull-request`, {
     method: "POST",
     // Its merge commit's archive, as GitHub has one, so Autopilot reads the code (and checks its edits against it).
-    body: JSON.stringify({ repo: "acme/app", author: "octo", mergedAt: new Date().toISOString(), archived: true, ...pr }),
+    body: JSON.stringify({ repo, author: "octo", mergedAt: new Date().toISOString(), archived: true, ...pr }),
   });
   expect(fake.ok).toBe(true);
   const body = JSON.stringify({
     action: "closed",
     installation: { id: installationId },
-    repository: { id: installationId, full_name: "acme/app" },
+    repository: { id: installationId, full_name: repo },
     pull_request: {
+      base: { ref: base },
       number: pr.number,
       title: pr.title,
       body: pr.body ?? "",
-      html_url: `https://github.com/acme/app/pull/${pr.number}`,
+      html_url: `https://github.com/${repo}/pull/${pr.number}`,
       merged: true,
       merged_at: new Date().toISOString(),
       user: { login: "octo" },
@@ -74,6 +75,15 @@ export async function mergePullRequest(
     },
   });
   await deliver("pull_request", body);
+}
+
+/** Repository `repo` on GitHub (the fake): its default branch (`branch`, main) at a commit, with these files. */
+export async function repositoryFiles(repo: string, files: Record<string, string>, branch = "main") {
+  const response = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/repository`, {
+    method: "POST",
+    body: JSON.stringify({ repo, commit: `c-${randomInt(1_000_000_000)}`, branch, files }),
+  });
+  expect(response.ok).toBe(true);
 }
 
 /** A release published on acme/app (as connectGithub set it up): Tuti gets the signed webhook delivery. */

@@ -8,10 +8,13 @@ import { OperationError } from "./operations";
 import {
   deleteApiReference as deleteOperation,
   fetched,
+  fetchedFromGithub,
+  githubSource,
   replaceApiReference as replaceOperation,
   syncApiReference as syncOperation,
   updateApiReference,
 } from "./operations/api-references";
+import { listGithubRepositories } from "./operations/github";
 import { asTeam, call } from "./operations/run";
 
 /** The team's actions on an API reference's page (see the apiReferences.* operations). */
@@ -96,6 +99,62 @@ export async function previewApiReferenceUrl(projectSlug: string, url: string): 
     suggests = read.doc.title || new URL(address).hostname;
   });
   return result.error ? result : { suggests };
+}
+
+/**
+ * Settings' Source: the reference is read from this file on GitHub from now on, once it's read there. Only the parts
+ * given change (the repository, path or branch the team typed); the rest stay as the reference has them now.
+ */
+export async function changeApiReferenceGithub(
+  projectSlug: string,
+  slug: string,
+  source: { repoId?: number; path?: string; ref?: string },
+): Promise<FormState & { added?: number; removed?: number; changed?: boolean }> {
+  let answer: Awaited<ReturnType<typeof syncOperation.run>> | undefined;
+  const { repoId, path, ref } = source ?? {};
+  const github = { ...(repoId !== undefined && { repoId: Number(repoId) }), ...(path !== undefined && { path: String(path) }), ...(ref !== undefined && { ref: String(ref) }) };
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    answer = await call(syncOperation, context, { slug: String(slug), github });
+  });
+  if (result.error || !answer) {
+    return result;
+  }
+  return answer.changes ?? { error: answer.failure ?? "Another sync finished first. The page shows what it read." };
+}
+
+/** The add dialog's GitHub panel: the repositories the project added (githubRepositories.list), to pick one. */
+export async function listApiReferenceRepositories(projectSlug: string): Promise<FormState & { repositories?: { id: number; fullName: string }[] }> {
+  let repositories: { id: number; fullName: string }[] | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    ({ repositories } = await call(listGithubRepositories, context, {}));
+  });
+  return result.error ? result : { repositories };
+}
+
+/**
+ * "Fetch" in the add dialog's GitHub panel: reads the file as adding it would (one of the project's repositories, 5 MB),
+ * for the name it suggests and the branch it read (the repository's default one when none is given), or says why it
+ * can't be added. Nothing is stored. The repositories to pick from are githubRepositories.list's.
+ */
+export async function previewApiReferenceGithub(
+  projectSlug: string,
+  source: { repoId: number; path: string; ref?: string },
+): Promise<FormState & { suggests?: string; ref?: string }> {
+  let answer: { suggests: string; ref: string } | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    // As adding it would check it, before anything's read.
+    const checked = githubSource.safeParse({ repoId: Number(source?.repoId), path: String(source?.path ?? ""), ...(source?.ref ? { ref: String(source.ref) } : {}) });
+    if (!checked.success) {
+      throw new OperationError(400, "invalid_input", checked.error.issues[0]?.message ?? "Invalid input");
+    }
+    const file = await fetchedFromGithub(checked.data, context);
+    const read = readStorable(file.text);
+    if ("error" in read) {
+      throw new OperationError(400, "invalid_input", read.error);
+    }
+    answer = { suggests: read.doc.title || checked.data.path.replace(/^.*\//, "").replace(/\.[^.]+$/, ""), ref: file.ref };
+  });
+  return result.error ? result : answer!;
 }
 
 export async function deleteApiReference(projectSlug: string, slug: string): Promise<FormState> {

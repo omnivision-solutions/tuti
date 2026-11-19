@@ -850,7 +850,7 @@ widths, in light and dark (in development only).
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline
   button. An API reference's address (Settings' Source, for a URL) has its own outline Change, beside its field:
   changing it fetches and reads the new address first, a request out that can fail by itself, so it isn't held for
-  the page's Save.
+  the page's Save. A GitHub file's repository, file and branch share one outline Change, under them, for the same reason.
 - A control's parts read at 3:1 or more on what's under them, in light and dark: a switch's
   off track and its thumb, a progress bar's empty track (outlined, so one at 0 is seen to be empty).
   A setting or menu item the plan doesn't include looks like any other: no lock, no badge, not faded.

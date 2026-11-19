@@ -13,9 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useEditorSlot } from "@/components/use-editor-slot";
-import { type ApiReferenceSettings as Changes, changeApiReferenceUrl, saveApiReferenceSettings } from "@/server/api-references";
+import { type ApiReferenceSettings as Changes, changeApiReferenceGithub, changeApiReferenceUrl, saveApiReferenceSettings } from "@/server/api-references";
 
 /**
  * An API reference's Settings (docs/plan.md, A9). Its name, address and base address share one Save, in the
@@ -124,6 +125,109 @@ function usePicked<T>(saved: T) {
   };
 }
 
+/** A file on GitHub, as Settings shows and changes it. */
+type GithubFile = { repoId: number; path: string; ref: string };
+
+/**
+ * A GitHub source's repository, path and branch, changed here as a URL's address is: the new file is read before it's
+ * kept, so one that doesn't read is said under the fields and the reference stays as it was.
+ */
+function SourceGithub({ projectSlug, slug, file, repositories }: { projectSlug: string; slug: string; file: GithubFile; repositories: { id: number; fullName: string }[] }) {
+  // Only what's typed over what's stored, as SourceUrl's: a field left alone follows the page.
+  const [edits, setEdits] = useState<Partial<Record<keyof GithubFile, string>>>({});
+  const [error, setError] = useState<string>();
+  const [pending, startTransition] = useTransition();
+  const next = { repoId: Number(edits.repoId ?? file.repoId), path: (edits.path ?? file.path).trim(), ref: (edits.ref ?? file.ref).trim() };
+  const moved = next.repoId !== file.repoId || next.path !== file.path || next.ref !== file.ref;
+  const edit = (field: keyof GithubFile, value: string) => {
+    // A field typed back to what's stored is left alone again.
+    setEdits((was) => ({ ...was, [field]: value.trim() === String(file[field]) ? undefined : value }));
+    setError(undefined);
+  };
+  // The stored repository, even one the project has removed since (listed by its id).
+  const items = [
+    ...repositories.map((repo) => ({ value: String(repo.id), label: repo.fullName })),
+    ...(repositories.some((repo) => repo.id === file.repoId) ? [] : [{ value: String(file.repoId), label: "A repository the project removed" }]),
+  ];
+  const change = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!moved || !next.path || !next.ref || pending) {
+      return;
+    }
+    setError(undefined);
+    startTransition(async () => {
+      // Only what was typed: a field left alone is the reference's as it is on the server, a teammate's change included,
+      // never this page's copy of it (the operation keeps what isn't sent).
+      const typed = {
+        ...(edits.repoId !== undefined && { repoId: next.repoId }),
+        ...(edits.path !== undefined && { path: next.path }),
+        ...(edits.ref !== undefined && { ref: next.ref }),
+      };
+      const result = await changeApiReferenceGithub(projectSlug, slug, typed).catch(() => SAVE_FAILED as Awaited<ReturnType<typeof changeApiReferenceGithub>>);
+      if (result.error) {
+        setError(result.error);
+        document.getElementById("reference-source-path")?.focus();
+        return;
+      }
+      // Back to following what's stored, but for fields typed in again while this one was read.
+      setEdits((now) => Object.fromEntries(Object.entries(now).filter(([field, value]) => value !== undefined && value.trim() !== String(next[field as keyof GithubFile]))));
+      const what = [result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ");
+      toast.success(what ? `File changed: ${what}` : "File changed");
+    });
+  };
+  return (
+    <form onSubmit={change} className="flex flex-col gap-4">
+      <Field>
+        <FieldLabel id="reference-source-repository-label">Repository</FieldLabel>
+        <Select items={items} value={String(next.repoId)} onValueChange={(value) => edit("repoId", String(value))}>
+          <SelectTrigger id="reference-source-repository" className="w-full" aria-labelledby="reference-source-repository-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Field data-invalid={error ? true : undefined}>
+          <FieldLabel htmlFor="reference-source-path">File in the repository</FieldLabel>
+          <Input
+            id="reference-source-path"
+            value={edits.path ?? file.path}
+            maxLength={1000}
+            className="font-mono"
+            spellCheck={false}
+            autoCapitalize="off"
+            aria-invalid={error ? true : undefined}
+            aria-describedby="reference-source-github-note"
+            onChange={(event) => edit("path", event.target.value)}
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="reference-source-branch">Branch</FieldLabel>
+          <Input id="reference-source-branch" value={edits.ref ?? file.ref} maxLength={255} spellCheck={false} autoCapitalize="off" onChange={(event) => edit("ref", event.target.value)} />
+        </Field>
+      </div>
+      <Field>
+        {error ? (
+          <FieldError id="reference-source-github-note">{error}</FieldError>
+        ) : (
+          <FieldDescription id="reference-source-github-note">A new file is read before it’s kept, and read again when a pull request into its branch merges.</FieldDescription>
+        )}
+        <div className="flex justify-end">
+          <Button type="submit" variant="outline" disabled={pending || !moved || !next.path || !next.ref} focusableWhenDisabled>
+            {pending ? "Changing…" : "Change"}
+          </Button>
+        </div>
+      </Field>
+    </form>
+  );
+}
+
 export function ApiReferenceSettings({
   projectSlug,
   host,
@@ -137,8 +241,8 @@ export function ApiReferenceSettings({
   /** The help center's host, before the reference's address: "acme.tuti.so". */
   host: string;
   reference: { slug: string; name: string; baseUrl: string | null; treeStyle: TreeStyle; tryIt: boolean };
-  /** Where the spec is read from, as rows of words ("From", "Uploaded file"), and its kind ("upload"); a URL's address. */
-  source: { kind: string; rows: [string, string][]; url?: string | null };
+  /** Where the spec is read from, as rows of words ("From", "Uploaded file"), and its kind ("upload"); a URL's address, a GitHub file and the repositories it can move to. */
+  source: { kind: string; rows: [string, string][]; url?: string | null; github?: GithubFile; repositories?: { id: number; fullName: string }[] };
   /** In the team's order, with how many endpoints are listed under each. */
   groups: { key: string; name: string; endpoints: number }[];
   /** What the reader couldn't read, by kind: the first places of each. */
@@ -303,6 +407,9 @@ export function ApiReferenceSettings({
               ))}
             </dl>
             {source.kind === "url" && <SourceUrl projectSlug={projectSlug} slug={reference.slug} url={source.url ?? ""} />}
+            {source.kind === "github" && source.github && (
+              <SourceGithub projectSlug={projectSlug} slug={reference.slug} file={source.github} repositories={source.repositories ?? []} />
+            )}
             <div className="flex justify-end">
               <ApiReferenceSync projectSlug={projectSlug} slug={reference.slug} source={source.kind} maxBytes={maxBytes} inHeader={false} />
             </div>

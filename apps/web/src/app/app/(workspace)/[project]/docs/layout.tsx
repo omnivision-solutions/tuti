@@ -2,6 +2,8 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { CollectionIcon } from "@/components/collection-icon";
+import { githubConfig } from "@/lib/github";
+import { isAdminRole } from "@/lib/roles";
 import { DocsWorkspace } from "@/components/docs-tree";
 import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
@@ -40,6 +42,8 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
       access={access}
       parents={newCollectionParents(docs)}
       deleted={deleted}
+      admin={isAdminRole(membership.role)}
+      github={githubConfig() !== null}
     >
       {children}
     </DocsWorkspace>

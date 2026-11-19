@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getMembership } from "@/server/membership";
 import { OperationError } from "@/server/operations";
 import { getApiReference } from "@/server/operations/api-references";
+import { listGithubRepositories } from "@/server/operations/github";
 import { call } from "@/server/operations/run";
 import { getSession } from "@/server/session";
 
@@ -19,4 +20,13 @@ export async function loadReference(slug: string, referenceSlug: string) {
     }
     throw error;
   });
+}
+
+/** The project's GitHub repositories (githubRepositories.list): where a GitHub reference's Source can move it. */
+export async function loadRepositories(slug: string) {
+  const [session, membership] = await Promise.all([getSession(), getMembership(slug)]);
+  if (!session || !membership) {
+    notFound();
+  }
+  return (await call(listGithubRepositories, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, {})).repositories;
 }

@@ -5,12 +5,14 @@ import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/github/webhook/route";
+import TeamDocsLayout from "@/app/app/(workspace)/[project]/docs/layout";
 import { SIGNED_OUT } from "@/lib/read-access";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import * as actions from "./api-references";
 import { searchDocs } from "./docs-search";
-
 import { countSpecFetch, createApiReference, FETCHES_PER_MEMBER_PER_MINUTE, getApiReference, syncApiReference } from "./operations/api-references";
+import { listGithubRepositories } from "./operations/github";
 import { call } from "./operations/run";
 
 /**
@@ -201,6 +203,41 @@ describe("added from GitHub", () => {
 
   test("a repository id no repository can have is refused", async () => {
     await expect(add({ repoId: 2_147_483_648 })).rejects.toMatchObject({ status: 400, message: "That isn't a repository's id" });
+  });
+});
+
+describe("the dialog's GitHub panel", () => {
+  test("githubRepositories.list gives the project's repositories by name, with the ids adding one takes", async () => {
+    const elsewhere = await createProject(await signUp("Someone else"));
+    await prisma.githubInstallation.create({
+      data: { projectId: elsewhere.id, installationId: installationId + 300_000, accountLogin: "acme", createdById: owner.id, included: { create: { repoId: installationId + 300_000, fullName: "acme/aaa-theirs" } } },
+    });
+    expect(await call(listGithubRepositories, as(), {})).toEqual({ repositories: [repo, other] });
+    actAs(owner);
+    expect(await actions.listApiReferenceRepositories(project.slug)).toEqual({ repositories: [repo, other] });
+  });
+
+  test("the docs offer GitHub only on a server with its App, and its Settings link only to an admin", async () => {
+    const workspace = async () => {
+      const element = (await TeamDocsLayout({ params: Promise.resolve({ project: project.slug }), children: null } as never)) as { props: { admin: boolean; github: boolean } };
+      return { admin: element.props.admin, github: element.props.github };
+    };
+    actAs(owner);
+    expect(await workspace()).toEqual({ admin: true, github: true });
+    vi.stubEnv("GITHUB_APP_ID", "");
+    expect(await workspace()).toEqual({ admin: true, github: false });
+    await prisma.teamMember.updateMany({ where: { projectId: project.id }, data: { role: "MEMBER" } });
+    expect(await workspace()).toEqual({ admin: false, github: false });
+  });
+
+  test("Fetch reads the file as adding would: the name it suggests, the branch it read, and why one can't be read", async () => {
+    actAs(owner);
+    expect(await actions.previewApiReferenceGithub(project.slug, { repoId: other.id, path: "spec.json" })).toEqual({ suggests: "Acme API", ref: "trunk" });
+    expect(await actions.previewApiReferenceGithub(project.slug, { repoId: repo.id, path: "nope.json", ref: "main" })).toEqual({ error: `There's no file at nope.json on main in ${repo.fullName}.` });
+    expect(await actions.previewApiReferenceGithub(project.slug, { repoId: repo.id, path: "../x" })).toMatchObject({ error: expect.any(String) });
+    // Nothing is stored; the reads the team asked for are counted (not the refused path).
+    expect(await prisma.apiReference.count({ where: { projectId: project.id } })).toBe(0);
+    expect(await fetches()).toBe(2);
   });
 });
 
