@@ -1,7 +1,7 @@
 "use client";
 
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -36,19 +36,22 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  */
 export function PortalReaders({ projectSlug, readers }: { projectSlug: string; readers: Reader[] }) {
   const [adding, setAdding] = useState(false);
+  // While the dialog is adding it stays open (Escape, a click outside, ×), so a refusal isn't lost with it. A ref: state
+  // set inside the form's action would only show once the action is over.
+  const busy = useRef(false);
   return (
     <SettingsCard
       title="Readers"
       count={readers.length}
       action={
-        <Dialog open={adding} onOpenChange={setAdding}>
+        <Dialog open={adding} onOpenChange={(next) => (next || !busy.current) && setAdding(next)}>
           <DialogTrigger render={<Button variant="outline" size="sm" />}>
             <PlusIcon aria-hidden />
             Add readers
           </DialogTrigger>
           <DialogContent>
             {/* Inside the content, which is there only while it's open: each opening starts empty, with no error left. */}
-            <AddReadersForm projectSlug={projectSlug} onAdded={() => setAdding(false)} />
+            <AddReadersForm projectSlug={projectSlug} onBusy={(adding) => { busy.current = adding; }} onAdded={() => setAdding(false)} />
           </DialogContent>
         </Dialog>
       }
@@ -72,9 +75,10 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
   );
 }
 
-function AddReadersForm({ projectSlug, onAdded }: { projectSlug: string; onAdded: () => void }) {
+function AddReadersForm({ projectSlug, onBusy, onAdded }: { projectSlug: string; onBusy: (adding: boolean) => void; onAdded: () => void }) {
   const [state, action, pending] = useActionState(async (prev: { error?: string }, formData: FormData) => {
-    const result = await addPortalReaders(projectSlug, prev, formData);
+    onBusy(true);
+    const result = await addPortalReaders(projectSlug, prev, formData).finally(() => onBusy(false));
     if (!result.error) {
       const added = result.added ?? [];
       const people = added.filter((entry) => !entry.startsWith("@")).length;
@@ -117,7 +121,7 @@ function AddReadersForm({ projectSlug, onAdded }: { projectSlug: string; onAdded
         {state.error && <FieldError>{state.error}</FieldError>}
       </Field>
       <DialogFooter>
-        <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+        <DialogClose render={<Button type="button" variant="outline" disabled={pending} />}>Cancel</DialogClose>
         <Button type="submit" disabled={pending} focusableWhenDisabled>
           Add readers
         </Button>

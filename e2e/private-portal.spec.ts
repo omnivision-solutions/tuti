@@ -131,9 +131,23 @@ test("the team lets someone outside it read the private portal by email: they're
   // A whole domain too, but not one anyone can get an address at: the dialog stays open and says why.
   await owner.getByRole("button", { name: "Add readers" }).click();
   await expect(add.getByLabel("Email addresses")).toHaveValue("");
+  // While it's adding, the dialog can't be closed (here the request is held back), so the refusal isn't lost with it.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route(`**/app/${slug}/settings/access`, async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.continue();
+  });
   await add.getByLabel("Email addresses").fill("@gmail.com");
   await add.getByRole("button", { name: "Add readers" }).click();
+  await expect(add.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await owner.keyboard.press("Escape");
+  await expect(add).toBeVisible();
+  release();
   await expect(add.getByText("Anyone can get an @gmail.com address: add people from it one by one")).toBeVisible();
+  await owner.unroute(`**/app/${slug}/settings/access`);
   await expect(add.getByLabel("Email addresses")).toHaveValue("@gmail.com");
   // Closed and opened again, it starts empty, without the last error.
   await add.getByRole("button", { name: "Cancel" }).click();
