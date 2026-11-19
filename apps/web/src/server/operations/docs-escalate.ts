@@ -30,10 +30,26 @@ const SUMMARY_TIMEOUT_MS = 8000;
 const MAX_SUMMARY = 500;
 
 export const escalateFields = z.object({
-  questionId: z.string().trim().min(1, "Which question?").max(100),
-  email: emailAddress,
+  questionId: z
+    .string()
+    .trim()
+    .min(1, "Which question?")
+    .max(100)
+    .describe("The question's `id` from docs.ask: one this caller asked in the last hour (404 otherwise), passed on once (409 `already_escalated` after)")
+    .meta({ examples: ["cm3q5x0a1000008l4h2gk7v9e"] }),
+  email: emailAddress
+    .describe(
+      "For a key: the address of the person asking, whom the team's replies are emailed to. Refused (409 `replies_not_emailed`) while replies can't be emailed: the server doesn't send support email, the project has no support address, or the address marked its email as spam. Signed in, the user acting asks",
+    )
+    .meta({ examples: ["e2e-reader@example.com"] }),
   // Plain text: the inbox shows it as text, never as markup.
-  note: z.string().trim().max(MAX_ESCALATION_NOTE, `Keep the note under ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters`).optional(),
+  note: z
+    .string()
+    .trim()
+    .max(MAX_ESCALATION_NOTE, `Keep the note under ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters`)
+    .optional()
+    .describe(`What they add for the team, as plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters`)
+    .meta({ examples: ["I need this for an audit on Friday."] }),
 });
 
 /** Whether "Ask a person" is on: the inbox is on, and the team didn't turn Messages off in the widget (Customize → Widget), where the reply shows. */
@@ -270,13 +286,27 @@ async function toConversation(
 export const escalateDocs = defineOperation({
   name: "docs.escalate",
   title: "Pass a question to the team",
-  summary: `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox with the question and the note (plain text, up to ${MAX_ESCALATION_NOTE.toLocaleString("en")} characters) from \`email\` (a key's) or the user acting, the AI's answer with the articles it cited, and a note for the team with a short AI summary. Only for a question this caller asked in the last hour, once; refused (403) while the support inbox is off or Messages is hidden in the widget, and for a key (409) while replies can't be emailed (the server doesn't send support email, the project has no support address, or the address marked its email as spam)`,
+  summary:
+    "Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox. Refused (403) while the support inbox is off or Messages is hidden in the widget. Counted against the hourly limits on emails sent (429)",
   method: "POST",
   path: "/docs/escalate",
   scope: "write",
   access: "anyone",
   errors: [404, 409, 429],
   input: escalateFields,
+  output: z
+    .object({
+      id: z.string().describe("The question's id").meta({ examples: ["cm3q5x0a1000008l4h2gk7v9e"] }),
+      escalated: z.literal(true).describe("Passed to the team").meta({ examples: [true] }),
+      conversation: z
+        .number()
+        .int()
+        .describe(
+          "The conversation's number in the support inbox: the question and the note from them, the AI's answer with the articles it cited, and a note for the team with a short AI summary",
+        )
+        .meta({ examples: [42] }),
+    })
+    .describe("The conversation it started"),
   example: { questionId: "cm3q5x0a1000008l4h2gk7v9e", email: "ada@example.com", note: "I need this for an audit on Friday." },
   run: async ({ actor, projectId }, input) => {
     // An API key acts for the team, and is nobody: the conversation is with the address given.

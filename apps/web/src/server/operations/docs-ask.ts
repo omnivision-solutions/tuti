@@ -42,9 +42,23 @@ const EARLIER_ANSWER_LENGTH = 1500;
 export const answersEnabled = () => aiEnabled() && embeddingsEnabled();
 
 export const askFields = z.object({
-  q: z.string().trim().min(1, "Type a question").max(MAX_QUESTION, `Up to ${MAX_QUESTION} characters`),
-  /** The question this follows up on (its `id`), asked by the same asker: the conversation so far is its context. */
-  followUpTo: z.string().trim().min(1).max(100).optional(),
+  q: z
+    .string()
+    .trim()
+    .min(1, "Type a question")
+    .max(MAX_QUESTION, `Up to ${MAX_QUESTION} characters`)
+    .describe(`The question, up to ${MAX_QUESTION} characters`)
+    .meta({ examples: ["How do I invite my team?"] }),
+  followUpTo: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      `To ask a follow-up: the \`id\` of the answer it follows (one this caller asked; 404 otherwise). The last ${MAX_EARLIER_TURNS} turns are its context, for finding what to answer from and for the AI, which still answers only from the articles`,
+    )
+    .meta({ examples: ["cm3q5x0a1000008l4h2gk7v9e"] }),
 });
 
 /** One earlier turn of a conversation: what was asked, and the answer (null: it had none). */
@@ -304,14 +318,38 @@ export async function rateAnswer(projectId: string, questionId: string, helpful:
 export const askDocs = defineOperation({
   name: "docs.ask",
   title: "Ask the docs",
-  summary:
-    "Ask the docs a question: an AI answer from the published articles with the articles it cites, `no_answer` (“I don't know”) when they don't cover it, `off_limits` when it names one of the team's off-limits topics (see assistant.update; the AI isn't asked), or `unavailable` with the closest articles when the project is out of AI credits (the AI isn't asked). To ask a follow-up, pass `followUpTo`: the `id` of the answer it follows (one this key asked); the last 4 turns are its context, for finding what to answer from and for the AI, which still answers only from the articles. Off (503) unless the server has AI and embeddings set up; up to 20 questions an hour per key",
+  summary: `Ask the docs a question: an AI answer from the published articles, citing them, or “I don't know”. Off (503) unless the server has AI and embeddings set up. Up to ${ASKS_PER_ASKER_PER_HOUR} questions an hour per key, and ${ASKS_PER_PROJECT_PER_HOUR} per project (429)`,
   method: "POST",
   path: "/docs/ask",
   scope: "read",
   access: "anyone",
   errors: [404, 429, 503],
   input: askFields,
+  output: z
+    .object({
+      id: z.string().describe("The question's id: pass it as `followUpTo` to ask a follow-up, or to docs.escalate to pass it to the team").meta({ examples: ["cm3q5x0a1000008l4h2gk7v9e"] }),
+      status: z
+        .enum(["answered", "no_answer", "off_limits", "failed", "unavailable"])
+        .describe(
+          "`answered`; `no_answer` (“I don't know”): the docs don't cover it; `off_limits`: it names one of the team's off-limits topics (see assistant.update), so the AI isn't asked; `failed`: the AI didn't answer in time; `unavailable`: the project is out of AI credits, so the AI isn't asked. With `failed` and `unavailable`, `sources` are the closest articles",
+        )
+        .meta({ examples: ["answered"] }),
+      answer: z
+        .string()
+        .nullable()
+        .describe("The answer, as plain text: paragraphs separated by blank lines, “- ” list items; null without one")
+        .meta({ examples: ["Owners and admins invite teammates from the Team page: enter their email and pick a role."] }),
+      sources: z
+        .array(
+          z.object({
+            slug: z.string().describe("The article's slug (an API reference's operation: its path under /docs)").meta({ examples: ["invite-your-team"] }),
+            title: z.string().describe("Its title").meta({ examples: ["Invite your team"] }),
+            url: z.string().nullable().describe("Its page; null for an AI-only article, which has none, so the answer names it without a link").meta({ examples: ["https://help.example.com/docs/invite-your-team"] }),
+          }),
+        )
+        .describe("The articles the answer cites"),
+    })
+    .describe("The answer"),
   example: { q: "And on mobile?", followUpTo: "cm3q5x0a1000008l4h2gk7v9e" },
   run: async ({ actor, projectId }, input) =>
     answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API", await actorReader(actor, projectId), {

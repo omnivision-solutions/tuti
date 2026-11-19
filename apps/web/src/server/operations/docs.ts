@@ -67,36 +67,50 @@ const toListing = (listing: Listing) => listing.toUpperCase() as ArticleListing;
 const SERVED: ArticleListing[] = ["EVERYWHERE", "UNLISTED"];
 
 const slug = z.string().trim().min(1).max(80);
+/** An article's slug, as an operation's path names it. */
+const articleSlug = slug.describe("The article's slug: the end of its address, /docs/<slug>").meta({ examples: ["getting-started"] });
+const collectionSlug = slug.describe("The collection's slug").meta({ examples: ["basics"] });
+const tabSlug = slug.describe("The tab's slug: the end of its address, /docs/<slug>").meta({ examples: ["guides"] });
+/** Rich content: the editor's JSON document. */
+const docExample = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Create a board, then share your portal." }] }] };
 const articleFields = {
-  title: z.string().trim().min(3, "Title is too short").max(MAX_ARTICLE_TITLE),
-  /** Plain text; ignored when `content` is sent. */
-  body: z.string().max(MAX_ARTICLE_LENGTH).optional(),
-  /** Rich content (the editor's JSON, "article" profile). */
-  content: z.unknown().optional(),
-  /** The collection's slug, or null for none. */
-  collection: slug.nullable().optional(),
-  /** Show "Updated <date>" on the portal when it's edited after it was published (default true). */
-  showUpdatedDate: z.boolean().optional(),
-  /**
-   * Where it's served once published (default everywhere): `everywhere`; `unlisted` (readable at its
-   * link, in no list or search; AI answers cite it); `hidden` (nowhere public); `ai_only` (only a
-   * source for AI answers, named without a link).
-   */
-  listing: z.enum(LISTINGS).optional(),
-  /** The meta description: under its title in search engines' results (up to 300 characters; empty: from the text). Changes at once. */
-  description: z.string().trim().max(MAX_ARTICLE_DESCRIPTION, `The description is up to ${MAX_ARTICLE_DESCRIPTION} characters`).optional(),
-  /**
-   * Words readers search for that the text doesn't have (up to 20, of up to 60 characters; the same
-   * word twice, in any case, is kept once): docs search matches them like the text, and AI answers
-   * find the article by them. Replaces the ones it has; changes at once.
-   */
+  title: z.string().trim().min(3, "Title is too short").max(MAX_ARTICLE_TITLE).describe(`Its title, 3 to ${MAX_ARTICLE_TITLE} characters`).meta({ examples: ["Getting started"] }),
+  body: z
+    .string()
+    .max(MAX_ARTICLE_LENGTH)
+    .optional()
+    .describe("Its text as plain text: blank lines between paragraphs. Ignored when `content` is sent")
+    .meta({ examples: ["Create a board, then share your portal."] }),
+  content: z.unknown().optional().describe("Its text as rich content: the editor's JSON document (the article profile), as articles.get returns it"),
+  collection: slug.nullable().optional().describe("The slug of the collection it's in, or null for none").meta({ examples: ["basics"] }),
+  showUpdatedDate: z.boolean().optional().describe("Show “Updated <date>” on the portal when it's edited after it was published (default true)"),
+  listing: z
+    .enum(LISTINGS)
+    .optional()
+    .describe(
+      "Where it's served once published: `everywhere` (the default); `unlisted` (readable at its link, in no list or search; AI answers cite it); `hidden` (nowhere public); `ai_only` (only a source for AI answers, named without a link)",
+    ),
+  description: z
+    .string()
+    .trim()
+    .max(MAX_ARTICLE_DESCRIPTION, `The description is up to ${MAX_ARTICLE_DESCRIPTION} characters`)
+    .optional()
+    .describe(`The meta description, under its title in search engines' results (up to ${MAX_ARTICLE_DESCRIPTION} characters; empty: from the text)`),
   keywords: z
     .array(z.string().trim().min(1).max(MAX_KEYWORD, `Keywords are up to ${MAX_KEYWORD} characters`))
     .max(MAX_KEYWORDS, `Up to ${MAX_KEYWORDS} keywords`)
     .transform((keywords) => keywords.filter((k, i) => keywords.findIndex((other) => other.toLowerCase() === k.toLowerCase()) === i))
-    .optional(),
-  /** "Block search indexing": search engines are asked not to list it, and it's left out of the sitemap, llms.txt and llms-full.txt (readers still find it in the docs and their search). Changes at once. */
-  noindex: z.boolean().optional(),
+    .optional()
+    .describe(
+      `Words readers search for that the text doesn't have (up to ${MAX_KEYWORDS}, each up to ${MAX_KEYWORD} characters; the same word twice, in any case, is kept once): searched like the text by docs search, and AI answers find the article by them. Replaces the ones it has`,
+    )
+    .meta({ examples: [["invite", "teammates"]] }),
+  noindex: z
+    .boolean()
+    .optional()
+    .describe(
+      "Block search indexing: search engines are asked not to list it, and it's left out of the sitemap, llms.txt and llms-full.txt (readers still find it in the docs and their search)",
+    ),
 };
 
 /** A slug the team picks for an article or an API reference (see customDocsSlug). */
@@ -109,29 +123,92 @@ export const customSlug = z
 
 /** "Who can read" on tabs.*, collections.* and articles.* (see accessChange). */
 const accessFields = {
-  /**
-   * Who may read it (and what's in it), on top of what's above it: `inherit` (what the level above
-   * allows; for a tab, everyone who may read the portal), `signed_in` (anyone signed in on the
-   * portal) or `groups` (readers in one of `groups`; with none, only the team). The team reads everything.
-   */
-  access: z.enum(ACCESSES).optional(),
-  /**
-   * With `access: "groups"`, the groups (keys: groups.list); left out, the ones it has. Without
-   * `access`, groups alone set it: some make it `groups`, none `inherit` (as collections' `groups` did).
-   */
+  access: z
+    .enum(ACCESSES)
+    .optional()
+    .describe(
+      "Who may read it, and so what's in it, on top of the levels above it: `inherit` (the default: what the level above allows; for a tab, everyone who may read the portal), `signed_in` (anyone signed in on the portal) or `groups` (readers in one of `groups`, besides the team; with none, only the team). The team reads everything",
+    ),
   groups: z
     .array(readerGroup)
     .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
     .transform((groups) => [...new Set(groups)])
-    .optional(),
-  /**
-   * What people it isn't for see of it: `inherit` (the default: what the level above says; with
-   * nothing above saying, `hide`), `lock` (its title, listed with a lock; its page asks them to sign
-   * in or says they don't have access, never its content) or `hide` (nothing: not listed, and its
-   * link is not found).
-   */
-  noAccess: z.enum(NO_ACCESSES).optional(),
+    .optional()
+    .describe(
+      `With \`access: "groups"\`, the keys of the project's reader groups (see groups.list), up to ${MAX_READER_GROUPS}; left out, the ones it has. Without \`access\`, sending groups alone means they make it \`groups\` (some) or \`inherit\` (none)`,
+    )
+    .meta({ examples: [["customers"]] }),
+  noAccess: z
+    .enum(NO_ACCESSES)
+    .optional()
+    .describe(
+      "What people it isn't for see of it: `inherit` (the default: what the level above says; with nothing above saying, as for a tab, `hide`: hidden), `lock` (its title or name, listed with a lock; its page asks them to sign in or says they don't have access, never its content, and nothing in it) or `hide` (nothing: not listed, and its link is not found)",
+    ),
 };
+
+/** "Who can read" as an article, collection or tab returns it (accessView). */
+const accessOutput = {
+  access: z.enum(ACCESSES).describe("Who may read it, on top of the levels above it: `inherit`, `signed_in` or `groups` (readers in one of `groups`)").meta({ examples: ["inherit"] }),
+  groups: z.array(z.string()).describe("With `groups` access, the keys of the reader groups that may read it").meta({ examples: [[]] }),
+  noAccess: z.enum(NO_ACCESSES).describe("What people it isn't for see of it: `inherit`, `lock` (listed with a lock) or `hide`").meta({ examples: ["inherit"] }),
+};
+
+const isoTime = (what: string) => z.string().describe(`${what} (ISO 8601)`).meta({ examples: ["2026-11-02T09:30:00.000Z"] });
+
+/** A collection as an article or a version names it. */
+const collectionRef = z
+  .object({
+    slug: z.string().describe("The collection's slug").meta({ examples: ["basics"] }),
+    name: z.string().describe("The collection's name").meta({ examples: ["Basics"] }),
+  })
+  .nullable();
+
+/** articleView's result. */
+const articleOutput = z
+  .object({
+    slug: z
+      .string()
+      .describe("Its slug: the end of its address, /docs/<slug>. A draft's follows its title unless the team set it; a published one keeps it")
+      .meta({ examples: ["getting-started"] }),
+    title: z.string().describe("Its title").meta({ examples: ["Getting started"] }),
+    status: z.enum(["published", "draft"]).describe("`published` on the portal, or a `draft` only the team sees").meta({ examples: ["published"] }),
+    publishedAt: z.string().nullable().describe("When it was published (ISO 8601); null for a draft").meta({ examples: ["2026-11-02T09:30:00.000Z"] }),
+    showUpdatedDate: z.boolean().describe("Whether the portal shows “Updated <date>” once it's edited after it was published").meta({ examples: [true] }),
+    listing: z
+      .enum(LISTINGS)
+      .describe("Where it's served once published: `everywhere`, `unlisted` (at its link only), `hidden` (nowhere public) or `ai_only` (only a source for AI answers)")
+      .meta({ examples: ["everywhere"] }),
+    deletedAt: z.string().optional().describe("When it was deleted (ISO 8601): only in the list of deleted articles"),
+    collection: collectionRef.describe("The collection it's in, or null for none").meta({ examples: [{ slug: "basics", name: "Basics" }] }),
+    order: z.number().int().describe("Its place among the articles in its collection (or in none), 0 first: readers list them by this, then by title").meta({ examples: [0] }),
+    body: z.string().describe("Its text as plain text").meta({ examples: ["Create a board, then share your portal."] }),
+    content: z.record(z.string(), z.unknown()).describe("Its text as rich content: the editor's JSON document").meta({ examples: [docExample] }),
+    url: z.string().describe("Its page on the portal").meta({ examples: ["https://help.example.com/docs/getting-started"] }),
+    access: accessOutput.access.optional().describe("Only for the team: who may read it (changes at once, like the listing): `inherit`, `signed_in` or `groups`"),
+    groups: accessOutput.groups.optional().describe("Only for the team: with `groups` access, the keys of the reader groups that may read it"),
+    noAccess: accessOutput.noAccess.optional().describe("Only for the team: what people it isn't for see of it: `inherit`, `lock` or `hide`"),
+    customSlug: z.boolean().optional().describe("Only for the team: whether the team set its slug (else it comes from the title)").meta({ examples: [false] }),
+    description: z.string().optional().describe("Only for the team: its meta description for search engines (empty: from the text)").meta({ examples: [""] }),
+    keywords: z.array(z.string()).optional().describe("Only for the team: words docs search and AI answers find it by besides its text").meta({ examples: [["onboarding"]] }),
+    noindex: z.boolean().optional().describe("Only for the team: whether search engines are asked not to list it").meta({ examples: [false] }),
+    changes: z
+      .object({
+        title: z.string().describe("The title saved").meta({ examples: ["Getting started"] }),
+        body: z.string().describe("The text saved, as plain text").meta({ examples: ["Create a board, invite your team, then share your portal."] }),
+        content: z.record(z.string(), z.unknown()).describe("The text saved, as rich content").meta({ examples: [docExample] }),
+        collection: collectionRef.describe("The collection saved, or null for none").meta({ examples: [{ slug: "basics", name: "Basics" }] }),
+        savedAt: isoTime("When they were last saved: send it as `savedAt` to publish or discard only these"),
+      })
+      .nullable()
+      .optional()
+      .describe(
+        "Only for the team: a published article's saved changes that readers don't see yet (title, text, collection), until articles.publishChanges or articles.discardChanges; null when there are none",
+      )
+      .meta({ examples: [null] }),
+    createdAt: isoTime("When it was written"),
+    updatedAt: isoTime("When it was last changed"),
+  })
+  .meta({ id: "Article", description: "A docs article. The team gets who can read it, its settings and its unpublished changes too" });
 
 /**
  * What an operation's `access`, `groups` and `noAccess` change (undefined: none was sent): the
@@ -167,15 +244,36 @@ const accessView = (level: Level & { noAccess: NoAccess }) => ({
 });
 
 const collectionFields = {
-  name: collectionName,
-  description: z.string().trim().max(300),
-  /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. See checkIcon. */
+  name: collectionName.describe("Its name, up to 60 characters; its slug follows it").meta({ examples: ["Getting started"] }),
+  description: z.string().trim().max(300).describe("A line under its name, up to 300 characters").meta({ examples: ["The basics, in five minutes."] }),
+  /** See checkIcon. */
   icon: z
     .string()
     .trim()
     .transform((name) => name || null)
-    .nullable(),
+    .nullable()
+    .describe("Names a Lucide icon (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none")
+    .meta({ examples: ["rocket"] }),
 };
+
+/** collectionView's result. */
+const collectionOutput = z
+  .object({
+    slug: z.string().describe("Its slug, from its name").meta({ examples: ["getting-started"] }),
+    name: z.string().describe("Its name").meta({ examples: ["Getting started"] }),
+    description: z.string().describe("The line under its name; empty for none").meta({ examples: ["The basics, in five minutes."] }),
+    icon: z.string().nullable().describe("Its Lucide icon's name, or null for none").meta({ examples: ["rocket"] }),
+    ...accessOutput,
+    parent: z.string().nullable().describe("The slug of the collection it's in, or null at the top level").meta({ examples: [null] }),
+    tab: z
+      .string()
+      .nullable()
+      .describe("The slug of the tab it's in (a collection in another is in its top-level one's), or null if the docs have no tabs")
+      .meta({ examples: ["guides"] }),
+    order: z.number().int().describe("Its place among its siblings, 0 first: readers list collections in this order").meta({ examples: [0] }),
+    articles: z.number().int().describe("How many articles are in it, drafts included (not those in the collections in it)").meta({ examples: [4] }),
+  })
+  .meta({ id: "Collection", description: "A docs collection: articles grouped under a name, in a tab or in another collection" });
 
 /**
  * Refuses an icon the installed Lucide doesn't have, unless it's the one the collection has
@@ -786,17 +884,27 @@ export async function articleRevisions(articleId: string) {
 export const listArticles = defineOperation({
   name: "articles.list",
   title: "List articles",
-  summary:
-    "List docs articles by title: published ones (listed everywhere; the team sees every listing), the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
+  summary: "List docs articles, a page at a time: published ones by title, or for the team its drafts or the deleted articles it can still restore",
   method: "GET",
   path: "/articles",
   scope: "read",
   access: "anyone",
   input: z.object({
-    status: z.enum(["published", "draft", "deleted"]).default("published"),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-    cursor: z.coerce.number().int().min(0).default(0),
+    status: z
+      .enum(["published", "draft", "deleted"])
+      .default("published")
+      .describe(
+        `\`published\` (the default): by title, those listed everywhere (the team sees every listing); \`draft\`: the team's drafts, latest edited first; \`deleted\`: those the team can still restore (for ${DELETED_ARTICLE_DAYS} days), latest deleted first. Only the team sees drafts and deleted ones`,
+      ),
+    limit: z.coerce.number().int().min(1).max(100).default(50).describe("How many to return, 1 to 100 (default 50)"),
+    cursor: z.coerce.number().int().min(0).default(0).describe("Where to start: the `nextCursor` of the page before"),
   }),
+  output: z
+    .object({
+      articles: z.array(articleOutput).describe("The articles on this page"),
+      nextCursor: z.string().nullable().describe("Send it as `cursor` for the next page; null when there are no more").meta({ examples: ["20"] }),
+    })
+    .describe("A page of articles"),
   example: { status: "published", limit: 20 },
   run: async ({ actor, projectId }, input) => {
     const team = await isTeam(actor, projectId);
@@ -831,13 +939,13 @@ export const listArticles = defineOperation({
 export const getArticle = defineOperation({
   name: "articles.get",
   title: "Get an article",
-  summary:
-    "Get a docs article by its slug (drafts, hidden and AI-only articles only for the team). The team also gets its unpublished `changes`",
+  summary: "Get a docs article by its slug. Drafts, hidden and AI-only articles only for the team, which also gets its unpublished `changes`",
   method: "GET",
   path: "/articles/{slug}",
   scope: "read",
   access: "anyone",
-  input: z.object({ slug }),
+  input: z.object({ slug: articleSlug }),
+  output: articleOutput.describe("The article"),
   run: async ({ actor, projectId }, input) => {
     const [article, team] = await Promise.all([findArticle(projectId, input.slug), isTeam(actor, projectId)]);
     // An article without a page (a draft, hidden or AI only) is as good as missing to everyone but the team.
@@ -855,15 +963,34 @@ export const getArticle = defineOperation({
 export const searchArticles = defineOperation({
   name: "articles.search",
   title: "Search articles",
-  summary: "Search the published docs articles: best matches first, each with the passage that matched. Each word also matches the words it starts (\"sig\" finds \"signing\"), so it works as someone types",
+  summary: "Search the published docs articles: best matches first, at most `limit`, each with the passage that matched",
   method: "GET",
   path: "/search/articles",
   scope: "read",
   access: "anyone",
   input: z.object({
-    q: z.string().trim().min(1, "Type something to search for").max(200),
-    limit: z.coerce.number().int().min(1).max(20).default(10),
+    q: z
+      .string()
+      .trim()
+      .min(1, "Type something to search for")
+      .max(200)
+      .describe("What to search for, up to 200 characters. Each word also matches the words it starts (\"sig\" finds \"signing\"), so it works as someone types"),
+    limit: z.coerce.number().int().min(1).max(20).default(10).describe("How many results at most, 1 to 20 (default 10)"),
   }),
+  output: z
+    .object({
+      results: z
+        .array(
+          z.object({
+            slug: z.string().describe("The article's slug").meta({ examples: ["invite-your-team"] }),
+            title: z.string().describe("The article's title").meta({ examples: ["Invite your team"] }),
+            snippet: z.string().describe("The passage that matched").meta({ examples: ["Owners and admins invite teammates from the Team page."] }),
+            url: z.string().describe("The article's page on the portal").meta({ examples: ["https://help.example.com/docs/invite-your-team"] }),
+          }),
+        )
+        .describe("The articles found, best matches first"),
+    })
+    .describe("What the search found"),
   example: { q: "invite my team", limit: 5 },
   run: async ({ actor, projectId }, input) => {
     const [results, portal] = await Promise.all([searchDocs(projectId, input.q, input.limit, await actorReader(actor, projectId)), portalOf(projectId)]);
@@ -874,8 +1001,7 @@ export const searchArticles = defineOperation({
 export const createArticle = defineOperation({
   name: "articles.create",
   title: "Create an article",
-  summary:
-    "Write a docs article (a draft until it's published); its slug comes from the title, unless you set one (`slug`: lowercase letters, digits and hyphens; refused if it's taken, never changed). `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`), and `noAccess` what people it isn't for see of it (`inherit`, the default: as its collection; `lock`: its title with a lock, never its text; or `hide`). `description`, `keywords` and `noindex` as in articles.update",
+  summary: "Write a docs article: a draft until it's published (articles.publish). Who can read it once it's published is on top of its collection and tab",
   method: "POST",
   path: "/articles",
   scope: "write",
@@ -884,9 +1010,14 @@ export const createArticle = defineOperation({
   input: z.object({
     ...articleFields,
     ...accessFields,
-    /** The end of its URL (/docs/<slug>) instead of one from the title: lowercase letters, digits and hyphens. */
-    slug: customSlug.optional(),
+    slug: customSlug
+      .optional()
+      .describe(
+        "The end of its address (/docs/<slug>) instead of one from the title: lowercase letters, digits and hyphens. Refused (409) if it's taken; never changed when the title is (articles.update's `newSlug` changes it)",
+      )
+      .meta({ examples: ["getting-started"] }),
   }),
+  output: articleOutput.describe("The article, as a draft"),
   example: { title: "Getting started", body: "Create a board, then share your portal.", collection: "basics" },
   run: async ({ actor, projectId }, input) => {
     // Before anything is written: a lookup failing after would fail a request that did its work.
@@ -928,54 +1059,83 @@ export const createArticle = defineOperation({
 });
 
 const updateInput = z.object({
-  slug,
+  slug: articleSlug,
   ...articleFields,
   ...accessFields,
   title: articleFields.title.optional(),
-  /** A new slug, set by you (see articles.create's `slug`); null: back to one from the title. */
-  newSlug: customSlug.nullable().optional(),
-  /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
-  publish: z.boolean().optional(),
-  /**
-   * The version (its id from articles.revisions) the change was made on. Someone's text saved since: a 409, except that
-   * a text made before Autopilot's edits saved since is applied by section onto the newest when they changed other
-   * sections (the same section: a 409). A title or collection sent as it was at that version keeps the newest; one
-   * changed since by someone else too is a 409. With `publish: true` on a published article it must be the newest
-   * (else a 409): publishing goes only through a version you saw. Required for a new text, or to publish, while
-   * Autopilot's edits wait in the article's unpublished changes (without it, a 409), so they're never overwritten or
-   * published unseen.
-   */
-  revision: z.string().min(1).optional(),
-  /**
-   * After such a 409: the newest version you were shown (still the newest). The text is applied by section onto it,
-   * yours where you both changed a section (merged by hand), and Autopilot's edits it writes over are dismissed.
-   */
-  seen: z.string().min(1).optional(),
-  /**
-   * The version an earlier save of this same text left (its `revision` in that save's result), when that save merged
-   * it onto Autopilot's edits: it's the saver's own, not someone else's, so later edits are layered onto it by section.
-   */
-  own: z.string().min(1).optional(),
-  /**
-   * The editor's: the sections of the text its user changed since the version it last had (`own`, else `revision`), by
-   * key (a heading's text and how often it came before). Only those replace the newest text's; one someone changed
-   * since that version is a 409 (unless `seen` is the newest), and so is text that moves sections around. Without it,
-   * the text is merged by version.
-   */
-  edited: z.array(z.string().max(2_000)).max(1_000).optional(),
+  listing: articleFields.listing.describe(
+    "Where it's served: `everywhere`, `unlisted` (readable at its link, in no list or search; AI answers cite it), `hidden` (nowhere public) or `ai_only` (only a source for AI answers). Changes at once, on a published article too",
+  ),
+  newSlug: customSlug
+    .nullable()
+    .optional()
+    .describe(
+      "Sets a new end of its address, by you (as `slug` in articles.create), on a published article too: the old address redirects. Null goes back to one from the title: a draft's follows it again; a published one keeps the one it has",
+    )
+    .meta({ examples: ["invite-your-team"] }),
+  publish: z
+    .boolean()
+    .optional()
+    .describe("On a published article: make the changes live at once, with any saved before, instead of keeping them unpublished (refused, 402, past the plan's limit; saving alone always works). Ignored on a draft"),
+  revision: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "The version (its id from articles.revisions) the change was made on. Someone's text saved since: a 409, except that a text made before Autopilot's edits saved since is applied by section onto the newest when they changed other sections (the same section: a 409). A title or collection sent as it was at that version keeps the newest; one changed since by someone else too is a 409. With `publish: true` on a published article it must be the newest (else a 409): publishing goes only through a version you saw. Required for a new text, or to publish, while Autopilot's edits wait in the article's unpublished changes (without it, a 409), so they're never overwritten or published unseen",
+    )
+    .meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+  seen: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "After such a 409: the newest version you were shown (still the newest). The text is applied by section onto it, yours where you both changed a section (merged by hand), and Autopilot's edits it writes over are dismissed",
+    ),
+  own: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "The version an earlier save of this same text left (its `revision` in that save's result), when that save merged it onto Autopilot's edits: it's the saver's own, not someone else's, so later edits are layered onto it by section",
+    ),
+  edited: z
+    .array(z.string().max(2_000))
+    .max(1_000)
+    .optional()
+    .describe(
+      "The editor's: the sections of the text its user changed since the version it last had (`own`, else `revision`), by key (a heading's text and how often it came before). Only those replace the newest text's; one someone changed since that version is a 409 (unless `seen` is the newest), and so is text that moves sections around. Without it, the text is merged by version",
+    ),
 });
 
 export const updateArticle = defineOperation({
   name: "articles.update",
   title: "Update an article",
   summary:
-    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before (refused, 402 `article_limit`, while the project has more published articles than its plan allows; saving alone always works). The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
+    "Change a docs article; each save is kept as a version (articles.revisions). On a published one, title, text and collection wait as unpublished `changes` until articles.publishChanges or `publish: true` (refused, 402 `article_limit`, past the plan's limit); the rest, settings included, change at once",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
   access: "team",
   errors: [402, 409],
   input: updateInput,
+  output: articleOutput
+    .extend({
+      revision: z
+        .string()
+        .nullable()
+        .describe("The version this save left newest (its id from articles.revisions): send it as `revision` with the next save of this text")
+        .meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+      merged: z
+        .boolean()
+        .describe("Whether the text was applied by section onto a newer version than `revision` said (changes saved since, Autopilot's edits or someone's): the text saved isn't the one sent")
+        .meta({ examples: [false] }),
+      newVersion: z
+        .boolean()
+        .describe("Whether it made a new version: not when the text, title and collection it leaves are the newest's as they were (nothing changed)")
+        .meta({ examples: [true] }),
+    })
+    .describe("The article as saved, with the version it left"),
   example: { body: "Owners and admins invite from the Team page.", publish: true, revision: "cm3x9a1b2c3d4e5f6g7h8i9j0" },
   run: saveArticle,
 });
@@ -1054,12 +1214,33 @@ export async function saveArticle(
 export const listRevisions = defineOperation({
   name: "articles.revisions",
   title: "List an article's versions",
-  summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT}, or on tuti.so as many as the project's plan includes)`,
+  summary: `List a docs article's saved versions, newest (the current one) first: the latest ${ARTICLE_REVISIONS_KEPT}, or on tuti.so as many as the project's plan includes`,
   method: "GET",
   path: "/articles/{slug}/revisions",
   scope: "read",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug: articleSlug }),
+  output: z
+    .object({
+      revisions: z
+        .array(
+          z.object({
+            id: z.string().describe("The version's id: for articles.restore, and `revision` in articles.update and articles.publish").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+            title: z.string().describe("Its title then").meta({ examples: ["Getting started"] }),
+            body: z.string().describe("Its text then, as plain text").meta({ examples: ["Create a board, then share your portal."] }),
+            collection: collectionRef.describe("Its collection then, or null for none").meta({ examples: [{ slug: "basics", name: "Basics" }] }),
+            author: z
+              .object({ name: z.string().describe("Their name").meta({ examples: ["Ada Admin"] }) })
+              .nullable()
+              .describe("Who saved it; null for Autopilot, or someone no longer there")
+              .meta({ examples: [{ name: "Ada Admin" }] }),
+            createdAt: isoTime("When it was saved"),
+            current: z.boolean().describe("Whether it's the current version: the first one").meta({ examples: [true] }),
+          }),
+        )
+        .describe("The versions, newest first"),
+    })
+    .describe("The article's saved versions"),
   run: async ({ projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
     const revisions = await articleRevisions(article.id);
@@ -1080,22 +1261,35 @@ export const listRevisions = defineOperation({
 export const restoreArticle = defineOperation({
   name: "articles.restore",
   title: "Restore an article",
-  summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless a tab, a collection or another article has taken it (then the next free one). A version that takes out Autopilot's edits waiting in the article's unpublished changes is refused (409, naming them) unless \`dismissEdits\` lists them (their update ids, given in the 409): then those edits are dismissed with it`,
+  summary:
+    "Restore a deleted docs article, or bring back one of its versions. A version that takes out Autopilot's edits waiting in the article's unpublished changes is refused (409 `edits_waiting`, naming them) unless `dismissEdits` lists them",
   method: "POST",
   path: "/articles/{slug}/restore",
   scope: "write",
   access: "team",
   errors: [409],
   input: z.object({
-    slug,
-    revision: z.string().trim().min(1).max(100).optional(),
-    /**
-     * The edits (their update ids, as the 409 named them) to dismiss when the version takes them out: Autopilot's edits
-     * waiting in the article's changes. One it takes out that isn't listed (landed since, say): a 409 naming them again.
-     */
+    slug: articleSlug,
+    revision: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe(
+        `The version to bring back (its id from articles.revisions): it becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Left out, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless a tab, a collection or another article has taken it (then the next free one)`,
+      )
+      .meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
     // (As many as can wait on one article, generously: a bound, not a limit anyone meets.)
-    dismissEdits: z.array(z.string().min(1).max(100)).max(1_000).optional(),
+    dismissEdits: z
+      .array(z.string().min(1).max(100))
+      .max(1_000)
+      .optional()
+      .describe(
+        "Autopilot's edits to dismiss with it, by their update ids as given in the 409 naming them: those waiting in the article's unpublished changes that the version takes out. They're dismissed with it. One it takes out that isn't listed (landed since, say) is a 409 naming them again",
+      ),
   }),
+  output: articleOutput.describe("The article restored"),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1170,17 +1364,33 @@ export const publishArticle = defineOperation({
   name: "articles.publish",
   title: "Publish an article",
   summary:
-    "Publish a docs article on the portal. Optional `revision` (the newest id from articles.revisions, or null if none exists) publishes a draft only if it is still that version; a later save, including its first revision, is refused with 409 `changed`. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. While Autopilot's edits wait in the draft (they go live with it), `edits` is required (409 `edits_required` without it): the ids of those you reviewed (codeChanges.target's `actions`); one waiting that isn't among them is a 409 `changed` (one gone since is fine)",
+    "Publish a docs article on the portal: it goes live for readers, search and AI answers. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
   access: "team",
   errors: [402, 409],
   input: z.object({
-    slug,
-    edits: z.array(z.string().min(1).max(100)).max(500).optional(),
-    revision: z.string().min(1).max(100).nullable().optional().describe("The draft’s newest revision id from articles.revisions, as reviewed; null if none existed. A later save, including the first revision, is refused with 409 changed. Omit to publish without a revision check."),
+    slug: articleSlug,
+    edits: z
+      .array(z.string().min(1).max(100))
+      .max(500)
+      .optional()
+      .describe(
+        "Required while Autopilot's edits wait in the draft, which go live with it (409 `edits_required` without it): the ids of those you reviewed (codeChanges.target's `actions`). One waiting that isn't among them is a 409 `changed`; one gone since is fine",
+      ),
+    revision: z
+      .string()
+      .min(1)
+      .max(100)
+      .nullable()
+      .optional()
+      .describe(
+        "Optional: the draft's newest version id from articles.revisions, as reviewed, or null if none exists. It publishes the draft only if it's still that version: a later save, including its first revision, is refused with 409 `changed`. Left out, there's no check",
+      )
+      .meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
   }),
+  output: articleOutput.describe("The article, published"),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1221,14 +1431,21 @@ export const publishArticle = defineOperation({
 });
 
 const changesInput = z.object({
-  slug,
-  /**
-   * Only if the changes are still the ones saved then (their `changes.savedAt`), e.g. the ones the
-   * team reviewed: someone may have saved more since. Otherwise it's a 409.
-   */
-  savedAt: z.iso.datetime().optional(),
-  /** Only if the article's newest version (its id from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
-  revision: z.string().min(1).max(100).nullable().optional(),
+  slug: articleSlug,
+  savedAt: z.iso
+    .datetime()
+    .optional()
+    .describe(
+      "Only if the changes are still the ones saved then (their `changes.savedAt`), e.g. the ones the team reviewed: someone may have saved more since. Otherwise it's a 409 `changed`",
+    )
+    .meta({ examples: ["2026-11-02T09:30:00.000Z"] }),
+  revision: z
+    .string()
+    .min(1)
+    .max(100)
+    .nullable()
+    .optional()
+    .describe("Only if the article's newest version (its id from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409 `changed`"),
 });
 
 /**
@@ -1252,13 +1469,14 @@ export const publishChanges = defineOperation({
   name: "articles.publishChanges",
   title: "Publish an article's changes",
   summary:
-    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing. Refused (402 `article_limit`) while the project has more published articles than its plan allows (unpublish some first)",
+    "Publish a docs article's unpublished `changes` (articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Refused (402 `article_limit`) while the project has more published articles than its plan allows: unpublish some first",
   method: "POST",
   path: "/articles/{slug}/publish-changes",
   scope: "write",
   access: "team",
   errors: [402, 409],
   input: changesInput,
+  output: articleOutput.describe("The article, its changes live; without changes, nothing is done"),
   run: (context, input) => publishArticleChanges(context, input),
 });
 
@@ -1306,6 +1524,7 @@ export const discardChanges = defineOperation({
   access: "team",
   errors: [409],
   input: changesInput,
+  output: articleOutput.describe("The article, back to its published version"),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1328,12 +1547,13 @@ export const discardChanges = defineOperation({
 export const unpublishArticle = defineOperation({
   name: "articles.unpublish",
   title: "Unpublish an article",
-  summary: "Take a docs article off the portal (back to a draft, with its unpublished changes as the draft's text)",
+  summary: "Take a docs article off the portal, and out of search and AI answers: it's back to a draft, with its unpublished changes as the draft's text",
   method: "POST",
   path: "/articles/{slug}/unpublish",
   scope: "write",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug: articleSlug }),
+  output: articleOutput.describe("The article, now a draft"),
   run: async ({ projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1359,7 +1579,8 @@ export const deleteArticle = defineOperation({
   path: "/articles/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug: articleSlug }),
+  output: z.object({ deleted: z.string().describe("The deleted article's slug").meta({ examples: ["getting-started"] }) }).describe("The article deleted"),
   run: async ({ projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
     // Unpublished as it's deleted (a deleted article is never published), so it leaves the portal and search at once.
@@ -1381,13 +1602,23 @@ const position = z.number().int().min(0).max(10_000);
 export const reorderArticle = defineOperation({
   name: "articles.reorder",
   title: "Move an article",
-  summary:
-    "Move a docs article within its collection, or into another (`collection`, null for none), at `position` (0 first; left out, last); the others keep their order around it. Readers list articles in this order. A move to another collection goes live at once, on a published article too (its unpublished changes move with it), and is kept as a version",
+  summary: "Move a docs article within its collection, or into another; the others keep their order around it. Readers list articles in this order",
   method: "POST",
   path: "/articles/{slug}/reorder",
   scope: "write",
   access: "team",
-  input: z.object({ slug, collection: slug.nullable().optional(), position: position.optional() }),
+  input: z.object({
+    slug: articleSlug,
+    collection: slug
+      .nullable()
+      .optional()
+      .describe(
+        "The collection to move it into (its slug), null for none; left out, the one it's in. A move to another collection goes live at once, on a published article too (its unpublished changes move with it), and is kept as a version",
+      )
+      .meta({ examples: ["basics"] }),
+    position: position.optional().describe("Its place there, 0 first; left out, last").meta({ examples: [0] }),
+  }),
+  output: articleOutput.describe("The article, moved"),
   example: { collection: "basics", position: 0 },
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
@@ -1580,13 +1811,13 @@ async function placeFor(
 export const listCollections = defineOperation({
   name: "collections.list",
   title: "List collections",
-  summary:
-    "List the docs' collections in order (by tab, each top-level one, then the ones in it), with the collection each is in (`parent`), its tab, its icon and how many articles each has",
+  summary: "List the docs' collections in order: by tab, each top-level one, then the ones in it",
   method: "GET",
   path: "/collections",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z.object({ collections: z.array(collectionOutput).describe("Every collection, in order") }).describe("The docs' collections"),
   run: async ({ projectId }) => {
     const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: readingOrder, select: collectionSelect });
     return { collections: inTreeOrder(collections).map((c) => collectionView(c, collections)) };
@@ -1598,8 +1829,15 @@ const collectionInput = z.object({
   ...accessFields,
   description: collectionFields.description.default(""),
   icon: collectionFields.icon.default(null),
-  parent: slug.nullable().optional(),
-  tab: slug.optional(),
+  parent: slug
+    .nullable()
+    .optional()
+    .describe(`The collection to put it in (its slug; ${MAX_COLLECTION_DEPTH} levels deep at most), or null for the top level (the default)`)
+    .meta({ examples: ["guides"] }),
+  tab: slug
+    .optional()
+    .describe("At the top level, the tab to put it in (its slug); left out, the first one, if the docs have tabs. One in another collection is in that one's tab")
+    .meta({ examples: ["guides"] }),
 });
 
 /** Adds collection `input` after the others where it goes, under the project's lock (the caller's): its id and slug. */
@@ -1628,13 +1866,14 @@ export const createCollection = defineOperation({
   name: "collections.create",
   title: "Create a collection",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `access` says who can read it and what's in it, on top of its tab and the collections it's in (`inherit`, the default; `signed_in`; or `groups`, readers in one of `groups`, keys of the project's reader groups (see groups.list), besides the team; `groups` alone, as before, means `groups`); `icon` names a Lucide icon (lucide.dev) shown next to its name. `noAccess` says what people it isn't for see of it and what's in it (`inherit`, the default; `lock`: its name with a lock, nothing in it; or `hide`)",
+    "Add a docs collection, at the top level of a tab or in another collection, after the others there; its slug comes from the name. Who can read it is on top of its tab and the collections it's in, and goes for what's in it",
   method: "POST",
   path: "/collections",
   scope: "write",
   access: "team",
   errors: [402],
   input: collectionInput,
+  output: collectionOutput.describe("The collection"),
   example: { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" },
   run: async ({ projectId }, input) =>
     prisma.$transaction(async (tx) => {
@@ -1670,22 +1909,27 @@ export const updateCollection = defineOperation({
   name: "collections.update",
   title: "Update a collection",
   summary:
-    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who can read it (`access` and `groups`, as in collections.create; `groups` alone, as before: some make it `groups`, none `inherit`), its `icon` (a Lucide icon's name; null removes it) what people it isn't for see (`noAccess`, as in collections.create), or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Change a docs collection: rename it (its slug follows the name), change its description or icon, move it, or set who can read it, as in collections.create. To move it to a place among its siblings, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
   access: "team",
   errors: [402],
   input: z.object({
-    slug,
+    slug: collectionSlug,
     name: collectionFields.name.optional(),
     description: collectionFields.description.optional(),
     ...accessFields,
-    icon: collectionFields.icon.optional(),
-    parent: slug.nullable().optional(),
-    tab: slug.optional(),
-    order: position.optional(),
+    icon: collectionFields.icon.optional().describe("A Lucide icon's name (kebab-case, as on lucide.dev), shown next to its name; null removes it"),
+    parent: slug
+      .nullable()
+      .optional()
+      .describe(`Another collection to move it into (its slug; ${MAX_COLLECTION_DEPTH} levels deep at most), or null for the top level; it goes last there`)
+      .meta({ examples: ["guides"] }),
+    tab: slug.optional().describe("At the top level, the tab to move it to (its slug)").meta({ examples: ["guides"] }),
+    order: position.optional().describe("Its order number among its siblings, 0 first").meta({ examples: [0] }),
   }),
+  output: collectionOutput.describe("The collection, changed"),
   example: { name: "Basics", parent: null },
   run: async ({ projectId }, input) =>
     prisma.$transaction(async (tx) => {
@@ -1717,13 +1961,25 @@ export const updateCollection = defineOperation({
 export const reorderCollection = defineOperation({
   name: "collections.reorder",
   title: "Move a collection",
-  summary:
-    "Move a docs collection among its siblings, into another collection (`parent`, null for the top level; 5 levels deep at most, and not one inside it) or to another tab (`tab`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
+  summary: "Move a docs collection among its siblings, into another collection or to another tab; the others keep their order around it. Readers list collections in this order",
   method: "POST",
   path: "/collections/{slug}/reorder",
   scope: "write",
   access: "team",
-  input: z.object({ slug, parent: slug.nullable().optional(), tab: slug.optional(), position: position.optional() }),
+  input: z.object({
+    slug: collectionSlug,
+    parent: slug
+      .nullable()
+      .optional()
+      .describe(`The collection to move it into (its slug; ${MAX_COLLECTION_DEPTH} levels deep at most, and not one inside it), or null for the top level; left out, where it is`)
+      .meta({ examples: ["guides"] }),
+    tab: slug
+      .optional()
+      .describe("At the top level, the tab to move it to (its slug); left out, the one it's in, or was in through its parent")
+      .meta({ examples: ["guides"] }),
+    position: position.optional().describe("Its place there, 0 first; left out, last").meta({ examples: [0] }),
+  }),
+  output: collectionOutput.describe("The collection, moved"),
   example: { parent: null, position: 0 },
   run: async ({ projectId }, input) =>
     prisma.$transaction(async (tx) => {
@@ -1742,7 +1998,8 @@ export const deleteCollection = defineOperation({
   path: "/collections/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug: collectionSlug }),
+  output: z.object({ deleted: z.string().describe("The deleted collection's slug").meta({ examples: ["basics"] }) }).describe("The collection deleted"),
   run: async ({ projectId }, input) => {
     // Locked, so an article or collection being saved into it lands first (and is let go) or finds it gone.
     await prisma.$transaction(async (tx) => {
@@ -1801,10 +2058,30 @@ export const tabView = ({ slug, name, order, landing, landingArticle, landingCol
   /** With `page`: the article's or collection's slug (null once it's deleted). */
   landingPage: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
 });
-const tabName = z.string().trim().min(1, "Name is required").max(40);
+const tabName = z.string().trim().min(1, "Name is required").max(40).describe("Its name, up to 40 characters; its slug follows it").meta({ examples: ["Guides"] });
 
 export const LANDINGS = ["overview", "first", "page"] as const;
 export type DocsLanding = (typeof LANDINGS)[number];
+
+/** tabView's result. */
+const tabOutput = z
+  .object({
+    slug: z.string().describe("Its slug, from its name: the end of its address, /docs/<slug>").meta({ examples: ["guides"] }),
+    name: z.string().describe("Its name").meta({ examples: ["Guides"] }),
+    order: z.number().int().describe("Its place among the tabs, 0 first: readers see the first one when they open the docs").meta({ examples: [0] }),
+    ...accessOutput,
+    collections: z.number().int().describe("How many top-level collections it has (each with the ones in it)").meta({ examples: [3] }),
+    landing: z
+      .enum(LANDINGS)
+      .describe("What its path shows: an `overview` (search and a card per top-level collection), its `first` article in reading order, or a `page` the team picked")
+      .meta({ examples: ["overview"] }),
+    landingPage: z
+      .string()
+      .nullable()
+      .describe("With `page`: the slug of the article or collection it shows (null once it's deleted)")
+      .meta({ examples: [null] }),
+  })
+  .meta({ id: "DocsTab", description: "A docs tab: a section of the docs with its own collections, shown across the top" });
 
 /**
  * The landing page `slug` may be for `tab` (`first`: the docs' first tab, which has the articles in
@@ -1836,13 +2113,13 @@ async function lockedTab(tx: Prisma.TransactionClient, projectId: string, slug: 
 export const listTabs = defineOperation({
   name: "tabs.list",
   title: "List tabs",
-  summary:
-    "List the docs' tabs in order, each with its collections and what its path shows (`landing`, `landingPage`; see tabs.update). Without tabs, the docs are one page",
+  summary: "List the docs' tabs in order, with what each one's path shows (see tabs.update). Without tabs, the docs are one page",
   method: "GET",
   path: "/tabs",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z.object({ tabs: z.array(tabOutput).describe("The tabs, in order; empty when the docs have none") }).describe("The docs' tabs"),
   run: async ({ projectId }) => ({
     tabs: (await prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: tabSelect })).map(tabView),
   }),
@@ -1852,13 +2129,14 @@ export const createTab = defineOperation({
   name: "tabs.create",
   title: "Create a tab",
   summary:
-    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one. `access` says who can read it (`inherit`, the default: everyone who may read the portal; `signed_in`; or `groups`, with `groups`), and so what's in it; the first tab's is also the articles' in no collection. `noAccess` says what people it isn't for see of it (`inherit`, the default: hidden; `lock`: its name with a lock, nothing in it; or `hide`)",
+    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one. Who can read the first tab goes for the articles in no collection too",
   method: "POST",
   path: "/tabs",
   scope: "write",
   access: "team",
   errors: [402],
   input: z.object({ name: tabName, ...accessFields }),
+  output: tabOutput.describe("The tab"),
   example: { name: "Guides" },
   run: async ({ projectId }, input) =>
     tabView(
@@ -1890,13 +2168,30 @@ export const updateTab = defineOperation({
   name: "tabs.update",
   title: "Update a tab",
   summary:
-    "Rename a docs tab (its slug follows the name) or set what its path shows (`landing`): an `overview` (search and a card per top-level collection; the default), its `first` article in reading order, or a `page`: the article or collection in this tab that `landingPage` names (its slug; required with `page`). A picked page a reader can't read there (unpublished, hidden, restricted, moved to another tab) shows them the overview instead. Or change who can read it (`access` and `groups`) or what the rest see (`noAccess`), as in tabs.create",
+    "Change a docs tab: rename it (its slug follows the name), set what its path shows, or change who can read it and what the rest see, as in tabs.create",
   method: "PATCH",
   path: "/tabs/{slug}",
   scope: "write",
   access: "team",
   errors: [402],
-  input: z.object({ slug, name: tabName.optional(), landing: z.enum(LANDINGS).optional(), landingPage: slug.optional(), ...accessFields }),
+  input: z.object({
+    slug: tabSlug,
+    name: tabName.optional(),
+    landing: z
+      .enum(LANDINGS)
+      .optional()
+      .describe(
+        "What its path shows: an `overview` (search and a card per top-level collection; the default), its `first` article in reading order, or a `page`: the article or collection in this tab that `landingPage` names",
+      ),
+    landingPage: slug
+      .optional()
+      .describe(
+        "With `landing: \"page\"` (and required with it): the slug of an article or collection in this tab. A picked page a reader can't read there (unpublished, hidden, restricted, moved to another tab) shows them the overview instead",
+      )
+      .meta({ examples: ["getting-started"] }),
+    ...accessFields,
+  }),
+  output: tabOutput.describe("The tab, changed"),
   example: { name: "API reference", landing: "page", landingPage: "getting-started" },
   run: async ({ projectId }, input) => {
     if ((input.landing === "page") !== (input.landingPage !== undefined)) {
@@ -1964,12 +2259,13 @@ export const reorderTab = defineOperation({
   name: "tabs.reorder",
   title: "Move a tab",
   summary:
-    "Move a docs tab to `position` among the tabs (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the docs. The articles in no collection keep who can read them when another tab becomes first",
+    "Move a docs tab among the tabs; the others keep their order around it. Readers see the tabs in this order, the first one when they open the docs. The articles in no collection keep who can read them when another tab becomes first",
   method: "POST",
   path: "/tabs/{slug}/reorder",
   scope: "write",
   access: "team",
-  input: z.object({ slug, position: position.optional() }),
+  input: z.object({ slug: tabSlug, position: position.optional().describe("Its place among the tabs, 0 first; left out, last").meta({ examples: [0] }) }),
+  output: tabOutput.describe("The tab, moved"),
   example: { position: 0 },
   run: async ({ projectId }, input) =>
     tabView(
@@ -1992,13 +2288,19 @@ export const deleteTab = defineOperation({
   name: "tabs.delete",
   title: "Delete a tab",
   summary:
-    "Delete a docs tab. Its collections go last in the tab before it, with everything in them, and keep who can read them; its API references go with them, unpublished if the tab restricted who can read it (they have no access of their own). The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
+    "Delete a docs tab. Its collections and API references move last into the tab before it; references are unpublished if the tab restricted who can read it (they have no access of their own). The first tab, the docs' home (/docs), can't be deleted while there are others: move another first (409)",
   method: "DELETE",
   path: "/tabs/{slug}",
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ slug }),
+  input: z.object({ slug: tabSlug }),
+  output: z
+    .object({
+      deleted: z.string().describe("The deleted tab's slug").meta({ examples: ["guides"] }),
+      movedTo: z.string().nullable().describe("The tab its collections went to (its slug), last there with everything in them, and they keep who can read them; null when deleting the only tab leaves the docs without tabs").meta({ examples: ["docs"] }),
+    })
+    .describe("The tab deleted, and where its collections went"),
   run: async ({ projectId }, input) => {
     // Locked, so a collection being saved into it lands first (and moves) or finds it gone.
     const movedTo = await prisma.$transaction(async (tx) => {
