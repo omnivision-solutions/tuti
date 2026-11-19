@@ -137,7 +137,7 @@ function ReaderActions({ projectSlug, email }: { projectSlug: string; email: str
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Actions for ${email}`} />}>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} focusableWhenDisabled aria-label={`Actions for ${email}`} />}>
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-40">
@@ -157,6 +157,7 @@ function ReaderActions({ projectSlug, email }: { projectSlug: string; email: str
             <AlertDialogAction
               variant="destructive"
               disabled={pending}
+              focusableWhenDisabled
               onClick={() =>
                 startTransition(async () => {
                   const result = await removePortalReader(projectSlug, email);
