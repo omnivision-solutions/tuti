@@ -161,8 +161,12 @@ test("an admin picks the changelog's style examples: published entries from a se
   await pick.click();
   await expect(search).toHaveValue("");
   await expect(dialog.getByRole("listitem")).toHaveCount(4);
-  // Picking one closes the dialog and adds its chip; focus is back on Pick.
-  await dialog.getByRole("button", { name: "Faster month view" }).click();
+  // Picking one closes the dialog and adds its chip; focus is back on Pick. A second press as it closes picks nothing.
+  await dialog.getByRole("list").evaluate((list) => {
+    const press = (title: string) => [...list.querySelectorAll("button")].find((button) => button.textContent === title)!.click();
+    press("Faster month view");
+    press("Agenda view");
+  });
   await expect(dialog).toBeHidden();
   await expect(chips).toHaveText(["Faster month view"]);
   await expect(row.getByText("1/3")).toBeVisible();
@@ -229,5 +233,20 @@ test("an admin picks the changelog's style examples: published entries from a se
   await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" }).click();
   const leave = team.getByRole("alertdialog", { name: "Leave without saving?" });
   await leave.getByRole("button", { name: "Keep editing" }).click();
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+
+  // A pick not saved yet whose entry is unpublished meanwhile stops counting once the page hears of it (here, as the
+  // AI model saves): its chip goes, and there's room to pick another.
+  await pick.click();
+  await dialog.getByRole("button", { name: "Agenda view" }).click();
+  await expect(row.getByText("3/3")).toBeVisible();
+  await expect(pick).toBeDisabled();
+  await api("/changelog/2/unpublish", {});
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" }).click();
+  await expect(team.getByText("AI model saved")).toBeVisible();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await expect(row.getByText("2/3")).toBeVisible();
+  await expect(pick).toBeEnabled();
+  // What was typed is still there.
   await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
 });

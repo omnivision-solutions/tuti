@@ -902,8 +902,8 @@ export function ChangelogStyleForm({
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
-  // Chips come and go without anyone typing: the form is told, for "Save changes".
-  useFieldChanged(pick, picked);
+  // The dialog, opened, has had its pick.
+  const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
     save: async (prev, formData) => {
       const result = await saveChangelogStyle(projectSlug, prev, formData);
@@ -915,8 +915,13 @@ export function ChangelogStyleForm({
       return result;
     },
   });
+  // The picks still published (one unpublished since doesn't count), in the changelog's order whatever the order
+  // picked, so the same examples are never a change to save.
+  const chosen = published.filter((entry) => picked.includes(entry.number));
+  // Chips come and go without anyone typing: the form is told, for "Save changes".
+  useFieldChanged(pick, chosen.map((entry) => entry.number).join());
   // No more to pick: 3 are, or every published entry is.
-  const full = picked.length >= Math.min(MAX_EXAMPLES, published.length);
+  const full = chosen.length >= Math.min(MAX_EXAMPLES, published.length);
   const words = query.trim().toLowerCase();
   const matches = published.filter((entry) => !picked.includes(entry.number) && entry.title.toLowerCase().includes(words));
 
@@ -945,7 +950,7 @@ export function ChangelogStyleForm({
             Style examples{" "}
             {published.length > 0 && (
               <span className="font-normal text-muted-foreground tabular-nums">
-                {picked.length}/{MAX_EXAMPLES}
+                {chosen.length}/{MAX_EXAMPLES}
               </span>
             )}
           </>
@@ -954,29 +959,26 @@ export function ChangelogStyleForm({
       >
         {published.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
-            {/* In the changelog's order whatever the order picked, so the same examples are never a change to save. */}
             <ul aria-label="Style examples" className="contents">
-              {published
-                .filter((entry) => picked.includes(entry.number))
-                .map((entry) => (
-                  <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-2xl bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
-                    <input type="hidden" name="examples" value={entry.number} />
-                    {/* A long title wraps: cut short, two that start alike would read the same. */}
-                    <span className="min-w-0 break-words">{entry.title}</span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${entry.title}`}
-                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                      onClick={() => {
-                        setPicked(picked.filter((n) => n !== entry.number));
-                        // Its button is gone: focus goes to Pick, not to the top of the page.
-                        pick.current?.focus();
-                      }}
-                    >
-                      <XIcon aria-hidden className="size-3.5" />
-                    </button>
-                  </li>
-                ))}
+              {chosen.map((entry) => (
+                <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-2xl bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
+                  <input type="hidden" name="examples" value={entry.number} />
+                  {/* A long title wraps: cut short, two that start alike would read the same. */}
+                  <span className="min-w-0 break-words">{entry.title}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${entry.title}`}
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    onClick={() => {
+                      setPicked(picked.filter((n) => n !== entry.number));
+                      // Its button is gone: focus goes to Pick, not to the top of the page.
+                      pick.current?.focus();
+                    }}
+                  >
+                    <XIcon aria-hidden className="size-3.5" />
+                  </button>
+                </li>
+              ))}
             </ul>
             <Button
               ref={pick}
@@ -989,6 +991,7 @@ export function ChangelogStyleForm({
               disabled={full}
               focusableWhenDisabled
               onClick={() => {
+                done.current = false;
                 setQuery("");
                 setPicking(true);
               }}
@@ -1015,8 +1018,12 @@ export function ChangelogStyleForm({
                   type="button"
                   className="w-full rounded-md px-2 py-2 text-left text-sm break-words hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                   onClick={() => {
-                    setPicked([...picked, entry.number]);
-                    setPicking(false);
+                    // One pick a time it's opened: a second press while it closes would pick the entry that moved up.
+                    if (!done.current) {
+                      done.current = true;
+                      setPicked([...picked, entry.number]);
+                      setPicking(false);
+                    }
                   }}
                 >
                   {entry.title}
