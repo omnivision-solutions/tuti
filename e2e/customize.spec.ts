@@ -290,8 +290,18 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   await owner.getByLabel("Custom CSS").fill(".portal-header { background: rgb(1, 2, 3); }");
   await expect(preview.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
   // Its HTML runs only on an address of the team's own, which this portal doesn't have yet.
-  await expect(owner.getByText("Your portal isn't on one yet", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Runs only on your own domain.")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Add a domain" })).toHaveAttribute("href", `/app/${slug}/settings/domain`);
+  // Each field keeps its name, and the HTML's says where it goes and where it runs.
+  await expect(owner.getByRole("textbox", { name: "Custom HTML" })).toHaveAccessibleDescription("· end of every page Runs only on your own domain. Add a domain");
   await checkpoint(owner, "customize-custom-code");
+  // On a phone nothing runs past the edge: the fields take the card's width.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.getByLabel("Custom CSS")).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.locator('[data-slot="portal-settings"]').evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "customize-custom-code-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
 
