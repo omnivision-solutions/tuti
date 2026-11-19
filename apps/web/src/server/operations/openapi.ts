@@ -93,7 +93,7 @@ const overview = `Read and change a Tuti project from code: its feedback, change
 
 ## Getting a key
 
-Project owners and admins create keys in the app, in Settings → Developers. A **Read only** key runs the operations that read; a **Read and write** key runs them all. The key is shown once, when it's created.
+Project owners and admins create keys in the app, in Settings → Developers. A **Read only** key runs the operations that read; a **Read and write** key runs the rest too, except the few that only a person can run, in the app (their description says so). The key is shown once, when it's created.
 
 ## Authentication
 
@@ -116,7 +116,7 @@ An error has a status and a JSON body: \`code\` for code to check, \`message\` f
 - 400: the input isn't valid
 - 401: no key, or one that no longer works
 - 402: the project's plan doesn't include it, or it's out of AI credits
-- 403: the key may not do it (a read-only key, or its creator's role)
+- 403: it isn't allowed (a read-only key, its creator's role, one only a person can run in the app, or a setting that's off)
 - 404: no such thing
 - 409: it conflicts with how things are now
 - 429: too many requests
