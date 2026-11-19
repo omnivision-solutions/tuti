@@ -961,7 +961,7 @@ export function ChangelogStyleForm({
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
             <ul aria-label="Style examples" className="contents">
               {chosen.map((entry) => (
-                <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-2xl bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
+                <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-lg bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
                   <input type="hidden" name="examples" value={entry.number} />
                   {/* A long title wraps: cut short, two that start alike would read the same. */}
                   <span className="min-w-0 break-words">{entry.title}</span>
@@ -970,7 +970,8 @@ export function ChangelogStyleForm({
                     aria-label={`Remove ${entry.title}`}
                     className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     onClick={() => {
-                      setPicked(picked.filter((n) => n !== entry.number));
+                      // From what still shows: an example unpublished meanwhile is gone for good, republished or not.
+                      setPicked(chosen.filter((other) => other.number !== entry.number).map((other) => other.number));
                       // Its button is gone: focus goes to Pick, not to the top of the page.
                       pick.current?.focus();
                     }}
@@ -1021,7 +1022,7 @@ export function ChangelogStyleForm({
                     // One pick a time it's opened: a second press while it closes would pick the entry that moved up.
                     if (!done.current) {
                       done.current = true;
-                      setPicked([...picked, entry.number]);
+                      setPicked([...chosen.map((other) => other.number), entry.number]);
                       setPicking(false);
                     }
                   }}
