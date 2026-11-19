@@ -1,5 +1,5 @@
 /**
- * The fonts a portal can pick for its headings and its text (Customize → Branding → Typography).
+ * The fonts a portal can pick for its headings and its text (Settings → Branding → Fonts).
  * Each is built into the app (components/portal-fonts.ts, next/font): served from the portal's own
  * host, so readers' browsers never ask Google for them, and only downloaded when a page uses it.
  */
@@ -31,7 +31,7 @@ export const fontVariable = (font: PortalFont) => `--portal-font-${font}`;
 
 /**
  * The portal's fonts as the style of its pages' wrapper (and its <body>, for what opens over the page): the team's
- * (Customize → Branding → Typography), else Inter, in place of the app's; the text's stack ends with the bundled symbols
+ * (Settings → Branding → Fonts), else Inter, in place of the app's; the text's stack ends with the bundled symbols
  * font (app/layout.tsx), so a symbol none of them has never shows as an empty box. `--font-sans` and `--font-heading`
  * get it from globals.css's theme.
  */

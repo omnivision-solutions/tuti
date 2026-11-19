@@ -98,13 +98,13 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await reader.close();
   await owner.goto(`/app/${slug}/customize/powered-by`);
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
-  await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).not.toBeChecked();
+  await expect(owner.getByRole("switch", { name: '"Powered by tuti"' })).not.toBeChecked();
   // Showing the badge again here leaves the add-on billing: the field says where it's removed.
-  await owner.getByLabel('Show "Powered by tuti" in the footer').click();
-  await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).toHaveAccessibleDescription("The add-on is still on this project's plan: remove it in Billing.");
+  await owner.getByRole("switch", { name: '"Powered by tuti"' }).click();
+  await expect(owner.getByRole("switch", { name: '"Powered by tuti"' })).toHaveAccessibleDescription("The add-on is still on this project's plan: remove it in Billing.");
   await expect(owner.getByText("The add-on is still on").getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "customize-branding-badge-shown-with-add-on");
-  await owner.getByLabel('Show "Powered by tuti" in the footer').click();
+  await owner.getByRole("switch", { name: '"Powered by tuti"' }).click();
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/billing`);
 
@@ -120,8 +120,10 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/customize/powered-by`);
-  await expect(owner.getByText("Hiding it is an add-on to a paid plan.")).toBeVisible();
-  await owner.getByLabel('Show "Powered by tuti" in the footer').click();
+  await owner.locator("#powered-by").getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("The badge at the foot of your portal. Hiding it is an add-on to a paid plan.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await owner.getByRole("switch", { name: '"Powered by tuti"' }).click();
   const dialog = owner.getByRole("dialog", { name: 'Keep "Powered by tuti"?' });
   await expect(dialog).toContainText("add it to its plan in Billing: $49 a month, on a paid plan.");
   await expect(dialog.getByRole("link", { name: "Get a licence" })).toHaveCount(0);

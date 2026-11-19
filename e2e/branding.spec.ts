@@ -51,10 +51,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // Uploads go through the image pipeline (the S3 fake, processed inline); each shows a preview when ready.
   await card.getByLabel("Logo", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: light });
   await expect(card.getByRole("img", { name: "Logo preview" })).toBeVisible();
-  await card.getByLabel("Logo for dark mode", { exact: true }).setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: dark });
-  await expect(card.getByRole("img", { name: "Logo for dark mode preview" })).toBeVisible();
+  await card.getByLabel("Dark mode logo", { exact: true }).setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: dark });
+  await expect(card.getByRole("img", { name: "Dark mode logo preview" })).toBeVisible();
   // An image can be dropped on its field too.
   const favicon = card.getByLabel("Favicon", { exact: true });
+  // What files it takes isn't said until one is refused.
+  await expect(card.getByText(/PNG|drop an image/)).toHaveCount(0);
   // "Upload" is the way in from the keyboard, named for its image.
   await expect(favicon).toHaveAttribute("tabindex", "-1");
   await expect(card.getByRole("button", { name: "Upload favicon" })).toBeVisible();
@@ -65,24 +67,30 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   }, [...light]);
   await favicon.locator("..").dispatchEvent("drop", { dataTransfer: dropped });
   await expect(card.getByRole("img", { name: "Favicon preview" })).toBeVisible();
+  // An image can be taken away again, and put back.
+  await card.getByRole("button", { name: "Remove favicon" }).click();
+  await expect(card.getByRole("img", { name: "Favicon preview" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Upload favicon" })).toBeFocused();
+  await favicon.setInputFiles({ name: "favicon.png", mimeType: "image/png", buffer: light });
+  await expect(card.getByRole("img", { name: "Favicon preview" })).toBeVisible();
   await card.getByLabel("Accent colour", { exact: true }).fill("#2563eb");
   // The preview shows each change before it's saved: the logo, and the colour as the portal's accent.
   await expect(preview.getByRole("banner").getByRole("img", { name: "Acme" }).first()).toBeVisible();
   // Text beside the logo (the logo is then an image beside its name), where it links, and dark mode for readers who haven't picked one.
-  await card.getByLabel("Logo text").fill("Acme Help");
-  await card.getByLabel("Logo link").fill("https://acme.example");
+  await card.getByLabel("Text beside it").fill("Acme Help");
+  await card.getByLabel("Links to").fill("https://acme.example");
   await expect(preview.getByRole("banner").getByRole("link", { name: /Acme Help/ })).toHaveAttribute("href", "https://acme.example");
-  await card.getByText("Dark", { exact: true }).click();
+  await card.getByRole("radio", { name: "Dark" }).locator("..").click();
   await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
   // A font for headings, from the ones built into Tuti.
-  await card.getByLabel("Heading font").click();
+  await card.getByLabel("Headings").click();
   await owner.getByRole("option", { name: "Playfair Display" }).click();
   await expect
     .poll(() => preview.getByRole("heading", { level: 1 }).first().evaluate((h) => getComputedStyle(h).fontFamily))
     // Built in from a file of Tuti's own (src/fonts), so its family is named after it.
     .toMatch(/playfairDisplay/);
   // Back to each reader's device's.
-  await card.getByText("System", { exact: true }).click();
+  await card.getByRole("radio", { name: "System" }).locator("..").click();
   await expect(preview.locator("html")).not.toHaveClass(/\bdark\b/);
   const accent = () => preview.locator("html").evaluate((html) => getComputedStyle(html).getPropertyValue("--primary").trim());
   await expect.poll(accent).toBe("#2563eb");
@@ -167,9 +175,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // project; switching it off asks about one instead.
   await owner.goto(`/app/${slug}/customize/powered-by`);
   await owner.waitForURL(`**/app/${slug}/settings/branding#powered-by`);
-  const badge = owner.locator("form").filter({ has: owner.getByLabel('Show "Powered by tuti" in the footer') });
-  const poweredBy = badge.getByLabel('Show "Powered by tuti" in the footer');
-  await expect(badge.getByText("Hiding it needs a licence for this project.")).toBeVisible();
+  const badge = owner.locator("#powered-by");
+  const poweredBy = badge.getByRole("switch", { name: '"Powered by tuti"' });
+  // What hiding takes is behind the row's ⓘ.
+  await badge.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("The badge at the foot of your portal. Hiding it needs a licence for this project.")).toBeVisible();
+  await owner.keyboard.press("Escape");
   await poweredBy.click();
   const dialog = owner.getByRole("dialog", { name: 'Keep "Powered by tuti"?' });
   await expect(dialog).toBeVisible();

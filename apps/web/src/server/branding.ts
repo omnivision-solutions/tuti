@@ -40,6 +40,8 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
           ...(formData.has("bodyFont") && { body: (text("bodyFont") || null) as PortalFont | null }),
         },
       }),
+      // Branding's own form has "Powered by tuti" too, sent as the theme's switch is.
+      ...(formData.has("poweredBy") && { poweredBy: formData.getAll("poweredBy").includes("on") }),
     }),
     links: () => ({
       headerLinks: linksFrom(formData, "headerLink"),
