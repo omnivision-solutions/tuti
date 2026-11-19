@@ -183,8 +183,14 @@ const UNCLOSED = new Set("br hr img wbr p li dt dd tr td th thead tbody tfoot".s
 function isHtml(tag: string, rest: string): boolean {
   const name = /^<\/?([a-zA-Z][\w-]*)/.exec(tag)?.[1]?.toLowerCase();
   if (!name || UNCLOSED.has(name) || (tag.startsWith("</") && ELEMENTS.has(name))) return true;
-  // Closed later on, outside code (`</code>` in a code span closes nothing).
-  return ELEMENTS.has(name) && rest.replace(/(`+)[^]*?\1/g, "").toLowerCase().includes(`</${name}`);
+  if (!ELEMENTS.has(name)) return false;
+  // Closed later on: by a close no later open of its name takes, outside code (`</code>` in a code span closes nothing).
+  let open = 0;
+  for (const [, close] of rest.replace(/(`+)[^]*?\1/g, "").matchAll(new RegExp(`<(/?)${name}(?=[\\s/>])`, "gi"))) {
+    open += close ? -1 : 1;
+    if (open < 0) return true;
+  }
+  return false;
 }
 
 /** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`, `<code>`) kept as text. */

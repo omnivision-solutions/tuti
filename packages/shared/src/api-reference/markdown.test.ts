@@ -111,6 +111,8 @@ describe("specHtml", () => {
     expect(specHtml("Run <code>make</code>, then /callback?code=<code>&notify=1 while age<ttl.")).toBe(
       "<p>Run <code>make</code>, then /callback?code=&lt;code&gt;&amp;notify=1 while age&lt;ttl.</p>\n",
     );
+    expect(specHtml("From /callback?code=<code>, run <code>make</code>.")).toBe("<p>From /callback?code=&lt;code&gt;, run <code>make</code>.</p>\n");
+    expect(specHtml("Wait <s> seconds, at most <strong>30</strong>.")).toBe("<p>Wait &lt;s&gt; seconds, at most <strong>30</strong>.</p>\n");
     expect(specHtml("Wrap it in `<code>…</code>`, from /callback?code=<code>.")).toBe("<p>Wrap it in <code>&lt;code&gt;…&lt;/code&gt;</code>, from /callback?code=&lt;code&gt;.</p>\n");
   });
 });
