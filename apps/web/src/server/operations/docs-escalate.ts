@@ -5,6 +5,8 @@ import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { supportAddress as inboxAddress, supportDomain } from "../inbound";
+import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
+
 import { countEmailedLink } from "../email-link-limits";
 import { sessionIn } from "../session";
 import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
@@ -287,7 +289,7 @@ export const escalateDocs = defineOperation({
   name: "docs.escalate",
   title: "Pass a question to the team",
   summary:
-    "Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox. Refused (403) while the support inbox is off or Messages is hidden in the widget. Counted against the hourly limits on emails sent (429)",
+    `Pass a question to the team (“Ask a person”), for someone docs.ask couldn't help: it starts a conversation in the support inbox. Refused (403) while the inbox is off or Messages is hidden in the widget. Up to ${SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR} an hour per address and ${SIGN_IN_LINKS_PER_PORTAL_PER_HOUR} per project, shared with the emails it sends (429)`,
   method: "POST",
   path: "/docs/escalate",
   scope: "write",
