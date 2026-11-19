@@ -27,7 +27,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
   const included = planIncludes(plan, "privatePortal");
 
   return (
-    <SettingsPane title="Access" description="Who can see your portal, its docs and changelog, and the widget.">
+    <SettingsPane title="Access" description={<>Who can see your portal, its docs and changelog, and the widget.</>}>
       {/* A portal made private on a plan that had it: what happens to it now. Making it private opens the upgrade prompt instead. */}
       {!included && access === "private" && (
         <PlanNotice feature="privatePortal" projectSlug={project.slug} admin>
