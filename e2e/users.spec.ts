@@ -298,6 +298,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_idText/, /^CompanycompanyText/, /^MRRmrrNumber/, /^PlanplanText/]);
   // What they're for is one line beside the title; no Edit buttons, and no Save: a format saves as it's picked.
   await expect(properties).toContainText("Names and formats for the properties your app sends");
+  await expect(properties.getByRole("button", { name: /^(Edit|Save)/ })).toHaveCount(0);
   // Who's asking, beside it in Users, is None, and lists the users' first amount first, as suggested (not their id, a number too).
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await menu.getByRole("link", { name: "Who's asking" }).click();
