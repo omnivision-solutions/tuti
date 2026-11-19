@@ -32,6 +32,8 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await checkpoint(owner, "team-invite-unverified", { fullPage: false });
   // A click beside the dialog leaves it open: the link isn't shown again.
   await owner.mouse.click(20, 400);
+  await owner.getByRole("textbox", { name: "Email of the person to invite" }).click(); // still there to use, not fading out
+  await expect(inviting).toHaveAttribute("data-open");
   await expect(owner.getByRole("button", { name: "Copy link" })).toBeVisible();
   expect(countEmailsTo(inviteeEmail)).toBe(0);
 
