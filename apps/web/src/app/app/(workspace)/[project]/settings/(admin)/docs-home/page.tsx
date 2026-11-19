@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
 import { DocsHomeSettings } from "@/components/docs-look-settings";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
@@ -20,15 +19,7 @@ export default async function DocsHomePage(props: PageProps<"/app/[project]/sett
   const brand = (await branding({ id: project.id }))!;
   return (
     <PortalSettingsPane page="docs-home" preview={await portalPreview(slug, "/docs")}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Header</CardTitle>
-          <CardDescription>What readers see first on your docs&apos; home.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DocsHomeSettings projectSlug={slug} home={brand.docsHome} />
-        </CardContent>
-      </Card>
+      <DocsHomeSettings projectSlug={slug} home={brand.docsHome} />
     </PortalSettingsPane>
   );
 }
