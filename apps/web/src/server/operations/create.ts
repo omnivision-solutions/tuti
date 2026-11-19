@@ -231,7 +231,7 @@ export const createComment = defineOperation({
         .optional()
         .describe("The id of the comment it went under; null for one that replies to none. Not on a note")
         .meta({ examples: [null] }),
-      internal: z.literal(true).optional().describe("Only on an internal note, and `true`: only the team sees it"),
+      internal: z.literal(true).optional().describe("Only on an internal note, and `true`: only the team sees it").meta({ examples: [true] }),
     })
     .describe("The comment, or note, written"),
   example: { body: "Thanks! This is planned for next month." },

@@ -282,7 +282,8 @@ const replyToOutput = z.string().nullable().describe("The id of the comment it r
 const internalOutput = z
   .literal(true)
   .optional()
-  .describe("Only on an internal note, and `true`: only the team sees it, never on the portal, in emails or webhooks");
+  .describe("Only on an internal note, and `true`: only the team sees it, never on the portal, in emails or webhooks")
+  .meta({ examples: [true] });
 
 export const listComments = defineOperation({
   name: "comments.list",
