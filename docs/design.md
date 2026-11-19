@@ -447,7 +447,7 @@ the list picks none to approve at once.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Documentation (at `/docs`); `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
-    one 82rem container on every page (the docs' columns), so the logo never moves between parts; outside Docs the
+    one 82rem container on every page (100rem from 1536px; the docs' columns), so the logo never moves between parts; outside Docs the
     pages' own narrower containers sit centred under it.
     On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it, on Docs, the docs tabs' row when there are two or more: an underlined row
@@ -591,10 +591,13 @@ the list picks none to approve at once.
     cards, Related articles, and "Still stuck?" (Ask AI
     and Contact us as quiet buttons) on a soft grey fill. With two or more
     sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
-    the same desktop container (79rem, the header 82rem) so navigation keeps the logo, tree and article's left edge in place.
+    the same desktop container (79rem, the header 82rem; from 1536px 97rem and 100rem) so navigation keeps the logo, tree and article's left edge in place.
     The text keeps 65–70 characters a line between the two (a 46rem column; 64ch
     at 1280px); below 1280px "On this page" is a compact menu under the title. Without sections the text is a 43rem
     column, aligned to the same left edge beside the tree from 1280px, with the outline's column left empty; below that it stays centred beside the tree.
+    From 1536px the extra room goes around the text, not into it: "On this page" at the container's right edge and the
+    46rem column centred between it and the tree (a 43rem one keeps the same left edge). An API operation's page gives it
+    to both of its columns there: the examples three-quarters as wide as the page, at least 26rem (26rem below 1536px).
     **Reading mode** hides the tree and "On this page", leaving the article alone; the same
     button (pressed, soft green) brings them back. Remembered per browser (`localStorage`, set on `<html>` before the
     page shows, `lib/docs-reading.ts`). A collection's page: its icon and name, a card

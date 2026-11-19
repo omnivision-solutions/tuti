@@ -480,7 +480,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
   );
   return (
     <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} references={tree.references} current={operation.slug} />}>
-      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start">
+      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_minmax(26rem,0.75fr)]">
         <article className="flex min-w-0 flex-col gap-8" aria-labelledby={ARTICLE_TITLE_ID}>
           <div className="flex flex-col gap-3">
             {/* The way up, and the page's actions at the row's end on wide screens, under the title on phones (as an article's). */}
@@ -637,7 +637,8 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
           <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {reference.name}
           </h1>
-          <Markdown text={doc.description} className="article-text gap-4 text-muted-foreground" />
+          {/* An article's measure, as the page widens on big screens. */}
+          <Markdown text={doc.description} className="article-text max-w-[46rem] gap-4 text-muted-foreground" />
         </div>
         <div className={cn("grid gap-4", schemes.length > 0 && "lg:grid-cols-2")}>
           <Box title="Where requests go">
