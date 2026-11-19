@@ -26,9 +26,13 @@ test("the script's link signs a browser in as the account once, until the browse
   const ada = await signUp("Ada");
   const link = mintLink(ada.email.toUpperCase());
   expect(link.href).toMatch(/^http:\/\/tuti\.localhost:3100\/api\/auth\/support\/sign-in\?token=[\w-]{43}$/);
+  const stored = await prisma.verification.findFirstOrThrow({ where: { identifier: { startsWith: "support-sign-in:" }, value: ada.id } });
+  expect(stored.expiresAt.getTime() - stored.createdAt.getTime()).toBeCloseTo(10 * 60 * 1000, -4);
 
   const first = await open(link);
   expect(first).toMatchObject({ location: "/app", userId: ada.id });
+  const session = await prisma.session.findFirstOrThrow({ where: { userId: ada.id }, orderBy: { createdAt: "desc" } });
+  expect(session.expiresAt.getTime() - session.createdAt.getTime()).toBeCloseTo(24 * 60 * 60 * 1000, -4);
   // A browser-session cookie: no Max-Age, so closing the window ends it.
   expect(first.cookies.find((c) => c.startsWith("tuti.session_token="))).not.toMatch(/Max-Age/i);
 
