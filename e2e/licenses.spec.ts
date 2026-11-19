@@ -330,7 +330,7 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await expect(owner.getByText("License assigned")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();
-  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
   await useUpLicenseEmails(slug);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLinkIcon } from "lucide-react";
-import { Suspense, use, useActionState, useTransition } from "react";
+import { type ReactNode, Suspense, use, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SettingBlock, SettingRow } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
 import { EMAIL_FORWARDING_DOCS, type MailProvider } from "@/lib/mail-providers";
@@ -39,8 +40,27 @@ type OwnDomain = {
   receivedAt: Date | null;
 };
 
+const LABEL = "Send from your own address";
+const INFO = "Use your company's address, like support@yourcompany.com, instead of your support address: replies come from it, and emails to it land in the Inbox.";
+
+/** Where the own address stands, in a word or two, on its row: sending first (its DNS records, the plan), then receiving. */
+function ownStatus(own: OwnDomain): { label: string; variant: "soft" | "outline" | "destructive" } {
+  if (own.error) {
+    return { label: "Not verified", variant: "destructive" };
+  }
+  if (!own.verified) {
+    return { label: "Waiting for DNS", variant: "outline" };
+  }
+  if (!own.included) {
+    return { label: "Not on your plan", variant: "outline" };
+  }
+  return own.receivedAt ? { label: "Working", variant: "soft" } : { label: "No email received yet", variant: "outline" };
+}
+
 /**
- * Settings → Inbox and email → Your own address (support.setEmailDomain): the team's own address, both ways.
+ * Settings → Inbox and email → Send from your own address (support.setEmailDomain): the team's own address, both
+ * ways. One row with "Set up" until there's an address; its steps show once started, and stay while one is set, the
+ * row saying where it stands.
  * In steps: the address, then sending emails: they put the 3 CNAMEs it shows in their DNS (each part
  * selectable, with Copy) and check; once
  * verified, replies come from it, and a test email shows it working. Receiving emails: they forward
@@ -53,6 +73,7 @@ export function EmailDomainSettings({
   supportAddress,
   oneClick,
   receiver,
+  planNotice,
 }: {
   projectSlug: string;
   own: OwnDomain;
@@ -61,82 +82,116 @@ export function EmailDomainSettings({
   oneClick?: Promise<OneClickDns | null> | null;
   /** Who receives the domain's email (lib/mail-providers.ts), while it isn't forwarded yet. */
   receiver?: Promise<Receiver> | null;
+  /** Shown in place of "Set up" where the project's plan doesn't include it. */
+  planNotice?: ReactNode;
 }) {
   if (!own.address) {
-    return (
-      <SetupSteps>
-        <SetupStep title="Your address" state="current" description="Your company's address. Your users' replies to it still land in the Inbox.">
-          <AddAddressForm projectSlug={projectSlug} />
-        </SetupStep>
-        <SetupStep title="Sending emails" state="upcoming" description="Replies to your users come from it once 3 DNS records are in." />
-        <SetupStep title="Receiving emails" state="upcoming" description="Forward it to your support address, so emails to it land in the Inbox." />
-      </SetupSteps>
-    );
+    // Its own component: "Set up" starts closed again once an address is removed.
+    return <SetUp projectSlug={projectSlug} included={own.included} planNotice={planNotice} />;
   }
   const sending = own.verified && own.included;
   // SES checks the 3 together. A failure isn't always theirs (SES may have lost the domain): it says
   // why above them, and they get no status.
   const status: DnsStatus | undefined = own.verified ? "verified" : own.error ? undefined : "pending";
+  const stands = ownStatus(own);
   return (
-    <div className="flex flex-col gap-6">
-      <SetupSteps>
-        <SetupStep title="Your address" state="done">
-          <SetupValue>{own.address}</SetupValue>
-        </SetupStep>
-        <SetupStep
-          title="Sending emails"
-          state={sending ? "done" : "current"}
-          description={
-            sending
-              ? `Replies to your users come from ${own.address}. Keep these records at your DNS provider.`
-              : !own.included
-                ? `Your plan doesn't include sending from your own address any more: replies come from ${supportAddress} until it does.`
-                : own.error
-                  ? `${own.error}. Replies come from ${supportAddress} until it's verified again.`
-                  : `Add these 3 records at your domain's DNS provider, then check. Until then, replies come from ${supportAddress}.`
-          }
-          status={<Badge variant={own.verified ? "soft" : own.error ? "destructive" : "outline"}>{own.verified ? "Verified" : own.error ? "Not verified" : "Waiting for DNS"}</Badge>}
-          aside={!own.verified && <OneClickDnsButton link={oneClick} />}
-        >
-          {!own.verified && !own.error && own.included && (
-            <WaitingNotice>Waiting for your DNS records. Changes can take a while to show; we check again daily.</WaitingNotice>
-          )}
-          <DnsRecords records={own.records.map((record) => ({ ...record, status }))} label={`DNS records for ${own.address.slice(own.address.lastIndexOf("@") + 1)}`} />
-          <div>{sending ? <TestButton projectSlug={projectSlug} /> : !own.verified && <CheckButton projectSlug={projectSlug} address={own.address} />}</div>
-        </SetupStep>
-        <SetupStep
-          title="Receiving emails"
-          state={own.receivedAt ? "done" : "current"}
-          description={
-            own.receivedAt ? (
-              `Emails to ${own.address} land in the Inbox. Keep forwarding it. Last email received ${timeAgo(new Date(own.receivedAt))}.`
-            ) : (
-              <Suspense fallback={<ForwardingGuide address={own.address} receiver="other" />}>
-                <DetectedGuide address={own.address} receiver={receiver} />
-              </Suspense>
-            )
-          }
-          status={<Badge variant={own.receivedAt ? "soft" : "outline"}>{own.receivedAt ? "Forwarded" : "Waiting for an email"}</Badge>}
-        >
-          <CopyRows
-            label={`Forward ${own.address}`}
-            rows={[
-              { label: "From", value: own.address, name: "forwarding from" },
-              { label: "To", value: supportAddress, name: "forwarding to" },
-            ]}
-          />
-          {!own.receivedAt && (
-            <p className="text-sm text-muted-foreground">
-              Your provider may ask to confirm the forwarding: that email lands in the Inbox. Then send an email to {own.address} to check: it shows here once it
-              arrives.
-            </p>
-          )}
-        </SetupStep>
-      </SetupSteps>
-      <div className="flex justify-end border-t pt-4">
-        <RemoveButton projectSlug={projectSlug} address={own.address} supportAddress={supportAddress} />
-      </div>
-    </div>
+    <>
+      <SettingRow label={LABEL} description={`Replies come from ${sending ? own.address : supportAddress}.`} info={INFO} inline>
+        <Badge variant={stands.variant}>{stands.label}</Badge>
+      </SettingRow>
+      <SettingBlock className="gap-6">
+        <SetupSteps>
+          <SetupStep title="Your address" state="done">
+            <SetupValue>{own.address}</SetupValue>
+          </SetupStep>
+          <SetupStep
+            title="Sending emails"
+            state={sending ? "done" : "current"}
+            description={
+              sending
+                ? `Replies to your users come from ${own.address}. Keep these records at your DNS provider.`
+                : !own.included
+                  ? `Your plan doesn't include sending from your own address any more: replies come from ${supportAddress} until it does.`
+                  : own.error
+                    ? `${own.error}. Replies come from ${supportAddress} until it's verified again.`
+                    : `Add these 3 records at your domain's DNS provider, then check. Until then, replies come from ${supportAddress}.`
+            }
+            status={<Badge variant={own.verified ? "soft" : own.error ? "destructive" : "outline"}>{own.verified ? "Verified" : own.error ? "Not verified" : "Waiting for DNS"}</Badge>}
+            aside={!own.verified && <OneClickDnsButton link={oneClick} />}
+          >
+            {!own.verified && !own.error && own.included && (
+              <WaitingNotice>Waiting for your DNS records. Changes can take a while to show; we check again daily.</WaitingNotice>
+            )}
+            <DnsRecords records={own.records.map((record) => ({ ...record, status }))} label={`DNS records for ${own.address.slice(own.address.lastIndexOf("@") + 1)}`} />
+            <div>{sending ? <TestButton projectSlug={projectSlug} /> : !own.verified && <CheckButton projectSlug={projectSlug} address={own.address} />}</div>
+          </SetupStep>
+          <SetupStep
+            title="Receiving emails"
+            state={own.receivedAt ? "done" : "current"}
+            description={
+              own.receivedAt ? (
+                `Emails to ${own.address} land in the Inbox. Keep forwarding it. Last email received ${timeAgo(new Date(own.receivedAt))}.`
+              ) : (
+                <Suspense fallback={<ForwardingGuide address={own.address} receiver="other" />}>
+                  <DetectedGuide address={own.address} receiver={receiver} />
+                </Suspense>
+              )
+            }
+            status={<Badge variant={own.receivedAt ? "soft" : "outline"}>{own.receivedAt ? "Forwarded" : "Waiting for an email"}</Badge>}
+          >
+            <CopyRows
+              label={`Forward ${own.address}`}
+              rows={[
+                { label: "From", value: own.address, name: "forwarding from" },
+                { label: "To", value: supportAddress, name: "forwarding to" },
+              ]}
+            />
+            {!own.receivedAt && (
+              <p className="text-sm text-muted-foreground">
+                Your provider may ask to confirm the forwarding: that email lands in the Inbox. Then send an email to {own.address} to check: it shows here once it
+                arrives.
+              </p>
+            )}
+          </SetupStep>
+        </SetupSteps>
+        <div className="flex justify-end border-t pt-4">
+          <RemoveButton projectSlug={projectSlug} address={own.address} supportAddress={supportAddress} />
+        </div>
+      </SettingBlock>
+    </>
+  );
+}
+
+/** No address yet: the row with "Set up", which shows the steps (the address first) under it. */
+function SetUp({ projectSlug, included, planNotice }: { projectSlug: string; included: boolean; planNotice?: ReactNode }) {
+  const [started, setStarted] = useState(false);
+  return (
+    <>
+      <SettingRow label={LABEL} description="Replies come from support@yourcompany.com." info={INFO} inline>
+        {included && (
+          <Button variant="outline" size="sm" aria-expanded={started} aria-controls="email-domain-setup" onClick={() => setStarted(!started)}>
+            {started ? "Cancel" : "Set up"}
+          </Button>
+        )}
+      </SettingRow>
+      {!included ? (
+        <SettingBlock>{planNotice}</SettingBlock>
+      ) : (
+        started && (
+          <SettingBlock>
+            <div id="email-domain-setup">
+              <SetupSteps>
+                <SetupStep title="Your address" state="current" description="Your company's address. Your users' replies to it still land in the Inbox.">
+                  <AddAddressForm projectSlug={projectSlug} />
+                </SetupStep>
+                <SetupStep title="Sending emails" state="upcoming" description="Replies to your users come from it once 3 DNS records are in." />
+                <SetupStep title="Receiving emails" state="upcoming" description="Forward it to your support address, so emails to it land in the Inbox." />
+              </SetupSteps>
+            </div>
+          </SettingBlock>
+        )
+      )}
+    </>
   );
 }
 
@@ -177,7 +232,7 @@ function AddAddressForm({ projectSlug }: { projectSlug: string }) {
         <FieldLabel htmlFor="email-domain-address" className="sr-only">
           Your company&apos;s address
         </FieldLabel>
-        <Input id="email-domain-address" name="address" type="email" required maxLength={254} placeholder="support@yourcompany.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
+        <Input id="email-domain-address" name="address" autoFocus type="email" required maxLength={254} placeholder="support@yourcompany.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
         {state.error && <FieldError>{state.error}</FieldError>}
       </Field>
       <Button type="submit" disabled={pending} className="self-start">

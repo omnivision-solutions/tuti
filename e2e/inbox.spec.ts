@@ -1932,11 +1932,40 @@ test("with an address for the project, an email to it lands in the inbox without
   await createProject(owner, "Acme", slug);
 
   await owner.goto(`/app/${slug}/settings/support`);
+  // A row a setting, a line each: what takes longer to say is behind its ⓘ.
+  const row = (label: string) => owner.locator('[data-slot="setting-row"]').filter({ hasText: label });
+  await expect(row("Messages in the widget")).toContainText("Users write to your team from the widget.");
+  await expect(owner.getByRole("switch", { name: "Messages in the widget" })).toHaveAccessibleDescription("Users write to your team from the widget.");
+  await row("Messages in the widget").getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("“Ask a person” after an AI answer starts a conversation here too, so it's off while this is.", { exact: false })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(row("Support address")).toContainText("Your project gets one of its own, for good.");
   await owner.getByRole("button", { name: "Get a support address" }).click();
   const address = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
   await expect(owner.getByText(address)).toBeVisible();
-  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  // Until an email comes the row says what the address is for, not that none came. Its own address is one row too.
+  await expect(row("Support address")).toContainText("Forward your own address here.");
+  await expect(owner.getByText("No email received yet")).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
+  await expect(row("Send from your own address")).toContainText("Replies come from support@yourcompany.com.");
+  await expect(owner.getByRole("button", { name: "Set up", exact: true })).toBeVisible();
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  // On a wide screen the address is beside its label.
+  const labelBox = async () => (await row("Support address").getByText("Support address", { exact: true }).boundingBox())!;
+  const addressBox = async () => (await owner.getByText(address).boundingBox())!;
+  expect((await addressBox()).x).toBeGreaterThan((await labelBox()).x + (await labelBox()).width);
   await checkpoint(owner, "support-email-settings");
+  // On a phone it goes under its label, and nothing is wider than the screen.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect((await addressBox()).y).toBeGreaterThanOrEqual((await labelBox()).y + (await labelBox()).height);
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "support-email-settings-phone");
+  await owner.setViewportSize(desktop);
+  await row("Support address").getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("your provider may ask you to confirm it, and that email lands in the Inbox too.", { exact: false })).toBeVisible();
+  await owner.keyboard.press("Escape");
 
   // A customer writes to the team's own support address, which forwards it here.
   await receive(address, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "I can't find my October invoice.\r\n\r\nOn Mon, someone wrote:\r\n> earlier"));
@@ -1969,8 +1998,10 @@ test("with an address for the project, an email to it lands in the inbox without
   expect(await download.text()).toBe("%PDF-1.4 the invoice");
   await checkpoint(owner, "email-attachments");
 
+  // Once one came, the row says when.
   await owner.goto(`/app/${slug}/settings/support`);
-  await expect(owner.getByText(/^Last email received/)).toBeVisible();
+  await expect(owner.locator('[data-slot="setting-row"]').filter({ hasText: "Support address" }).getByText(/^Last email received .+\.$/)).toBeVisible();
+  await expect(owner.getByText("Forward your own address here.")).toHaveCount(0);
 });
 
 /** A raw email as a mail provider delivers it. */
@@ -2014,7 +2045,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();
-  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
 
   // In its first week, a project sends up to 200 emails a day: past that, a reply waits for tomorrow.
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
@@ -2145,7 +2176,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   await expect(operator.getByText("Acme's email is on again")).toBeVisible();
 
   await owner.reload();
-  await expect(owner.getByText("No email received yet.").or(owner.getByText(/^Last email received/))).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
   await expect(paused).toHaveCount(0);
 });
 
@@ -2162,8 +2193,26 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
 
   // Its email is at Google Workspace: the guide to forwarding it there.
   await publishMx(domain, ["aspmx.l.google.com", "alt1.aspmx.l.google.com"]);
+  // One row until it's started: "Set up" shows the steps under it, the address first; Cancel hides them again.
+  const ownRow = owner.locator('[data-slot="setting-row"]').filter({ hasText: "Send from your own address" });
+  const setUp = owner.getByRole("button", { name: "Set up", exact: true });
+  await expect(setUp).toHaveAttribute("aria-expanded", "false");
+  await expect(owner.getByRole("region", { name: "Sending emails" })).toHaveCount(0);
+  await setUp.click();
+  await expect(owner.getByLabel("Your company's address")).toBeFocused();
+  await expect(owner.getByRole("region", { name: "Receiving emails" })).toBeVisible();
+  await checkpoint(owner, "own-address-started");
+  await ownRow.getByRole("button", { name: "Cancel" }).click();
+  await expect(owner.getByLabel("Your company's address")).toHaveCount(0);
+  await setUp.click();
   await owner.getByLabel("Your company's address").fill(`support@${domain}`);
   await owner.getByRole("button", { name: "Use this address" }).click();
+  await expect(owner.getByRole("region", { name: "Sending emails" }).getByText("Waiting for DNS")).toBeVisible();
+  // The row says where it stands and where replies come from meanwhile; a setup under way opens showing its steps.
+  await expect(ownRow).toContainText("Waiting for DNS");
+  await expect(ownRow).toContainText(`Replies come from ${supportAddress}.`);
+  await expect(setUp).toHaveCount(0);
+  await owner.reload();
   await expect(owner.getByRole("region", { name: "Sending emails" }).getByText("Waiting for DNS")).toBeVisible();
   const receiving = owner.getByRole("region", { name: "Receiving emails" });
   await expect(receiving).toContainText(`${domain}'s email is at Google Workspace. There, forward support@${domain} to your support address`);
@@ -2176,6 +2225,14 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
     await expect(record).toContainText("Pending");
   }
   await checkpoint(owner, "own-address-records");
+  // On a phone the steps fit the screen.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(ownRow).toContainText("Waiting for DNS");
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "own-address-records-phone");
+  await owner.setViewportSize(desktop);
   // Not in DNS yet.
   await owner.getByRole("button", { name: "Check DNS" }).click();
   await expect(owner.getByText(/Not found yet/)).toBeVisible();
@@ -2184,6 +2241,9 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await owner.getByRole("button", { name: "Check DNS" }).click();
   await expect(owner.getByText(`support@${domain} is verified`)).toBeVisible();
   await expect(owner.getByText(`Replies to your users come from support@${domain}.`, { exact: false })).toBeVisible();
+  // Sending works; nothing forwarded from it yet.
+  await expect(ownRow).toContainText(`Replies come from support@${domain}.`);
+  await expect(ownRow).toContainText("No email received yet");
   for (const record of await records.all()) {
     await expect(record).toContainText("Verified");
   }
@@ -2200,12 +2260,16 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await owner.reload();
   await expect(receiving.getByText("Forwarded", { exact: true })).toBeVisible();
   await expect(receiving).toContainText(`Emails to support@${domain} land in the Inbox.`);
+  await expect(ownRow).toContainText("Working");
+  await expect(ownRow).not.toContainText("No email received yet");
   await checkpoint(owner, "own-address-verified");
 
   await owner.getByRole("button", { name: "Remove address" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`support@${domain} removed`)).toBeVisible();
-  await expect(owner.getByLabel("Your company's address")).toBeVisible();
+  // Back to the one row, its steps closed.
+  await expect(setUp).toHaveAttribute("aria-expanded", "false");
+  await expect(owner.getByLabel("Your company's address")).toHaveCount(0);
 });
 
 test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter put a link to the article where the cursor is, and the visitor sees it in the widget", async ({ browser }, testInfo) => {
