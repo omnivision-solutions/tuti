@@ -34,7 +34,14 @@ function Meter({ label, left, of, used }: { label: string; left: number | null; 
     <div className="flex flex-col gap-2 text-sm">
       <div className="flex justify-between gap-3">
         <span className="font-medium">{label}</span>
-        <span className="text-muted-foreground tabular-nums">{of === null || left === null ? used : `${credits(left)} of ${credits(of)} left`}</span>
+        {of === null || left === null ? (
+          <span className="text-muted-foreground tabular-nums">{used}</span>
+        ) : (
+          <span className="tabular-nums">
+            {`${credits(left)} `}
+            <span className="text-muted-foreground">of {credits(of)}</span>
+          </span>
+        )}
       </div>
       {of !== null && left !== null && <Progress aria-label={`${label} left`} value={Math.min(left, of)} max={of} />}
     </div>
@@ -120,7 +127,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         // A license's plan is one row: nothing to pay or renew, and unassigning it is rare, so behind "⋯".
         <SettingsCard>
           <div className="flex items-center gap-2.5 px-4 py-3 @min-[34rem]/settings:px-5">
-            <h2 className="text-base font-semibold">{shown.name} plan</h2>
+            <h2 className="text-base font-semibold">{shown.name}</h2>
             <Badge variant="soft">{license.source === "appsumo" ? "Lifetime" : `${license.from} license`}</Badge>
             <div className="ml-auto">
               <UnassignLicense menu projectSlug={slug} licenseId={license.id} active badge={plan.badgeAddOn} />
@@ -189,6 +196,42 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
+      {creditsEnabled() && (monthly.length === 0 || extra.length > 0) && (
+        <SettingsCard>
+          <SettingBlock>
+            <h2 className="text-base font-semibold">{monthly.length > 0 ? "Extra AI credits" : `${credits(balance)} AI credits`}</h2>
+            {extra.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No credits left.</p>
+            ) : (
+              <table className="w-full text-sm" aria-label="AI credits left">
+                <thead className="sr-only">
+                  <tr>
+                    <th>Credits</th>
+                    <th>Left</th>
+                    <th>Expires</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {extra.map((grant) => (
+                    <tr key={grant.id}>
+                      <td className="w-1/3 py-2">{SOURCES[grant.source]}</td>
+                      <td className="w-20 py-2 text-right tabular-nums">{credits(grant.remaining)}</td>
+                      <td className="py-2 text-right text-muted-foreground">{grant.expiresAt ? `until ${formatShortDate(grant.expiresAt)}` : "Never"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </SettingBlock>
+        </SettingsCard>
+      )}
+      {topupsEnabled() && (
+        <SettingsCard title="Buy credits" description="Credits are added once the payment goes through.">
+          <SettingBlock>
+            <BuyCredits projectSlug={slug} perDollar={creditsPerTopupDollar()} days={topupExpiryDays()} min={TOPUP_DOLLARS.min} max={TOPUP_DOLLARS.max} />
+          </SettingBlock>
+        </SettingsCard>
+      )}
       {plansEnabled() && (!license || licensed) && (badge !== null || plan.badgeAddOn) && (
         <SettingsCard>
           <SettingRow
@@ -220,42 +263,6 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 </div>
               ))}
           </SettingRow>
-        </SettingsCard>
-      )}
-      {creditsEnabled() && (monthly.length === 0 || extra.length > 0) && (
-        <SettingsCard>
-          <SettingBlock>
-            <h2 className="text-base font-semibold">{monthly.length > 0 ? "Extra AI credits" : `${credits(balance)} AI credits`}</h2>
-            {extra.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No credits left.</p>
-            ) : (
-              <table className="w-full text-sm" aria-label="AI credits left">
-                <thead className="sr-only">
-                  <tr>
-                    <th>Credits</th>
-                    <th>Left</th>
-                    <th>Expires</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {extra.map((grant) => (
-                    <tr key={grant.id}>
-                      <td className="py-2">{SOURCES[grant.source]}</td>
-                      <td className="py-2 text-right tabular-nums">{credits(grant.remaining)}</td>
-                      <td className="w-40 py-2 text-right text-muted-foreground">{grant.expiresAt ? `until ${formatShortDate(grant.expiresAt)}` : "Never"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </SettingBlock>
-        </SettingsCard>
-      )}
-      {topupsEnabled() && (
-        <SettingsCard title="Buy credits" description="Credits are added once the payment goes through.">
-          <SettingBlock>
-            <BuyCredits projectSlug={slug} perDollar={creditsPerTopupDollar()} days={topupExpiryDays()} min={TOPUP_DOLLARS.min} max={TOPUP_DOLLARS.max} />
-          </SettingBlock>
         </SettingsCard>
       )}
       <UsageMonths projectId={project.id} />

@@ -121,7 +121,7 @@ test("a project still paying for a plan the file no longer lists is offered the 
 });
 
 /** "This month"'s meter `label`, as the page says it. */
-const meter = (label: string, text: string) => new RegExp(`>${label}</span><span[^>]*>${text}<`);
+const meter = (label: string, text: string) => new RegExp(`>${label}</span><span[^>]*>${text.replace(/ of (.+) left$/, " <span[^>]*>of $1")}<`);
 
 test("This month counts down the month's email to the project's users from its plan's limit; without plans, nothing", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
@@ -163,7 +163,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
   let page = await billing();
   expect(page).toContain(`>Resets ${until}</span>`);
   // The plan, one row: its name, what kind of license, and Unassign behind "⋯".
-  expect(page).toMatch(/>Pro plan<\/h2><span[^>]*>Tuti license</);
+  expect(page).toMatch(/>Pro<\/h2><span[^>]*>Tuti license</);
   expect(page).toContain('aria-label="License options"');
   expect(page).not.toContain("doesn't renew or bill");
   expect(page).toMatch(meter("Emails", "10,000 of 10,000 left"));
