@@ -204,8 +204,10 @@ test("only hostnames that can be a domain of the team's own", async () => {
 test("off unless the server says where domains point; one added before keeps showing so it can be removed", async () => {
   await addAndPublish(hostname());
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "");
+  // Not set up here, like any feature a server doesn't have: 503, not bad input.
   await expect(call(setDomain, as(), { hostname: hostname() })).rejects.toMatchObject({
-    status: 400,
+    status: 503,
+    code: "domains_unavailable",
     message: "Custom domains aren't set up on this server (see CUSTOM_DOMAIN_TARGET in .env.example)",
   });
   expect((await call(getDomain, as(), {})).domain).toMatchObject({ records: [{ type: "TXT" }] });
