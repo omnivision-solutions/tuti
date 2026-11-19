@@ -115,7 +115,7 @@ An error has a status and a JSON body: \`code\` for code to check, \`message\` f
 
 - 400: the input isn't valid
 - 401: no key, or one that no longer works
-- 402: the project's plan doesn't include it, or it's out of AI credits
+- 402: the project's plan doesn't include it or is at its limit, it's out of AI credits, or a payment didn't go through
 - 403: it isn't allowed (a read-only key, its creator's role, one only a person can run in the app, or a setting that's off)
 - 404: no such thing
 - 409: it conflicts with how things are now
