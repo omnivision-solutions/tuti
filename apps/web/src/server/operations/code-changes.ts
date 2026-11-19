@@ -1132,7 +1132,7 @@ const postOut = z.object({
     .describe("Who sees it besides the team: everyone, its author, or nobody")
     .meta({ examples: ["public"] }),
   createdAt: when("When it was posted"),
-  url: z.string().describe("The post on the portal").meta({ examples: ["https://acme.tuti.so/feedback/p/42-repeating-events"] }),
+  url: z.string().describe("The post on the portal").meta({ examples: ["https://acme.tuti.so/feedback/feature-requests/repeating-events-42"] }),
 });
 
 /** An update as a review page shows it (actionViews). */
