@@ -625,7 +625,7 @@ export const getReports = defineOperation({
   name: "reports.get",
   title: "Get reports",
   summary:
-    "How the docs, their AI and the inbox did over a range of days: by day (UTC), in total, and over as many days just before. Lists stop at 50 (comments and questions at 20). Where plans are sold, it needs a plan with Reporting, for ranges as long as that plan allows (402 otherwise).",
+    "How the docs, their AI and the inbox did over a range of days: by day (UTC), in total, and over as many days just before. Failed searches and conversations list 50, comments and questions 20. Where plans are sold, needs a plan with Reporting, for ranges as long as that plan allows (402 otherwise).",
   method: "GET",
   path: "/reports",
   scope: "read",

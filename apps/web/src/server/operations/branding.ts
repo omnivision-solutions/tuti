@@ -254,7 +254,7 @@ const brandingOutput = z
     color: z.string().nullable().describe(LINES.color).meta({ examples: ["#5b21b6"] }),
     headerLinks: z.array(linkOutput).describe(LINES.headerLinks),
     footerLinks: z.array(linkOutput).describe(LINES.footerLinks),
-    poweredBy: z.boolean().describe(`${LINES.poweredBy}: always, unless the project has a licence or the add-on`).meta({ examples: [true] }),
+    poweredBy: z.boolean().describe(`${LINES.poweredBy}: always, unless it was turned off (poweredBy false) on a project with a licence or the add-on`).meta({ examples: [true] }),
     contentActions: contentActions.required().describe(LINES.contentActions),
     docsHome: docsHome.required().describe(LINES.docsHome),
     colorScheme: z.enum(COLOR_SCHEMES).describe(LINES.colorScheme).meta({ examples: ["system"] }),

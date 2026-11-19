@@ -134,7 +134,7 @@ const modelId = z
   .max(200, "Model ids are under 200 characters")
   .optional()
   .describe(
-    "A model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default. Picking a model puts the role's group on the custom level, which needs a plan with it (402); \"\" works on every plan",
+    "A model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default; \"off\" skips Autopilot's checks (code_changes_check only: 400 for another role). Picking a model puts the role's group on the custom level, which needs a plan with it (402); \"off\" and \"\" work on every plan",
   )
   .meta({ examples: ["anthropic/claude-sonnet-5.5"] });
 
