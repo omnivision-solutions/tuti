@@ -5,7 +5,10 @@ import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/github/webhook/route";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
+
+import { searchDocs } from "./docs-search";
 
 import { countSpecFetch, createApiReference, FETCHES_PER_MEMBER_PER_MINUTE, getApiReference, syncApiReference } from "./operations/api-references";
 import { call } from "./operations/run";
@@ -354,6 +357,26 @@ describe("a pull request merging", () => {
     commit({ "docs/openapi.json": MORE });
     await merge("main", ["docs/openapi.json"]);
     expect(await prisma.apiReference.findUniqueOrThrow({ where: { projectId_slug: { projectId: project.id, slug: "second" } } })).toMatchObject({ spec: MORE });
+  });
+
+  test("a merge that brings a new operation makes it searchable, as adding, Sync now and another file do (A14)", async () => {
+    /** What the docs' search finds for a signed-out reader, operations included, as their paths under /docs. */
+    const found = async (query: string) => (await searchDocs(project.id, query, 10, SIGNED_OUT, { log: false, operations: true })).map((result) => result.slug);
+    // Added: its operations are searchable.
+    expect(await found("posts")).toEqual(["acme-api/get-posts"]);
+    expect(await found("users")).toEqual([]);
+    // A merge changing the file brings GET /users: searchable once it's synced.
+    commit({ "docs/openapi.json": spec({ "GET /posts": "Posts", "GET /users": "Users" }) });
+    await merge("main", ["docs/openapi.json"]);
+    expect(await found("users")).toEqual(["acme-api/get-users"]);
+    // Sync now dropping it takes it out.
+    commit({ "docs/openapi.json": POSTS });
+    expect((await sync()).changes).toMatchObject({ removed: 1, changed: true });
+    expect(await found("users")).toEqual([]);
+    // Another file (the other repository's): its operations replace these.
+    await sync({ repoId: other.id, path: "spec.json", ref: "trunk" });
+    expect(await found("other")).toEqual(["acme-api/get-other"]);
+    expect(await found("posts")).toEqual([]);
   });
 
   test("a merge that breaks the file says so on the reference's page", async () => {
