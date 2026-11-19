@@ -558,7 +558,7 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
   await api("/changelog/1/publish", {});
   await owner.goto(`/app/${slug}/settings/access`);
-  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
 
@@ -873,7 +873,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
 
   // On a private portal: its sign-in page shows nothing of it to someone who may not read it, the widget included.
   await owner.goto(`/app/${slug}/settings/access`);
-  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
   const outsider = await newPerson(browser, portalUrl(slug));
