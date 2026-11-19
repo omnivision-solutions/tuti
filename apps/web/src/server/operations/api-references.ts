@@ -694,7 +694,7 @@ export const syncApiReference = defineOperation({
       .meta({ examples: ["https://api.example.com/openapi.json"] })
       .optional(),
     github: z
-      .object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.optional() })
+      .object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.meta({ description: "A branch; left out, the one it's read from now", examples: ["main"] }).optional() })
       .describe("A GitHub file reference's new file: any of its `repoId`, `path` and `ref`, the rest kept. Read first, as `url` is")
       .optional(),
   }),
