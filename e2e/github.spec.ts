@@ -206,7 +206,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await connectGithub(owner, mobile, { ...account, add: [] });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   await owner.getByRole("button", { name: "Add repository" }).click();
-  const toAdd = owner.getByRole("list", { name: "Repositories to add" });
+  const toAdd = owner.getByRole("dialog", { name: "Add repository" }).getByRole("list", { name: "Repositories to add" });
   await expect(toAdd.getByRole("button", { name: /^acme-e2e\/app/ })).toBeDisabled();
   await expect(toAdd.getByText("In Acme", { exact: true })).toBeVisible();
   await owner.getByRole("textbox", { name: "Search repositories" }).fill("ios");
@@ -269,14 +269,15 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("link", { name: `Connect @${labs.account}` }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
   await expect(connectedTo(labs.account)).toBeVisible();
-  // Beside the title the long name leaves the title whole, on a wide screen and on a tablet (where it's above the card).
+  // The long name leaves the title whole at every width: beside it on a wide screen (cut itself first where they'd
+  // crowd), above the card on a tablet, where it's whole.
   const title = owner.getByRole("heading", { name: "GitHub", exact: true });
-  for (const width of [1280, 960, 820]) {
+  for (const width of [1280, 1140, 960, 820]) {
     await owner.setViewportSize({ width, height: 900 });
     await expect(connectedTo(labs.account)).toBeVisible();
-    await expect.poll(() => connectedTo(labs.account).evaluate(uncut)).toBe(true);
     await expect.poll(() => title.evaluate(uncut)).toBe(true);
   }
+  await expect.poll(() => connectedTo(labs.account).evaluate(uncut)).toBe(true);
   await checkpoint(owner, "settings-github-long-name-tablet");
   // On a phone the long name wraps, never cut.
   await owner.setViewportSize({ width: 390, height: 844 });

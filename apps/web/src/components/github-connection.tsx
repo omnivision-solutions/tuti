@@ -17,7 +17,7 @@ import {
 import { SettingRow, SettingsCard } from "@/components/settings-card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { disconnectGithub, refreshGithubRepositories, setAutoApplyLinks, setCodeChangeAnalysis, setGithubRepository } from "@/server/github";
@@ -109,7 +109,7 @@ export type GithubRepositoryRow = {
 
 /**
  * Settings → Integrations → GitHub's Repositories card: the repositories that feed this project, each with Remove
- * under its ⋯, and "Add repository" at the title's right to search the account's others. Each change saves at once.
+ * under its ⋯, and "Add repository" at the title's right, a dialog to search the account's others. Each change saves at once.
  */
 export function GithubRepositories({
   projectSlug,
@@ -163,12 +163,15 @@ export function GithubRepositories({
       title="Repositories"
       count={ours.length}
       action={
-        <Popover open={adding} onOpenChange={setAdding}>
-          <PopoverTrigger render={<Button variant="outline" size="sm" className="shrink-0" disabled={pending} />}>
+        <Dialog open={adding} onOpenChange={setAdding}>
+          <DialogTrigger render={<Button variant="outline" size="sm" className="shrink-0" disabled={pending} />}>
             <PlusIcon />
             Add repository
-          </PopoverTrigger>
-          <PopoverContent align="end" className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 text-sm">
+          </DialogTrigger>
+          <DialogContent className="text-sm">
+            <DialogHeader>
+              <DialogTitle>Add repository</DialogTitle>
+            </DialogHeader>
             <Input
               autoFocus
               value={search}
@@ -201,8 +204,8 @@ export function GithubRepositories({
                 ))
               )}
             </ul>
-          </PopoverContent>
-        </Popover>
+          </DialogContent>
+        </Dialog>
       }
     >
       {ours.length === 0 ? (
