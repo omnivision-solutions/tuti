@@ -20,7 +20,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
   // Its email to its users this month, against its plan's limit.
-  await expect(owner.getByText("1,000 of 1,000")).toBeVisible();
+  await expect(owner.getByText("1,000 of 1,000 left")).toBeVisible();
   // Picked with the keyboard too (native radios): Yearly, then back.
   await owner.getByRole("radio", { name: "Monthly" }).focus();
   await owner.keyboard.press("ArrowRight");
@@ -74,7 +74,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);
   await expect(owner.getByText("Pro plan", { exact: true })).toBeVisible();
   await expect(owner.getByText(/^\$39 a month · Renews on \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
-  await expect(owner.getByText("10,000 of 10,000")).toBeVisible();
+  await expect(owner.getByText("10,000 of 10,000 left")).toBeVisible();
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
 

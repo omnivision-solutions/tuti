@@ -121,7 +121,7 @@ test("a project still paying for a plan the file no longer lists is offered the 
 });
 
 /** "This month"'s meter `label`, as the page says it. */
-const meter = (label: string, text: string) => new RegExp(`>${label}</span><span[^>]*>${text.replace(/ of (.+) left$/, " <span[^>]*>of $1")}<`);
+const meter = (label: string, text: string) => new RegExp(`>${label}</span><span[^>]*>${text.replace(/ of (.+) left$/, " <span[^>]*>of $1 left")}<`);
 
 test("This month counts down the month's email to the project's users from its plan's limit; without plans, nothing", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
@@ -236,6 +236,12 @@ test("a license on a plan with no email limit still has its month: the AI credit
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
   expect(creditsThrough).toEqual(new Date("2026-12-19T12:00:00Z"));
   expect(page).toContain(">Resets 19 Dec</span>");
+  // With AI credits off too, nothing on the card follows the license's month: no reset day.
+  vi.stubEnv("AI_CREDITS", "");
+  const emailsOnly = await billing();
+  expect(emailsOnly).toMatch(meter("Emails", "0 sent since 1 Nov"));
+  expect(emailsOnly).not.toContain(">Resets ");
+  vi.stubEnv("AI_CREDITS", "on");
   // Where plans are off, there's no This month: the license's credits are in the list, with the rest.
   vi.stubEnv("BILLING_CONFIG", "");
   const without = await billing();

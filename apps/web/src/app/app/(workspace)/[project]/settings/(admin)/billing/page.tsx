@@ -39,7 +39,7 @@ function Meter({ label, left, of, used }: { label: string; left: number | null; 
         ) : (
           <span className="tabular-nums">
             {`${credits(left)} `}
-            <span className="text-muted-foreground">of {credits(of)}</span>
+            <span className="text-muted-foreground">of {credits(of)} left</span>
           </span>
         )}
       </div>
@@ -188,7 +188,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           <SettingBlock>
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-base font-semibold">This month</h2>
-              {until && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
+              {/* The day the license's month ends, where something here follows it (emails counted against a limit, its credits). */}
+              {until && (emails.limit !== null || monthly.length > 0) && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
             </div>
             <div className="grid gap-4 @min-[34rem]/settings:grid-cols-2 @min-[34rem]/settings:gap-x-8">
               {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}

@@ -149,7 +149,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByText("$49 a month, billed monthly on its own.")).toBeVisible();
   // This month: what's left of the license's month's emails, and when the month resets.
   await expect(owner.getByText(/^Resets \d{1,2} [A-Z][a-z]+( \d{4})?$/)).toBeVisible();
-  await expect(owner.getByText("4,000 of 4,000")).toBeVisible();
+  await expect(owner.getByText("4,000 of 4,000 left")).toBeVisible();
   await expect(owner.getByRole("progressbar", { name: "Emails left" })).toHaveAttribute("aria-valuenow", "4000");
   await checkpoint(owner, "team-settings-billing-license");
   await owner.getByRole("button", { name: "Hide the badge" }).click();
@@ -335,7 +335,7 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await useUpLicenseEmails(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("0 of 4,000", { exact: true })).toBeVisible();
+  await expect(owner.getByText("0 of 4,000 left", { exact: true })).toBeVisible();
   // Billing and the inbox write the day alike, short as en-GB has it ("5 Sept").
   const until = /^Resets (\d{1,2} [A-Z][a-z]+)( \d{4})?$/;
   await expect(owner.getByText(until)).toBeVisible();
