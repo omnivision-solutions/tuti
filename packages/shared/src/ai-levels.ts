@@ -37,8 +37,20 @@ export const aiLevelsSchema = z.object({ affordable: row.optional(), best: row.o
 
 const all = (model: string) => Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, model])) as Record<AiRole, string>;
 
-/** The rows of a server with no file. Placeholders until the writing evaluation picks them (docs/plan.md, E0). */
-const BUILT_IN: Rows = { affordable: all("anthropic/claude-haiku-5.5"), best: all("anthropic/claude-sonnet-5.5") };
+/**
+ * The rows of a server with no file. Affordable is the smallest model for every role. Best is the largest where the
+ * model writes what people read (answers, drafted replies, changelog entries, Autopilot's articles and its second
+ * opinion on new ones) and the middle one where it judges or condenses, which a larger model doesn't do better.
+ */
+const BUILT_IN: Rows = {
+  affordable: all("anthropic/claude-haiku-5.5"),
+  best: {
+    ...all("anthropic/claude-opus-5.5"),
+    escalations: "anthropic/claude-sonnet-5.5",
+    support_summary: "anthropic/claude-sonnet-5.5",
+    code_changes_decide: "anthropic/claude-sonnet-5.5",
+  },
+};
 
 /** The variables that set a server's own models. One set, with no file, means its provider may not have the built-in rows' models. */
 const ownModels = () =>

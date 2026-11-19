@@ -193,6 +193,7 @@ const onPlan = (plan: string) => prisma.project.update({ where: { id: project.id
 test("levels: a group runs on its level's models; a plan picks levels with aiLevels and models with Custom's feature, and a level it loses is kept and not used", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   const SONNET = "anthropic/claude-sonnet-5.5";
+  const OPUS = "anthropic/claude-opus-5.5";
 
   // The free plan runs on Balanced: no level, no model of its own. Autopilot's checks can still be switched off.
   await onPlan("free");
@@ -206,11 +207,12 @@ test("levels: a group runs on its level's models; a plan picks levels with aiLev
   // Pro picks a level, not its own models.
   await onPlan("pro");
   expect(await call(updateAiModels, as(), { levels: { answers: "best" } })).toMatchObject({
-    answers: { model: null, default: DEFAULT_AI_MODEL, used: SONNET },
+    answers: { model: null, default: DEFAULT_AI_MODEL, used: OPUS },
+    escalations: { used: SONNET },
     changelog: { used: DEFAULT_AI_MODEL },
     levels: { answers: { level: "best", used: "best", available: ["affordable", "balanced", "best"] }, changelog: { level: "balanced" } },
   });
-  expect(await answeredWith(project.id)).toBe(SONNET);
+  expect(await answeredWith(project.id)).toBe(OPUS);
   await expect(call(updateAiModels, as(), { levels: { answers: "custom" } })).rejects.toMatchObject({ status: 402 });
 
   // Business picks models: a pick puts its group on Custom.
@@ -226,8 +228,8 @@ test("levels: a group runs on its level's models; a plan picks levels with aiLev
 
 test("levels: one the server doesn't offer, or whose models cost more than its cap, can't be saved", async () => {
   vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
-  // Best's row is Sonnet, $15 per million output tokens in the fake's list; Affordable's is Haiku, $5.
-  await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "The best level uses “anthropic/claude-sonnet-5.5”, which costs more than this server allows" });
+  // Best's row for answers is Opus, $25 per million output tokens in the fake's list; Affordable's is Haiku, $5.
+  await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "The best level uses “anthropic/claude-opus-5.5”, which costs more than this server allows" });
   expect((await call(getAiModels, as(), {})).levels.answers.available).toEqual(["affordable", "balanced", "custom"]);
   expect((await call(updateAiModels, as(), { levels: { answers: "affordable" } })).levels.answers.level).toBe("affordable");
   // A server that set its own models and has no levels file has only Balanced and Custom.
@@ -273,7 +275,7 @@ test("a settings page's AI model: every level the server offers, with the upgrad
   await onPlan("pro");
   expect(await saveAiModel(project.slug, { levels: { answers: "best" } })).toEqual({});
   const pro = await setting();
-  expect(pro).toMatchObject({ saved: "best", used: "best", summary: "Answers Claude Sonnet 5.5 · Summaries Claude Sonnet 5.5", notice: null });
+  expect(pro).toMatchObject({ saved: "best", used: "best", summary: "Answers Claude Opus 5.5 · Summaries Claude Sonnet 5.5", notice: null });
   expect(pro.levels.map(({ level, upgrade }) => [level, upgrade?.title ?? null])).toEqual([["affordable", null], ["balanced", null], ["best", null], ["custom", custom.title]]);
 
   // Business: Custom, and a pick for one role; the other runs on the server's own. Only models under the server's cap are offered.

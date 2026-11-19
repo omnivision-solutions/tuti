@@ -61,8 +61,8 @@ export const serverEnv = {
   // No analytics: journeys never send page views to PostHog, whatever a local .env holds.
   POSTHOG_KEY: "",
   POSTHOG_HOST: "",
-  // A cap on the models projects pick, like Tuti's cloud: the model fake's Sonnet ($15 per million output tokens) is the most it allows.
-  AI_MODEL_MAX_PRICE: "15",
+  // A cap on the models projects pick, like Tuti's cloud: the model fake's Opus ($25 per million output tokens), Best's largest, is the most it allows.
+  AI_MODEL_MAX_PRICE: "25",
   // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
   AI_CREDITS: "on",
   AI_CREDITS_FREE: "1000",
