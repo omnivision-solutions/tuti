@@ -992,7 +992,7 @@ Decided (2026-11-19):
 - [ ] B4. Changelog's.
 - [ ] B5. Docs'.
 - [ ] B6. API references'.
-- [ ] B7. Inbox's.
+- [x] B7. Inbox's. Done (2026-11-19): `conversations.*` and `support.*` rewritten: short summaries, each field described with an example, and outputs (`Conversation`, `ConversationUser`, `ConversationMessage`, `ConversationAttachment`, `ConversationPost` and `SupportEmail` named in the spec); nothing dropped from `agent-context.json`
 - [ ] B8. Autopilot's.
 - [ ] B9. Users'.
 - [ ] B10. Portal's, Project's and Billing's; the list of operations not yet rewritten goes.
