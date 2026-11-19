@@ -404,6 +404,8 @@ describe("OpenAPI", () => {
     }
     // Titles name what they act on, not just the verb.
     expect(spec.paths["/code-change-actions/{id}/stop"].post.summary).toBe("Stop a scheduled action");
+    expect(spec.paths["/portal/readers/{email}"].delete.summary).toBe("Stop letting someone read the private portal");
+    expect(spec.paths["/portal/readers"].get.summary).toBe("List who may read the private portal");
     // Written as plain text: rendered as the Markdown a description is, the words come back as written.
     const words = (name: string) => operations.find((operation) => operation.name === name)!.summary;
     const shown = async (path: string, method: string) => firstLine(spec.paths[path][method].description);
