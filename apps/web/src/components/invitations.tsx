@@ -39,7 +39,7 @@ export function InviteDialog({ projectSlug, roles, note }: { projectSlug: string
         <PlusIcon />
         Invite people
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto">
+      <DialogContent initialFocus={() => document.getElementById("invite-email")} className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Invite people</DialogTitle>
           {note && <DialogDescription>{note}</DialogDescription>}

@@ -83,8 +83,21 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(owner.getByRole("main").getByRole("listitem").filter({ hasText: owner.email }).getByRole("combobox")).toHaveCount(0);
   await role.click();
   await checkpoint(owner, "team-member-role", { fullPage: false });
+  // The role picked shows while it saves: the save is held until that's seen.
+  let releaseRole = () => {};
+  const roleHeld = new Promise<void>((resolve) => (releaseRole = resolve));
+  await owner.route(`**/app/${slug}/settings/team`, async (route) => {
+    if (route.request().method() === "POST") {
+      await roleHeld;
+    }
+    await route.continue();
+  });
   await owner.getByRole("option", { name: "Admin" }).click();
+  await expect(role).toContainText("Admin");
+  await expect(role).toHaveAttribute("aria-busy", "true");
+  releaseRole();
   await expect(owner.getByText("Role changed to Admin")).toBeVisible();
+  await owner.unroute(`**/app/${slug}/settings/team`);
   await expect(role).toContainText("Admin");
   await owner.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(owner, "team-with-invitee");
