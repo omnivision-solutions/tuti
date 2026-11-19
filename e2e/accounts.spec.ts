@@ -195,9 +195,11 @@ test("an owner renames the project in Settings → General, and the app and its 
   await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
   await checkpoint(olive, "settings-general");
   // A change typed while a save runs stays in the field, still to save.
+  let releaseSave = () => {};
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
   await olive.route(`**/app/${slug}/settings/general`, async (route) => {
     if (route.request().method() === "POST") {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await saveHeld;
     }
     await route.continue();
   });
@@ -205,6 +207,7 @@ test("an owner renames the project in Settings → General, and the app and its 
   await olive.getByRole("button", { name: "Save changes" }).click();
   await expect(olive.getByRole("button", { name: "Saving…" })).toBeVisible();
   await olive.getByLabel("Project name").fill("Acme Help");
+  releaseSave();
   await expect(olive.getByRole("button", { name: /Acme Docs/ }).first()).toBeVisible();
   await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
   await expect(olive.getByRole("button", { name: "Save changes" })).toBeEnabled();
