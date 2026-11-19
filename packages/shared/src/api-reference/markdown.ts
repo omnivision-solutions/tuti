@@ -184,11 +184,11 @@ function isHtml(tag: string, rest: string): boolean {
   const name = /^<\/?([a-zA-Z][\w-]*)/.exec(tag)?.[1]?.toLowerCase();
   if (!name || UNCLOSED.has(name) || (tag.startsWith("</") && ELEMENTS.has(name))) return true;
   if (!ELEMENTS.has(name)) return false;
-  // Closed later on: by a close no later open of its name takes, outside code (`</code>` in a code span closes nothing).
+  // Closed later on: by a close no later open of its name takes, outside code and comments (`</code>` in a code span closes nothing).
   // It gives up after OPENS more opens of its name (none nests that deep), so many tags in a row stay fast.
   let open = 0;
   let opens = 0;
-  for (const [, , close] of rest.matchAll(new RegExp(`(\`+)[^\`]*\\1|<(/?)${name}(?=[\\s/>])`, "gi"))) {
+  for (const [, , close] of rest.matchAll(new RegExp(`(\`+)[^\`]*\\1|<!--[\\s\\S]*?-->|<(/?)${name}(?=[\\s/>])`, "gi"))) {
     if (close === undefined) continue;
     if (!close && ++opens > OPENS) return false;
     open += close ? -1 : 1;
