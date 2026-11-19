@@ -66,7 +66,7 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await level("Best").click();
   await expect(owner.getByText("AI model saved")).toBeVisible();
   await expect(level("Best")).toBeChecked();
-  await expect(owner.getByText("Drafts Claude Sonnet 5.5", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
   await checkpoint(owner, "team-settings-changelog-best");
   expect((await saved()).levels).toEqual({ changelog: "best" });
   // Custom still needs Business.

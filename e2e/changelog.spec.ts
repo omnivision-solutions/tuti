@@ -372,7 +372,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await aiModel.getByRole("radio", { name: "Best" }).click();
   await expect(team.getByText("AI model saved")).toBeVisible();
   await expect(aiModel.getByRole("radio", { name: "Best" })).toBeChecked();
-  await expect(team.getByText("Drafts Claude Sonnet 5.5", { exact: true })).toBeVisible();
+  await expect(team.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
   await checkpoint(team, "team-settings-changelog");
   // Where the page was: its old address still opens it.
   await team.goto(`/app/${slug}/settings/writing-style`);
@@ -400,7 +400,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("alertdialog").getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
-  expect(asked?.model).toBe("anthropic/claude-sonnet-5.5");
+  expect(asked?.model).toBe("anthropic/claude-opus-5.5");
   expect(asked?.user).toContain('"title": "Dark mode is here"');
   expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
 

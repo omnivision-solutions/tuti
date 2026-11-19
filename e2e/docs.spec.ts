@@ -1683,7 +1683,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await aiModel.getByRole("radio", { name: "Best" }).click();
   await expect(team.getByText("AI model saved")).toBeVisible();
   await expect(aiModel.getByRole("radio", { name: "Best" })).toBeChecked();
-  await expect(team.getByText("Answers Claude Sonnet 5.5 · Summaries Claude Sonnet 5.5", { exact: true })).toBeVisible();
+  await expect(team.getByText("Answers Claude Opus 5.5 · Summaries Claude Sonnet 5.5", { exact: true })).toBeVisible();
   await checkpoint(team, "team-ai-answers-settings");
 
   // A published article whose only section is close to the visitor's question.

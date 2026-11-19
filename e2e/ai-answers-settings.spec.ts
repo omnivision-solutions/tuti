@@ -50,7 +50,7 @@ test("an owner sets AI answers' AI model: on Free, Best opens the upgrade prompt
   await level("Best").click();
   await expect(owner.getByText("AI model saved")).toBeVisible();
   await expect(level("Best")).toBeChecked();
-  await expect(owner.getByText("Answers Claude Sonnet 5.5 · Summaries Claude Sonnet 5.5", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Answers Claude Opus 5.5 · Summaries Claude Sonnet 5.5", { exact: true })).toBeVisible();
   await checkpoint(owner, "team-settings-ai-answers-best");
   expect(await levels()).toEqual({ answers: "best" });
 });
