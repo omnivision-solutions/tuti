@@ -31,6 +31,17 @@ export function shortTitle(summary: string): string {
   return `${cut.slice(0, cut.lastIndexOf(" ") > 50 ? cut.lastIndexOf(" ") : 100)}…`;
 }
 
+/**
+ * An operation's text as CommonMark, which OpenAPI's `description` is: written as plain text, so what Markdown would
+ * read as markup outside its code spans (`<address>` as a tag, `tabs.*` as emphasis) is escaped.
+ */
+export function plainMarkdown(text: string): string {
+  return text
+    .split(/(`[^`]*`)/)
+    .map((part, at) => (at % 2 === 1 ? part : part.replace(/[\\*_<>[\]#]/g, "\\$&")))
+    .join("");
+}
+
 /** The OpenAPI 3.1 description of the REST API, generated from the operations so it can't drift from them. */
 export function openApiSpec(serverUrl: string) {
   const paths: Record<string, Record<string, unknown>> = {};
@@ -68,7 +79,7 @@ export function openApiSpec(serverUrl: string) {
     paths[operation.path]![operation.method.toLowerCase()] = {
       operationId: operation.name,
       summary: shortTitle(operation.summary),
-      description: operation.scope === "write" ? `${operation.summary}\n\nNeeds a read + write key.` : operation.summary,
+      description: `${plainMarkdown(operation.summary)}${operation.scope === "write" ? "\n\nNeeds a read + write key." : ""}`,
       tags: [operation.name.split(".")[0]],
       ...(parameters.length > 0 && { parameters }),
       ...(body && { requestBody: body }),

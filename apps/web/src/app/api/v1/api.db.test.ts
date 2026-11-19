@@ -7,6 +7,7 @@ import { createPost as createPostOperation } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { firstLine } from "@/server/api-reference-queries";
 import { matchOperation, operations } from "@/server/operations";
 
 import { DELETE, GET, PATCH, POST } from "./[...path]/route";
@@ -398,6 +399,13 @@ describe("OpenAPI", () => {
     for (const methods of Object.values(spec.paths as Record<string, Record<string, { summary: string }>>)) {
       for (const op of Object.values(methods)) expect(op.summary.length).toBeLessThanOrEqual(101);
     }
+    // Titles name what they act on, not just the verb.
+    expect(spec.paths["/code-change-actions/{id}/stop"].post.summary).toBe("Stop a scheduled action");
+    // Written as plain text: rendered as the Markdown a description is, the words come back as written.
+    const words = (name: string) => operations.find((operation) => operation.name === name)!.summary;
+    const shown = async (path: string, method: string) => firstLine(spec.paths[path][method].description);
+    expect(await shown("/site/verify", "post")).toBe(words("site.verify"));
+    expect(await shown("/groups", "get")).toBe(words("groups.list").replace(/`/g, ""));
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
     ]);
