@@ -223,3 +223,11 @@ test("the help center reads Tuti's spec whole: what team.list returns, with exam
   const vote = doc.operations.find((operation) => operation.key === "POST /posts/{}/vote")!;
   expect(vote.body?.example).toEqual({ voted: true, author: { id: "user-42" } });
 });
+
+test("an integer's bounds are the ones its field sets, not zod's safe-integer range", () => {
+  const spec = JSON.stringify(openApiSpec("https://tuti.example.com/api/v1"));
+  const tools = JSON.stringify(operations.map((operation) => [inputSchema(operation), agentOutputSchema(operation)]));
+  for (const json of [spec, tools]) expect(json).not.toContain(String(Number.MAX_SAFE_INTEGER));
+  expect(spec).toContain('"maximum":100');
+  expect(spec).toContain('"exclusiveMinimum":0');
+});
