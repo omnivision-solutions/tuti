@@ -96,6 +96,34 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
   );
 }
 
+/**
+ * A value picked in a control that saves at once, over the page's own (`saved`): shown from the click until the page
+ * has it. Not just until the save answers: the refreshed page comes after its answer, and in between the old value
+ * would show again, and the next pick (a group moved again) would start from it. `saving` while the save is on its way.
+ */
+function usePicked<T>(saved: T) {
+  const [picked, setPicked] = useState<{ value: T; saving: boolean } | null>(null);
+  // The page's value as text, to see it change: then it has the save, or a teammate's (unless one of ours is on its way).
+  const now = JSON.stringify(saved);
+  const [seen, setSeen] = useState(now);
+  if (seen !== now) {
+    setSeen(now);
+    if (picked && !picked.saving) setPicked(null);
+  }
+  return {
+    value: picked ? picked.value : saved,
+    saving: picked?.saving ?? false,
+    /** Picked: what `settle` takes once its save answers. */
+    pick: (value: T) => {
+      const made = { value, saving: true };
+      setPicked(made);
+      return made;
+    },
+    /** Pick `made`'s save answered: saved, it's kept until the page has it; refused, it's back as the page has it. A later pick's own save settles that one. */
+    settle: (made: { value: T; saving: boolean }, ok: boolean) => setPicked((current) => (current !== made ? current : ok ? { ...made, saving: false } : null)),
+  };
+}
+
 export function ApiReferenceSettings({
   projectSlug,
   host,
@@ -157,22 +185,22 @@ export function ApiReferenceSettings({
   };
   const actionsHost = useEditorSlot("api-reference-actions");
 
-  // The controls that save at once: what was picked shows until its save has answered (then the page has it, or it's back as it was).
-  const [tree, setTree] = useState<TreeStyle | null>(null);
-  const [tryIt, setTryIt] = useState<boolean | null>(null);
-  const [order, setOrder] = useState<string[] | null>(null);
+  // The controls that save at once: what was picked shows until the page has it, or, refused, it's back as it was.
+  const tree = usePicked(reference.treeStyle);
+  const tryIt = usePicked(reference.tryIt);
+  const order = usePicked(groups.map((group) => group.key));
   const [, startChange] = useTransition();
-  const change = (changes: Changes, done: string, show: () => void, settle: () => void) => {
-    show();
+  const change = <T,>(picked: ReturnType<typeof usePicked<T>>, value: T, changes: Changes, done: string) => {
+    const made = picked.pick(value);
     startChange(async () => {
       const result = await save(changes);
       if (result.error) toast.error(result.error);
       else toast.success(done);
-      settle();
+      picked.settle(made, !result.error);
     });
   };
 
-  const keys = order ?? groups.map((group) => group.key);
+  const keys = order.value;
   const byKey = new Map(groups.map((group) => [group.key, group]));
   const listed = keys.map((key) => byKey.get(key)).filter((group) => group !== undefined);
   const handle = (key: string) => `group-move-${encodeURIComponent(key)}`;
@@ -183,14 +211,14 @@ export function ApiReferenceSettings({
     const next = keys.filter((other) => other !== key);
     next.splice(to, 0, key);
     refocus.current = byMenu ? handle(key) : null;
-    change({ groupOrder: next }, "Group order saved", () => setOrder(next), () => setOrder(null));
+    change(order, next, { groupOrder: next }, "Group order saved");
   };
   useEffect(() => {
-    if (order === null && refocus.current) {
+    if (!order.saving && refocus.current) {
       document.getElementById(refocus.current)?.focus();
       refocus.current = null;
     }
-  }, [order]);
+  }, [order.saving]);
   const [dragging, setDragging] = useState<string | null>(null);
   const rowOf = (event: DragEvent) => (event.target as Element).closest<HTMLElement>("[data-group-key]")?.dataset.groupKey;
 
@@ -328,9 +356,9 @@ export function ApiReferenceSettings({
                     type="radio"
                     name="treeStyle"
                     value={value}
-                    checked={(tree ?? reference.treeStyle) === value}
+                    checked={tree.value === value}
                     className="mt-0.5 size-4 accent-primary"
-                    onChange={() => change({ treeStyle: value }, `${label} saved`, () => setTree(value), () => setTree(null))}
+                    onChange={() => change(tree, value, { treeStyle: value }, `${label} saved`)}
                   />
                   <span className="flex flex-col gap-0.5">
                     <span className="font-medium">{label}</span>
@@ -349,11 +377,11 @@ export function ApiReferenceSettings({
             </CardHeader>
             <CardContent>
               <ol
-                aria-busy={order !== null}
+                aria-busy={order.saving}
                 className="flex flex-col divide-y"
                 onDragStart={(event) => {
                   const key = rowOf(event);
-                  if (order !== null || !key) {
+                  if (order.saving || !key) {
                     event.preventDefault();
                     return;
                   }
@@ -376,11 +404,11 @@ export function ApiReferenceSettings({
                 }}
               >
                 {listed.map((group, at) => (
-                  <li key={group.key} draggable={order === null} data-group-key={group.key} className="flex cursor-grab items-center gap-2 py-1.5 data-[dragging]:opacity-50" data-dragging={dragging === group.key || undefined}>
+                  <li key={group.key} draggable={!order.saving} data-group-key={group.key} className="flex cursor-grab items-center gap-2 py-1.5 data-[dragging]:opacity-50" data-dragging={dragging === group.key || undefined}>
                     <MoveMenu
                       id={handle(group.key)}
                       name={group.name}
-                      disabled={order !== null}
+                      disabled={order.saving}
                       up={at > 0 ? () => move(group.key, at - 1, true) : undefined}
                       down={at < listed.length - 1 ? () => move(group.key, at + 1, true) : undefined}
                     />
@@ -406,10 +434,10 @@ export function ApiReferenceSettings({
                 <span className="text-xs text-muted-foreground">Each endpoint’s page can send a real request, with the reader’s own key kept in their browser.</span>
               </span>
               <Switch
-                checked={tryIt ?? reference.tryIt}
+                checked={tryIt.value}
                 onChange={(event) => {
                   const on = event.currentTarget.checked;
-                  change({ tryIt: on }, on ? "Try it switched on" : "Try it switched off", () => setTryIt(on), () => setTryIt(null));
+                  change(tryIt, on, { tryIt: on }, on ? "Try it switched on" : "Try it switched off");
                 }}
               />
             </label>
