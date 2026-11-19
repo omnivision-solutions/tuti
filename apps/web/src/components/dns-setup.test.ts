@@ -56,6 +56,8 @@ test("the own address's row says where it stands (sending first, then receiving)
   expect(row(own(true, null))).toEqual(["e2e-support@example.com", "Working"]);
   // Downgraded: verified, but replies come from the support address.
   expect(row(own(true, null, { included: false }))).toEqual(["e2e-inbox@example.com", "Not on your plan"]);
+  // And before its records were in: the plan is what's missing, not DNS.
+  expect(row(own(false, null, { included: false }))).toEqual(["e2e-inbox@example.com", "Not on your plan"]);
 });
 
 test("the own address's 3 records, checked together: pending, then verified; after a failure (which may not be theirs) they have none", () => {

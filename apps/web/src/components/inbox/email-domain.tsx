@@ -48,20 +48,21 @@ const INFO = "Use your company's address, like support@yourcompany.com, instead 
 /** The row's line: the address replies come from now, broken anywhere where the row has no room for it (beside a status, on phones). */
 const repliesFrom = (address: string) => (
   <>
-    Replies come from <span className="break-all">{address}</span>.
+    Replies come from <span className="wrap-anywhere">{address}</span>.
   </>
 );
 
-/** Where the own address stands, in a word or two, on its row: sending first (its DNS records, the plan), then receiving. */
+/** Where the own address stands, in a word or two, on its row: sending first (the plan, its DNS records), then receiving. */
 function ownStatus(own: OwnDomain): { label: string; variant: "soft" | "outline" | "destructive" } {
+  // The plan first: without it, records in DNS don't change where replies come from.
+  if (!own.included) {
+    return { label: "Not on your plan", variant: "outline" };
+  }
   if (own.error) {
     return { label: "Not verified", variant: "destructive" };
   }
   if (!own.verified) {
     return { label: "Waiting for DNS", variant: "outline" };
-  }
-  if (!own.included) {
-    return { label: "Not on your plan", variant: "outline" };
   }
   return own.receivedAt ? { label: "Working", variant: "soft" } : { label: "No email received yet", variant: "outline" };
 }

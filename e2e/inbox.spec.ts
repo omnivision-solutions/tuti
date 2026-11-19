@@ -2246,7 +2246,7 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await expect(ownRow).toContainText("No email received yet");
   // On a phone the address breaks where it must, beside the status, and never runs under it.
   await owner.setViewportSize({ width: 390, height: 844 });
-  await expect(ownRow.getByText(`support@${domain}`, { exact: true })).toHaveCSS("word-break", "break-all");
+  await expect(ownRow.getByText(`support@${domain}`, { exact: true })).toHaveCSS("overflow-wrap", "anywhere");
   const line = (await ownRow.getByText("Replies come from").boundingBox())!;
   expect(line.x + line.width).toBeLessThanOrEqual((await ownRow.getByText("No email received yet").boundingBox())!.x);
   expect(await ownRow.getByText("Replies come from").evaluate((p) => p.scrollWidth - p.clientWidth)).toBeLessThanOrEqual(0);
