@@ -212,6 +212,9 @@ test("on a license, This month has what's left of its month's emails and AI cred
 test("a license on a plan with no email limit still has its month: the AI credits' meter and the reset day, beside the emails sent", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("AI_CREDITS", "on");
+  // Mid-month, so the month counted and the one the page names are the same.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
+  onTestFinished(() => void vi.useRealTimers());
   const holder = (await prisma.teamMember.findFirstOrThrow({ where: { projectId }, select: { userId: true } })).userId;
   const license = await prisma.planLicense.create({
     data: { source: "tuti", externalKey: crypto.randomUUID(), plan: "business", userId: holder, projectId, claimedAt: new Date(), assignedAt: new Date() },
@@ -223,10 +226,10 @@ test("a license on a plan with no email limit still has its month: the AI credit
   const monthly = month.credits.toNumber().toLocaleString("en");
   const page = await billing();
   // The emails are counted by calendar month, not the license's: said, beside a reset day that isn't theirs.
-  const first = formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)));
-  expect(page).toMatch(meter("Emails", `0 sent since ${first}`));
+  expect(page).toMatch(meter("Emails", "0 sent since 1 Nov"));
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
-  expect(page).toContain(`>Resets ${formatShortDate(creditsThrough!)}</span>`);
+  expect(creditsThrough).toEqual(new Date("2026-12-19T12:00:00Z"));
+  expect(page).toContain(">Resets 19 Dec</span>");
   // Where plans are off, there's no This month: the license's credits are in the list, with the rest.
   vi.stubEnv("BILLING_CONFIG", "");
   const without = await billing();
