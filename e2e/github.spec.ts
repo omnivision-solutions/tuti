@@ -76,6 +76,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // GitHub's Repositories say Autopilot reads them only while it does.
   await owner.goto(`/app/${web}/settings/integrations/github`);
   await expect(owner.getByText("gather in the changelog's Next release draft. Each repository", { exact: false })).toBeVisible();
+  // So does its row on Integrations.
+  await owner.goto(`/app/${web}/settings/integrations`);
+  await expect(owner.getByRole("link", { name: "GitHub · acme-e2e Pull requests for the changelog Connected", exact: true })).toBeVisible();
   // Off, Autopilot's page says so, and takes its owner to the switch.
   await owner.goto(`/app/${web}/autopilot`);
   await expect(owner.getByText("Autopilot is off for this project. Turn it on in its settings.")).toBeVisible();

@@ -51,10 +51,11 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
     githubResult === "choose" ? accountsFromCookie((await cookies()).get(ACCOUNTS_COOKIE)?.value ?? "", project.id) : [];
   const installation = await prisma.githubInstallation.findUnique({
     where: { projectId: project.id },
-    select: { accountLogin: true, createdAt: true },
+    select: { accountLogin: true, createdAt: true, project: { select: { analyseCodeChanges: true } } },
   });
 
-  const githubFor = codeChangesEnabled() ? "Pull requests for the changelog and Autopilot" : "Pull requests for the changelog";
+  // As GitHub's own page: once connected, Autopilot reads pull requests only while the project has it on.
+  const githubFor = codeChangesEnabled() && installation?.project.analyseCodeChanges !== false ? "Pull requests for the changelog and Autopilot" : "Pull requests for the changelog";
 
   return (
     <SettingsPane title="Integrations">
