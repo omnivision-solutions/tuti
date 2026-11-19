@@ -1153,13 +1153,13 @@ const actionFields = {
   probability: z.number().describe("How sure Autopilot is, 0 to 1").meta({ examples: [0.92] }),
   confidence: z.enum(["likely", "maybe"]).describe("`likely` above its kind's threshold, else `maybe`").meta({ examples: ["likely"] }),
   applyLikely: z.boolean().describe("Ticked as the review page opens").meta({ examples: [true] }),
-  emailed: z.number().int().optional().describe("For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back)"),
+  emailed: z.number().int().optional().describe("For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back)").meta({ examples: [0] }),
   emails: z.number().int().optional().describe("For a post it completes or moves forward: how many people approving (or publishing) it emails").meta({ examples: [14] }),
   reason: z.string().describe("Why Autopilot proposes it").meta({ examples: ["The pull request ships weekly repeats, which this post asks for."] }),
   comment: z
     .string()
     .optional()
-    .describe("The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too)"),
+    .describe("The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too)").meta({ examples: ["Weekly repeats are out today; monthly ones are next."] }),
   post: postOut.nullable().describe("The post it updates; null for an article or the changelog"),
   article: z
     .object({
@@ -1171,34 +1171,34 @@ const actionFields = {
     .nullable()
     .describe("The article it edits (or, for a new article once its draft exists, the draft)")
     .meta({ examples: [null] }),
-  problem: z.enum(["wrong", "missing"]).optional().describe("An article edit's: what's wrong with the article, or missing from it"),
-  before: z.string().optional().describe("An article edit's text before (plain text)"),
-  after: z.string().optional().describe("An article edit's text after, or a new article's text (plain text)"),
-  revision: z.string().optional().describe("An article edit's own change: its tagged revision"),
-  basedOn: z.string().nullable().optional().describe("The revision that edit was written on"),
-  title: z.string().optional().describe("A new article's title"),
+  problem: z.enum(["wrong", "missing"]).optional().describe("An article edit's: what's wrong with the article, or missing from it").meta({ examples: ["wrong"] }),
+  before: z.string().optional().describe("An article edit's text before (plain text)").meta({ examples: ["Events happen once."] }),
+  after: z.string().optional().describe("An article edit's text after, or a new article's text (plain text)").meta({ examples: ["Events can repeat every week."] }),
+  revision: z.string().optional().describe("An article edit's own change: its tagged revision").meta({ examples: ["cm3x9rev10000000000000000"] }),
+  basedOn: z.string().nullable().optional().describe("The revision that edit was written on").meta({ examples: ["cm3x9rev00000000000000000"] }),
+  title: z.string().optional().describe("A new article's title").meta({ examples: ["Repeating events"] }),
   place: z
     .object({
       collection: z
-        .object({ slug: z.string(), name: z.string(), icon: z.string().nullable() })
+        .object({ slug: z.string(), name: z.string(), icon: z.string().nullable() }).meta({ examples: [{ slug: "events", name: "Events", icon: "calendar" }] })
         .nullable()
         .describe("An existing collection (its slug, name and Lucide icon)"),
       newCollection: z
-        .object({ name: z.string(), icon: z.string().nullable() })
+        .object({ name: z.string(), icon: z.string().nullable() }).meta({ examples: [{ name: "Scheduling", icon: "clock" }] })
         .nullable()
         .describe("A new collection approving makes, readers seeing it only once an article in it is published"),
       afterArticle: z
-        .object({ slug: z.string(), title: z.string() })
+        .object({ slug: z.string(), title: z.string() }).meta({ examples: [{ slug: "create-an-event", title: "Create an event" }] })
         .nullable()
         .describe("The article it goes after; else `first`, else last"),
-      first: z.boolean().describe("It goes first in its collection"),
+      first: z.boolean().describe("It goes first in its collection").meta({ examples: [false] }),
     })
     .nullable()
     .optional()
     .describe(
       "A new article's: where approving saves its draft (null: in no collection). A collection deleted since is none; an article deleted or moved since, last",
     ),
-  line: z.string().optional().describe("The pull request's line in the changelog (as proposed, or as written once applied)"),
+  line: z.string().optional().describe("The pull request's line in the changelog (as proposed, or as written once applied)").meta({ examples: ["Events can repeat weekly."] }),
   decidedBy: z
     .string()
     .nullable()
@@ -1208,12 +1208,12 @@ const actionFields = {
   unsure: z.boolean().describe("Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check").meta({ examples: [false] }),
   unpublished: z.boolean().describe("An article edit approved into the article's unpublished changes, not published").meta({ examples: [false] }),
   canUndo: z.boolean().describe("Applied, with what it changed recorded: codeChangeActions.undo can put it back").meta({ examples: [false] }),
-  undoRemovesCollection: z.string().optional().describe("A new article's draft: the collection approving made, by name, which Undo removes too"),
+  undoRemovesCollection: z.string().optional().describe("A new article's draft: the collection approving made, by name, which Undo removes too").meta({ examples: ["Scheduling"] }),
   putsBackStatus: z.boolean().describe("Undo puts the post's status back (applying moved it)").meta({ examples: [false] }),
   together: z
     .array(z.string())
     .optional()
-    .describe("A post's update applied as one, from several pull requests: its parts (this one among them), which Undo puts back together"),
+    .describe("A post's update applied as one, from several pull requests: its parts (this one among them), which Undo puts back together").meta({ examples: [["cm3x9a1b2c3d4e5f6g7h8i9j1", "cm3x9a1b2c3d4e5f6g7h8i9j2"]] }),
   decidedAt: z.string().nullable().describe("When it was applied, dismissed or undone").meta({ examples: [null] }),
   dismissReason: z.string().describe("Why it was dismissed, if someone said").meta({ examples: [""] }),
   dueAt: z.string().nullable().describe("A scheduled one: when it goes out by itself").meta({ examples: [null] }),
@@ -1283,8 +1283,8 @@ const targetOut = z
         z.object({
           id: z.string().meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
           kind: actionKind,
-          revision: z.string().optional().describe("The version it applies, for codeChangeActions.apply's `revision`"),
-          emails: z.number().int().optional().describe("How many people approving it emails"),
+          revision: z.string().optional().describe("The version it applies, for codeChangeActions.apply's `revision`").meta({ examples: ["Xq3t9b2LmP0aZk1e"] }),
+          emails: z.number().int().optional().describe("How many people approving it emails").meta({ examples: [14] }),
         }),
       )
       .describe("What approving it from the list approves (codeChangeActions.applyMany)"),
@@ -1308,9 +1308,9 @@ const appliedOut = z
     kind: actionKind,
     status: z.literal("applied").meta({ examples: ["applied"] }),
     post: z.number().int().optional().describe("The post's number, for a post's update or link").meta({ examples: [42] }),
-    article: z.string().optional().describe("The article's slug, for an article's edit or a new article's draft"),
-    published: z.boolean().optional().describe("Whether the article is published: false on a draft, whose edits stay in the draft, and for a new article's draft"),
-    changelog: z.number().int().optional().describe("The changelog entry's number, for the changelog line"),
+    article: z.string().optional().describe("The article's slug, for an article's edit or a new article's draft").meta({ examples: ["repeating-events"] }),
+    published: z.boolean().optional().describe("Whether the article is published: false on a draft, whose edits stay in the draft, and for a new article's draft").meta({ examples: [true] }),
+    changelog: z.number().int().optional().describe("The changelog entry's number, for the changelog line").meta({ examples: [18] }),
   })
   .describe("The action, applied");
 
@@ -1333,21 +1333,21 @@ const targetReviewOut = z
   .object({
     type: z.enum(["feedback", "articles"]).describe("A post, or an article").meta({ examples: ["feedback"] }),
     title: z.string().describe("The post's or article's title").meta({ examples: ["Repeating events"] }),
-    articleId: z.string().optional().describe("An article's id"),
+    articleId: z.string().optional().describe("An article's id").meta({ examples: ["cm3x9article00000000000000"] }),
     revision: z
       .string()
       .nullable()
       .optional()
-      .describe("An article's newest revision: what Approve publishes, codeChangeActions.apply's `revision`"),
-    teammateEdit: z.boolean().optional().describe("Whether the article's unpublished changes hold a teammate's edit too"),
-    changesReaders: z.boolean().optional().describe("Whether its unpublished changes change it as readers see it"),
+      .describe("An article's newest revision: what Approve publishes, codeChangeActions.apply's `revision`").meta({ examples: ["cm3x9rev10000000000000000"] }),
+    teammateEdit: z.boolean().optional().describe("Whether the article's unpublished changes hold a teammate's edit too").meta({ examples: [false] }),
+    changesReaders: z.boolean().optional().describe("Whether its unpublished changes change it as readers see it").meta({ examples: [true] }),
     outOfDate: z
       .array(z.string())
       .optional()
-      .describe("Its waiting edits that are out of date (written on an earlier version): nothing of them shows until they're written again"),
-    writing: z.array(z.string()).optional().describe("Those of them being written again (their pull request analysed again)"),
-    writeFailed: z.array(z.string()).optional().describe("Why their pull request's last analysis failed, each once"),
-    overview: z.string().optional().describe("What the article's waiting edits change, in a few lines; empty for none"),
+      .describe("Its waiting edits that are out of date (written on an earlier version): nothing of them shows until they're written again").meta({ examples: [[]] }),
+    writing: z.array(z.string()).optional().describe("Those of them being written again (their pull request analysed again)").meta({ examples: [[]] }),
+    writeFailed: z.array(z.string()).optional().describe("Why their pull request's last analysis failed, each once").meta({ examples: [[]] }),
+    overview: z.string().optional().describe("What the article's waiting edits change, in a few lines; empty for none").meta({ examples: ["Adds weekly repeats to the events guide."] }),
     update: z
       .object({
         parts: z.array(z.string().meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] })).describe("Its parts: each pull request's part, the first merged first"),
@@ -2077,8 +2077,8 @@ export const applyCodeChangeActions = defineOperation({
           z.object({
             id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
             status: z.enum(["applied", "failed"]).describe("Applied, or why not in `code` and `message`").meta({ examples: ["applied"] }),
-            code: z.string().optional().describe("Why not: the error code apply gives (`unknown`: couldn't tell whether it went out)"),
-            message: z.string().optional().describe("Why not, in words"),
+            code: z.string().optional().describe("Why not: the error code apply gives (`unknown`: couldn't tell whether it went out)").meta({ examples: ["changed"] }),
+            message: z.string().optional().describe("Why not, in words").meta({ examples: ["It changed since you reviewed it"] }),
           }),
         )
         .describe("For each, in order: applied or why not"),
