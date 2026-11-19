@@ -11,7 +11,7 @@ import { createProject, signUp } from "./helpers";
 
 test("an admin connects two projects to one GitHub account, gives each its repositories, and disconnects", async ({ browser }, testInfo) => {
   // Two projects, each connected, given repositories, Autopilot's settings and a disconnect: near 30 seconds on a busy runner.
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const [web, mobile] = [`e2e-${randomUUID().slice(0, 8)}`, `e2e-${randomUUID().slice(0, 8)}`];
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -255,6 +255,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => owner.getByRole("heading", { name: `GitHub · ${labs.account}` }).evaluate(uncut)).toBe(true);
   await checkpoint(owner, "settings-github-long-name-phone");
+  // So does its row on Integrations: the name on more lines, nothing wider than the pane.
+  await owner.goto(`/app/${mobile}/settings/integrations`);
+  const longRow = owner.getByText(`GitHub · ${labs.account}`, { exact: true });
+  await expect.poll(() => longRow.evaluate(uncut)).toBe(true);
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  await owner.goto(`/app/${mobile}/settings/integrations/github`);
   await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   const history = await owner.evaluate(() => window.history.length);
