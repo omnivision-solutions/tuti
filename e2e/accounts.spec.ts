@@ -173,7 +173,14 @@ test("an owner renames the project in Settings → General, and the app and its 
   await createProject(olive, "Acme", slug);
   await olive.goto(`/app/${slug}/settings/general`);
   await expect(olive.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
+  // The page's one Save: nothing to save until the name differs.
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await olive.getByLabel("Project name").fill("A");
+  // Leaving with the change not saved asks first.
+  await olive.getByRole("link", { name: "Change the portal address in Domain" }).click();
+  await expect(olive.getByRole("alertdialog", { name: "Leave without saving?" })).toBeVisible();
+  await olive.getByRole("button", { name: "Keep editing" }).click();
+  await expect(olive.getByLabel("Project name")).toHaveValue("A");
   await olive.getByRole("button", { name: "Save changes" }).click();
   await expect(olive.getByText("Give the project a name of 2 characters or more")).toBeVisible();
   await olive.getByLabel("Project name").fill("  Acme Help  ");
@@ -184,6 +191,7 @@ test("an owner renames the project in Settings → General, and the app and its 
   await expect(olive.getByRole("button", { name: "Save changes" })).toBeFocused();
   // The field shows the name as saved.
   await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
   await checkpoint(olive, "settings-general");
   const visitor = await newPerson(browser, portalUrl(slug));

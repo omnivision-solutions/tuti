@@ -16,7 +16,7 @@ export default async function SsoSettingsPage(props: PageProps<"/app/[project]/s
     notFound();
   }
   return (
-    <SettingsPane title="Single sign-on" description="Let users of your app post and vote without creating a separate account. Your server signs a token (a JWT) for the logged-in user and sends them to your portal.">
+    <SettingsPane title="Single sign-on" description={<>Let users of your app post and vote without creating a separate account. Your server signs a token (a JWT) for the logged-in user and sends them to your portal.</>}>
       <SettingsCard>
         <SettingBlock>
           <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`}

@@ -817,7 +817,9 @@ widths, in light and dark (in development only).
   - A setting is one row. Under its label, at most one short line; a label that says it needs none. What takes longer
     to explain goes in `info` (an ⓘ beside the label, opening on hover, focus or a tap) or behind a link ("See
     details", "Show example"). No intro paragraphs, and no card title repeating the page's title or a field's label.
-  - The page's description is one line beside its title in the header (`SettingsPane`'s `description`), or nothing.
+  - The page's description is one short line beside its title in the header (`SettingsPane`'s `description`; above
+    the cards under 56rem, where the header has no room), or nothing. One given as elements (a link in it) stays above
+    the cards at every width.
   - One Save: "Save changes" in the pane's header, there once the page has a form (`useCustomizeForm`), enabled once
     something differs. A switch that acts alone saves at once.
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
