@@ -17,8 +17,7 @@ export function inputSchema(operation: (typeof operations)[number]): JsonSchema 
  * What an operation returns as JSON Schema, or null when it doesn't say: self-contained, its named types (`.meta({ id })`)
  * under `$defs`, as MCP's `outputSchema` takes it.
  */
-export function outputSchema(operation: (typeof operations)[number]): JsonSchema | null {
-  if (!operation.output) return null;
+export function outputSchema(operation: (typeof operations)[number]): JsonSchema {
   const schema = z.toJSONSchema(operation.output, { io: "output", unrepresentable: "any" }) as JsonSchema;
   delete schema.$schema;
   return opened(schema) as JsonSchema;
@@ -67,9 +66,8 @@ export function forAgents(schema: unknown): unknown {
 }
 
 /** MCP's `outputSchema`: the output, opened, with its lists of values named for agents rather than checked. */
-export function agentOutputSchema(operation: (typeof operations)[number]): JsonSchema | null {
-  const schema = outputSchema(operation);
-  return schema && (forAgents(schema) as JsonSchema);
+export function agentOutputSchema(operation: (typeof operations)[number]): JsonSchema {
+  return forAgents(outputSchema(operation)) as JsonSchema;
 }
 
 /** Each error status: its response's name in the spec, what it means, a short form for MCP, and an example body. */
@@ -407,11 +405,10 @@ export function openApiSpec(serverUrl: string) {
 
 /**
  * An operation's 200 response: what it returns, its named types moved to the spec's `schemas` (one name is one type
- * across operations), with an example made of its fields' examples. A bare object while it doesn't say.
+ * across operations), with an example made of its fields' examples.
  */
 function ok(operation: (typeof operations)[number], schemas: Record<string, JsonSchema>) {
   const output = outputSchema(operation);
-  if (!output) return { description: "OK", content: { "application/json": { schema: { type: "object" } } } };
   const { $defs = {}, ...schema } = output as JsonSchema & { $defs?: Record<string, JsonSchema> };
   const example = exampleOf(schema, $defs);
   const inSpec = <T>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll('"#/$defs/', '"#/components/schemas/')) as T;

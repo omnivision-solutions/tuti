@@ -11,7 +11,7 @@ vi.hoisted(() => {
   process.env.BETTER_AUTH_SECRET = "test-secret-at-least-32-characters-long";
 });
 
-import { type OperationName, operations } from "./index";
+import { operations } from "./index";
 import { agentOutputSchema, errorStatuses, errorsLine, forAgents, inputSchema, opened, openApiSpec, outputSchema, pathParams } from "./openapi";
 
 /**
@@ -19,21 +19,6 @@ import { agentOutputSchema, errorStatuses, errorsLine, forAgents, inputSchema, o
  * gives a short summary (at most 300 characters) and says what it returns (`output`), with a description on each field
  * it takes and returns, and nothing its summary told an agent before is lost.
  */
-
-/**
- * Operations whose summary isn't rewritten yet (B3–B10, one area each): they may still be long, and say nothing of what
- * they return. An area's step takes its names off as it rewrites them; the list goes once it's empty.
- */
-const notRewrittenYet = new Set<OperationName>([
-  // B3: Feedback
-  // B4: Changelog
-  // B5: Docs
-  // B6: API references
-  // B7: Inbox
-  // B8: Autopilot
-  // B9: Users
-  // B10: Portal, Project and Billing
-]);
 
 /**
  * agent-context.json: each operation's words (4 letters or more) as its summary had them before the rewrite. Each must
@@ -99,13 +84,10 @@ test("nothing an operation's summary told an agent is lost", () => {
   ).toEqual([]);
 });
 
-test("rewritten operations are short and say what they return", () => {
-  const names = new Set(operations.map((operation) => operation.name));
-  expect([...notRewrittenYet].filter((name) => !names.has(name)), "notRewrittenYet names operations that don't exist").toEqual([]);
-  for (const operation of operations.filter((operation) => !notRewrittenYet.has(operation.name as OperationName))) {
+test("every operation is short and says what it returns", () => {
+  for (const operation of operations) {
     expect(operation.summary.length, `${operation.name}'s summary is over 300 characters`).toBeLessThanOrEqual(300);
-    expect(operation.output, `${operation.name} has no output`).toBeDefined();
-    const output = outputSchema(operation)!;
+    const output = outputSchema(operation);
     expect(output.description, `${operation.name}'s output has no .describe(): the 200 response's description`).toEqual(expect.any(String));
   }
 });
@@ -132,21 +114,21 @@ function withoutExample(schema: Schema, defs: Record<string, Schema>, path: stri
   return [path || "(the output itself)"];
 }
 
-test("every field of a rewritten operation's output has an example, optional ones too", () => {
-  for (const operation of operations.filter((operation) => operation.output && !notRewrittenYet.has(operation.name as OperationName))) {
-    const schema = outputSchema(operation)! as Schema;
+test("every field of an operation's output has an example, optional ones too", () => {
+  for (const operation of operations) {
+    const schema = outputSchema(operation) as Schema;
     const missing = withoutExample(schema, (schema.$defs ?? {}) as Record<string, Schema>, "");
     expect(missing, `${operation.name}: these output fields have no .meta({ examples }), so the response example leaves them out`).toEqual([]);
   }
 });
 
-test("every field of a rewritten operation's output has an example, so the spec's response example is whole", () => {
+test("an operation's response example is whole and is one it could return", () => {
   const spec = openApiSpec("https://tuti.example.com/api/v1");
-  for (const operation of operations.filter((operation) => operation.output && !notRewrittenYet.has(operation.name as OperationName))) {
+  for (const operation of operations) {
     const ok = (spec.paths[operation.path]![operation.method.toLowerCase()] as { responses: Record<string, { content: Record<string, { example?: unknown }> }> })
       .responses["200"]!;
     const example = ok.content["application/json"]!.example;
-    const parsed = operation.output!.safeParse(example);
+    const parsed = operation.output.safeParse(example);
     expect(parsed.error?.issues ?? [], `${operation.name}'s response example (fields without .meta({ examples }) are left out of it)`).toEqual([]);
     expect(parsed.data, `${operation.name}'s response example has fields its output doesn't`).toEqual(example);
   }

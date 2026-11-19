@@ -36,13 +36,12 @@ function mcpServer(actor: ApiKey) {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((operation) => {
-      const output = agentOutputSchema(operation);
       return {
         name: toolName(operation),
         title: operation.title,
         description: [operation.summary, errorsLine(operation)].filter(Boolean).join("\n\n"),
         inputSchema: { type: "object" as const, ...inputSchema(operation) },
-        ...(output && { outputSchema: { type: "object" as const, ...output } }),
+        outputSchema: { type: "object" as const, ...agentOutputSchema(operation) },
         annotations: { readOnlyHint: operation.scope === "read" },
       };
     }),
