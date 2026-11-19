@@ -22,7 +22,7 @@ export default async function GeneralSettingsPage(props: PageProps<"/app/[projec
   const portal = await portalAddress(slug);
   const address = `${new URL(portal).host}${new URL(portal).pathname.replace(/\/$/, "")}`;
   return (
-    <SettingsPane title="General" description="Your project's name and where its portal is.">
+    <SettingsPane title="General">
       <SettingsCard>
         <ProjectNameForm projectSlug={slug} name={name} />
         <SettingRow

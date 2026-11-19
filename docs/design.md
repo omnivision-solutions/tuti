@@ -366,7 +366,7 @@ the list picks none to approve at once.
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has a section pane of its own (Panes), in groups (Project,
   Portal, Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
-  on General. Each of its pages is a `SettingsPane`: a pane titled by the page, a line on what it's for, then its
+  on General. Each of its pages is a `SettingsPane`: a pane titled by the page, a line on what it's for beside the title, then its
   `SettingsCard`s (a form that isn't a row in a `SettingBlock`); the Portal group's pages are `PortalSettingsPane`s
   instead, their settings beside a preview (Portal settings, below). Reporting is a
   `SectionPane` (Help center, AI support, Inbox, each page with its icon; a drawer on phones), its links keeping the
@@ -810,9 +810,25 @@ widths, in light and dark (in development only).
   `lg` instead (`className`).
 - **`ItemGroup`**: a list's group (posts by status): a tinted (`muted`) bar with its icon, title and count that folds
   what's under it.
-- **`SettingsCard`** + **`SettingRow`** (`label`, `description`, `htmlFor`, `inline`): settings as one card of rows,
-  the label and a line on what it does on the left, the control on the right. In a card under 34rem wide the control
-  goes under them at the card's width; `inline` keeps a short control (a switch, a button) on the right.
+- **`SettingsCard`** (`title`, `count`, `action`) + **`SettingRow`** (`label`, `description`, `info`, `htmlFor`,
+  `inline`): settings as one card of rows, the label on the left, the control on the right. In a card under 34rem wide
+  the control goes under them at the card's width; `inline` keeps a short control (a switch, a button) on the right.
+  **Settings rows**, the rules every settings page follows:
+  - A setting is one row. Under its label, at most one short line; a label that says it needs none. What takes longer
+    to explain goes in `info` (an ⓘ beside the label, opening on hover or a press) or behind a link ("See
+    details", "Show example"). No intro paragraphs, and no card title repeating the page's title or a field's label.
+  - The page's description is one short line beside its title in the header (`SettingsPane`'s `description`; above
+    the cards under 56rem, where the header has no room), or nothing. One given as elements (a link in it) stays above
+    the cards at every width.
+  - One Save: "Save changes" in the pane's header, there once the page has a form (`useCustomizeForm`), enabled once
+    something differs. A switch that acts alone saves at once.
+  - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
+    `Select`. No radios with a sentence each, no native `<select>`.
+  - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
+    button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
+    is one muted line in the card, not an `EmptyState`.
+  - An upload is its thumbnail and an Upload button on the row; what files it takes is said when one is refused.
+  - A number carries its unit in the field ("25 people").
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its
   `PaneHeader`, the body centred in it, max-w-2xl for a form's card (a wizard's step above it), max-w-3xl for
   settings cards, as Settings' pages.

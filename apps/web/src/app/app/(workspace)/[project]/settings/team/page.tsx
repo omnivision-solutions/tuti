@@ -53,7 +53,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   const limit = teamLimit(plan);
 
   return (
-    <SettingsPane title="Team & roles" description={`${members.length} ${members.length === 1 ? "person" : "people"}`}>
+    <SettingsPane title="Team & roles" description={<>{`${members.length} ${members.length === 1 ? "person" : "people"}`}</>}>
       <SettingsCard>
         <SettingBlock>
           <ItemList>

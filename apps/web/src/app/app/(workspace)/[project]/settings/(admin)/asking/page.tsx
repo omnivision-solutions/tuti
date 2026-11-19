@@ -18,7 +18,7 @@ export default async function AskingSettingsPage(props: PageProps<"/app/[project
   }
   const numbers = await numberPropertyNames(project.id);
   return (
-    <SettingsPane title="Who's asking" description="A number property of your users (MRR, seats…), totalled over each post's voters on Feedback and the post, so you can see what a post is worth. Only your team sees it.">
+    <SettingsPane title="Who's asking" description={<>A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what a post is worth. Only your team sees it.</>}>
       <SettingsCard>
         <SettingBlock>
           <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={storedPropertyFormats(project.propertyFormats)} />

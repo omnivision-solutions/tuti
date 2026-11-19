@@ -18,7 +18,7 @@ export default async function ImportSettingsPage(props: PageProps<"/app/[project
     notFound();
   }
   return (
-    <SettingsPane title="Import" description="Bring what you have in another tool across. Import again whenever you like: only what's new comes, nothing twice.">
+    <SettingsPane title="Import" description={<>Bring what you have in another tool across. Import again whenever you like: only what&apos;s new comes, nothing twice.</>}>
       <Card>
         <SetupImport projectSlug={slug} latest={await latestImport(project.id)} mediaStorage={mediaStorage() !== null} boardsNotes={boardsNotes(project.plan)} />
       </Card>
