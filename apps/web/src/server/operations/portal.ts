@@ -29,33 +29,53 @@ export async function portalAccess(projectId: string): Promise<{ access: PortalA
   return { access: portalAccess === "PRIVATE" ? "private" : "public", home: portalHome.toLowerCase() as PortalHomePage };
 }
 
+const ACCESS_LINE = "Who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email)";
+const HOME_LINE = "What the portal's home page opens: feedback (its first board), roadmap, changelog or docs";
+
+const portalOutput = z
+  .object({
+    access: z.enum(ACCESS).describe(ACCESS_LINE).meta({ examples: ["public"] }),
+    home: z.enum(HOMES).describe(HOME_LINE).meta({ examples: ["feedback"] }),
+  })
+  .meta({ id: "PortalSettings", description: "Who may read the portal, and what its home page opens" });
+
 export const getPortal = defineOperation({
   name: "portal.get",
   title: "Get the portal settings",
-  summary:
-    "Get who may read the portal: public (anyone) or private (only the team, people your app signs in with SSO and readers added by email); and what its home page opens: feedback (the first board), roadmap, changelog or docs",
+  summary: "Get who may read the portal and what its home page opens.",
   method: "GET",
   path: "/portal",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: portalOutput.describe("The portal's settings"),
   run: ({ projectId }) => portalAccess(projectId),
 });
 
 export const updatePortal = defineOperation({
   name: "portal.update",
   title: "Update the portal settings",
-  summary:
-    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in; where plans are sold, on a plan with private portals: 402 otherwise, and on a lower plan a private portal is its team's only); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs)",
+  summary: "Set who may read the portal and what its home page opens. Fields left out stay as they are.",
   method: "PATCH",
   path: "/portal",
   scope: "write",
   access: "admin",
   errors: [402],
   input: z.object({
-    access: z.enum(ACCESS, { error: "Pick public or private" }).optional(),
-    home: z.enum(HOMES, { error: "Pick feedback, roadmap, changelog or docs" }).optional(),
+    access: z
+      .enum(ACCESS, { error: "Pick public or private" })
+      .optional()
+      .describe(
+        `${ACCESS_LINE}; see portalReaders.add. A private portal's pages, feeds, widget and AI answers ask everyone else to sign in. Where plans are sold, private needs a plan with private portals (402 otherwise), and on a lower plan a private portal is its team's only`,
+      )
+      .meta({ examples: ["private"] }),
+    home: z
+      .enum(HOMES, { error: "Pick feedback, roadmap, changelog or docs" })
+      .optional()
+      .describe(HOME_LINE)
+      .meta({ examples: ["docs"] }),
   }),
+  output: portalOutput.describe("The portal's settings, as changed"),
   example: { access: "private", home: "docs" },
   run: async ({ projectId }, input) => {
     if (input.access === "private") {

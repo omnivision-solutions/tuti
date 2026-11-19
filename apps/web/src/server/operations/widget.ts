@@ -33,13 +33,35 @@ export const httpsLink = z.object({
     .string()
     .trim()
     .min(1, "Give each link a label")
-    .max(MAX_WIDGET_LINK_LABEL_LENGTH, `Keep link labels under ${MAX_WIDGET_LINK_LABEL_LENGTH} characters`),
+    .max(MAX_WIDGET_LINK_LABEL_LENGTH, `Keep link labels under ${MAX_WIDGET_LINK_LABEL_LENGTH} characters`)
+    .describe(`What it says, up to ${MAX_WIDGET_LINK_LABEL_LENGTH} characters`)
+    .meta({ examples: ["Status"] }),
   url: z
     .string()
     .trim()
     .max(500, "Keep links under 500 characters")
-    .pipe(z.url({ protocol: /^https$/, error: "Links need a full https:// address" })),
+    .pipe(z.url({ protocol: /^https$/, error: "Links need a full https:// address" }))
+    .describe("Where it goes: a full https:// address")
+    .meta({ examples: ["https://status.example.com"] }),
 });
+
+/** A link as branding and the widget return it. */
+export const linkOutput = z
+  .object({
+    label: z.string().describe("What it says").meta({ examples: ["Status"] }),
+    url: z.string().describe("Where it goes: a full https:// address").meta({ examples: ["https://status.example.com"] }),
+  })
+  .meta({ id: "PortalLink", description: "A link for visitors: a label and a full https:// address" });
+
+/** An uploaded image, as a lasting link (lastingImage, shareImage). */
+export const imageOutput = z
+  .object({
+    id: z.string().describe("The upload's id").meta({ examples: ["cm3media0001"] }),
+    url: z.string().describe("A lasting link to the image").meta({ examples: ["https://media.example.com/cm3media0001/480.webp"] }),
+    width: z.number().int().describe("Its width in pixels").meta({ examples: [480] }),
+    height: z.number().int().describe("Its height in pixels").meta({ examples: [120] }),
+  })
+  .meta({ id: "UploadedImage", description: "An image uploaded in the app" });
 
 export type WidgetLink = z.infer<typeof httpsLink>;
 
@@ -121,22 +143,50 @@ export function servedIcon(settings: WidgetSettings, plan: Parameters<typeof pla
 
 export { luminance, textColorOn } from "@/lib/colors";
 
+const LABEL_LINE = "The launcher's name, a round button: read out by screen readers and its tooltip";
+const HOME_LINE = "The panel's Home: its heading, empty for “How can we help?”";
+const GREETING_LINE = "The greeting above Home's heading, empty for “Hi there 👋”, with the visitor's first name once their site signs them in";
+const HIDDEN_LINE = "The parts turned off, gone from Home and the tabs";
+const ON_PORTAL_LINE = "Whether the launcher shows on every page of the project's own portal too (true for new projects)";
+const AI_FIRST_LINE =
+  "Whether a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with “Ask a person” to pass it to the team; one with files goes to the team (true for new projects)";
+
+const widgetOutput = z
+  .object({
+    label: z.string().describe(LABEL_LINE).meta({ examples: ["Help & feedback"] }),
+    color: z.string().nullable().describe("The launcher's colour, #rrggbb; null follows the portal's accent colour where it stands out, else the brand green").meta({ examples: ["#5b21b6"] }),
+    position: z.enum(POSITIONS).describe("Its corner").meta({ examples: ["bottom-right"] }),
+    links: z.array(linkOutput).describe("Home's quick links"),
+    icon: z
+      .enum(WIDGET_ICON_CHOICES)
+      .describe("The launcher's icon as set; on a plan without the launcher's icon it shows chat")
+      .meta({ examples: ["chat"] }),
+    iconImage: imageOutput.nullable().describe("The uploaded icon, when the icon is image"),
+    title: z.string().describe(HOME_LINE).meta({ examples: ["Questions about Acme?"] }),
+    greeting: z.string().describe(GREETING_LINE).meta({ examples: [""] }),
+    hidden: z.array(z.enum(WIDGET_PARTS)).describe(HIDDEN_LINE).meta({ examples: [["whatsNew"]] }),
+    onPortal: z.boolean().describe(ON_PORTAL_LINE).meta({ examples: [true] }),
+    aiFirst: z.boolean().describe(AI_FIRST_LINE).meta({ examples: [true] }),
+  })
+  .meta({ id: "WidgetSettings", description: "The widget's launcher and its panel's Home" });
+
 export const getWidgetSettings = defineOperation({
   name: "widget.get",
   title: "Get the widget settings",
-  summary: "Get the widget's settings: the launcher's name (label), colour, corner and icon, and the panel's Home: quick links, heading (title), greeting and the parts turned off (hidden), whether the launcher shows on the project's own portal (onPortal), and whether a new message in Messages goes to the AI first (aiFirst)",
+  summary: "Get the widget's settings: the launcher's name, colour, corner and icon, and the panel's Home.",
   method: "GET",
   path: "/widget",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: widgetOutput.describe("The widget's settings"),
   run: async ({ projectId }) => (await widgetSettings({ id: projectId }))!,
 });
 
 export const updateWidgetSettings = defineOperation({
   name: "widget.update",
   title: "Update the widget settings",
-  summary: `Set the widget's launcher, a round button: its name (label: read out by screen readers and its tooltip), colour (#rrggbb; null follows the portal's accent colour where it stands out on light and dark pages, else the brand green; sending the launcher's own stored colour keeps it, and sending that default otherwise is null), corner, up to ${MAX_WIDGET_LINKS} quick links (replaces the list), and its icon (${WIDGET_ICON_CHOICES.join(", ")}; "image" with iconImage, the id of an image uploaded in the app). Where plans are sold, an icon other than chat needs a plan with the launcher's icon (402 otherwise); on a lower plan the one set is kept and the launcher shows chat. The panel's Home: its heading (title) and the greeting above it (empty for "How can we help?" and "Hi there 👋", with the visitor's first name once their site signs them in), and the parts turned off (hidden, replaces the list: ${WIDGET_PARTS.join(", ")}), gone from Home and the tabs. onPortal: the launcher on every page of the project's own portal too (true for new projects). aiFirst: a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with "Ask a person" to pass it to the team; one with files goes to the team (true for new projects)`,
+  summary: "Set the widget's launcher (its name, colour, corner, quick links and icon) and its panel's Home. Fields left out stay as they are.",
   method: "PATCH",
   path: "/widget",
   scope: "write",
@@ -148,18 +198,53 @@ export const updateWidgetSettings = defineOperation({
       .trim()
       .min(1, "Give the button a label")
       .max(MAX_WIDGET_LABEL_LENGTH, `Keep the label under ${MAX_WIDGET_LABEL_LENGTH} characters`)
-      .optional(),
-    color: hexColor.nullable().optional(),
-    position: z.enum(POSITIONS, { error: "Pick bottom-right or bottom-left" }).optional(),
-    links: z.array(httpsLink).max(MAX_WIDGET_LINKS, `Add up to ${MAX_WIDGET_LINKS} links`).optional(),
-    icon: z.enum(WIDGET_ICON_CHOICES, { error: `Pick ${WIDGET_ICON_CHOICES.join(", ")}` }).optional(),
-    iconImage: z.string().trim().min(1).nullable().optional(),
-    title: z.string().trim().max(MAX_WIDGET_HOME_TEXT, `Keep the heading under ${MAX_WIDGET_HOME_TEXT} characters`).optional(),
-    greeting: z.string().trim().max(MAX_WIDGET_HOME_TEXT, `Keep the greeting under ${MAX_WIDGET_HOME_TEXT} characters`).optional(),
-    hidden: z.array(z.enum(WIDGET_PARTS, { error: `Parts are ${WIDGET_PARTS.join(", ")}` })).optional(),
-    onPortal: z.boolean().optional(),
-    aiFirst: z.boolean().optional(),
+      .optional()
+      .describe(`${LABEL_LINE}; up to ${MAX_WIDGET_LABEL_LENGTH} characters`)
+      .meta({ examples: ["Help & feedback"] }),
+    color: hexColor
+      .nullable()
+      .optional()
+      .describe(
+        "The launcher's colour, #rrggbb; null follows the portal's accent colour where it stands out on light and dark pages, else the brand green. Sending the launcher's own stored colour keeps it, and sending that default otherwise is null",
+      )
+      .meta({ examples: ["#5b21b6"] }),
+    position: z.enum(POSITIONS, { error: "Pick bottom-right or bottom-left" }).optional().describe("Its corner").meta({ examples: ["bottom-left"] }),
+    links: z
+      .array(httpsLink)
+      .max(MAX_WIDGET_LINKS, `Add up to ${MAX_WIDGET_LINKS} links`)
+      .optional()
+      .describe(`Home's quick links, up to ${MAX_WIDGET_LINKS} (replaces the list)`),
+    icon: z
+      .enum(WIDGET_ICON_CHOICES, { error: `Pick ${WIDGET_ICON_CHOICES.join(", ")}` })
+      .optional()
+      .describe(
+        "The launcher's icon (image with iconImage). Where plans are sold, an icon other than chat needs a plan with the launcher's icon (402 otherwise); on a lower plan the one set is kept and the launcher shows chat",
+      )
+      .meta({ examples: ["help"] }),
+    iconImage: z.string().trim().min(1).nullable().optional().describe("The id of an image uploaded in the app, for the image icon").meta({ examples: ["cm3media0001"] }),
+    title: z
+      .string()
+      .trim()
+      .max(MAX_WIDGET_HOME_TEXT, `Keep the heading under ${MAX_WIDGET_HOME_TEXT} characters`)
+      .optional()
+      .describe(`${HOME_LINE}; up to ${MAX_WIDGET_HOME_TEXT} characters`)
+      .meta({ examples: ["Questions about Acme?"] }),
+    greeting: z
+      .string()
+      .trim()
+      .max(MAX_WIDGET_HOME_TEXT, `Keep the greeting under ${MAX_WIDGET_HOME_TEXT} characters`)
+      .optional()
+      .describe(`${GREETING_LINE}; up to ${MAX_WIDGET_HOME_TEXT} characters`)
+      .meta({ examples: ["Hi there 👋"] }),
+    hidden: z
+      .array(z.enum(WIDGET_PARTS, { error: `Parts are ${WIDGET_PARTS.join(", ")}` }))
+      .optional()
+      .describe(`${HIDDEN_LINE} (replaces the list)`)
+      .meta({ examples: [["whatsNew"]] }),
+    onPortal: z.boolean().optional().describe(ON_PORTAL_LINE).meta({ examples: [true] }),
+    aiFirst: z.boolean().optional().describe(AI_FIRST_LINE).meta({ examples: [true] }),
   }),
+  output: widgetOutput.describe("The widget's settings, as changed"),
   example: {
     label: "Help & feedback",
     color: "#5b21b6",

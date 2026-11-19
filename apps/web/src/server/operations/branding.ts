@@ -19,7 +19,7 @@ import {
 
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
-import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, type WidgetLink } from "./widget";
+import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, imageOutput, linkOutput, type WidgetLink } from "./widget";
 
 /**
  * The portal's and its docs' look (Phase 10, Customize): logos, favicon, accent colour, header and
@@ -158,66 +158,182 @@ export { brandCss } from "@/lib/colors";
 const links = (where: string) =>
   z.array(httpsLink).max(MAX_BRAND_LINKS, `Add up to ${MAX_BRAND_LINKS} ${where} links`).optional();
 const upload = z.string().trim().min(1).nullable().optional();
-const contentActions = z.object({ menu: z.boolean(), copyMarkdown: z.boolean(), chatGpt: z.boolean(), claude: z.boolean(), updatedDate: z.boolean() }).partial();
+const UPLOAD = "the id of one of the images uploaded in the app, null to remove";
+
+/** What each field is, for branding.update's input and the branding it returns. */
+const LINES = {
+  logo: "The portal's logo",
+  logoDark: "Shown instead of the logo in dark mode; without it the logo shows in both",
+  favicon: "The portal's favicon",
+  color: "The accent colour, #rrggbb; null for the brand green",
+  headerLinks: "Links in the portal's header",
+  footerLinks: "Links in the portal's footer",
+  poweredBy: 'Whether the footer says "Powered by tuti"',
+  contentActions: "What readers can do with an article",
+  menu: "The “Copy page” menu at all",
+  copyMarkdown: "Copy as Markdown, in the menu",
+  chatGpt: "Open in ChatGPT, in the menu",
+  claude: "Open in Claude, in the menu",
+  updatedDate: "The article's “Updated” date",
+  docsHome: "The docs' home",
+  docsTitle: "The title at its top; empty for the default",
+  docsSubtitle: "The subtitle under it; empty for the default",
+  popular: "Whether each tab's overview lists its most-read articles, once there are three (on for new projects)",
+  colorScheme: "Light or dark mode for readers who haven't picked one; system is their device's",
+  themeSwitch:
+    "Whether readers get a light/dark switch in the portal's footer; off, every reader gets colorScheme, except under a path of your site, where a theme the site keeps stays",
+  logoText: "Text beside the logo (empty: none; without a logo, the project's name shows)",
+  logoLink: "Where the logo goes, an https address; null for the portal's home",
+  sidebarLinks: "Links above the docs' tree",
+  seo: "The portal's search listing, and how it shows where it's shared",
+  seoTitle: "Its title; empty for the project's name",
+  seoDescription: "Its description",
+  seoImage: "The image a link to the portal shows",
+  fonts: "Fonts for headings and for text, from the portal fonts; null for the page's own",
+  customCss: "The team's CSS, on every portal page",
+  customHtml:
+    "The team's HTML, scripts too, at the end of each page, only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain",
+};
+
+const contentActions = z
+  .object({
+    menu: z.boolean().describe(LINES.menu).meta({ examples: [true] }),
+    copyMarkdown: z.boolean().describe(LINES.copyMarkdown).meta({ examples: [true] }),
+    chatGpt: z.boolean().describe(LINES.chatGpt).meta({ examples: [true] }),
+    claude: z.boolean().describe(LINES.claude).meta({ examples: [true] }),
+    updatedDate: z.boolean().describe(LINES.updatedDate).meta({ examples: [true] }),
+  })
+  .partial();
 const docsHome = z
   .object({
-    title: z.string().trim().max(DOCS_TITLE_MAX, `The title is up to ${DOCS_TITLE_MAX} characters`),
-    subtitle: z.string().trim().max(DOCS_SUBTITLE_MAX, `The subtitle is up to ${DOCS_SUBTITLE_MAX} characters`),
-    popular: z.boolean(),
+    title: z
+      .string()
+      .trim()
+      .max(DOCS_TITLE_MAX, `The title is up to ${DOCS_TITLE_MAX} characters`)
+      .describe(`${LINES.docsTitle}; up to ${DOCS_TITLE_MAX} characters`)
+      .meta({ examples: ["Acme Help Center"] }),
+    subtitle: z
+      .string()
+      .trim()
+      .max(DOCS_SUBTITLE_MAX, `The subtitle is up to ${DOCS_SUBTITLE_MAX} characters`)
+      .describe(`${LINES.docsSubtitle}; up to ${DOCS_SUBTITLE_MAX} characters`)
+      .meta({ examples: ["Guides and answers for every part of Acme"] }),
+    popular: z.boolean().describe(LINES.popular).meta({ examples: [true] }),
   })
   .partial();
 const httpsUrl = z.string().trim().max(500, "Keep links under 500 characters").pipe(z.url({ protocol: /^https$/, error: "Links need a full https:// address" }));
 const fontId = z.enum(PORTAL_FONTS.map((font) => font.id) as [PortalFont, ...PortalFont[]]).nullable();
-const fonts = z.object({ heading: fontId, body: fontId }).partial();
-const seo = z
+const fonts = z
   .object({
-    title: z.string().trim().max(SEO_TITLE_MAX, `The page title is up to ${SEO_TITLE_MAX} characters`),
-    description: z.string().trim().max(SEO_DESCRIPTION_MAX, `The description is up to ${SEO_DESCRIPTION_MAX} characters`),
+    heading: fontId.describe("For headings").meta({ examples: ["inter"] }),
+    body: fontId.describe("For text").meta({ examples: [null] }),
   })
   .partial();
+const seo = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .max(SEO_TITLE_MAX, `The page title is up to ${SEO_TITLE_MAX} characters`)
+      .describe(`${LINES.seoTitle}; up to ${SEO_TITLE_MAX} characters`)
+      .meta({ examples: ["Acme Help Center"] }),
+    description: z
+      .string()
+      .trim()
+      .max(SEO_DESCRIPTION_MAX, `The description is up to ${SEO_DESCRIPTION_MAX} characters`)
+      .describe(`${LINES.seoDescription}; up to ${SEO_DESCRIPTION_MAX} characters`)
+      .meta({ examples: ["Guides and answers for every part of Acme"] }),
+  })
+  .partial();
+
+const brandingOutput = z
+  .object({
+    logo: imageOutput.nullable().describe(LINES.logo),
+    logoDark: imageOutput.nullable().describe(LINES.logoDark),
+    favicon: imageOutput.nullable().describe(LINES.favicon),
+    color: z.string().nullable().describe(LINES.color).meta({ examples: ["#5b21b6"] }),
+    headerLinks: z.array(linkOutput).describe(LINES.headerLinks),
+    footerLinks: z.array(linkOutput).describe(LINES.footerLinks),
+    poweredBy: z.boolean().describe(`${LINES.poweredBy}: always, unless the project has a licence or the add-on`).meta({ examples: [true] }),
+    contentActions: contentActions.required().describe(LINES.contentActions),
+    docsHome: docsHome.required().describe(LINES.docsHome),
+    colorScheme: z.enum(COLOR_SCHEMES).describe(LINES.colorScheme).meta({ examples: ["system"] }),
+    themeSwitch: z.boolean().describe(LINES.themeSwitch).meta({ examples: [true] }),
+    logoText: z.string().describe(LINES.logoText).meta({ examples: ["Help"] }),
+    logoLink: z.string().nullable().describe(LINES.logoLink).meta({ examples: ["https://example.com"] }),
+    sidebarLinks: z.array(linkOutput).describe(LINES.sidebarLinks),
+    seo: seo.required().describe(LINES.seo),
+    seoImage: imageOutput.nullable().describe(LINES.seoImage),
+    fonts: fonts.required().describe(LINES.fonts),
+    customCss: z.string().describe(LINES.customCss).meta({ examples: [""] }),
+    customHtml: z.string().describe(LINES.customHtml).meta({ examples: [""] }),
+  })
+  .meta({ id: "Branding", description: "The portal's and its docs' look" });
 
 export const getBranding = defineOperation({
   name: "branding.get",
   title: "Get the branding",
-  summary: "Get the portal's branding: logos, favicon, colour, header and footer links, and whether it says \"Powered by tuti\"",
+  summary: "Get the portal's branding: logos, favicon, colour, links, fonts, the docs' home, its search listing, custom code, and whether it says \"Powered by tuti\".",
   method: "GET",
   path: "/branding",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: brandingOutput.describe("The portal's branding"),
   run: async ({ projectId }) => (await branding({ id: projectId }))!,
 });
 
 export const updateBranding = defineOperation({
   name: "branding.update",
   title: "Update the branding",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project; where plans are sold, as on tuti.so, the "Powered by tuti" add-on on its paid plan instead), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} at its top, empty for the defaults, and popular to list each tab's most-read articles on its overview, once there are three, on for new projects), colorScheme (system, light or dark: for readers who haven't picked one), themeSwitch (true or false: whether readers get a light/dark switch in the portal's footer; off, every reader gets colorScheme, except under a path of your site, where a theme the site keeps stays), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own), customCss (CSS on every portal page) and customHtml (HTML, scripts too, at the end of each page only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain); each up to ${CUSTOM_CODE_MAX} characters. Fields left out stay as they are`,
+  summary: "Set the portal's and its docs' look. Fields left out stay as they are; a list sent replaces the list.",
   method: "PATCH",
   path: "/branding",
   scope: "write",
   access: "admin",
   errors: [409],
   input: z.object({
-    logo: upload,
-    logoDark: upload,
-    favicon: upload,
-    color: hexColor.nullable().optional(),
-    headerLinks: links("header"),
-    footerLinks: links("footer"),
-    poweredBy: z.boolean().optional(),
-    contentActions: contentActions.optional(),
-    docsHome: docsHome.optional(),
-    colorScheme: z.enum(COLOR_SCHEMES).optional(),
-    themeSwitch: z.boolean().optional(),
-    logoText: z.string().trim().max(LOGO_TEXT_MAX, `The logo text is up to ${LOGO_TEXT_MAX} characters`).optional(),
-    logoLink: httpsUrl.nullable().optional(),
-    sidebarLinks: links("sidebar"),
-    seo: seo.optional(),
-    seoImage: upload,
-    fonts: fonts.optional(),
-    customCss: z.string().max(CUSTOM_CODE_MAX, `Custom CSS is up to ${CUSTOM_CODE_MAX.toLocaleString("en")} characters`).optional(),
-    customHtml: z.string().max(CUSTOM_CODE_MAX, `Custom HTML is up to ${CUSTOM_CODE_MAX.toLocaleString("en")} characters`).optional(),
+    logo: upload.describe(`${LINES.logo}: ${UPLOAD}`).meta({ examples: ["cm3media0001"] }),
+    logoDark: upload.describe(`${LINES.logoDark}: ${UPLOAD}`).meta({ examples: [null] }),
+    favicon: upload.describe(`${LINES.favicon}: ${UPLOAD}`).meta({ examples: ["cm3media0002"] }),
+    color: hexColor.nullable().optional().describe(LINES.color).meta({ examples: ["#5b21b6"] }),
+    headerLinks: links("header").describe(`${LINES.headerLinks}, up to ${MAX_BRAND_LINKS} https links (replaces the list)`),
+    footerLinks: links("footer").describe(`${LINES.footerLinks}, up to ${MAX_BRAND_LINKS} https links (replaces the list)`),
+    poweredBy: z
+      .boolean()
+      .optional()
+      .describe(`${LINES.poweredBy}. false needs a licence for the project; where plans are sold, as on tuti.so, the "Powered by tuti" add-on on its paid plan instead`)
+      .meta({ examples: [false] }),
+    contentActions: contentActions.optional().describe(`${LINES.contentActions}: each true or false`),
+    docsHome: docsHome.optional().describe(`${LINES.docsHome}: a title and subtitle at its top, empty for the defaults, and its popular articles`),
+    colorScheme: z.enum(COLOR_SCHEMES).optional().describe(LINES.colorScheme).meta({ examples: ["system"] }),
+    themeSwitch: z.boolean().optional().describe(LINES.themeSwitch).meta({ examples: [true] }),
+    logoText: z
+      .string()
+      .trim()
+      .max(LOGO_TEXT_MAX, `The logo text is up to ${LOGO_TEXT_MAX} characters`)
+      .optional()
+      .describe(`${LINES.logoText}; up to ${LOGO_TEXT_MAX} characters`)
+      .meta({ examples: ["Help"] }),
+    logoLink: httpsUrl.nullable().optional().describe(LINES.logoLink).meta({ examples: ["https://example.com"] }),
+    sidebarLinks: links("sidebar").describe(`${LINES.sidebarLinks}, up to ${MAX_BRAND_LINKS} (replaces the list)`),
+    seo: seo.optional().describe(LINES.seo),
+    seoImage: upload.describe(`${LINES.seoImage}: ${UPLOAD}`).meta({ examples: [null] }),
+    fonts: fonts.optional().describe(LINES.fonts),
+    customCss: z
+      .string()
+      .max(CUSTOM_CODE_MAX, `Custom CSS is up to ${CUSTOM_CODE_MAX.toLocaleString("en")} characters`)
+      .optional()
+      .describe(`${LINES.customCss}; up to ${CUSTOM_CODE_MAX} characters`)
+      .meta({ examples: [".tuti-header { border-bottom: 0; }"] }),
+    customHtml: z
+      .string()
+      .max(CUSTOM_CODE_MAX, `Custom HTML is up to ${CUSTOM_CODE_MAX.toLocaleString("en")} characters`)
+      .optional()
+      .describe(`${LINES.customHtml}; up to ${CUSTOM_CODE_MAX} characters`)
+      .meta({ examples: ['<script src="https://example.com/analytics.js" defer></script>'] }),
   }),
+  output: brandingOutput.describe("The portal's branding, as changed"),
   example: {
     color: "#5b21b6",
     headerLinks: [{ label: "Docs", url: "https://docs.example.com" }],

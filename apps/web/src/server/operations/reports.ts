@@ -382,17 +382,264 @@ export async function inboxReport(projectId: string, range: ReportRange) {
   };
 }
 
+/** What reports.get returns: each part's days, then its numbers. */
+const n = (description: string, example: number) => z.number().describe(description).meta({ examples: [example] });
+const counts = (description: string, example: number) => z.array(z.number().int()).describe(description).meta({ examples: [[example, example + 3]] });
+const rangeFields = {
+  since: z.string().describe("The range's first day, 00:00 UTC (ISO 8601)").meta({ examples: ["2026-10-21T00:00:00.000Z"] }),
+  until: z.string().describe("The day after its last, 00:00 UTC (ISO 8601)").meta({ examples: ["2026-11-20T00:00:00.000Z"] }),
+  days: z.array(z.string()).describe("Each day of the range (UTC), YYYY-MM-DD: the daily counts' days, in order").meta({ examples: [["2026-11-18", "2026-11-19"]] }),
+};
+const BEFORE =
+  "The same totals over as many days just before the range, to compare with. While today is under way, the last of them counts only as much of it as today has had, so these are possibly fractions";
+const reportsOutput = z
+  .object({
+    docs: z
+      .object({
+        ...rangeFields,
+        daily: z
+          .object({
+            views: counts("Article views", 120),
+            searches: counts("Searches", 40),
+            failed: counts("Searches that found nothing", 3),
+            helpful: counts("Readers' answers “Yes” to “Was this helpful?”", 6),
+            notHelpful: counts("Readers' answers “No”", 1),
+          })
+          .describe("Each count by day, one value for each of `days`"),
+        totals: z
+          .object({
+            views: n("Article views", 3600),
+            searches: n("Searches", 1200),
+            failedSearches: n("Searches that found nothing", 90),
+            failedTopics: n("The different words of searches that found nothing, without those dismissed with none since: topics to write about", 12),
+            helpful: n("Readers' answers “Yes” to “Was this helpful?”", 180),
+            notHelpful: n("Readers' answers “No”", 25),
+            publishedArticles: n("Articles published now", 42),
+          })
+          .describe("The range's totals"),
+        before: z
+          .object({
+            views: n("Article views", 3100.5),
+            searches: z.number().nullable().describe("Searches; null where theirs were deleted for some of those days").meta({ examples: [1100] }),
+            failedSearches: z.number().nullable().describe("Searches that found nothing; null where some of those days' were deleted").meta({ examples: [95] }),
+            helpful: n("Answers “Yes”", 160),
+            notHelpful: n("Answers “No”", 30),
+          })
+          .describe(BEFORE),
+        searchesSince: z
+          .string()
+          .nullable()
+          .describe("The first day searches are counted on, YYYY-MM-DD, when the range starts before it (older ones were deleted); null otherwise")
+          .meta({ examples: [null] }),
+        articles: z
+          .array(
+            z.object({
+              slug: z.string().describe("The article's slug").meta({ examples: ["invite-your-team"] }),
+              title: z.string().describe("Its title").meta({ examples: ["Invite your team"] }),
+              collection: z.string().nullable().describe("Its collection's name, or null").meta({ examples: ["Getting started"] }),
+              published: z.boolean().describe("Whether it's published").meta({ examples: [true] }),
+              views: n("Its views in the range", 420),
+              helpful: n("Answers “Yes” on it in the range", 18),
+              notHelpful: n("Answers “No” on it in the range", 2),
+            }),
+          )
+          .describe("Each article's numbers: published ones, and unpublished ones read or answered in the range; most viewed first"),
+        comments: z
+          .array(
+            z.object({
+              article: z
+                .object({
+                  slug: z.string().describe("The article's slug").meta({ examples: ["invite-your-team"] }),
+                  title: z.string().describe("Its title").meta({ examples: ["Invite your team"] }),
+                })
+                .describe("The article it's on"),
+              comment: z.string().describe("What the reader wrote").meta({ examples: ["It doesn't say how to remove someone"] }),
+              at: z.string().describe("When (ISO 8601)").meta({ examples: ["2026-11-18T14:02:00.000Z"] }),
+            }),
+          )
+          .describe("The latest 20 comments from readers who answered “No”, newest first"),
+        failedSearches: z
+          .array(
+            z.object({
+              query: z.string().describe("What was searched (their words are the only ones kept)").meta({ examples: ["export to csv"] }),
+              count: n("How many times", 14),
+              before: n("How many came before it was dismissed (docs.dismissGap)", 0),
+              dismissed: z.boolean().describe("Dismissed, with none since").meta({ examples: [false] }),
+            }),
+          )
+          .describe("The 50 searches that found nothing most often, those since any dismissal first"),
+      })
+      .describe("The docs: views, searches and those that found nothing, readers' answers to “Was this helpful?”, and each article's numbers"),
+    ai: z
+      .object({
+        ...rangeFields,
+        daily: z
+          .object({
+            handled: counts("Conversations the AI handled alone", 30),
+            escalated: counts("Conversations passed to the team (“Ask a person”)", 2),
+            answered: counts("Conversations where every question got an answer from the docs", 26),
+            helpful: counts("Conversations with a thumbs up", 5),
+            notHelpful: counts("Conversations with a thumbs down", 1),
+            rated: counts("Conversations with a thumbs up or down (one with both, once)", 6),
+          })
+          .describe("Each count by day (a conversation counts on the day it began), one value for each of `days`"),
+        totals: z
+          .object({
+            conversations: n("Conversations with the AI", 960),
+            escalated: n("Passed to the team (“Ask a person”)", 60),
+            answered: n("Where every question got an answer from the docs", 820),
+            helpful: n("With a thumbs up", 150),
+            notHelpful: n("With a thumbs down", 30),
+            rated: n("With a thumbs up or down (one with both, once)", 175),
+          })
+          .describe("The range's totals"),
+        before: z
+          .object({
+            conversations: n("Conversations with the AI", 900.5),
+            escalated: n("Passed to the team", 55),
+            answered: n("Answered from the docs", 760),
+            helpful: n("With a thumbs up", 140),
+            notHelpful: n("With a thumbs down", 35),
+            rated: n("With a thumbs up or down", 170),
+          })
+          .nullable()
+          .describe(`${BEFORE}. Null where some of their questions were deleted, as Past year's are on servers with plans`),
+        pastHistory: n("Conversations the plan's history leaves out of the list (counted above all the same)", 0),
+        listed: n("How many conversations there are to list", 960),
+        conversations: z
+          .array(
+            z.object({
+              id: z.string().describe("The conversation's id: its first question's").meta({ examples: ["cm3question0001"] }),
+              lastAt: z.string().describe("When its last question was asked (ISO 8601)").meta({ examples: ["2026-11-19T08:41:00.000Z"] }),
+              source: z.enum(["portal", "widget", "api"]).describe("Where it was asked: the portal, the widget or the API (docs.ask)").meta({ examples: ["widget"] }),
+              asker: z.string().nullable().describe("Who asked, when a signed-in reader; null for an anonymous reader or an API key").meta({ examples: ["Riley Reader"] }),
+              escalated: z.boolean().describe("Whether it was passed to the team").meta({ examples: [false] }),
+              answered: n("Its questions answered from the docs", 2),
+              helpful: n("Its thumbs up", 1),
+              notHelpful: n("Its thumbs down", 0),
+              turns: z
+                .array(
+                  z.object({
+                    question: z.string().describe("The question").meta({ examples: ["How do I invite my team?"] }),
+                    answer: z.string().nullable().describe("The AI's answer, or null without one").meta({ examples: ["Open Settings → Team and choose Invite."] }),
+                    status: z
+                      .enum(["answered", "no_answer", "failed"])
+                      .describe("answered (from the docs), no_answer (the docs couldn't answer it) or failed")
+                      .meta({ examples: ["answered"] }),
+                    helpful: z.boolean().nullable().describe("The asker's thumbs up (true) or down (false), or null").meta({ examples: [true] }),
+                    escalated: z.boolean().describe("Whether this question was passed to the team").meta({ examples: [false] }),
+                    conversation: z
+                      .number()
+                      .int()
+                      .nullable()
+                      .describe("The Inbox conversation it started (its number), when passed to the team")
+                      .meta({ examples: [null] }),
+                  }),
+                )
+                .describe("Its questions, in order: the first and its follow-ups"),
+            }),
+          )
+          .describe("The latest 50 conversations, newest first"),
+        gaps: z
+          .array(
+            z.object({
+              question: z.string().describe("The latest asking of the question").meta({ examples: ["Can I export to CSV?"] }),
+              noAnswer: n("How many times the AI couldn't answer it", 4),
+              notHelpful: n("How many of its answers got a thumbs down", 1),
+              escalated: n("How many were passed to the team", 2),
+              lastAsked: z.string().describe("When it was last asked (ISO 8601)").meta({ examples: ["2026-11-19T08:41:00.000Z"] }),
+              answer: z.string().nullable().describe("The latest answer that got a thumbs down, or null").meta({ examples: [null] }),
+              cause: z
+                .enum(["no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "unknown"])
+                .nullable()
+                .describe("Why the latest “I don't know” happened (unknown: asked before causes were kept), or null with only thumbs down")
+                .meta({ examples: ["no_relevant_section"] }),
+              follows: z.string().nullable().describe("The question it followed up on, or null").meta({ examples: [null] }),
+              article: z
+                .object({
+                  slug: z.string().describe("The article's slug").meta({ examples: ["export-data"] }),
+                  title: z.string().describe("Its title").meta({ examples: ["Export your data"] }),
+                })
+                .nullable()
+                .describe("The first article the latest unhelpful answer cited (the one to improve), or null")
+                .meta({ examples: [null] }),
+            }),
+          )
+          .describe("The 20 questions it couldn't answer, or whose answer got a thumbs down, asked most first (without those dismissed)"),
+      })
+      .describe("The AI that answers from the docs: its conversations, answered or passed to the team, thumbs up and down, the latest ones, and the questions it couldn't answer"),
+    inbox: z
+      .object({
+        ...rangeFields,
+        daily: z
+          .object({
+            created: counts("New conversations", 8),
+            fromAi: counts("New conversations started by “Ask a person” after an AI answer", 1),
+          })
+          .describe("Each count by day, one value for each of `days`"),
+        totals: z
+          .object({
+            conversations: n("New conversations", 240),
+            fromAi: n("Started by “Ask a person” after an AI answer", 60),
+            replied: n("Of those, how many the team replied to", 230),
+            medianFirstReply: z
+              .number()
+              .nullable()
+              .describe("The median time to the team's first reply, in seconds, of those replied to; null with none")
+              .meta({ examples: [2700] }),
+            openNow: n("Conversations open now, whatever the range", 7),
+          })
+          .describe("The range's totals"),
+        before: z
+          .object({
+            conversations: n("New conversations", 210.5),
+            fromAi: n("Started by “Ask a person”", 52),
+            medianFirstReply: z.number().nullable().describe("The median time to the first reply, in seconds; null with none").meta({ examples: [3100] }),
+          })
+          .nullable()
+          .describe(`${BEFORE}. Null where some were deleted`),
+        origins: z
+          .object({
+            widget: n("From the widget", 150),
+            email: n("By email", 20),
+            escalation: n("From “Ask a person”", 60),
+            api: n("From the API", 10),
+          })
+          .describe("New conversations by where they began"),
+        teammates: z
+          .array(
+            z.object({
+              id: z.string().nullable().describe("The teammate's id; null for one who left").meta({ examples: ["cm3user0001"] }),
+              name: z.string().nullable().describe("Their name").meta({ examples: ["Olive Owner"] }),
+              replies: n("Their replies", 140),
+              conversations: n("Conversations they replied in", 95),
+            }),
+          )
+          .describe("Replies per teammate, most first"),
+      })
+      .describe("The inbox: new conversations by where they began, the median time to the team's first reply, open now, and replies per teammate"),
+  })
+  .describe("How the range went");
+
 export const getReports = defineOperation({
   name: "reports.get",
   title: "Get reports",
-  summary: `How a range of days went (\`range\`: ${RANGE_KEYS.join(", ")}; the past 30 days by default), by day (UTC), in total and in total over as many days just before (\`before\`, to compare with; while today is under way, the last of them only as much of it as today has had, so possibly fractions; null where those were deleted, as Past year's are on servers with plans, and searches null where theirs were): the docs (views, searches and those that found nothing, readers' answers to “Was this helpful?”, each article's numbers), the AI's conversations from the docs (answered, passed to the team, thumbs up and down, the latest ones, the questions it couldn't answer) and the inbox (new conversations by where they began, the median time to the team's first reply, open now, replies per teammate). Where plans are sold, on a plan with Reporting, ranges as long as that plan allows (402 otherwise)`,
+  summary:
+    "How the docs, their AI and the inbox did over a range of days: by day (UTC), in total, and over as many days just before. Lists stop at 50 (comments and questions at 20). Where plans are sold, it needs a plan with Reporting, for ranges as long as that plan allows (402 otherwise).",
   method: "GET",
   path: "/reports",
   scope: "read",
   access: "team",
   errors: [402],
   // Unpicked: the default range, or the longest the plan has where that's locked (defaultRange).
-  input: z.object({ range: z.enum(RANGE_KEYS).optional() }),
+  input: z.object({
+    range: z
+      .enum(RANGE_KEYS)
+      .optional()
+      .describe("Which days, in whole UTC days up to today: the past 30 days by default (or the longest the plan has, where that's locked)")
+      .meta({ examples: ["7d"] }),
+  }),
+  output: reportsOutput,
   example: { range: "7d" },
   run: async ({ projectId }, input) => {
     const plan = await requirePlan(projectId, "reporting");

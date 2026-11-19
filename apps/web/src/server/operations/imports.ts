@@ -54,6 +54,42 @@ async function importView(row: ImportRow) {
 
 export type ImportView = Awaited<ReturnType<typeof importView>>;
 
+const sourceKeys = Object.keys(IMPORT_SOURCES) as [ImportSourceKey, ...ImportSourceKey[]];
+const partKeys = Object.keys(IMPORT_PARTS) as [ImportPart, ...ImportPart[]];
+
+/** An import as imports.start and imports.get return it (importView). */
+const importOutput = z
+  .object({
+    id: z.string().describe("The import's id").meta({ examples: ["cm3import0001"] }),
+    source: z.enum(sourceKeys).describe("The tool it came from").meta({ examples: ["featurebase"] }),
+    state: z
+      .enum(["running", "done", "failed"])
+      .describe("running, done, or failed (`error` says why; started again, what came across already is skipped)")
+      .meta({ examples: ["running"] }),
+    parts: z.array(z.enum(partKeys)).describe("The parts it brings").meta({ examples: [["contacts", "feedback"]] }),
+    step: z.string().nullable().describe("The step under way (contacts, posts, …) while it runs; where it stopped, once failed; null once done").meta({ examples: ["posts"] }),
+    counts: z
+      .record(
+        z.string(),
+        z.object({
+          imported: z.number().int().describe("How many came across").meta({ examples: [1200] }),
+          leftOut: z.record(z.string(), z.number().int()).describe("How many it left out, by reason").meta({ examples: [{ duplicate: 3 }] }),
+        }),
+      )
+      .describe("What came across so far, per kind (contacts, posts, …): how many, and how many it left out and why")
+      .meta({ examples: [{ contacts: { imported: 1200, leftOut: {} }, posts: { imported: 340, leftOut: { duplicate: 3 } } }] }),
+    error: z.string().nullable().describe("Why it failed, or null").meta({ examples: [null] }),
+    startedBy: z.string().nullable().describe("Who started it, or null for someone who left").meta({ examples: ["Olive Owner"] }),
+    createdAt: z.string().describe("When it started (ISO 8601)").meta({ examples: ["2026-11-19T09:00:00.000Z"] }),
+    finishedAt: z.string().nullable().describe("When it ended (ISO 8601), or null while it runs").meta({ examples: [null] }),
+    invitationsToSend: z
+      .number()
+      .int()
+      .describe("The invitations an import (this one or an earlier one) left waiting to be sent, as Team & roles lists them")
+      .meta({ examples: [0] }),
+  })
+  .meta({ id: "Import", description: "An import from another tool (never its key)" });
+
 /** Inline (JOBS_DRIVER=inline), the import's pages go on without the request that started or looked at it waiting for them. */
 const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 
@@ -125,7 +161,7 @@ export const startImport = defineOperation({
   name: "imports.start",
   title: "Start an import",
   summary:
-    "Start an import from another tool (`source`: featurebase, with an API key of its own; intercom, with an app's access token; ferndesk, with an API key with Full access; canny, with an API key; frill, with an API key; nolt, with an API key; website, a public help center by its https address as `key`, no key needed) and the parts to bring, of those the source has (Featurebase: all of them; Intercom: contacts, docs and avatars; Ferndesk: contacts, changelog (every changelog's entries, its tags as tags), docs (its changelogs left out) and inbox, its AI assistant's conversations, closed; Canny: contacts, feedback, changelog and avatars, a changelog entry linked to the posts it shipped, a published one only to those already completed, when feedback comes in with it or before; Frill: the same, its ideas in one board, bugs (and ideas Frill sends as private) as Private, those waiting for approval, rejected or archived left out; Nolt: contacts, feedback and avatars, its board coming turned off, as its API doesn't say who sees it; website: docs only, its pages under the address (from its sitemap, else its links; robots.txt respected, public addresses only), each page's main content an article, always as a draft, in collections from its folders, its images copied and its old paths redirected to the new articles (redirects.list); any other is 400) (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). For a source whose API doesn't say who may read each article (Ferndesk), `publishArticles` says whether its published articles and changelog entries come published; without it they come as drafts, to publish once checked (400 for another source). For one whose API doesn't say who may see each post (Frill), `publicPosts` says whether its posts come onto a Public board; without it the board is made Private and each post Private (400 for another source). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key the source refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
+    "Start an import from another tool. It runs in the background (imports.get shows its progress); started again later, it brings only what's new, nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time.",
   method: "POST",
   path: "/imports",
   scope: "write",
@@ -133,15 +169,41 @@ export const startImport = defineOperation({
   // `key`: the source's API key, or its site's address (import-parts IMPORT_SOURCES' credential); `parts`: only those it has.
   input: z
     .object({
-      source: z.enum(Object.keys(IMPORT_SOURCES) as [ImportSourceKey, ...ImportSourceKey[]]),
-      key: z.string().trim().max(500),
-      parts: z.array(z.enum(Object.keys(IMPORT_PARTS) as [ImportPart, ...ImportPart[]])).min(1, "Pick what to bring"),
-      // Only for a source whose API doesn't say who may read each article (import-parts' askPublish): whether its
-      // published ones come published; without it, as drafts, as the setup step suggests.
-      publishArticles: z.boolean().optional(),
-      // Only for a source whose API doesn't say who may see each post (import-parts' askPostVisibility): whether its
-      // posts come onto Public boards; without it, onto Private ones, each post Private, as the setup step suggests.
-      publicPosts: z.boolean().optional(),
+      source: z
+        .enum(sourceKeys)
+        .describe(
+          "The tool, and the parts it has: featurebase (all of them); intercom (contacts, docs and avatars); ferndesk (contacts; changelog: every changelog's entries, its tags as tags; docs, its changelogs left out; inbox: its AI assistant's conversations, closed); canny (contacts, feedback, changelog and avatars: a changelog entry linked to the posts it shipped, a published one only to those already completed, when feedback comes in with it or before); frill (the same: its ideas in one board, bugs (and ideas Frill sends as private) as Private, those waiting for approval, rejected or archived left out); nolt (contacts, feedback and avatars: its board coming turned off, as its API doesn't say who sees it); website (docs only: a public help center, its pages under the address, from its sitemap, else its links; robots.txt respected, public addresses only; each page's main content an article, always as a draft, in collections from its folders, its images copied and its old paths redirected to the new articles, redirects.list)",
+        )
+        .meta({ examples: ["featurebase"] }),
+      key: z
+        .string()
+        .trim()
+        .max(500)
+        .describe(
+          "The source's credential: Featurebase's API key of its own, an Intercom app's access token, a Ferndesk API key with Full access, a Canny, Frill or Nolt API key; for website, the help center's https address (no key needed). The key is checked, then each part's list read once: a key the source refuses, or one that can't read a part, is refused (400, saying which). It's kept only while the import runs",
+        )
+        .meta({ examples: ["fb_live_a1b2c3d4e5"] }),
+      parts: z
+        .array(z.enum(partKeys))
+        .min(1, "Pick what to bring")
+        .describe(
+          "The parts to bring, of those the source has (any other is 400): team (your team, as invitations to send); contacts (as the project's users, by their id in your app); feedback (boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates); docs (the help center's collections and articles, with their media and the links between them, published as they were); changelog (its entries, published at their dates or as drafts, with their images, quietly); inbox (conversations with their messages); avatars (contacts' uploaded profile pictures, copied last). Feedback, inbox and avatars need Contacts (400 without). Started again, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages)",
+        )
+        .meta({ examples: [["contacts", "feedback"]] }),
+      publishArticles: z
+        .boolean()
+        .optional()
+        .describe(
+          "For a source whose API doesn't say who may read each article (Ferndesk): whether its published articles and changelog entries come published; without it they come as drafts, to publish once checked (400 for another source)",
+        )
+        .meta({ examples: [false] }),
+      publicPosts: z
+        .boolean()
+        .optional()
+        .describe(
+          "For a source whose API doesn't say who may see each post (Frill): whether its posts come onto a Public board; without it the board is made Private and each post Private (400 for another source)",
+        )
+        .meta({ examples: [false] }),
     })
     .superRefine(({ source, key, parts, publishArticles, publicPosts }, ctx) => {
       const { name, credential, parts: has, askPublish, askPostVisibility } = IMPORT_SOURCES[source] as ImportSourceInfo;
@@ -158,6 +220,7 @@ export const startImport = defineOperation({
         ctx.addIssue({ code: "custom", path: ["parts"], message: `${name} has no ${IMPORT_PARTS[part].label} to bring` });
       }
     }),
+  output: importOutput.describe("The import started, or the one running: starting it again returns that one"),
   run: async ({ actor, projectId }, input) => {
     // It takes another tool's key, pasted into the app.
     if (actor.kind !== "user") {
@@ -213,11 +276,12 @@ export const startImport = defineOperation({
 export const getImport = defineOperation({
   name: "imports.get",
   title: "Get the latest import",
-  summary: "The project's latest import (imports.start), running or ended, with what came across so far, per kind, and what it left out and why (null: none yet)",
+  summary: "The project's latest import (imports.start), running or ended, with what came across so far.",
   method: "GET",
   path: "/imports/latest",
   scope: "read",
   access: "admin",
   input: z.object({}),
+  output: z.object({ import: importOutput.nullable().describe("The latest import; null: none yet") }).describe("The latest import"),
   run: async ({ projectId }) => ({ import: await latestImport(projectId) }),
 });
