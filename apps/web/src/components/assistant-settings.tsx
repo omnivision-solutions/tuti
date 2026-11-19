@@ -133,6 +133,11 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
         name="offLimits"
         value={draft}
         onChange={(event) => {
+          // While an input method composes (a comma may be part of it), the text is left whole: it's read once it changes again.
+          if ((event.nativeEvent as InputEvent).isComposing) {
+            setDraft(event.target.value);
+            return;
+          }
           // A comma ends a topic, typed or pasted (as the text changes: phones' keyboards don't say which key was
           // pressed): what's before each becomes a chip, and the rest stays in the box. Each is cut to a topic's
           // length here, not by the box, which would cut a pasted list short.
