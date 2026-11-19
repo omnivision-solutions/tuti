@@ -547,16 +547,17 @@ export function PoweredBySettings({
   /** Where plans are sold; null elsewhere. */
   plan: BadgePlan | null;
 }) {
-  const [shown, setShown] = useState(poweredBy);
-  // What's saved, as the page last said (after each save it says again).
+  // What was picked here, until the page says that's what's saved (after each save it says again): a pick made while
+  // another was being saved stays one to save. With none, the switch shows what's saved, changed elsewhere or not.
+  const [choice, setShown] = useState<boolean | null>(null);
   const [saved, setSaved] = useState(poweredBy);
   if (saved !== poweredBy) {
     setSaved(poweredBy);
-    if (shown === saved) {
-      // Nothing changed here: it was changed elsewhere.
-      setShown(poweredBy);
+    if (choice === poweredBy) {
+      setShown(null);
     }
   }
+  const shown = choice ?? saved;
   const change = shown === saved ? "" : shown ? "on" : "off";
   const id = useId();
   // The form's field: it says when the change is made, taken back or saved, for "Save changes".

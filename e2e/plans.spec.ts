@@ -117,11 +117,28 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByRole("switch", { name: '"Powered by tuti"' })).toHaveAccessibleDescription("The add-on is still on this project's plan: remove it in Billing.");
   await expect(owner.getByText("The add-on is still on").getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "customize-branding-badge-shown-with-add-on");
-  // Saved with "Save changes", the badge is back on the portal.
+  // Saved with "Save changes", the badge is back on the portal. Switched off again while that was being saved, it
+  // stays off and still to save once the save lands; switched back on, there's nothing left to save.
   const save = owner.getByRole("button", { name: "Save changes" });
+  const badgeSwitch = owner.getByRole("switch", { name: '"Powered by tuti"' });
+  let land!: () => void;
+  const saving = new Promise<void>((resolve) => (land = resolve));
+  await owner.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) await saving;
+    await route.fallback();
+  });
   await save.click();
+  await expect(owner.getByRole("button", { name: "Saving…" })).toBeVisible();
+  await badgeSwitch.click();
+  land();
+  await owner.unroute("**/*");
   await expect(owner.getByText("Branding saved")).toBeVisible();
+  await expect(save).toBeEnabled();
+  await expect(badgeSwitch).not.toBeChecked();
+  await badgeSwitch.click();
   await expect(save).toBeDisabled();
+  await owner.reload();
+  await expect(badgeSwitch).toBeChecked();
   await reader.goto(cloudPortalUrl(slug));
   await expect(reader.getByRole("link", { name: /Powered by/ })).toBeVisible();
   // Switched off and saved in another tab, it's gone again.
