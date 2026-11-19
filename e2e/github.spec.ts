@@ -21,14 +21,18 @@ test("an admin connects two projects to one GitHub account, gives each its repos
 
   // Before connecting, it says what leaves: merged pull requests' diffs, to the AI provider.
   await owner.goto(`/app/${web}/settings/integrations`);
-  await expect(owner.getByText("Tuti also sends each one's diff, without secrets, to", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Tuti sends each merged pull request's diff, without secrets, to", { exact: false })).toBeVisible();
   // What's on the way is listed too, so a team sees it's coming.
   const soon = owner.getByRole("region", { name: "Coming soon" });
-  await expect(soon.getByRole("heading", { level: 3 })).toHaveText(["GitLab", "Linear", "Jira", "Slack"]);
-  await expect(soon.getByRole("listitem").getByText("Coming soon", { exact: true })).toHaveCount(4);
+  await expect(soon.getByRole("listitem")).toHaveText(["GitLabSoon", "LinearSoon", "JiraSoon", "SlackSoon"]);
   await expect(soon.getByRole("link")).toHaveCount(0);
   await expect(soon.getByRole("button")).toHaveCount(0);
   await checkpoint(owner, "settings-integrations");
+  // On a phone the tiles go two to a row, and nothing reaches past the screen.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "settings-integrations-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
   await connectGithub(owner, web, account);
   // Connected, it's on GitHub's own settings page.
@@ -218,11 +222,15 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name: "acme-e2e/docs", exact: true })).toBeEnabled();
   await owner.keyboard.press("Escape");
 
-  // Integrations lists it as connected, with Manage.
+  // Integrations lists it as connected, the row opening its settings.
   await owner.getByRole("region", { name: "GitHub" }).getByRole("link", { name: "Integrations" }).click();
-  await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ })).toBeVisible();
+  await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ })).toBeVisible();
   await checkpoint(owner, "settings-integrations-connected");
-  await owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ }).click();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "settings-integrations-connected-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github`);
   await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
 

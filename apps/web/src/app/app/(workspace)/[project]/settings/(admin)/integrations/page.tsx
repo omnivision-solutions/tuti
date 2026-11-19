@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { aiProvider, codeChangesEnabled } from "@tuti/shared";
+import { cn } from "cn";
 import { ChevronRightIcon, GitMergeIcon, HashIcon, SquareKanbanIcon, TicketIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -8,12 +9,11 @@ import { notFound } from "next/navigation";
 
 import { GithubAccountChoice } from "@/components/github-connection";
 import { GithubMark } from "@tuti/ui/github-mark";
-import { IntegrationLogo } from "@/components/integration-logo";
-import { SettingsPane } from "@/components/settings-card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { formatDate, timeAgo } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { githubConfig } from "@/lib/github";
 import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
@@ -22,11 +22,14 @@ export const metadata: Metadata = { title: "Integrations · Settings" };
 
 /** What's on the way (docs/plan.md, Later), so a team sees it's coming. */
 const COMING_SOON = [
-  { name: "GitLab", icon: GitMergeIcon, text: "Merge requests in the changelog and Autopilot, like GitHub's pull requests." },
-  { name: "Linear", icon: SquareKanbanIcon, text: "Issues linked to feedback, their progress shown on the post." },
-  { name: "Jira", icon: TicketIcon, text: "Issues linked to feedback, their progress shown on the post." },
-  { name: "Slack", icon: HashIcon, text: "New feedback, conversations and Autopilot's updates in a channel." },
+  { name: "GitLab", icon: GitMergeIcon },
+  { name: "Linear", icon: SquareKanbanIcon },
+  { name: "Jira", icon: TicketIcon },
+  { name: "Slack", icon: HashIcon },
 ];
+
+/** GitHub's row, padded as a `SettingRow`. */
+const ROW = "flex items-center gap-3 px-4 py-3.5 @min-[34rem]/settings:px-5";
 
 const GITHUB_RESULTS: Record<string, string> = {
   disconnected: "GitHub disconnected.",
@@ -34,7 +37,7 @@ const GITHUB_RESULTS: Record<string, string> = {
   unconfirmed: "GitHub couldn't confirm that you can use that installation. Try connecting again.",
 };
 
-/** Settings → Integrations: the tools connected to the project (each with Manage), the ones to connect, and the ones on the way. */
+/** Settings → Integrations: GitHub (a row to connect it, or to its settings once connected), and the tools on the way as a line of tiles. */
 export default async function IntegrationsSettingsPage(props: PageProps<"/app/[project]/settings/integrations">) {
   const { project: slug } = await props.params;
   const { github: githubResult } = await props.searchParams;
@@ -51,6 +54,8 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
     select: { accountLogin: true, createdAt: true },
   });
 
+  const githubFor = codeChangesEnabled() ? "Pull requests for the changelog and Autopilot" : "Pull requests for the changelog";
+
   return (
     <SettingsPane title="Integrations">
       {typeof githubResult === "string" && GITHUB_RESULTS[githubResult] && (
@@ -58,59 +63,29 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
           <AlertDescription>{GITHUB_RESULTS[githubResult]}</AlertDescription>
         </Alert>
       )}
-      {installation && (
-        <section aria-labelledby="connected-heading" className="flex flex-col gap-3">
-          <h2 id="connected-heading" className="font-heading text-base font-medium">
-            Connected
-          </h2>
-          <Link
-            href={`/app/${project.slug}/settings/integrations/github`}
-            className="flex items-center gap-4 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
-          >
-            <IntegrationLogo>
-              <GithubMark className="size-6" />
-            </IntegrationLogo>
+      <SettingsCard>
+        {installation ? (
+          <Link href={`/app/${project.slug}/settings/integrations/github`} className={cn(ROW, "rounded-xl transition-colors hover:bg-muted/50")}>
+            <GithubMark className="size-6 shrink-0" />
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate font-medium">GitHub · {installation.accountLogin}</span>
-              <span className="text-sm text-muted-foreground" title={formatDate(installation.createdAt)}>
-                Connected {timeAgo(installation.createdAt)}
-              </span>
+              <span className="font-medium wrap-anywhere">GitHub · {installation.accountLogin}</span>
+              <span className="text-sm text-muted-foreground">{githubFor}</span>
             </span>
-            <span className="flex items-center gap-1 text-sm text-muted-foreground">
-              Manage
-              <ChevronRightIcon className="size-4" />
-            </span>
+            <Badge title={`Connected ${formatDate(installation.createdAt)}`}>Connected</Badge>
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           </Link>
-        </section>
-      )}
-      {!installation && (
-        <section aria-labelledby="connect-heading" className="flex flex-col gap-3">
-          <h2 id="connect-heading" className="font-heading text-base font-medium">
-            Connect a tool
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:col-span-2 [&:not(:has([data-choice]))]:sm:col-span-1">
-              <IntegrationLogo>
-                <GithubMark className="size-6" />
-              </IntegrationLogo>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-medium">GitHub</h3>
-                <p className="text-sm text-muted-foreground">
-                  Merged pull requests gather in the changelog&apos;s Next release draft.
-                  {codeChangesEnabled() &&
-                    ` Tuti also sends each one's diff, without secrets, to ${aiProvider()} to propose the feedback it resolves and the docs it changes, and the repository's files when Verify checks an article against them. You can turn that off once it's connected.`}
-                </p>
+        ) : (
+          <>
+            <div className={ROW}>
+              <GithubMark className="size-6 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <h2 className="font-medium">GitHub</h2>
+                <p className="text-sm text-muted-foreground">{githubFor}</p>
               </div>
-              {!github ? (
-                <p className="text-sm text-muted-foreground">GitHub isn&apos;t set up on this server (see GITHUB_APP_* in .env.example).</p>
-              ) : accounts.length > 0 ? (
-                <div data-choice className="text-sm">
-                  <GithubAccountChoice projectSlug={project.slug} accounts={accounts} />
-                </div>
-              ) : (
+              {github && accounts.length === 0 && (
                 <a
                   href={`/api/github/install?${new URLSearchParams({ project: project.slug })}`}
-                  className={buttonVariants({ variant: "outline", size: "sm", className: "self-start" })}
+                  className={buttonVariants({ variant: "outline", size: "sm", className: "shrink-0" })}
                   aria-label="Connect GitHub"
                 >
                   Connect
@@ -118,26 +93,37 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
                 </a>
               )}
             </div>
-          </div>
-        </section>
-      )}
-      <section aria-labelledby="soon-heading" className="flex flex-col gap-3">
-        <h2 id="soon-heading" className="font-heading text-base font-medium">
+            {!github ? (
+              <SettingBlock className="text-sm text-muted-foreground">
+                <p>GitHub isn&apos;t set up on this server (see GITHUB_APP_* in .env.example).</p>
+              </SettingBlock>
+            ) : (
+              (accounts.length > 0 || codeChangesEnabled()) && (
+                <SettingBlock className="text-sm">
+                  {accounts.length > 0 && <GithubAccountChoice projectSlug={project.slug} accounts={accounts} />}
+                  {/* What leaves the server once it's connected, said before connecting. */}
+                  {codeChangesEnabled() && (
+                    <p className="text-muted-foreground">
+                      Tuti sends each merged pull request&apos;s diff, without secrets, to {aiProvider()} to propose the feedback it resolves and the docs it
+                      changes, and the repository&apos;s files when Verify checks an article against them. You can turn that off once it&apos;s connected.
+                    </p>
+                  )}
+                </SettingBlock>
+              )
+            )}
+          </>
+        )}
+      </SettingsCard>
+      <section aria-labelledby="soon-heading" className="@container flex flex-col gap-2">
+        <h2 id="soon-heading" className="text-base font-semibold">
           Coming soon
         </h2>
-        <ul className="grid gap-4 sm:grid-cols-2">
-          {COMING_SOON.map(({ name, icon: Icon, text }) => (
-            <li key={name} className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-              <div className="flex items-start justify-between gap-2">
-                <IntegrationLogo>
-                  <Icon aria-hidden className="size-5" />
-                </IntegrationLogo>
-                <Badge variant="secondary">Coming soon</Badge>
-              </div>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-medium">{name}</h3>
-                <p className="text-sm text-muted-foreground">{text}</p>
-              </div>
+        <ul className="grid grid-cols-2 gap-2 @min-[34rem]:grid-cols-4">
+          {COMING_SOON.map(({ name, icon: Icon }) => (
+            <li key={name} className="flex min-w-0 items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 font-medium">
+              <Icon aria-hidden className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <Badge variant="secondary">Soon</Badge>
             </li>
           ))}
         </ul>
