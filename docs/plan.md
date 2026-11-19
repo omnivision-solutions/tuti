@@ -994,7 +994,7 @@ Decided (2026-11-19):
 - [ ] B6. API references'.
 - [ ] B7. Inbox's.
 - [ ] B8. Autopilot's.
-- [ ] B9. Users'.
+- [x] B9. Users'. Done (2026-11-19): users, companies, reader groups, portal readers, email preferences and property formats: summaries of one or two sentences, each field described (the sort and paging fields, a group's conditions and their `op`s, the email switches, a reader entry's address or domain), and outputs with example values: `User`, `ReaderGroup` (with `GroupCondition`), `PortalReader`, `EmailPreferences` and `PropertyFormat` named in the spec's schemas; no words dropped from `agent-context.json`
 - [x] B10. Portal's, Project's and Billing's; the list of operations not yet rewritten goes. Done (2026-11-19): their 32 operations rewritten (portal, site, domain, redirects, branding, widget; project, imports, reports, AI models; plan, licence, usage, credits): summaries of one or two sentences, what they said about a field on that field, outputs with example values (named `PortalSettings`, `SiteAddress`, `CustomDomain`, `Redirect`, `Branding`, `WidgetSettings`, `PortalLink`, `UploadedImage`, `Import`, `AiRoleModel`, `AiGroupLevel`, `AiUsageMonth`, `AiFeatureUsage`, `CreditGrant`), and no word an agent read lost. The list itself goes once every area is in
 
 ## Later

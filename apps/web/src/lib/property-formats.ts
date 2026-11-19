@@ -12,9 +12,9 @@ export const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "CHF", "SEK", "INR
 export const MAX_PROPERTY_FORMATS = 100;
 
 export const propertyFormat = z.object({
-  label: z.string().trim().max(64, "Names are up to 64 characters").optional(),
-  format: z.enum(PROPERTY_FORMATS).optional(),
-  currency: z.enum(CURRENCIES).optional(),
+  label: z.string().trim().max(64, "Names are up to 64 characters").optional().describe("A name of the team's own for it, shown in place of its key"),
+  format: z.enum(PROPERTY_FORMATS).optional().describe("How its values show: as text, a number, money or a date"),
+  currency: z.enum(CURRENCIES).optional().describe("The currency money is in"),
 });
 export type PropertyFormat = z.infer<typeof propertyFormat>;
 export type PropertyFormats = Record<string, PropertyFormat>;

@@ -3,7 +3,7 @@ import { lockProject } from "@tuti/jobs";
 import { pictureUrl } from "@tuti/shared/media-links";
 import { z } from "zod";
 
-import { type GroupCondition, groupConditions, groupMatch, type GroupRule, type Match, storedRule } from "@/lib/group-conditions";
+import { type GroupCondition, groupConditions, groupMatch, type GroupRule, type Match, OPERATORS, storedRule } from "@/lib/group-conditions";
 import { titleSlug } from "@/lib/post-urls";
 import { readerGroup } from "@/lib/reader-groups";
 
@@ -19,12 +19,48 @@ import { requirePlan } from "./plan";
 
 const groupFields = {
   name: z.string().trim().min(1, "Name is required").max(50),
-  description: z.string().trim().max(300),
+  description: z.string().trim().max(300).describe("What it's for, for the team"),
   /** At least one: a group without any would have nobody in it. */
-  conditions: groupConditions.min(1, "A group needs a condition"),
-  /** `all` of them must match a user, or `any` one. */
-  match: groupMatch,
+  conditions: groupConditions
+    .min(1, "A group needs a condition")
+    .describe(
+      "Who's in it: conditions on your users' properties (set by SSO tokens' `properties` and users.sync), at least one and up to 10. Values compare as text, exactly; a list property matches when one of its items does (for the negative ones, when none does), and a missing one matches only the negative ones and `is_not_set`. An SSO token's `groups` is the `groups` property: `{ \"property\": \"groups\", \"op\": \"is\", \"value\": \"beta\" }`",
+    ),
+  match: groupMatch.describe("`all` needs every condition to match a user, `any` one of them"),
 };
+
+/** A group as the API returns it (GroupView). */
+const groupOutput = z
+  .object({
+    key: z
+      .string()
+      .describe("Its key: from its name when made, it never changes, and names it in these paths and on tabs, collections and articles (`groups`)")
+      .meta({ examples: ["pro-customers"] }),
+    name: z.string().describe("Its name").meta({ examples: ["Pro customers"] }),
+    description: z.string().describe("What it's for, for the team; empty if none").meta({ examples: ["Customers on a paid plan"] }),
+    conditions: z
+      .array(
+        z
+          .object({
+            property: z.string().describe("The user property it looks at, by name").meta({ examples: ["plan"] }),
+            op: z
+              .enum(Object.keys(OPERATORS) as [keyof typeof OPERATORS, ...(keyof typeof OPERATORS)[]])
+              .describe("How it compares the property with `value`")
+              .meta({ examples: ["is_any_of"] }),
+            value: z
+              .union([z.string(), z.array(z.string())])
+              .optional()
+              .describe("The text it compares with, or a list for `is_any_of` and `is_none_of`; none for `is_set` and `is_not_set`")
+              .meta({ examples: [["pro", "enterprise"]] }),
+          })
+          .meta({ id: "GroupCondition", description: "A condition on a user's properties" }),
+      )
+      .describe("Who's in it: one of your app's users is when their properties match all of these, or any one (`match`)"),
+    match: groupMatch.describe("`all` of the conditions must match, or `any` one").meta({ examples: ["all"] }),
+    readers: z.number().int().describe("How many of your users are in it now").meta({ examples: [42] }),
+    sample: z.array(z.string().meta({ examples: ["Sam from Acme"] })).describe("The names of the first 3 of them, by name"),
+  })
+  .meta({ id: "ReaderGroup", description: "A reader group: who's in it is worked out from your users' properties when they read" });
 
 export type GroupView = {
   key: string;
@@ -121,31 +157,32 @@ export const listGroups = defineOperation({
   name: "groups.list",
   title: "List reader groups",
   summary:
-    "List the reader groups by name, each with its `key` (how tabs.*, collections.*, articles.* and these paths name it): one of your app's users is in one when their properties match all of its `conditions` (or, `match` `any`, one of them); `readers` counts them now and `sample` names up to 3. Tabs, collections and articles can be for some groups only (`access` groups, with `groups`, on tabs.*, collections.* and articles.*)",
+    "List the reader groups by name, with who's in each now (`readers` counts them, `sample` names up to 3). Tabs, collections and articles can be for some groups only (`access` groups, with `groups` naming them by key).",
   method: "GET",
   path: "/groups",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z.object({ groups: z.array(groupOutput).describe("The project's reader groups, by name") }).describe("The reader groups"),
   run: async ({ projectId }) => ({ groups: await groupsWithReaders(projectId) }),
 });
 
 export const createGroup = defineOperation({
   name: "groups.create",
   title: "Create a reader group",
-  summary:
-    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: `conditions` on your users' properties (set by SSO tokens' `properties` and users.sync; up to 10; `match` `all` (the default) needs every one, `any` one of them), each a `property`, an `op` and a `value`: `is`, `is_not`, `contains` or `excludes` a text; `is_any_of` or `is_none_of` a list; `is_set` and `is_not_set` take none. Values compare as text, exactly; a list property matches when one of its items does (or, for the negative ones, none does), and a missing one matches only the negative ones and `is_not_set`. An SSO token's `groups` is the `groups` property, e.g. `{ \"property\": \"groups\", \"op\": \"is\", \"value\": \"beta\" }`",
+  summary: "Add a reader group: who's in it is worked out from your users' properties each time they read, by its `conditions`.",
   method: "POST",
   path: "/groups",
   scope: "write",
   access: "admin",
   errors: [402],
   input: z.object({
-    name: groupFields.name,
-    description: groupFields.description.default(""),
+    name: groupFields.name.describe("Its name; its `key` comes from it and never changes"),
+    description: groupFields.description.default("").describe("An optional description, what it's for, for the team"),
     conditions: groupFields.conditions,
-    match: groupFields.match.default("all"),
+    match: groupFields.match.default("all").describe("`all` (the default) needs every condition to match a user, `any` one of them"),
   }),
+  output: groupOutput.describe("The new group, with who's in it now"),
   example: { name: "Pro customers", conditions: [{ property: "plan", op: "is_any_of", value: ["pro", "enterprise"] }, { property: "support_tier", op: "is_set" }] },
   run: async ({ projectId }, { name, description, conditions, match }) => {
     await requirePlan(projectId, "privatePortal");
@@ -170,19 +207,20 @@ export const updateGroup = defineOperation({
   name: "groups.update",
   title: "Update a reader group",
   summary:
-    "Change a reader group (`group` is its key, which stays): its name, description, `conditions` (all of them, at least one) or `match`. Then it's whichever of your users match them, and the tabs, collections and articles for it follow",
+    "Change a reader group; what's left out stays. Then it's whichever of your users match its conditions, and the tabs, collections and articles for it follow.",
   method: "PATCH",
   path: "/groups/{group}",
   scope: "write",
   access: "admin",
   errors: [402],
   input: z.object({
-    group: readerGroup,
-    name: groupFields.name.optional(),
+    group: readerGroup.describe("The group's key, which stays"),
+    name: groupFields.name.optional().describe("Its name"),
     description: groupFields.description.optional(),
-    conditions: groupFields.conditions.optional(),
+    conditions: groupFields.conditions.optional().describe("All of its conditions, at least one, in place of those it has (see groups.create)"),
     match: groupFields.match.optional(),
   }),
+  output: groupOutput.describe("The group, with who's in it now"),
   example: { name: "Enterprise customers", conditions: [{ property: "plan", op: "is", value: "enterprise" }] },
   run: async ({ projectId }, { group, ...input }) => {
     await requirePlan(projectId, "privatePortal");
@@ -200,13 +238,14 @@ export const deleteGroup = defineOperation({
   name: "groups.delete",
   title: "Delete a reader group",
   summary:
-    "Delete a reader group (by key). One a tab, collection or article is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go",
+    "Delete a reader group. One a tab, collection or article is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go.",
   method: "DELETE",
   path: "/groups/{group}",
   scope: "write",
   access: "admin",
   errors: [409],
-  input: z.object({ group: readerGroup }),
+  input: z.object({ group: readerGroup.describe("The group's key") }),
+  output: z.object({ deleted: z.string().describe("The deleted group's key").meta({ examples: ["beta"] }) }).describe("The group is gone"),
   run: async ({ projectId }, input) => {
     // Locked, so a tab, collection or article being saved with it lands first (and is named here) or finds it gone.
     await prisma.$transaction(async (tx) => {

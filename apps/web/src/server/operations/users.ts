@@ -19,6 +19,33 @@ export const MAX_USERS_PER_SYNC = 1000;
 
 const userId = z.string().min(1).max(255);
 
+const when = (description: string) => z.string().describe(description).meta({ examples: ["2026-11-02T09:30:00.000Z"] });
+
+/** A user as the API returns them (UserView, as JSON). */
+const userFields = {
+  id: z.string().describe("Their id in your app: the `sub` of your SSO tokens").meta({ examples: ["user-42"] }),
+  name: z.string().describe("Their name").meta({ examples: ["Sam from Acme"] }),
+  email: z.string().nullable().describe("Their email address, or null when your app hasn't given one").meta({ examples: ["e2e-sam@example.com"] }),
+  avatar: z.string().nullable().describe("Their picture's URL, or null").meta({ examples: ["https://example.com/avatars/sam.png"] }),
+  properties: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
+    .describe("What your app tells Tuti about them (users.sync's and SSO tokens' `properties`), by name: text, numbers, booleans or lists of text")
+    .meta({ examples: [{ plan: "enterprise", seats: 40, features: ["sso"] }] }),
+  groups: z
+    .array(z.string().meta({ examples: ["enterprise"] }))
+    .describe("The keys of the reader groups they're in now: those whose conditions their properties match"),
+  createdAt: when("When Tuti first heard of them"),
+  updatedAt: when("When they last changed"),
+};
+
+const userOutput = z.object(userFields).meta({ id: "User", description: "One of the people your app signs in to Tuti or sends with users.sync" });
+
+const listInput = {
+  limit: z.coerce.number().int().min(1).max(100).default(50).describe("How many a page has, up to 100"),
+  cursor: z.coerce.number().int().min(0).default(0).describe("Where the page starts: the previous page's `nextCursor`"),
+};
+const nextCursor = z.string().nullable().describe("The next page's `cursor`, or null on the last page").meta({ examples: ["50"] });
+
 export type UserView = {
   /** Their id in the project's app. */
   id: string;
@@ -127,8 +154,7 @@ async function countUsers(filters: Prisma.Sql[]) {
 export const listUsers = defineOperation({
   name: "users.list",
   title: "List users",
-  summary:
-    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, `company` those at that company (their `company` property), and `sort` puts the most posts, votes or conversations, or the latest seen, first; `total` counts all of them, every page",
+  summary: "List the project's users (the people your app signs in or sends with users.sync), by name unless `sort` says otherwise, each with the reader groups they're in now and their activity.",
   method: "GET",
   path: "/users",
   scope: "read",
@@ -136,14 +162,51 @@ export const listUsers = defineOperation({
   errors: [404],
   input: z.object({
     // As long as an id can be, so Users can find anyone by theirs.
-    q: z.string().trim().max(255).optional(),
-    group: readerGroup.optional(),
-    /** Those whose `company` property is this text, as it is (companies.list's names). */
-    company: z.string().min(1).max(200).optional(),
-    sort: z.enum(USER_SORTS).default("name"),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-    cursor: z.coerce.number().int().min(0).default(0),
+    q: z.string().trim().max(255).optional().describe("Finds users by name, email or their id in your app; whoever has that id exactly comes first"),
+    group: readerGroup.optional().describe("Keeps the users in this reader group, by its key"),
+    company: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("Keeps the users at this company: their `company` property is this text, as it is (companies.list's names)"),
+    sort: z
+      .enum(USER_SORTS)
+      .default("name")
+      .describe("`name` (A to Z), or puts the most `posts`, `votes` or `conversations` first, or the latest seen (`lastSeen`)"),
+    ...listInput,
   }),
+  output: z
+    .object({
+      users: z
+        .array(
+          z
+            .object({
+              ...userFields,
+              activity: z
+                .object({
+                  posts: z.number().int().describe("Posts they wrote, not merged into others").meta({ examples: [3] }),
+                  votes: z.number().int().describe("Their votes on others' posts").meta({ examples: [12] }),
+                  conversations: z
+                    .number()
+                    .int()
+                    .describe("Their conversations with the team, not spam nor past the plan's history")
+                    .meta({ examples: [2] }),
+                  lastSeenAt: z
+                    .string()
+                    .nullable()
+                    .describe("When Tuti last saw them: in the widget, or writing a post, vote, comment or message; null if never")
+                    .meta({ examples: ["2026-11-18T16:05:00.000Z"] }),
+                })
+                .describe("What they did on the portal and widget"),
+            })
+            .meta({ description: "A user, with their activity" }),
+        )
+        .describe("A page of users"),
+      nextCursor,
+      total: z.number().int().describe("Counts the users that match, all of them, on every page").meta({ examples: [128] }),
+    })
+    .describe("A page of the project's users"),
   example: { q: "acme.com", group: "enterprise", limit: 20 },
   run: async ({ projectId }, input) => {
     // Their conversations as the inbox shows them: not those past the plan's history.
@@ -197,12 +260,13 @@ export const listUsers = defineOperation({
 export const getUser = defineOperation({
   name: "users.get",
   title: "Get a user",
-  summary: "One of the project's users, by their id in your app: name, email, properties and the reader groups they're in now",
+  summary: "Get one of the project's users by their id in your app, with the reader groups they're in now.",
   method: "GET",
   path: "/users/{user}",
   scope: "read",
   access: "team",
-  input: z.object({ user: userId }),
+  input: z.object({ user: userId.describe("Their id in your app") }),
+  output: userOutput.describe("The user"),
   run: async ({ projectId }, input) => {
     const user = await prisma.ssoIdentity.findUnique({ where: { projectId_externalId: { projectId, externalId: input.user } }, select: userSelect });
     if (!user) {
@@ -213,17 +277,21 @@ export const getUser = defineOperation({
 });
 
 const userInput = z.object({
-  id: userId,
-  name: z.string().trim().min(1).max(100).optional(),
-  email: z.email().max(320).nullable().optional(),
-  avatar: z.url({ protocol: /^https?$/ }).max(2048).nullable().optional(),
-  properties: propertyChangesInput.optional(),
+  id: userId.describe("Their id in your app: the `sub` of your SSO tokens"),
+  name: z.string().trim().min(1).max(100).optional().describe("Their name"),
+  email: z.email().max(320).nullable().optional().describe("Their email address; null removes it"),
+  avatar: z.url({ protocol: /^https?$/ }).max(2048).nullable().optional().describe("Their picture's URL (http or https); null removes it"),
+  properties: propertyChangesInput
+    .optional()
+    .describe(
+      `Sets the ones it names, keeping the rest: strings (up to 200 characters), numbers, booleans or lists of strings, or null, which removes one. Reader groups' conditions match them; up to ${MAX_PROPERTIES} per user`,
+    ),
 });
 
 export const syncUsersOperation = defineOperation({
   name: "users.sync",
   title: "Add or update users",
-  summary: `Add or change the project's users, up to ${MAX_USERS_PER_SYNC} at once, each by their \`id\` in your app (the \`sub\` of your SSO tokens): their name, email, avatar and properties, which reader groups' conditions match. Only what's given changes; \`properties\` sets the ones it names (strings, numbers, booleans or lists of strings) and removes the ones that are null, keeping the rest, up to ${MAX_PROPERTIES} per user. Someone signed in to your portal with a verified address is in the groups of the users with that email. All or nothing; \`created\` and \`updated\` say how many`,
+  summary: `Add or change the project's users, up to ${MAX_USERS_PER_SYNC} at once, by their \`id\` in your app. Only what's given changes, and it's all or nothing. Someone signed in to your portal with a verified address is in the reader groups of the users with that email.`,
   method: "POST",
   path: "/users",
   scope: "write",
@@ -233,8 +301,15 @@ export const syncUsersOperation = defineOperation({
       .array(userInput)
       .min(1, "Send at least one user")
       .max(MAX_USERS_PER_SYNC, `Up to ${MAX_USERS_PER_SYNC} users at once`)
-      .refine((users) => new Set(users.map((user) => user.id)).size === users.length, "Each user once"),
+      .refine((users) => new Set(users.map((user) => user.id)).size === users.length, "Each user once")
+      .describe(`The users to add or change, each once, up to ${MAX_USERS_PER_SYNC}`),
   }),
+  output: z
+    .object({
+      created: z.number().int().describe("How many users were new").meta({ examples: [1] }),
+      updated: z.number().int().describe("How many were there already and updated").meta({ examples: [0] }),
+    })
+    .describe("How many users were added and how many changed"),
   example: {
     users: [{ id: "user-42", name: "Sam from Acme", email: "e2e-sam@example.com", properties: { plan: "enterprise", seats: 40, features: ["sso"], trial: null } }],
   },
@@ -253,17 +328,37 @@ export const COMPANY_SORTS = ["users", "votes", "total"] as const;
 export const listCompanies = defineOperation({
   name: "companies.list",
   title: "List companies",
-  summary:
-    "List the companies your users are at (their `company` property): how many users each has, their `votes` (on others' posts), and with Who's asking picked (project.update's `askingProperty`), the `total` of that number property over them; the most users first, or with `sort`, the most votes or the biggest total. users.list's `company` lists a company's users",
+  summary: "List the companies your users are at, by their `company` property, the most users first unless `sort` says otherwise. users.list's `company` lists a company's users.",
   method: "GET",
   path: "/companies",
   scope: "read",
   access: "team",
   input: z.object({
-    sort: z.enum(COMPANY_SORTS).default("users"),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-    cursor: z.coerce.number().int().min(0).default(0),
+    sort: z.enum(COMPANY_SORTS).default("users").describe("The most `users` first, the most `votes`, or the biggest `total`"),
+    ...listInput,
   }),
+  output: z
+    .object({
+      property: z
+        .string()
+        .nullable()
+        .describe("The number property `total` adds up: Who's asking, as picked in project.update (`askingProperty`); null if none is")
+        .meta({ examples: ["mrr"] }),
+      companies: z
+        .array(
+          z
+            .object({
+              name: z.string().describe("The company, as your users' `company` property has it").meta({ examples: ["Acme"] }),
+              users: z.number().int().describe("How many of your users are at it").meta({ examples: [12] }),
+              votes: z.number().int().describe("Its users' votes on others' posts, each counted once").meta({ examples: [30] }),
+              total: z.number().nullable().describe("The sum of `property` over its users, or null without one").meta({ examples: [4800] }),
+            })
+            .meta({ description: "A company your users are at" }),
+        )
+        .describe("A page of companies"),
+      nextCursor,
+    })
+    .describe("A page of companies"),
   example: { sort: "total", limit: 20 },
   run: async ({ projectId }, input) => {
     const { askingProperty } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { askingProperty: true } });
@@ -306,7 +401,6 @@ export const listCompanies = defineOperation({
             FROM page LEFT JOIN votes USING (name)
             ORDER BY ${input.sort === "total" ? Prisma.sql`page.total DESC NULLS LAST, ` : Prisma.empty}page.users DESC, page.name`;
     return {
-      /** The number property `total` is of, if any. */
       property: askingProperty,
       companies: rows.slice(0, input.limit).map((row) => ({ ...row, total: row.total === null ? null : Number(row.total) })),
       nextCursor: rows.length > input.limit ? String(input.cursor + input.limit) : null,
