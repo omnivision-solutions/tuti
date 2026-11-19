@@ -5,9 +5,8 @@ import { toPlainText } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { type Prisma, prisma } from "@tuti/db";
 import { contentHash, embed, EMBEDDING_MODEL, embeddingsEnabled, type JobInput, log as serverLog, toVectorLiteral } from "@tuti/shared";
-import { type ApiDoc, type ApiReferenceState, type ApiServer, onHelpCenter, OPENAPI_MAX_BYTES, operationMarkdown, readSpec, settle } from "@tuti/shared/api-reference";
+import { type ApiDoc, type ApiReferenceState, type ApiServer, onHelpCenter, OPENAPI_MAX_BYTES, operationMarkdown, readSpec, settle, specHtml } from "@tuti/shared/api-reference";
 import { isPrivate, publicOnlyLookup } from "@tuti/shared/webhook-url";
-import { marked } from "marked";
 import { Agent, fetch } from "undici";
 
 import { installationApi } from "./github-api";
@@ -623,7 +622,7 @@ async function plainWords(markdown: string): Promise<string> {
       .filter(Boolean)
       .join(" ");
   }
-  const content = await htmlToContent("article", marked.parse(markdown, { async: false, gfm: true }));
+  const content = await htmlToContent("article", specHtml(markdown));
   return "error" in content ? markdown : toPlainText(content.doc);
 }
 

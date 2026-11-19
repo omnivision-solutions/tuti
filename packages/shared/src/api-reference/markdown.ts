@@ -1,3 +1,5 @@
+import { Marked, type Tokens } from "marked";
+
 import { graphqlResponse, graphqlSignature, requestExamples } from "./examples";
 import type { ApiDoc, ApiOperation, ApiParam, ApiSchema } from "./types";
 
@@ -162,4 +164,44 @@ function fieldRows(schema: ApiSchema, prefix: string): Row[] {
     const name = path ? `${path}.${property.name}` : property.name;
     return [{ name, type: typeLine(property).filter(Boolean).join(" · "), required: property.required, about: about(property) }, ...fieldRows(property, name)];
   });
+}
+
+/** HTML's elements (and a few old ones specs still write). Any other tag in a spec's Markdown is a placeholder, `/docs/<slug>`. */
+const ELEMENTS = new Set(
+  (
+    "a abbr address article aside audio b bdi bdo big blockquote body br button canvas caption center cite code colgroup data " +
+    "datalist dd del details dfn dialog div dl dt em fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup " +
+    "hr html i iframe img ins kbd label legend li main map mark menu meter nav noscript object ol optgroup option output p " +
+    "picture pre progress q rp rt ruby s samp script search section select slot small span strike strong style sub summary sup svg " +
+    "table tbody td template textarea tfoot th thead time title tr tt u ul var video wbr"
+  ).split(" "),
+);
+
+/**
+ * Whether `tag` (`<slug>`, `</b>`, a comment) is HTML rather than a placeholder: by its name alone.
+ * ponytail: an element's name written as a placeholder (`?code=<code>`) still reads as HTML; telling them apart needs pairing tags.
+ */
+function isHtml(tag: string): boolean {
+  const name = /^<\/?([a-zA-Z][\w-]*)/.exec(tag)?.[1]?.toLowerCase();
+  return !name || ELEMENTS.has(name);
+}
+
+/** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`) kept as text. */
+export function specHtml(markdown: string): string {
+  return new Marked({
+    gfm: true,
+    // A placeholder is read as the text it is, not as HTML; HTML's own tags as marked reads them. (marked's types
+    // have each tokenizer return its own kind of token, but it takes any.)
+    tokenizer: {
+      tag(src) {
+        const tag = this.rules.inline.tag.exec(src)?.[0];
+        return tag !== undefined && !isHtml(tag) && ({ type: "text", raw: tag, text: tag } as unknown as Tokens.Tag);
+      },
+      html(src) {
+        const cap = this.rules.block.html.exec(src);
+        const tag = cap && /^ *(<[^<>]*>?)/.exec(cap[0])?.[1];
+        return !!tag && !isHtml(tag) && ((this.lexer.state.top ? this.paragraph(src) : this.text(src)) as unknown as Tokens.HTML);
+      },
+    },
+  }).parse(markdown, { async: false });
 }

@@ -15,7 +15,7 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { WidgetDocs } from "@/components/widget-docs";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { apiReferencePage, markdownDoc } from "./api-reference-queries";
+import { apiReferencePage, firstLine, markdownDoc } from "./api-reference-queries";
 import { createApiReference, updateApiReference } from "./operations/api-references";
 import { articleTabs, docsContents } from "./docs-queries";
 import { createArticle, createCollection, createTab, publishArticle } from "./operations/docs";
@@ -246,6 +246,9 @@ describe("an operation's page", () => {
     // So do an email address, and two spaces at a line's end: a line break.
     expect(JSON.stringify(await markdownDoc("Write to help@acme.example for more."))).toContain('"href":"mailto:help@acme.example"');
     expect(JSON.stringify(await markdownDoc("First line  \nsecond line"))).toContain('"type":"hardBreak"');
+    // A placeholder written as a tag is shown as it's written; HTML's own tags still work.
+    expect(await firstLine("The end of its address, /docs/<slug>, on <date>.")).toBe("The end of its address, /docs/<slug>, on <date>.");
+    expect(JSON.stringify(await markdownDoc("A <b>bold</b> <post id>"))).toContain('{"type":"text","marks":[{"type":"bold"}],"text":"bold"},{"type":"text","text":" <post id>"}');
   });
 
   test("says how it's signed: the scheme, and that unsigned works too when the spec says so", async () => {

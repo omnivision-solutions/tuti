@@ -73,6 +73,19 @@ test("a reference of a few hundred operations is written in one go, each embedde
   expect((await entries(reference.id)).every((row) => row.embedded)).toBe(true);
 }, 30_000);
 
+test("search's snippet keeps a placeholder the spec writes as a tag", async () => {
+  const text = JSON.stringify({
+    openapi: "3.1.0",
+    info: { title: "Docs", version: "1" },
+    paths: { "/docs/{slug}": { get: { summary: "Get an article", description: "By its address, /docs/<slug>.", responses: { "200": { description: "ok" } } } } },
+  });
+  vi.stubEnv("OPENAI_API_KEY", ""); // Words only: no model, wherever it runs.
+  const reference = await addReference(text);
+  await apiReferenceChanged({ referenceId: reference.id }, log);
+  const [entry] = await prisma.$queryRaw<{ description: string }[]>`SELECT description FROM api_operation_entry WHERE "referenceId" = ${reference.id}`;
+  expect(entry?.description).toBe("By its address, /docs/<slug>.");
+});
+
 test("when embedding fails, the entries are still written, without vectors, and it throws to be tried again; the retry embeds them", async () => {
   withEmbeddings();
   const reference = await addReference(spec(3));
