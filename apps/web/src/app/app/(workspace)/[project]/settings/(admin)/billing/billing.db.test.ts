@@ -209,13 +209,19 @@ test("on a license, This month has what's left of its month's emails and AI cred
   expect(page).not.toContain("<table");
 });
 
-test("the credits list says until when each lasts, day first and short", async () => {
+test("the credits list says until when each lasts, day first and short, with the year when it isn't this one", async () => {
   vi.stubEnv("AI_CREDITS", "on");
-  await prisma.creditGrant.create({
-    data: { projectId, source: "MANUAL", credits: 100, remaining: 100, createdAt: new Date("2026-11-17T12:00:00Z"), expiresAt: new Date("2031-01-05T12:00:00Z") },
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
+  onTestFinished(() => void vi.useRealTimers());
+  await prisma.creditGrant.createMany({
+    data: [
+      { projectId, source: "MANUAL", credits: 100, remaining: 100, expiresAt: new Date("2031-01-05T12:00:00Z") },
+      { projectId, source: "TOPUP", credits: 50, remaining: 50, expiresAt: new Date("2026-12-18T12:00:00Z") },
+    ],
   });
   const page = await billing();
   expect(page).toContain(">until 5 Jan 2031</td>");
+  expect(page).toContain(">until 18 Dec</td>");
 });
 
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {
