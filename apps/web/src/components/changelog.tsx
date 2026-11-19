@@ -926,8 +926,8 @@ export function ChangelogStyleForm({
   const matches = published.filter((entry) => !picked.includes(entry.number) && entry.title.toLowerCase().includes(words));
 
   return (
-    // Locked while saving: the form is new once saved, so an edit made meanwhile would be lost. `inert`, not disabled
-    // fields: those would drop out of what the form holds, which "Save changes" compares with what's saved.
+    // Locked while saving: an edit made then wouldn't be in what's saved. `inert`, not disabled fields: those would
+    // drop out of what the form holds, which "Save changes" compares with what's saved.
     <form {...form} inert={pending} className="flex flex-col divide-y">
       <SettingBlock className="gap-2">
         <label htmlFor="style-tone" className="font-medium">

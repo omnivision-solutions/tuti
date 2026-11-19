@@ -249,4 +249,18 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(pick).toBeEnabled();
   // What was typed is still there.
   await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+  // A saved example unpublished goes the same way, and what's typed and not saved stays.
+  await api("/changelog/1/unpublish", {});
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Affordable" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await expect(row.getByText("1/3")).toBeVisible();
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+  await expect(save).toBeEnabled();
+  // Saved, the page has nothing more to save.
+  await save.click();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
+  await expect(save).toBeDisabled();
+  await team.reload();
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
 });
