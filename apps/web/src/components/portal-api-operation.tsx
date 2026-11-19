@@ -637,7 +637,8 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
           <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {reference.name}
           </h1>
-          <Markdown text={doc.description} className="article-text gap-4 text-muted-foreground" />
+          {/* An article's measure, as the page widens on big screens. */}
+          <Markdown text={doc.description} className="article-text max-w-[46rem] gap-4 text-muted-foreground" />
         </div>
         <div className={cn("grid gap-4", schemes.length > 0 && "lg:grid-cols-2")}>
           <Box title="Where requests go">

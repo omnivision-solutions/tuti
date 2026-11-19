@@ -7,7 +7,7 @@ import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 const SPEC = `
 openapi: 3.1.0
-info: { title: Acme API, version: "1" }
+info: { title: Acme API, version: "1", description: "Acme's API: the posts on its boards, who wrote them, and what the team decided about each one, for scripts and integrations." }
 servers: [{ url: https://api.acme.example/v1 }]
 components:
   securitySchemes:
@@ -105,6 +105,10 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   await expect(overview.getByText("Version 1 · OpenAPI")).toBeVisible();
   await expect(overview.getByRole("region", { name: "Where requests go" })).toContainText("https://api.acme.example/v1");
   await expect(overview.getByRole("region", { name: "How requests are signed" })).toContainText("Bearer token in the Authorization header");
+  // The description keeps an article's measure on a big screen, where the page is wider.
+  await reader.setViewportSize({ width: 1728, height: 900 });
+  expect((await overview.getByText("Acme's API: the posts").boundingBox())!.width).toBeLessThanOrEqual(46 * 16);
+  await reader.setViewportSize({ width: 1440, height: 900 });
   const posts = overview.getByRole("listitem").filter({ has: reader.getByRole("heading", { name: "Posts", level: 3 }) });
   await expect(posts.getByRole("link", { name: "GET List posts" })).toBeVisible();
   await expect(posts.getByRole("link", { name: "POST Create a post" })).toBeVisible();
