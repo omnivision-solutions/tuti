@@ -1,8 +1,8 @@
 "use client";
 
 import type { TeamRole } from "@tuti/db";
-import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { CheckIcon, CopyIcon, PlusIcon } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -20,13 +20,37 @@ import {
 import { ItemList, ItemRow } from "@/components/item-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type InviteLink, keepLinks, nextRow } from "@/lib/invite-links";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
 import { acceptInvitation, createInvitation, revokeInvitation, sendAllInvitations, sendInvitation } from "@/server/invitations";
 
-export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles: TeamRole[] }) {
+/**
+ * Team & roles' "Invite people": the invite form in a dialog. It stays open on the result, which has the link to copy
+ * (shown once). `note`: what to know first (invites go as links until the email is verified; the plan's team limit).
+ */
+export function InviteDialog({ projectSlug, roles, note }: { projectSlug: string; roles: TeamRole[]; note?: ReactNode }) {
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button id="invite-people" size="sm" />}>
+        <PlusIcon />
+        Invite people
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Invite people</DialogTitle>
+          {note && <DialogDescription>{note}</DialogDescription>}
+        </DialogHeader>
+        <InviteForm projectSlug={projectSlug} roles={roles} stacked />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** `stacked` (in the dialog): the fields one under another at its width, without the line on what the role may do. */
+export function InviteForm({ projectSlug, roles, stacked = false }: { projectSlug: string; roles: TeamRole[]; stacked?: boolean }) {
   const [role, setRole] = useState<TeamRole>("MEMBER");
   const [sent, setSent] = useState<{ email: string; url: string; emailSent: boolean; unverified: boolean }>();
   const [copied, setCopied] = useState(false);
@@ -35,7 +59,7 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
   return (
     <div className="flex flex-col gap-3">
       <form
-        className="flex flex-wrap items-center gap-2"
+        className={stacked ? "flex flex-col gap-2" : "flex flex-wrap items-center gap-2"}
         onSubmit={(event) => {
           event.preventDefault();
           const form = event.currentTarget;
@@ -59,10 +83,10 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
           id="invite-email"
           placeholder="name@example.com"
           aria-label="Email of the person to invite"
-          className="w-64"
+          className={stacked ? "w-full" : "w-64"}
         />
         <Select items={ROLE_LABELS} value={role} onValueChange={(value) => setRole(value as TeamRole)}>
-          <SelectTrigger className="w-32" aria-label="Role for the new team member">
+          <SelectTrigger className={stacked ? "w-full" : "w-32"} aria-label="Role for the new team member">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -73,15 +97,16 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
             ))}
           </SelectContent>
         </Select>
-        <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled>
+        <Button type="submit" variant={stacked ? "default" : "outline"} disabled={pending} focusableWhenDisabled>
           {pending ? "Sending…" : "Send invite"}
         </Button>
-        <span className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>
+        {!stacked && <span className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>}
       </form>
 
       {sent && (
-        <Alert>
-          <AlertTitle>
+        // One column no wider than the alert: a long address wraps, and the link is cut short, inside a dialog too.
+        <Alert className="grid-cols-[minmax(0,1fr)]">
+          <AlertTitle className="wrap-anywhere">
             {sent.emailSent
               ? `Invite sent to ${sent.email}`
               : sent.unverified
@@ -105,7 +130,7 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
                 {copied ? "Copied" : "Copy link"}
               </Button>
             </div>
-            Only {sent.email} can accept it. It works once and expires in 7 days. The link won&apos;t be shown again.
+            <span className="wrap-anywhere">Only {sent.email} can accept it. It works once and expires in 7 days. The link won&apos;t be shown again.</span>
           </AlertDescription>
         </Alert>
       )}
@@ -170,7 +195,7 @@ export function UnsentInvitations({ projectSlug, invitations, note }: { projectS
   const sendButtons = useRef(new Map<string, HTMLButtonElement>());
   const heading = useRef<HTMLHeadingElement>(null);
   // Where focus goes once the page shows a Send's or Remove's result: `next`, a row's id (its Send), else the card's
-  // heading, else (the card gone) the pending invites or the invite form; only once `done`'s row has gone.
+  // heading, else (the card gone) the pending invites or Invite people; only once `done`'s row has gone.
   const focusNext = useRef<{ next: string | null; done: string | null } | null>(null);
   // Bumped with focusNext, so the effect runs whether the page's refresh landed before or after.
   const [moved, setMoved] = useState(0);
@@ -181,7 +206,7 @@ export function UnsentInvitations({ projectSlug, invitations, note }: { projectS
     }
     focusNext.current = null;
     const button = target.next ? sendButtons.current.get(target.next) : undefined;
-    (button ?? heading.current ?? document.getElementById("pending-invites") ?? document.getElementById("invite-email"))?.focus();
+    (button ?? heading.current ?? document.getElementById("pending-invites") ?? document.getElementById("invite-people"))?.focus();
   }, [invitations, links, moved]);
   const moveFocus = (done: string | null) => {
     focusNext.current = { next: nextRow(invitations.map((invitation) => invitation.id), done), done };

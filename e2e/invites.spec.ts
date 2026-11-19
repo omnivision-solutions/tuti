@@ -8,6 +8,7 @@ import { fillSignUp, newPerson, png, signUp, skipSetup } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn, verifyEmail } from "./mail";
 
 test("an owner invites someone by email, who signs up from the email and joins", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000); // two people, a dozen pages and the team's screen at three widths
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const inviteeEmail = `e2e-${randomUUID()}@example.com`;
@@ -21,23 +22,29 @@ test("an owner invites someone by email, who signs up from the email and joins",
 
   // Until the owner's email is verified, an invite isn't emailed (the card says so): its link is there to copy.
   await owner.goto(`/app/${slug}/team`);
-  await expect(owner.getByText("Verify your email to email invites; until then you'll get a link to send them. Only that email address can accept it.")).toBeVisible();
+  await owner.getByRole("button", { name: "Invite people" }).click();
+  const inviting = owner.getByRole("dialog", { name: "Invite people" });
+  await expect(inviting).toContainText("Verify your email to email invites; until then you'll get a link to send them.");
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Verify your email to email invites: for now, send ${inviteeEmail} this link`)).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Copy link" })).toBeVisible();
-  await checkpoint(owner, "team-invite-unverified");
+  await expect(owner.getByRole("button", { name: "Copy link" })).toBeInViewport({ ratio: 1 });
+  await checkpoint(owner, "team-invite-unverified", { fullPage: false });
   expect(countEmailsTo(inviteeEmail)).toBe(0);
 
   // Verified, the owner invites again (replacing that one); the pending invite shows who it's for.
   await verifyEmail(owner);
   await owner.goto(`/app/${slug}/team`);
-  await expect(owner.getByText("We'll email them an invite. Only that email address can accept it.")).toBeVisible();
+  await owner.getByRole("button", { name: "Invite people" }).click();
+  await expect(inviting).not.toContainText("Verify your email");
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Invite sent to ${inviteeEmail}`)).toBeVisible();
-  await expect(owner.getByText(`${inviteeEmail} · Member`)).toBeVisible();
-  await checkpoint(owner, "team-invite-sent");
+  await checkpoint(owner, "team-invite-sent", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await expect(inviting).toHaveCount(0);
+  await expect(owner.getByRole("list", { name: "Pending invites" }).getByText(`${inviteeEmail} · Member`)).toBeVisible();
+  await checkpoint(owner, "team-invite-pending");
 
   // The invitee gets the email and opens its link: the page says who it's for.
   const email = await latestEmailTo(inviteeEmail);
@@ -64,31 +71,62 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Team & roles" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText(inviteeEmail)).toBeVisible();
   await expect(owner.getByText(`${inviteeEmail} · Member`)).toHaveCount(0);
-  // Each role is a badge; changing it and removing are in the member's ••• menu.
+  // A role is a dropdown on the member's row, saved as it's picked; the owner's own is a badge. Removing is in the ⋯ menu.
   const row = owner.getByRole("main").getByRole("listitem").filter({ hasText: inviteeEmail });
-  await expect(row.getByText("Member", { exact: true })).toBeVisible();
-  await expect(row.getByRole("combobox")).toHaveCount(0);
-  await row.getByRole("button", { name: /^Actions for / }).click();
-  await owner.getByRole("menuitem", { name: "Change role" }).click();
-  await checkpoint(owner, "team-member-menu", { fullPage: false });
-  await owner.getByRole("menuitemradio", { name: "Admin" }).click();
+  const role = row.getByRole("combobox", { name: "Role of Ivy Invitee" });
+  await expect(role).toContainText("Member");
+  await expect(owner.getByRole("main").getByRole("listitem").filter({ hasText: owner.email }).getByRole("combobox")).toHaveCount(0);
+  await role.click();
+  await checkpoint(owner, "team-member-role", { fullPage: false });
+  await owner.getByRole("option", { name: "Admin" }).click();
   await expect(owner.getByText("Role changed to Admin")).toBeVisible();
-  await expect(row.getByText("Admin", { exact: true })).toBeVisible();
+  await expect(role).toContainText("Admin");
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(owner, "team-with-invitee");
+  // On a phone the dropdown goes under the name, nothing runs off the side, and the dialog fits.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(role).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+  await owner.getByRole("button", { name: "Invite people" }).click();
+  const another = `e2e-${randomUUID()}@example.com`;
+  await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(another);
+  await owner.getByRole("button", { name: "Send invite" }).click();
+  await expect(owner.getByText(`Invite sent to ${another}`)).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy link" })).toBeInViewport({ ratio: 1 });
+  await checkpoint(owner, "team-invite-phone", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await expect(inviting).toHaveCount(0);
+  await expect(owner.getByRole("list", { name: "Pending invites" }).getByRole("button", { name: "Revoke" })).toBeInViewport({ ratio: 1 });
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+  await checkpoint(owner, "team-with-invitee-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  // The only owner can't leave: their row's menu says why when they try, not a line that's always there.
+  await expect(owner.getByText("You're the only owner")).toHaveCount(0);
+  await owner.getByRole("button", { name: "Actions for Olive Owner" }).click();
+  await owner.getByRole("menuitem", { name: "Leave project" }).click();
+  await expect(owner.getByRole("alertdialog", { name: "You're the only owner" })).toContainText("To leave, make someone else an owner first.");
+  await owner.getByRole("alertdialog").getByRole("button", { name: "OK" }).click();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
 
   // The new admin sees all of Settings; made a member again, only Team & roles (Access is the owners' and admins').
-  await owner.getByRole("button", { name: /^Actions for / }).click();
-  await owner.getByRole("menuitem", { name: "Change role" }).click();
-  await owner.getByRole("menuitemradio", { name: "Member" }).click();
+  await role.click();
+  await owner.getByRole("option", { name: "Member" }).click();
   await expect(owner.getByText("Role changed to Member")).toBeVisible();
   await invitee.goto(`/app/${slug}/settings`);
   await invitee.waitForURL(`**/app/${slug}/settings/team`);
   await expect(invitee.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText(["Team & roles"]);
   const access = await invitee.goto(`/app/${slug}/settings/access`);
   expect(access?.status()).toBe(404);
-  await expect(invitee.getByRole("button", { name: "Leave project" })).toHaveCount(0); // not on a 404
+  await expect(invitee.getByRole("button", { name: "Actions for Ivy Invitee" })).toHaveCount(0); // not on a 404
+  // A member sees the team, with roles as badges and nobody to invite; their own row's menu has Leave project, which asks first.
   await invitee.goto(`/app/${slug}/settings/team`);
-  await expect(invitee.getByRole("button", { name: "Leave project" })).toBeVisible();
+  await expect(invitee.getByRole("combobox")).toHaveCount(0);
+  await expect(invitee.getByRole("button", { name: "Invite people" })).toHaveCount(0);
+  await expect(invitee.getByRole("button", { name: /^Actions for / })).toHaveCount(1);
+  await invitee.getByRole("button", { name: "Actions for Ivy Invitee" }).click();
+  await invitee.getByRole("menuitem", { name: "Leave project" }).click();
+  await expect(invitee.getByRole("alertdialog", { name: "Leave Acme?" })).toContainText("you'll need a new invite to come back");
+  await invitee.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   // The Inbox says Messages in the widget is off, with no link to Settings they can't open.
   await invitee.goto(`/app/${slug}/inbox`);
   const off = invitee.getByRole("note").filter({ hasText: "Messages in the widget is off" });
@@ -108,7 +146,7 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(invitee.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
   // Removing asks first, and says their API keys and the invites they sent go with them.
-  await owner.getByRole("button", { name: /^Actions for / }).click();
+  await owner.getByRole("button", { name: "Actions for Ivy Invitee" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByRole("alertdialog")).toContainText("the API keys they created stop working, and the invites they sent are cancelled");
   await checkpoint(owner, "remove-member", { fullPage: false });
@@ -147,6 +185,7 @@ test("an invite for someone else says so", async ({ browser }, testInfo) => {
   await owner.getByRole("button", { name: "Create project" }).click();
   await skipSetup(owner, slug);
   await owner.goto(`/app/${slug}/team`);
+  await owner.getByRole("button", { name: "Invite people" }).click();
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Invite sent to ${inviteeEmail}`)).toBeVisible();
@@ -184,6 +223,7 @@ test("someone with an account sees invites on the dashboard, declines one and ac
     await owner.getByRole("button", { name: "Create project" }).click();
     await skipSetup(owner, slug);
     await owner.goto(`/app/${slug}/team`);
+    await owner.getByRole("button", { name: "Invite people" }).click();
     await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(ivy.email);
     await owner.getByRole("button", { name: "Send invite" }).click();
     await expect(owner.getByText(`Invite sent to ${ivy.email}`)).toBeVisible();
