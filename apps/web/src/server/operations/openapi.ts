@@ -292,6 +292,7 @@ export function openApiSpec(serverUrl: string) {
                   required: others.filter((name) => required.has(name)),
                   // Rules across fields, declared with .meta() next to the operation's refine.
                   ...(schema.anyOf !== undefined && { anyOf: schema.anyOf }),
+                  ...(schema.oneOf !== undefined && { oneOf: schema.oneOf }),
                 },
                 ...(Object.keys(bodyExample).length > 0 && { example: bodyExample }),
               },
