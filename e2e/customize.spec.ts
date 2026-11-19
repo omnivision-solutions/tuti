@@ -359,7 +359,7 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
   expect(before.settings!.y).toBeGreaterThanOrEqual(0);
   await checkpoint(owner, "customize-branding-top", { fullPage: false });
 
-  await owner.getByRole("heading", { name: "Logo", exact: true }).hover();
+  await owner.getByRole("heading", { name: "Header", exact: true }).hover();
   await owner.mouse.wheel(0, 600);
   await expect.poll(() => settings.evaluate((pane) => pane.scrollTop)).toBeGreaterThan(0);
   expect(await owner.evaluate(() => window.scrollY)).toBe(0);

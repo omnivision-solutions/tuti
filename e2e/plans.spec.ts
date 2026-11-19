@@ -133,6 +133,8 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   land();
   await owner.unroute("**/*");
   await expect(owner.getByText("Branding saved")).toBeVisible();
+  // Once the page has what's saved (the badge on): the pick made meanwhile is what shows, not what's saved.
+  await owner.waitForLoadState("networkidle");
   await expect(save).toBeEnabled();
   await expect(badgeSwitch).not.toBeChecked();
   await badgeSwitch.click();

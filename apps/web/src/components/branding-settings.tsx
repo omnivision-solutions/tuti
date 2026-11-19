@@ -155,7 +155,7 @@ export function BrandingSettings({
           <ColorField id="brand-color" name="color" label="Accent colour" color={color} defaultColor={defaultColor} />
         </SettingRow>
       </SettingsCard>
-      <SettingsCard title="Logo">
+      <SettingsCard title="Header">
         <ImageRow projectSlug={projectSlug} name="logo" label="Logo" image={logo} look="light" onBusy={busy} />
         <ImageRow projectSlug={projectSlug} name="logoDark" label="Dark mode logo" image={logoDark} look="dark" onBusy={busy} />
         <SettingRow label="Text beside it" htmlFor="logo-text" inline>
