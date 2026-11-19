@@ -101,6 +101,7 @@ export const updateCodeChangesTuning = defineOperation({
   path: "/code-changes-tuning",
   scope: "write",
   access: "owner",
+  errors: [402],
   input: z.object(Object.fromEntries(TUNING_KEYS.map((key) => [key, tuningValue])) as Record<TuningKey, typeof tuningValue>),
   example: { "propose.edit.maybe": 0.4, "decide.rounds": 8, "decide.reasoning": null },
   run: async ({ actor, projectId }, input) => {

@@ -52,6 +52,14 @@ test("read-only keys get the read tools; tools return the same data as the API",
   // The instructions describe the whole product, not only feedback, and how things are named.
   expect(client.getInstructions()).toMatch(/changelog[\s\S]*docs[\s\S]*inbox[\s\S]*Autopilot[\s\S]*articles[\s\S]*by their slug/);
 
+  // What a tool returns, where its operation says, with each field's description; the SDK's client checks the result against it.
+  expect(tools.find((t) => t.name === "team_list")).toMatchObject({
+    outputSchema: { type: "object", properties: { team: { type: "array", description: "Everyone on the team, in the order they joined" } } },
+  });
+  expect((await client.callTool({ name: "team_list", arguments: {} })).structuredContent).toEqual({ team: [{ name: "Olive Owner", role: "owner" }] });
+  // The errors a call can give, last.
+  expect(tools.find((t) => t.name === "posts_get")?.description).toMatch(/\n\nErrors: 400 invalid input, 404 not found\.$/);
+
   const result = await client.callTool({ name: "boards_list", arguments: {} });
   expect(result.structuredContent).toEqual({ boards: [{ slug: "feature-requests", name: "Feature requests", posts: 0, postVisibility: "public", off: false }] });
   // Write tools aren't there for this key at all.

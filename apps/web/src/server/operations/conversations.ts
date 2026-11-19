@@ -181,6 +181,7 @@ export const listConversations = defineOperation({
   path: "/conversations",
   scope: "read",
   access: "team",
+  errors: [404],
   input: z.object({
     status: z.enum(CONVERSATION_STATUSES).optional(),
     /** A team member's email, or "none" for unassigned ones. */
@@ -624,6 +625,7 @@ export const updateConversation = defineOperation({
   path: "/conversations/{number}",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z
     .object({
       number: conversationNumber,
@@ -715,6 +717,7 @@ export const linkConversationPost = defineOperation({
   path: "/conversations/{number}/posts",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ number: conversationNumber, post: postNumber }),
   example: { post: 12 },
   run: async ({ projectId }, input) => {

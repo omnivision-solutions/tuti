@@ -83,6 +83,7 @@ export const subscribePlan = defineOperation({
   path: "/plan/subscribe",
   scope: "write",
   access: "admin",
+  errors: [409, 502, 503],
   input: z.object({ plan: z.string().min(1), interval: z.enum(["month", "year"]).default("month") }),
   example: { plan: "pro", interval: "month" },
   run: async ({ actor, projectId }, input) => {
@@ -132,6 +133,7 @@ export const managePlan = defineOperation({
   path: "/plan/manage",
   scope: "write",
   access: "admin",
+  errors: [409, 502],
   input: z.object({}),
   run: async ({ projectId }) => {
     const [project, billing] = await Promise.all([
@@ -160,6 +162,7 @@ export const setBadgeAddOn = defineOperation({
   path: "/plan/badge",
   scope: "write",
   access: "admin",
+  errors: [402, 409, 502, 503],
   input: z.object({ on: z.boolean() }),
   example: { on: true },
   run: async ({ actor, projectId }, { on }) => {

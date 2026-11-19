@@ -48,6 +48,7 @@ export const topUpCredits = defineOperation({
   path: "/credits/top-up",
   scope: "write",
   access: "admin",
+  errors: [502, 503],
   input: z.object({
     dollars: z.coerce
       .number()

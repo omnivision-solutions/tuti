@@ -66,6 +66,7 @@ export const setEmailDomain = defineOperation({
   path: "/support/email-domain",
   scope: "write",
   access: "admin",
+  errors: [402, 409],
   input: z.object({ address: z.email().max(254) }),
   example: { address: "support@example.com" },
   run: async ({ projectId }, { address: given }) => {
@@ -130,6 +131,7 @@ export const checkEmailDomainOperation = defineOperation({
   path: "/support/email-domain/check",
   scope: "write",
   access: "admin",
+  errors: [404],
   input: z.object({}),
   run: async ({ projectId }) => {
     if (!(await checkEmailDomain(projectId))) {
@@ -175,6 +177,7 @@ export const updateSupportSettings = defineOperation({
   path: "/support",
   scope: "write",
   access: "admin",
+  errors: [409],
   input: z
     .object({
       inbox: z.boolean().optional(),

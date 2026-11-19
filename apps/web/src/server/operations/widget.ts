@@ -141,6 +141,7 @@ export const updateWidgetSettings = defineOperation({
   path: "/widget",
   scope: "write",
   access: "admin",
+  errors: [402, 409],
   input: z.object({
     label: z
       .string()

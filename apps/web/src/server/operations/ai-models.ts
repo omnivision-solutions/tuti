@@ -102,6 +102,7 @@ export const updateAiModels = defineOperation({
   path: "/ai-models",
   scope: "write",
   access: "admin",
+  errors: [402, 502],
   input: z.object({
     ...(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, modelId])) as Record<AiRole, typeof modelId>),
     levels: z.object(Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, z.enum(AI_LEVELS).optional()])) as Record<AiGroup, z.ZodOptional<z.ZodEnum<{ [L in AiLevel]: L }>>>).optional(),

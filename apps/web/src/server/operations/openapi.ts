@@ -13,6 +13,133 @@ export function inputSchema(operation: (typeof operations)[number]): JsonSchema 
   return schema;
 }
 
+/**
+ * What an operation returns as JSON Schema, or null when it doesn't say: self-contained, its named types (`.meta({ id })`)
+ * under `$defs`, as MCP's `outputSchema` takes it.
+ */
+export function outputSchema(operation: (typeof operations)[number]): JsonSchema | null {
+  if (!operation.output) return null;
+  const schema = z.toJSONSchema(operation.output, { io: "output", unrepresentable: "any" }) as JsonSchema;
+  delete schema.$schema;
+  return schema;
+}
+
+/** Each error status: its response's name in the spec, what it means, a short form for MCP, and an example body. */
+const ERRORS = {
+  400: {
+    name: "BadRequest",
+    description: "The request isn't valid: a field is missing, has the wrong type or is out of range, or the body isn't a JSON object. The message names the field.",
+    brief: "invalid input",
+    example: { code: "invalid_input", message: "title: Title is too short" },
+  },
+  401: {
+    name: "Unauthorized",
+    description: "No API key was sent, or it isn't valid: it was revoked, or whoever created it left the team.",
+    brief: "invalid key",
+    example: { code: "unauthorized", message: "This API key isn't valid or was revoked" },
+  },
+  402: {
+    name: "PaymentRequired",
+    description: "The project's plan doesn't include this or is at its limit, it's out of AI credits, or a payment didn't go through. The message says what's needed.",
+    brief: "needs a plan, credits or a payment",
+    example: { code: "plan_required", message: "A custom domain needs the Pro plan. See Settings → Billing." },
+  },
+  403: {
+    name: "Forbidden",
+    description: "It isn't allowed: the key is read-only, its creator isn't a project owner or admin where only they may, only a person can do it in the app, a setting is off, or someone's address isn't confirmed. The code says which.",
+    brief: "not allowed",
+    example: { code: "forbidden", message: "This key can only read. Create a read + write key to change things." },
+  },
+  404: { name: "NotFound", description: "Nothing by that name, number or id in this project.", brief: "not found", example: { code: "not_found", message: "No such post" } },
+  409: {
+    name: "Conflict",
+    description: "It can't be done as things are now: for example the post was merged, or someone changed it meanwhile. The code says which.",
+    brief: "conflict",
+    example: { code: "merged", message: "This post was merged into another one; vote there instead" },
+  },
+  429: {
+    name: "RateLimited",
+    description: `Too many requests: past ${API_RATE_LIMIT} a minute per key, try again after the seconds in the Retry-After header. Some operations have limits of their own (their description gives them), whose 429 has no Retry-After.`,
+    brief: "rate limited",
+    example: { code: "rate_limited", message: `Up to ${API_RATE_LIMIT} requests a minute per key` },
+  },
+  502: {
+    name: "BadGateway",
+    description: "A service Tuti uses failed (the AI model, Stripe, DNS or email). Try again in a moment.",
+    brief: "a service Tuti uses failed",
+    example: { code: "ai_failed", message: "The AI couldn't write a draft. Try again in a moment." },
+  },
+  503: {
+    name: "Unavailable",
+    description: "This feature isn't set up on this server (for example AI or billing), or Tuti couldn't start the work just now: try again in a moment.",
+    brief: "not set up on this server, or try again in a moment",
+    example: { code: "ai_unavailable", message: "AI isn't set up on this server" },
+  },
+  // Any operation, but never on purpose: not one of the statuses an operation lists (errorStatuses), so tests fail on it.
+  500: {
+    name: "InternalError",
+    description: "Something went wrong on Tuti's side. Try again in a moment.",
+    brief: "something went wrong",
+    example: { code: "internal_error", message: "Something went wrong" },
+  },
+} as const;
+
+/**
+ * The error statuses an operation answers with: 401 and 429 always, 400 when it takes input (anything but a GET reads
+ * a JSON body it's sent), 403 when it writes or is for owners and admins, 404 when its path names something, and what it
+ * declares (`errors`: a 404 too where its input, not its path, names what may not be there).
+ */
+export function errorStatuses(operation: (typeof operations)[number]): Exclude<keyof typeof ERRORS, 500>[] {
+  const takesInput = Object.keys(inputSchema(operation).properties ?? {}).length > 0 || operation.method !== "GET";
+  return [
+    ...(takesInput ? [400 as const] : []),
+    401 as const,
+    ...(operation.scope === "write" || operation.access === "admin" || operation.access === "owner" ? [403 as const] : []),
+    ...(pathParams(operation.path).length > 0 ? [404 as const] : []),
+    429 as const,
+    ...(operation.errors ?? []),
+  ]
+    .filter((status, at, all) => all.indexOf(status) === at)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * MCP's line about a tool's errors: those a call can give. A bad key and the key's own rate limit fail the whole request;
+ * an operation's own limit (a declared 429) fails only the call, so it's listed.
+ */
+export function errorsLine(operation: (typeof operations)[number]): string {
+  const statuses = errorStatuses(operation).filter((status) => status !== 401 && (status !== 429 || operation.errors?.includes(429)));
+  return statuses.length === 0 ? "" : `Errors: ${statuses.map((status) => `${status} ${ERRORS[status].brief}`).join(", ")}.`;
+}
+
+/**
+ * A value made of each field's first example (`.meta({ examples })`), for the spec's response example; fields without
+ * one are left out, and undefined when nothing has one. `defs`: the schema's `$defs`, which its `$ref`s name.
+ */
+export function exampleOf(schema: JsonSchema, defs: Record<string, JsonSchema> = {}): unknown {
+  if (typeof schema.$ref === "string") {
+    const target = defs[schema.$ref.replace("#/$defs/", "")];
+    return target && exampleOf(target, defs);
+  }
+  if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
+  if (schema.type === "array" && schema.items) {
+    const item = exampleOf(schema.items as JsonSchema, defs);
+    return item === undefined ? undefined : [item];
+  }
+  if (schema.properties) {
+    const fields = Object.entries(schema.properties).flatMap(([name, field]) => {
+      const value = exampleOf(field, defs);
+      return value === undefined ? [] : [[name, value] as const];
+    });
+    return fields.length > 0 ? Object.fromEntries(fields) : undefined;
+  }
+  for (const choice of [...((schema.anyOf ?? schema.oneOf ?? []) as JsonSchema[])]) {
+    const value = exampleOf(choice, defs);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 /** Path parameters of an operation, e.g. ["number"] for /posts/{number}. */
 export const pathParams = (path: string) => [...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!);
 
@@ -135,18 +262,24 @@ Up to ${API_RATE_LIMIT} requests a minute per key. Past that, requests get a 429
 /** The OpenAPI 3.1 description of the REST API, generated from the operations so it can't drift from them. */
 export function openApiSpec(serverUrl: string) {
   const paths: Record<string, Record<string, unknown>> = {};
+  // Types several operations return (`.meta({ id })`), by name.
+  const schemas: Record<string, JsonSchema> = {};
   for (const operation of operations) {
     const schema = inputSchema(operation);
     const inPath = pathParams(operation.path);
     const properties = schema.properties ?? {};
     const required = new Set(schema.required ?? []);
     const others = Object.keys(properties).filter((name) => !inPath.includes(name));
+    // The operation's example request: its values for parameters, the rest the body's.
+    const example = operation.example ?? {};
+    const exampleFor = (name: string) => (Object.hasOwn(example, name) ? { example: example[name] } : {});
     const parameters = [
-      ...inPath.map((name) => ({ name, in: "path", required: true, schema: properties[name] })),
+      ...inPath.map((name) => ({ name, in: "path", required: true, schema: properties[name], ...exampleFor(name) })),
       ...(operation.method === "GET"
-        ? others.map((name) => ({ name, in: "query", required: required.has(name), schema: properties[name] }))
+        ? others.map((name) => ({ name, in: "query", required: required.has(name), schema: properties[name], ...exampleFor(name) }))
         : []),
     ];
+    const bodyExample = Object.fromEntries(others.filter((name) => Object.hasOwn(example, name)).map((name) => [name, example[name]]));
     const body =
       operation.method !== "GET" && others.length > 0
         ? {
@@ -160,6 +293,7 @@ export function openApiSpec(serverUrl: string) {
                   // Rules across fields, declared with .meta() next to the operation's refine.
                   ...(schema.anyOf !== undefined && { anyOf: schema.anyOf }),
                 },
+                ...(Object.keys(bodyExample).length > 0 && { example: bodyExample }),
               },
             },
           }
@@ -174,8 +308,10 @@ export function openApiSpec(serverUrl: string) {
       ...(parameters.length > 0 && { parameters }),
       ...(body && { requestBody: body }),
       responses: {
-        "200": { description: "OK", content: { "application/json": { schema: { type: "object" } } } },
-        default: { $ref: "#/components/responses/Error" },
+        "200": ok(operation, schemas),
+        ...Object.fromEntries(
+          [...errorStatuses(operation), 500 as const].map((status) => [String(status), { $ref: `#/components/responses/${ERRORS[status].name}` }]),
+        ),
       },
     };
   }
@@ -193,26 +329,51 @@ export function openApiSpec(serverUrl: string) {
     paths,
     components: {
       securitySchemes: { apiKey: { type: "http", scheme: "bearer", description: "A project API key (tuti_…)" } },
-      responses: {
+      schemas: {
+        ...schemas,
         Error: {
-          description: "An error: 400 bad input, 401 missing or revoked key, 403 read-only key, 404 not found, 409 conflict, 429 rate limited, 502 a service Tuti uses failed (e.g. the AI model), 503 a feature isn't set up on this server",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  error: {
-                    type: "object",
-                    properties: { code: { type: "string" }, message: { type: "string" } },
-                    required: ["code", "message"],
-                  },
-                },
-                required: ["error"],
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: { type: "string", description: "What went wrong, for code to check: stays the same" },
+                message: { type: "string", description: "What went wrong, for a person: may change" },
               },
+              required: ["code", "message"],
             },
           },
+          required: ["error"],
         },
       },
+      responses: Object.fromEntries(
+        Object.values(ERRORS).map(({ name, description, example }) => [
+          name,
+          { description, content: { "application/json": { schema: { $ref: "#/components/schemas/Error" }, example: { error: example } } } },
+        ]),
+      ),
     },
+  };
+}
+
+/**
+ * An operation's 200 response: what it returns, its named types moved to the spec's `schemas` (one name is one type
+ * across operations), with an example made of its fields' examples. A bare object while it doesn't say.
+ */
+function ok(operation: (typeof operations)[number], schemas: Record<string, JsonSchema>) {
+  const output = outputSchema(operation);
+  if (!output) return { description: "OK", content: { "application/json": { schema: { type: "object" } } } };
+  const { $defs = {}, ...schema } = output as JsonSchema & { $defs?: Record<string, JsonSchema> };
+  const example = exampleOf(schema, $defs);
+  const inSpec = <T>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll('"#/$defs/', '"#/components/schemas/')) as T;
+  for (const [name, type] of Object.entries(inSpec($defs))) {
+    if (schemas[name] && JSON.stringify(schemas[name]) !== JSON.stringify(type)) {
+      throw new Error(`Two types are named ${name} (${operation.name}'s and another's): give one another id`);
+    }
+    schemas[name] = type;
+  }
+  return {
+    description: typeof schema.description === "string" ? schema.description : "OK",
+    content: { "application/json": { schema: inSpec(schema), ...(example !== undefined && { example }) } },
   };
 }

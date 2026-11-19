@@ -10,6 +10,7 @@ import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { type Operation, type OperationName, operations } from "./index";
+import { errorStatuses } from "./openapi";
 
 /**
  * Every operation on the API surface (REST; MCP serves the same operations with
@@ -451,6 +452,8 @@ async function call(operation: Operation, input: Record<string, unknown>, key: s
   });
   const handler = { GET, POST, PATCH, DELETE }[operation.method];
   const response = await handler(request, { params: Promise.resolve({ path: url.pathname.split("/").slice(3) }) });
+  // Whatever it answers, the spec lists: an error it can give and doesn't list goes in its `errors`.
+  expect([200, ...errorStatuses(operation)], `${operation.name} answered ${response.status}`).toContain(response.status);
   return { status: response.status, text: await response.text() };
 }
 
@@ -563,5 +566,12 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   if (operation.name === "conversations.summarize") {
     model.reply("They want an invoice for October.");
   }
-  expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });
+  const result = await call(operation, input(), keys.write);
+  expect(result).toMatchObject({ status: 200 });
+  // What it says it returns: every field it declares, of its type, and none it doesn't (parsing drops those, so the
+  // parsed result would differ), so the spec and MCP's outputSchema stay whole.
+  if (operation.output) {
+    const body = JSON.parse(result.text) as unknown;
+    expect(operation.output.parse(body)).toEqual(body);
+  }
 });

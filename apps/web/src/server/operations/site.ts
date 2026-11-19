@@ -75,6 +75,7 @@ export const setSite = defineOperation({
   path: "/site",
   scope: "write",
   access: "admin",
+  errors: [402, 409],
   input: z.object({ url: z.string().max(500) }),
   example: { url: "https://example.com/portal" },
   run: async ({ projectId }, input) => {
@@ -115,6 +116,7 @@ export const verifySite = defineOperation({
   path: "/site/verify",
   scope: "write",
   access: "admin",
+  errors: [404, 409, 502],
   input: z.object({}),
   run: async ({ projectId }) => {
     const mount = await prisma.siteMount.findUnique({ where: { projectId }, select: mountSelect });
@@ -165,6 +167,7 @@ export const removeSite = defineOperation({
   path: "/site",
   scope: "write",
   access: "admin",
+  errors: [404],
   input: z.object({}),
   run: async ({ projectId }) => {
     const mount = await prisma.siteMount.findUnique({ where: { projectId }, select: { origin: true, path: true } });

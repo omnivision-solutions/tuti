@@ -133,6 +133,7 @@ export const listUsers = defineOperation({
   path: "/users",
   scope: "read",
   access: "team",
+  errors: [404],
   input: z.object({
     // As long as an id can be, so Users can find anyone by theirs.
     q: z.string().trim().max(255).optional(),

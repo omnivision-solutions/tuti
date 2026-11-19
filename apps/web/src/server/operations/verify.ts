@@ -117,6 +117,7 @@ export const verifyArticle = defineOperation({
   path: "/articles/{slug}/verify",
   scope: "write",
   access: "team",
+  errors: [402, 409, 503],
   input: z.object({ slug }),
   run: async ({ actor, projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);

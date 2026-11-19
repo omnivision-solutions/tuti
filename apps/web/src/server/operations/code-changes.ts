@@ -1140,6 +1140,7 @@ export const analyseCodeChange = defineOperation({
   path: "/code-changes/{id}/analyse",
   scope: "write",
   access: "team",
+  errors: [402, 409, 503],
   input: z.object({ id }),
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
@@ -1195,6 +1196,7 @@ export const resumeCodeChanges = defineOperation({
   path: "/code-changes/resume",
   scope: "write",
   access: "team",
+  errors: [402, 409, 503],
   input: z.object({}),
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
@@ -1283,6 +1285,7 @@ export const applyCodeChangeAction = defineOperation({
   path: "/code-change-actions/{id}/apply",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: z.object({
     id,
     /** For a post's update: the comment to post, if the team changed it (a progress update's; for a completion, one to post with it, or empty for none). */
@@ -2118,6 +2121,7 @@ export const undoCodeChangeAction = defineOperation({
   path: "/code-change-actions/{id}/undo",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ id }),
   run: async (context, input) => {
     const { projectId } = context;
@@ -2264,6 +2268,7 @@ export const publishCodeChangeActionNow = defineOperation({
   path: "/code-change-actions/{id}/publish-now",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: z.object({ id }),
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
@@ -2338,6 +2343,7 @@ export const stopCodeChangeAction = defineOperation({
   path: "/code-change-actions/{id}/stop",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ id }),
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
@@ -2611,6 +2617,7 @@ export const dismissCodeChangeAction = defineOperation({
   path: "/code-change-actions/{id}/dismiss",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ id, reason: z.string().trim().max(500).optional(), revision: z.string().min(1).max(100).optional() }),
   example: { reason: "Only part of it; we'll say so when it's all out" },
   run: async (context, input) => {
