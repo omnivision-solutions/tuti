@@ -785,6 +785,7 @@ export async function articleRevisions(articleId: string) {
 
 export const listArticles = defineOperation({
   name: "articles.list",
+  title: "List articles",
   summary:
     "List docs articles by title: published ones (listed everywhere; the team sees every listing), the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
   method: "GET",
@@ -829,6 +830,7 @@ export const listArticles = defineOperation({
 
 export const getArticle = defineOperation({
   name: "articles.get",
+  title: "Get an article",
   summary:
     "Get a docs article by its slug (drafts, hidden and AI-only articles only for the team). The team also gets its unpublished `changes`",
   method: "GET",
@@ -852,6 +854,7 @@ export const getArticle = defineOperation({
 
 export const searchArticles = defineOperation({
   name: "articles.search",
+  title: "Search articles",
   summary: "Search the published docs articles: best matches first, each with the passage that matched. Each word also matches the words it starts (\"sig\" finds \"signing\"), so it works as someone types",
   method: "GET",
   path: "/search/articles",
@@ -870,6 +873,7 @@ export const searchArticles = defineOperation({
 
 export const createArticle = defineOperation({
   name: "articles.create",
+  title: "Create an article",
   summary:
     "Write a docs article (a draft until it's published); its slug comes from the title, unless you set one (`slug`: lowercase letters, digits and hyphens; refused if it's taken, never changed). `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`), and `noAccess` what people it isn't for see of it (`inherit`, the default: as its collection; `lock`: its title with a lock, never its text; or `hide`). `description`, `keywords` and `noindex` as in articles.update",
   method: "POST",
@@ -962,6 +966,7 @@ const updateInput = z.object({
 
 export const updateArticle = defineOperation({
   name: "articles.update",
+  title: "Update an article",
   summary:
     "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before (refused, 402 `article_limit`, while the project has more published articles than its plan allows; saving alone always works). The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
   method: "PATCH",
@@ -1046,6 +1051,7 @@ export async function saveArticle(
 
 export const listRevisions = defineOperation({
   name: "articles.revisions",
+  title: "List an article's versions",
   summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT}, or on tuti.so as many as the project's plan includes)`,
   method: "GET",
   path: "/articles/{slug}/revisions",
@@ -1071,6 +1077,7 @@ export const listRevisions = defineOperation({
 
 export const restoreArticle = defineOperation({
   name: "articles.restore",
+  title: "Restore an article",
   summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless a tab, a collection or another article has taken it (then the next free one). A version that takes out Autopilot's edits waiting in the article's unpublished changes is refused (409, naming them) unless \`dismissEdits\` lists them (their update ids, given in the 409): then those edits are dismissed with it`,
   method: "POST",
   path: "/articles/{slug}/restore",
@@ -1158,6 +1165,7 @@ export const restoreArticle = defineOperation({
 
 export const publishArticle = defineOperation({
   name: "articles.publish",
+  title: "Publish an article",
   summary:
     "Publish a docs article on the portal. Optional `revision` (the newest id from articles.revisions, or null if none exists) publishes a draft only if it is still that version; a later save, including its first revision, is refused with 409 `changed`. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. While Autopilot's edits wait in the draft (they go live with it), `edits` is required (409 `edits_required` without it): the ids of those you reviewed (codeChanges.target's `actions`); one waiting that isn't among them is a 409 `changed` (one gone since is fine)",
   method: "POST",
@@ -1238,6 +1246,7 @@ async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, sav
 
 export const publishChanges = defineOperation({
   name: "articles.publishChanges",
+  title: "Publish an article's changes",
   summary:
     "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them, and Autopilot's edits waiting in them are approved. Without changes it does nothing. Refused (402 `article_limit`) while the project has more published articles than its plan allows (unpublish some first)",
   method: "POST",
@@ -1283,6 +1292,7 @@ export async function publishArticleChanges(
 
 export const discardChanges = defineOperation({
   name: "articles.discardChanges",
+  title: "Discard an article's changes",
   summary:
     "Drop a docs article's unpublished `changes`: it's back to the published version (saved as a new version, so the changes stay in articles.revisions), and Autopilot's edits waiting in them are dismissed. Without changes it does nothing",
   method: "POST",
@@ -1311,6 +1321,7 @@ export const discardChanges = defineOperation({
 
 export const unpublishArticle = defineOperation({
   name: "articles.unpublish",
+  title: "Unpublish an article",
   summary: "Take a docs article off the portal (back to a draft, with its unpublished changes as the draft's text)",
   method: "POST",
   path: "/articles/{slug}/unpublish",
@@ -1336,6 +1347,7 @@ export const unpublishArticle = defineOperation({
 
 export const deleteArticle = defineOperation({
   name: "articles.delete",
+  title: "Delete an article",
   summary: `Delete a docs article; the team can restore it (with articles.restore) for ${DELETED_ARTICLE_DAYS} days`,
   method: "DELETE",
   path: "/articles/{slug}",
@@ -1362,6 +1374,7 @@ const position = z.number().int().min(0).max(10_000);
 
 export const reorderArticle = defineOperation({
   name: "articles.reorder",
+  title: "Move an article",
   summary:
     "Move a docs article within its collection, or into another (`collection`, null for none), at `position` (0 first; left out, last); the others keep their order around it. Readers list articles in this order. A move to another collection goes live at once, on a published article too (its unpublished changes move with it), and is kept as a version",
   method: "POST",
@@ -1560,6 +1573,7 @@ async function placeFor(
 
 export const listCollections = defineOperation({
   name: "collections.list",
+  title: "List collections",
   summary:
     "List the docs' collections in order (by tab, each top-level one, then the ones in it), with the collection each is in (`parent`), its tab, its icon and how many articles each has",
   method: "GET",
@@ -1606,6 +1620,7 @@ async function insertCollection(tx: Prisma.TransactionClient, projectId: string,
 
 export const createCollection = defineOperation({
   name: "collections.create",
+  title: "Create a collection",
   summary:
     "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `access` says who can read it and what's in it, on top of its tab and the collections it's in (`inherit`, the default; `signed_in`; or `groups`, readers in one of `groups`, keys of the project's reader groups (see groups.list), besides the team; `groups` alone, as before, means `groups`); `icon` names a Lucide icon (lucide.dev) shown next to its name. `noAccess` says what people it isn't for see of it and what's in it (`inherit`, the default; `lock`: its name with a lock, nothing in it; or `hide`)",
   method: "POST",
@@ -1646,6 +1661,7 @@ export async function collectionNamed(projectId: string, name: string, icon: str
 
 export const updateCollection = defineOperation({
   name: "collections.update",
+  title: "Update a collection",
   summary:
     "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who can read it (`access` and `groups`, as in collections.create; `groups` alone, as before: some make it `groups`, none `inherit`), its `icon` (a Lucide icon's name; null removes it) what people it isn't for see (`noAccess`, as in collections.create), or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
@@ -1692,6 +1708,7 @@ export const updateCollection = defineOperation({
 
 export const reorderCollection = defineOperation({
   name: "collections.reorder",
+  title: "Move a collection",
   summary:
     "Move a docs collection among its siblings, into another collection (`parent`, null for the top level; 5 levels deep at most, and not one inside it) or to another tab (`tab`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
   method: "POST",
@@ -1711,6 +1728,7 @@ export const reorderCollection = defineOperation({
 
 export const deleteCollection = defineOperation({
   name: "collections.delete",
+  title: "Delete a collection",
   summary: "Delete a docs collection; the collections in it move up a level, in its place, and its articles stay, without a collection",
   method: "DELETE",
   path: "/collections/{slug}",
@@ -1809,6 +1827,7 @@ async function lockedTab(tx: Prisma.TransactionClient, projectId: string, slug: 
 
 export const listTabs = defineOperation({
   name: "tabs.list",
+  title: "List tabs",
   summary:
     "List the docs' tabs in order, each with its collections and what its path shows (`landing`, `landingPage`; see tabs.update). Without tabs, the docs are one page",
   method: "GET",
@@ -1823,6 +1842,7 @@ export const listTabs = defineOperation({
 
 export const createTab = defineOperation({
   name: "tabs.create",
+  title: "Create a tab",
   summary:
     "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one. `access` says who can read it (`inherit`, the default: everyone who may read the portal; `signed_in`; or `groups`, with `groups`), and so what's in it; the first tab's is also the articles' in no collection. `noAccess` says what people it isn't for see of it (`inherit`, the default: hidden; `lock`: its name with a lock, nothing in it; or `hide`)",
   method: "POST",
@@ -1859,6 +1879,7 @@ export const createTab = defineOperation({
 
 export const updateTab = defineOperation({
   name: "tabs.update",
+  title: "Update a tab",
   summary:
     "Rename a docs tab (its slug follows the name) or set what its path shows (`landing`): an `overview` (search and a card per top-level collection; the default), its `first` article in reading order, or a `page`: the article or collection in this tab that `landingPage` names (its slug; required with `page`). A picked page a reader can't read there (unpublished, hidden, restricted, moved to another tab) shows them the overview instead. Or change who can read it (`access` and `groups`) or what the rest see (`noAccess`), as in tabs.create",
   method: "PATCH",
@@ -1931,6 +1952,7 @@ async function keepTabAccess(tx: Prisma.TransactionClient, projectId: string, ta
 
 export const reorderTab = defineOperation({
   name: "tabs.reorder",
+  title: "Move a tab",
   summary:
     "Move a docs tab to `position` among the tabs (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the docs. The articles in no collection keep who can read them when another tab becomes first",
   method: "POST",
@@ -1958,6 +1980,7 @@ export const reorderTab = defineOperation({
 
 export const deleteTab = defineOperation({
   name: "tabs.delete",
+  title: "Delete a tab",
   summary:
     "Delete a docs tab. Its collections go last in the tab before it, with everything in them, and keep who can read them; its API references go with them, unpublished if the tab restricted who can read it (they have no access of their own). The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
   method: "DELETE",

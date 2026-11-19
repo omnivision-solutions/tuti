@@ -303,6 +303,7 @@ export async function rateAnswer(projectId: string, questionId: string, helpful:
 
 export const askDocs = defineOperation({
   name: "docs.ask",
+  title: "Ask the docs",
   summary:
     "Ask the docs a question: an AI answer from the published articles with the articles it cites, `no_answer` (“I don't know”) when they don't cover it, `off_limits` when it names one of the team's off-limits topics (see assistant.update; the AI isn't asked), or `unavailable` with the closest articles when the project is out of AI credits (the AI isn't asked). To ask a follow-up, pass `followUpTo`: the `id` of the answer it follows (one this key asked); the last 4 turns are its context, for finding what to answer from and for the AI, which still answers only from the articles. Off (503) unless the server has AI and embeddings set up; up to 20 questions an hour per key",
   method: "POST",

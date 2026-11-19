@@ -90,6 +90,7 @@ export const limitHeaders = async (actor: Actor) => (actor.kind === "apiKey" ? n
 
 export const getAssistantSettings = defineOperation({
   name: "assistant.get",
+  title: "Get AI answers' settings",
   summary:
     "Get how the docs' AI answers: answer length, instructions and off-limits topics. `tone` is deprecated and always empty: a tone is part of `instructions`",
   method: "GET",
@@ -102,6 +103,7 @@ export const getAssistantSettings = defineOperation({
 
 export const updateAssistantSettings = defineOperation({
   name: "assistant.update",
+  title: "Update AI answers' settings",
   summary: `Set how the docs' AI answers: answer length (short, medium or detailed), instructions (the tone to write in included), and up to ${MAX_OFF_LIMITS_TOPICS} off-limits topics (replaces the list). A question that names an off-limits topic gets “I can't help with that here” without asking the AI. None of it overrides answering only from the docs. \`tone\` is deprecated and will be removed: one that's sent is put before the instructions (those sent, else those saved), a blank line between, and comes back as part of \`instructions\``,
   method: "PATCH",
   path: "/assistant",

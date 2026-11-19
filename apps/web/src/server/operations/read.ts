@@ -28,6 +28,7 @@ export async function projectPortal(projectId: string) {
 
 export const listBoards = defineOperation({
   name: "boards.list",
+  title: "List boards",
   summary: "List the project's boards",
   method: "GET",
   path: "/boards",
@@ -53,6 +54,7 @@ export const summary = postSummary;
 
 export const listPosts = defineOperation({
   name: "posts.list",
+  title: "List posts",
   summary: "List posts, most voted or newest first; merged duplicates are left out",
   method: "GET",
   path: "/posts",
@@ -126,6 +128,7 @@ export async function findVisiblePost(actor: Actor, projectId: string, number: n
 
 export const getPost = defineOperation({
   name: "posts.get",
+  title: "Get a post",
   summary:
     "Get a post by its number, with its text and rich content and `eta`: the month the team expects it (the portal hides it once it has passed or the post is completed or closed); to the team, who looks after it (`owner`)",
   method: "GET",
@@ -155,6 +158,7 @@ export const getPost = defineOperation({
 
 export const listComments = defineOperation({
   name: "comments.list",
+  title: "List comments",
   summary:
     "List a post's comments, oldest first (`sort: \"newest\"`: newest first), each followed by its replies (`replyTo`: the comment's id), oldest first; with how many like each (`likes`) and whether the caller does (`liked`). To the team (an API key, a team member) with its internal notes (`internal: true`)",
   method: "GET",
@@ -250,6 +254,7 @@ export async function roadmapColumns(projectId: string, viewer: PostViewer, { bo
 
 export const getRoadmap = defineOperation({
   name: "roadmap.get",
+  title: "Get the roadmap",
   summary: "The public roadmap: planned, in progress and completed posts",
   method: "GET",
   path: "/roadmap",

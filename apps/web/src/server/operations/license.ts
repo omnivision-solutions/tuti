@@ -9,6 +9,7 @@ import { defineOperation } from "./define";
 
 export const checkLicense = defineOperation({
   name: "license.check",
+  title: "Check the licence",
   summary:
     "Check tuti.so for the project's licence now (bought at tuti.so/app/license): status licensed, not_licensed (none yet, or cancelled), in_use (on another installation), unreachable (tuti.so didn't answer; the current key stays) or busy (just checked), and licensedUntil",
   method: "POST",

@@ -176,6 +176,7 @@ function keepsPublishedPosts(entry: { publishedAt: Date | null; posts: { post: {
 
 export const listChangelog = defineOperation({
   name: "changelog.list",
+  title: "List changelog entries",
   summary: "List changelog entries, newest first: published ones, or the team's drafts",
   method: "GET",
   path: "/changelog",
@@ -212,6 +213,7 @@ export const listChangelog = defineOperation({
 
 export const getChangelogEntry = defineOperation({
   name: "changelog.get",
+  title: "Get a changelog entry",
   summary: "Get a changelog entry by its number (drafts only for the team)",
   method: "GET",
   path: "/changelog/{number}",
@@ -231,6 +233,7 @@ export const getChangelogEntry = defineOperation({
 
 export const reactToChangelogEntry = defineOperation({
   name: "changelog.react",
+  title: "React to an entry",
   summary:
     "React to a published changelog entry (thumbs_up 👍, heart ❤️ or tada 🎉) or take the reaction back, as the key's creator or on behalf of someone from your app",
   method: "POST",
@@ -273,6 +276,7 @@ export const reactToChangelogEntry = defineOperation({
 
 export const createChangelogEntry = defineOperation({
   name: "changelog.create",
+  title: "Create a changelog entry",
   summary: "Write a changelog entry (a draft until it's published), pick the posts it completes and its featured image (cover: an upload's id; also its link-preview image)",
   method: "POST",
   path: "/changelog",
@@ -317,6 +321,7 @@ export const createChangelogEntry = defineOperation({
 
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
+  title: "Update a changelog entry",
   summary:
     "Change a changelog entry: its title, text, tags, featured image (cover: an upload's id, null to remove; also its link-preview image) or the posts it completes (posts replace the list; only while it's a draft)",
   method: "PATCH",
@@ -389,6 +394,7 @@ export const updateChangelogEntry = defineOperation({
 
 export const draftChangelogEntry = defineOperation({
   name: "changelog.draft",
+  title: "Draft an entry with AI",
   summary:
     "Replace a draft entry's text with release notes the AI writes from its pull requests and the posts it completes (and name it, if it still has the running draft's title)",
   method: "POST",
@@ -449,6 +455,7 @@ export const AI_EDITS_PER_HOUR = 60;
 
 export const rewriteChangelogEntry = defineOperation({
   name: "changelog.rewrite",
+  title: "Rewrite an entry with AI",
   summary:
     "Propose an AI edit of an entry's text, without saving it: `shorten` it, explain it for non-developers (`plain`), or rewrite a `section`; the whole text, or one section (`section`: its heading, or its number: 1 for the first heading, 0 for the text before it), with an optional `instruction`. To accept it, send `proposed.content` to changelog.update with `expectedUpdatedAt`",
   method: "POST",
@@ -582,6 +589,7 @@ const styleView = ({ tone, examples }: Awaited<ReturnType<typeof changelogStyle>
 
 export const getChangelogStyle = defineOperation({
   name: "changelogStyle.get",
+  title: "Get the writing style",
   summary: "Get the changelog's writing style: the tone notes and example entries AI drafts follow",
   method: "GET",
   path: "/changelog-style",
@@ -593,6 +601,7 @@ export const getChangelogStyle = defineOperation({
 
 export const updateChangelogStyle = defineOperation({
   name: "changelogStyle.update",
+  title: "Update the writing style",
   summary: `Set the changelog's writing style for AI drafts: tone notes, and up to ${MAX_STYLE_EXAMPLES} published entries (by number) as examples (replaces the list)`,
   method: "PATCH",
   path: "/changelog-style",
@@ -630,6 +639,7 @@ export const updateChangelogStyle = defineOperation({
 
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
+  title: "Publish a changelog entry",
   summary:
     "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers (a public portal's), the first time it's published that way only. Sample entries (Home's sample content) are always published quietly, and never emailed; so is an entry imported as a draft though it was published in the other tool, the first time, and it keeps its date there",
   method: "POST",
@@ -739,6 +749,7 @@ export const publishChangelogEntry = defineOperation({
 
 export const unpublishChangelogEntry = defineOperation({
   name: "changelog.unpublish",
+  title: "Unpublish a changelog entry",
   summary: "Take a changelog entry off the portal (back to a draft); posts keep their status",
   method: "POST",
   path: "/changelog/{number}/unpublish",
@@ -758,6 +769,7 @@ export const unpublishChangelogEntry = defineOperation({
 
 export const deleteChangelogEntry = defineOperation({
   name: "changelog.delete",
+  title: "Delete a changelog entry",
   summary: "Delete a changelog entry",
   method: "DELETE",
   path: "/changelog/{number}",

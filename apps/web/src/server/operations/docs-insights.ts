@@ -56,6 +56,7 @@ export async function saveAnswer(projectId: string, readerId: string, input: z.i
 
 export const answerArticle = defineOperation({
   name: "articles.feedback",
+  title: "Rate an article",
   summary:
     "Answer “Was this helpful?” under a published help article (a “No” may say what was missing), as the key's creator or on behalf of someone from your app; answering again replaces the answer",
   method: "POST",
@@ -216,6 +217,7 @@ export async function dismissGap(projectId: string, question: string) {
 
 export const dismissDocsGap = defineOperation({
   name: "docs.dismissGap",
+  title: "Dismiss a docs gap",
   summary: "Dismiss a question from the gaps and the searches that found nothing in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back (a search from the next day on, UTC: searches are counted per day)",
   method: "POST",
   path: "/docs/gaps/dismiss",
@@ -228,6 +230,7 @@ export const dismissDocsGap = defineOperation({
 
 export const getDocsInsights = defineOperation({
   name: "docs.insights",
+  title: "Get docs insights",
   summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate). Where plans are sold, on a plan with Reporting (402 otherwise)`,
   method: "GET",
   path: "/docs/insights",

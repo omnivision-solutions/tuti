@@ -9,6 +9,7 @@ import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/h
 
 import { firstLine } from "@/server/api-reference-queries";
 import { matchOperation, operations } from "@/server/operations";
+import { groupOf, groups } from "@/server/operations/openapi";
 
 import { DELETE, GET, PATCH, POST } from "./[...path]/route";
 import { GET as getSpec } from "./openapi.json/route";
@@ -389,23 +390,27 @@ describe("OpenAPI", () => {
       { required: ["eta"] },
       { required: ["visibility"] },
     ]);
-    // A short title in `summary`, the operation's whole text in `description` (and what key it needs).
+    // The operation's title in `summary`, its whole text in `description` (and what key it needs).
     expect(spec.paths["/project"].get).toMatchObject({
-      summary: "Get the project the key belongs to",
+      summary: "Get the project",
       description: expect.stringMatching(/^Get the project the key belongs to, with its portal URL/),
     });
     expect(create.summary).toBe("Create a post");
     expect(create.description).toMatch(/\n\nNeeds a read \+ write key\.$/);
-    for (const methods of Object.values(spec.paths as Record<string, Record<string, { summary: string }>>)) {
-      for (const op of Object.values(methods)) {
-        expect(op.summary.length).toBeLessThanOrEqual(101);
-        expect(op.summary).not.toContain("`");
-      }
-    }
-    // Titles name what they act on, not just the verb.
     expect(spec.paths["/code-change-actions/{id}/stop"].post.summary).toBe("Stop a scheduled action");
-    expect(spec.paths["/portal/readers/{email}"].delete.summary).toBe("Stop letting someone read the private portal");
-    expect(spec.paths["/portal/readers"].get.summary).toBe("List who may read the private portal");
+    // Ten groups by product area, in order, each saying what it's for; an operation is in its name's first part's.
+    expect(spec.tags.map((tag: { name: string }) => tag.name)).toEqual([
+      "Feedback", "Changelog", "Docs", "API references", "Inbox", "Autopilot", "Users", "Portal", "Project", "Billing",
+    ]);
+    for (const tag of spec.tags as { description: string }[]) {
+      expect(tag.description).toMatch(/^[A-Z].{20,130}\.$/);
+    }
+    expect(spec.paths["/posts"].get.tags).toEqual(["Feedback"]);
+    expect(spec.paths["/code-change-actions/{id}/stop"].post.tags).toEqual(["Autopilot"]);
+    expect(spec.paths["/portal/readers"].get.tags).toEqual(["Users"]);
+    // The overview: getting a key, signing requests, errors, paging and rate limits.
+    expect(spec.info.description.match(/^## .+/gm)).toEqual(["## Getting a key", "## Authentication", "## Errors", "## Paging", "## Rate limits"]);
+    expect(spec.info.description).toContain("Up to 600 requests a minute per key");
     // Written as plain text: rendered as the Markdown a description is, the words come back as written.
     const words = (name: string) => operations.find((operation) => operation.name === name)!.summary;
     const shown = async (path: string, method: string) => firstLine(spec.paths[path][method].description);
@@ -414,6 +419,24 @@ describe("OpenAPI", () => {
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
     ]);
+  });
+});
+
+describe("operations' titles and groups", () => {
+  test("every operation is in a group, with a short title of its own there", () => {
+    const byGroup = new Map<string, string[]>();
+    for (const operation of operations) {
+      const group = groupOf(operation);
+      expect(group, `${operation.name}: add its first part to a group in openapi.ts`).toBeDefined();
+      // Headings: short, plain text, a sentence's start without its end.
+      expect(operation.title.length, operation.name).toBeLessThanOrEqual(30);
+      expect(operation.title, operation.name).toMatch(/^[A-Z][^`*_<>]*[^.\s]$/);
+      byGroup.set(group!, [...(byGroup.get(group!) ?? []), operation.title]);
+    }
+    for (const [group, titles] of byGroup) {
+      expect(new Set(titles).size, group).toBe(titles.length);
+    }
+    expect([...byGroup.keys()].sort()).toEqual(groups.map((group) => group.name).sort());
   });
 });
 

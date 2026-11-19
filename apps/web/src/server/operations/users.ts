@@ -126,6 +126,7 @@ async function countUsers(filters: Prisma.Sql[]) {
 
 export const listUsers = defineOperation({
   name: "users.list",
+  title: "List users",
   summary:
     "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, `company` those at that company (their `company` property), and `sort` puts the most posts, votes or conversations, or the latest seen, first; `total` counts all of them, every page",
   method: "GET",
@@ -194,6 +195,7 @@ export const listUsers = defineOperation({
 
 export const getUser = defineOperation({
   name: "users.get",
+  title: "Get a user",
   summary: "One of the project's users, by their id in your app: name, email, properties and the reader groups they're in now",
   method: "GET",
   path: "/users/{user}",
@@ -219,6 +221,7 @@ const userInput = z.object({
 
 export const syncUsersOperation = defineOperation({
   name: "users.sync",
+  title: "Add or update users",
   summary: `Add or change the project's users, up to ${MAX_USERS_PER_SYNC} at once, each by their \`id\` in your app (the \`sub\` of your SSO tokens): their name, email, avatar and properties, which reader groups' conditions match. Only what's given changes; \`properties\` sets the ones it names (strings, numbers, booleans or lists of strings) and removes the ones that are null, keeping the rest, up to ${MAX_PROPERTIES} per user. Someone signed in to your portal with a verified address is in the groups of the users with that email. All or nothing; \`created\` and \`updated\` say how many`,
   method: "POST",
   path: "/users",
@@ -248,6 +251,7 @@ export const COMPANY_SORTS = ["users", "votes", "total"] as const;
 
 export const listCompanies = defineOperation({
   name: "companies.list",
+  title: "List companies",
   summary:
     "List the companies your users are at (their `company` property): how many users each has, their `votes` (on others' posts), and with Who's asking picked (project.update's `askingProperty`), the `total` of that number property over them; the most users first, or with `sort`, the most votes or the biggest total. users.list's `company` lists a company's users",
   method: "GET",

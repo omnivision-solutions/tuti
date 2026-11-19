@@ -11,6 +11,7 @@ import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, 
 
 export const updatePost = defineOperation({
   name: "posts.update",
+  title: "Update a post",
   summary:
     "Change a post's status, move it to another board, say who sees it (`visibility`: public, private for its author and the team, team for the team only; its votes and comments go with it), or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said). `from` changes the status only while the post still has that one: changed since, nothing is written (409 `changed`)",
   method: "PATCH",
@@ -114,6 +115,7 @@ export const updatePost = defineOperation({
 
 export const mergePost = defineOperation({
   name: "posts.merge",
+  title: "Merge a duplicate post",
   summary: "Merge a duplicate into another post: votes and comments move over, and the duplicate leaves every list",
   method: "POST",
   path: "/posts/{number}/merge",

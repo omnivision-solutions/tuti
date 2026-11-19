@@ -82,6 +82,7 @@ async function releaseCustomHostname(cloudflareId: string | null) {
 
 export const getDomain = defineOperation({
   name: "domain.get",
+  title: "Get the custom domain",
   summary:
     "Get the portal's custom domain (null if none): its hostname, whether it's verified, and the DNS records to add (a CNAME pointing it at Tuti, and a TXT record that proves it's yours)",
   method: "GET",
@@ -94,6 +95,7 @@ export const getDomain = defineOperation({
 
 export const setDomain = defineOperation({
   name: "domain.set",
+  title: "Set a custom domain",
   summary:
     "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is. Where plans are sold, on a plan with a custom domain (402 otherwise; on a lower plan a domain set before isn't served, and the portal is at its Tuti address)",
   method: "POST",
@@ -146,6 +148,7 @@ export const setDomain = defineOperation({
 
 export const verifyDomain = defineOperation({
   name: "domain.verify",
+  title: "Verify the custom domain",
   summary:
     "Check the custom domain's TXT record (see domain.get): once it's there, the domain is verified and the portal answers on it (where Tuti gets certificates through Cloudflare, `certificate` says when HTTPS works there: pending until the CNAME points at Tuti, then active). DNS changes can take a few minutes to show",
   method: "POST",
@@ -218,6 +221,7 @@ export const verifyDomain = defineOperation({
 
 export const removeDomain = defineOperation({
   name: "domain.remove",
+  title: "Remove the custom domain",
   summary: "Stop using the custom domain: the portal answers only at its Tuti address again",
   method: "DELETE",
   path: "/domain",

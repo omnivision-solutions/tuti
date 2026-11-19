@@ -52,6 +52,7 @@ async function openQuestion(conversationId: string) {
 
 export const suggestReply = defineOperation({
   name: "conversations.suggestReply",
+  title: "Suggest a reply",
   summary:
     "A reply drafted from your docs to what the user asked, for the team to edit and send (nothing is sent). Only when the docs cover it: otherwise `no_answer`, without asking the AI",
   method: "POST",
@@ -125,6 +126,7 @@ Write at most five short lines, plain text, no headings or formatting: what the 
 
 export const summarizeConversation = defineOperation({
   name: "conversations.summarize",
+  title: "Summarize a conversation",
   summary: "Adds the AI's summary of the conversation as a note (only the team sees it): what the user wants, what's been done and what's open",
   method: "POST",
   path: "/conversations/{number}/summary",

@@ -119,6 +119,7 @@ const notFound = (key: string) => new OperationError(404, "not_found", `There's 
 
 export const listGroups = defineOperation({
   name: "groups.list",
+  title: "List reader groups",
   summary:
     "List the reader groups by name, each with its `key` (how tabs.*, collections.*, articles.* and these paths name it): one of your app's users is in one when their properties match all of its `conditions` (or, `match` `any`, one of them); `readers` counts them now and `sample` names up to 3. Tabs, collections and articles can be for some groups only (`access` groups, with `groups`, on tabs.*, collections.* and articles.*)",
   method: "GET",
@@ -131,6 +132,7 @@ export const listGroups = defineOperation({
 
 export const createGroup = defineOperation({
   name: "groups.create",
+  title: "Create a reader group",
   summary:
     "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: `conditions` on your users' properties (set by SSO tokens' `properties` and users.sync; up to 10; `match` `all` (the default) needs every one, `any` one of them), each a `property`, an `op` and a `value`: `is`, `is_not`, `contains` or `excludes` a text; `is_any_of` or `is_none_of` a list; `is_set` and `is_not_set` take none. Values compare as text, exactly; a list property matches when one of its items does (or, for the negative ones, none does), and a missing one matches only the negative ones and `is_not_set`. An SSO token's `groups` is the `groups` property, e.g. `{ \"property\": \"groups\", \"op\": \"is\", \"value\": \"beta\" }`",
   method: "POST",
@@ -165,6 +167,7 @@ export const createGroup = defineOperation({
 
 export const updateGroup = defineOperation({
   name: "groups.update",
+  title: "Update a reader group",
   summary:
     "Change a reader group (`group` is its key, which stays): its name, description, `conditions` (all of them, at least one) or `match`. Then it's whichever of your users match them, and the tabs, collections and articles for it follow",
   method: "PATCH",
@@ -193,6 +196,7 @@ export const updateGroup = defineOperation({
 
 export const deleteGroup = defineOperation({
   name: "groups.delete",
+  title: "Delete a reader group",
   summary:
     "Delete a reader group (by key). One a tab, collection or article is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go",
   method: "DELETE",

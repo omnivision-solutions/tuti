@@ -43,9 +43,14 @@ test("read-only keys get the read tools; tools return the same data as the API",
     expect.arrayContaining(["project_get", "team_list", "boards_list", "posts_list", "posts_get", "comments_list", "duplicates_list", "articles_search"]),
   );
   expect(tools.find((t) => t.name === "posts_list")).toMatchObject({
+    title: "List posts",
     annotations: { readOnlyHint: true },
     inputSchema: { type: "object", properties: { status: { enum: expect.arrayContaining(["planned"]) } } },
   });
+
+  expect(tools.every((t) => t.title)).toBe(true);
+  // The instructions describe the whole product, not only feedback, and how things are named.
+  expect(client.getInstructions()).toMatch(/changelog[\s\S]*docs[\s\S]*inbox[\s\S]*Autopilot[\s\S]*articles[\s\S]*by their slug/);
 
   const result = await client.callTool({ name: "boards_list", arguments: {} });
   expect(result.structuredContent).toEqual({ boards: [{ slug: "feature-requests", name: "Feature requests", posts: 0, postVisibility: "public", off: false }] });

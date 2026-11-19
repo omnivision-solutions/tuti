@@ -30,13 +30,14 @@ function mcpServer(actor: ApiKey) {
     {
       capabilities: { tools: {} },
       instructions:
-        "Tuti holds one project's product feedback: boards of posts that users vote and comment on, each with a status. Posts are identified by their number.",
+        "Tuti runs one project's customer-facing side: feedback (boards of posts people vote and comment on, each with a status, and the roadmap), the changelog, docs (articles in collections and tabs, with AI answers) and API references, an inbox of conversations with users, Autopilot (updates it proposes to posts and articles from merged pull requests), users with their reader groups, and the portal's settings (who may read it, its address, branding, the widget). Posts, changelog entries and conversations are identified by their number; articles, collections, tabs and API references by their slug; reader groups by their key; users by their id in your app, portal readers by email; comments, code changes, their actions and redirects by id.",
     },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((operation) => ({
       name: toolName(operation),
+      title: operation.title,
       description: operation.summary,
       inputSchema: { type: "object" as const, ...inputSchema(operation) },
       annotations: { readOnlyHint: operation.scope === "read" },

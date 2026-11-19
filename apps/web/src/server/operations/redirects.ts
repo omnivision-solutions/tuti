@@ -33,6 +33,7 @@ function onPortal(to: string, addresses: string[]): string {
 
 export const listRedirects = defineOperation({
   name: "redirects.list",
+  title: "List redirects",
   summary: "List the portal's redirects, newest first: each sends requests for `from` (a path of the portal) to `to` (a path of it, or a whole https address)",
   method: "GET",
   path: "/redirects",
@@ -44,6 +45,7 @@ export const listRedirects = defineOperation({
 
 export const createRedirect = defineOperation({
   name: "redirects.create",
+  title: "Create a redirect",
   summary: `Send an old address on the portal on to a new one: \`from\` is the old path (or a whole URL of the old site, whose path is taken), matched lowercase whatever the query; \`to\` is a path of the portal or a whole https address, which gets the request's query unless it has its own. Not the portal's own addresses (sign-in, /api, /widget, …) or its home, one rule per \`from\`, no rule to or from another rule's address (so they can't go round in circles), up to ${MAX_REDIRECTS}`,
   method: "POST",
   path: "/redirects",
@@ -91,6 +93,7 @@ export const createRedirect = defineOperation({
 
 export const deleteRedirect = defineOperation({
   name: "redirects.delete",
+  title: "Delete a redirect",
   summary: "Stop a redirect (`id`, from redirects.list): its old address is the portal's again",
   method: "DELETE",
   path: "/redirects/{id}",
