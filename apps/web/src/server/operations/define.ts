@@ -40,7 +40,7 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
    * 409 (a conflict with how things are now), 502 (a service Tuti uses failed: the AI, Stripe, DNS, email), 503 (a
    * feature that isn't set up on this server).
    */
-  errors?: (402 | 404 | 409 | 502 | 503)[];
+  errors?: (402 | 404 | 409 | 429 | 502 | 503)[];
   input: I;
   /**
    * What it returns, as JSON (dates as ISO strings): the spec's 200 response and MCP's `outputSchema`. Fields say what

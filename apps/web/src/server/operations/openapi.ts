@@ -40,13 +40,13 @@ const ERRORS = {
   },
   402: {
     name: "PaymentRequired",
-    description: "The project's plan doesn't include this, or it's out of AI credits. The message says what's needed.",
-    brief: "needs a plan or credits",
+    description: "The project's plan doesn't include this or is at its limit, it's out of AI credits, or a payment didn't go through. The message says what's needed.",
+    brief: "needs a plan, credits or a payment",
     example: { code: "plan_required", message: "A custom domain needs the Pro plan. See Settings → Billing." },
   },
   403: {
     name: "Forbidden",
-    description: "The key may not do this: it's read-only, its creator isn't a project owner or admin where only they may, or only a person can do it in the app.",
+    description: "It isn't allowed: the key is read-only, its creator isn't a project owner or admin where only they may, only a person can do it in the app, a setting is off, or someone's address isn't confirmed. The code says which.",
     brief: "not allowed",
     example: { code: "forbidden", message: "This key can only read. Create a read + write key to change things." },
   },
@@ -71,8 +71,8 @@ const ERRORS = {
   },
   503: {
     name: "Unavailable",
-    description: "This feature isn't set up on this server (for example AI or billing).",
-    brief: "not set up on this server",
+    description: "This feature isn't set up on this server (for example AI or billing), or Tuti couldn't start the work just now: try again in a moment.",
+    brief: "not set up on this server, or try again in a moment",
     example: { code: "ai_unavailable", message: "AI isn't set up on this server" },
   },
   // Any operation, but never on purpose: not one of the statuses an operation lists (errorStatuses), so tests fail on it.
@@ -103,9 +103,12 @@ export function errorStatuses(operation: (typeof operations)[number]): Exclude<k
     .sort((a, b) => a - b);
 }
 
-/** MCP's line about a tool's errors: those a call can give (a bad key or too many requests fail the whole request). */
+/**
+ * MCP's line about a tool's errors: those a call can give. A bad key and the key's own rate limit fail the whole request;
+ * an operation's own limit (a declared 429) fails only the call, so it's listed.
+ */
 export function errorsLine(operation: (typeof operations)[number]): string {
-  const statuses = errorStatuses(operation).filter((status) => status !== 401 && status !== 429);
+  const statuses = errorStatuses(operation).filter((status) => status !== 401 && (status !== 429 || operation.errors?.includes(429)));
   return statuses.length === 0 ? "" : `Errors: ${statuses.map((status) => `${status} ${ERRORS[status].brief}`).join(", ")}.`;
 }
 

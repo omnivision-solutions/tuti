@@ -303,6 +303,7 @@ export const createConversation = defineOperation({
   path: "/conversations",
   scope: "write",
   access: "team",
+  errors: [429],
   input: z
     .object({
       user: appUser.optional(),

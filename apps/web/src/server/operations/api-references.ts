@@ -294,6 +294,7 @@ export const createApiReference = defineOperation({
   path: "/api-references",
   scope: "write",
   access: "team",
+  errors: [429],
   input: z
     .object({ name, spec: spec.optional(), url: sourceUrl.optional(), github: githubSource.optional(), tab: slug.optional() })
     .refine(
@@ -489,7 +490,7 @@ export const syncApiReference = defineOperation({
   path: "/api-references/{slug}/sync",
   scope: "write",
   access: "team",
-  errors: [409],
+  errors: [409, 429],
   input: z.object({ slug, url: sourceUrl.optional(), github: z.object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.optional() }).optional() }),
   example: { url: "https://api.example.com/openapi.json" },
   run: async (context, input) => {

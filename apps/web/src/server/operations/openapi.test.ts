@@ -252,6 +252,36 @@ test("rewritten operations are short and say what they return", () => {
   }
 });
 
+type Schema = { [key: string]: unknown; $ref?: string; examples?: unknown[]; properties?: Record<string, Schema>; items?: Schema; anyOf?: Schema[]; oneOf?: Schema[] };
+
+/** The fields of an output schema with no example, as paths (`posts[].eta`): the response example would leave them out. */
+function withoutExample(schema: Schema, defs: Record<string, Schema>, path: string, seen = new Set<string>()): string[] {
+  if (schema.$ref) {
+    const name = schema.$ref.replace("#/$defs/", "");
+    if (seen.has(name)) return [];
+    return withoutExample(defs[name] ?? {}, defs, path, new Set([...seen, name]));
+  }
+  if (Array.isArray(schema.examples) && schema.examples.length > 0) return [];
+  if (schema.properties) {
+    return Object.entries(schema.properties).flatMap(([name, field]) => withoutExample(field, defs, path ? `${path}.${name}` : name, seen));
+  }
+  if (schema.items) return withoutExample(schema.items, defs, `${path}[]`, seen);
+  const choices = (schema.anyOf ?? schema.oneOf ?? []).filter((choice) => choice.type !== "null");
+  if (choices.length > 0) {
+    const each = choices.map((choice) => withoutExample(choice, defs, path, seen));
+    return each.find((missing) => missing.length === 0) ?? each[0]!;
+  }
+  return [path || "(the output itself)"];
+}
+
+test("every field of a rewritten operation's output has an example, optional ones too", () => {
+  for (const operation of operations.filter((operation) => operation.output && !notRewrittenYet.has(operation.name as OperationName))) {
+    const schema = outputSchema(operation)! as Schema;
+    const missing = withoutExample(schema, (schema.$defs ?? {}) as Record<string, Schema>, "");
+    expect(missing, `${operation.name}: these output fields have no .meta({ examples }), so the response example leaves them out`).toEqual([]);
+  }
+});
+
 test("every field of a rewritten operation's output has an example, so the spec's response example is whole", () => {
   const spec = openApiSpec("https://tuti.example.com/api/v1");
   for (const operation of operations.filter((operation) => operation.output && !notRewrittenYet.has(operation.name as OperationName))) {
@@ -293,6 +323,8 @@ test("errors by status: what every operation can give, and what it declares", ()
     "Errors: 400 invalid input, 403 not allowed, 404 not found, 409 conflict.",
   );
   expect(errorStatuses(operations.find((operation) => operation.name === "team.list")!)).toEqual([401, 429]);
+  // An operation's own limit fails only the tool call, so MCP lists it; the key's limit fails the whole request.
+  expect(errorsLine(operations.find((operation) => operation.name === "docs.ask")!)).toContain("429 rate limited");
 });
 
 test("the help center reads Tuti's spec whole: what team.list returns, with example values, and each error", () => {

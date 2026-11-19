@@ -466,7 +466,7 @@ export const rewriteChangelogEntry = defineOperation({
   path: "/changelog/{number}/rewrite",
   scope: "write",
   access: "team",
-  errors: [402, 502, 503],
+  errors: [402, 429, 502, 503],
   input: z.object({
     number: entryNumber,
     mode: z.enum(REWRITE_MODES),
