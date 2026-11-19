@@ -1634,14 +1634,16 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const instructions = team.getByLabel("Instructions");
   await expect(instructions).toHaveValue("Friendly and plain");
   await instructions.fill("Friendly and plain\n\nCall the product Acme.");
-  await team.getByRole("radio", { name: "Short" }).check();
-  // Topics are chips: Enter or Add adds one, trimmed, and each has a button that removes it.
+  const length = team.getByRole("radiogroup", { name: "Answer length" });
+  await length.getByText("Short", { exact: true }).click();
+  await expect(length.getByRole("radio", { name: "Short" })).toBeChecked();
+  // Topics are chips in their field: Enter or a comma adds one, trimmed, and each has a button that removes it.
   const topic = team.getByLabel("Off-limits topics");
   const topics = team.getByRole("listitem").filter({ has: team.getByRole("button", { name: /^Remove / }) });
   await topic.fill("refund");
   await topic.press("Enter");
   await topic.fill("  legal advice  ");
-  await team.getByRole("button", { name: "Add", exact: true }).click();
+  await topic.press(",");
   await topic.fill("pricing");
   await topic.press("Enter");
   await expect(topics).toHaveText(["refund", "legal advice", "pricing"]);
@@ -1660,13 +1662,15 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
-  await expect(instructions).toBeDisabled();
+  await team.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.locator("form", { has: instructions })).toHaveAttribute("inert");
+  await expect(team.getByRole("button", { name: "Saving…" })).toBeDisabled();
   releaseSave();
   await expect(team.getByText("AI answers saved")).toBeVisible();
   await team.unroute(saving);
   // The form shows what was saved, and the tone is stored once: in the instructions.
   await expect(topics).toHaveText(["refund", "legal advice"]);
+  await expect(team.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await team.reload();
   await expect(topics).toHaveText(["refund", "legal advice"]);
   await expect(instructions).toHaveValue("Friendly and plain\n\nCall the product Acme.");
