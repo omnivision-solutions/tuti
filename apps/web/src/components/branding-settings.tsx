@@ -3,7 +3,7 @@
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
 import { ImageIcon, MonitorIcon, MoonIcon, SunIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ColorField } from "@/components/color-field";
@@ -117,7 +117,6 @@ export function BrandingSettings({
       // A link only once it's a whole address, as saving needs.
       logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
       fonts: { heading: fontOf(data, "headingFont"), body: fontOf(data, "bodyFont") },
-      ...(data.has("poweredBy") && { poweredBy: data.getAll("poweredBy").includes("on") }),
     }),
     uploading > 0,
   );
@@ -516,6 +515,9 @@ type BadgePlan = { addOn: boolean; billingUrl: string; perMonth: number | null }
  * project has a licence (or the add-on on its plan). Without one, switching it off opens a dialog instead: why the
  * badge matters, and where to buy a licence (and Check now), or where plans are sold, the add-on on Billing. What it
  * takes to hide is behind the row's ⓘ; a licence's date and the add-on's state show under the label.
+ *
+ * The form sends the switch only once it's been changed here: saving a colour from a page opened before the badge was
+ * hidden elsewhere (Billing's add-on, another tab) leaves the badge as it is, and the switch then shows what's saved.
  */
 export function PoweredBySettings({
   projectSlug,
@@ -534,9 +536,26 @@ export function PoweredBySettings({
   plan: BadgePlan | null;
 }) {
   const [shown, setShown] = useState(poweredBy);
+  // What's saved, as the page last said, and whether a change made here has been: from then on the form keeps
+  // sending the switch, so what it holds stays what it sent ("Save changes" goes by that).
+  const [saved, setSaved] = useState(poweredBy);
+  const [sent, setSent] = useState(false);
+  if (saved !== poweredBy) {
+    setSaved(poweredBy);
+    if (shown === saved) {
+      // Nothing changed here: it was changed elsewhere.
+      setShown(poweredBy);
+    } else if (shown === poweredBy) {
+      setSent(true);
+    }
+  }
+  const changed = sent || shown !== saved;
   const id = useId();
   const box = useRef<HTMLInputElement>(null);
   useFieldChanged(box, shown);
+  // The preview shows it as it's switched (the form's own draft only has what it sends).
+  const { setDraft } = usePreview();
+  useEffect(() => setDraft({ poweredBy: shown }), [setDraft, shown]);
   const [licensedUntil, setLicensedUntil] = useState(initial);
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -576,8 +595,8 @@ export function PoweredBySettings({
 
   return (
     <div id="powered-by" className="scroll-mt-4">
-      {/* Sent off or on (see saveBranding). */}
-      <input type="hidden" name="poweredBy" value="" />
+      {/* Sent off or on (see saveBranding), once changed. */}
+      {changed && <input type="hidden" name="poweredBy" value="" />}
       <SettingRow
         label={'"Powered by tuti"'}
         htmlFor={id}
@@ -588,7 +607,7 @@ export function PoweredBySettings({
         <Switch
           ref={box}
           id={id}
-          name="poweredBy"
+          name={changed ? "poweredBy" : undefined}
           checked={shown}
           aria-describedby={status ? `${id}-description` : undefined}
           onChange={(event) => {

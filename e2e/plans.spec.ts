@@ -78,6 +78,11 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Pro plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
 
+  // Branding, open in another tab since before the add-on: its switch is on.
+  const stale = await owner.context().newPage();
+  await stale.goto(`/app/${slug}/settings/branding`);
+  await expect(stale.getByRole("switch", { name: '"Powered by tuti"' })).toBeChecked();
+
   // The "Powered by tuti" add-on: added to the plan, the badge is gone from the portal.
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
@@ -87,6 +92,14 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByText("Hidden on this project's plan. It ends with the plan.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Show the badge again" })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-badge-add-on");
+  // Saving something else from the tab opened before leaves the badge hidden: its switch wasn't touched, so it isn't
+  // sent, and then shows what's saved.
+  await stale.getByLabel("Text beside it").fill("Acme");
+  await stale.getByRole("button", { name: "Save changes" }).click();
+  await expect(stale.getByText("Branding saved")).toBeVisible();
+  await expect(stale.getByRole("switch", { name: '"Powered by tuti"' })).not.toBeChecked();
+  await expect(stale.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await stale.close();
   const reader = await owner.context().newPage();
   await reader.goto(cloudPortalUrl(slug));
   await expect(reader.getByRole("banner")).toBeVisible();
@@ -95,7 +108,6 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await reader.goto(`${cloudPortalUrl(slug)}/widget`);
   await expect(reader.getByRole("navigation", { name: "Widget" })).toBeVisible();
   await expect(reader.getByRole("link", { name: /Powered by/ })).toHaveCount(0);
-  await reader.close();
   await owner.goto(`/app/${slug}/customize/powered-by`);
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
   await expect(owner.getByRole("switch", { name: '"Powered by tuti"' })).not.toBeChecked();
@@ -104,8 +116,22 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByRole("switch", { name: '"Powered by tuti"' })).toHaveAccessibleDescription("The add-on is still on this project's plan: remove it in Billing.");
   await expect(owner.getByText("The add-on is still on").getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "customize-branding-badge-shown-with-add-on");
+  // Saved with "Save changes", the badge is back on the portal; switched off and saved, gone again.
+  const save = owner.getByRole("button", { name: "Save changes" });
+  await save.click();
+  await expect(owner.getByText("Branding saved")).toBeVisible();
+  await expect(save).toBeDisabled();
+  await reader.goto(cloudPortalUrl(slug));
+  await expect(reader.getByRole("link", { name: /Powered by/ })).toBeVisible();
   await owner.getByRole("switch", { name: '"Powered by tuti"' }).click();
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
+  await save.click();
+  await expect(owner.getByText("Branding saved").last()).toBeVisible();
+  await expect(save).toBeDisabled();
+  await reader.reload();
+  await expect(reader.getByRole("banner")).toBeVisible();
+  await expect(reader.getByRole("link", { name: /Powered by/ })).toHaveCount(0);
+  await reader.close();
   await owner.goto(`/app/${slug}/settings/billing`);
 
   // Cancelled in Stripe's portal, it lasts until the period it's paid for ends.
