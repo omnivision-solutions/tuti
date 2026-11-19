@@ -22,10 +22,10 @@ export function ProjectNameForm({ projectSlug, name }: { projectSlug: string; na
   return (
     <SettingRow label="Project name" htmlFor="project-name">
       <form {...form} className="flex flex-wrap items-start gap-2">
-        {/* A new key once saved: the field shows the name as saved (trimmed), not as typed. Its length is
-            the server's to check, after trimming (a limit here would count the spaces). */}
+        {/* The form trims it as it's sent, so the field shows the name as saved; no new key once saved, which would drop
+            what's typed while it saves. Its length is the server's to check, after trimming (a limit here would count
+            the spaces). */}
         <Input
-          key={name}
           id="project-name"
           name="name"
           defaultValue={name}
