@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readGraphql } from "./graphql";
-import { operationMarkdown } from "./markdown";
+import { operationMarkdown, specHtml } from "./markdown";
 import { readOpenApi } from "./openapi";
 import type { ApiDoc } from "./types";
 
@@ -95,5 +95,15 @@ describe("operationMarkdown", () => {
     expect(text).toContain("| `title` | String | No |");
     expect(text).toContain("## Query\n\n```graphql\nquery");
     expect(text).toContain('## Response example\n\n```json\n{\n  "data": {\n    "post": {');
+  });
+});
+
+describe("specHtml", () => {
+  it("shows a placeholder written as a tag as its text, and keeps HTML's own tags", () => {
+    expect(specHtml("The end of its address, /docs/<slug>.")).toBe("<p>The end of its address, /docs/&lt;slug&gt;.</p>\n");
+    expect(specHtml("The <post id>, on <date>.")).toBe("<p>The &lt;post id&gt;, on &lt;date&gt;.</p>\n");
+    expect(specHtml("One<br>two, <b>bold</b>, <kbd>Esc</kbd> <!-- note -->")).toBe("<p>One<br>two, <b>bold</b>, <kbd>Esc</kbd> <!-- note --></p>\n");
+    expect(specHtml("<details>\n<summary>More</summary>\n\nText\n</details>")).toContain("<details>\n<summary>More</summary>");
+    expect(specHtml("<SLUG>\n")).toBe("&lt;SLUG&gt;\n");
   });
 });

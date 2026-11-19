@@ -1,3 +1,5 @@
+import { Marked } from "marked";
+
 import { graphqlResponse, graphqlSignature, requestExamples } from "./examples";
 import type { ApiDoc, ApiOperation, ApiParam, ApiSchema } from "./types";
 
@@ -163,3 +165,27 @@ function fieldRows(schema: ApiSchema, prefix: string): Row[] {
     return [{ name, type: typeLine(property).filter(Boolean).join(" · "), required: property.required, about: about(property) }, ...fieldRows(property, name)];
   });
 }
+
+/** HTML's elements (and a few old ones specs still write). Any other tag in a spec's Markdown is a placeholder, `/docs/<slug>`. */
+const ELEMENTS = new Set(
+  (
+    "a abbr address area article aside audio b bdi bdo big blockquote body br button canvas caption center cite code col colgroup data " +
+    "datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup " +
+    "hr html i iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object ol optgroup option output p " +
+    "picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup svg " +
+    "table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr"
+  ).split(" "),
+);
+
+const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const specMarked = new Marked({
+  gfm: true,
+  renderer: {
+    // Raw HTML goes through as written, except a tag that isn't HTML's: that's a placeholder, shown as its text.
+    html: ({ text }) => text.replace(/<\/?([a-zA-Z][\w-]*)[^<>]*>/g, (tag, name: string) => (ELEMENTS.has(name.toLowerCase()) ? tag : escapeHtml(tag))),
+  },
+});
+
+/** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`) kept as text. */
+export const specHtml = (markdown: string): string => specMarked.parse(markdown, { async: false });

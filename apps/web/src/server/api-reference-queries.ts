@@ -1,8 +1,7 @@
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { prisma } from "@tuti/db";
-import { type ApiDoc, type ApiReferenceState, onHelpCenter } from "@tuti/shared/api-reference";
-import { marked } from "marked";
+import { type ApiDoc, type ApiReferenceState, onHelpCenter, specHtml } from "@tuti/shared/api-reference";
 import { cache } from "react";
 
 import { locks, readable, restricted } from "@/lib/read-access";
@@ -115,7 +114,7 @@ export const markdownDoc = cache(async (text: string): Promise<Doc> => {
     const paragraphs = text.split(/\n\s*\n/).map((paragraph) => paragraph.trim().split(/\s*\n\s*/).join(" "));
     return fromPlainText(paragraphs.join("\n\n"));
   }
-  const content = await htmlToContent("article", marked.parse(text, { async: false, gfm: true }));
+  const content = await htmlToContent("article", specHtml(text));
   return "error" in content ? fromPlainText(text) : content.doc;
 });
 
