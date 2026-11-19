@@ -51,42 +51,38 @@ export function PropertyFormatsList({ projectSlug, properties, numbers, formats 
 /** Left as they are, the name and format that show without the team's aren't saved, so they follow the values. */
 function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string; name: string; saved: PropertyFormat; amount: boolean }) {
   const router = useRouter();
-  // What this row last saved, until the page brings what's saved: a format picked right after a rename is sent with
-  // the new name, not the one the page still has.
-  const [kept, setKept] = useState(saved);
-  const [seen, setSeen] = useState(JSON.stringify(saved));
-  if (seen !== JSON.stringify(saved)) {
-    setSeen(JSON.stringify(saved));
-    setKept(saved);
-  }
   // What was picked shows while it saves; a save that fails puts back what's kept.
-  const [format, setFormat] = useOptimistic(kept);
+  const [format, setFormat] = useOptimistic(saved);
   const [renaming, setRenaming] = useState(false);
   const shown = format.format ?? (amount ? "number" : "text");
   const offered = amount ? AMOUNT_FORMATS : FORMATS;
 
+  // One save at a time on a row, its name's too, until the page has what was saved: its controls are off meanwhile, so
+  // nothing is sent with a name or format that isn't kept yet.
   const [saving, startSaving] = useTransition();
-  // One save at a time: a pick made while another saves is ignored, as it would be sent with what may not be kept.
-  const pick = (change: PropertyFormat) => {
-    if (saving) {
-      return;
-    }
-    startSaving(async () => {
-      const next = { ...format, ...change };
-      setFormat(next);
-      if (await saveProperty(projectSlug, name, next)) {
-        setKept(next);
-        startSaving(() => router.refresh());
+  const save = (next: PropertyFormat) =>
+    new Promise<boolean>((resolve) => {
+      if (saving) {
+        resolve(false);
+        return;
       }
+      startSaving(async () => {
+        setFormat(next);
+        const done = await saveProperty(projectSlug, name, next);
+        resolve(done);
+        if (done) {
+          startSaving(() => router.refresh());
+        }
+      });
     });
-  };
+  const pick = (change: PropertyFormat) => void save({ ...format, ...change });
 
   return (
     <SettingRow label={<span className="break-all">{format.label || readableName(name)}</span>}>
       {/* As wide with a currency as without, so the keys the app sends line up in a column of their own. */}
       <div className="flex items-center gap-2 @min-[34rem]/settings:w-96">
         <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{name}</code>
-        <Select items={offered} value={shown} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
+        <Select items={offered} value={shown} disabled={saving} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
           <SelectTrigger className="w-28 shrink-0" aria-label={`Format of ${name}`}>
             <SelectValue />
           </SelectTrigger>
@@ -99,7 +95,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
           </SelectContent>
         </Select>
         {format.format === "money" && (
-          <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} onValueChange={(value) => pick({ currency: value as (typeof CURRENCIES)[number] })}>
+          <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} disabled={saving} onValueChange={(value) => pick({ currency: value as (typeof CURRENCIES)[number] })}>
             <SelectTrigger className="w-22 shrink-0" aria-label={`Currency of ${name}`}>
               <SelectValue />
             </SelectTrigger>
@@ -113,7 +109,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
           </Select>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="shrink-0" aria-label={`Actions for ${name}`} />}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="shrink-0" disabled={saving} focusableWhenDisabled aria-label={`Actions for ${name}`} />}>
             <MoreHorizontalIcon />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto min-w-32">
@@ -122,30 +118,27 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
         </DropdownMenu>
         {/* Mounted as it opens: each time, the name kept now. */}
         <Dialog open={renaming} onOpenChange={setRenaming}>
-          <DialogContent>{renaming && <RenameForm projectSlug={projectSlug} name={name} format={format} keep={setKept} close={() => setRenaming(false)} />}</DialogContent>
+          <DialogContent>{renaming && <RenameForm name={name} label={format.label ?? ""} save={(label) => save({ ...format, label })} close={() => setRenaming(false)} />}</DialogContent>
         </Dialog>
       </div>
     </SettingRow>
   );
 }
 
-/** The team's own name for a property, saved with the format it has. */
-function RenameForm({ projectSlug, name, format, keep, close }: { projectSlug: string; name: string; format: PropertyFormat; keep: (saved: PropertyFormat) => void; close: () => void }) {
-  const router = useRouter();
-  const [label, setLabel] = useState(format.label ?? "");
-  const [pending, startSaving] = useTransition();
+/** The team's own name for a property, saved by its row with the format it has (closed while it saves, it's saved all the same). */
+function RenameForm({ name, label: kept, save, close }: { name: string; label: string; save: (label: string) => Promise<boolean>; close: () => void }) {
+  const [label, setLabel] = useState(kept);
+  const [pending, setPending] = useState(false);
   return (
     <form
       className="flex flex-col gap-4"
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault();
-        startSaving(async () => {
-          if (await saveProperty(projectSlug, name, { ...format, label })) {
-            keep({ ...format, label });
-            close();
-            router.refresh();
-          }
-        });
+        setPending(true);
+        if (await save(label)) {
+          close();
+        }
+        setPending(false);
       }}
     >
       <DialogHeader>

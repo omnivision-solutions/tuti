@@ -376,16 +376,30 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toContainText("USD");
   await expect(plan.getByRole("combobox", { name: "Format of plan" })).toContainText("Text");
   await expect(plan).toContainText("Tier");
-  // A format picked right after a rename is saved with the new name: both are there after a reload.
+  // A row saves one thing at a time. While its name is being saved, even with the dialog closed, its format can't be
+  // picked; picked once that's done, it's saved with the new name: both are there after a reload.
   const company = properties.getByRole("listitem").filter({ hasText: "company" });
   await company.getByRole("button", { name: "Actions for company" }).click();
   await owner.getByRole("menuitem", { name: "Rename" }).click();
   await dialog.getByRole("textbox", { name: "Name shown" }).fill("Employer");
+  let releaseRename = () => {};
+  const renameHeld = new Promise<void>((resolve) => (releaseRename = resolve));
+  await owner.route(`**/app/${slug}/settings/properties`, async (route) => {
+    if (route.request().method() === "POST") {
+      await renameHeld;
+    }
+    await route.continue();
+  });
   await dialog.getByRole("button", { name: "Save" }).click();
+  await owner.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toBeDisabled();
+  releaseRename();
+  await owner.unroute(`**/app/${slug}/settings/properties`);
+  await expect(owner.getByText("Saved how company shows")).toBeVisible();
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toBeEnabled();
   await company.getByRole("combobox", { name: "Format of company" }).click();
   await owner.getByRole("option", { name: "Date" }).click();
-  await expect(company.getByRole("combobox", { name: "Format of company" })).toContainText("Date");
   await expect(owner.getByText("Saved how company shows")).toHaveCount(2);
   await owner.reload();
   await expect(company).toContainText("Employer");
