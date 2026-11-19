@@ -21,7 +21,55 @@ export function outputSchema(operation: (typeof operations)[number]): JsonSchema
   if (!operation.output) return null;
   const schema = z.toJSONSchema(operation.output, { io: "output", unrepresentable: "any" }) as JsonSchema;
   delete schema.$schema;
-  return schema;
+  return opened(schema) as JsonSchema;
+}
+
+/** Keys whose values are data, not schemas: left as they are. */
+const DATA = new Set(["examples", "example", "default", "const", "enum"]);
+
+/**
+ * Rewrites a JSON Schema node by node: `change` gets each schema (not a map of names to schemas like `properties`, where
+ * a field may be called "enum", nor data like `examples`) after its parts are rewritten.
+ */
+function eachSchema(value: unknown, change: (schema: Record<string, unknown>) => Record<string, unknown>, named = false): unknown {
+  if (Array.isArray(value)) return value.map((item) => eachSchema(item, change));
+  if (value === null || typeof value !== "object") return value;
+  const parts = Object.entries(value).map(([key, field]) => [
+    key,
+    named ? eachSchema(field, change) : DATA.has(key) ? field : eachSchema(field, change, key === "properties" || key === "$defs" || key === "patternProperties"),
+  ]);
+  return named ? Object.fromEntries(parts) : change(Object.fromEntries(parts) as Record<string, unknown>);
+}
+
+/**
+ * A result may carry more than its output says (a field the next release added, kept in stored JSON), so no object is
+ * closed: zod's `additionalProperties: false` goes. Without closed objects a union's branches can overlap, so `oneOf`
+ * (zod's discriminated unions) becomes `anyOf`: a result fits when it fits one.
+ */
+export function opened(schema: unknown): unknown {
+  return eachSchema(schema, ({ additionalProperties, oneOf, ...rest }) => ({
+    ...rest,
+    ...(additionalProperties !== undefined && additionalProperties !== false && { additionalProperties }),
+    ...(oneOf !== undefined && (rest.anyOf === undefined ? { anyOf: oneOf } : { allOf: [...((rest.allOf as unknown[]) ?? []), { anyOf: oneOf }] })),
+  }));
+}
+
+/**
+ * For agents: clients check a tool's result against MCP's `outputSchema`, so a value a list doesn't have yet (a feature
+ * or a status the other release wrote, during a deploy) mustn't fail the call. Each `enum` and `const` becomes
+ * `examples`, which name the values without checking them; the spec keeps them for readers.
+ */
+export function forAgents(schema: unknown): unknown {
+  return eachSchema(schema, ({ enum: values, const: only, examples, ...rest }) => {
+    const named = [...((examples as unknown[]) ?? []), ...(Array.isArray(values) ? values : []), ...(only !== undefined ? [only] : [])];
+    return { ...rest, ...(named.length > 0 && { examples: [...new Set(named)] }) };
+  });
+}
+
+/** MCP's `outputSchema`: the output, opened, with its lists of values named for agents rather than checked. */
+export function agentOutputSchema(operation: (typeof operations)[number]): JsonSchema | null {
+  const schema = outputSchema(operation);
+  return schema && (forAgents(schema) as JsonSchema);
 }
 
 /** Each error status: its response's name in the spec, what it means, a short form for MCP, and an example body. */
