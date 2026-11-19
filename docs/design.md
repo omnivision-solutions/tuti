@@ -826,7 +826,8 @@ widths, in light and dark (in development only).
     `Select`. No radios with a sentence each, no native `<select>`.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
-    is one muted line in the card, not an `EmptyState`.
+    is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
+    repeat the page's: its "New" button is in the pane's header (`SettingsPane`'s `actions`).
   - An upload is its thumbnail and an Upload button on the row; what files it takes is said when one is refused.
   - A number carries its unit in the field ("25 people").
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its

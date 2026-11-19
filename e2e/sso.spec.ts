@@ -229,10 +229,9 @@ test("a collection for one reader group: people the app signs in with that group
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  // How many are in it, what it's for and its rule; the list says how many groups there are.
+  // How many are in it, what it's for and its rule.
   await expect(groups).toContainText("0 users · On the Enterprise plan");
   await expect(groups).toContainText("groups is enterprise");
-  await expect(groups.getByRole("heading", { name: "Groups 1" })).toBeVisible();
 
   // "Specific groups" on a new collection: the group, picked from the list.
   await owner.goto(`/app/${slug}/docs`);
@@ -282,7 +281,8 @@ test("a collection for one reader group: people the app signs in with that group
   const desktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(groups.getByRole("button", { name: "New group" })).toBeVisible();
-  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // The pane's body scrolls what's too wide for it, so it's the one to measure.
+  expect(await groups.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   await checkpoint(owner, "team-settings-groups-phone", { fullPage: false });
   await owner.setViewportSize(desktop);
   await groups.getByRole("button", { name: "Actions for Enterprise customers" }).click();

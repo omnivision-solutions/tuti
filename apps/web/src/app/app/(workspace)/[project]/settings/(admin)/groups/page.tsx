@@ -27,13 +27,14 @@ export default async function GroupsSettingsPage(props: PageProps<"/app/[project
     <SettingsPane
       title="Groups"
       description="Users grouped by their properties, to limit who reads which docs"
+      actions={<NewGroupButton projectSlug={project.slug} properties={properties} />}
     >
       {!planIncludes(plan, "privatePortal") && (
         <PlanNotice feature="privatePortal" projectSlug={project.slug} admin>
           Without it, content for groups is your team&apos;s only. Your groups are kept.
         </PlanNotice>
       )}
-      <SettingsCard title="Groups" count={groups.length} action={<NewGroupButton projectSlug={project.slug} properties={properties} />}>
+      <SettingsCard>
         <ReaderGroups projectSlug={project.slug} groups={groups} properties={properties} />
       </SettingsCard>
     </SettingsPane>
