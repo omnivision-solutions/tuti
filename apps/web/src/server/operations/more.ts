@@ -160,13 +160,22 @@ async function writeFormats(
 export const updatePropertyFormats = defineOperation({
   name: "propertyFormats.update",
   title: "Set property formats",
-  summary:
-    "Set how the app shows some of your users' properties, by name, keeping the rest (project.update's `propertyFormats` sets them all at once): a `label` of the team's own and a `format` (text, number, money in a `currency`, or date); one with neither is cleared",
+  summary: "Set how the app shows some of your users' properties, by name, keeping the rest (project.update's `propertyFormats` sets them all at once).",
   method: "PATCH",
   path: "/project/property-formats",
   scope: "write",
   access: "admin",
-  input: z.object({ formats: propertyFormatsInput }),
+  input: z.object({
+    formats: propertyFormatsInput.describe(`Formats by property name, up to ${MAX_PROPERTY_FORMATS} in all; one with neither a label nor a format is cleared`),
+  }),
+  output: z
+    .object({
+      propertyFormats: z
+        .record(z.string(), propertyFormat.meta({ id: "PropertyFormat", description: "How the app shows a property" }))
+        .describe("Every property's format now, by name")
+        .meta({ examples: [{ mrr: { label: "MRR", format: "money", currency: "EUR" } }] }),
+    })
+    .describe("The project's property formats"),
   example: { formats: { mrr: { label: "MRR", format: "money", currency: "EUR" }, seats: { label: "" } } },
   // fromEntries, so a property named "__proto__" is one like any other.
   run: async ({ projectId }, input) => ({

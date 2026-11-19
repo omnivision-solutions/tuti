@@ -62,13 +62,43 @@ export const updateEmailPreferences = defineOperation({
   name: "emailPreferences.update",
   title: "Set email preferences",
   summary:
-    "Choose which of the project's emails about posts someone gets, as the key's creator or on behalf of someone from your app: about posts they wrote (`ownPosts`: others' comments on them too) or posts they voted on, commented on or follow (`followedPosts`), each as it moves forward and when it ships, and the team's replies emailed to its voters (writing a post votes for it); or no emails about posts at all, nor the changelog's to their address (`unsubscribed`, as the unsubscribe link in every such email; replies to their messages and sign-in emails still arrive). The changelog entries emailed to subscribers, at the address the project's emails go to (`changelog`: on confirms it at once; off is the unsubscribe link in every changelog email; a private portal emails none). What's left out stays as it was. On someone's behalf, only turning emails off. `unsubscribed: true` and `changelog` need an address they've proven (verified, or from your single sign-on); `changelog: true` is refused while emails to that address are turned off (`unsubscribed`, or another account's at the same address; `unsubscribed: false` in the same update counts; a refused update changes nothing)",
+    "Choose which of the project's emails someone gets, as the key's creator or on behalf of someone from your app (`author`; on someone's behalf, only turning emails off). What's left out stays as it was, and a refused update changes nothing.",
   method: "PATCH",
   path: "/email-preferences",
   scope: "write",
   access: "anyone",
   errors: [409],
-  input: z.object({ ownPosts: z.boolean().optional(), followedPosts: z.boolean().optional(), unsubscribed: z.boolean().optional(), changelog: z.boolean().optional(), author }),
+  input: z.object({
+    ownPosts: z.boolean().optional().describe("Emails about posts they wrote, others' comments on them too, as each moves forward and when it ships"),
+    followedPosts: z
+      .boolean()
+      .optional()
+      .describe(
+        "Emails about posts they voted on, commented on or follow, as each moves forward and when it ships, and the team's replies emailed to a post's voters (writing a post votes for it)",
+      ),
+    unsubscribed: z
+      .boolean()
+      .optional()
+      .describe(
+        "No emails about posts at all, nor the changelog's to their address, as the unsubscribe link in every such email; replies to their messages and sign-in emails still arrive. `true` and `changelog` need an address they've proven (verified, or from your single sign-on)",
+      ),
+    changelog: z
+      .boolean()
+      .optional()
+      .describe(
+        "The changelog entries emailed to subscribers, at the address the project's emails go to: on confirms it at once, off is the unsubscribe link in every changelog email; a private portal emails none. `true` is refused while emails to that address are turned off (`unsubscribed`, or another account's at the same address; `unsubscribed: false` in the same update counts)",
+      ),
+    author: author.describe("Someone from your app to act for (API keys only): their `id` in your app; without it, the key's creator"),
+  }),
+  output: z
+    .object({
+      ownPosts: z.boolean().describe("Whether they get emails about posts they wrote").meta({ examples: [true] }),
+      followedPosts: z.boolean().describe("Whether they get emails about posts they voted on, commented on or follow").meta({ examples: [false] }),
+      unsubscribed: z.boolean().describe("Whether they turned off emails about posts and the changelog's").meta({ examples: [false] }),
+      changelog: z.boolean().describe("Whether the changelog is emailed to their address").meta({ examples: [false] }),
+    })
+    .meta({ id: "EmailPreferences", description: "Which of the project's emails someone gets" })
+    .describe("Their email preferences now"),
   example: { followedPosts: false, author: { id: "user-42" } },
   run: async (context, input) => {
     // For someone from the app, only ever fewer emails: what they turned off (here or by an email's link) stays off.

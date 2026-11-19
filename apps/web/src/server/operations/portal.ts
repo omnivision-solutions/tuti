@@ -133,29 +133,62 @@ export async function portalReaders(projectId: string) {
 export const listPortalReaders = defineOperation({
   name: "portalReaders.list",
   title: "List portal readers",
-  summary:
-    "List who may read the private portal: the people (by email) allowed besides the team and people your app signs in with SSO; newest first",
+  summary: "List who may read the private portal besides the team and people your app signs in with SSO, newest first.",
   method: "GET",
   path: "/portal/readers",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z
+    .object({
+      readers: z
+        .array(
+          z
+            .object({
+              email: z.string().describe("An address allowed to read it, or a whole domain (\"@acme.com\")").meta({ examples: ["e2e-reader@example.com"] }),
+              addedAt: z.string().describe("When it was added").meta({ examples: ["2026-11-02T09:30:00.000Z"] }),
+              addedBy: z.string().nullable().describe("Who on the team added it, or null if their account is gone").meta({ examples: ["Olive Owner"] }),
+            })
+            .meta({ id: "PortalReader", description: "Someone, or a domain, who may read the private portal" }),
+        )
+        .describe("The readers, newest first"),
+    })
+    .describe("The private portal's readers"),
   run: async ({ projectId }) => ({ readers: await portalReaders(projectId) }),
 });
 
 export const addPortalReaders = defineOperation({
   name: "portalReaders.add",
   title: "Add portal readers",
-  summary: `Let people read the portal while it's private, by email (up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all): any account with that address, once it's verified (an emailed sign-in link verifies it). An entry can be a whole domain ("@acme.com"): everyone with a verified address there (not free email providers, where anyone can get one). On a private portal, each new one is emailed a link to it unless \`notify\` is false (up to ${READER_EMAILS_PER_PROJECT_PER_DAY} such emails a day per portal, and ${READER_EMAILS_PER_ADDRESS_PER_DAY} per address; past them, readers are added without one, and \`emailed\` says how many were sent). Addresses already there are left as they are`,
+  summary: `Let people read the portal while it's private, by email: up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all. Addresses already there are left as they are.`,
   method: "POST",
   path: "/portal/readers",
   scope: "write",
   access: "admin",
   errors: [402],
   input: z.object({
-    emails: z.array(readerEntry).min(1, "Enter an email address").max(READERS_PER_ADD, `Add up to ${READERS_PER_ADD} at once`),
-    notify: z.boolean().default(true),
+    emails: z
+      .array(readerEntry)
+      .min(1, "Enter an email address")
+      .max(READERS_PER_ADD, `Add up to ${READERS_PER_ADD} at once`)
+      .describe(
+        `Addresses, any account with one reading once it's verified (an emailed sign-in link verifies it), or whole domains ("@acme.com"): everyone with a verified address there (not free email providers, where anyone can get one); up to ${READERS_PER_ADD}`,
+      ),
+    notify: z
+      .boolean()
+      .default(true)
+      .describe(
+        `On a private portal, email each new one a link to it, unless false: up to ${READER_EMAILS_PER_PROJECT_PER_DAY} such emails a day per portal and ${READER_EMAILS_PER_ADDRESS_PER_DAY} per address; past them, readers are added without one`,
+      ),
   }),
+  output: z
+    .object({
+      added: z
+        .array(z.string().meta({ examples: ["e2e-reader@example.com"] }))
+        .describe("Each entry added; those already there are left out"),
+      emailed: z.number().int().describe("Says how many emails were sent: none to a domain, nor past the day's limits").meta({ examples: [1] }),
+    })
+    .describe("Who was added, and how many were emailed"),
   example: { emails: ["e2e-reader@example.com"] },
   run: async ({ actor, projectId }, input) => {
     await requirePlan(projectId, "privatePortal");
@@ -238,14 +271,13 @@ async function claimReaderEmails(tx: Prisma.TransactionClient, projectId: string
 export const removePortalReader = defineOperation({
   name: "portalReaders.remove",
   title: "Remove a portal reader",
-  summary:
-    "Stop letting someone read the private portal: an address, or a domain (\"@acme.com\"); the team and SSO users keep their access, and accounts stay",
+  summary: "Stop letting someone read the private portal. The team and SSO users keep their access, and accounts stay.",
   method: "DELETE",
   path: "/portal/readers/{email}",
   scope: "write",
   access: "admin",
-  // An address or a domain entry ("@acme.com"), as listed.
-  input: z.object({ email: z.string().trim().toLowerCase().min(1).max(320) }),
+  input: z.object({ email: z.string().trim().toLowerCase().min(1).max(320).describe("An address, or a domain (\"@acme.com\"), as listed") }),
+  output: z.object({ removed: z.string().describe("The entry removed").meta({ examples: ["e2e-reader@example.com"] }) }).describe("They can't read it any more"),
   run: async ({ projectId }, input) => {
     const { count } = await prisma.portalReader.deleteMany({ where: { projectId, email: input.email } });
     if (count === 0) {

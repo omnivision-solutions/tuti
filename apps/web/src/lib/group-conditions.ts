@@ -9,13 +9,19 @@ import type { Properties } from "@tuti/shared/user-properties";
 
 export const MAX_CONDITIONS = 10;
 
-const property = z.string().trim().min(1, "A condition needs a property").max(64, "Properties are up to 64 characters");
+const property = z
+  .string()
+  .trim()
+  .min(1, "A condition needs a property")
+  .max(64, "Properties are up to 64 characters")
+  .describe("The user property it looks at, by name");
 const value = z.string().trim().min(1, "A condition needs a value").max(200, "Values are up to 200 characters");
 const values = z
   .array(value)
   .min(1, "A condition needs a value")
   .max(50, "Up to 50 values")
-  .transform((list) => [...new Set(list)]);
+  .transform((list) => [...new Set(list)])
+  .describe("The texts it compares with, up to 50");
 
 /** The operators, as the dialog names them. */
 export const OPERATORS = {
@@ -47,9 +53,13 @@ export const groupCondition = z.preprocess(
     return { ...(attribute !== undefined && !("property" in rest) && { property: attribute }), ...rest, ...(rest.op === "is_one_of" && { op: "is_any_of" }) };
   },
   z.discriminatedUnion("op", [
-    z.object({ property, op: z.enum(["is", "is_not", "contains", "excludes"]), value }),
-    z.object({ property, op: z.enum(["is_any_of", "is_none_of"]), value: values }),
-    z.object({ property, op: z.enum(["is_set", "is_not_set"]) }),
+    z.object({
+      property,
+      op: z.enum(["is", "is_not", "contains", "excludes"]).describe("Whether the property `is`, `is_not`, `contains` or `excludes` a text"),
+      value: value.describe("The text it compares with"),
+    }),
+    z.object({ property, op: z.enum(["is_any_of", "is_none_of"]).describe("Whether the property `is_any_of` or `is_none_of` a list"), value: values }),
+    z.object({ property, op: z.enum(["is_set", "is_not_set"]).describe("Whether the property is set; these take no value") }),
   ]),
 );
 export type GroupCondition = z.output<typeof groupCondition>;

@@ -54,19 +54,6 @@ const notRewrittenYet = new Set<OperationName>([
   "codeChangesTuning.get",
   "codeChangesTuning.update",
   // B9: Users
-  "companies.list",
-  "emailPreferences.update",
-  "groups.create",
-  "groups.delete",
-  "groups.list",
-  "groups.update",
-  "portalReaders.add",
-  "portalReaders.list",
-  "portalReaders.remove",
-  "propertyFormats.update",
-  "users.get",
-  "users.list",
-  "users.sync",
   // B10: Portal, Project and Billing
 ]);
 
