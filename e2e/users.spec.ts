@@ -306,9 +306,12 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await value.click();
   await expect(owner.getByRole("option")).toHaveText(["None", "MRRSuggested", "Account ID"]);
   await checkpoint(owner, "settings-whos-asking-suggested");
-  await owner.getByRole("option", { name: "MRR" }).click();
+  // Picked with the keyboard, focus stays on the box once it's saved.
+  await owner.keyboard.press("ArrowDown");
+  await owner.keyboard.press("Enter");
   await expect(owner.getByText("Feedback totals MRR over each post's voters")).toBeVisible();
   await expect(value).toContainText("MRR");
+  await expect(value).toBeFocused();
   // Picked, nothing is suggested: the properties in their order.
   await value.click();
   await expect(owner.getByRole("option")).toHaveText(["None", "Account ID", "MRR"]);

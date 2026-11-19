@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useTransition } from "react";
+import { useEffect, useId, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
@@ -30,11 +30,21 @@ export function AskingPropertySelect({
 }) {
   const [pending, startTransition] = useTransition();
   const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  // Disabled while a pick saves, the box loses focus: it gets it back once saved, not the page.
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!pending && refocus.current) {
+      refocus.current = false;
+      trigger.current?.focus();
+    }
+  }, [pending]);
   const suggested = property === null ? suggestedAsking(properties, formats) : undefined;
   const names =
     suggested !== undefined ? [suggested, ...properties.filter((name) => name !== suggested)] : property && !properties.includes(property) ? [property, ...properties] : properties;
   const items = { [NONE]: "None", ...Object.fromEntries(names.map((name) => [valueOf(name), propertyLabel(formats, name)])) };
-  const pick = (name: string | null) =>
+  const pick = (name: string | null) => {
+    refocus.current = true;
     startTransition(async () => {
       const result = await setAskingProperty(projectSlug, name);
       if (result.error) {
@@ -43,6 +53,7 @@ export function AskingPropertySelect({
         toast.success(name === null ? "Feedback won't total a property" : `Feedback totals ${propertyLabel(formats, name)} over each post's voters`);
       }
     });
+  };
   return (
     <SettingRow label="Value of a post" description="Totals a number property over each post's voters. Only your team sees it." htmlFor={id}>
       <Select
@@ -51,7 +62,7 @@ export function AskingPropertySelect({
         disabled={pending}
         onValueChange={(value) => pick(value === NONE ? null : String(value).slice(valueOf("").length))}
       >
-        <SelectTrigger id={id} aria-describedby={`${id}-description`} className="w-full @min-[34rem]/settings:w-48">
+        <SelectTrigger ref={trigger} id={id} aria-describedby={`${id}-description`} className="w-full @min-[34rem]/settings:w-48">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
