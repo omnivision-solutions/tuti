@@ -294,6 +294,16 @@ test("every field of a rewritten operation's output has an example, so the spec'
   }
 });
 
+test("rules across fields reach the request body: anyOf and oneOf", () => {
+  const spec = openApiSpec("https://tuti.example.com/api/v1");
+  const body = (path: string, method: string) =>
+    (spec.paths[path]![method] as { requestBody: { content: Record<string, { schema: Record<string, unknown> }> } }).requestBody.content["application/json"]!.schema;
+  // A user from your app or an email, not both.
+  expect(body("/conversations", "post").oneOf).toEqual([{ required: ["user"] }, { required: ["email"] }]);
+  // At least one change.
+  expect(body("/conversations/{number}", "patch").anyOf).toEqual(expect.arrayContaining([{ required: ["status"] }]));
+});
+
 test("every example request is one the operation takes", () => {
   for (const operation of operations.filter((operation) => operation.example)) {
     const parsed = operation.input.safeParse(operation.example);
