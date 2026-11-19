@@ -106,15 +106,6 @@ describe("specHtml", () => {
     expect(specHtml("<details>\n<summary>More</summary>\n\nText\n</details>")).toContain("<details>\n<summary>More</summary>");
     expect(specHtml("<SLUG>\nis the **address**.")).toBe("<p>&lt;SLUG&gt;\nis the <strong>address</strong>.</p>\n");
     expect(specHtml("- <slug>\n- two")).toBe("<ul>\n<li>&lt;slug&gt;</li>\n<li>two</li>\n</ul>\n");
-    // An element's name is a placeholder too unless the text closes it.
-    expect(specHtml("Back to /callback?code=<code>, titled <title>.")).toBe("<p>Back to /callback?code=&lt;code&gt;, titled &lt;title&gt;.</p>\n");
-    expect(specHtml("Run <code>make</code>.")).toBe("<p>Run <code>make</code>.</p>\n");
-    expect(specHtml("Run <code>make</code>, then /callback?code=<code>&notify=1 while age<ttl.")).toBe(
-      "<p>Run <code>make</code>, then /callback?code=&lt;code&gt;&amp;notify=1 while age&lt;ttl.</p>\n",
-    );
-    expect(specHtml("From /callback?code=<code>, run <code>make</code>.")).toBe("<p>From /callback?code=&lt;code&gt;, run <code>make</code>.</p>\n");
-    expect(specHtml("Wait <s> seconds, at most <strong>30</strong>.")).toBe("<p>Wait &lt;s&gt; seconds, at most <strong>30</strong>.</p>\n");
-    expect(specHtml("<b><!-- <b> -->bold</b>")).toBe("<p><b><!-- <b> -->bold</b></p>\n");
-    expect(specHtml("Wrap it in `<code>…</code>`, from /callback?code=<code>.")).toBe("<p>Wrap it in <code>&lt;code&gt;…&lt;/code&gt;</code>, from /callback?code=&lt;code&gt;.</p>\n");
+    expect(specHtml("Run <code>make</code>, <b><!-- <b> -->bold</b>.")).toBe("<p>Run <code>make</code>, <b><!-- <b> -->bold</b>.</p>\n");
   });
 });

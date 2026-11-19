@@ -169,36 +169,24 @@ function fieldRows(schema: ApiSchema, prefix: string): Row[] {
 /** HTML's elements (and a few old ones specs still write). Any other tag in a spec's Markdown is a placeholder, `/docs/<slug>`. */
 const ELEMENTS = new Set(
   (
-    "a abbr address article aside audio b bdi bdo big blockquote body button canvas caption center cite code colgroup data " +
+    "a abbr address article aside audio b bdi bdo big blockquote body br button canvas caption center cite code colgroup data " +
     "datalist dd del details dfn dialog div dl dt em fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup " +
-    "html i iframe ins kbd label legend li main map mark menu meter nav noscript object ol optgroup option output p " +
+    "hr html i iframe img ins kbd label legend li main map mark menu meter nav noscript object ol optgroup option output p " +
     "picture pre progress q rp rt ruby s samp script search section select slot small span strike strong style sub summary sup svg " +
-    "table tbody td template textarea tfoot th thead time title tr tt u ul var video"
+    "table tbody td template textarea tfoot th thead time title tr tt u ul var video wbr"
   ).split(" "),
 );
-/** Elements HTML lets go unclosed (and `<br>`'s kind, never closed). Any other element is HTML only when the text after it closes it: `<code>` alone is a placeholder. */
-const UNCLOSED = new Set("br hr img wbr p li dt dd tr td th thead tbody tfoot".split(" "));
 
-/** Whether `tag` (`<slug>`, `</b>`, a comment), followed by `rest`, is HTML rather than a placeholder. */
-function isHtml(tag: string, rest: string): boolean {
+/**
+ * Whether `tag` (`<slug>`, `</b>`, a comment) is HTML rather than a placeholder: by its name alone.
+ * ponytail: an element's name written as a placeholder (`?code=<code>`) still reads as HTML; telling them apart needs pairing tags.
+ */
+function isHtml(tag: string): boolean {
   const name = /^<\/?([a-zA-Z][\w-]*)/.exec(tag)?.[1]?.toLowerCase();
-  if (!name || UNCLOSED.has(name) || (tag.startsWith("</") && ELEMENTS.has(name))) return true;
-  if (!ELEMENTS.has(name)) return false;
-  // Closed later on: by a close no later open of its name takes, outside code and comments (`</code>` in a code span closes nothing).
-  // It gives up after OPENS more opens of its name (none nests that deep), so many tags in a row stay fast.
-  let open = 0;
-  let opens = 0;
-  for (const [, , close] of rest.matchAll(new RegExp(`(\`+)[^\`]*\\1|<!--[\\s\\S]*?-->|<(/?)${name}(?=[\\s/>])`, "gi"))) {
-    if (close === undefined) continue;
-    if (!close && ++opens > OPENS) return false;
-    open += close ? -1 : 1;
-    if (open < 0) return true;
-  }
-  return false;
+  return !name || ELEMENTS.has(name);
 }
-const OPENS = 50;
 
-/** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`, `<code>`) kept as text. */
+/** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`) kept as text. */
 export function specHtml(markdown: string): string {
   return new Marked({
     gfm: true,
@@ -207,12 +195,12 @@ export function specHtml(markdown: string): string {
     tokenizer: {
       tag(src) {
         const tag = this.rules.inline.tag.exec(src)?.[0];
-        return tag !== undefined && !isHtml(tag, src.slice(tag.length)) && ({ type: "text", raw: tag, text: tag } as unknown as Tokens.Tag);
+        return tag !== undefined && !isHtml(tag) && ({ type: "text", raw: tag, text: tag } as unknown as Tokens.Tag);
       },
       html(src) {
         const cap = this.rules.block.html.exec(src);
         const tag = cap && /^ *(<[^<>]*>?)/.exec(cap[0])?.[1];
-        return !!tag && !isHtml(tag, src.slice(src.indexOf(tag) + tag.length)) && ((this.lexer.state.top ? this.paragraph(src) : this.text(src)) as unknown as Tokens.HTML);
+        return !!tag && !isHtml(tag) && ((this.lexer.state.top ? this.paragraph(src) : this.text(src)) as unknown as Tokens.HTML);
       },
     },
   }).parse(markdown, { async: false });
