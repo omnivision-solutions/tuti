@@ -42,6 +42,11 @@ export const jobs = {
     name: "article-changed",
     input: z.object({ articleId: z.string() }),
   },
+  /** An API reference was added or replaced, or what's on the help center changed: index its operations for search and AI answers. */
+  apiReferenceChanged: {
+    name: "api-reference-changed",
+    input: z.object({ referenceId: z.string() }),
+  },
   imageUploaded: {
     name: "image-uploaded",
     input: z.object({ mediaId: z.string() }),

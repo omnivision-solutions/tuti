@@ -1,5 +1,16 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { fetchSpec, freeDocsSlug, lockProject, readStorable, referenceCounts, respec, specUrlRefusal, syncApiReference as syncReference } from "@tuti/jobs";
+import {
+  dropHidden,
+  fetchSpec,
+  freeDocsSlug,
+  indexReference,
+  lockProject,
+  readStorable,
+  referenceCounts,
+  respec,
+  specUrlRefusal,
+  syncApiReference as syncReference,
+} from "@tuti/jobs";
 import { type ApiDoc, type ApiReferenceState, onHelpCenter, OPENAPI_MAX_BYTES, settle } from "@tuti/shared/api-reference";
 import { z } from "zod";
 
@@ -241,29 +252,29 @@ export const createApiReference = defineOperation({
     const { projectId } = context;
     const { text, url: from } = input.url === undefined ? { text: input.spec!, url: undefined } : await fetched(input.url, context);
     const { doc, state } = settle(null, read(text, from));
-    return summary(
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });
-        return tx.apiReference.create({
-          data: {
-            projectId,
-            tabId,
-            slug: await freeDocsSlug(tx, projectId, input.name, "reference"),
-            name: input.name,
-            order: await lastIn(tx, projectId, tabId),
-            format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
-            ...(input.url !== undefined && { source: "URL", sourceUrl: stored(input.url) }),
-            spec: text,
-            doc: json(doc),
-            state: json(state),
-            ...counts(doc, state),
-            publishedAt: new Date(),
-          },
-          select: summarySelect,
-        });
-      }),
-    );
+    const { id, ...created } = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });
+      return tx.apiReference.create({
+        data: {
+          projectId,
+          tabId,
+          slug: await freeDocsSlug(tx, projectId, input.name, "reference"),
+          name: input.name,
+          order: await lastIn(tx, projectId, tabId),
+          format: doc.format === "graphql" ? "GRAPHQL" : "OPENAPI",
+          ...(input.url !== undefined && { source: "URL", sourceUrl: stored(input.url) }),
+          spec: text,
+          doc: json(doc),
+          state: json(state),
+          ...counts(doc, state),
+          publishedAt: new Date(),
+        },
+        select: { ...summarySelect, id: true },
+      });
+    });
+    await indexReference(id);
+    return summary(created);
   },
 });
 
@@ -292,75 +303,80 @@ export const updateApiReference = defineOperation({
     seen: z.union([z.literal(true), keys]).optional(),
   }),
   example: { hide: ["DELETE /posts/{}"], hideGroups: ["Internal"], treeStyle: "headings" },
-  run: async ({ projectId }, input) =>
-    summary(
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        // The doc is large: read only for a change that's checked against it.
-        const choosing = [input.hide, input.show, input.hideGroups, input.showGroups, input.groupOrder].some((list) => list !== undefined);
-        const row = await tx.apiReference.findUnique({
-          where: { projectId_slug: { projectId, slug: input.slug } },
-          select: { id: true, slug: true, tabId: true, publishedAt: true, state: true, doc: choosing },
-        });
-        if (!row) {
-          throw notFound(input.slug);
-        }
-        const data: Prisma.ApiReferenceUncheckedUpdateInput = {};
-        // A set, not a list: it may hold thousands of keys, and this runs with the project locked.
-        const seen = input.seen === true || input.seen === undefined ? input.seen : new Set(input.seen);
-        const unseen = (state: ApiReferenceState) => (seen === undefined ? state.unseen : seen === true ? [] : state.unseen.filter((key) => !seen.has(key)));
-        if (choosing) {
-          const doc = row.doc as unknown as ApiDoc;
-          const state = row.state as unknown as ApiReferenceState;
-          // Sets, not lists: each list may hold thousands of keys, and this runs with the project locked.
-          const known = (given: string[] | undefined, has: Set<string>, what: string) => {
-            const unknown = (given ?? []).find((key) => !has.has(key));
-            if (unknown !== undefined) {
-              throw new OperationError(400, "invalid_input", `This reference has no ${what} “${unknown.slice(0, 200)}”`);
-            }
-            return given ?? [];
-          };
-          const operations = new Set(doc.operations.map((operation) => operation.key));
-          const groups = new Set(doc.groups.map((group) => group.key));
-          const [hide, show] = [known(input.hide, operations, "operation"), known(input.show, operations, "operation")];
-          const [hideGroups, showGroups] = [known(input.hideGroups, groups, "group"), known(input.showGroups, groups, "group")];
-          const [shown, shownGroups] = [new Set(show), new Set(showGroups)];
-          const next: ApiReferenceState = {
-            ...state,
-            hiddenOperations: [...new Set([...state.hiddenOperations.filter((key) => !shown.has(key)), ...hide])],
-            hiddenGroups: [...new Set([...state.hiddenGroups.filter((key) => !shownGroups.has(key)), ...hideGroups])],
-            unseen: unseen(state),
-            groupOrder: [...new Set([...known(input.groupOrder, groups, "group"), ...state.groupOrder])],
-          };
-          Object.assign(data, { state: json(next), ...counts(doc, next) });
-        } else if (seen) {
-          const state = row.state as unknown as ApiReferenceState;
-          const left = unseen(state);
-          Object.assign(data, { state: json({ ...state, unseen: left }), unseenCount: left.length });
-        }
-        if (input.tab !== undefined) {
-          const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });
-          if (tabId !== row.tabId) {
-            Object.assign(data, { tabId, order: await lastIn(tx, projectId, tabId) });
+  run: async ({ projectId }, input) => {
+    const { id, ...updated } = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      // The doc is large: read only for a change that's checked against it.
+      const choosing = [input.hide, input.show, input.hideGroups, input.showGroups, input.groupOrder].some((list) => list !== undefined);
+      const row = await tx.apiReference.findUnique({
+        where: { projectId_slug: { projectId, slug: input.slug } },
+        select: { id: true, slug: true, tabId: true, publishedAt: true, state: true, doc: choosing },
+      });
+      if (!row) {
+        throw notFound(input.slug);
+      }
+      const data: Prisma.ApiReferenceUncheckedUpdateInput = {};
+      // A set, not a list: it may hold thousands of keys, and this runs with the project locked.
+      const seen = input.seen === true || input.seen === undefined ? input.seen : new Set(input.seen);
+      const unseen = (state: ApiReferenceState) => (seen === undefined ? state.unseen : seen === true ? [] : state.unseen.filter((key) => !seen.has(key)));
+      if (choosing) {
+        const doc = row.doc as unknown as ApiDoc;
+        const state = row.state as unknown as ApiReferenceState;
+        // Sets, not lists: each list may hold thousands of keys, and this runs with the project locked.
+        const known = (given: string[] | undefined, has: Set<string>, what: string) => {
+          const unknown = (given ?? []).find((key) => !has.has(key));
+          if (unknown !== undefined) {
+            throw new OperationError(400, "invalid_input", `This reference has no ${what} “${unknown.slice(0, 200)}”`);
           }
+          return given ?? [];
+        };
+        const operations = new Set(doc.operations.map((operation) => operation.key));
+        const groups = new Set(doc.groups.map((group) => group.key));
+        const [hide, show] = [known(input.hide, operations, "operation"), known(input.show, operations, "operation")];
+        const [hideGroups, showGroups] = [known(input.hideGroups, groups, "group"), known(input.showGroups, groups, "group")];
+        const [shown, shownGroups] = [new Set(show), new Set(showGroups)];
+        const next: ApiReferenceState = {
+          ...state,
+          hiddenOperations: [...new Set([...state.hiddenOperations.filter((key) => !shown.has(key)), ...hide])],
+          hiddenGroups: [...new Set([...state.hiddenGroups.filter((key) => !shownGroups.has(key)), ...hideGroups])],
+          unseen: unseen(state),
+          groupOrder: [...new Set([...known(input.groupOrder, groups, "group"), ...state.groupOrder])],
+        };
+        Object.assign(data, { state: json(next), ...counts(doc, next) });
+        await dropHidden(tx, row.id, onHelpCenter(doc, next).operations.map((operation) => operation.key));
+      } else if (seen) {
+        const state = row.state as unknown as ApiReferenceState;
+        const left = unseen(state);
+        Object.assign(data, { state: json({ ...state, unseen: left }), unseenCount: left.length });
+      }
+      if (input.tab !== undefined) {
+        const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId: null });
+        if (tabId !== row.tabId) {
+          Object.assign(data, { tabId, order: await lastIn(tx, projectId, tabId) });
         }
-        if (input.newSlug !== undefined && input.newSlug !== row.slug) {
-          data.slug = await customDocsSlug(tx, projectId, input.newSlug, row, "reference");
-        }
-        return tx.apiReference.update({
-          where: { id: row.id },
-          data: {
-            ...data,
-            ...(input.name !== undefined && { name: input.name }),
-            ...(input.published !== undefined && { publishedAt: input.published ? (row.publishedAt ?? new Date()) : null }),
-            ...(input.treeStyle !== undefined && { treeStyle: input.treeStyle.toUpperCase() as Uppercase<(typeof TREE_STYLES)[number]> }),
-            ...(input.baseUrl !== undefined && { baseUrl: input.baseUrl }),
-            ...(input.tryIt !== undefined && { tryIt: input.tryIt }),
-          },
-          select: summarySelect,
-        });
-      }),
-    ),
+      }
+      if (input.newSlug !== undefined && input.newSlug !== row.slug) {
+        data.slug = await customDocsSlug(tx, projectId, input.newSlug, row, "reference");
+      }
+      return tx.apiReference.update({
+        where: { id: row.id },
+        data: {
+          ...data,
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.published !== undefined && { publishedAt: input.published ? (row.publishedAt ?? new Date()) : null }),
+          ...(input.treeStyle !== undefined && { treeStyle: input.treeStyle.toUpperCase() as Uppercase<(typeof TREE_STYLES)[number]> }),
+          ...(input.baseUrl !== undefined && { baseUrl: input.baseUrl }),
+          ...(input.tryIt !== undefined && { tryIt: input.tryIt }),
+        },
+        select: { ...summarySelect, id: true },
+      });
+    });
+    // What's on the help center, or the examples' address in each operation's Markdown, may have changed.
+    if ([input.hide, input.show, input.hideGroups, input.showGroups, input.baseUrl].some((given) => given !== undefined)) {
+      await indexReference(id);
+    }
+    return summary(updated);
+  },
 });
 
 export const replaceApiReference = defineOperation({
@@ -375,7 +391,7 @@ export const replaceApiReference = defineOperation({
   example: { spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '2'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
   run: async ({ projectId }, input) => {
     const next = read(input.spec);
-    return prisma.$transaction(async (tx) => {
+    const { id, ...replaced } = await prisma.$transaction(async (tx) => {
       // Locked, so a choice saved meanwhile (apiReferences.update) isn't written over.
       await lockProject(tx, projectId);
       const row = await tx.apiReference.findUnique({
@@ -388,9 +404,14 @@ export const replaceApiReference = defineOperation({
       if (row.source !== "UPLOAD") {
         throw new OperationError(409, "not_uploaded", "This reference's spec is read from where it lives, so it can't be replaced by hand");
       }
-      const { data, changes } = respec(row, input.spec, next);
-      return { ...summary(await tx.apiReference.update({ where: { id: row.id }, data, select: summarySelect })), changes };
+      const { data, changes, shown } = respec(row, input.spec, next);
+      await dropHidden(tx, row.id, shown);
+      return { id: row.id, ...summary(await tx.apiReference.update({ where: { id: row.id }, data, select: summarySelect })), changes };
     });
+    if (replaced.changes.changed) {
+      await indexReference(id);
+    }
+    return replaced;
   },
 });
 
@@ -420,7 +441,7 @@ export const syncApiReference = defineOperation({
       // A new address: read whole before it's kept, so one that doesn't work leaves the reference as it was.
       const { text, url: from } = await fetched(input.url, context);
       const next = read(text, from);
-      return prisma.$transaction(async (tx) => {
+      const { id, ...moved } = await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         // Only over the reference as it started from: every change and sync moves syncTriedAt on, so a teammate's change
         // that landed meanwhile stays, even one back to this address (A to C to A). A sync landing meanwhile refuses it
@@ -433,10 +454,15 @@ export const syncApiReference = defineOperation({
           throw notFound(input.slug);
         }
         // A sync of the old address still on its way finds the address changed, and writes nothing.
-        const { data, changes } = respec(current, text, next);
+        const { data, changes, shown } = respec(current, text, next);
         const updated = await tx.apiReference.update({ where: { id: row.id }, data: { ...data, sourceUrl: stored(input.url!) }, select: summarySelect });
-        return { ...summary(updated), changes, failure: null };
+        await dropHidden(tx, row.id, shown);
+        return { id: row.id, ...summary(updated), changes, failure: null as string | null };
       });
+      if (moved.changes.changed) {
+        await indexReference(id);
+      }
+      return moved;
     }
     // An address refused before anything is fetched costs nothing: the sync still says why, uncounted. The sync is of
     // the address checked here: one changed or synced meanwhile is left alone (`expected`), unfetched.

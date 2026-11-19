@@ -3,13 +3,16 @@ import { FAILED_SEARCHES_PER_DAY } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
-import { visibleArticleSql } from "@/lib/reader-groups";
+import { visibleArticleSql, visibleReferenceSql } from "@/lib/reader-groups";
 
 import { docsContents, everyCollection } from "./docs-queries";
 import { canReadPortal, currentReader, readerOf } from "./portal-access";
 
-/** `locked`: an article this reader may not read, found by its title alone (no snippet). */
-export type DocsSearchResult = { slug: string; title: string; snippet: string; locked?: true };
+/**
+ * `locked`: an article this reader may not read, found by its title alone (no snippet). An API reference's operation has
+ * its `method` (GET, or GraphQL's query) and a slug that's its path under /docs: "<reference>/<operation>".
+ */
+export type DocsSearchResult = { slug: string; title: string; snippet: string; locked?: true; method?: string };
 
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
@@ -17,9 +20,10 @@ const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
 /**
  * How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, whether it matches by
- * meaning at all, and whether unlisted articles are found too (what the team can send a link to; never on the portal).
+ * meaning at all, whether unlisted articles are found too (what the team can send a link to; never on the portal), and
+ * whether API references' operations are (the portal's search: the widget lists articles only).
  */
-export type SearchOptions = { embedTimeoutMs?: number; log?: boolean; meaning?: boolean; unlisted?: boolean };
+export type SearchOptions = { embedTimeoutMs?: number; log?: boolean; meaning?: boolean; unlisted?: boolean; operations?: boolean };
 
 /**
  * A project's listed docs articles (published, listed everywhere; unlisted ones too with `unlisted`) that match a query, best first, each with a
@@ -35,12 +39,12 @@ export async function searchDocs(
   query: string,
   limit: number,
   reader: Reader,
-  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true, unlisted = false }: SearchOptions = {},
+  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true, unlisted = false, operations = false }: SearchOptions = {},
 ): Promise<DocsSearchResult[]> {
   const listed = unlisted ? WITH_A_PAGE : Prisma.sql`a.listing = 'EVERYWHERE'`;
   const [byMeaning, byWords] = await Promise.all([
-    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs, listed) : [],
-    wordMatches(projectId, query, limit, reader, listed),
+    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs, listed, operations) : [],
+    wordMatches(projectId, query, limit, reader, listed, operations),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
   const results = [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
@@ -151,7 +155,15 @@ export function logSearch(projectId: string, query: string, results: number) {
     .catch((error: unknown) => log.warn("Logging a docs search failed", { projectId, error }));
 }
 
-async function meaningMatches(projectId: string, query: string, limit: number, reader: Reader, timeoutMs: number, listed: Prisma.Sql): Promise<DocsSearchResult[]> {
+async function meaningMatches(
+  projectId: string,
+  query: string,
+  limit: number,
+  reader: Reader,
+  timeoutMs: number,
+  listed: Prisma.Sql,
+  operations: boolean,
+): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
@@ -162,8 +174,8 @@ async function meaningMatches(projectId: string, query: string, limit: number, r
   }
   // Each article's closest section, then the articles by how close it is.
   // ponytail: scans all of the project's chunks; fine for docs, add an HNSW index past ~100k chunks.
-  const rows = await prisma.$queryRaw<{ slug: string; title: string; heading: string; text: string }[]>`
-    SELECT a.slug, a.title, best.heading, best.text
+  const articles = prisma.$queryRaw<{ slug: string; title: string; heading: string; text: string; distance: number }[]>`
+    SELECT a.slug, a.title, best.heading, best.text, best.distance
     FROM (
       SELECT DISTINCT ON (c."articleId") c."articleId", c.heading, c.text, c.embedding <=> ${vector}::vector AS distance
       FROM article_chunk c
@@ -175,16 +187,57 @@ async function meaningMatches(projectId: string, query: string, limit: number, r
       AND ${visibleArticleSql(reader)}
     ORDER BY best.distance, a.title
     LIMIT ${limit}`;
-  return rows.map(({ slug, title, heading, text }) => ({ slug, title, snippet: snippet(text || heading) }));
+  // And operations, closest first among them; both by how close they are.
+  const [rows, entries] = await Promise.all([articles, operations ? operationsByMeaning(projectId, vector, SEARCH_MIN_SIMILARITY, limit, reader) : []]);
+  return [
+    ...rows.map(({ slug, title, heading, text, distance }) => ({ distance, result: { slug, title, snippet: snippet(text || heading) } })),
+    ...entries.map((entry) => ({ distance: entry.distance, result: operationResult(entry) })),
+  ]
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, limit)
+    .map(({ result }) => result);
 }
 
-export type AnswerSection = { articleId: string; slug: string; title: string; listing: ArticleListing; heading: string; text: string };
+/** An operation as search finds it: its reference's slug, its own, its method or GraphQL kind, and its words. */
+type OperationRow = { reference: string; slug: string; title: string; kind: string; path: string; description: string; text: string; id: string };
+
+/** Operations on the help center (kept by the apiReferenceChanged job, never a hidden one), `e`, with their reference, `r`. */
+const OPERATIONS = Prisma.sql`api_operation_entry e JOIN api_reference r ON r.id = e."referenceId"`;
+
+/** One of the project's operations (OPERATIONS) whose reference is published and in a tab `reader` may read (the first tab's, in none). */
+const operationFound = (projectId: string, reader: Reader) =>
+  Prisma.sql`e."projectId" = ${projectId} AND r."projectId" = ${projectId} AND r."publishedAt" IS NOT NULL AND ${visibleReferenceSql(reader)}`;
+
+/** Operations at least `similarity` alike to a query's embedding (`vector`), closest first. */
+function operationsByMeaning(projectId: string, vector: string, similarity: number, limit: number, reader: Reader) {
+  return prisma.$queryRaw<(OperationRow & { distance: number })[]>`
+    SELECT r.slug AS reference, e.slug, e.title, e.kind, e.path, e.description, e.text, e.id, e.embedding <=> ${vector}::vector AS distance
+    FROM ${OPERATIONS}
+    WHERE ${operationFound(projectId, reader)}
+      AND e.embedding IS NOT NULL AND e.embedding <=> ${vector}::vector <= ${1 - similarity}
+    ORDER BY distance, e.title
+    LIMIT ${limit}`;
+}
+
+const operationResult = (row: OperationRow): DocsSearchResult => ({
+  slug: `${row.reference}/${row.slug}`,
+  title: row.title,
+  snippet: snippet(row.description || row.path),
+  method: row.kind,
+});
+
+/**
+ * A section AI answers may use: an article's, or an API reference's operation (`operation`: its Markdown's start, `articleId`
+ * the operation's entry, `slug` its path under /docs, and its method and path after its title, for the sources).
+ */
+export type AnswerSection = { articleId: string; slug: string; title: string; listing: ArticleListing; heading: string; text: string; operation?: true };
 
 /**
  * The published sections closest to a question, at least ANSWER_MIN_SIMILARITY alike, best
  * first: what AI answers may use (docs.ask). Every listing but hidden: unlisted articles are
  * public at their link anyway, and AI-only ones are there for this. Only articles the asker,
- * `reader` may read. Null if the question couldn't be embedded in time.
+ * `reader` may read. API references' operations on the help center too, by the same measure, from references they may
+ * read. Null if the question couldn't be embedded in time.
  */
 export async function answerSections(
   projectId: string,
@@ -202,8 +255,8 @@ export async function answerSections(
     return null;
   }
   // ponytail: scans all of the project's chunks, like meaningMatches.
-  return prisma.$queryRaw<AnswerSection[]>`
-    SELECT a.id AS "articleId", a.slug, a.title, a.listing, c.heading, c.text
+  const sections = prisma.$queryRaw<(AnswerSection & { distance: number })[]>`
+    SELECT a.id AS "articleId", a.slug, a.title, a.listing, c.heading, c.text, c.embedding <=> ${vector}::vector AS distance
     FROM article_chunk c
     JOIN article a ON a.id = c."articleId"
     WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
@@ -211,6 +264,34 @@ export async function answerSections(
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
     LIMIT ${limit}`;
+  const [articles, operations] = await Promise.all([sections, operationsByMeaning(projectId, vector, ANSWER_MIN_SIMILARITY, limit, reader)]);
+  return [
+    ...articles.map(({ distance, ...section }) => ({ distance, section })),
+    ...operations.map((entry) => ({ distance: entry.distance, section: operationSection(entry) })),
+  ]
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, limit)
+    .map(({ section }) => section);
+}
+
+const operationSection = (row: OperationRow): AnswerSection => ({
+  articleId: row.id,
+  slug: `${row.reference}/${row.slug}`,
+  title: `${row.title} (${row.kind} ${row.path})`,
+  listing: "EVERYWHERE",
+  heading: "",
+  text: row.text,
+  operation: true,
+});
+
+/** Of these operations' sections, the ones still there for `reader`: on the help center, their reference published and readable. */
+export async function operationsStillThere(projectId: string, ids: string[], reader: Reader): Promise<Set<string>> {
+  if (ids.length === 0) {
+    return new Set();
+  }
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT e.id FROM ${OPERATIONS} WHERE ${operationFound(projectId, reader)} AND e.id = ANY(${ids}::text[])`;
+  return new Set(rows.map((row) => row.id));
 }
 
 /** The most words a prefix query takes: a longer query is someone pasting, not typing. */
@@ -232,14 +313,14 @@ export function prefixQuery(query: string): string | null {
 }
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.
-async function wordMatches(projectId: string, query: string, limit: number, reader: Reader, listed: Prisma.Sql): Promise<DocsSearchResult[]> {
+async function wordMatches(projectId: string, query: string, limit: number, reader: Reader, listed: Prisma.Sql, operations: boolean): Promise<DocsSearchResult[]> {
   // The passage is a piece of the text; "…" marks where it was cut. Its title and keywords match too
   // (keywords: words readers use that the text doesn't); when the text doesn't, the team's description stands in for it.
   // Whole words (stemmed: "invites" finds "invite"), or the start of each word as typed, unstemmed (`prefixQuery`).
-  const rows = await prisma.$queryRaw<
-    { slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean; description: string; inText: boolean }[]
+  const articles = prisma.$queryRaw<
+    { slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean; description: string; inText: boolean; rank: number }[]
   >`
-    SELECT a.slug, a.title, h.passage, a.description, t."inText",
+    SELECT a.slug, a.title, h.passage, a.description, t."inText", ts_rank(d.words, q) + coalesce(ts_rank(d.starts, pq), 0) AS rank,
       left(a.body, length(h.passage)) <> h.passage AS "cutStart",
       right(a.body, length(h.passage)) <> h.passage AS "cutEnd"
     FROM article a
@@ -266,11 +347,34 @@ async function wordMatches(projectId: string, query: string, limit: number, read
       AND ${visibleArticleSql(reader)}
     ORDER BY ts_rank(d.words, q) + coalesce(ts_rank(d.starts, pq), 0) DESC, a.title
     LIMIT ${limit}`;
-  return rows.map(({ slug, title, passage, cutStart, cutEnd, description, inText }) => ({
-    slug,
-    title,
-    snippet: snippet(!inText && description ? description : `${cutStart ? "…" : ""}${passage.trim()}${cutEnd ? "…" : ""}`),
-  }));
+  // Operations by their title (weighted as an article's), method, path, description and parameters' names.
+  const entries = operations
+    ? prisma.$queryRaw<(OperationRow & { rank: number })[]>`
+        SELECT r.slug AS reference, e.slug, e.title, e.kind, e.path, e.description, e.text, e.id,
+          ts_rank(d.words, q) + coalesce(ts_rank(d.starts, pq), 0) AS rank
+        FROM ${OPERATIONS}
+        CROSS JOIN websearch_to_tsquery('english', ${query}) q
+        CROSS JOIN to_tsquery('simple', ${prefixQuery(query)}::text) pq
+        CROSS JOIN LATERAL (
+          SELECT setweight(to_tsvector('english', e.title), 'A') || to_tsvector('english', e.words) AS words,
+            setweight(to_tsvector('simple', e.title), 'A') || to_tsvector('simple', e.words) AS starts
+        ) d
+        WHERE ${operationFound(projectId, reader)} AND (d.words @@ q OR coalesce(d.starts @@ pq, false))
+        ORDER BY rank DESC, e.title
+        LIMIT ${limit}`
+    : [];
+  const [rows, found] = await Promise.all([articles, entries]);
+  // Both by how well they match.
+  return [
+    ...rows.map(({ slug, title, passage, cutStart, cutEnd, description, inText, rank }) => ({
+      rank,
+      result: { slug, title, snippet: snippet(!inText && description ? description : `${cutStart ? "…" : ""}${passage.trim()}${cutEnd ? "…" : ""}`) },
+    })),
+    ...found.map((entry) => ({ rank: entry.rank, result: operationResult(entry) })),
+  ]
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, limit)
+    .map(({ result }) => result);
 }
 
 /** On one line, cut at a word near SNIPPET_LENGTH. */

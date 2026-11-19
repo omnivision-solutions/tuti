@@ -109,13 +109,18 @@ const AS_TYPED_MEANING_FROM = 3;
  * up to 8, by meaning once there are a few characters to go by. Not counted in the team's insights:
  * every keystroke would be (logDocsSearch counts what they searched for).
  */
-export async function searchDocsAsTyped(projectSlug: string, query: string): Promise<DocsSearchResult[]> {
+export async function searchDocsAsTyped(projectSlug: string, query: string, { operations = false }: { operations?: boolean } = {}): Promise<DocsSearchResult[]> {
   const q = String(query).trim().slice(0, 200);
   const project = q ? await readableProject(String(projectSlug)) : null;
   if (!project) {
     return [];
   }
-  return searchForReader(project.id, String(projectSlug), q, AS_TYPED_RESULTS, { log: false, meaning: q.length >= AS_TYPED_MEANING_FROM });
+  // API references' operations on the portal's box (the widget lists articles only); found only where the reader may read them.
+  return searchForReader(project.id, String(projectSlug), q, AS_TYPED_RESULTS, {
+    log: false,
+    meaning: q.length >= AS_TYPED_MEANING_FROM,
+    operations: operations === true,
+  });
 }
 
 /** Counts a search from the search box in the team's insights, once the reader stops typing: picks a result, asks the AI or closes it. */

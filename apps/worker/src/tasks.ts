@@ -10,6 +10,12 @@ const CODE_CHANGE_QUEUE = "24h" as const;
 /** How long one page of an import may take (Hatchet's default is 60 seconds): Featurebase's rate limit can hold it up. */
 const IMPORT_STEP_TIMEOUT = "5m" as const;
 
+/**
+ * How long indexing an API reference may take (Hatchet's default is 60 seconds): a spec of thousands of operations is
+ * embedded a hundred at a time, and each description read through the converter, before its one write.
+ */
+const API_REFERENCE_INDEX_TIMEOUT = "10m" as const;
+
 /** A job's Hatchet task options, but its input and function. */
 export function taskOptions(key: JobKey, job: Job = jobs[key]) {
   // Queued behind the run with the same key, not cancelling it (Hatchet's default).
@@ -37,5 +43,6 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     ...(key === "importStep" && { executionTimeout: IMPORT_STEP_TIMEOUT }),
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
+    ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
   };
 }

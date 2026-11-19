@@ -1,10 +1,14 @@
 import { prisma } from "@tuti/db";
+import { apiReferenceChanged } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, articleChunkText } from "@tuti/shared";
 import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
+import { createApiReference } from "@/server/operations/api-references";
+import { createConversation } from "@/server/operations/conversations";
 import { createArticle, publishArticle } from "@/server/operations/docs";
+import { suggestReply } from "@/server/operations/support-ai";
 import {
   answerQuestion,
   answersEnabled,
@@ -165,6 +169,61 @@ describe("answers", () => {
       prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { publishedAt: null } }),
     );
     expect(await ask()).toMatchObject({ status: "no_answer", answer: null, sources: [] });
+  });
+});
+
+describe("an API reference's operation", () => {
+  const SPEC = `
+openapi: 3.1.0
+info: { title: Acme API, version: "1" }
+paths:
+  /posts:
+    post:
+      summary: Create a post
+      description: Adds a post to a board.
+      responses: { "201": { description: Created } }
+`;
+
+  /** Adds a reference whose one operation, "Create a post", is this similar to QUESTION: its search entry is embedded so. */
+  async function addOperation(similarity: number) {
+    await call(createApiReference, as(), { name: "Reference", spec: SPEC });
+    const entry = await prisma.apiOperationEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true, referenceId: true, text: true } });
+    openai.setVector(entry.text, along(similarity));
+    // Embedded again with that vector: the job keeps an unchanged text's embedding, so it's cleared first.
+    await prisma.$executeRaw`UPDATE api_operation_entry SET embedding = NULL WHERE id = ${entry.id}`;
+    await apiReferenceChanged({ referenceId: entry.referenceId }, { info: () => {}, warn: () => {} });
+    return entry.id;
+  }
+
+  test("answers cite it with its method and path, linking its page; the log's articleIds keep articles only", async () => {
+    const inviting = await write("Inviting your team", "Owners and admins invite people from the Team page.", 0.6);
+    const operation = await addOperation(0.8);
+    model.reply(reply("Send a POST to /posts.", ["s1", "s2"]));
+
+    const answer = await ask();
+    expect(answer.sources).toEqual([
+      { slug: "reference/create-a-post", title: "Create a post (POST /posts)", url: expect.stringMatching(/\/docs\/reference\/create-a-post$/) },
+      { slug: inviting, title: "Inviting your team", url: expect.stringMatching(/\/docs\/inviting-your-team$/) },
+    ]);
+    const sent = JSON.parse(model.requests[0]!.user.slice(model.requests[0]!.user.indexOf("{"))) as { sections: { article: string; text: string }[] };
+    expect(sent.sections[0]).toMatchObject({ article: "Create a post (POST /posts)", text: expect.stringContaining("`POST /posts`") });
+    const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: inviting }, select: { id: true } });
+    const [question] = await logged();
+    expect(question!.articleIds).toEqual([article.id]);
+    expect(question!.articleIds).not.toContain(operation);
+    // Kept apart, for "Ask a person" (escalationContext).
+    expect(await prisma.docsQuestion.findMany({ where: { projectId: project.id }, select: { operationIds: true } })).toEqual([{ operationIds: [operation] }]);
+  });
+
+  test("a support reply drafted from it links its page", async () => {
+    vi.stubEnv("AI_CREDITS", "");
+    await addOperation(0.8);
+    await call(createConversation, as(), { email: "e2e-sam@example.com", body: QUESTION });
+    model.reply(reply("Send a POST to /posts.", ["s1"]));
+
+    const suggested = await call(suggestReply, as(), { number: 1 });
+    expect(suggested.status).toBe("suggested");
+    expect(suggested.draft).toMatch(/^Send a POST to \/posts\.\n\n- Create a post \(POST \/posts\): .*\/docs\/reference\/create-a-post$/);
   });
 });
 

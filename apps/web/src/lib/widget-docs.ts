@@ -11,3 +11,12 @@ export function docsHref({ q, docsTab, collection, article }: { q?: string; docs
   }
   return `/widget?${params}`;
 }
+
+/**
+ * Where an AI answer's source opens in the widget: an article in the panel's Help center (its page is a link away from
+ * there); null for an API reference's operation ("<reference>/<operation>"), which the panel can't show, so it opens on
+ * its page in a new tab (AnswerSources).
+ */
+export function widgetSourceHref(slug: string): string | null {
+  return slug.includes("/") ? null : docsHref({ article: slug });
+}

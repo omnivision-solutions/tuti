@@ -146,7 +146,7 @@ export async function escalateQuestion(
   }
   const question = await prisma.docsQuestion.findFirst({
     where: { id: input.questionId, projectId, askerId, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },
-    select: { id: true, question: true, answer: true, articleIds: true, helpful: true, escalatedAt: true, followsId: true },
+    select: { id: true, question: true, answer: true, articleIds: true, operationIds: true, helpful: true, escalatedAt: true, followsId: true },
   });
   // Someone else's, or too old: the same answer, so ids can't be probed.
   if (!question) {
@@ -162,24 +162,44 @@ export async function escalateQuestion(
   return toConversation(projectId, settings.slug, askerId, question, input, who, timeoutMs);
 }
 
-type Escalated = { id: string; question: string; answer: string | null; articleIds: string[]; helpful: boolean | null; followsId: string | null };
+type Escalated = {
+  id: string;
+  question: string;
+  answer: string | null;
+  articleIds: string[];
+  operationIds: string[];
+  helpful: boolean | null;
+  followsId: string | null;
+};
 
-/** What the team needs, as for the email: the earlier questions, the articles the answer cited (with links) and the AI's summary. */
+/**
+ * What the team needs, as for the email: the earlier questions, the articles and API reference operations the answer
+ * cited (with links; an operation while it's still on the help center, its reference published) and the AI's summary.
+ */
 async function escalationContext(projectId: string, askerId: string, question: Escalated, note: string | null, timeoutMs: number) {
   const notHelpful = question.helpful === false;
   const earlier = question.followsId
     ? (await earlierTurns(projectId, askerId, question.followsId).catch(() => [])).map((turn) => turn.question)
     : [];
-  const [portal, articles, summary] = await Promise.all([
+  const [portal, articles, operations, summary] = await Promise.all([
     projectPortal(projectId),
     prisma.article.findMany({
       where: { id: { in: question.articleIds }, projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } },
       select: { slug: true, title: true, listing: true },
       orderBy: { title: "asc" },
     }),
+    // The team reads them all, whatever the asker may read (as articles above).
+    prisma.apiOperationEntry.findMany({
+      where: { id: { in: question.operationIds }, projectId, reference: { publishedAt: { not: null } } },
+      select: { slug: true, title: true, kind: true, path: true, reference: { select: { slug: true } } },
+      orderBy: { title: "asc" },
+    }),
     summarize(projectId, { question: question.question, askedBefore: earlier, answer: question.answer, notHelpful, note }, timeoutMs),
   ]);
-  const sources = articles.map((article) => (article.listing === "AI_ONLY" ? article.title : `${article.title} (${portal}/docs/${article.slug})`));
+  const sources = [
+    ...articles.map((article) => (article.listing === "AI_ONLY" ? article.title : `${article.title} (${portal}/docs/${article.slug})`)),
+    ...operations.map((operation) => `${operation.title} (${operation.kind} ${operation.path}) (${portal}/docs/${operation.reference.slug}/${operation.slug})`),
+  ];
   return { earlier, notHelpful, sources, summary };
 }
 

@@ -4,9 +4,11 @@ import { OPENAPI_MAX_BYTES } from "@tuti/shared/api-reference";
 import { type ApiFake, type SiteFake, startApiFake, startSiteFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import * as actions from "./api-references";
+import { searchDocs } from "./docs-search";
 import {
   countSpecFetch,
   createApiReference,
@@ -643,5 +645,47 @@ describe("the 6-hourly job", () => {
     expect(await syncApiReferences({}, log, new Date(), syncBudget(0))).toEqual({ synced: 0, failed: 0 });
     expect((await stored()).syncTriedAt).toEqual(new Date(0));
     expect(await syncApiReferences({}, log)).toEqual({ synced: 1, failed: 0 });
+  });
+});
+
+describe("in the docs' search (A14)", () => {
+  /** What the docs' search finds for a signed-out reader, operations included, as their paths under /docs. */
+  const found = async (query: string) => (await searchDocs(project.id, query, 10, SIGNED_OUT, { log: false, operations: true })).map((result) => result.slug);
+  const USERS = spec({ "GET /posts": "Posts", "DELETE /posts": "Admin", "GET /users": "Users" });
+
+  beforeEach(async () => {
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+    await addFromUrl();
+  });
+
+  test("a sync that brings a new operation makes it searchable, and one that drops an operation takes it out", async () => {
+    expect(await found("users")).toEqual([]);
+    site.answer("/openapi.json", USERS);
+    expect((await sync()).changes).toMatchObject({ added: 1, changed: true });
+    expect(await found("users")).toEqual(["acme-api/get-users"]);
+    site.answer("/openapi.json", POSTS);
+    expect((await sync()).changes).toMatchObject({ removed: 1, changed: true });
+    expect(await found("users")).toEqual([]);
+  });
+
+  test("a sync that changes nothing doesn't reindex", async () => {
+    const indexing = vi.spyOn(handlers, "apiReferenceChanged");
+    expect((await sync()).changes).toEqual({ added: 0, removed: 0, changed: false });
+    expect(indexing).not.toHaveBeenCalled();
+    indexing.mockRestore();
+  });
+
+  test("Settings' new address, and the 6-hourly sync, bring their new operations to search too", async () => {
+    actAs(owner);
+    site.answer("/v2/openapi.json", USERS);
+    expect(await actions.changeApiReferenceUrl(project.slug, "acme-api", `${site.origin}/v2/openapi.json`)).toMatchObject({ added: 1, changed: true });
+    expect(await found("users")).toEqual(["acme-api/get-users"]);
+
+    site.answer("/v2/openapi.json", spec({ "GET /posts": "Posts", "DELETE /posts": "Admin", "GET /users": "Users", "GET /teams": "Teams" }));
+    // Other projects' references from earlier tests are due too: only this one is.
+    await prisma.apiReference.updateMany({ where: { projectId: { not: project.id } }, data: { syncTriedAt: new Date() } });
+    await prisma.apiReference.update({ where: { projectId_slug: { projectId: project.id, slug: "acme-api" } }, data: { syncTriedAt: new Date(Date.now() - SYNC_EVERY_MS - 60_000) } });
+    expect(await handlers.syncApiReferences({}, { info: () => {}, warn: () => {} })).toEqual({ synced: 1, failed: 0 });
+    expect(await found("teams")).toEqual(["acme-api/get-teams"]);
   });
 });

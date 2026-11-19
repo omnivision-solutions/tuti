@@ -1,11 +1,13 @@
 import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
+import type { ApiOperation } from "@tuti/shared/api-reference";
 import { prisma } from "@tuti/db";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { Fragment } from "react";
 
+import { Method } from "@/components/api-method";
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { ApiReferenceLanding } from "@/components/portal-api-operation";
 import { articleLinks } from "@/components/article-links";
@@ -64,7 +66,7 @@ import { firstBoardPath } from "@/server/portal-home";
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
-  const results = project ? await searchForReader(project.id, projectSlug, query, 10) : [];
+  const results = project ? await searchForReader(project.id, projectSlug, query, 10, { operations: true }) : [];
   if (results.length === 0) {
     return (
       <EmptyState
@@ -84,6 +86,13 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-1 border-b py-4 first:pt-0">
           <Link href={at(`/docs/${result.slug}`)} className="text-[1.0625rem] font-semibold break-words hover:underline">
+            {/* An API reference's operation: its method first, as the reference's cards list them, and a space after it so
+                it's read as a word of its own ("POST Create a post"). */}
+            {result.method && (
+              <>
+                <Method kind={result.method as ApiOperation["kind"]} />{" "}
+              </>
+            )}
             {result.title}
             {result.locked && <LockedMark />}
           </Link>

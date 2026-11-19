@@ -66,7 +66,8 @@ export async function articleChanged({ articleId }: JobInput<"articleChanged">, 
 /** For the backfill: embeds every published article (unchanged ones are skipped), carrying on past failures. */
 export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; embedded: number; failed: string[] }> {
   const articles = await prisma.article.findMany({
-    where: { publishedAt: { not: null } },
+    // Not sample content, which is never embedded (chunksOf).
+    where: { publishedAt: { not: null }, sample: false },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });

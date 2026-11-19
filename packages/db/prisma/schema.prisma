@@ -432,6 +432,7 @@ model Project {
   changelogSubscribers    ChangelogSubscriber[]
   articles                Article[]
   articleChunks           ArticleChunk[]
+  apiOperationEntries     ApiOperationEntry[]
   collections             Collection[]
   docsTabs                DocsTab[]
   apiReferences           ApiReference[]
@@ -2125,6 +2126,7 @@ model ApiReference {
   project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// tabs.delete moves it to another tab first; SetNull only keeps a delete that skipped that from failing.
   tab     DocsTab? @relation(fields: [tabId], references: [id], onDelete: SetNull)
+  entries ApiOperationEntry[]
 
   @@unique([projectId, slug])
   @@index([tabId])
@@ -2457,6 +2459,9 @@ model DocsQuestion {
   answer         String?
   /// The articles the answer cites.
   articleIds     String[]           @default([])
+  /// The API reference operations the answer cites (`api_operation_entry` ids: kept across reindexes while the
+  /// operation's in its spec).
+  operationIds   String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
   helpful        Boolean?
   /// The question it follows up on, in a conversation with the docs' AI (asked by the same asker): earlier turns
@@ -2515,6 +2520,39 @@ model ArticleChunk {
   @@unique([articleId, position])
   @@index([projectId])
   @@map("article_chunk")
+}
+
+/// An API reference's operation on the help center, for the docs' search and AI answers (the apiReferenceChanged job keeps
+/// a reference's in step: one per operation `onHelpCenter` gives, never a hidden one). Whether a reader may find it (its
+/// reference published, its tab one they may read) is checked when they search, as an article's is.
+model ApiOperationEntry {
+  id          String @id @default(cuid())
+  referenceId String
+  projectId   String
+  /// The operation's key ("POST /posts"), its page's slug under the reference, its method or GraphQL kind, path and title.
+  key         String
+  slug        String
+  kind        String
+  path        String
+  title       String
+  /// Its description in plain words: a search result's snippet.
+  description String
+  /// What search matches besides the title: its method, path, description and parameters' names.
+  words       String
+  /// The start of its Markdown (operationMarkdown): AI answers' section, and what its embedding is of.
+  text        String
+  /// Null without an embedding (embeddings aren't set up).
+  model       String?
+  /// Of `text`, to tell when it needs embedding again.
+  contentHash String
+  embedding   Unsupported("vector(1536)")?
+
+  reference ApiReference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([referenceId, key])
+  @@index([projectId])
+  @@map("api_operation_entry")
 }
 
 enum CodeChangeState {

@@ -8,7 +8,7 @@ import type { Reader } from "@/lib/read-access";
 import { MAX_QUESTION } from "@/lib/widget-docs";
 
 import { readableArticle } from "../docs-queries";
-import { type AnswerSection, answerSections } from "../docs-search";
+import { type AnswerSection, answerSections, operationsStillThere } from "../docs-search";
 import { actorReader } from "../portal-access";
 import { ANSWER_LENGTHS, type AssistantSettings, assistantSettings, offLimitsTopic } from "./assistant";
 import { defineOperation, OperationError } from "./define";
@@ -203,7 +203,9 @@ export async function answerQuestion(
         status: status === "answered" ? "ANSWERED" : status === "failed" || status === "unavailable" ? "FAILED" : "NO_ANSWER",
         cause: status === "off_limits" ? "OFF_LIMITS" : status === "unavailable" ? "NO_CREDITS" : cause,
         answer: answer?.answer ?? null,
-        articleIds: [...new Set(answer?.cited.map((section) => section.articleId))],
+        // Articles and API reference operations apart: an operation's section isn't an article (its id is its search entry's).
+        articleIds: [...new Set(answer?.cited.filter((section) => !section.operation).map((section) => section.articleId))],
+        operationIds: [...new Set(answer?.cited.filter((section) => section.operation).map((section) => section.articleId))],
       },
     });
     return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, await portalAddress(slug)) };
@@ -262,6 +264,12 @@ export async function answerQuestion(
  * now (one made AI only isn't linked).
  */
 export async function stillUsable(projectId: string, sections: AnswerSection[], reader: Reader): Promise<AnswerSection[]> {
+  // An API reference's operation: still on the help center, its reference published and readable.
+  const operations = await operationsStillThere(
+    projectId,
+    sections.filter((section) => section.operation).map((section) => section.articleId),
+    reader,
+  );
   const current = await prisma.article.findMany({
     where: {
       id: { in: sections.map((section) => section.articleId) },
@@ -274,7 +282,15 @@ export async function stillUsable(projectId: string, sections: AnswerSection[], 
     select: { id: true, listing: true },
   });
   const listing = new Map(current.map((article) => [article.id, article.listing]));
-  return sections.filter((section) => listing.has(section.articleId)).map((section) => ({ ...section, listing: listing.get(section.articleId)! }));
+  return sections.flatMap((section) =>
+    section.operation
+      ? operations.has(section.articleId)
+        ? [section]
+        : []
+      : listing.has(section.articleId)
+        ? [{ ...section, listing: listing.get(section.articleId)! }]
+        : [],
+  );
 }
 
 /** The asker's thumbs up or down on an answer; rating again replaces it. */

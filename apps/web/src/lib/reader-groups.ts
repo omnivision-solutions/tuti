@@ -108,3 +108,18 @@ export function visibleArticleSql(reader: Reader): Prisma.Sql {
     ))
   ))`;
 }
+
+/**
+ * API references `reader` may read, for raw SQL on alias `r` (true for the team): a reference has no access of its own,
+ * so it's its tab's, and one in no tab is under the first tab, as an article in no collection is (apiReferencePage).
+ */
+export function visibleReferenceSql(reader: Reader): Prisma.Sql {
+  if (reader === null) {
+    return Prisma.sql`TRUE`;
+  }
+  return Prisma.sql`NOT EXISTS (
+    SELECT 1 FROM docs_tab t
+    WHERE t.id = coalesce(r."tabId", (SELECT f.id FROM docs_tab f WHERE f."projectId" = r."projectId" ORDER BY f."order", f.name LIMIT 1))
+      AND NOT ${levelSql(reader, "t", "tab_group", "tabId")}
+  )`;
+}
