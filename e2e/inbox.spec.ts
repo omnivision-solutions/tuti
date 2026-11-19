@@ -2244,6 +2244,14 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   // Sending works; nothing forwarded from it yet.
   await expect(ownRow).toContainText(`Replies come from support@${domain}.`);
   await expect(ownRow).toContainText("No email received yet");
+  // On a phone the address breaks where it must, beside the status, and never runs under it.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(ownRow.getByText(`support@${domain}`, { exact: true })).toHaveCSS("word-break", "break-all");
+  const line = (await ownRow.getByText("Replies come from").boundingBox())!;
+  expect(line.x + line.width).toBeLessThanOrEqual((await ownRow.getByText("No email received yet").boundingBox())!.x);
+  expect(await ownRow.getByText("Replies come from").evaluate((p) => p.scrollWidth - p.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "own-address-sending-phone");
+  await owner.setViewportSize(desktop);
   for (const record of await records.all()) {
     await expect(record).toContainText("Verified");
   }

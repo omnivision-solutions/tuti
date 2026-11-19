@@ -49,7 +49,7 @@ const own = (verified: boolean, error: string | null, { included = true, receive
 
 test("the own address's row says where it stands (sending first, then receiving) and where replies come from", () => {
   // The row is the first thing rendered: its line, then its status.
-  const row = (html: string) => /Replies come from ([^<]+)\.<\/p><\/div><div[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1);
+  const row = (html: string) => /Replies come from <span[^>]*>([^<]+)<\/span>\.<\/p><\/div><div[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1);
   expect(row(own(false, null))).toEqual(["e2e-inbox@example.com", "Waiting for DNS"]);
   expect(row(own(false, "Amazon SES doesn't have this domain for you any more: remove it and add it again"))).toEqual(["e2e-inbox@example.com", "Not verified"]);
   expect(row(own(true, null, { received: false }))).toEqual(["e2e-support@example.com", "No email received yet"]);

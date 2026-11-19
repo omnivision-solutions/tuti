@@ -45,6 +45,13 @@ type OwnDomain = {
 const LABEL = "Send from your own address";
 const INFO = "Use your company's address, like support@yourcompany.com, instead of your support address: replies come from it, and emails to it land in the Inbox.";
 
+/** The row's line: the address replies come from now, broken anywhere where the row has no room for it (beside a status, on phones). */
+const repliesFrom = (address: string) => (
+  <>
+    Replies come from <span className="break-all">{address}</span>.
+  </>
+);
+
 /** Where the own address stands, in a word or two, on its row: sending first (its DNS records, the plan), then receiving. */
 function ownStatus(own: OwnDomain): { label: string; variant: "soft" | "outline" | "destructive" } {
   if (own.error) {
@@ -98,7 +105,7 @@ export function EmailDomainSettings({
   const stands = ownStatus(own);
   return (
     <>
-      <SettingRow label={LABEL} description={`Replies come from ${sending ? own.address : supportAddress}.`} info={INFO} inline>
+      <SettingRow label={LABEL} description={repliesFrom(sending ? own.address : supportAddress)} info={INFO} inline>
         <Badge variant={stands.variant}>{stands.label}</Badge>
       </SettingRow>
       <SettingBlock className="gap-6">
@@ -173,7 +180,7 @@ function SetUp({ projectSlug, supportAddress, upgrade }: { projectSlug: string; 
   const open = started && !upgrade;
   return (
     <>
-      <SettingRow label={LABEL} description={`Replies come from ${supportAddress}.`} info={INFO} inline>
+      <SettingRow label={LABEL} description={repliesFrom(supportAddress)} info={INFO} inline>
         {upgrade && (
           <span id="email-domain-plan" hidden>
             {upgrade.title}
