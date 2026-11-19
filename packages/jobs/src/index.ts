@@ -73,7 +73,7 @@ export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
 export { liveDomain, portalAddress, type PortalAddress, projectWith } from "./portal-address";
 export { fetchSiteCheck } from "./site-check";
-export { fetchSpec, readStorable, referenceCounts, respec, SPEC_FETCH_TIMEOUT_MS, SPEC_MAX_REDIRECTS, SPEC_URL_TOO_LARGE, type SpecChanges, specUrlRefusal, syncApiReference, budget as syncBudget, SYNC_BUDGET_MS, SYNC_EVERY_MS, SYNC_ROWS_PER_HOST } from "./api-references";
+export { fetchGithubSpec, fetchSpec, GITHUB_NOT_ADDED, repoPathRefusal, type SourceAt, SPEC_FILE_TOO_LARGE, syncMergedApiReferences, readStorable, referenceCounts, respec, SPEC_FETCH_TIMEOUT_MS, SPEC_MAX_REDIRECTS, SPEC_URL_TOO_LARGE, type SpecChanges, specUrlRefusal, syncApiReference, budget as syncBudget, SYNC_BUDGET_MS, SYNC_EVERY_MS, SYNC_ROWS_PER_HOST } from "./api-references";
 import { syncApiReferences } from "./api-references";
 export { syncApiReferences };
 export { emitEvent, portalPostUrl, postGeneration, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";

@@ -1,6 +1,8 @@
 import type { JobInput } from "@tuti/shared";
 
+import { syncMergedApiReferences } from "./api-references";
 import { analysisOn, startCodeChange } from "./code-changes";
+import { installationApi } from "./github-api";
 import { repositoryConnection } from "./github-repositories";
 import { addToRunningDraft, closeRunningDraft, skipsChangelog } from "./running-draft";
 import type { JobLogger, JobResult } from "./index";
@@ -8,7 +10,7 @@ import type { JobLogger, JobResult } from "./index";
 /**
  * A merged pull request on an included repo goes into the changelog's running draft (unless it's
  * labelled as internal work) and becomes a code change, which proposes the posts and articles it
- * changes (docs/plan.md).
+ * changes (docs/plan.md). API references read from the branch it merged into are read again when it changed their file.
  */
 export async function githubPullRequest(input: JobInput<"githubPullRequest">, log: JobLogger): Promise<JobResult> {
   const installation =
@@ -29,8 +31,23 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
     author: input.author,
     mergedAt: input.mergedAt ?? new Date().toISOString(),
   });
-  log.info(`${input.repo}#${input.number} merged${drafted ? ", added to the changelog draft" : ""}${analysed ? ", a code change" : ""}`);
-  return { drafted, analysed };
+  // Last, and on its own: a reference that can't be read says so on its page, and stops none of the rest.
+  let references = { synced: 0, failed: 0 };
+  if (input.base) {
+    try {
+      references = await syncMergedApiReferences(projectId, { repoId: input.repoId, base: input.base }, async () => {
+        type File = { filename: string; previous_filename?: string };
+        // GitHub lists at most 3,000 files for a pull request, 100 a page.
+        return (await installationApi(input.installationId)).list<File>(`/repos/${input.repo}/pulls/${input.number}/files`, (page) => page as File[], 30);
+      }, log);
+    } catch (error) {
+      log.warn(`Syncing API references after ${input.repo}#${input.number} failed: ${String(error)}`);
+    }
+  }
+  log.info(
+    `${input.repo}#${input.number} merged${drafted ? ", added to the changelog draft" : ""}${analysed ? ", a code change" : ""}${references.synced + references.failed ? `, ${references.synced + references.failed} API references synced` : ""}`,
+  );
+  return { drafted, analysed, references: references.synced };
 }
 
 /** A release was published: it closes the changelog's running draft (and names it). */

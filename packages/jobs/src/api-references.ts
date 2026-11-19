@@ -10,14 +10,17 @@ import { isPrivate, publicOnlyLookup } from "@tuti/shared/webhook-url";
 import { marked } from "marked";
 import { Agent, fetch } from "undici";
 
+import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockProject } from "./running-draft";
 
 /**
- * API references read from where their spec lives (docs/plan.md, API reference in Docs, A10): a URL, fetched when it's
- * added, on Sync now and every 6 hours (`syncApiReferences`). The address is the team's, but our server fetches it, so
- * it's treated as anyone's: https only, public addresses only (on the address connected to, and on every redirect),
- * a time and size limit, and nothing of ours (cookies, credentials) sent.
+ * API references read from where their spec lives (docs/plan.md, API reference in Docs, A10 and A11): a URL, or a file
+ * in a repository the project added on GitHub, read when it's added, on Sync now and every 6 hours
+ * (`syncApiReferences`); a repository's also when a pull request into its branch merges (`syncMergedApiReferences`).
+ * The address is the team's, but our server fetches it, so it's treated as anyone's: https only, public addresses only
+ * (on the address connected to, and on every redirect), a time and size limit, and nothing of ours (cookies,
+ * credentials) sent. A repository is read with the app's installation, and only one the project added.
  */
 
 export const SPEC_FETCH_TIMEOUT_MS = 15_000;
@@ -168,6 +171,84 @@ async function readUpTo(stream: ReadableStream<Uint8Array> | null, max: number):
   }
 }
 
+export const GITHUB_NOT_ADDED = "This repository isn't one of the project's. Add it in Settings › Integrations › GitHub first.";
+
+/**
+ * Why `path` can't be a file's path in a repository, or null when it can. Its parts go into the contents API's address
+ * as they are, so an empty, "." or ".." part (which would move the request elsewhere on GitHub's API) is refused.
+ */
+export function repoPathRefusal(path: string): string | null {
+  return path.split("/").some((part) => part === "" || part === "." || part === "..") ? "Enter the file's path in the repository, like openapi.yaml" : null;
+}
+
+/**
+ * The file at `path` on branch `ref` (left out: the repository's default branch) of repository `repoId`, read with the
+ * app's installation, and the branch it was read on; or why it couldn't be, in words for the team. Only a repository
+ * `projectId` added is read, whatever is asked: the project's own row says which installation, and under what name.
+ * The same limits as a URL's: 5 MB, read as a stream and stopped there, and 15 seconds for all of it.
+ */
+export async function fetchGithubSpec(
+  projectId: string,
+  source: { repoId: number; path: string; ref?: string | null },
+  /** Tests only: the read's deadline, ended when they say (it's SPEC_FETCH_TIMEOUT_MS from now). */
+  { signal: deadline }: { signal?: AbortSignal } = {},
+): Promise<{ text: string; ref: string } | { error: string }> {
+  const refused = repoPathRefusal(source.path);
+  if (refused) {
+    return { error: refused };
+  }
+  const repo = await prisma.githubRepository.findFirst({
+    where: { repoId: source.repoId, connection: { projectId } },
+    select: { fullName: true, connection: { select: { installationId: true } } },
+  });
+  if (!repo) {
+    return { error: GITHUB_NOT_ADDED };
+  }
+  const { fullName } = repo;
+  // One limit for all of it: the token, the default branch, the file, and the reads saying what's missing.
+  const signal = deadline ?? AbortSignal.timeout(SPEC_FETCH_TIMEOUT_MS);
+  try {
+    const api = await installationApi(repo.connection.installationId, signal);
+    // ponytail: the default branch costs a read of its own; only when none is given (adding one without a branch).
+    const ref = source.ref || (await api.find<{ default_branch: string }>(`/repos/${fullName}`))?.default_branch;
+    if (!ref) {
+      return { error: `Tuti's GitHub app can't see ${fullName} any more.` };
+    }
+    const path = source.path.split("/").map(encodeURIComponent).join("/");
+    const response = await api.raw(`/repos/${fullName}/contents/${path}?ref=${encodeURIComponent(ref)}`, signal);
+    if (!response) {
+      // Which of them is missing: reads only when a read failed.
+      if (!(await api.find(`/repos/${fullName}`))) {
+        return { error: `Tuti's GitHub app can't see ${fullName} any more.` };
+      }
+      if (!(await api.find(`/repos/${fullName}/branches/${encodeURIComponent(ref)}`))) {
+        return { error: `${fullName} has no branch “${ref}”.` };
+      }
+      return { error: `There's no file at ${source.path} on ${ref} in ${fullName}.` };
+    }
+    if (Number(response.headers.get("content-length")) > OPENAPI_MAX_BYTES) {
+      await response.body?.cancel().catch(() => {});
+      return { error: SPEC_FILE_TOO_LARGE };
+    }
+    const bytes = await readUpTo(response.body as ReadableStream<Uint8Array> | null, OPENAPI_MAX_BYTES);
+    return bytes ? { text: bytes.toString("utf8"), ref } : { error: SPEC_FILE_TOO_LARGE };
+  } catch (error) {
+    const { name, cause } = error as { name?: string; cause?: { name?: string } };
+    if (name === "TimeoutError" || cause?.name === "TimeoutError" || signal.aborted) {
+      return { error: `GitHub didn't answer within ${SPEC_FETCH_TIMEOUT_MS / 1000} seconds.` };
+    }
+    // The installation gone (401, 404) or suspended (a 403 that isn't a rate limit); GitHub's own trouble (a 503, a rate
+    // limit) is the message below, not this.
+    const { status, rateLimited } = error as { status?: number; rateLimited?: boolean };
+    if (status === 401 || status === 404 || (status === 403 && !rateLimited)) {
+      return { error: "Tuti's GitHub app can't reach this repository any more. Connect GitHub again in Settings › Integrations." };
+    }
+    return { error: "Couldn't read the file from GitHub. Try again later." };
+  }
+}
+
+export const SPEC_FILE_TOO_LARGE = "The file is over 5 MB, the most an API reference reads.";
+
 /** What PostgreSQL stores in neither text nor JSON: a null character, or a surrogate without its other half. */
 const UNSTORABLE = /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
@@ -273,6 +354,9 @@ export function respec(
   };
 }
 
+/** Where a reference's spec was when a sync was chosen: one moved or synced since is left alone. */
+export type SourceAt = { sourceUrl: string | null; repoId?: number | null; path?: string | null; ref?: string | null; syncTriedAt: Date };
+
 /**
  * Takes what's no longer on the help center (`shown`: the keys of what is) out of the docs' search and AI answers at
  * once, in the change's transaction, with the project locked: the job that indexes the rest (indexReference) may run
@@ -300,38 +384,54 @@ export async function indexReference(referenceId: string) {
 }
 
 /**
- * Reads a URL's reference `id` again. What it read replaces the doc, the team's choices kept; a read that fails (or
- * finds no operations) keeps the pages as they were and says why (`syncError`). Null when there's nothing to sync:
- * the reference is gone, isn't read from a URL, its address changed while this read the old one, or another sync
- * (Sync now beside the 6-hourly one) finished while this one read: its answer is newer, so this one's is dropped.
+ * Reads a URL's or a repository's reference `id` again. What it read replaces the doc, the team's choices kept; a read
+ * that fails (or finds no operations) keeps the pages as they were and says why (`syncError`). Null when there's
+ * nothing to sync: the reference is gone, was uploaded, its source changed while this read the old one, or another
+ * sync (Sync now beside the 6-hourly one) finished while this one read: its answer is newer, so this one's is dropped.
  */
 export async function syncApiReference(
   id: string,
   options: {
     allowLoopback?: boolean;
     /**
-     * The reference as whoever chose to sync it saw it (the job's queue, Sync now's check of its address): one moved or
+     * The reference as whoever chose to sync it saw it (the job's queue, Sync now's check of its source): one moved or
      * synced since is left alone, unfetched, until it's chosen again as it is.
      */
-    expected?: { sourceUrl: string | null; syncTriedAt: Date };
+    expected?: SourceAt;
   } = {},
 ): Promise<{ changes: SpecChanges } | { error: string } | null> {
-  const found = await prisma.apiReference.findUnique({ where: { id }, select: { projectId: true, source: true, sourceUrl: true, syncTriedAt: true } });
-  if (!found || found.source !== "URL" || !found.sourceUrl) {
+  const found = await prisma.apiReference.findUnique({
+    where: { id },
+    select: { projectId: true, source: true, sourceUrl: true, repoId: true, path: true, ref: true, syncTriedAt: true },
+  });
+  if (!found || found.source === "UPLOAD") {
     return null;
   }
   const { expected } = options;
-  if (expected && (expected.sourceUrl !== found.sourceUrl || expected.syncTriedAt.getTime() !== found.syncTriedAt.getTime())) {
+  if (
+    expected &&
+    (expected.sourceUrl !== found.sourceUrl ||
+      (expected.repoId ?? null) !== found.repoId ||
+      (expected.path ?? null) !== found.path ||
+      (expected.ref ?? null) !== found.ref ||
+      expected.syncTriedAt.getTime() !== found.syncTriedAt.getTime())
+  ) {
     return null;
   }
-  const url = found.sourceUrl;
-  const fetched = await fetchSpec(url, options);
+  const { projectId, source, sourceUrl, repoId, path, ref, syncTriedAt } = found;
+  let fetched: { text: string; url?: string } | { error: string };
+  if (source === "URL") {
+    fetched = sourceUrl ? await fetchSpec(sourceUrl, options) : { error: NOT_AN_ADDRESS };
+  } else {
+    fetched = repoId !== null && path && ref ? await fetchGithubSpec(projectId, { repoId, path, ref }) : { error: GITHUB_NOT_ADDED };
+  }
+  // A repository's file has no address of its own, so its relative servers stay as written, as an upload's do.
   const read = "error" in fetched ? fetched : readStorable(fetched.text, fetched.url);
   const result = await prisma.$transaction(async (tx): Promise<{ changes: SpecChanges } | { error: string } | null> => {
     // Locked, so a choice saved meanwhile (apiReferences.update) isn't written over.
-    await lockProject(tx, found.projectId);
+    await lockProject(tx, projectId);
     // Every sync's write moves syncTriedAt on: unchanged, nothing has written since this one started.
-    const row = await tx.apiReference.findFirst({ where: { id, source: "URL", sourceUrl: url, syncTriedAt: found.syncTriedAt }, select: { doc: true, state: true } });
+    const row = await tx.apiReference.findFirst({ where: { id, source, sourceUrl, repoId, path, ref, syncTriedAt }, select: { doc: true, state: true } });
     if (!row) {
       return null;
     }
@@ -353,9 +453,66 @@ export async function syncApiReference(
 }
 
 /**
- * Every 6 hours, each URL's reference read again: the ones whose last try is oldest first, a few hosts at once and
- * one reference at a time per host, so no team's server gets them all together. One that fails says so on its page
- * and is tried again next time it's due; it stops none of the others.
+ * A pull request merged into branch `base` of repository `repoId`, in project `projectId`: each of the project's
+ * references read from that branch of it is read again, when the pull request changed its file (as a file of it, or one
+ * renamed from it; one with more files than GitHub lists, 3,000, always). `files` lists the pull request's, read only
+ * when a reference is on that branch. A failure is said on the reference's page, as the 6-hourly sync's is.
+ */
+export async function syncMergedApiReferences(
+  projectId: string,
+  { repoId, base }: { repoId: number; base: string },
+  files: () => Promise<{ filename: string; previous_filename?: string }[]>,
+  log: JobLogger,
+): Promise<{ synced: number; failed: number }> {
+  const references = await prisma.apiReference.findMany({
+    where: { projectId, source: "GITHUB", repoId, ref: base },
+    // Oldest first: the same order each time.
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, sourceUrl: true, repoId: true, path: true, ref: true, syncTriedAt: true },
+  });
+  let [synced, failed] = [0, 0];
+  if (references.length === 0) {
+    return { synced, failed };
+  }
+  const changed = await files();
+  const paths = new Set(changed.flatMap((file) => [file.filename, ...(file.previous_filename ? [file.previous_filename] : [])]));
+  for (const reference of references) {
+    if (changed.length < 3_000 && !paths.has(reference.path!)) {
+      continue;
+    }
+    try {
+      // Overtaken by another sync (Sync now, the 6-hourly one, another merge's) that may have read the file before this
+      // merge: read again while the file is where it was, a few times at most.
+      let at: typeof reference | null = reference;
+      for (let tries = 0; at && tries < 3; tries++) {
+        const result = await syncApiReference(at.id, { expected: at });
+        if (result) {
+          if ("error" in result) failed++;
+          else synced++;
+          break;
+        }
+        at = await prisma.apiReference.findFirst({
+          where: { id: reference.id, source: "GITHUB", repoId: reference.repoId, path: reference.path, ref: reference.ref },
+          select: { id: true, sourceUrl: true, repoId: true, path: true, ref: true, syncTriedAt: true },
+        });
+      }
+    } catch (error) {
+      // One that can't be written stops none of the others.
+      failed++;
+      log.warn(`Syncing an API reference after a merge failed: ${String(error)}`);
+    }
+  }
+  return { synced, failed };
+}
+
+/** The 6-hourly job's name for GitHub among the hosts it reads from: no address's host has a space. */
+const GITHUB_HOST = "github api";
+
+/**
+ * Every 6 hours, each URL's and repository's reference read again: the ones whose last try is oldest first, a few hosts
+ * at once and one reference at a time per host, so no team's server gets them all together. GitHub is one host among
+ * them (a repository's file is also read when a pull request into its branch merges, so this is its safety net). One
+ * that fails says so on its page and is tried again next time it's due; it stops none of the others.
  */
 export async function syncApiReferences(
   _: unknown,
@@ -365,14 +522,18 @@ export async function syncApiReferences(
   over: (next: { id: string; sourceUrl: string | null }) => boolean | Promise<boolean> = budget(SYNC_BUDGET_MS),
   candidates = SYNC_CANDIDATES,
 ): Promise<JobResult> {
-  // The oldest due per host (its name, lowercased, as URL gives it: the port, credentials and path left off).
-  // The address is stored as URL writes it (`href`), so this is the name URL.hostname gives, an IPv6 address bracketed.
-  const due = await prisma.$queryRaw<{ id: string; sourceUrl: string | null; syncTriedAt: Date }[]>`
-    SELECT id, "sourceUrl", "syncTriedAt" FROM (
-      SELECT id, "sourceUrl", "syncTriedAt",
-        row_number() OVER (PARTITION BY lower(substring("sourceUrl" from '^[^:]+://(?:[^/?#@]*@)?(\\[[^]]*\\]|[^/?#:]+)')) ORDER BY "syncTriedAt", id) AS place
+  // The oldest due per host (its name, lowercased, as URL gives it: the port, credentials and path left off; GitHub's
+  // GITHUB_HOST, which no address's name is). The address is stored as URL writes it (`href`), so this is the name
+  // URL.hostname gives, an IPv6 address bracketed.
+  const due = await prisma.$queryRaw<(SourceAt & { id: string; source: "URL" | "GITHUB" })[]>`
+    SELECT id, source, "sourceUrl", "repoId", path, ref, "syncTriedAt" FROM (
+      SELECT id, source, "sourceUrl", "repoId", path, ref, "syncTriedAt",
+        row_number() OVER (
+          PARTITION BY CASE WHEN source = 'GITHUB' THEN ${GITHUB_HOST}::text
+            ELSE lower(substring("sourceUrl" from '^[^:]+://(?:[^/?#@]*@)?(\\[[^]]*\\]|[^/?#:]+)')) END
+          ORDER BY "syncTriedAt", id) AS place
       FROM api_reference
-      WHERE source = 'URL' AND "syncTriedAt" <= ${new Date(now.getTime() - SYNC_EVERY_MS)}
+      WHERE source IN ('URL', 'GITHUB') AND "syncTriedAt" <= ${new Date(now.getTime() - SYNC_EVERY_MS)}
     ) due
     WHERE place <= ${SYNC_ROWS_PER_HOST}
     -- Each host's first before any host's second: busy hosts can't fill the window between them.
@@ -380,7 +541,7 @@ export async function syncApiReferences(
     LIMIT ${candidates}`;
   const byHost = new Map<string, typeof due>();
   for (const row of due) {
-    const host = URL.parse(row.sourceUrl ?? "")?.hostname ?? "";
+    const host = row.source === "GITHUB" ? GITHUB_HOST : (URL.parse(row.sourceUrl ?? "")?.hostname ?? "");
     byHost.set(host, [...(byHost.get(host) ?? []), row]);
   }
   // Each host with its references due, how many it's had read this run, and whether one is being read now; in the order
@@ -415,8 +576,7 @@ export async function syncApiReferences(
       }
       try {
         // As it was chosen: one moved or synced since it was queued is left for the next run, and counted as neither.
-        const { id, sourceUrl, syncTriedAt } = chosen;
-        const result = await syncApiReference(id, { expected: { sourceUrl, syncTriedAt } });
+        const result = await syncApiReference(chosen.id, { expected: chosen });
         if (result && "error" in result) {
           failed++;
         } else if (result) {

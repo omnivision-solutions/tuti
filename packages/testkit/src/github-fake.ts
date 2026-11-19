@@ -30,12 +30,20 @@ export type GithubFake = {
   /**
    * A repository's default branch at its latest commit, as Verify reads it: the repository (its default branch), the
    * branch's commit, the tree at that commit and each file's contents there; and the commit's archive, as the docs agent
-   * reads it (`/tarball/<commit>`, a gzipped tar like GitHub's, through a redirect). Also `POST /_fake/repository {repo, …}`,
+   * reads it (`/tarball/<commit>`, a gzipped tar like GitHub's, through a redirect). Contents are read at the commit or on
+   * the branch, as JSON or (`Accept: application/vnd.github.raw`) as the file's bytes. Also `POST /_fake/repository {repo, …}`,
    * from other processes.
    */
   repository(repo: string, snapshot: FakeRepository): void;
   /** Every path the App read with an installation token, in order. */
   reads: string[];
+  /**
+   * What GitHub answers every installation token request with from now on (a 503 in an outage, say), with these headers
+   * and message; null for tokens again.
+   */
+  answerTokens(status: number | null, answer?: { headers?: Record<string, string>; message?: string }): void;
+  /** In this process only: run before each request is answered, which waits for it (a test holding GitHub). Null: none. */
+  beforeAnswering(hook: ((request: { method: string; path: string }) => Promise<unknown> | void) | null): void;
   /** A signed webhook delivery, as GitHub would send it. */
   webhook(event: string, payload: unknown): { body: string; headers: Record<string, string> };
   close(): Promise<void>;
@@ -50,7 +58,7 @@ export type FakePullRequest = {
   mergedAt?: string;
   /** Commit messages, oldest first. */
   commits?: string[];
-  files?: { filename: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
+  files?: { filename: string; previous_filename?: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
   /** Its merge commit's archive is there too (`/tarball/merge-<number>`), holding its files' contents; without it, only a `repository` snapshot's commit has one. */
   archived?: boolean;
 };
@@ -63,6 +71,8 @@ export type FakeRepository = {
   truncated?: boolean;
   /** Files whose contents GitHub fails to send (500). */
   failing?: string[];
+  /** In this process only: run as the next contents request arrives (once), which is answered when it's done (a test holding a read). */
+  during?: () => Promise<unknown>;
 };
 
 /** A GitHub user signing in to Tuti with GitHub; `verified` (default true) is whether GitHub verified `email`. */
@@ -80,6 +90,9 @@ export async function startGithubFake(): Promise<GithubFake> {
   const pulls = new Map<string, FakePullRequest>();
   const repositories = new Map<string, FakeRepository>();
   const reads: string[] = [];
+  let tokenStatus: number | null = null;
+  let tokenAnswer: { headers?: Record<string, string>; message?: string } = {};
+  let hook: ((request: { method: string; path: string }) => Promise<unknown> | void) | null = null;
   const signInsFor = new Map<string, FakeGithubSignIn>();
   const signIns = new Map<string, FakeGithubSignIn>();
   let globalInstall: { setupUrl: string; id: number; code: string } | undefined;
@@ -102,7 +115,8 @@ export async function startGithubFake(): Promise<GithubFake> {
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
+      await hook?.({ method: req.method ?? "GET", path: new URL(req.url ?? "/", "http://fake").pathname });
       const send = (status: number, body: unknown) =>
         res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
       const url = new URL(req.url ?? "/", "http://fake");
@@ -162,6 +176,9 @@ export async function startGithubFake(): Promise<GithubFake> {
       }
       const redirect = (to: URL) => res.writeHead(302, { location: to.href }).end();
       const installationToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
+      if (req.method === "POST" && installationToken && tokenStatus !== null) {
+        return res.writeHead(tokenStatus, { "content-type": "application/json", ...tokenAnswer.headers }).end(JSON.stringify({ message: tokenAnswer.message ?? "Refused" }));
+      }
       if (req.method === "POST" && installationToken) {
         return validJwt(req.headers.authorization)
           ? send(201, { token: `installation-${installationToken[1]}` })
@@ -242,15 +259,26 @@ export async function startGithubFake(): Promise<GithubFake> {
         }
         reads.push(url.pathname);
         const snapshot = contentsPath && repositories.get(contentsPath[1]!);
-        if (contentsPath && snapshot && url.searchParams.get("ref") === snapshot.commit) {
+        const ref = url.searchParams.get("ref");
+        if (contentsPath && snapshot && (ref === snapshot.commit || ref === (snapshot.branch ?? "main"))) {
           const path = decodeURIComponent(contentsPath[2]!);
-          if (snapshot.failing?.includes(path)) {
-            return send(500, { message: "Server Error" });
-          }
-          const content = snapshot.files[path];
-          return content !== undefined
-            ? send(200, { type: "file", encoding: "base64", content: Buffer.from(content).toString("base64").replace(/.{60}/g, "$&\n") })
-            : send(404, { message: "Not Found" });
+          void (async () => {
+            const during = snapshot.during;
+            snapshot.during = undefined;
+            await during?.();
+            if (snapshot.failing?.includes(path)) {
+              return send(500, { message: "Server Error" });
+            }
+            const content = snapshot.files[path];
+            if (content === undefined) {
+              return send(404, { message: "Not Found" });
+            }
+            if (req.headers.accept === "application/vnd.github.raw") {
+              return res.writeHead(200, { "content-type": "application/vnd.github.raw" }).end(content);
+            }
+            send(200, { type: "file", encoding: "base64", content: Buffer.from(content).toString("base64").replace(/.{60}/g, "$&\n") });
+          })();
+          return;
         }
         if (contentsPath) {
           const number = /^merge-(\d+)$/.exec(url.searchParams.get("ref") ?? "")?.[1];
@@ -278,8 +306,9 @@ export async function startGithubFake(): Promise<GithubFake> {
         const items: unknown[] =
           pullPath![3] === "/commits"
             ? (pr.commits ?? []).map((message, i) => ({ sha: `c${i}`, commit: { message } }))
-            : (pr.files ?? []).map(({ filename, status = "modified", additions = 1, deletions = 0, patch }) => ({
+            : (pr.files ?? []).map(({ filename, previous_filename, status = "modified", additions = 1, deletions = 0, patch }) => ({
                 filename,
+                ...(previous_filename !== undefined && { previous_filename }),
                 status,
                 additions,
                 deletions,
@@ -339,6 +368,13 @@ export async function startGithubFake(): Promise<GithubFake> {
     pullRequest: (repo, pr) => pulls.set(`${repo}#${pr.number}`, pr),
     repository: (repo, snapshot) => repositories.set(repo, snapshot),
     reads,
+    answerTokens(status, answer = {}) {
+      tokenStatus = status;
+      tokenAnswer = answer;
+    },
+    beforeAnswering(next) {
+      hook = next;
+    },
     webhook(event, payload) {
       const body = JSON.stringify(payload);
       return {

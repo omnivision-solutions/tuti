@@ -33,21 +33,31 @@ export type GithubApi = {
   send<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T | null>;
   /** The raw answer (redirects followed), for downloads such as a commit's archive; throws unless it's OK. */
   download(path: string, signal?: AbortSignal): Promise<Response>;
+  /** A file's bytes as stored (the contents API's raw media type, up to 100 MB), or null when GitHub answers 404; throws on other errors. */
+  raw(path: string, signal?: AbortSignal): Promise<Response | null>;
 };
 
-/** API access for one installation. */
-export async function installationApi(installationId: number): Promise<GithubApi> {
+/** API access for one installation; `signal`, when given, ends every request of it (the token's too). */
+export async function installationApi(installationId: number, signal?: AbortSignal): Promise<GithubApi> {
   const response = await fetch(`${apiUrl()}/app/installations/${installationId}/access_tokens`, {
     method: "POST",
+    signal,
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${appJwt()}`, "user-agent": "Tuti" },
   });
   if (!response.ok) {
-    throw new Error(`GitHub refused an installation token (${response.status})`);
+    // Its status says why, and a rate limit says so too (GitHub answers a secondary one with a 403): see tokenRefusal.
+    const message = (await response.text().catch(() => "")).slice(0, 1000);
+    throw Object.assign(new Error(`GitHub refused an installation token (${response.status})`), {
+      status: response.status,
+      rateLimited: response.headers.has("retry-after") || response.headers.get("x-ratelimit-remaining") === "0" || /rate limit/i.test(message),
+    });
   }
   const { token } = (await response.json()) as { token: string };
   const headers = { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" };
   const request = async (url: string, notFoundIsNull = false, init: RequestInit = {}) => {
-    const res = await fetch(url, { ...init, headers: { ...headers, ...init.headers } });
+    // A request's own signal ends it too, never in place of the installation's.
+    const ends = init.signal && signal ? AbortSignal.any([init.signal, signal]) : (init.signal ?? signal);
+    const res = await fetch(url, { ...init, signal: ends, headers: { ...headers, ...init.headers } });
     if (notFoundIsNull && res.status === 404) {
       return null;
     }
@@ -85,6 +95,9 @@ export async function installationApi(installationId: number): Promise<GithubApi
     async download(path, signal) {
       // fetch drops the token on the redirect to another host (GitHub's codeload, whose link carries its own).
       return (await request(`${apiUrl()}${path}`, false, { signal }))!;
+    },
+    raw(path, signal) {
+      return request(`${apiUrl()}${path}`, true, { signal, headers: { accept: "application/vnd.github.raw" } });
     },
   };
 }
