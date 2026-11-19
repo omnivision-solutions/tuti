@@ -74,7 +74,13 @@ test("saved topics are chips, each a field of the form; Enter adds one, trimmed,
   await type("shipping, refund, , returns");
   expect(chips()).toEqual(["refund", "legal advice", "pricing", "shipping"]);
   expect(box.value).toBe("returns");
-  expect(status()).toBe("Added shipping");
+  expect(status()).toBe("Added shipping. refund is already there");
+  // A pasted list isn't cut at one topic's length; each topic is.
+  await type(`returns, ${"x".repeat(70)}, ${"y".repeat(70)}`);
+  expect(chips().slice(4)).toEqual(["returns", "x".repeat(60)]);
+  expect(box.value).toBe("y".repeat(60));
+  await act(async () => button("Remove returns").click());
+  await act(async () => button(`Remove ${"x".repeat(60)}`).click());
   await type("");
   expect(document.getElementById(box.getAttribute("aria-describedby")!)!.textContent).toBe("Press Enter or a comma to add a topic");
   await act(async () => button("Remove shipping").click());
@@ -96,7 +102,7 @@ test("each chip's button is named for its topic and removes it, with focus moved
 });
 
 test("at the limit no more can be added, until one is removed", async () => {
-  const { box, type, enter, button, chips } = await render(["a", "b"], 2);
+  const { box, type, enter, button, chips, sent, status } = await render(["a", "b"], 2);
   expect(box.readOnly).toBe(true);
   expect(box.placeholder).toBe("2 topics is the most");
   await type("c");
@@ -111,6 +117,10 @@ test("at the limit no more can be added, until one is removed", async () => {
   await act(async () => button("Remove b").click());
   await type("d, e, f");
   expect(chips()).toEqual(["c", "d"]);
+  // Nothing is left in the full box, which can't be edited: it would be sent as one topic too many.
+  expect(box.value).toBe("");
+  expect(status()).toBe("Added d. 2 topics is the most: e, f not added");
+  expect(sent()).toEqual(["c", "d", ""]);
 });
 
 test("the form has one box for instructions and none for a tone", async () => {

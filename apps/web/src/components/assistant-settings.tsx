@@ -134,15 +134,33 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
         value={draft}
         onChange={(event) => {
           // A comma ends a topic, typed or pasted (as the text changes: phones' keyboards don't say which key was
-          // pressed): what's before each becomes a chip, and the rest stays in the box.
-          const pieces = event.target.value.split(",");
+          // pressed): what's before each becomes a chip, and the rest stays in the box. Each is cut to a topic's
+          // length here, not by the box, which would cut a pasted list short.
+          const pieces = event.target.value.split(",").map((piece) => piece.trim().slice(0, maxLength));
           const rest = pieces.pop()!;
-          const added = [...new Set(pieces.map((piece) => piece.trim()))].filter((piece) => piece && !topics.includes(piece)).slice(0, max - topics.length);
-          if (added.length > 0) {
-            setTopics([...topics, ...added]);
-            setStatus(`Added ${added.join(", ")}`);
+          const typed = [...new Set(pieces.filter(Boolean))];
+          const fresh = typed.filter((piece) => !topics.includes(piece));
+          const added = fresh.slice(0, max - topics.length);
+          const filled = topics.length + added.length >= max;
+          // What a full list has no room for: the topics past the limit, and what was typed after the last comma.
+          const left = [...fresh.slice(added.length), ...(filled && rest ? [rest] : [])];
+          const repeated = typed.filter((piece) => topics.includes(piece));
+          if (pieces.length === 0) {
+            setDraft(event.target.value.slice(0, maxLength));
+            return;
           }
-          setDraft(pieces.length > 0 ? rest.trimStart() : rest);
+          setTopics([...topics, ...added]);
+          setStatus(
+            [
+              added.length > 0 && `Added ${added.join(", ")}`,
+              repeated.length > 0 && `${repeated.join(", ")} ${repeated.length > 1 ? "are" : "is"} already there`,
+              left.length > 0 && `${max} topics is the most: ${left.join(", ")} not added`,
+            ]
+              .filter(Boolean)
+              .join(". "),
+          );
+          // Nothing stays in a box that's full: it can't be edited there, and would be sent as one topic too many.
+          setDraft(filled ? "" : rest);
         }}
         onKeyDown={(event) => {
           // Enter adds the topic; it doesn't save the form. Not the Enter that confirms an input method's candidate (Safari sends that one
@@ -153,7 +171,6 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
           }
         }}
         readOnly={full}
-        maxLength={maxLength}
         placeholder={full ? `${max} topics is the most` : "Add a topic…"}
         autoComplete="off"
         enterKeyHint="done"
