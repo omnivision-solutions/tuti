@@ -257,7 +257,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   ses.identities.set("matrix.example.com", { tags: { "tuti-project": project.id }, tokens: ["matrixtoken1"], configurationSet: "tuti-test", verified: true });
   await prisma.post.deleteMany({ where: { projectId: project.id } });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
-  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2 } });
+  // Who's asking on `seats`, so companies.list has a total to return.
+  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2, askingProperty: "seats" } });
   // A published entry #1, so reads find it (and unpublish has something to do), and a draft #2 to draft with AI.
   await prisma.changelogEntry.createMany({
     data: [
@@ -273,9 +274,9 @@ async function createFixture(own: "domain" | "site" = "domain") {
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
   await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", conditions: inGroupNamed("beta") } });
-  // One of the project's users, and none the sync would add.
+  // One of the project's users, at a company (for companies.list), and none the sync would add.
   await prisma.ssoIdentity.deleteMany({ where: { projectId: project.id, externalId: "matrix-new" } });
-  const matrixUser = await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user", properties: { plan: "free" } });
+  const matrixUser = await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user", properties: { plan: "free", company: "Acme", seats: 5 } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
   // for its check, which the site answers (for site.*); else a custom domain waiting for DNS, with
   // its TXT record there to verify it.
