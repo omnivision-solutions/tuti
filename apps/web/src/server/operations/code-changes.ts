@@ -1202,7 +1202,7 @@ const actionFields = {
   decidedBy: z
     .string()
     .nullable()
-    .describe("Who applied, dismissed or undid it: \"Autopilot\" for a link it applied by itself; null while nobody has")
+    .describe("Who applied, dismissed, undid or stopped it, or held a comment it wasn't sure of: \"Autopilot\" for one it applied by itself; null while nobody has")
     .meta({ examples: [null] }),
   auto: z.boolean().describe("Applied by Autopilot itself, nobody approving it").meta({ examples: [false] }),
   unsure: z.boolean().describe("Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check").meta({ examples: [false] }),
@@ -1214,7 +1214,7 @@ const actionFields = {
     .array(z.string())
     .optional()
     .describe("A post's update applied as one, from several pull requests: its parts (this one among them), which Undo puts back together").meta({ examples: [["cm3x9a1b2c3d4e5f6g7h8i9j1", "cm3x9a1b2c3d4e5f6g7h8i9j2"]] }),
-  decidedAt: z.string().nullable().describe("When it was applied, dismissed or undone").meta({ examples: [null] }),
+  decidedAt: z.string().nullable().describe("When it was applied, dismissed, undone or stopped, or its comment held; null while nobody has").meta({ examples: [null] }),
   dismissReason: z.string().describe("Why it was dismissed, if someone said").meta({ examples: [""] }),
   dueAt: z.string().nullable().describe("A scheduled one: when it goes out by itself").meta({ examples: [null] }),
   wouldHaveGoneOutAt: z.string().nullable().describe("One someone stopped: when it would have gone out by itself").meta({ examples: [null] }),
