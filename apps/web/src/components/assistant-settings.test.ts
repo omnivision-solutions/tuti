@@ -145,6 +145,10 @@ test("while an input method composes, a comma adds nothing; as the composition e
   await compose("y".repeat(80));
   await enter();
   expect(chips()).toEqual(["a", "b", "y".repeat(60)]);
+  // A cut never leaves half a character.
+  await compose(`${"z".repeat(59)}😀`);
+  await end();
+  expect(box.value).toBe("z".repeat(59));
 });
 
 test("the form has one box for instructions and none for a tone", async () => {

@@ -81,8 +81,10 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
   const full = topics.length >= max;
   // What just happened to the chips, read out by a screen reader: the box alone doesn't say.
   const [status, setStatus] = useState("");
+  // To a topic's length, never through the middle of a character (an emoji is two units): half of one is dropped.
+  const cut = (text: string) => text.slice(0, maxLength).replace(/[\uD800-\uDBFF]$/, "");
   const add = () => {
-    const topic = draft.trim().slice(0, maxLength);
+    const topic = cut(draft.trim());
     if (topic && topics.includes(topic)) {
       // Left in the box, so it shows that nothing was added.
       setStatus(`${topic} is already there`);
@@ -98,7 +100,7 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
     // A comma ends a topic, typed or pasted (as the text changes: phones' keyboards don't say which key was
     // pressed): what's before each becomes a chip, and the rest stays in the box. Each is cut to a topic's
     // length here, not by the box, which would cut a pasted list short.
-    const pieces = event.currentTarget.value.split(",").map((piece) => piece.trim().slice(0, maxLength));
+    const pieces = event.currentTarget.value.split(",").map((piece) => cut(piece.trim()));
     const rest = pieces.pop()!;
     const typed = [...new Set(pieces.filter(Boolean))];
     const fresh = typed.filter((piece) => !topics.includes(piece));
@@ -108,7 +110,7 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
     const left = [...fresh.slice(added.length), ...(filled && rest ? [rest] : [])];
     const repeated = typed.filter((piece) => topics.includes(piece));
     if (pieces.length === 0) {
-      setDraft(event.currentTarget.value.slice(0, maxLength));
+      setDraft(cut(event.currentTarget.value));
       return;
     }
     setTopics([...topics, ...added]);
