@@ -11,7 +11,7 @@ import { emitEvent } from "../events";
 import { notifyInbox } from "../live";
 import { namedProjectUser } from "../project-users";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { findPost, postNumber, projectSlug, toApiStatus as toPostStatus } from "./read";
+import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
 
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
 
@@ -21,15 +21,109 @@ const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typ
 export const MAX_MESSAGE_LENGTH = 10_000;
 const MAX_SUBJECT_LENGTH = 200;
 
-export const conversationNumber = z.coerce.number().int().positive();
-const body = z.string().trim().min(1, "Write something first").max(MAX_MESSAGE_LENGTH);
+export const conversationNumber = z.coerce.number().int().positive().describe("The conversation's number in the project").meta({ examples: [12] });
+const body = z
+  .string()
+  .trim()
+  .min(1, "Write something first")
+  .max(MAX_MESSAGE_LENGTH)
+  .describe("The message: plain text, up to 10,000 characters")
+  .meta({ examples: ["The export button does nothing on the reports page."] });
+const linkedPost = postNumber.describe("The post's number").meta({ examples: [7] });
 
 /** Someone from the project's app, matched by their id there (as with SSO), like `author` elsewhere. */
 const appUser = z.object({
-  id: z.string().min(1).max(255),
-  name: z.string().trim().min(1).max(100).optional(),
-  email: z.email().max(320).optional(),
+  id: z.string().min(1).max(255).describe("Their id in your app").meta({ examples: ["user-42"] }),
+  name: z.string().trim().min(1).max(100).optional().describe("Their name").meta({ examples: ["Sam Lee"] }),
+  email: z.email().max(320).optional().describe("Their email address").meta({ examples: ["sam@example.com"] }),
 });
+
+/** When something happened, as the API sends it. */
+const at = (description: string) => z.string().describe(`${description} (ISO 8601)`).meta({ examples: ["2026-11-18T09:30:00.000Z"] });
+
+const conversationUserOutput = z
+  .object({
+    id: z.string().nullable().describe("Their id in your app, when they came through SSO or the API; null otherwise (an email, a portal account, a signed-out visitor)").meta({ examples: ["user-42"] }),
+    name: z.string().nullable().describe("Their name: for someone known by email only, the name their email came from, once its address is verified").meta({ examples: ["Sam Lee"] }),
+    email: z.string().nullable().describe("Their email address; null for a signed-out visitor, or someone from your app who hasn't given one").meta({ examples: ["sam@example.com"] }),
+    verified: z.boolean().describe("Whether the address is known to be theirs: always for someone from your app").meta({ examples: [true] }),
+  })
+  .meta({ id: "ConversationUser", description: "Who a conversation is with: someone from your app or with a portal account, an email address, or a signed-out visitor" });
+
+const conversationFields = {
+  number: z.number().int().describe("The conversation's number in the project").meta({ examples: [12] }),
+  subject: z.string().describe("Its subject: the one it was started with, or the start of its first message").meta({ examples: ["Can't export to CSV"] }),
+  status: z
+    .enum(CONVERSATION_STATUSES)
+    .describe("open: waiting on the team; waiting: on the user (the team's reply is its latest message); closed: done with")
+    .meta({ examples: ["open"] }),
+  origin: z
+    .enum(["widget", "email", "escalation", "api"])
+    .describe("Where it started: the widget, an email, an AI answer passed to a person (escalation), or the API")
+    .meta({ examples: ["widget"] }),
+  user: conversationUserOutput,
+  assignee: z
+    .object({
+      name: z.string().describe("Their name in Tuti").meta({ examples: ["Olive Owner"] }),
+      email: z.string().describe("Their email address").meta({ examples: ["olive@example.com"] }),
+    })
+    .nullable()
+    .describe("The team member it's assigned to; null when unassigned"),
+  spam: z.boolean().describe("Marked as spam: lists leave it out unless asked for").meta({ examples: [false] }),
+  lastMessageAt: at("When its latest message was written; notes don't move it"),
+  waitingSince: at("Since when the user has waited on the team: their oldest unanswered message; null when they aren't waiting").nullable(),
+  snoozedUntil: at("Out of the inbox's views till then, or till the user writes; null when not snoozed (closed and spam ones never are)")
+    .nullable()
+    .meta({ examples: [null] }),
+  createdAt: at("When it started"),
+  url: z.string().describe("Its page in Tuti's inbox").meta({ examples: ["https://tuti.example.com/app/acme/inbox/12"] }),
+};
+
+const conversationOutput = z.object(conversationFields).meta({ id: "Conversation", description: "A conversation between someone and the team" });
+
+const attachmentOutput = z
+  .object({
+    id: z.string().describe("The file's id").meta({ examples: ["cm3k9x2ab0001qz8h4f7d2e1c"] }),
+    filename: z.string().describe("Its name").meta({ examples: ["screenshot.png"] }),
+    contentType: z.string().describe("Its type").meta({ examples: ["image/png"] }),
+    size: z.number().int().describe("Its size in bytes").meta({ examples: [48213] }),
+    url: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("In conversations.get: a link to it, signed for a while (images to show, other files saved under their name); null without media storage")
+      .meta({ examples: ["https://media.example.com/attachments/screenshot.png?signature=abc"] }),
+  })
+  .meta({ id: "ConversationAttachment", description: "A file a message came with, kept in the media storage" });
+
+const messageOutput = z
+  .object({
+    id: z.string().describe("The message's id").meta({ examples: ["cm3k9x2ab0002qz8h9c4b7a3d"] }),
+    author: z
+      .enum(["user", "team", "ai", "tuti"])
+      .describe("Who wrote it: the user, the team, the AI, or Tuti itself (a notice)")
+      .meta({ examples: ["user"] }),
+    name: z.string().nullable().describe("The name of whoever wrote it, when they have an account (a teammate, someone from your app); null otherwise").meta({ examples: ["Sam Lee"] }),
+    channel: z.enum(["widget", "email", "api", "app"]).describe("How it came: the widget, email, the API or Tuti's app").meta({ examples: ["widget"] }),
+    body: z.string().describe("What it says, plain text").meta({ examples: ["The export button does nothing on the reports page."] }),
+    note: z.boolean().describe("An internal note: only the team sees it, never sent").meta({ examples: [false] }),
+    attachments: z.array(attachmentOutput).describe("The files it came with"),
+    attachmentsDropped: z.number().int().describe("How many files it came with couldn't be kept (no media storage, or an import couldn't copy them)").meta({ examples: [0] }),
+    createdAt: at("When it was written"),
+  })
+  .meta({ id: "ConversationMessage", description: "A message in a conversation, or the team's note" });
+
+const linkedPostOutput = z
+  .object({
+    number: z.number().int().describe("The post's number").meta({ examples: [7] }),
+    title: z.string().describe("Its title").meta({ examples: ["Export to CSV"] }),
+    status: z.enum(POST_STATUSES).describe("Where it is on the roadmap").meta({ examples: ["planned"] }),
+  })
+  .meta({ id: "ConversationPost", description: "A post a conversation is linked to" });
+
+const linkedPostsOutput = z
+  .object({ posts: z.array(linkedPostOutput).describe("The posts it's linked to, the first linked first") })
+  .describe("The conversation's posts as they are now");
 
 const conversationSelect = {
   id: true,
@@ -176,24 +270,31 @@ async function teamMemberByEmail(projectId: string, email: string) {
 export const listConversations = defineOperation({
   name: "conversations.list",
   title: "List conversations",
-  summary: "List conversations, latest message first; spam is left out unless asked for. `snoozed` true lists only those snoozed now, false leaves them out",
+  summary: "List conversations, latest message first, a page at a time. Spam is left out unless asked for.",
   method: "GET",
   path: "/conversations",
   scope: "read",
   access: "team",
   errors: [404],
   input: z.object({
-    status: z.enum(CONVERSATION_STATUSES).optional(),
-    /** A team member's email, or "none" for unassigned ones. */
-    assignee: z.union([z.literal("none"), z.email()]).optional(),
-    /** Someone from your app, by their id there. */
-    user: z.string().min(1).max(255).optional(),
-    spam: z.stringbool().default(false),
-    /** Only those snoozed now (true), or none of them (false); either, unless given. */
-    snoozed: z.stringbool().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(25),
-    cursor: z.coerce.number().int().min(0).default(0),
+    status: z.enum(CONVERSATION_STATUSES).optional().describe("Only those with this status").meta({ examples: ["open"] }),
+    assignee: z
+      .union([z.literal("none"), z.email()])
+      .optional()
+      .describe('Only those assigned to this team member, by their email, or "none" for unassigned ones')
+      .meta({ examples: ["olive@example.com"] }),
+    user: z.string().min(1).max(255).optional().describe("Only those with this person from your app, by their id there").meta({ examples: ["user-42"] }),
+    spam: z.stringbool().default(false).describe("true lists spam only"),
+    snoozed: z.stringbool().optional().describe("true lists only those snoozed now, false leaves them out; either when not given"),
+    limit: z.coerce.number().int().min(1).max(100).default(25).describe("How many to return, 1 to 100").meta({ examples: [25] }),
+    cursor: z.coerce.number().int().min(0).default(0).describe("Where to start: the previous page's `nextCursor`").meta({ examples: [25] }),
   }),
+  output: z
+    .object({
+      conversations: z.array(conversationOutput).describe("The conversations, latest message first"),
+      nextCursor: z.string().nullable().describe("The next page's `cursor`; null on the last page").meta({ examples: ["25"] }),
+    })
+    .describe("A page of conversations"),
   example: { status: "open", assignee: "none", limit: 10 },
   run: async ({ projectId }, input) => {
     const assigneeId =
@@ -230,12 +331,19 @@ export const listConversations = defineOperation({
 export const getConversation = defineOperation({
   name: "conversations.get",
   title: "Get a conversation",
-  summary: "Get a conversation by its number, with its messages, oldest first",
+  summary: "Get a conversation by its number, with its messages and notes, oldest first, and the posts it's linked to",
   method: "GET",
   path: "/conversations/{number}",
   scope: "read",
   access: "team",
   input: z.object({ number: conversationNumber }),
+  output: z
+    .object({
+      ...conversationFields,
+      posts: z.array(linkedPostOutput).describe("The posts it's linked to, the first linked first"),
+      messages: z.array(messageOutput).describe("Its messages and notes, oldest first"),
+    })
+    .describe("The conversation"),
   run: async ({ projectId }, { number }) => {
     const conversation = await findConversation(projectId, number);
     const messages = await prisma.conversationMessage.findMany({
@@ -269,12 +377,20 @@ export const getConversation = defineOperation({
 export const markConversationRead = defineOperation({
   name: "conversations.markRead",
   title: "Mark a conversation read",
-  summary: "Mark a conversation read for the signed-in teammate (API keys cannot mark someone else's inbox read)",
+  summary: "Mark a conversation read for the signed-in teammate, up to what their page showed. People only: API keys cannot mark someone else's inbox read (403).",
   method: "POST",
   path: "/conversations/{number}/read",
   scope: "write",
   access: "team",
-  input: z.object({ number: conversationNumber, seen: z.iso.datetime().nullable() }),
+  input: z.object({
+    number: conversationNumber,
+    seen: z.iso
+      .datetime()
+      .nullable()
+      .describe("When the latest message the page showed was written: the user's messages up to then are read, never a newer one; null marks none")
+      .meta({ examples: ["2026-11-18T09:30:00.000Z"] }),
+  }),
+  output: z.object({}).describe("Nothing: it's marked read").meta({ examples: [{}] }),
   run: async ({ actor, projectId }, { number, seen }) => {
     if (actor.kind !== "user") {
       throw new OperationError(403, "people_only", "Only signed-in teammates can mark conversations read");
@@ -298,16 +414,24 @@ export const markConversationRead = defineOperation({
 export const createConversation = defineOperation({
   name: "conversations.create",
   title: "Start a conversation",
-  summary: "Start a conversation from someone in your app (`user`, by their id there) or an email address, with their first message",
+  summary:
+    "Start a conversation from someone in your app or an email address, with their first message: open, and waiting on the team, who are emailed about it. Webhooks get `conversation.created`.",
   method: "POST",
   path: "/conversations",
   scope: "write",
   access: "team",
   input: z
     .object({
-      user: appUser.optional(),
-      email: z.email().max(320).optional(),
-      subject: z.string().trim().min(1).max(MAX_SUBJECT_LENGTH).optional(),
+      user: appUser.optional().describe("Someone from your app, matched by their id there; send this or `email`"),
+      email: z.email().max(320).optional().describe("An email address to start it with, for someone not from your app; send this or `user`").meta({ examples: ["sam@example.com"] }),
+      subject: z
+        .string()
+        .trim()
+        .min(1)
+        .max(MAX_SUBJECT_LENGTH)
+        .optional()
+        .describe("Its subject, up to 200 characters; without one, the start of the message")
+        .meta({ examples: ["Can't export to CSV"] }),
       body,
     })
     .refine((input) => (input.user === undefined) !== (input.email === undefined), "Send either a user or an email")
@@ -317,6 +441,7 @@ export const createConversation = defineOperation({
     subject: "Can't export to CSV",
     body: "The export button does nothing on the reports page.",
   },
+  output: z.object({ ...conversationFields, messages: z.array(messageOutput).describe("Its first message") }).describe("The conversation started"),
   run: async ({ actor, projectId }, input) => {
     const userId = input.user ? await namedProjectUser(actor, projectId, input.user) : null;
     const { conversation, message } = await startConversation(projectId, {
@@ -535,7 +660,7 @@ export const replyToConversation = defineOperation({
   name: "conversations.reply",
   title: "Reply to a conversation",
   summary:
-    "Reply in a conversation as the team (and close it with `close`: `closed` says whether it did; `keptOpen`, that it stays open and waiting on the team as the user wrote after what the team saw, `seen`, unanswered), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
+    "Reply in a conversation as the team, write an internal note, or write as its user. A reply leaves it waiting on the user, unless the user wrote after what the team saw, unanswered: then it stays open and waiting on the team.",
   method: "POST",
   path: "/conversations/{number}/messages",
   scope: "write",
@@ -543,23 +668,42 @@ export const replyToConversation = defineOperation({
   input: z.object({
     number: conversationNumber,
     body,
-    author: appUser.pick({ id: true }).optional(),
-    note: z.boolean().optional().describe("An internal note: only the team sees it; it isn't sent and doesn't change the status"),
-    close: z.boolean().optional().describe("The team's reply closes the conversation (Send and close), rather than leaving it waiting on the user"),
+    author: appUser
+      .pick({ id: true })
+      .optional()
+      .describe("Write as the conversation's user, by their id in your app (API keys only; not with `note` or `close`)"),
+    note: z.boolean().optional().describe("An internal note: only the team sees it; it's never sent and doesn't change the status").meta({ examples: [false] }),
+    close: z
+      .boolean()
+      .optional()
+      .describe("The team's reply closes the conversation (Send and close), rather than leaving it waiting on the user")
+      .meta({ examples: [true] }),
     seen: z.iso
       .datetime({ offset: true })
       .transform((at) => new Date(at))
       .optional()
       .describe(
         "When the latest message the team saw was written: one from the user after it keeps the conversation open and waiting on the team (without it, the latest as the reply is asked for)",
-      ),
+      )
+      .meta({ examples: ["2026-11-18T09:30:00.000Z"] }),
     attachments: z
       .array(z.string().min(1))
       .max(10)
       .optional()
-      .describe("Files uploaded for it in the app (their ids), sent with it: 10 MB each, 25 MB together"),
+      .describe("Files uploaded for it in the app (their ids), sent with it: 10 MB each, 25 MB together")
+      .meta({ examples: [["cm3k9x2ab0001qz8h4f7d2e1c"]] }),
   }),
   example: { body: "Thanks, Sam! A fix is on its way." },
+  output: messageOutput
+    .extend({
+      keptOpen: z
+        .boolean()
+        .optional()
+        .describe("A reply's (not a note's or the user's): whether it stays open and waiting on the team, as the user wrote after what the team saw (`seen`), unanswered")
+        .meta({ examples: [false] }),
+      closed: z.boolean().optional().describe("With `close`: whether it closed the conversation (not when it was kept open)").meta({ examples: [true] }),
+    })
+    .describe("The message written"),
   run: async ({ actor, projectId }, input) => {
     // Written as its user (an API key's), it joins one past the plan's history, as their email would.
     const conversation = await findConversation(projectId, input.number, { hidden: !!input.author && actor.kind !== "user" });
@@ -620,7 +764,7 @@ export const updateConversation = defineOperation({
   name: "conversations.update",
   title: "Update a conversation",
   summary:
-    "Change a conversation's status (waiting on the user only once the team's reply is its latest message: replying sets it), assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
+    "Change a conversation's status, assign it to a team member, mark it as spam, or snooze it: out of the inbox's views till then, or till the user writes, and open again after. Closed conversations and spam aren't snoozed (409).",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
@@ -629,15 +773,21 @@ export const updateConversation = defineOperation({
   input: z
     .object({
       number: conversationNumber,
-      status: z.enum(CONVERSATION_STATUSES).optional(),
-      assignee: z.email().nullable().optional(),
-      spam: z.boolean().optional(),
+      status: z
+        .enum(CONVERSATION_STATUSES)
+        .optional()
+        .describe("Its new status: waiting (on the user) only once the team's reply is its latest message (replying sets it)")
+        .meta({ examples: ["closed"] }),
+      assignee: z.email().nullable().optional().describe("Assign it to a team member, by their email; null to unassign").meta({ examples: ["olive@example.com"] }),
+      spam: z.boolean().optional().describe("Mark it as spam, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso
         .datetime({ offset: true })
         .transform((at) => new Date(at))
         .refine((at) => at > new Date() && at.getTime() - Date.now() <= 366 * 86_400_000, "Snooze it till a time in the next year")
         .nullable()
-        .optional(),
+        .optional()
+        .describe("Snooze it till a time to come, up to a year; null wakes it")
+        .meta({ examples: ["2026-11-25T09:00:00.000Z"] }),
     })
     .refine(
       (input) => input.status !== undefined || input.assignee !== undefined || input.spam !== undefined || input.snoozedUntil !== undefined,
@@ -645,6 +795,7 @@ export const updateConversation = defineOperation({
     )
     .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }, { required: ["snoozedUntil"] }] }),
   example: { status: "closed" },
+  output: z.object(conversationFields).describe("The conversation as it is now"),
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
@@ -712,14 +863,15 @@ async function linkedPosts(conversationId: string) {
 export const linkConversationPost = defineOperation({
   name: "conversations.linkPost",
   title: "Link a conversation to a post",
-  summary: "Link a conversation to a post it's about; merging the post takes the link along",
+  summary: "Link a conversation to a post it's about; merging the post takes the link along. A merged post isn't linked (409): link the one it was merged into.",
   method: "POST",
   path: "/conversations/{number}/posts",
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ number: conversationNumber, post: postNumber }),
+  input: z.object({ number: conversationNumber, post: linkedPost }),
   example: { post: 12 },
+  output: linkedPostsOutput,
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     let post = await findPost(projectId, input.post);
@@ -749,7 +901,8 @@ export const unlinkConversationPost = defineOperation({
   path: "/conversations/{number}/posts/{post}",
   scope: "write",
   access: "team",
-  input: z.object({ number: conversationNumber, post: postNumber }),
+  input: z.object({ number: conversationNumber, post: linkedPost }),
+  output: linkedPostsOutput,
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     // Waits for a merge of the post (which holds its row), so a link it moves isn't unlinked halfway.

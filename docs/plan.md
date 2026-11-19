@@ -992,7 +992,7 @@ Decided (2026-11-19):
 - [x] B4. Changelog's. Done (2026-11-19): the 13 changelog and writing-style operations have short summaries, a description and example on each field, and outputs: `ChangelogEntry` (with `ChangelogReactions`) for every operation that returns an entry, `ChangelogStyle` for the writing style's two; `changelog.rewrite`'s summary gives its own limit (60 AI edits an hour per project), and every word `agent-context.json` held is still there.
 - [ ] B5. Docs'.
 - [ ] B6. API references'.
-- [ ] B7. Inbox's.
+- [x] B7. Inbox's. Done (2026-11-19): `conversations.*` and `support.*` rewritten: short summaries, each field described with an example, and outputs (`Conversation`, `ConversationUser`, `ConversationMessage`, `ConversationAttachment`, `ConversationPost` and `SupportEmail` named in the spec); nothing dropped from `agent-context.json`
 - [ ] B8. Autopilot's.
 - [ ] B9. Users'.
 - [x] B10. Portal's, Project's and Billing's; the list of operations not yet rewritten goes. Done (2026-11-19): their 32 operations rewritten (portal, site, domain, redirects, branding, widget; project, imports, reports, AI models; plan, licence, usage, credits): summaries of one or two sentences, what they said about a field on that field, outputs with example values (named `PortalSettings`, `SiteAddress`, `CustomDomain`, `Redirect`, `Branding`, `WidgetSettings`, `PortalLink`, `UploadedImage`, `Import`, `AiRoleModel`, `AiGroupLevel`, `AiUsageMonth`, `AiFeatureUsage`, `CreditGrant`), and no word an agent read lost. The list itself goes once every area is in

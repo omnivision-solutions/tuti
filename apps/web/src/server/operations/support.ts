@@ -50,6 +50,54 @@ export const supportSettings = async (projectId: string) => {
   };
 };
 
+const when = (description: string) => z.string().nullable().describe(`${description} (ISO 8601)`).meta({ examples: ["2026-11-18T09:30:00.000Z"] });
+
+const supportEmailOutput = z
+  .object({
+    address: z.string().nullable().describe("The project's support email address; null until it has one").meta({ examples: ["support@acme.tuti.example.com"] }),
+    lastReceivedAt: when("When the latest email came; null before the first"),
+    paused: z
+      .object({
+        at: z.string().describe("When it was paused (ISO 8601)").meta({ examples: ["2026-11-18T09:30:00.000Z"] }),
+        reason: z.string().describe("Why").meta({ examples: ["Too many bounces"] }),
+      })
+      .nullable()
+      .describe("Where plans are sold: email paused, as its bounces or complaints went over; replies wait to be emailed till it's resumed. Null when not paused")
+      .meta({ examples: [null] }),
+    ownDomain: z
+      .object({
+        included: z.boolean().describe("Whether the project's plan includes email from your own domain").meta({ examples: [true] }),
+        address: z.string().nullable().describe("The address replies come from once it's verified; null when not set").meta({ examples: ["support@example.com"] }),
+        records: z
+          .array(
+            z.object({
+              type: z.literal("CNAME").describe("The record's type").meta({ examples: ["CNAME"] }),
+              name: z.string().describe("Its name").meta({ examples: ["abc123._domainkey.example.com"] }),
+              value: z.string().describe("Its value").meta({ examples: ["abc123.dkim.amazonses.com"] }),
+            }),
+          )
+          .describe("The DKIM CNAMEs to add to your DNS"),
+        verified: z.boolean().describe("Whether Amazon SES has found the records: replies come from the address").meta({ examples: [false] }),
+        checkedAt: when("When SES last checked; null before it has"),
+        error: z.string().nullable().describe("What went wrong when it last checked; null when nothing did").meta({ examples: [null] }),
+        receivedAt: when("When an email forwarded from the address last came (forward it to the support address); null before one has"),
+      })
+      .nullable()
+      .describe("Sending from your own domain, with Amazon SES; null where the server doesn't offer it"),
+  })
+  .meta({ id: "SupportEmail", description: "The support inbox's email" });
+
+const supportSettingsFields = {
+  inbox: z.boolean().describe('Whether the support inbox is on: Messages in the widget, and "Ask a person" starts a conversation').meta({ examples: [true] }),
+  draftInstructions: z
+    .string()
+    .describe("The team's standing instructions for replies drafted by AI (conversations.suggestReply)")
+    .meta({ examples: ["Keep it short and friendly; sign off as the Acme team."] }),
+  email: supportEmailOutput.nullable().describe("Email; null where the server doesn't receive email"),
+};
+
+const settingsOutput = z.object(supportSettingsFields).describe("The support settings as they are now");
+
 /** Every domain a domain is under, itself first (help.acme.com: help.acme.com, acme.com). */
 const domainAndParents = (domain: string) =>
   domain
@@ -61,14 +109,23 @@ export const setEmailDomain = defineOperation({
   name: "support.setEmailDomain",
   title: "Set the email domain",
   summary:
-    "Send replies by email from your own address (`support@yourcompany.com`): adds its domain to Amazon SES, whose 3 DKIM CNAMEs (`support.get`, `email.ownDomain.records`) go in your DNS. Replies come from it once SES finds them (`support.checkEmailDomain`); until then, from the project's support address. A domain is one project's alone. Where plans are sold, on a plan with email from your own domain (402 otherwise)",
+    "Send replies by email from your own address: adds its domain to Amazon SES, whose 3 DKIM CNAMEs (`email.ownDomain.records`) go in your DNS. Replies come from it once SES finds them (`support.checkEmailDomain`); otherwise from the project's support address.",
   method: "POST",
   path: "/support/email-domain",
   scope: "write",
   access: "admin",
   errors: [402, 409],
-  input: z.object({ address: z.email().max(254) }),
+  input: z.object({
+    address: z
+      .email()
+      .max(254)
+      .describe(
+        "The address to send from (`support@yourcompany.com`). A domain is one project's alone. Where plans are sold, it takes a plan with email from your own domain (402)",
+      )
+      .meta({ examples: ["support@example.com"] }),
+  }),
   example: { address: "support@example.com" },
+  output: settingsOutput,
   run: async ({ projectId }, { address: given }) => {
     const api = ses();
     const support = supportDomain();
@@ -133,6 +190,7 @@ export const checkEmailDomainOperation = defineOperation({
   access: "admin",
   errors: [404],
   input: z.object({}),
+  output: settingsOutput,
   run: async ({ projectId }) => {
     if (!(await checkEmailDomain(projectId))) {
       throw new OperationError(404, "not_found", "No domain to check");
@@ -150,6 +208,7 @@ export const removeEmailDomain = defineOperation({
   scope: "write",
   access: "admin",
   input: z.object({}),
+  output: settingsOutput,
   run: async ({ projectId }) => {
     await dropEmailDomain(projectId);
     return supportSettings(projectId);
@@ -159,20 +218,21 @@ export const removeEmailDomain = defineOperation({
 export const getSupportSettings = defineOperation({
   name: "support.get",
   title: "Get the support settings",
-  summary:
-    "Get the support inbox's settings: whether it's on (Messages in the widget; \"Ask a person\" starts a conversation), the team's instructions for replies drafted by AI (`draftInstructions`), and its email address (null until it has one; `email` is null where the server doesn't receive email)",
+  summary: "Get the support inbox's settings: whether it's on, the team's instructions for replies drafted by AI, and its email.",
   method: "GET",
   path: "/support",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: settingsOutput,
   run: async ({ projectId }) => supportSettings(projectId),
 });
 
 export const updateSupportSettings = defineOperation({
   name: "support.update",
   title: "Update the support settings",
-  summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate; turning it on gives the project its support email address where the server receives email), or (`email: true`) give the project its support email address, which is its for good, or (`draftInstructions`) set the team's standing instructions for replies drafted by AI (conversations.suggestReply): their tone and form, up to 2,000 characters; a draft still says only what the docs say",
+  summary:
+    "Turn the support inbox on or off, give the project its support email address, or set the team's standing instructions for replies drafted by AI. Turning the inbox on gives the project its address too, where the server receives email.",
   method: "PATCH",
   path: "/support",
   scope: "write",
@@ -180,13 +240,28 @@ export const updateSupportSettings = defineOperation({
   errors: [409],
   input: z
     .object({
-      inbox: z.boolean().optional(),
-      email: z.literal(true).optional(),
-      draftInstructions: z.string().trim().max(MAX_DRAFT_INSTRUCTIONS, "Keep the instructions under 2,000 characters").optional(),
+      inbox: z
+        .boolean()
+        .optional()
+        .describe("Turn the support inbox on or off; it takes “Ask a person” after an AI answer too (docs.escalate)")
+        .meta({ examples: [true] }),
+      email: z
+        .literal(true)
+        .optional()
+        .describe("true gives the project its support email address, which is its for good (409 where the server doesn't receive email)")
+        .meta({ examples: [true] }),
+      draftInstructions: z
+        .string()
+        .trim()
+        .max(MAX_DRAFT_INSTRUCTIONS, "Keep the instructions under 2,000 characters")
+        .optional()
+        .describe("The team's standing instructions for replies drafted by AI (conversations.suggestReply): their tone and form, up to 2,000 characters; a draft still says only what the docs say")
+        .meta({ examples: ["Keep it short and friendly; sign off as the Acme team."] }),
     })
     .refine((input) => input.inbox !== undefined || input.email !== undefined || input.draftInstructions !== undefined, "Send inbox, email or draftInstructions")
     .meta({ anyOf: [{ required: ["inbox"] }, { required: ["email"] }, { required: ["draftInstructions"] }] }),
   example: { inbox: true },
+  output: settingsOutput,
   run: async ({ projectId }, input) => {
     if (input.email && !supportDomain()) {
       throw new OperationError(409, "email_off", "This server doesn't receive email (SUPPORT_EMAIL_DOMAIN isn't set)");

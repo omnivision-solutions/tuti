@@ -9,7 +9,7 @@ import { portalAddress } from "../custom-domains";
 import { answerSections } from "../docs-search";
 import { readerOf } from "../portal-access";
 import { assistantSettings } from "./assistant";
-import { addMessage, findConversation } from "./conversations";
+import { addMessage, conversationNumber, findConversation } from "./conversations";
 import { defineOperation, OperationError } from "./define";
 import { answerPrompt, answersEnabled, readAnswer, stillUsable } from "./docs-ask";
 import { projectSlug } from "./read";
@@ -22,7 +22,6 @@ import { projectSlug } from "./read";
  * without a teammate sending it.
  */
 
-const conversationNumber = z.coerce.number().int().positive();
 /** How much of what they asked is searched and answered: their messages since the team's last reply. */
 const MAX_QUESTION_LENGTH = 2000;
 /** How many sections a draft may use, and how long the model may take. */
@@ -61,6 +60,19 @@ export const suggestReply = defineOperation({
   access: "team",
   errors: [503],
   input: z.object({ number: conversationNumber }),
+  output: z
+    .object({
+      status: z
+        .enum(["suggested", "no_answer", "unavailable", "failed"])
+        .describe("suggested: `draft` has it; no_answer: the docs don't cover what they asked; unavailable: the project is out of AI credits; failed: the AI didn't answer, try again")
+        .meta({ examples: ["suggested"] }),
+      draft: z
+        .string()
+        .nullable()
+        .describe("The reply, then each article it used, with a link to its page (an AI-only article: its title only); null unless suggested")
+        .meta({ examples: ["Use Export on the reports page.\n\n- Exporting reports: https://acme.example.com/docs/exporting-reports"] }),
+    })
+    .describe("The drafted reply, or why there isn't one"),
   run: async ({ projectId }, { number }) => {
     if (!answersEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
@@ -135,6 +147,12 @@ export const summarizeConversation = defineOperation({
   access: "team",
   errors: [402, 502, 503],
   input: z.object({ number: conversationNumber }),
+  output: z
+    .object({
+      id: z.string().describe("The note's id").meta({ examples: ["cm3k9x2ab0003qz8h1e6f9b2a"] }),
+      body: z.string().describe('The note: "Summary: " and the summary, up to five short lines').meta({ examples: ["Summary: They want an invoice for October."] }),
+    })
+    .describe("The note added"),
   run: async ({ projectId }, { number }) => {
     if (!aiEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
