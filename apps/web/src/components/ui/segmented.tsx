@@ -1,5 +1,7 @@
+"use client";
+
 import { cn } from "cn";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 /**
  * A choice of two to five short options, side by side (docs/design.md → Settings rows): radios, so it's a form
@@ -16,7 +18,7 @@ export function Segmented<T extends string>({
   ...props
 }: {
   name: string;
-  options: readonly { value: T; label: ReactNode; icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean }> }[];
+  options: readonly { value: T; label: ReactNode; /** An icon element (`<SunIcon aria-hidden />`), sized here. */ icon?: ReactNode }[];
   defaultValue?: T;
   value?: T;
   onValueChange?: (value: T) => void;
@@ -27,10 +29,10 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div role="radiogroup" {...props} className={cn("flex w-fit max-w-full gap-1 rounded-lg bg-muted p-1", className)}>
-      {options.map(({ value: option, label, icon: Icon }) => (
+      {options.map(({ value: option, label, icon }) => (
         <label
           key={option}
-          className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-focus-visible:ring-2 has-focus-visible:ring-ring"
+          className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap [&>svg]:size-3.5 text-muted-foreground transition-colors hover:text-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-focus-visible:ring-2 has-focus-visible:ring-ring"
         >
           <input
             type="radio"
@@ -40,7 +42,7 @@ export function Segmented<T extends string>({
             onChange={() => onValueChange?.(option)}
             className="sr-only"
           />
-          {Icon && <Icon aria-hidden className="size-3.5" />}
+          {icon}
           {label}
         </label>
       ))}
