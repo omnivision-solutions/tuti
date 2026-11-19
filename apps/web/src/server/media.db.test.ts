@@ -167,10 +167,18 @@ describe("limits", () => {
     expect(await createUpload(project.slug, { type: "image/png", size: 600 * 1024 })).toMatchObject({ mediaId: expect.any(String) });
   });
 
-  test("each person can start 30 uploads an hour", async () => {
-    await prisma.media.createMany({
-      data: Array.from({ length: 30 }, () => ({ projectId: project.id, uploaderId: ada.id, size: 1, status: "FAILED" as const })),
+  test("a portal user can start 30 uploads an hour, a team member 300", async () => {
+    const started = (uploaderId: string, length: number) =>
+      prisma.media.createMany({
+        data: Array.from({ length }, () => ({ projectId: project.id, uploaderId, size: 1, status: "FAILED" as const })),
+      });
+    await started(ada.id, 30);
+    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({
+      error: "You've uploaded a lot of images in the last hour. Try again later.",
     });
+    actAs(owner);
+    await started(owner.id, 299);
+    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toMatchObject({ mediaId: expect.any(String) });
     expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({
       error: "You've uploaded a lot of images in the last hour. Try again later.",
     });

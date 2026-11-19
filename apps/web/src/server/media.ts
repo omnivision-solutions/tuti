@@ -41,7 +41,9 @@ import { actsIn, getAccountSession, getSession, onTeam } from "./session";
  */
 
 const MB = 1024 * 1024;
+/** Portal users add a picture or two to a post; a team member writing docs adds dozens in a sitting. The project's quota bounds both. */
 const UPLOADS_PER_HOUR = 30;
+const UPLOADS_PER_HOUR_TEAM = 300;
 
 const size = z.number().int().positive({ error: "This file is empty" });
 const fileSchema = z.object({
@@ -110,7 +112,7 @@ export async function createUpload(
     const recent = await tx.media.count({
       where: { uploaderId: userId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } },
     });
-    if (recent >= UPLOADS_PER_HOUR) {
+    if (recent >= (isTeam ? UPLOADS_PER_HOUR_TEAM : UPLOADS_PER_HOUR)) {
       return { error: `You've uploaded a lot of ${attachment ? "files" : "images"} in the last hour. Try again later.` };
     }
     const { _sum } = await tx.media.aggregate({
