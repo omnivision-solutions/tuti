@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { AskingPropertySelect } from "@/components/asking-property-select";
-import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { SettingsCard, SettingsPane } from "@/components/settings-card";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
 import { numberPropertyNames } from "@/server/operations/groups";
@@ -18,11 +18,9 @@ export default async function AskingSettingsPage(props: PageProps<"/app/[project
   }
   const numbers = await numberPropertyNames(project.id);
   return (
-    <SettingsPane title="Who's asking" description={<>A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what a post is worth. Only your team sees it.</>}>
+    <SettingsPane title="Who's asking">
       <SettingsCard>
-        <SettingBlock>
-          <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={storedPropertyFormats(project.propertyFormats)} />
-        </SettingBlock>
+        <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={storedPropertyFormats(project.propertyFormats)} />
       </SettingsCard>
     </SettingsPane>
   );

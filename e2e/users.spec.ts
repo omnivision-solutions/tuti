@@ -296,25 +296,30 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.goto(`/app/${slug}/settings/properties`);
   const properties = owner.getByRole("region", { name: "User properties" });
   await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_id · Text/, /^Companycompany · Text/, /^MRRmrr · Number/, /^Planplan · Text/]);
-  // Who's asking, beside it in Users, is None, and offers the users' first amount in one click (not their id, a number too).
+  // Who's asking, beside it in Users, is None, and lists the users' first amount first, as suggested (not their id, a number too).
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await menu.getByRole("link", { name: "Who's asking" }).click();
   const card = owner.getByRole("region", { name: "Who's asking" });
-  await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("None");
-  await expect(card).toContainText("Your users have MRR, a number Feedback can total.");
+  const value = card.getByRole("combobox", { name: "Value of a post" });
+  await expect(value).toContainText("None");
+  await expect(value).toHaveAccessibleDescription("Totals a number property over each post's voters. Only your team sees it.");
+  await value.click();
+  await expect(owner.getByRole("option")).toHaveText(["None", "MRRSuggested", "Account ID"]);
   await checkpoint(owner, "settings-whos-asking-suggested");
-  await owner.setViewportSize({ width: 390, height: 844 });
-  await card.scrollIntoViewIfNeeded();
-  await checkpoint(owner, "settings-whos-asking-suggested-phone");
-  await owner.setViewportSize({ width: 1280, height: 720 });
-  await card.getByRole("button", { name: "Use MRR" }).click();
+  await owner.getByRole("option", { name: "MRR" }).click();
   await expect(owner.getByText("Feedback totals MRR over each post's voters")).toBeVisible();
-  await expect(card.getByRole("combobox", { name: "Property to total" })).toContainText("MRR");
-  await expect(card.getByRole("button", { name: "Use MRR" })).toBeHidden();
-  await expect(card.getByRole("combobox", { name: "Property to total" })).toBeFocused();
-  await card.getByRole("combobox", { name: "Property to total" }).click();
+  await expect(value).toContainText("MRR");
+  // Picked, nothing is suggested: the properties in their order.
+  await value.click();
   await expect(owner.getByRole("option")).toHaveText(["None", "Account ID", "MRR"]);
   await owner.keyboard.press("Escape");
+  await expect(owner.getByText("Feedback totals MRR over each post's voters")).toBeHidden({ timeout: 10_000 });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await checkpoint(owner, "settings-whos-asking");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(value).toBeVisible();
+  await checkpoint(owner, "settings-whos-asking-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Under User properties, the team shows mrr as money (in dollars, as it's first offered); its name stays MRR.
   await menu.getByRole("link", { name: "User properties" }).click();
@@ -379,7 +384,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });
 
-test("on a phone, Who's asking's suggestion of a long-named property stays inside its card", async ({ browser }, testInfo) => {
+test("on a phone, Who's asking's suggestion of a long-named property stays inside its list and its card", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -391,11 +396,19 @@ test("on a phone, Who's asking's suggestion of a long-named property stays insid
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/settings/asking`);
   const card = owner.getByRole("region", { name: "Who's asking" });
-  // Cut short to fit, its name whole.
-  const use = card.getByRole("button", { name: "Use Averyveryveryverylongnumberpropertynamewithoutanyspaces" });
-  await use.scrollIntoViewIfNeeded();
-  const box = (await card.boundingBox())!;
-  const button = (await use.boundingBox())!;
-  expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
+  const value = card.getByRole("combobox", { name: "Value of a post" });
+  await value.click();
+  // Cut short to fit, its name whole and "Suggested" in sight.
+  const option = owner.getByRole("option", { name: "Averyveryveryverylongnumberpropertynamewithoutanyspaces" });
+  const tag = (await option.getByText("Suggested").boundingBox())!;
+  const list = (await owner.getByRole("listbox").boundingBox())!;
+  expect(tag.x + tag.width).toBeLessThanOrEqual(list.x + list.width);
   await checkpoint(owner, "settings-whos-asking-long-name-phone");
+  await option.click();
+  await expect(owner.getByText("Feedback totals Averyveryveryverylongnumberpropertynamewithoutanyspaces over each post's voters")).toBeVisible();
+  // Picked, it's cut short in its box too.
+  const box = (await card.boundingBox())!;
+  const trigger = (await value.boundingBox())!;
+  expect(trigger.x + trigger.width).toBeLessThanOrEqual(box.x + box.width);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });
