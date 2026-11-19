@@ -78,12 +78,12 @@ const ERRORS = {
 } as const;
 
 /**
- * The error statuses an operation answers with: 401 and 429 always, 400 when it takes input (a POST or PATCH always
- * reads a JSON body), 403 when it writes or is for owners and admins, 404 when its path names something, and what it
+ * The error statuses an operation answers with: 401 and 429 always, 400 when it takes input (anything but a GET reads
+ * a JSON body it's sent), 403 when it writes or is for owners and admins, 404 when its path names something, and what it
  * declares (`errors`: a 404 too where its input, not its path, names what may not be there).
  */
 export function errorStatuses(operation: (typeof operations)[number]): (keyof typeof ERRORS)[] {
-  const takesInput = Object.keys(inputSchema(operation).properties ?? {}).length > 0 || operation.method === "POST" || operation.method === "PATCH";
+  const takesInput = Object.keys(inputSchema(operation).properties ?? {}).length > 0 || operation.method !== "GET";
   return [
     ...(takesInput ? [400 as const] : []),
     401 as const,

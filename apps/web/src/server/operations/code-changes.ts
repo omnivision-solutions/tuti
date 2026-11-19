@@ -1634,7 +1634,6 @@ export const applyCodeChangeActions = defineOperation({
   path: "/code-change-actions/apply",
   scope: "write",
   access: "team",
-  errors: [402, 404, 409],
   input: z.object({
     actions: z
       .array(
