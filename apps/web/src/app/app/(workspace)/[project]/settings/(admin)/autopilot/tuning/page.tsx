@@ -12,7 +12,7 @@ import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
 export const metadata: Metadata = { title: "Tuning · Autopilot · Settings" };
 
 /**
- * Settings → Autopilot → Advanced tuning: Autopilot's values for this project (owners change them, on Business; admins
+ * Settings → Autopilot → Advanced tuning: Autopilot's values for this project (owners change them, on a plan with Advanced tuning; admins
  * see them). A page of its own, so Settings → Autopilot and this each save one way.
  */
 export default async function CodeChangesTuningPage(props: PageProps<"/app/[project]/settings/autopilot/tuning">) {

@@ -19,7 +19,7 @@ import { requirePlan } from "./plan";
 
 /**
  * Autopilot's Advanced tuning (docs/plan.md, Autopilot's docs agent, D6): a project's own values for a few of Autopilot's
- * settings (code-changes-tuning.ts), owners only, on Business. Each is the server's until the project sets it.
+ * settings (code-changes-tuning.ts), owners only, on a plan with Advanced tuning. Each is the server's until the project sets it.
  */
 
 export type CodeChangesTuning = {
@@ -94,7 +94,7 @@ const shown = (range: TuningRange, n: number, round: (n: number) => number) =>
 export const updateCodeChangesTuning = defineOperation({
   name: "codeChangesTuning.update",
   summary:
-    "Change Autopilot's Advanced tuning (owners only, on the Business plan): any of its values, each inside the server's range (see codeChangesTuning.get), or null for the server's. Values left out keep theirs",
+    "Change Autopilot's Advanced tuning (owners only, where plans are sold on a plan with Advanced tuning): any of its values, each inside the server's range (see codeChangesTuning.get), or null for the server's. Values left out keep theirs",
   method: "PATCH",
   path: "/code-changes-tuning",
   scope: "write",

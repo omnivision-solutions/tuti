@@ -68,7 +68,7 @@ export const getSite = defineOperation({
 export const setSite = defineOperation({
   name: "site.set",
   summary:
-    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify. Where plans are sold, on Business (402 otherwise; on a lower plan a path set before isn't served, and the portal is at its Tuti address)",
+    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify. Where plans are sold, on a plan with a portal under a path of your site (402 otherwise; on a lower plan a path set before isn't served, and the portal is at its Tuti address)",
   method: "POST",
   path: "/site",
   scope: "write",

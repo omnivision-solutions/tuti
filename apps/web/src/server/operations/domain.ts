@@ -95,7 +95,7 @@ export const getDomain = defineOperation({
 export const setDomain = defineOperation({
   name: "domain.set",
   summary:
-    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is. Where plans are sold, on Pro and Business (402 otherwise; on a lower plan a domain set before isn't served, and the portal is at its Tuti address)",
+    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is. Where plans are sold, on a plan with a custom domain (402 otherwise; on a lower plan a domain set before isn't served, and the portal is at its Tuti address)",
   method: "POST",
   path: "/domain",
   scope: "write",
