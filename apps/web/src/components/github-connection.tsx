@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { SettingRow, SettingsCard } from "@/components/settings-card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -23,10 +23,10 @@ import { Switch } from "@/components/ui/switch";
 import { disconnectGithub, refreshGithubRepositories, setAutoApplyLinks, setCodeChangeAnalysis, setGithubRepository } from "@/server/github";
 
 /**
- * Settings → Integrations → GitHub's ⋯ menu, in the pane's header: Refresh list and Switch account (`switchUrl`, both
- * only where the server has a GitHub App), and Disconnect, which asks first.
+ * Settings → Integrations → GitHub's ⋯ menu, in the pane's header: when it was connected (`connected`, a date), Refresh
+ * list and Switch account (`switchUrl`, both only where the server has a GitHub App), and Disconnect, which asks first.
  */
-export function GithubConnectionMenu({ projectSlug, account, switchUrl }: { projectSlug: string; account: string; switchUrl: string | null }) {
+export function GithubConnectionMenu({ projectSlug, account, connected, switchUrl }: { projectSlug: string; account: string; connected: string; switchUrl: string | null }) {
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -37,6 +37,9 @@ export function GithubConnectionMenu({ projectSlug, account, switchUrl }: { proj
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-40">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Connected {connected}</DropdownMenuLabel>
+          </DropdownMenuGroup>
           {switchUrl && (
             <>
               <DropdownMenuItem

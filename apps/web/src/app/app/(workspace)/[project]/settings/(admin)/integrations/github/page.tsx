@@ -76,7 +76,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
   });
 
   const connected = (className: string) => (
-    <Badge className={className} title={`Connected ${formatDate(installation.createdAt)}`}>
+    <Badge className={className}>
       Connected · {installation.accountLogin}
     </Badge>
   );
@@ -87,17 +87,19 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       back={{ href: integrations, label: "Integrations" }}
       actions={
         <>
-          {connected("hidden @min-[48rem]/app:inline-flex")}
+          {/* From 56rem, where the header has room for the longest login beside the title. */}
+          {connected("hidden @min-[56rem]/app:inline-flex")}
           <GithubConnectionMenu
             projectSlug={project.slug}
             account={installation.accountLogin}
+            connected={formatDate(installation.createdAt)}
             switchUrl={github ? `/api/github/install?${new URLSearchParams({ project: project.slug })}` : null}
           />
         </>
       }
     >
-      {/* On a phone the header has no room for it: here, where a long account name wraps. */}
-      {connected("-mb-3 h-auto max-w-full justify-start text-left break-all whitespace-normal @min-[48rem]/app:hidden")}
+      {/* Narrower, the header has no room for it: here, where a long account name wraps. */}
+      {connected("-mb-3 h-auto max-w-full justify-start text-left break-all whitespace-normal @min-[56rem]/app:hidden")}
       {!github && (
         <Alert variant="destructive">
           <AlertDescription>

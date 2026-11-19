@@ -221,6 +221,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   const url = owner.url();
   const actions = owner.getByRole("button", { name: "GitHub connection actions" });
   await actions.click();
+  // It says when GitHub was connected too.
+  await expect(owner.getByRole("menu").getByText(/^Connected \S/)).toBeVisible();
   await checkpoint(owner, "settings-github-menu", { fullPage: false });
   await owner.getByRole("menuitem", { name: "Refresh list" }).click();
   await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();
@@ -267,6 +269,15 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("link", { name: `Connect @${labs.account}` }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
   await expect(connectedTo(labs.account)).toBeVisible();
+  // Beside the title the long name leaves the title whole, on a wide screen and on a tablet (where it's above the card).
+  const title = owner.getByRole("heading", { name: "GitHub", exact: true });
+  for (const width of [1280, 960, 820]) {
+    await owner.setViewportSize({ width, height: 900 });
+    await expect(connectedTo(labs.account)).toBeVisible();
+    await expect.poll(() => connectedTo(labs.account).evaluate(uncut)).toBe(true);
+    await expect.poll(() => title.evaluate(uncut)).toBe(true);
+  }
+  await checkpoint(owner, "settings-github-long-name-tablet");
   // On a phone the long name wraps, never cut.
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(connectedTo(labs.account)).toBeVisible();
