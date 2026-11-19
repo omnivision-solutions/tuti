@@ -827,7 +827,8 @@ widths, in light and dark (in development only).
     things (User properties' format, beside the key and a currency) use a `Select` whatever the count, so they fit a phone.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
-    is one muted line in the card, not an `EmptyState`.
+    is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
+    repeat the page's, and so no count: its "New" button is in the pane's header (`SettingsPane`'s `actions`).
   - An upload is its thumbnail and an Upload button on the row; what files it takes is said when one is refused.
   - A number carries its unit in the field ("25 people").
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its
@@ -885,8 +886,8 @@ widths, in light and dark (in development only).
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense
   ("Merged into #12", "Status: Planned").
 - Disable buttons while their action runs.
-- A setting left empty offers the obvious pick in one click (Who's asking's
-  "Use Seats"); it isn't picked for the team.
+- A setting left empty offers the obvious pick first in its list, marked
+  "Suggested" (Who's asking's Seats); it isn't picked for the team.
 - Users' properties show in words until the team names them: the key in
   sentence case (`company_size` is Company size, `mrr` MRR), a number as a
   number unless its key says it's an id, a time, a year, a zip code or a

@@ -4,13 +4,14 @@ import { expect, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
+import { setAnalysis } from "./autopilot";
 import { APP_URL } from "./env";
 import { connectGithub, nextInstall } from "./github";
 import { createProject, signUp } from "./helpers";
 
 test("an admin connects two projects to one GitHub account, gives each its repositories, and disconnects", async ({ browser }, testInfo) => {
   // Two projects, each connected, given repositories, Autopilot's settings and a disconnect: near 30 seconds on a busy runner.
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const [web, mobile] = [`e2e-${randomUUID().slice(0, 8)}`, `e2e-${randomUUID().slice(0, 8)}`];
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -21,14 +22,19 @@ test("an admin connects two projects to one GitHub account, gives each its repos
 
   // Before connecting, it says what leaves: merged pull requests' diffs, to the AI provider.
   await owner.goto(`/app/${web}/settings/integrations`);
-  await expect(owner.getByText("Tuti also sends each one's diff, without secrets, to", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Tuti sends each merged pull request's diff, without secrets, to", { exact: false })).toBeVisible();
   // What's on the way is listed too, so a team sees it's coming.
   const soon = owner.getByRole("region", { name: "Coming soon" });
-  await expect(soon.getByRole("heading", { level: 3 })).toHaveText(["GitLab", "Linear", "Jira", "Slack"]);
-  await expect(soon.getByRole("listitem").getByText("Coming soon", { exact: true })).toHaveCount(4);
+  await expect(soon.getByRole("listitem")).toHaveText(["GitLabSoon", "LinearSoon", "JiraSoon", "SlackSoon"]);
   await expect(soon.getByRole("link")).toHaveCount(0);
   await expect(soon.getByRole("button")).toHaveCount(0);
   await checkpoint(owner, "settings-integrations");
+  // On a phone the tiles go two to a row, and nothing reaches past the screen.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  // The pane's body scrolls what's too wide for it, so it's the one to measure.
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-integrations-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
   await connectGithub(owner, web, account);
   // Connected, it's on GitHub's own settings page.
@@ -72,6 +78,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // GitHub's Repositories say Autopilot reads them only while it does.
   await owner.goto(`/app/${web}/settings/integrations/github`);
   await expect(owner.getByText("gather in the changelog's Next release draft. Each repository", { exact: false })).toBeVisible();
+  // So does its row on Integrations.
+  await owner.goto(`/app/${web}/settings/integrations`);
+  await expect(owner.getByRole("link", { name: "GitHub · acme-e2e Pull requests for the changelog Connected", exact: true })).toBeVisible();
   // Off, Autopilot's page says so, and takes its owner to the switch.
   await owner.goto(`/app/${web}/autopilot`);
   await expect(owner.getByText("Autopilot is off for this project. Turn it on in its settings.")).toBeVisible();
@@ -218,11 +227,16 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name: "acme-e2e/docs", exact: true })).toBeEnabled();
   await owner.keyboard.press("Escape");
 
-  // Integrations lists it as connected, with Manage.
+  // Integrations lists it as connected, the row opening its settings.
   await owner.getByRole("region", { name: "GitHub" }).getByRole("link", { name: "Integrations" }).click();
-  await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ })).toBeVisible();
+  await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ })).toBeVisible();
   await checkpoint(owner, "settings-integrations-connected");
-  await owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ }).click();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  // The pane's body scrolls what's too wide for it, so it's the one to measure.
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-integrations-connected-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github`);
   await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
 
@@ -241,6 +255,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => owner.getByRole("heading", { name: `GitHub · ${labs.account}` }).evaluate(uncut)).toBe(true);
   await checkpoint(owner, "settings-github-long-name-phone");
+  // So does its row on Integrations: the name on more lines, nothing wider than the pane.
+  await owner.goto(`/app/${mobile}/settings/integrations`);
+  const longRow = owner.getByText(`GitHub · ${labs.account}`, { exact: true });
+  await expect.poll(() => longRow.evaluate(uncut)).toBe(true);
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  await owner.goto(`/app/${mobile}/settings/integrations/github`);
   await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   const history = await owner.evaluate(() => window.history.length);
@@ -253,4 +273,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   expect(await owner.evaluate(() => window.history.length)).toBe(history);
   await expect(owner.getByRole("link", { name: "Connect GitHub" })).toBeVisible();
   await checkpoint(owner, "settings-integrations");
+  // Not connected, the row names Autopilot only while the project has it on.
+  await expect(owner.getByText("Pull requests for the changelog and Autopilot", { exact: true })).toBeVisible();
+  await setAnalysis(mobile, false);
+  await owner.reload();
+  await expect(owner.getByText("Pull requests for the changelog", { exact: true })).toBeVisible();
 });
