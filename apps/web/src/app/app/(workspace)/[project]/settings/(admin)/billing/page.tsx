@@ -96,11 +96,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // A license's AI credits for its month (they end with it, as its emails do: emails.until) are This month's, spent
   // ones too (the meter then reads 0); the rest (a trial's, the free ones, top-ups) are listed under it.
   // ponytail: a Stripe plan's credits stay in the list; into This month too when its period is a month, if asked for.
+  // The license's month while it runs: over and the next not given yet (the hourly job late), there's none to show.
+  const until = emails?.until && emails.until > new Date() ? emails.until : null;
   const monthly =
-    licensed && emails?.until && creditsEnabled()
+    licensed && until && creditsEnabled()
       ? (
           await prisma.creditGrant.findMany({
-            where: { projectId: project.id, planLicenseId: license!.id, kind: "AI", expiresAt: emails.until },
+            where: { projectId: project.id, planLicenseId: license!.id, kind: "AI", expiresAt: until },
             select: { id: true, credits: true, remaining: true },
           })
         ).map((grant) => ({ id: grant.id, credits: grant.credits.toNumber(), remaining: grant.remaining.toNumber() }))
@@ -185,7 +187,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           <SettingBlock>
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-base font-semibold">This month</h2>
-              {emails.until && <span className="text-sm text-muted-foreground">Resets {formatShortDate(emails.until)}</span>}
+              {until && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
             </div>
             <div className="grid gap-4 @min-[34rem]/settings:grid-cols-2 @min-[34rem]/settings:gap-x-8">
               {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}

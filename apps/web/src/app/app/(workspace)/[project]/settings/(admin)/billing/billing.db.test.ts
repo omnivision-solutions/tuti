@@ -186,6 +186,20 @@ test("on a license, This month has what's left of its month's emails and AI cred
   expect(page).toMatch(meter("AI credits", `0 of ${monthly} left`));
   expect(page).toContain(">Extra AI credits</h2>");
   expect(page).toContain("700 credits owed: new credits pay that first.");
+  // Its month over and the next not given yet (the hourly job late): the month's credits can't be spent, so they
+  // aren't shown as left, nor as owed, and no day past is given as the reset.
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 0 } });
+  const past = new Date(Date.now() - 60_000);
+  await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 300, expiresAt: past } });
+  await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL" }, data: { expiresAt: past } });
+  await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough: past } });
+  page = await billing();
+  expect(page).not.toMatch(/>AI credits<\/span>/);
+  expect(page).not.toContain("credits owed");
+  expect(page).not.toContain(">Resets ");
+  await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 0, expiresAt: creditsThrough } });
+  await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL" }, data: { expiresAt: creditsThrough } });
+  await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough } });
   // With no others, no list.
   await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 0 } });
   await prisma.creditGrant.deleteMany({ where: { projectId, planLicenseId: null } });
