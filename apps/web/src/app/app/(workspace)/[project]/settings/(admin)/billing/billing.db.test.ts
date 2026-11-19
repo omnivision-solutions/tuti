@@ -4,7 +4,7 @@ import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPl
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { formatDate } from "@/lib/format";
+import { formatShortDate } from "@/lib/format";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import BillingSettingsPage from "./page";
@@ -157,11 +157,15 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.project.update({ where: { id: projectId }, data: { plan: "pro" } });
   await grantLicenseCredits(license.id);
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
-  const until = formatDate(creditsThrough!);
+  const until = formatShortDate(creditsThrough!);
   const month = await prisma.creditGrant.findFirstOrThrow({ where: { planLicenseId: license.id, kind: "AI" } });
   const monthly = month.credits.toNumber().toLocaleString("en");
   let page = await billing();
-  expect(page).toContain(`Resets ${until}`);
+  expect(page).toContain(`>Resets ${until}</span>`);
+  // The plan, one row: its name, what kind of license, and Unassign behind "⋯".
+  expect(page).toMatch(/>Pro plan<\/h2><span[^>]*>Tuti license</);
+  expect(page).toContain('aria-label="License options"');
+  expect(page).not.toContain("doesn't renew or bill");
   expect(page).toMatch(meter("Emails", "10,000 of 10,000 left"));
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
   // The rest, without the month's: the trial's alone.
@@ -175,16 +179,29 @@ test("on a license, This month has what's left of its month's emails and AI cred
   page = await billing();
   expect(page).toMatch(meter("Emails", "9,999 of 10,000 left"));
   expect(page).toMatch(meter("AI credits", `1 of ${monthly} left`));
+  // Spent, the month's credits still have their meter; what the project owes is said, as no balance is.
+  await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 0 } });
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 700 } });
+  page = await billing();
+  expect(page).toMatch(meter("AI credits", `0 of ${monthly} left`));
+  expect(page).toContain(">Extra AI credits</h2>");
+  expect(page).toContain("700 credits owed: new credits pay that first.");
+  // With no others, no list.
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 0 } });
+  await prisma.creditGrant.deleteMany({ where: { projectId, planLicenseId: null } });
+  await prisma.project.update({ where: { id: projectId }, data: { freeCreditsGrantedAt: new Date() } });
+  page = await billing();
+  expect(page).not.toContain("AI credits</h2>");
+  expect(page).not.toContain("<table");
 });
 
-test("the credits table's dates read day first: when a grant was made, and when it expires", async () => {
+test("the credits list says until when each lasts, day first and short", async () => {
   vi.stubEnv("AI_CREDITS", "on");
   await prisma.creditGrant.create({
     data: { projectId, source: "MANUAL", credits: 100, remaining: 100, createdAt: new Date("2026-11-17T12:00:00Z"), expiresAt: new Date("2031-01-05T12:00:00Z") },
   });
   const page = await billing();
-  expect(page).toContain("(17 November 2026)");
-  expect(page).toContain(">5 January 2031</td>");
+  expect(page).toContain(">until 5 Jan 2031</td>");
 });
 
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {

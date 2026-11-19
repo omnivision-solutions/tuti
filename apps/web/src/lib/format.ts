@@ -25,6 +25,12 @@ export function timeAgo(date: Date, now = new Date()): string {
 /** A day, like "19 October 2026" (UTC, so server and browser agree); shared with the emails. */
 export { formatDate } from "@tuti/shared/dates";
 
+/** A day in a tight row, like "18 Dec" (UTC, as formatDate), with its year when it isn't this one's: "18 Nov 2027". */
+export function formatShortDate(date: Date, now = new Date()): string {
+  const year = date.getUTCFullYear() === now.getUTCFullYear() ? undefined : "numeric";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year, timeZone: "UTC" });
+}
+
 /** A day, short, like "6 Oct" (UTC, as formatDate). */
 export function formatDay(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });

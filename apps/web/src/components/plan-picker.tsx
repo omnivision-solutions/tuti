@@ -15,7 +15,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { BilledToggle, PlanLineItem } from "@tuti/ui/plan-line";
-import { CheckIcon, ChevronDownIcon, ExternalLinkIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, EllipsisIcon, ExternalLinkIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { billedAs, yearlyNote } from "@/lib/plans";
@@ -221,10 +222,12 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
 
 /**
  * A plan license's project (Billing): "Unassign license", back on its own plan; its holder, or the project's owners and
- * admins. While the license gives its plan (`active`), it asks first: only its holder can assign it again.
+ * admins. While the license gives its plan (`active`), it asks first: only its holder can assign it again. `menu`: behind
+ * "⋯" (the plan's row, where it's rarely wanted), not a button of its own.
  */
-export function UnassignLicense({ projectSlug, licenseId, active, badge = false }: { projectSlug: string; licenseId: string; active: boolean; badge?: boolean }) {
+export function UnassignLicense({ projectSlug, licenseId, active, badge = false, menu = false }: { projectSlug: string; licenseId: string; active: boolean; badge?: boolean; menu?: boolean }) {
   const [pending, startTransition] = useTransition();
+  const [asking, setAsking] = useState(false);
   const done = useRef(false);
   // Done, the plans take this button's place: the keyboard's place moves to the first of them, or to the line saying
   // plans can't be bought here.
@@ -257,10 +260,21 @@ export function UnassignLicense({ projectSlug, licenseId, active, badge = false 
     );
   }
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button type="button" variant="outline" className="self-start" disabled={pending} focusableWhenDisabled />}>
-        {pending ? "Unassigning…" : "Unassign license"}
-      </AlertDialogTrigger>
+    <AlertDialog open={asking} onOpenChange={setAsking}>
+      {menu ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="License options" disabled={pending} focusableWhenDisabled />}>
+            <EllipsisIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto min-w-36">
+            <DropdownMenuItem onClick={() => setAsking(true)}>Unassign license</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <AlertDialogTrigger render={<Button type="button" variant="outline" className="self-start" disabled={pending} focusableWhenDisabled />}>
+          {pending ? "Unassigning…" : "Unassign license"}
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Unassign this license?</AlertDialogTitle>
