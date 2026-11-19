@@ -351,7 +351,7 @@ export const listCompanies = defineOperation({
               name: z.string().describe("The company, as your users' `company` property has it").meta({ examples: ["Acme"] }),
               users: z.number().int().describe("How many of your users are at it").meta({ examples: [12] }),
               votes: z.number().int().describe("Its users' votes on others' posts, each counted once").meta({ examples: [30] }),
-              total: z.number().nullable().describe("The sum of `property` over its users, or null without one").meta({ examples: [4800] }),
+              total: z.number().nullable().describe("The sum of `property` over its users who have it as a number; null when none is picked or none of them has one").meta({ examples: [4800] }),
             })
             .meta({ description: "A company your users are at" }),
         )
