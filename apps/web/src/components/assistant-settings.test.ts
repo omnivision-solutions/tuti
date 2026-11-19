@@ -123,6 +123,30 @@ test("at the limit no more can be added, until one is removed", async () => {
   expect(sent()).toEqual(["c", "d", ""]);
 });
 
+test("while an input method composes, a comma adds nothing; as the composition ends, the text is read: split at commas, cut to a topic's length", async () => {
+  const { box, enter, chips } = await render([]);
+  const compose = (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, text);
+      box.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
+    });
+  const end = () => act(async () => void box.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+  await compose("a, b");
+  expect(chips()).toEqual([]);
+  expect(box.value).toBe("a, b");
+  await end();
+  expect(chips()).toEqual(["a"]);
+  expect(box.value).toBe("b");
+  await enter();
+  // Composed past a topic's length, it's cut as it ends, and by Enter.
+  await compose("x".repeat(80));
+  await end();
+  expect(box.value).toBe("x".repeat(60));
+  await compose("y".repeat(80));
+  await enter();
+  expect(chips()).toEqual(["a", "b", "y".repeat(60)]);
+});
+
 test("the form has one box for instructions and none for a tone", async () => {
   const root = document.createElement("div");
   document.body.append(root);

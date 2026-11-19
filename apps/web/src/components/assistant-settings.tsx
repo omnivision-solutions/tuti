@@ -82,7 +82,7 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
   // What just happened to the chips, read out by a screen reader: the box alone doesn't say.
   const [status, setStatus] = useState("");
   const add = () => {
-    const topic = draft.trim();
+    const topic = draft.trim().slice(0, maxLength);
     if (topic && topics.includes(topic)) {
       // Left in the box, so it shows that nothing was added.
       setStatus(`${topic} is already there`);
@@ -93,6 +93,36 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
       setStatus(`Added ${topic}`);
     }
     setDraft("");
+  };
+  const read = (event: { currentTarget: HTMLInputElement }) => {
+    // A comma ends a topic, typed or pasted (as the text changes: phones' keyboards don't say which key was
+    // pressed): what's before each becomes a chip, and the rest stays in the box. Each is cut to a topic's
+    // length here, not by the box, which would cut a pasted list short.
+    const pieces = event.currentTarget.value.split(",").map((piece) => piece.trim().slice(0, maxLength));
+    const rest = pieces.pop()!;
+    const typed = [...new Set(pieces.filter(Boolean))];
+    const fresh = typed.filter((piece) => !topics.includes(piece));
+    const added = fresh.slice(0, max - topics.length);
+    const filled = topics.length + added.length >= max;
+    // What a full list has no room for: the topics past the limit, and what was typed after the last comma.
+    const left = [...fresh.slice(added.length), ...(filled && rest ? [rest] : [])];
+    const repeated = typed.filter((piece) => topics.includes(piece));
+    if (pieces.length === 0) {
+      setDraft(event.currentTarget.value.slice(0, maxLength));
+      return;
+    }
+    setTopics([...topics, ...added]);
+    setStatus(
+      [
+        added.length > 0 && `Added ${added.join(", ")}`,
+        repeated.length > 0 && `${repeated.join(", ")} ${repeated.length > 1 ? "are" : "is"} already there`,
+        left.length > 0 && `${max} topics is the most: ${left.join(", ")} not added`,
+      ]
+        .filter(Boolean)
+        .join(". "),
+    );
+    // Nothing stays in a box that's full: it can't be edited there, and would be sent as one topic too many.
+    setDraft(filled ? "" : rest);
   };
   return (
     // Drawn as one field (Input's look); a press on its padding goes to the box.
@@ -132,41 +162,10 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
         id="assistant-off-limits"
         name="offLimits"
         value={draft}
-        onChange={(event) => {
-          // While an input method composes (a comma may be part of it), the text is left whole: it's read once it changes again.
-          if ((event.nativeEvent as InputEvent).isComposing) {
-            setDraft(event.target.value);
-            return;
-          }
-          // A comma ends a topic, typed or pasted (as the text changes: phones' keyboards don't say which key was
-          // pressed): what's before each becomes a chip, and the rest stays in the box. Each is cut to a topic's
-          // length here, not by the box, which would cut a pasted list short.
-          const pieces = event.target.value.split(",").map((piece) => piece.trim().slice(0, maxLength));
-          const rest = pieces.pop()!;
-          const typed = [...new Set(pieces.filter(Boolean))];
-          const fresh = typed.filter((piece) => !topics.includes(piece));
-          const added = fresh.slice(0, max - topics.length);
-          const filled = topics.length + added.length >= max;
-          // What a full list has no room for: the topics past the limit, and what was typed after the last comma.
-          const left = [...fresh.slice(added.length), ...(filled && rest ? [rest] : [])];
-          const repeated = typed.filter((piece) => topics.includes(piece));
-          if (pieces.length === 0) {
-            setDraft(event.target.value.slice(0, maxLength));
-            return;
-          }
-          setTopics([...topics, ...added]);
-          setStatus(
-            [
-              added.length > 0 && `Added ${added.join(", ")}`,
-              repeated.length > 0 && `${repeated.join(", ")} ${repeated.length > 1 ? "are" : "is"} already there`,
-              left.length > 0 && `${max} topics is the most: ${left.join(", ")} not added`,
-            ]
-              .filter(Boolean)
-              .join(". "),
-          );
-          // Nothing stays in a box that's full: it can't be edited there, and would be sent as one topic too many.
-          setDraft(filled ? "" : rest);
-        }}
+        // A change to the box's text, read once an input method is done composing it (a comma may be part of that): its
+        // last change comes while it composes, so the text is read again as the composition ends.
+        onChange={(event) => ((event.nativeEvent as InputEvent).isComposing ? setDraft(event.target.value) : read(event))}
+        onCompositionEnd={read}
         onKeyDown={(event) => {
           // Enter adds the topic; it doesn't save the form. Not the Enter that confirms an input method's candidate (Safari sends that one
           // after the composition ends, with key code 229).
