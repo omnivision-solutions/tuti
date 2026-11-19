@@ -1,5 +1,7 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { prisma } from "@tuti/db";
-import type { z } from "zod";
+import { z } from "zod";
 
 /**
  * Every feature is an operation, defined once and exposed in the REST API (and,
@@ -45,9 +47,9 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   /**
    * What it returns, as JSON (dates as ISO strings): the spec's 200 response and MCP's `outputSchema`. Fields say what
    * they are with `.describe()` and show a value with `.meta({ examples: [...] })`; a type several operations return
-   * gets `.meta({ id })`, its name in the spec. The operations matrix parses every result with it.
+   * gets `.meta({ id })`, its name in the spec. Under the tests every result is checked against it (defineOperation).
    */
-  output?: z.ZodObject;
+  output: z.ZodObject;
   /** An example request body or query, for the docs. */
   example?: Record<string, unknown>;
   run: (context: { actor: Actor; projectId: string }, input: z.infer<I>) => Promise<O>;
@@ -55,7 +57,26 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
 
 /** Keeps the name as a literal type, so lists of operations (like the authorization matrix) are checked by name. */
 export const defineOperation = <const N extends string, I extends z.ZodType, O>(operation: Operation<I, O> & { name: N }) =>
-  operation;
+  process.env.VITEST ? { ...operation, run: checked(operation) } : operation;
+
+/**
+ * In tests, a run whose result isn't what its output says fails: every field it declares, of its type, and none it
+ * doesn't (parsing drops those, so the parsed result would differ). So every test that runs an operation, not only the
+ * operations matrix, keeps the spec and MCP's outputSchema whole.
+ */
+function checked<I extends z.ZodType, O>(operation: Operation<I, O>): Operation<I, O>["run"] {
+  return async (context, input) => {
+    const result = await operation.run(context, input);
+    const body = JSON.parse(JSON.stringify(result)) as unknown;
+    const parsed = operation.output.safeParse(body);
+    if (!parsed.success || !isDeepStrictEqual(parsed.data, body)) {
+      throw new Error(
+        `${operation.name} returned what its output doesn't say: ${parsed.success ? "fields it doesn't declare" : z.prettifyError(parsed.error)}\n${JSON.stringify(body).slice(0, 2000)}`,
+      );
+    }
+    return result;
+  };
+}
 
 /** An expected failure, with the HTTP status the API answers with. */
 export class OperationError extends Error {
