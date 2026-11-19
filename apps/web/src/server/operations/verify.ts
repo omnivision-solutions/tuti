@@ -13,7 +13,86 @@ import { defineOperation, OperationError } from "./define";
  * date is an Autopilot update, reviewed on the article's review like a pull request's edit.
  */
 
-const slug = z.string().trim().min(1).max(80);
+const slug = z.string().trim().min(1).max(80).describe("The article's slug: the end of its address, /docs/<slug>").meta({ examples: ["getting-started"] });
+
+const isoTime = (what: string) => z.string().describe(`${what} (ISO 8601)`).meta({ examples: ["2026-11-02T09:30:00.000Z"] });
+const nullableTime = (what: string) => z.string().nullable().describe(`${what} (ISO 8601)`).meta({ examples: ["2026-11-02T09:31:12.000Z"] });
+
+/** verificationView's result. */
+const verificationOutput = z
+  .object({
+    id: z.string().describe("The run's id").meta({ examples: ["cm3v1a2b3c4d5e6f7g8h9i0j1"] }),
+    state: z
+      .enum(["running", "done", "changed", "failed", "skipped"])
+      .describe("`running`, `done`, `changed` (another edit landed while it ran: no fix written), `failed`, or `skipped` (verified at this commit already, on the same version)")
+      .meta({ examples: ["done"] }),
+    reason: z.string().describe("Why it failed, was skipped, or wrote no fix; empty otherwise").meta({ examples: [""] }),
+    repo: z.string().describe("The GitHub repository it read (owner/name)").meta({ examples: ["acme/app"] }),
+    commit: z.string().describe("The commit of the repository's default branch it read, its latest when it ran").meta({ examples: ["4f2c9e1b7a3d"] }),
+    revision: z.string().nullable().describe("The article's version it checked: its newest, unpublished changes and every edit waiting in them included").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+    counts: z
+      .object({
+        current: z.number().int().describe("Statements still true").meta({ examples: [11] }),
+        outdated: z.number().int().describe("Statements out of date").meta({ examples: [1] }),
+        unclear: z.number().int().describe("Statements the files can't tell").meta({ examples: [2] }),
+      })
+      .describe("How many statements it found of each kind"),
+    statements: z
+      .array(
+        z.object({
+          statement: z.string().describe("What the article says, in short").meta({ examples: ["Invites expire after 7 days."] }),
+          source: z.string().optional().describe("The sentence it's in, quoted from the article").meta({ examples: ["An invite link expires after 7 days."] }),
+          verdict: z.enum(["current", "outdated", "unclear"]).describe("Whether it's still true (`current`), out of date (`outdated`), or can't be told (`unclear`)").meta({ examples: ["outdated"] }),
+          evidence: z.array(z.string()).describe("The repository's files that show it").meta({ examples: [["src/invites.ts"]] }),
+          note: z.string().describe("For the team: what the code says").meta({ examples: ["Invites now expire after 14 days."] }),
+        }),
+      )
+      .describe("What it found per statement"),
+    fix: z
+      .object({
+        id: z.string().describe("The fix's id: an Autopilot update (codeChangeActions.dismiss, .undo)").meta({ examples: ["cm3f1x2y3z4a5b6c7d8e9f0g1"] }),
+        status: z
+          .enum(["waiting", "approved", "dismissed", "undone"])
+          .describe("`waiting`: it waits for the team on the article's review (codeChanges.target), `approved` (with the article's changes), `dismissed` or `undone`")
+          .meta({ examples: ["waiting"] }),
+        revision: z.string().nullable().describe("The article's version the fix made").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j2"] }),
+        decidedBy: z.string().nullable().describe("Who approved, dismissed or undid it").meta({ examples: [null] }),
+        decidedAt: z.string().nullable().describe("When (ISO 8601)").meta({ examples: [null] }),
+        dismissReason: z.string().describe("Why it was dismissed; empty otherwise").meta({ examples: [""] }),
+      })
+      .nullable()
+      .describe("Its fix for what's out of date, and what became of it; null when it wrote none"),
+    startedBy: z.string().nullable().describe("Who started it; null for Autopilot").meta({ examples: ["Ada Admin"] }),
+    startedReason: z
+      .string()
+      .describe("Why Autopilot started it, after pull requests' edits piled up on the article; empty when someone did")
+      .meta({ examples: [""] }),
+    createdAt: isoTime("When it started"),
+    finishedAt: nullableTime("When it finished; null while it runs"),
+  })
+  .meta({ id: "ArticleVerification", description: "One Verify run on a docs article: what it found, and its fix" });
+
+/** verifyAllView's result. */
+const verifyAllOutput = z
+  .object({
+    id: z.string().describe("Its id").meta({ examples: ["cm3a1l2l3v4e5r6i7f8y9a0b1"] }),
+    state: z
+      .enum(["running", "done", "stopped"])
+      .describe("`running`, `done`, or `stopped` (`reason` says why: out of AI credits, or the next article couldn't start)")
+      .meta({ examples: ["running"] }),
+    reason: z.string().describe("Why it stopped, saying how far it got; empty otherwise").meta({ examples: [""] }),
+    total: z.number().int().describe("The published articles when it started").meta({ examples: [24] }),
+    checked: z.number().int().describe("How many it has checked (done, skipped or failed)").meta({ examples: [9] }),
+    leftOut: z.number().int().describe("How many it left out: unpublished or deleted since it started, or being verified by hand when their turn came").meta({ examples: [0] }),
+    done: z.number().int().describe("How many are behind it, checked or left out: its progress").meta({ examples: [9] }),
+    fixed: z.number().int().describe("Articles whose run wrote a fix").meta({ examples: [2] }),
+    waiting: z.number().int().describe("How many of those fixes still wait on their review in Autopilot").meta({ examples: [2] }),
+    failed: z.number().int().describe("Articles whose run failed").meta({ examples: [0] }),
+    startedBy: z.string().nullable().describe("Who started it").meta({ examples: ["Ada Admin"] }),
+    createdAt: isoTime("When it started"),
+    finishedAt: nullableTime("When it finished; null while it runs"),
+  })
+  .describe("The Verify all run, with its progress");
 
 const verificationSelect = {
   id: true,
@@ -112,13 +191,16 @@ export const verifyArticle = defineOperation({
   name: "articles.verify",
   title: "Verify an article",
   summary:
-    "Verify a published docs article against the project's GitHub repository (its default branch at its latest commit): what it says that's still true, out of date or can't be told, with the files that show it, and an Autopilot update fixing what's out of date (it waits for the team on the article's review, codeChanges.target). Checks the article's newest version (its unpublished changes, with every edit waiting in them). Sends repository files (secrets left out) to the AI provider, and costs AI credits where they're used (402 when out). Only while the project analyses merged pull requests and has a repository (409 otherwise). One runs per article at a time: starting it again returns the one running. Run again at the same commit on the same version, it's skipped",
+    "Verify a published docs article against the project's GitHub repository, and write an Autopilot update fixing what's out of date. Sends repository files (secrets left out) to the AI provider; costs AI credits where used. One runs per article at a time: starting it again returns the one running",
   method: "POST",
   path: "/articles/{slug}/verify",
   scope: "write",
   access: "team",
   errors: [402, 409, 503],
   input: z.object({ slug }),
+  output: verificationOutput.describe(
+    "The run: `running` while it checks (see articles.verifications), or `skipped` when run again at the same commit on the same version. Only while the project analyses merged pull requests and has a repository (409 otherwise)",
+  ),
   run: async ({ actor, projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
     const unavailable = await whyNot(projectId, article.publishedAt !== null);
@@ -178,12 +260,13 @@ export const verifyArticle = defineOperation({
 export const listVerifications = defineOperation({
   name: "articles.verifications",
   title: "List an article's checks",
-  summary: "A docs article's verification history (articles.verify), newest first: each run's commit, what it found per statement, and its fix",
+  summary: "List a docs article's verification history (articles.verify), newest first: the latest 20 runs",
   method: "GET",
   path: "/articles/{slug}/verifications",
   scope: "read",
   access: "team",
   input: z.object({ slug }),
+  output: z.object({ verifications: z.array(verificationOutput).describe("Its runs, newest first") }).describe("The article's verification history"),
   run: async ({ projectId }, input) => ({ verifications: await articleVerifications((await teamArticle(projectId, input.slug)).id) }),
 });
 
@@ -301,12 +384,15 @@ export const verifyAll = defineOperation({
   name: "articles.verifyAll",
   title: "Verify every article",
   summary:
-    "Verify every published docs article (articles.verify on each, one after another, most read first; each its own run, so one failing doesn't stop the rest), with one email to the owners at the end for the fixes it wrote. Only people can start it, in the app, after seeing what it costs: API keys and MCP get 403. One runs per project at a time: starting it again returns the one running, with its progress. With AI credits, running out stops it, saying how far it got (402 when there are none to start with). Articles verified at the same commit and unchanged since are skipped",
+    "Verify every published docs article, one after another, most read first, each its own run, so one failing doesn't stop the rest; one email to the owners at the end for the fixes it wrote. Only people can start it, in the app, after seeing what it costs: API keys and MCP get 403",
   method: "POST",
   path: "/docs/verify-all",
   scope: "write",
   access: "team",
   input: z.object({}),
+  output: verifyAllOutput.describe(
+    "The run, with its progress. One runs per project at a time: starting it again while one runs returns that one. Articles verified at the same commit and unchanged since are skipped. With AI credits, running out stops it (402 when there are none to start with)",
+  ),
   run: async ({ actor, projectId }) => {
     // It costs AI for every article: a person starts it, having seen what it costs (the app's confirmation).
     if (actor.kind !== "user") {

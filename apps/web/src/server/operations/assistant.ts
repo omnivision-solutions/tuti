@@ -88,35 +88,63 @@ export async function assistantSettings(projectId: string): Promise<AssistantSet
  */
 export const limitHeaders = async (actor: Actor) => (actor.kind === "apiKey" ? new Headers() : await headers());
 
+/** AssistantSettings, as assistant.get and assistant.update return them. */
+const settingsOutput = z
+  .object({
+    tone: z.literal("").describe("Deprecated, and always empty: a tone is part of `instructions`").meta({ examples: [""] }),
+    length: z.enum(LENGTHS).describe("How long answers are: `short` (one to three sentences), `medium` (a short paragraph) or `detailed`").meta({ examples: ["medium"] }),
+    instructions: z
+      .string()
+      .describe("Standing instructions for the AI, the tone to write in included")
+      .meta({ examples: ["Friendly and plain; address the reader as you."] }),
+    offLimits: z
+      .array(z.string())
+      .describe("Topics the AI doesn't answer: a question that names one gets “I can't help with that here” without asking the AI")
+      .meta({ examples: [["refund", "legal advice"]] }),
+  })
+  .meta({ id: "AssistantSettings", description: "How the docs' AI answers. None of it overrides answering only from the docs" });
+
 export const getAssistantSettings = defineOperation({
   name: "assistant.get",
   title: "Get AI answers' settings",
-  summary:
-    "Get how the docs' AI answers: answer length, instructions and off-limits topics. `tone` is deprecated and always empty: a tone is part of `instructions`",
+  summary: "Get how the docs' AI answers: answer length, instructions and off-limits topics",
   method: "GET",
   path: "/assistant",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: settingsOutput.describe("The AI answers' settings"),
   run: ({ projectId }) => assistantSettings(projectId),
 });
 
 export const updateAssistantSettings = defineOperation({
   name: "assistant.update",
   title: "Update AI answers' settings",
-  summary: `Set how the docs' AI answers: answer length (short, medium or detailed), instructions (the tone to write in included), and up to ${MAX_OFF_LIMITS_TOPICS} off-limits topics (replaces the list). A question that names an off-limits topic gets “I can't help with that here” without asking the AI. None of it overrides answering only from the docs. \`tone\` is deprecated and will be removed: one that's sent is put before the instructions (those sent, else those saved), a blank line between, and comes back as part of \`instructions\``,
+  summary: "Set how the docs' AI answers: answer length, instructions and off-limits topics. None of it overrides answering only from the docs",
   method: "PATCH",
   path: "/assistant",
   scope: "write",
   access: "admin",
   input: z.object({
-    tone: z.string().trim().max(MAX_ASSISTANT_TONE, `Keep the tone under ${MAX_ASSISTANT_TONE} characters`).optional(),
-    length: z.enum(LENGTHS, { error: "Pick short, medium or detailed" }).optional(),
+    tone: z
+      .string()
+      .trim()
+      .max(MAX_ASSISTANT_TONE, `Keep the tone under ${MAX_ASSISTANT_TONE} characters`)
+      .optional()
+      .describe(
+        "Deprecated, and will be removed: a tone that's sent is put before the instructions (those sent, else those saved), a blank line between, and comes back as part of `instructions`",
+      ),
+    length: z
+      .enum(LENGTHS, { error: "Pick short, medium or detailed" })
+      .optional()
+      .describe("How long answers are: `short`, `medium` or `detailed`")
+      .meta({ examples: ["short"] }),
     instructions: z
       .string()
       .trim()
       .max(MAX_ASSISTANT_INSTRUCTIONS, `Keep the instructions under ${MAX_ASSISTANT_INSTRUCTIONS.toLocaleString("en")} characters`)
-      .optional(),
+      .optional()
+      .describe(`Standing instructions for the AI, the tone to write in included, up to ${MAX_ASSISTANT_INSTRUCTIONS.toLocaleString("en")} characters`),
     offLimits: z
       .array(
         z
@@ -126,8 +154,12 @@ export const updateAssistantSettings = defineOperation({
           .refine((topic) => matchText(topic) !== "", "Each topic needs a word in it"),
       )
       .max(MAX_OFF_LIMITS_TOPICS, `Add up to ${MAX_OFF_LIMITS_TOPICS} topics`)
-      .optional(),
+      .optional()
+      .describe(
+        `Up to ${MAX_OFF_LIMITS_TOPICS} topics the AI doesn't answer, each up to ${MAX_OFF_LIMITS_TOPIC} characters; replaces the list. A question that names an off-limits topic (as whole words, in any case) gets “I can't help with that here” without asking the AI`,
+      ),
   }),
+  output: settingsOutput.describe("The AI answers' settings, as saved"),
   example: {
     length: "short",
     instructions: "Friendly and plain; address the reader as you.\n\nMention the Team page when a question is about inviting people.",

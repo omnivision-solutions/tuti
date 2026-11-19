@@ -20,10 +20,14 @@ export { INSIGHTS_DAYS };
 export const MAX_FEEDBACK_COMMENT = 500;
 
 export const answerFields = z.object({
-  slug: z.string().trim().min(1).max(80),
-  helpful: z.boolean(),
-  /** What was missing; only with `helpful: false`. */
-  comment: z.string().trim().max(MAX_FEEDBACK_COMMENT, `Up to ${MAX_FEEDBACK_COMMENT} characters`).optional(),
+  slug: z.string().trim().min(1).max(80).describe("The article's slug: the end of its address, /docs/<slug>").meta({ examples: ["getting-started"] }),
+  helpful: z.boolean().describe("The answer to “Was this helpful?”").meta({ examples: [false] }),
+  comment: z
+    .string()
+    .trim()
+    .max(MAX_FEEDBACK_COMMENT, `Up to ${MAX_FEEDBACK_COMMENT} characters`)
+    .optional()
+    .describe(`What was missing, up to ${MAX_FEEDBACK_COMMENT} characters; only with \`helpful: false\`. Left out, a “No” keeps the comment they left before`),
 });
 
 /**
@@ -58,12 +62,19 @@ export const answerArticle = defineOperation({
   name: "articles.feedback",
   title: "Rate an article",
   summary:
-    "Answer “Was this helpful?” under a published help article (a “No” may say what was missing), as the key's creator or on behalf of someone from your app; answering again replaces the answer",
+    "Answer “Was this helpful?” under a published help article, as the key's creator or on behalf of someone from your app (`author`); answering again replaces the answer",
   method: "POST",
   path: "/articles/{slug}/feedback",
   scope: "write",
   access: "anyone",
   input: answerFields.extend({ author }),
+  output: z
+    .object({
+      slug: z.string().describe("The article's slug").meta({ examples: ["getting-started"] }),
+      helpful: z.boolean().describe("The answer saved").meta({ examples: [false] }),
+      comment: z.string().nullable().describe("What was missing; null for none, and always for a “Yes”").meta({ examples: ["It doesn't say how to invite people by email."] }),
+    })
+    .describe("The answer as saved"),
   example: { helpful: false, comment: "It doesn't say how to invite people by email.", author: { id: "user-42" } },
   // Keys act for the team, which reads every article.
   run: async (context, input) => saveAnswer(context.projectId, await authorId(context, input.author), input, await actorReader(context.actor, context.projectId)),
@@ -201,7 +212,15 @@ export async function docsGaps(projectId: string, since: Date, until?: Date) {
   }));
 }
 
-export const gapFields = z.object({ question: z.string().trim().min(1).max(300) });
+export const gapFields = z.object({
+  question: z
+    .string()
+    .trim()
+    .min(1)
+    .max(300)
+    .describe("The question, as docs.insights lists it (matched like the list groups them: case and spacing don't matter)")
+    .meta({ examples: ["Can I pay with crypto?"] }),
+});
 
 /**
  * Hides a question from the Gaps list and the failed searches, as asked until now; asked again later, it's back (a search from the
@@ -218,12 +237,14 @@ export async function dismissGap(projectId: string, question: string) {
 export const dismissDocsGap = defineOperation({
   name: "docs.dismissGap",
   title: "Dismiss a docs gap",
-  summary: "Dismiss a question from the gaps and the searches that found nothing in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back (a search from the next day on, UTC: searches are counted per day)",
+  summary:
+    "Dismiss a question from the gaps and the searches that found nothing in docs.insights; asked again later, it's back (a search from the next day on, UTC: searches are counted per day)",
   method: "POST",
   path: "/docs/gaps/dismiss",
   scope: "write",
   access: "team",
   input: gapFields,
+  output: z.object({ dismissed: z.string().describe("The question dismissed, as sent").meta({ examples: ["Can I pay with crypto?"] }) }).describe("The question dismissed"),
   example: { question: "Can I pay with crypto?" },
   run: ({ projectId }, { question }) => dismissGap(projectId, question),
 });
@@ -231,13 +252,90 @@ export const dismissDocsGap = defineOperation({
 export const getDocsInsights = defineOperation({
   name: "docs.insights",
   title: "Get docs insights",
-  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate). Where plans are sold, on a plan with Reporting (402 otherwise)`,
+  summary: `Get how the docs did in the last ${INSIGHTS_DAYS} days: views, the top 20 articles, the latest 10 “No” comments, the top 10 searches that found nothing, and the top 20 gaps. Where plans are sold, on a plan with Reporting (402 otherwise)`,
   method: "GET",
   path: "/docs/insights",
   scope: "read",
   access: "team",
   errors: [402],
   input: z.object({}),
+  output: z
+    .object({
+      since: z.string().describe(`Where the ${INSIGHTS_DAYS} days start: midnight UTC (ISO 8601)`).meta({ examples: ["2026-10-21T00:00:00.000Z"] }),
+      views: z.number().int().describe("Article views in that time").meta({ examples: [1840] }),
+      articles: z
+        .array(
+          z.object({
+            slug: z.string().describe("The article's slug").meta({ examples: ["getting-started"] }),
+            title: z.string().describe("Its title").meta({ examples: ["Getting started"] }),
+            views: z.number().int().describe("Its views").meta({ examples: [412] }),
+            helpful: z.number().int().describe("How many readers found it helpful").meta({ examples: [37] }),
+            notHelpful: z.number().int().describe("How many didn't").meta({ examples: [4] }),
+          }),
+        )
+        .describe("The top 20 articles, most viewed first"),
+      comments: z
+        .array(
+          z.object({
+            article: z
+              .object({
+                slug: z.string().describe("The article's slug").meta({ examples: ["invite-your-team"] }),
+                title: z.string().describe("Its title").meta({ examples: ["Invite your team"] }),
+              })
+              .describe("The article it's on"),
+            comment: z.string().describe("What the reader said was missing").meta({ examples: ["It doesn't say how to invite people by email."] }),
+            at: z.string().describe("When (ISO 8601)").meta({ examples: ["2026-11-18T14:05:00.000Z"] }),
+          }),
+        )
+        .describe("The latest 10 comments readers left with a “No”"),
+      searches: z
+        .object({
+          total: z.number().int().describe("Docs searches").meta({ examples: [620] }),
+          failed: z.number().int().describe("Searches that found nothing").meta({ examples: [48] }),
+          topFailed: z
+            .array(
+              z.object({
+                query: z.string().describe("What was searched for").meta({ examples: ["crypto"] }),
+                count: z.number().int().describe("How often").meta({ examples: [6] }),
+              }),
+            )
+            .describe("The 10 searches that found nothing most often, without those dismissed (docs.dismissGap)"),
+        })
+        .describe("Searches in the docs"),
+      gaps: z
+        .array(
+          z.object({
+            question: z.string().describe("The question, as last asked; grouped with the others like it (case and spacing don't matter)").meta({ examples: ["Can I pay with crypto?"] }),
+            follows: z
+              .string()
+              .nullable()
+              .describe("The question the latest asking followed up on (a follow-up such as “And on my phone?” means little alone), or null")
+              .meta({ examples: [null] }),
+            noAnswer: z.number().int().describe("How often the AI couldn't answer it").meta({ examples: [3] }),
+            cause: z
+              .enum(["no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "no_credits", "unknown"])
+              .nullable()
+              .describe(
+                "Why the latest “I don't know” happened: nothing in the docs was close enough, the AI cited nothing, an article it cited was unpublished meanwhile, the question named an off-limits topic, out of AI credits, or unknown (asked before causes were kept); null when it only got thumbs-down",
+              )
+              .meta({ examples: ["no_relevant_section"] }),
+            notHelpful: z.number().int().describe("How often its answer got a thumbs-down").meta({ examples: [1] }),
+            escalated: z.number().int().describe("How many were passed to the team (docs.escalate)").meta({ examples: [1] }),
+            lastAsked: z.string().describe("The latest time it was asked (ISO 8601)").meta({ examples: ["2026-11-18T16:20:00.000Z"] }),
+            answer: z.string().nullable().describe("The latest answer that got a thumbs-down, or null").meta({ examples: [null] }),
+            article: z
+              .object({
+                slug: z.string().describe("The article's slug").meta({ examples: ["billing"] }),
+                title: z.string().describe("Its title").meta({ examples: ["Billing"] }),
+              })
+              .nullable()
+              .describe("The first article that answer cited that's still there: the one to improve; null for none")
+              .meta({ examples: [null] }),
+          }),
+        )
+        .describe("Questions the AI couldn't answer or whose answer got a thumbs-down, grouped, most asked first, without those dismissed (docs.dismissGap)"),
+    })
+    .describe(`How the docs did in the last ${INSIGHTS_DAYS} days`),
   run: async ({ projectId }) => {
     await requirePlan(projectId, "reporting");
     return docsInsights(projectId);
