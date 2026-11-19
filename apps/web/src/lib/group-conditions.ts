@@ -75,6 +75,19 @@ export const groupMatch = z.enum(["all", "any"]);
 /** Who's in a group: its conditions and whether all or any of them must match. */
 export type GroupRule = { match: Match; conditions: GroupCondition[] };
 
+/** A list's values as said: "pro", "pro or business", "free, pro or business". */
+const anyOf = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join(", ")} or ${list.at(-1)}` : (list[0] ?? ""));
+
+/** A rule in a line, for the group's row in Settings: "plan is pro or business and seats is set". None for no conditions. */
+export const ruleSummary = ({ match, conditions }: GroupRule): string =>
+  conditions
+    .map((condition) =>
+      condition.op === "is_any_of" || condition.op === "is_none_of"
+        ? `${condition.property} ${condition.op === "is_any_of" ? "is" : "is not"} ${anyOf(condition.value)}`
+        : `${condition.property} ${OPERATORS[condition.op]}${"value" in condition ? ` ${condition.value}` : ""}`,
+    )
+    .join(match === "any" ? " or " : " and ");
+
 /** A group's conditions as stored; anything unreadable is none, which lets nobody in. */
 export const storedConditions = (json: unknown): GroupCondition[] => groupConditions.safeParse(json).data ?? [];
 

@@ -1,11 +1,9 @@
 "use client";
 
-import { UsersIcon, XIcon } from "lucide-react";
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { MoreHorizontalIcon, PlusIcon, UsersIcon, XIcon } from "lucide-react";
+import { type ReactNode, useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { EmptyState } from "@/components/empty-state";
-import { ItemList, ItemRow } from "@/components/item-list";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,51 +13,134 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import { count } from "@/lib/usage-format";
-import { LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
+import { LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS, ruleSummary } from "@/lib/group-conditions";
 import type { FormState } from "@/server/form-state";
 import { deleteGroup, type GroupPreview, previewGroup, saveGroup, suggestValues } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";
 
 const usersCount = (n: number) => `${count(n)} ${n === 1 ? "user" : "users"}`;
 
-/** Settings → Groups: the project's reader groups, with how many are in each now (who, and the conditions, in Edit). `properties`: the names its users have, suggested in the dialog. */
+/**
+ * Settings → Groups: the project's reader groups, each with how many users are in it now and its rule (who they are is
+ * in Edit); Edit and Delete under the row's ⋯. `properties`: the names its users have, suggested in the dialog.
+ */
 export function ReaderGroups({ projectSlug, groups, properties }: { projectSlug: string; groups: GroupView[]; properties: string[] }) {
+  if (groups.length === 0) {
+    return <p className="px-4 py-3.5 text-sm text-muted-foreground @min-[34rem]/settings:px-5">No groups yet</p>;
+  }
   return (
-    <div className="flex flex-col gap-4">
-      {groups.length === 0 ? (
-        <EmptyState title="No groups yet" description="Add one, then pick it on a tab, collection or article in Docs to make it for its users only." />
-      ) : (
-        <ItemList>
-          {groups.map((group) => (
-            <ItemRow
-              key={group.key}
-              title={group.name}
-              meta={[usersCount(group.readers), group.description].filter(Boolean).join(" · ")}
-              actions={
-                <>
-                  <GroupDialog projectSlug={projectSlug} properties={properties} group={group} />
-                  <DeleteGroupButton projectSlug={projectSlug} group={group} />
-                </>
-              }
-            />
-          ))}
-        </ItemList>
+    <ul className="flex flex-col divide-y">
+      {groups.map((group) => {
+        const rule = ruleSummary(group);
+        return (
+          <li key={group.key} className="flex items-center gap-3 px-4 py-3.5 @min-[34rem]/settings:px-5">
+            {/* Under 34rem of card (phones) the rule goes under the name, on lines of its own. */}
+            <div className="flex min-w-0 flex-1 flex-col gap-x-5 gap-y-1.5 @min-[34rem]/settings:flex-row @min-[34rem]/settings:items-center">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="font-medium break-words">{group.name}</span>
+                <span className="text-sm break-words text-muted-foreground">{[usersCount(group.readers), group.description].filter(Boolean).join(" · ")}</span>
+              </div>
+              {rule && (
+                <Badge
+                  variant="secondary"
+                  title={rule}
+                  className="h-auto min-h-5 max-w-full shrink justify-start self-start py-0.5 break-words whitespace-normal @min-[34rem]/settings:max-w-[50%] @min-[34rem]/settings:self-center"
+                >
+                  <span className="line-clamp-2">{rule}</span>
+                </Badge>
+              )}
+            </div>
+            <GroupActions projectSlug={projectSlug} properties={properties} group={group} />
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** The list's "New group", at its card's title. */
+export function NewGroupButton({ projectSlug, properties }: { projectSlug: string; properties: string[] }) {
+  return (
+    <GroupDialog
+      projectSlug={projectSlug}
+      properties={properties}
+      trigger={(show) => (
+        <Button variant="outline" size="sm" onClick={show}>
+          <PlusIcon />
+          New group
+        </Button>
       )}
-      <div>
-        <GroupDialog projectSlug={projectSlug} properties={properties} />
-      </div>
-    </div>
+    />
+  );
+}
+
+/** A group's ⋯ menu: Edit (its dialog) and Delete, which asks first. */
+function GroupActions({ projectSlug, properties, group }: { projectSlug: string; properties: string[]; group: GroupView }) {
+  const [pending, startTransition] = useTransition();
+  const [deleting, setDeleting] = useState(false);
+  return (
+    <>
+      <GroupDialog
+        projectSlug={projectSlug}
+        properties={properties}
+        group={group}
+        trigger={(show) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Actions for ${group.name}`} />}>
+              <MoreHorizontalIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto min-w-32">
+              <DropdownMenuItem onClick={show}>Edit</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={() => setDeleting(true)}>
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      />
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="break-words">Delete {group.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It can&apos;t be undone. A group a tab, collection or article is for can&apos;t be deleted, since that would change who can
+              read them: remove it from them first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await deleteGroup(projectSlug, group.key);
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`${group.name} deleted`);
+                  }
+                })
+              }
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -90,12 +171,31 @@ const complete = (row: Row) => row.property.trim() !== "" && (takesNoValue(row.o
 
 const PREVIEW_DELAY_MS = 300;
 
+type GroupDialogProps = { projectSlug: string; properties: string[]; group?: GroupView };
+
 /**
- * Adds a group, or (with `group`) changes one: its name, description and conditions on the left, and
- * the users who match them now on the right, as they're written.
+ * The dialog that adds a group, or (with `group`) changes one, opened by what `trigger` renders. Each time it opens
+ * it's a new one: the group as saved (or one empty condition, for a new one), and no error from the last try.
  */
-function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; properties: string[]; group?: GroupView }) {
+function GroupDialog({ trigger, ...props }: GroupDialogProps & { trigger: (show: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState(0);
+  return (
+    <>
+      {trigger(() => {
+        setOpened((n) => n + 1);
+        setOpen(true);
+      })}
+      <GroupForm key={opened} open={open} setOpen={setOpen} {...props} />
+    </>
+  );
+}
+
+/**
+ * A group's name, description and conditions on the left, and the users who match them now on the right, as
+ * they're written.
+ */
+function GroupForm({ projectSlug, properties, group, open, setOpen }: GroupDialogProps & { open: boolean; setOpen: (open: boolean) => void }) {
   const [rows, setRows] = useState<Row[]>(() => rowsOf(group));
   const [match, setMatch] = useState<Match>(group?.match ?? "all");
   const [preview, setPreview] = useState<GroupPreview | { error: string } | null>(null);
@@ -144,24 +244,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
   const shown = previewable ? preview : null;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        // Each time it opens: the group as saved (or one empty condition, for a new one).
-        if (next) {
-          setRows(rowsOf(group));
-          setMatch(group?.match ?? "all");
-          setPreview(null);
-          setValues(new Map());
-        }
-        setOpen(next);
-      }}
-    >
-      <DialogTrigger
-        render={<Button variant={group ? "ghost" : "outline"} size="sm" aria-label={group ? `Edit ${group.name}` : undefined} />}
-      >
-        {group ? "Edit" : "New group"}
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-4xl md:overflow-hidden">
         <div className="grid md:h-[min(42rem,calc(100dvh-2rem))] md:grid-cols-2">
           <form {...keepingFields(action)} className="flex min-h-0 flex-col">
@@ -361,42 +444,5 @@ function MatchingUsers({ preview }: { preview: GroupPreview | { error: string } 
         </div>
       )}
     </section>
-  );
-}
-
-function DeleteGroupButton({ projectSlug, group }: { projectSlug: string; group: GroupView }) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${group.name}`} />}>Delete</AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">Delete {group.name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            It can&apos;t be undone. A group a tab, collection or article is for can&apos;t be deleted, since that would change who can
-            read them: remove it from them first.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await deleteGroup(projectSlug, group.key);
-                if (result.error) {
-                  toast.error(result.error);
-                } else {
-                  toast.success(`${group.name} deleted`);
-                }
-              })
-            }
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
