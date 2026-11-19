@@ -143,7 +143,10 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
     await owner.getByRole("button", { name: "Send invite" }).click();
   };
   // The plan's room is said where inviting happens: in Invite people's dialog, which stays open between invites.
-  await owner.getByRole("button", { name: "Invite people" }).click();
+  // Opened from the keyboard, it starts in the email field, not on the note's "upgrade" link above it.
+  await owner.getByRole("button", { name: "Invite people" }).focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("textbox", { name: "Email of the person to invite" })).toBeFocused();
   await expect(owner.getByRole("dialog", { name: "Invite people" })).toContainText("Projects on the Free plan have up to 3 team members, invites included (1 now); upgrade for more.");
   for (const email of [`e2e-${randomUUID()}@example.com`, `e2e-${randomUUID()}@example.com`]) {
     await invite(email);
