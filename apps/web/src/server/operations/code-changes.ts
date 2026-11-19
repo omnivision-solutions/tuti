@@ -1104,7 +1104,7 @@ const codeChangeFields = {
     .enum(CHANGE_STATES)
     .describe("Its analysis: `analysing` (for up to 30 minutes), `ready`, `nothing_to_do`, `failed` or `paused` (out of AI credits, or the plan didn't include code changes)")
     .meta({ examples: ["ready"] }),
-  reason: z.string().describe("Why there's nothing to do, or where it failed; empty otherwise").meta({ examples: [""] }),
+  reason: z.string().describe("Why there's nothing to do, where it failed, or why it's paused; empty otherwise").meta({ examples: [""] }),
   retryAt: z
     .string()
     .nullable()
@@ -1324,7 +1324,7 @@ const reviewPullRequestOut = z.object({
     .enum(["ANALYSING", "READY", "NOTHING_TO_DO", "FAILED", "PAUSED"])
     .describe("Its analysis, as stored: codeChanges.get's `state` in capitals")
     .meta({ examples: ["READY"] }),
-  reason: z.string().describe("Why there's nothing to do, or where its analysis failed; empty otherwise").meta({ examples: [""] }),
+  reason: z.string().describe("Why there's nothing to do, where its analysis failed, or why it's paused; empty otherwise").meta({ examples: [""] }),
   updatedAt: when("When its analysis last changed"),
 });
 
@@ -1477,7 +1477,7 @@ export const getCodeChangeTarget = defineOperation({
   input: z.object({
     type: z.enum(["feedback", "articles"]).describe("`feedback` for a post, `articles` for an article").meta({ examples: ["feedback"] }),
     id: id
-      .describe("The post's id, or the article's, or for a new article's draft not written yet, its update's id: a `path` from codeChanges.targets")
+      .describe("The post's id, or the article's, or for a new article's draft not written yet, its update's id: the part of a `path` from codeChanges.targets after the `/` (the part before it is `type`)")
       .meta({ examples: ["cm3x9post0000000000000000"] }),
   }),
   output: targetReviewOut,
