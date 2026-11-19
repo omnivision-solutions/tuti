@@ -79,6 +79,7 @@ test("search's snippet keeps a placeholder the spec writes as a tag", async () =
     info: { title: "Docs", version: "1" },
     paths: { "/docs/{slug}": { get: { summary: "Get an article", description: "By its address, /docs/<slug>.", responses: { "200": { description: "ok" } } } } },
   });
+  vi.stubEnv("OPENAI_API_KEY", ""); // Words only: no model, wherever it runs.
   const reference = await addReference(text);
   await apiReferenceChanged({ referenceId: reference.id }, log);
   const [entry] = await prisma.$queryRaw<{ description: string }[]>`SELECT description FROM api_operation_entry WHERE "referenceId" = ${reference.id}`;
