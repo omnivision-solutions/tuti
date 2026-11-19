@@ -54,7 +54,7 @@ import { collectionNamed, createArticle, indexArticle, keepText, publishArticleC
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
-import { postSummarySelect, projectPortal, summary, toApiStatus } from "./read";
+import { postSummarySelect, projectPortal, STATUSES, summary, toApiStatus } from "./read";
 import { call } from "./run";
 
 /**
@@ -1068,15 +1068,374 @@ const noPublish = z
   .optional()
   .describe("Gone: refused if sent");
 
+const CHANGE_STATES = ["analysing", "ready", "nothing_to_do", "failed", "paused"] as const;
+const ACTION_KINDS = ["links", "resolves", "moves_forward", "article_edit", "new_article", "changelog_line"] as const;
+const actionKind = z
+  .enum(ACTION_KINDS)
+  .describe(
+    "What it does: `links` the pull request to a post, `resolves` (completes) a post, `moves_forward` (a progress update), `article_edit`, `new_article` (a draft) or `changelog_line`",
+  )
+  .meta({ examples: ["resolves"] });
+const when = (description: string) => z.string().describe(description).meta({ examples: ["2026-11-18T09:30:00.000Z"] });
+
+/** A pull request as its chip shows it (pullRequestView). */
+const pullRequestOut = z
+  .object({
+    id: z.string().describe("The code change's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+    repo: z.string().describe("The repository, as owner/name").meta({ examples: ["acme/app"] }),
+    number: z.number().int().describe("The pull request's number on GitHub").meta({ examples: [412] }),
+    url: z.string().describe("The pull request on GitHub").meta({ examples: ["https://github.com/acme/app/pull/412"] }),
+    title: z.string().describe("The pull request's title").meta({ examples: ["Add weekly repeats"] }),
+    author: z.string().describe("Its author's GitHub login").meta({ examples: ["octocat"] }),
+    mergedAt: when("When it merged"),
+  })
+  .meta({ id: "CodeChangePullRequest", description: "A merged pull request behind Autopilot's updates" });
+
+/** A code change as codeChanges.analyse returns it (changeView). */
+const codeChangeFields = {
+  id: z.string().describe("The code change's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+  repo: z.string().describe("The repository, as owner/name").meta({ examples: ["acme/app"] }),
+  number: z.number().int().describe("The pull request's number on GitHub").meta({ examples: [412] }),
+  url: z.string().describe("The pull request on GitHub").meta({ examples: ["https://github.com/acme/app/pull/412"] }),
+  title: z.string().describe("The pull request's title").meta({ examples: ["Add weekly repeats"] }),
+  author: z.string().describe("Its author's GitHub login").meta({ examples: ["octocat"] }),
+  mergedAt: when("When it merged"),
+  state: z
+    .enum(CHANGE_STATES)
+    .describe("Its analysis: `analysing` (for up to 30 minutes), `ready`, `nothing_to_do`, `failed` or `paused` (out of AI credits, or the plan didn't include code changes)")
+    .meta({ examples: ["ready"] }),
+  reason: z.string().describe("Why there's nothing to do, or where it failed; empty otherwise").meta({ examples: [""] }),
+  retryAt: z
+    .string()
+    .nullable()
+    .describe("Failed because the AI provider didn't answer: when it's analysed again by itself (null: it isn't)")
+    .meta({ examples: [null] }),
+  summary: z.string().describe("What changed for users, as Autopilot read it").meta({ examples: ["Events can repeat weekly."] }),
+  waiting: z.number().int().describe("Proposed actions waiting for the team").meta({ examples: [2] }),
+  tuned: z
+    .array(z.string().meta({ examples: ["decide.rounds"] }))
+    .describe("The Advanced tuning values its analysis ran with that the project changed, by path"),
+};
+const codeChangeOut = z.object(codeChangeFields);
+
+/** A post as the API returns it (postSummary). */
+const postOut = z.object({
+  number: z.number().int().describe("The post's number").meta({ examples: [42] }),
+  title: z.string().describe("The post's title").meta({ examples: ["Repeating events"] }),
+  status: z.enum(STATUSES).describe("Its status").meta({ examples: ["planned"] }),
+  board: z.string().describe("Its board's slug").meta({ examples: ["feature-requests"] }),
+  votes: z.number().int().describe("How many voted for it").meta({ examples: [12] }),
+  comments: z.number().int().describe("How many comments it has").meta({ examples: [3] }),
+  author: z.object({ name: z.string().describe("Their name").meta({ examples: ["Pat Reader"] }) }).describe("Who posted it"),
+  visibility: z
+    .enum(["public", "private", "team"])
+    .describe("Who sees it besides the team: everyone, its author, or nobody")
+    .meta({ examples: ["public"] }),
+  createdAt: when("When it was posted"),
+  url: z.string().describe("The post on the portal").meta({ examples: ["https://acme.tuti.so/feedback/p/42-repeating-events"] }),
+});
+
+/** An update as a review page shows it (actionViews). */
+const actionFields = {
+  id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+  codeChangeId: z.string().nullable().describe("The code change (pull request) it's from; null for a Verify run's fix").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+  createdAt: when("When it was proposed (an article's edits are layered in this order)"),
+  reviewPath: z
+    .string()
+    .nullable()
+    .describe("Where it's reviewed under Autopilot: `feedback/<post id>` or `articles/<id>` (codeChanges.target's `type` and `id`); null for the changelog line")
+    .meta({ examples: ["feedback/cm3x9post0000000000000000"] }),
+  kind: actionKind,
+  status: z
+    .enum(["pending", "applied", "dismissed", "stale", "undone", "scheduled"])
+    .describe("`pending` (waiting for the team), `scheduled` (going out by itself after the hold), `stale` (out of date), `applied`, `dismissed` or `undone`")
+    .meta({ examples: ["pending"] }),
+  probability: z.number().describe("How sure Autopilot is, 0 to 1").meta({ examples: [0.92] }),
+  confidence: z.enum(["likely", "maybe"]).describe("`likely` above its kind's threshold, else `maybe`").meta({ examples: ["likely"] }),
+  applyLikely: z.boolean().describe("Ticked as the review page opens").meta({ examples: [true] }),
+  emailed: z.number().int().optional().describe("For a post it completed or moved to In progress: how many it emailed so (Undo can't take those back)"),
+  emails: z.number().int().optional().describe("For a post it completes or moves forward: how many people approving (or publishing) it emails").meta({ examples: [14] }),
+  reason: z.string().describe("Why Autopilot proposes it").meta({ examples: ["The pull request ships weekly repeats, which this post asks for."] }),
+  comment: z
+    .string()
+    .optional()
+    .describe("The team's comment, for a post it moves forward (as proposed, or as posted once applied; one completing it posted with it too)"),
+  post: postOut.nullable().describe("The post it updates; null for an article or the changelog"),
+  article: z
+    .object({
+      slug: z.string().describe("The article's slug").meta({ examples: ["repeating-events"] }),
+      title: z.string().describe("The article's title").meta({ examples: ["Repeating events"] }),
+      collection: z.string().nullable().describe("Its collection's name; null for none").meta({ examples: ["Events"] }),
+      draft: z.boolean().describe("A draft: approving an edit keeps it in the draft, which the team publishes from Docs").meta({ examples: [false] }),
+    })
+    .nullable()
+    .describe("The article it edits (or, for a new article once its draft exists, the draft)")
+    .meta({ examples: [null] }),
+  problem: z.enum(["wrong", "missing"]).optional().describe("An article edit's: what's wrong with the article, or missing from it"),
+  before: z.string().optional().describe("An article edit's text before (plain text)"),
+  after: z.string().optional().describe("An article edit's text after, or a new article's text (plain text)"),
+  revision: z.string().optional().describe("An article edit's own change: its tagged revision"),
+  basedOn: z.string().nullable().optional().describe("The revision that edit was written on"),
+  title: z.string().optional().describe("A new article's title"),
+  place: z
+    .object({
+      collection: z
+        .object({ slug: z.string(), name: z.string(), icon: z.string().nullable() })
+        .nullable()
+        .describe("An existing collection (its slug, name and Lucide icon)"),
+      newCollection: z
+        .object({ name: z.string(), icon: z.string().nullable() })
+        .nullable()
+        .describe("A new collection approving makes, readers seeing it only once an article in it is published"),
+      afterArticle: z
+        .object({ slug: z.string(), title: z.string() })
+        .nullable()
+        .describe("The article it goes after; else `first`, else last"),
+      first: z.boolean().describe("It goes first in its collection"),
+    })
+    .nullable()
+    .optional()
+    .describe(
+      "A new article's: where approving saves its draft (null: in no collection). A collection deleted since is none; an article deleted or moved since, last",
+    ),
+  line: z.string().optional().describe("The pull request's line in the changelog (as proposed, or as written once applied)"),
+  decidedBy: z
+    .string()
+    .nullable()
+    .describe("Who applied, dismissed or undid it: \"Autopilot\" for a link it applied by itself; null while nobody has")
+    .meta({ examples: [null] }),
+  auto: z.boolean().describe("Applied by Autopilot itself, nobody approving it").meta({ examples: [false] }),
+  unsure: z.boolean().describe("Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check").meta({ examples: [false] }),
+  unpublished: z.boolean().describe("An article edit approved into the article's unpublished changes, not published").meta({ examples: [false] }),
+  canUndo: z.boolean().describe("Applied, with what it changed recorded: codeChangeActions.undo can put it back").meta({ examples: [false] }),
+  undoRemovesCollection: z.string().optional().describe("A new article's draft: the collection approving made, by name, which Undo removes too"),
+  putsBackStatus: z.boolean().describe("Undo puts the post's status back (applying moved it)").meta({ examples: [false] }),
+  together: z
+    .array(z.string())
+    .optional()
+    .describe("A post's update applied as one, from several pull requests: its parts (this one among them), which Undo puts back together"),
+  decidedAt: z.string().nullable().describe("When it was applied, dismissed or undone").meta({ examples: [null] }),
+  dismissReason: z.string().describe("Why it was dismissed, if someone said").meta({ examples: [""] }),
+  dueAt: z.string().nullable().describe("A scheduled one: when it goes out by itself").meta({ examples: [null] }),
+  wouldHaveGoneOutAt: z.string().nullable().describe("One someone stopped: when it would have gone out by itself").meta({ examples: [null] }),
+  waitReason: z
+    .string()
+    .nullable()
+    .describe("Why it waits for the team after all (it stopped qualifying, or someone stopped it: \"Stopped by …\")")
+    .meta({ examples: [null] }),
+};
+const actionOut = z.object(actionFields).meta({ id: "CodeChangeAction", description: "An update Autopilot proposes: to a post, an article or the changelog" });
+
+/** A post or an article in Autopilot's review list (autopilotTargets). */
+const targetOut = z
+  .object({
+    path: z
+      .string()
+      .describe("Its review's path, for codeChanges.target: `feedback/<post id>`, or `articles/<article id>` (a new article's update id until its draft exists)")
+      .meta({ examples: ["feedback/cm3x9post0000000000000000"] }),
+    section: z.enum(["feedback", "help_center"]).describe("A post, or an article").meta({ examples: ["feedback"] }),
+    title: z.string().describe("The post's or article's title").meta({ examples: ["Repeating events"] }),
+    group: z
+      .object({
+        id: z.string().meta({ examples: ["cm3x9board000000000000000"] }),
+        name: z.string().meta({ examples: ["Feature requests"] }),
+        icon: z.string().nullable().meta({ examples: [null] }),
+      })
+      .nullable()
+      .describe("Where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft"),
+    badge: z
+      .enum(["completing", "in_progress", "updated", "new"])
+      .nullable()
+      .describe("What its updates waiting or applied do; null once all were dismissed or undone")
+      .meta({ examples: ["completing"] }),
+    outcome: z
+      .object({
+        outcome: z
+          .enum(["completed", "in_progress", "published", "approved", "drafted", "linked", "dismissed", "undone"])
+          .describe("What became of it (`approved`: an edit kept unpublished)"),
+        line: z.string().describe("Who decided it, as a row says it: \"Approved by Olive\", \"Published by Autopilot\""),
+        at: z.string().nullable().describe("When"),
+      })
+      .nullable()
+      .describe("With `view: decided`: what became of it; null while something waits")
+      .meta({ examples: [null] }),
+    pullRequests: z.array(pullRequestOut).describe("The pull requests behind it, the latest merged first"),
+    sample: z.boolean().describe("On sample content").meta({ examples: [false] }),
+    since: when("When its first update still here was suggested"),
+    reach: z
+      .number()
+      .int()
+      .describe("How many people it reaches: a post's author, voters, commenters and subscribers; an article's views in 30 days")
+      .meta({ examples: [37] }),
+    waiting: z.number().int().describe("Updates on it waiting for the team (not those going out by themselves)").meta({ examples: [1] }),
+    stopped: z.string().nullable().describe("Who stopped one going out by itself (\"Stopped by Olive\"); null when nobody did").meta({ examples: [null] }),
+    scheduled: z.array(z.string()).describe("Updates going out by themselves (for publishNow and stop), by id").meta({ examples: [[]] }),
+    nextDueAt: z.string().nullable().describe("When the first of those goes").meta({ examples: [null] }),
+    sure: z
+      .object({
+        percent: z.number().int().describe("How sure Autopilot is of those waiting, on average").meta({ examples: [88] }),
+        likely: z.boolean().describe("Likely by their kinds' thresholds, on average").meta({ examples: [true] }),
+      })
+      .nullable()
+      .describe("Null when only the changelog line waits, or nothing does"),
+    likely: z
+      .array(
+        z.object({
+          id: z.string().meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+          kind: actionKind,
+          revision: z.string().optional().describe("The version it applies, for codeChangeActions.apply's `revision`"),
+          emails: z.number().int().optional().describe("How many people approving it emails"),
+        }),
+      )
+      .describe("What approving it from the list approves (codeChangeActions.applyMany)"),
+  })
+  .meta({ id: "AutopilotTarget", description: "A post or an article with updates from Autopilot" });
+
+/** A pull request's line in codeChanges.target's `also`. */
+const alsoOut = z.object({
+  codeChangeId: z.string().meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+  number: z.number().int().describe("Its pull request's number").meta({ examples: [412] }),
+  path: z.string().describe("Its review's path, for codeChanges.target").meta({ examples: ["articles/cm3x9article00000000000000"] }),
+  title: z.string().describe("The post's or article's title").meta({ examples: ["Repeating events"] }),
+  kind: actionKind,
+  stale: z.boolean().describe("Out of date (written on an earlier version of its article), so it can't go out until written again").meta({ examples: [false] }),
+});
+
+/** What codeChangeActions.apply returns (and publishNow, which applies). */
+const appliedOut = z
+  .object({
+    id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+    kind: actionKind,
+    status: z.literal("applied").meta({ examples: ["applied"] }),
+    post: z.number().int().optional().describe("The post's number, for a post's update or link").meta({ examples: [42] }),
+    article: z.string().optional().describe("The article's slug, for an article's edit or a new article's draft"),
+    published: z.boolean().optional().describe("Whether the article is published: false on a draft, whose edits stay in the draft, and for a new article's draft"),
+    changelog: z.number().int().optional().describe("The changelog entry's number, for the changelog line"),
+  })
+  .describe("The action, applied");
+
+/** A pull request on codeChanges.target, with its analysis as stored. */
+const reviewPullRequestOut = z.object({
+  ...pullRequestOut.shape,
+  summary: z.string().describe("What it changed for users").meta({ examples: ["Events can repeat weekly."] }),
+  why: z.string().describe("Why Autopilot suggests its updates").meta({ examples: ["Two posts ask for this."] }),
+  // ponytail: the stored analysis fields as read (state in capitals, unlike codeChanges.get's); a later change can trim them.
+  state: z
+    .enum(["ANALYSING", "READY", "NOTHING_TO_DO", "FAILED", "PAUSED"])
+    .describe("Its analysis, as stored: codeChanges.get's `state` in capitals")
+    .meta({ examples: ["READY"] }),
+  reason: z.string().describe("Why there's nothing to do, or where its analysis failed; empty otherwise").meta({ examples: [""] }),
+  updatedAt: when("When its analysis last changed"),
+});
+
+/** codeChanges.target's result (targetReview). */
+const targetReviewOut = z
+  .object({
+    type: z.enum(["feedback", "articles"]).describe("A post, or an article").meta({ examples: ["feedback"] }),
+    title: z.string().describe("The post's or article's title").meta({ examples: ["Repeating events"] }),
+    articleId: z.string().optional().describe("An article's id"),
+    revision: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("An article's newest revision: what Approve publishes, codeChangeActions.apply's `revision`"),
+    teammateEdit: z.boolean().optional().describe("Whether the article's unpublished changes hold a teammate's edit too"),
+    changesReaders: z.boolean().optional().describe("Whether its unpublished changes change it as readers see it"),
+    outOfDate: z
+      .array(z.string())
+      .optional()
+      .describe("Its waiting edits that are out of date (written on an earlier version): nothing of them shows until they're written again"),
+    writing: z.array(z.string()).optional().describe("Those of them being written again (their pull request analysed again)"),
+    writeFailed: z.array(z.string()).optional().describe("Why their pull request's last analysis failed, each once"),
+    overview: z.string().optional().describe("What the article's waiting edits change, in a few lines; empty for none"),
+    update: z
+      .object({
+        parts: z.array(z.string().meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] })).describe("Its parts: each pull request's part, the first merged first"),
+        revision: z
+          .string()
+          .describe("Its version, codeChangeActions.apply's `revision`: approving any part approves all of it, only as reviewed")
+          .meta({ examples: ["Xq3t9b2LmP0aZk1e"] }),
+        kind: z.enum(["resolves", "moves_forward"]).describe("Its one status change").meta({ examples: ["resolves"] }),
+        comment: z.string().describe("Its one comment, theirs joined").meta({ examples: ["Weekly repeats are out today."] }),
+        status: z.enum(["pending", "scheduled"]).describe("Waiting for the team while a part does, else going out by itself").meta({ examples: ["pending"] }),
+        applyLikely: z.boolean().describe("Ticked as the page opens").meta({ examples: [true] }),
+        emails: z.number().int().describe("How many people approving it emails").meta({ examples: [14] }),
+        waitReason: z.string().nullable().describe("Why it waits as it is: its comment too long to post").meta({ examples: [null] }),
+      })
+      .nullable()
+      .describe("A post's update waiting: each pull request's part as one status change with one comment; null for none"),
+    reach: z
+      .number()
+      .int()
+      .nullable()
+      .describe("How many it reaches now: a post's people (author, voters, commenters, subscribers), an article's views in 30 days")
+      .meta({ examples: [37] }),
+    asked: z
+      .object({
+        excerpt: z.string().describe("Its description's first lines").meta({ examples: ["It would help to repeat our standup every week."] }),
+        voters: z
+          .array(
+            z.object({
+              id: z.string().meta({ examples: ["cm3x9user0000000000000000"] }),
+              name: z.string().meta({ examples: ["Pat Reader"] }),
+              image: z.string().nullable().meta({ examples: [null] }),
+            }),
+          )
+          .describe("Its first voters, up to 4"),
+        voteCount: z.number().int().describe("Of how many").meta({ examples: [12] }),
+        conversations: z
+          .array(z.object({ number: z.number().int().meta({ examples: [7] }), subject: z.string().meta({ examples: ["Recurring events?"] }) }))
+          .describe("Its Inbox conversations, up to 3, the latest first"),
+        conversationCount: z.number().int().describe("Of how many").meta({ examples: [1] }),
+      })
+      .nullable()
+      .describe("A post's: what its users asked; null for an article"),
+    also: z.array(alsoOut).describe("What the pull requests behind its waiting updates update elsewhere that still waits"),
+    post: postOut.nullable().describe("The post (feedback)"),
+    article: actionFields.article.describe("The article (or null, for a new article's draft not written yet)"),
+    pullRequests: z.array(reviewPullRequestOut).describe("The pull requests behind its waiting updates (all of them, once none waits), the latest merged first"),
+    changes: z.array(reviewPullRequestOut).describe("Every pull request behind its updates: what it changed for users, and why Autopilot suggests them"),
+    actions: z
+      .array(
+        z.object({
+          ...actionFields,
+          number: z.number().int().nullable().describe("Its pull request's number; null for a Verify fix").meta({ examples: [412] }),
+          verification: z
+            .object({ id: z.string(), repo: z.string(), commit: z.string(), createdAt: z.string() })
+            .nullable()
+            .describe("For a Verify fix: the run that wrote it")
+            .meta({ examples: [null] }),
+        }),
+      )
+      .describe("Every update on it, waiting or decided, most likely first"),
+  })
+  .describe("The post's or article's review");
+
 export const listCodeChanges = defineOperation({
   name: "codeChanges.list",
   title: "List code changes",
-  summary: "List code changes (Autopilot): merged pull requests, each with the updates it suggests (those with updates waiting first)",
+  summary:
+    "List code changes (Autopilot): the latest 100 merged pull requests, each with how many updates it suggests waiting for the team; those with updates waiting first",
   method: "GET",
   path: "/code-changes",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z
+    .object({
+      codeChanges: z
+        .array(
+          z
+            .object({
+              ...codeChangeFields,
+              scheduled: z.array(z.string()).describe("Its updates going out by themselves (for publishNow and stop), by id").meta({ examples: [[]] }),
+              nextDueAt: z.string().nullable().describe("When the first of those goes").meta({ examples: [null] }),
+            })
+            .meta({ id: "CodeChange", description: "A merged pull request Autopilot analysed" }),
+        )
+        .describe("Those with updates waiting first, then the latest merged first"),
+    })
+    .describe("The project's code changes"),
   run: async ({ projectId }) => ({ codeChanges: await codeChangeList(projectId) }),
 });
 
@@ -1084,12 +1443,24 @@ export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
   title: "List updates by target",
   summary:
-    "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first, each with its `outcome` (what became of it: `completed`, `in_progress`, `published`, `approved` (an edit kept unpublished), `drafted`, `linked`, `dismissed` or `undone`; who decided it, as `line`; and `at`, when). Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
+    "Autopilot's review by what it updates: the posts and articles with updates waiting for the team or going out by themselves, the ones that reach the most people first (`view: decided`: the latest 100 decided). The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
   path: "/code-change-targets",
   scope: "read",
   access: "team",
-  input: z.object({ view: z.enum(["waiting", "decided"]).default("waiting") }),
+  input: z.object({
+    view: z
+      .enum(["waiting", "decided"])
+      .default("waiting")
+      .describe("`waiting`, or `decided`: those whose updates were all decided, the latest first, each with its `outcome`")
+      .meta({ examples: ["waiting"] }),
+  }),
+  output: z
+    .object({
+      feedback: z.array(targetOut).describe("Posts"),
+      helpCenter: z.array(targetOut).describe("Articles: edits, and new articles' drafts"),
+    })
+    .describe("Posts and articles with updates from Autopilot"),
   example: { view: "waiting" },
   run: async ({ projectId }, input) => autopilotTargets(projectId, { decided: input.view === "decided" }),
 });
@@ -1098,12 +1469,18 @@ export const getCodeChangeTarget = defineOperation({
   name: "codeChanges.target",
   title: "Get a target's updates",
   summary:
-    "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment, and `asked`: what its users asked (its description's first lines as `excerpt`, its first voters of `voteCount`, its Inbox `conversations`); for a new article's draft, its `place`: where approving saves it (an existing `collection`, or a `newCollection` approving makes, readers seeing it once an article in it is published; after `afterArticle`, or `first`, else last; null: in no collection); and `also`: what the pull requests behind its waiting updates update elsewhere that still waits (each with its pull request's `number`, its review's `path`, its `title`, `kind`, and `stale` when it's out of date)",
+    "Get a post's or an article's review in Autopilot: the pull requests behind it, every update on it, waiting or decided, and what else those pull requests update that still waits",
   method: "GET",
   path: "/code-change-targets/{type}/{id}",
   scope: "read",
   access: "team",
-  input: z.object({ type: z.enum(["feedback", "articles"]), id }),
+  input: z.object({
+    type: z.enum(["feedback", "articles"]).describe("`feedback` for a post, `articles` for an article").meta({ examples: ["feedback"] }),
+    id: id
+      .describe("The post's id, or the article's, or for a new article's draft not written yet, its update's id: a `path` from codeChanges.targets")
+      .meta({ examples: ["cm3x9post0000000000000000"] }),
+  }),
+  output: targetReviewOut,
   run: async ({ projectId }, input) => {
     const review = await targetReview(projectId, input.type, input.id);
     if (!review) {
@@ -1116,12 +1493,26 @@ export const getCodeChangeTarget = defineOperation({
 export const getCodeChange = defineOperation({
   name: "codeChanges.get",
   title: "Get a code change",
-  summary: "Get a code change with its proposed actions",
+  summary: "Get a code change with its proposed actions, most likely first",
   method: "GET",
   path: "/code-changes/{id}",
   scope: "read",
   access: "team",
-  input: z.object({ id }),
+  input: z.object({ id: id.describe("The code change's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }) }),
+  output: z
+    .object({
+      ...codeChangeFields,
+      why: z.string().describe("Why Autopilot proposes its actions").meta({ examples: ["Two posts ask for this."] }),
+      changelog: z
+        .object({
+          number: z.number().int().describe("The entry's number").meta({ examples: [18] }),
+          title: z.string().describe("The entry's title").meta({ examples: ["November updates"] }),
+        })
+        .nullable()
+        .describe("The changelog entry with the pull request's bullet, if one has it"),
+      actions: z.array(actionOut).describe("Its proposed actions, most likely first"),
+    })
+    .describe("The code change"),
   run: async ({ projectId }, input) => {
     const change = await codeChangeDetail(projectId, input.id);
     if (!change) {
@@ -1135,13 +1526,14 @@ export const analyseCodeChange = defineOperation({
   name: "codeChanges.analyse",
   title: "Analyse a code change",
   summary:
-    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); one already being analysed (`state` analysing, for up to 30 minutes) isn't queued again; refused (402) out of AI credits or where the project's plan doesn't include code changes",
+    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"). One already being analysed isn't queued again. Refused (402) out of AI credits or where the project's plan doesn't include code changes",
   method: "POST",
   path: "/code-changes/{id}/analyse",
   scope: "write",
   access: "team",
   errors: [402, 409, 503],
-  input: z.object({ id }),
+  input: z.object({ id: id.describe("The code change's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }) }),
+  output: codeChangeOut.describe("The code change, `analysing` (queued) or, where jobs run inline, analysed"),
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
@@ -1191,13 +1583,19 @@ export const resumeCodeChanges = defineOperation({
   name: "codeChanges.resume",
   title: "Resume paused code changes",
   summary:
-    "Resume every paused code change, paused because the project was out of AI credits or its plan didn't include code changes (\"Resume all\"): each is analysed again (`resumed`: queued, or where jobs run inline, analysed; `failed`: those whose analysis failed at once, inline); refused (402) while the project is still out, or its plan still doesn't include them",
+    "Resume every code change paused because the project was out of AI credits or its plan didn't include code changes (\"Resume all\"): each is analysed again. Refused (402) while the project is still out, or its plan still doesn't include them",
   method: "POST",
   path: "/code-changes/resume",
   scope: "write",
   access: "team",
   errors: [402, 409, 503],
   input: z.object({}),
+  output: z
+    .object({
+      resumed: z.number().int().describe("How many were queued, or where jobs run inline, analysed").meta({ examples: [3] }),
+      failed: z.number().int().describe("Those whose analysis failed at once (inline only)").meta({ examples: [0] }),
+    })
+    .describe("How many were resumed"),
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
     if (!codeChangesEnabled() || !project.analyseCodeChanges) {
@@ -1280,29 +1678,51 @@ export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   title: "Apply an action",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed; on a draft, its edits are approved and stay in the draft, unpublished, `published: false`, and only with `reviewedAs: \"draft\"` and its `revision`, else a 409 `draft`); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; approve an article's edit, which publishes the article's unpublished changes; create a new article's draft; or write the pull request's line in the changelog",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
   access: "team",
   errors: [402, 409],
   input: z.object({
-    id,
-    /** For a post's update: the comment to post, if the team changed it (a progress update's; for a completion, one to post with it, or empty for none). */
-    comment: postComment,
-    /** For the changelog line: the line to write, if the team changed it. */
-    line: z.string().trim().min(1).max(300).optional(),
-    /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
-    revision: z.string().min(1).max(100).optional(),
-    /**
-     * For an article edit: whether the article was published or a draft when reviewed (approving publishes the one,
-     * keeps the edit in the other). Published since, it's a 409 `changed`; a draft now, approving needs `draft` (else 409 `draft`).
-     */
-    reviewedAs: z.enum(["published", "draft"]).optional(),
-    /** For a new article's draft: the collection to save it in instead of its `place` (its slug: last there; null: none). */
-    collection: z.string().trim().min(1).max(80).nullable().optional(),
+    id: id.describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+    comment: postComment.describe(
+      "For a post's update: the comment to post, if the team changed it (it replaces theirs joined; for a completion, empty for none). A post's update is every pull request's part waiting on it, applied as one: one status change, one comment, each pull request linked",
+    ),
+    line: z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .optional()
+      .describe("For the changelog line: the line to write, if the team changed it: the pull request's bullet in the entry that has it, else the running draft"),
+    revision: z
+      .string()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe(
+        "Only if it's still the version reviewed, else a 409: a post's update's (codeChanges.target's `update.revision`), or an article's newest version (articles.revisions) for its edit, which publishes every edit waiting in its unpublished changes",
+      ),
+    reviewedAs: z
+      .enum(["published", "draft"])
+      .optional()
+      .describe(
+        "For an article edit: whether the article was published or a draft when reviewed. On a draft, its edits are approved and stay in the draft, unpublished (`published: false`), only with `draft` and its `revision`, else a 409 `draft`; published since, a 409 `changed`",
+      ),
+    collection: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .nullable()
+      .optional()
+      .describe(
+        "For a new article's draft: the collection's slug to save it in, last there, instead of its `place` (which may be a new collection made for it, readers seeing that only once an article in it is published); `collection` puts it in another, null in none",
+      ),
     publish: noPublish,
   }),
+  output: appliedOut,
   example: { comment: "Weekly repeats are out today; monthly ones are next." },
   run: async (context, input) => {
     const { projectId } = context;
@@ -1629,7 +2049,7 @@ export const applyCodeChangeActions = defineOperation({
   name: "codeChangeActions.applyMany",
   title: "Apply several actions",
   summary:
-    "Apply several proposed actions at once (the review page's Approve), each as codeChangeActions.apply does, with its edits (`comment`, `line`) and the version reviewed (`revision`): in order, each on its own, so one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once. `results` says, for each, `applied` or why not",
+    "Apply several proposed actions at once (the review page's Approve), in order, each on its own: one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once",
   method: "POST",
   path: "/code-change-actions/apply",
   scope: "write",
@@ -1638,17 +2058,32 @@ export const applyCodeChangeActions = defineOperation({
     actions: z
       .array(
         z.object({
-          id,
-          comment: postComment,
-          line: z.string().trim().min(1).max(300).optional(),
-          revision: z.string().min(1).max(100).optional(),
+          id: id.describe("The action's id"),
+          comment: postComment.describe("The team's edit of a post's comment, as codeChangeActions.apply takes it"),
+          line: z.string().trim().min(1).max(300).optional().describe("The team's edit of the changelog line"),
+          revision: z.string().min(1).max(100).optional().describe("The version reviewed, as codeChangeActions.apply takes it"),
           publish: noPublish,
         }),
       )
       .min(1, "Pick at least one")
       .max(50, "Up to 50 at once")
-      .refine((actions) => new Set(actions.map((action) => action.id)).size === actions.length, "Each action once"),
+      .refine((actions) => new Set(actions.map((action) => action.id)).size === actions.length, "Each action once")
+      .describe("The actions, 1 to 50, each once, each with its edits (`comment`, `line`) and the version reviewed (`revision`)"),
   }),
+  output: z
+    .object({
+      results: z
+        .array(
+          z.object({
+            id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j0"] }),
+            status: z.enum(["applied", "failed"]).describe("Applied, or why not in `code` and `message`").meta({ examples: ["applied"] }),
+            code: z.string().optional().describe("Why not: the error code apply gives (`unknown`: couldn't tell whether it went out)"),
+            message: z.string().optional().describe("Why not, in words"),
+          }),
+        )
+        .describe("For each, in order: applied or why not"),
+    })
+    .describe("What each says"),
   example: { actions: [{ id: "cm3x9a1b2c3d4e5f6g7h8i9j0" }, { id: "cm3x9a1b2c3d4e5f6g7h8i9j1", comment: "Weekly repeats are out today." }] },
   run: async (context, input) => {
     const results: ({ id: string; status: "applied" } | { id: string; status: "failed"; code: string; message: string })[] = [];
@@ -2116,13 +2551,24 @@ export const undoCodeChangeAction = defineOperation({
   name: "codeChangeActions.undo",
   title: "Undo an action",
   summary:
-    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes (of a draft's text, on a draft), everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
+    "Undo an applied action (any team member): what it did is put back, and it becomes `undone` and isn't proposed again. Refused where that can't be done whole (an edit on top of it changed the same sections; a new article's draft edited or published; its changelog entry published: edit the entry)",
   method: "POST",
   path: "/code-change-actions/{id}/undo",
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ id }),
+  input: z.object({ id: id.describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  output: z
+    .object({
+      id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+      status: z
+        .literal("undone")
+        .describe(
+          "Undone: a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too); an article's edit is taken out by section, of the published version (published again) and of its unpublished changes (of a draft's text, on a draft), everything else staying, and one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since; a new article's draft is deleted; the changelog line is put back",
+        )
+        .meta({ examples: ["undone"] }),
+    })
+    .describe("The action, undone"),
   run: async (context, input) => {
     const { projectId } = context;
     const action = await prisma.codeChangeAction.findFirst({
@@ -2269,7 +2715,8 @@ export const publishCodeChangeActionNow = defineOperation({
   scope: "write",
   access: "team",
   errors: [402, 409],
-  input: z.object({ id }),
+  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  output: appliedOut,
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
     if (!action) {
@@ -2344,7 +2791,13 @@ export const stopCodeChangeAction = defineOperation({
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ id }),
+  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  output: z
+    .object({
+      id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+      status: z.literal("pending").describe("Waiting for the team").meta({ examples: ["pending"] }),
+    })
+    .describe("The action, stopped"),
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
     if (!action) {
@@ -2612,13 +3065,30 @@ export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",
   title: "Dismiss an action",
   summary:
-    "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). A post's part, waiting or going out by itself, takes only its part out of the post's update; with `revision` (the post's update's version, as `apply` takes it), every part of that update is dismissed at once, refused (409) when it changed since. An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
+    "Dismiss a proposed action; it isn't proposed again for this code change. An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
   method: "POST",
   path: "/code-change-actions/{id}/dismiss",
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ id, reason: z.string().trim().max(500).optional(), revision: z.string().min(1).max(100).optional() }),
+  input: z.object({
+    id: id.describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+    reason: z.string().trim().max(500).optional().describe("Why, optional"),
+    revision: z
+      .string()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe(
+        "For a post's part: its post's update's version (as `apply` takes it), to dismiss every part of that update at once, refused (409) when it changed since. Without it, a part waiting or going out by itself takes only its part out of the post's update",
+      ),
+  }),
+  output: z
+    .object({
+      id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
+      status: z.literal("dismissed").meta({ examples: ["dismissed"] }),
+    })
+    .describe("The action, dismissed"),
   example: { reason: "Only part of it; we'll say so when it's all out" },
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({

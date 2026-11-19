@@ -39,20 +39,6 @@ const notRewrittenYet = new Set<OperationName>([
   "githubRepositories.list",
   // B7: Inbox
   // B8: Autopilot
-  "codeChangeActions.apply",
-  "codeChangeActions.applyMany",
-  "codeChangeActions.dismiss",
-  "codeChangeActions.publishNow",
-  "codeChangeActions.stop",
-  "codeChangeActions.undo",
-  "codeChanges.analyse",
-  "codeChanges.get",
-  "codeChanges.list",
-  "codeChanges.resume",
-  "codeChanges.target",
-  "codeChanges.targets",
-  "codeChangesTuning.get",
-  "codeChangesTuning.update",
   // B9: Users
   // B10: Portal, Project and Billing
 ]);
