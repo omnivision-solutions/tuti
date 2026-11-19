@@ -39,32 +39,40 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await connectGithub(owner, web, account);
   // Connected, it's on GitHub's own settings page.
   await expect(owner.getByText("GitHub is connected.", { exact: false })).toBeVisible();
-  await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
+  // The account is beside the page's title, with what's rarely done to the connection under ⋯.
+  const connectedTo = (login: string) => owner.getByText(`Connected · ${login}`, { exact: true }).filter({ visible: true });
+  await expect(connectedTo("acme-e2e")).toBeVisible();
+  // No intro, and no line on Autopilot: Integrations says what GitHub is for.
+  await expect(owner.getByText("gather in the changelog's Next release draft", { exact: false })).toHaveCount(0);
+  await expect(owner.getByRole("link", { name: "Settings → Autopilot" })).toHaveCount(0);
 
   // The first project added both repositories; it lets the iOS app go.
   const ours = owner.getByRole("list", { name: "This project's repositories" });
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app", "acme-e2e/ios"]);
-  await owner.getByRole("button", { name: "Remove acme-e2e/ios" }).click();
+  await expect(owner.getByRole("heading", { name: "Repositories 2" })).toBeVisible();
+  await owner.getByRole("button", { name: "Actions for acme-e2e/ios" }).click();
+  await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
+  await expect(owner.getByRole("heading", { name: "Repositories 1" })).toBeVisible();
   // Which repositories the app can see is the account's to choose, on GitHub.
   await expect(owner.getByRole("link", { name: "Manage access on GitHub" })).toHaveAttribute(
     "href",
     new RegExp(`/organizations/acme-e2e/settings/installations/${id}$`),
   );
-  await expect(owner.getByText("and Autopilot reads them for the posts they complete", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Missing one? Manage access on GitHub, then reconnect.")).toBeVisible();
   await checkpoint(owner, "settings-github-connected");
-  // On a phone the header keeps its words whole: the buttons go under the name and when it connected, each on a line.
+  // On a phone the account is above the card, whole, and nothing is wider than the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
   const uncut = (element: HTMLElement) => element.scrollWidth <= element.clientWidth;
-  await expect.poll(() => owner.getByRole("heading", { name: "GitHub · acme-e2e" }).evaluate(uncut)).toBe(true);
-  expect((await owner.getByText(/^Connected /).boundingBox())!.height).toBeLessThan(30);
+  await expect(connectedTo("acme-e2e")).toBeVisible();
+  await expect.poll(() => connectedTo("acme-e2e").evaluate(uncut)).toBe(true);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await checkpoint(owner, "settings-github-connected-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot (GitHub's page points there).
-  await owner.getByRole("link", { name: "Settings → Autopilot" }).click();
-  await owner.waitForURL("**/settings/autopilot");
+  // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot.
+  await owner.goto(`/app/${web}/settings/autopilot`);
   await expect(owner.getByText("Nothing has gone out yet.", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-autopilot");
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
@@ -75,10 +83,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
   await expect(analysis).not.toBeChecked();
-  // GitHub's Repositories say Autopilot reads them only while it does.
-  await owner.goto(`/app/${web}/settings/integrations/github`);
-  await expect(owner.getByText("gather in the changelog's Next release draft. Each repository", { exact: false })).toBeVisible();
-  // So does its row on Integrations.
+  // GitHub's row on Integrations says Autopilot reads its repositories only while it does.
   await owner.goto(`/app/${web}/settings/integrations`);
   await expect(owner.getByRole("link", { name: "GitHub · acme-e2e Pull requests for the changelog Connected", exact: true })).toBeVisible();
   // Off, Autopilot's page says so, and takes its owner to the switch.
@@ -212,15 +217,18 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
   await checkpoint(owner, "settings-github-repositories");
 
-  // Refresh list reads GitHub again, on the page.
+  // Refresh list, under the header's ⋯, reads GitHub again, on the page.
   const url = owner.url();
-  await owner.getByRole("button", { name: "Refresh list" }).click();
+  const actions = owner.getByRole("button", { name: "GitHub connection actions" });
+  await actions.click();
+  await checkpoint(owner, "settings-github-menu", { fullPage: false });
+  await owner.getByRole("menuitem", { name: "Refresh list" }).click();
   await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();
   expect(owner.url()).toBe(url);
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
   // A repository given access since is listed once they reconnect (GitHub says they can access it).
   await nextInstall(owner, { ...account, repositories: [...account.repositories, { id: id + 3, fullName: "acme-e2e/docs" }] });
-  await owner.getByRole("link", { name: "Reconnect" }).click();
+  await owner.getByRole("link", { name: "reconnect", exact: true }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
   await owner.getByRole("button", { name: "Add repository" }).click();
@@ -238,22 +246,32 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github`);
-  await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
+  await expect(connectedTo("acme-e2e")).toBeVisible();
+  // The page as it is on any later visit, on a wide screen and on a phone.
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await checkpoint(owner, "settings-github");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(connectedTo("acme-e2e")).toBeVisible();
+  await checkpoint(owner, "settings-github-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Switch account: the mobile app moves to the team's other organization, and starts with none of its repositories.
   // Its login as long as GitHub allows (39 characters), letters and digits only: nowhere to break a line but anywhere.
   const labs = { id: id + 2, account: "acmelabse2eplatformandinfrastructure123", repositories: [{ id: id + 2, fullName: "acmelabse2eplatformandinfrastructure123/ios" }] };
   await nextInstall(owner, labs);
-  await owner.getByRole("link", { name: "Switch account" }).click();
+  await actions.click();
+  await owner.getByRole("menuitem", { name: "Switch account" }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=choose`);
   await expect(owner.getByText("This project's repositories from @acme-e2e are removed", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-github-switch-account");
   await owner.getByRole("link", { name: `Connect @${labs.account}` }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
-  await expect(owner.getByRole("heading", { name: `GitHub · ${labs.account}` })).toBeVisible();
+  await expect(connectedTo(labs.account)).toBeVisible();
   // On a phone the long name wraps, never cut.
   await owner.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(() => owner.getByRole("heading", { name: `GitHub · ${labs.account}` }).evaluate(uncut)).toBe(true);
+  await expect(connectedTo(labs.account)).toBeVisible();
+  await expect.poll(() => connectedTo(labs.account).evaluate(uncut)).toBe(true);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await checkpoint(owner, "settings-github-long-name-phone");
   // So does its row on Integrations: the name on more lines, nothing wider than the pane.
   await owner.goto(`/app/${mobile}/settings/integrations`);
@@ -264,7 +282,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   const history = await owner.evaluate(() => window.history.length);
-  await owner.getByRole("button", { name: "Disconnect" }).click();
+  await actions.click();
+  await owner.getByRole("menuitem", { name: "Disconnect" }).click();
   const confirm = owner.getByRole("alertdialog", { name: "Disconnect GitHub?" });
   await checkpoint(owner, "settings-github-disconnect", { fullPage: false });
   await confirm.getByRole("button", { name: "Disconnect" }).click();

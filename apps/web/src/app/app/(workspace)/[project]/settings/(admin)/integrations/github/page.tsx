@@ -1,19 +1,14 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled } from "@tuti/shared";
 import { listedRepositories } from "@tuti/jobs";
-import { ArrowLeftRightIcon } from "lucide-react";
 import { cookies } from "next/headers";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
-import { GithubMark } from "@tuti/ui/github-mark";
-import { IntegrationLogo } from "@/components/integration-logo";
+import { GithubAccountChoice, GithubConnectionMenu, GithubRepositories } from "@/components/github-connection";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
-import { formatDate, timeAgo } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { githubConfig, installationSettingsUrl } from "@/lib/github";
 import { repositoryRows } from "@/lib/github-repository-rows";
 import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
@@ -27,7 +22,8 @@ const GITHUB_RESULTS: Record<string, string> = {
 };
 
 /**
- * Settings → Integrations → GitHub (Manage): the connection and the project's repositories.
+ * Settings → Integrations → GitHub (Manage): the connection (its account in the header, with what's rarely done to it
+ * under ⋯) and the project's repositories.
  */
 export default async function GithubIntegrationPage(props: PageProps<"/app/[project]/settings/integrations/github">) {
   const { project: slug } = await props.params;
@@ -47,7 +43,6 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       repositories: true,
       createdAt: true,
       included: { select: { repoId: true, fullName: true } },
-      project: { select: { analyseCodeChanges: true, autoApplyLinks: true, plan: true } },
     },
   });
   const integrations = `/app/${project.slug}/settings/integrations`;
@@ -80,32 +75,29 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
     },
   });
 
+  const connected = (className: string) => (
+    <Badge className={className} title={`Connected ${formatDate(installation.createdAt)}`}>
+      Connected · {installation.accountLogin}
+    </Badge>
+  );
+
   return (
-    <SettingsPane title="GitHub" back={{ href: integrations, label: "Integrations" }}>
-      <div className="flex flex-wrap items-center gap-4">
-        <IntegrationLogo>
-          <GithubMark className="size-6" />
-        </IntegrationLogo>
-        {/* At least 10rem wide: on a phone the buttons wrap under it rather than squeezing it. */}
-        <div className="flex min-w-0 flex-1 basis-40 flex-col">
-          <h2 className="font-heading text-lg font-medium break-words">GitHub · {installation.accountLogin}</h2>
-          <span className="text-sm text-muted-foreground" title={formatDate(installation.createdAt)}>
-            Connected {timeAgo(installation.createdAt)}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {github && (
-            <a
-              href={`/api/github/install?${new URLSearchParams({ project: project.slug })}`}
-              className={buttonVariants({ variant: "outline", size: "sm" })}
-            >
-              <ArrowLeftRightIcon />
-              Switch account
-            </a>
-          )}
-          <DisconnectGithubButton projectSlug={project.slug} account={installation.accountLogin} />
-        </div>
-      </div>
+    <SettingsPane
+      title="GitHub"
+      back={{ href: integrations, label: "Integrations" }}
+      actions={
+        <>
+          {connected("hidden @min-[48rem]/app:inline-flex")}
+          <GithubConnectionMenu
+            projectSlug={project.slug}
+            account={installation.accountLogin}
+            switchUrl={github ? `/api/github/install?${new URLSearchParams({ project: project.slug })}` : null}
+          />
+        </>
+      }
+    >
+      {/* On a phone the header has no room for it: here, where a long account name wraps. */}
+      {connected("-mb-3 h-auto max-w-full justify-start text-left break-all whitespace-normal @min-[48rem]/app:hidden")}
       {!github && (
         <Alert variant="destructive">
           <AlertDescription>
@@ -134,51 +126,28 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         </SettingsCard>
       )}
 
-      <SettingsCard
-        title="Repositories"
-        description={
-          <>
-            Pull requests merged in these repositories gather in the changelog&apos;s Next release draft
-            {codeChangesEnabled() && installation.project.analyseCodeChanges && ", and Autopilot reads them for the posts they complete and the docs they change"}. Each repository belongs to
-            one project.
-          </>
+      <GithubRepositories
+        // Fresh state after a refresh or another tab's change.
+        key={JSON.stringify([repositories, installation.included])}
+        projectSlug={project.slug}
+        account={installation.accountLogin}
+        repositories={repositoryRows(
+          repositories,
+          installation.included.map((row) => row.repoId),
+          elsewhere.map((row) => ({
+            repoId: row.repoId,
+            installationId: row.connection.installationId,
+            project: projectName(row.connection.project),
+          })),
+          installation.installationId,
+        )}
+        manageUrl={
+          github
+            ? installationSettingsUrl(github, installation.installationId, { login: installation.accountLogin, type: installation.accountType })
+            : null
         }
-      >
-        <SettingBlock>
-          <GithubRepositories
-            // Fresh state after a refresh or another tab's change.
-            key={JSON.stringify([repositories, installation.included])}
-            projectSlug={project.slug}
-            account={installation.accountLogin}
-            repositories={repositoryRows(
-              repositories,
-              installation.included.map((row) => row.repoId),
-              elsewhere.map((row) => ({
-                repoId: row.repoId,
-                installationId: row.connection.installationId,
-                project: projectName(row.connection.project),
-              })),
-              installation.installationId,
-            )}
-            manageUrl={
-              github
-                ? installationSettingsUrl(github, installation.installationId, { login: installation.accountLogin, type: installation.accountType })
-                : null
-            }
-            reconnectUrl={`/api/github/use?${new URLSearchParams({ project: project.slug, installation: String(installation.installationId) })}`}
-          />
-        </SettingBlock>
-      </SettingsCard>
-
-      {codeChangesEnabled() && (
-        <p className="text-sm text-muted-foreground">
-          What Autopilot does with merged pull requests is in{" "}
-          <Link href={`/app/${project.slug}/settings/autopilot`} className="underline">
-            Settings → Autopilot
-          </Link>
-          .
-        </p>
-      )}
+        reconnectUrl={`/api/github/use?${new URLSearchParams({ project: project.slug, installation: String(installation.installationId) })}`}
+      />
     </SettingsPane>
   );
 }
