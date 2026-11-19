@@ -57,7 +57,7 @@ const usageTotals = z.object({
   inputTokens: z.number().int().describe("Tokens sent to the model").meta({ examples: [512000] }),
   outputTokens: z.number().int().describe("Tokens the model wrote").meta({ examples: [64000] }),
   cost: z.number().optional().describe("What it cost in dollars, by its provider's price (left out on a server with AI credits)").meta({ examples: [1.84] }),
-  credits: z.number().optional().describe("The AI credits charged, on a server with AI credits, instead of the cost"),
+  credits: z.number().optional().describe("The AI credits charged, on a server with AI credits, instead of the cost").meta({ examples: [184] }),
   unpriced: z.number().int().describe("Requests whose provider gave no price, so the cost leaves them out").meta({ examples: [0] }),
 });
 
