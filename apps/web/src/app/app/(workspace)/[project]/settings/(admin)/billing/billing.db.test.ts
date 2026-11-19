@@ -222,7 +222,9 @@ test("a license on a plan with no email limit still has its month: the AI credit
   const month = await prisma.creditGrant.findFirstOrThrow({ where: { planLicenseId: license.id, kind: "AI" } });
   const monthly = month.credits.toNumber().toLocaleString("en");
   const page = await billing();
-  expect(page).toMatch(meter("Emails", "0 sent"));
+  // The emails are counted by calendar month, not the license's: said, beside a reset day that isn't theirs.
+  const first = formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)));
+  expect(page).toMatch(meter("Emails", `0 sent since ${first}`));
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
   expect(page).toContain(`>Resets ${formatShortDate(creditsThrough!)}</span>`);
   // Where plans are off, there's no This month: the license's credits are in the list, with the rest.

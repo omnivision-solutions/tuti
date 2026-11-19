@@ -192,7 +192,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             </div>
             <div className="grid gap-4 @min-[34rem]/settings:grid-cols-2 @min-[34rem]/settings:gap-x-8">
               {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}
-              <Meter label="Emails" left={emails.left} of={emails.limit} used={`${emails.emails.toLocaleString("en")} sent`} />
+              {/* Without a limit they're a calendar month's (UTC): said where the card's reset day is the license's. */}
+              <Meter
+                label="Emails"
+                left={emails.left}
+                of={emails.limit}
+                used={`${emails.emails.toLocaleString("en")} sent${until ? ` since ${formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))}` : ""}`}
+              />
               {monthly.length > 0 && <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />}
             </div>
             {monthly.length > 0 && owed >= 0.01 && <p className="text-sm text-muted-foreground">{credits(owed)} credits owed: new credits pay that first.</p>}
