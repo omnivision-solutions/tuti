@@ -1,4 +1,4 @@
-import { Marked } from "marked";
+import { Marked, type Tokens } from "marked";
 
 import { graphqlResponse, graphqlSignature, requestExamples } from "./examples";
 import type { ApiDoc, ApiOperation, ApiParam, ApiSchema } from "./types";
@@ -176,28 +176,33 @@ const ELEMENTS = new Set(
     "table tbody td template textarea tfoot th thead time title tr tt u ul var video"
   ).split(" "),
 );
-/** Elements HTML lets go unclosed (and `<br>`'s kind, never closed). Any other element is HTML only when the text closes it: `<code>` alone is a placeholder. */
+/** Elements HTML lets go unclosed (and `<br>`'s kind, never closed). Any other element is HTML only when the text after it closes it: `<code>` alone is a placeholder. */
 const UNCLOSED = new Set("br hr img wbr p li dt dd tr td th thead tbody tfoot".split(" "));
 
-const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** Whether `tag` (`<slug>`, `</b>`, a comment), followed by `rest`, is HTML rather than a placeholder. */
+function isHtml(tag: string, rest: string): boolean {
+  const name = /^<\/?([a-zA-Z][\w-]*)/.exec(tag)?.[1]?.toLowerCase();
+  if (!name || UNCLOSED.has(name) || (tag.startsWith("</") && ELEMENTS.has(name))) return true;
+  // Closed later on, outside code (`</code>` in a code span closes nothing).
+  return ELEMENTS.has(name) && rest.replace(/(`+)[^]*?\1/g, "").toLowerCase().includes(`</${name}`);
+}
 
 /** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`, `<code>`) kept as text. */
 export function specHtml(markdown: string): string {
-  const closed = new Set<string>();
-  const isHtml = (name: string) => UNCLOSED.has(name) || (ELEMENTS.has(name) && closed.has(name));
-  const marked = new Marked({
+  return new Marked({
     gfm: true,
-    renderer: {
-      // Raw HTML goes through as written, except a tag that isn't HTML: that's a placeholder, shown as its text.
-      html: ({ text }) => text.replace(/<\/?([a-zA-Z][\w-]*)[^<>]*>/g, (tag, name: string) => (isHtml(name.toLowerCase()) ? tag : escapeHtml(tag))),
+    // A placeholder is read as the text it is, not as HTML; HTML's own tags as marked reads them. (marked's types
+    // have each tokenizer return its own kind of token, but it takes any.)
+    tokenizer: {
+      tag(src) {
+        const tag = this.rules.inline.tag.exec(src)?.[0];
+        return tag !== undefined && !isHtml(tag, src.slice(tag.length)) && ({ type: "text", raw: tag, text: tag } as unknown as Tokens.Tag);
+      },
+      html(src) {
+        const cap = this.rules.block.html.exec(src);
+        const tag = cap && /^ *(<[^<>]*>?)/.exec(cap[0])?.[1];
+        return !!tag && !isHtml(tag, src.slice(src.indexOf(tag) + tag.length)) && ((this.lexer.state.top ? this.paragraph(src) : this.text(src)) as unknown as Tokens.HTML);
+      },
     },
-  });
-  const tokens = marked.lexer(markdown);
-  // Closing tags in its raw HTML only: one in code (`</code>`) closes nothing.
-  marked.walkTokens(tokens, (token) => {
-    if (token.type === "html") {
-      for (const match of token.raw.matchAll(/<\/([a-zA-Z][\w-]*)/g)) closed.add(match[1]!.toLowerCase());
-    }
-  });
-  return marked.parser(tokens);
+  }).parse(markdown, { async: false });
 }

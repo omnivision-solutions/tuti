@@ -104,10 +104,13 @@ describe("specHtml", () => {
     expect(specHtml("The <post id>, on <date>.")).toBe("<p>The &lt;post id&gt;, on &lt;date&gt;.</p>\n");
     expect(specHtml("One<br>two, <b>bold</b>, <kbd>Esc</kbd> <!-- note -->")).toBe("<p>One<br>two, <b>bold</b>, <kbd>Esc</kbd> <!-- note --></p>\n");
     expect(specHtml("<details>\n<summary>More</summary>\n\nText\n</details>")).toContain("<details>\n<summary>More</summary>");
-    expect(specHtml("<SLUG>\n")).toBe("&lt;SLUG&gt;\n");
+    expect(specHtml("<SLUG>\nis the **address**.")).toBe("<p>&lt;SLUG&gt;\nis the <strong>address</strong>.</p>\n");
     // An element's name is a placeholder too unless the text closes it.
     expect(specHtml("Back to /callback?code=<code>, titled <title>.")).toBe("<p>Back to /callback?code=&lt;code&gt;, titled &lt;title&gt;.</p>\n");
     expect(specHtml("Run <code>make</code>.")).toBe("<p>Run <code>make</code>.</p>\n");
+    expect(specHtml("Run <code>make</code>, then /callback?code=<code>&notify=1 while age<ttl.")).toBe(
+      "<p>Run <code>make</code>, then /callback?code=&lt;code&gt;&amp;notify=1 while age&lt;ttl.</p>\n",
+    );
     expect(specHtml("Wrap it in `<code>…</code>`, from /callback?code=<code>.")).toBe("<p>Wrap it in <code>&lt;code&gt;…&lt;/code&gt;</code>, from /callback?code=&lt;code&gt;.</p>\n");
   });
 });
