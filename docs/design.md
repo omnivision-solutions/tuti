@@ -885,8 +885,8 @@ widths, in light and dark (in development only).
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense
   ("Merged into #12", "Status: Planned").
 - Disable buttons while their action runs.
-- A setting left empty offers the obvious pick in one click (Who's asking's
-  "Use Seats"); it isn't picked for the team.
+- A setting left empty offers the obvious pick first in its list, marked
+  "Suggested" (Who's asking's Seats); it isn't picked for the team.
 - Users' properties show in words until the team names them: the key in
   sentence case (`company_size` is Company size, `mrr` MRR), a number as a
   number unless its key says it's an id, a time, a year, a zip code or a

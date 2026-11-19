@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useTransition } from "react";
+import { useEffect, useId, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { SettingRow } from "@/components/settings-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { propertyLabel, type PropertyFormats, suggestedAsking } from "@/lib/property-formats";
 import { setAskingProperty } from "@/server/groups";
@@ -14,9 +14,8 @@ const valueOf = (name: string) => `property:${name}`;
 
 /**
  * Settings → Users → Who's asking: the property Feedback totals over each post's voters, saved as it's picked. While
- * it's None, the first of the users' amounts (a number or money as the team set it, else not an id or a time: suggestedAsking) is
- * offered in one click;
- * it's the team's to pick, so it isn't set.
+ * it's None, the first of the users' amounts (a number or money as the team set it, else not an id or a time:
+ * suggestedAsking) is the first property in the list, marked Suggested; it's the team's to pick, so it isn't set.
  */
 export function AskingPropertySelect({
   projectSlug,
@@ -30,8 +29,9 @@ export function AskingPropertySelect({
   formats: PropertyFormats;
 }) {
   const [pending, startTransition] = useTransition();
+  const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  // Once the suggestion's pick is saved its button is gone: focus goes to what it set, not the page.
+  // Disabled while a pick saves, the box loses focus: it gets it back once saved, not the page.
   const refocus = useRef(false);
   useEffect(() => {
     if (!pending && refocus.current) {
@@ -39,9 +39,12 @@ export function AskingPropertySelect({
       trigger.current?.focus();
     }
   }, [pending]);
-  const names = property && !properties.includes(property) ? [property, ...properties] : properties;
+  const suggested = property === null ? suggestedAsking(properties, formats) : undefined;
+  const names =
+    suggested !== undefined ? [suggested, ...properties.filter((name) => name !== suggested)] : property && !properties.includes(property) ? [property, ...properties] : properties;
   const items = { [NONE]: "None", ...Object.fromEntries(names.map((name) => [valueOf(name), propertyLabel(formats, name)])) };
-  const pick = (name: string | null) =>
+  const pick = (name: string | null) => {
+    refocus.current = true;
     startTransition(async () => {
       const result = await setAskingProperty(projectSlug, name);
       if (result.error) {
@@ -50,45 +53,28 @@ export function AskingPropertySelect({
         toast.success(name === null ? "Feedback won't total a property" : `Feedback totals ${propertyLabel(formats, name)} over each post's voters`);
       }
     });
-  const suggested = property === null ? suggestedAsking(properties, formats) : undefined;
+  };
   return (
-    <div className="flex flex-col gap-3">
+    <SettingRow label="Value of a post" description="Totals a number property over each post's voters. Only your team sees it." htmlFor={id}>
       <Select
         items={items}
         value={property === null ? NONE : valueOf(property)}
         disabled={pending}
         onValueChange={(value) => pick(value === NONE ? null : String(value).slice(valueOf("").length))}
       >
-        <SelectTrigger ref={trigger} className="w-full sm:w-48" aria-label="Property to total">
+        <SelectTrigger ref={trigger} id={id} aria-describedby={`${id}-description`} className="w-full @min-[34rem]/settings:w-48">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {Object.entries(items).map(([value, label]) => (
-            <SelectItem key={value} value={value}>
-              {label}
+            // A long name is cut short to fit the list, so "Suggested" stays in sight.
+            <SelectItem key={value} value={value} className="*:first:min-w-0 *:first:shrink">
+              <span className="truncate">{label}</span>
+              {suggested !== undefined && value === valueOf(suggested) && <span className="text-muted-foreground">Suggested</span>}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      {suggested !== undefined && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
-          <p className="wrap-anywhere">Your users have {propertyLabel(formats, suggested)}, a number Feedback can total.</p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="max-w-full"
-            disabled={pending}
-            focusableWhenDisabled
-            onClick={() => {
-              refocus.current = true;
-              pick(suggested);
-            }}
-          >
-            {/* A long name is cut short to fit the card; the button's name stays whole. */}
-            <span className="truncate">Use {propertyLabel(formats, suggested)}</span>
-          </Button>
-        </div>
-      )}
-    </div>
+    </SettingRow>
   );
 }
