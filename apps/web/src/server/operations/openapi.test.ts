@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { readOpenApi } from "@tuti/shared/api-reference";
 import { expect, test, vi } from "vitest";
+import { z } from "zod";
 
 // Loading the operations loads the app's auth, which reads its addresses: placeholders (unit tests have none).
 vi.hoisted(() => {
@@ -11,7 +12,7 @@ vi.hoisted(() => {
 });
 
 import { type OperationName, operations } from "./index";
-import { agentOutputSchema, errorStatuses, errorsLine, inputSchema, openApiSpec, outputSchema, pathParams } from "./openapi";
+import { agentOutputSchema, errorStatuses, errorsLine, forAgents, inputSchema, opened, openApiSpec, outputSchema, pathParams } from "./openapi";
 
 /**
  * How the operations read in the API reference and MCP (docs/plan.md, "Tuti's API spec that reads well"): an operation
@@ -314,6 +315,19 @@ test("outputs stay open to what the other release writes: no closed objects, and
   expect(role.examples).toEqual(["owner", "admin", "member"]);
   // Readers of the spec still see the list.
   expect(JSON.stringify(openApiSpec("https://tuti.example.com/api/v1").components)).toContain('"enum":["owner","admin","member"]');
+});
+
+test("a discriminated union stays one a result can fit once its objects are open and its values only named", () => {
+  const condition = z.discriminatedUnion("op", [
+    z.object({ op: z.literal("is"), property: z.string(), value: z.string() }),
+    z.object({ op: z.enum(["set", "unset"]), property: z.string() }),
+  ]);
+  const schema = JSON.stringify(forAgents(opened(z.toJSONSchema(condition, { io: "output" }))));
+  // With open objects, { op: "is", property, value } fits both branches: oneOf would refuse it, anyOf takes it.
+  expect(schema).not.toMatch(/"oneOf"|"enum"|"const"|"additionalProperties":false/);
+  expect(schema).toContain('"anyOf"');
+  expect(schema).toContain('"examples":["is"]');
+  expect(schema).toContain('"examples":["set","unset"]');
 });
 
 test("every example request is one the operation takes", () => {

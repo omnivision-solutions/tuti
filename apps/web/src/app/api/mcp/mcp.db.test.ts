@@ -56,6 +56,10 @@ test("read-only keys get the read tools; tools return the same data as the API",
   expect(tools.find((t) => t.name === "team_list")).toMatchObject({
     outputSchema: { type: "object", properties: { team: { type: "array", description: "Everyone on the team, in the order they joined" } } },
   });
+  // A role the other release added doesn't fail a client that checks the result: the roles are named, not checked.
+  const teamMember = (tools.find((t) => t.name === "team_list")?.outputSchema as { $defs: Record<string, { properties: Record<string, Record<string, unknown>> }> }).$defs.TeamMember!;
+  expect(teamMember.properties.role).toMatchObject({ type: "string", examples: ["owner", "admin", "member"] });
+  expect(teamMember.properties.role!.enum).toBeUndefined();
   expect((await client.callTool({ name: "team_list", arguments: {} })).structuredContent).toEqual({ team: [{ name: "Olive Owner", role: "owner" }] });
   // The errors a call can give, last.
   expect(tools.find((t) => t.name === "posts_get")?.description).toMatch(/\n\nErrors: 400 invalid input, 404 not found\.$/);
