@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "./fixtures";
+import { expect, type Locator, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -95,9 +95,19 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await rail.getByRole("link", { name: "Docs home" }).click();
   await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
   await expect(preview.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
-  await owner.getByRole("switch", { name: "Show popular articles" }).check();
+  // One card of rows, no title or hints: the placeholders say what an empty field shows, and what Popular articles are is behind its ⓘ.
+  const settings = owner.locator("[data-slot=portal-settings]");
+  const popular = owner.getByRole("switch", { name: "Popular articles", exact: true });
+  await expect(settings.getByText("Header", { exact: true })).toHaveCount(0);
+  await expect(settings.getByText(/Empty for/)).toHaveCount(0);
+  await expect(owner.getByLabel("Title", { exact: true })).toHaveAttribute("placeholder", "How can we help?");
+  await expect(owner.getByText(/most-read articles/)).toHaveCount(0);
+  await settings.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await popular.check();
   await expect(preview.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveCount(3);
-  await owner.getByRole("switch", { name: "Show popular articles" }).uncheck();
+  await popular.uncheck();
   await owner.getByLabel("Title", { exact: true }).fill("  Acme help  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");
   await expect(preview.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
@@ -108,6 +118,22 @@ test("the team sets what readers can do with an article and the docs' home, seei
   // Saved as trimmed, and the form shows what's saved: nothing left to save.
   await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("Acme help");
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  // On a phone nothing runs off the side: a field fills the card under its label, and the switch stays beside its own.
+  const viewport = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await settings.evaluate((column) => column.scrollWidth - column.clientWidth)).toBeLessThanOrEqual(0);
+  const box = async (locator: Locator) => (await locator.boundingBox())!;
+  const [card, titleLabel, title, popularLabel, toggle] = await Promise.all(
+    [settings.locator("form section > div"), settings.getByText("Title", { exact: true }), owner.getByLabel("Title", { exact: true }), settings.getByText("Popular articles", { exact: true }), popular].map(box),
+  );
+  expect(title.y).toBeGreaterThanOrEqual(titleLabel.y + titleLabel.height);
+  expect(title.width).toBeGreaterThan(card.width - 48);
+  expect(toggle.x).toBeGreaterThan(popularLabel.x + popularLabel.width);
+  expect(toggle.y).toBeLessThan(popularLabel.y + popularLabel.height);
+  expect(toggle.x + toggle.width).toBeLessThanOrEqual(card.x + card.width);
+  await checkpoint(owner, "customize-docs-home-phone");
+  await owner.setViewportSize(viewport);
   await visitor.goto("/docs");
   await expect(visitor.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
 });

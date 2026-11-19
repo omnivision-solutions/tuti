@@ -3,7 +3,8 @@
 import { useId } from "react";
 
 import { useBrandingForm } from "@/components/branding-settings";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { SettingRow, SettingsCard } from "@/components/settings-card";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -77,26 +78,20 @@ export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; h
     docsHome: { title: String(data.get("title") ?? ""), subtitle: String(data.get("subtitle") ?? ""), popular: on(data, "popular") },
   }));
   return (
-    <form {...form}>
+    <form {...form} className="flex flex-col gap-3">
       <input type="hidden" name="part" value="docsHome" />
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="docs-title">Title</FieldLabel>
+      <SettingsCard>
+        <SettingRow label="Title" htmlFor="docs-title">
           <Input id="docs-title" name="title" defaultValue={home.title} maxLength={DOCS_TITLE_MAX} placeholder={DOCS_HEADING.title} autoComplete="off" />
-          <FieldDescription>At the top of your docs&apos; home. Empty for &ldquo;{DOCS_HEADING.title}&rdquo;.</FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="docs-subtitle">Subtitle</FieldLabel>
+        </SettingRow>
+        <SettingRow label="Subtitle" htmlFor="docs-subtitle">
           <Textarea id="docs-subtitle" name="subtitle" defaultValue={home.subtitle} maxLength={DOCS_SUBTITLE_MAX} rows={3} placeholder={DOCS_HEADING.subtitle} />
-        </Field>
-        <SwitchRow
-          name="popular"
-          label="Show popular articles"
-          description="Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read."
-          defaultChecked={home.popular}
-        />
-        {state.error && <FieldError>{state.error}</FieldError>}
-      </FieldGroup>
+        </SettingRow>
+        <SettingRow label="Popular articles" htmlFor="docs-popular" info="Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read." inline>
+          <Switch id="docs-popular" name="popular" defaultChecked={home.popular} />
+        </SettingRow>
+      </SettingsCard>
+      {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );
 }
