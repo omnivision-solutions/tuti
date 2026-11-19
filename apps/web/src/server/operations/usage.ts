@@ -53,6 +53,7 @@ const forTeam = <T extends Totals>({ cost, credits, ...totals }: T) => (creditsE
 
 export const getUsage = defineOperation({
   name: "usage.get",
+  title: "Get AI usage",
   summary:
     "What the project's AI use cost, by calendar month (UTC, newest first) and feature: requests, tokens in and out, and the cost in dollars (`unpriced`: requests whose provider gave no price); on a server with AI credits, `credits` charged instead of the cost",
   method: "GET",

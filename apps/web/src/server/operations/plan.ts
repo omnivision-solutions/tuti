@@ -45,6 +45,7 @@ const billingUrl = async (projectId: string) => new URL(`/app/${await projectSlu
 
 export const getPlan = defineOperation({
   name: "plan.get",
+  title: "Get the plan",
   summary:
     "The project's plan, on a server that sells plans (`enabled`): its key (`plan`; the server's default plan without a paid one, the trial's plan during a free trial), its free trial (`trial`: when it ends, `endsAt`, and whether it has, `ended`; null without one or once a plan is bought), and for a paid plan how it's billed (`interval`: month or year), Stripe's `status` (`past_due` while a failed payment is retried), when its period ends (`periodEnd`: it renews then), if it's cancelled, when it ends (`endsAt`), and whether it has the add-on hiding \"Powered by tuti\" (`badge`; see plan.badge)",
   method: "GET",
@@ -75,6 +76,7 @@ export const getPlan = defineOperation({
 
 export const subscribePlan = defineOperation({
   name: "plan.subscribe",
+  title: "Subscribe to a plan",
   summary:
     "Start a paid plan (`plan`: its key, one the server sells; billed each `month` or `year`): a Stripe Checkout page (`url`) to pay on; the plan starts once Stripe says it's paid. Refused (409) while the project has a plan (change it with plan.manage), and off (503) where plans aren't sold",
   method: "POST",
@@ -123,6 +125,7 @@ export const subscribePlan = defineOperation({
 
 export const managePlan = defineOperation({
   name: "plan.manage",
+  title: "Open the billing portal",
   summary:
     "Stripe's customer portal for the project (`url`): change or cancel its plan, update the card, and download invoices. Refused (409) for a project that has never had a plan",
   method: "POST",
@@ -150,6 +153,7 @@ export const managePlan = defineOperation({
 
 export const setBadgeAddOn = defineOperation({
   name: "plan.badge",
+  title: "Set the badge add-on",
   summary:
     'The add-on hiding "Powered by tuti" on the portal (on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. On a project whose plan comes from a plan license, it\'s a subscription of its own: `on` gives a Stripe Checkout page (`url`) to pay on, and it hides the badge once Stripe says it\'s paid; `on: false` cancels it; it ends with the license. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
   method: "POST",

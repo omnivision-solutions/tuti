@@ -26,6 +26,7 @@ export async function aiOrRefuse(projectId: string, role: AiRole): Promise<Ai> {
 
 export const getCredits = defineOperation({
   name: "credits.get",
+  title: "Get AI credits",
   summary:
     "The project's AI credits, on a server that uses them (`enabled`): the balance (below 0 when a request ran past it; the next credits cover that first) and each grant with credits left, soonest-expiring first (`expiresAt` null: for good)",
   method: "GET",
@@ -41,6 +42,7 @@ export const TOPUP_DOLLARS = { min: 5, max: 1000 } as const;
 
 export const topUpCredits = defineOperation({
   name: "credits.topUp",
+  title: "Buy AI credits",
   summary: `Buy AI credits: a Stripe Checkout page (\`url\`) to pay \`dollars\` (${TOPUP_DOLLARS.min} to ${TOPUP_DOLLARS.max}), and how many \`credits\` it gives; they're added once Stripe says it's paid. Off (503) where top-ups aren't set up`,
   method: "POST",
   path: "/credits/top-up",

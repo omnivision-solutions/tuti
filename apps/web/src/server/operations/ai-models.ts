@@ -80,6 +80,7 @@ export async function aiModels(projectId: string, known?: Map<string, AiModelLis
 
 export const getAiModels = defineOperation({
   name: "aiModels.get",
+  title: "Get the AI models",
   summary:
     "Get the model each AI role uses (answers, escalations, support_draft and support_summary: the Inbox's drafted replies and summaries, changelog, and Autopilot's three: code_changes_decide deciding, code_changes_check checking its own work, code_changes writing, and Verify): the one the project picked (null for the server's default), the default, and the one its work runs on (`used`). `levels` has each group's level (answers, support, changelog, code_changes): the one saved, the one `used` (balanced when the plan doesn't include the saved one or the server no longer offers it), and those `available`",
   method: "GET",
@@ -94,6 +95,7 @@ const modelId = z.string().trim().max(200, "Model ids are under 200 characters")
 
 export const updateAiModels = defineOperation({
   name: "aiModels.update",
+  title: "Update the AI models",
   summary:
     "Pick the model an AI role uses for this project: a model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default; \"off\" for code_changes_check skips Autopilot's checks. Autopilot's roles take only models with tool calls. The server may cap a model's price (AI_MODEL_MAX_PRICE). Roles left out keep theirs. Picking a model puts the role's group on the custom level, which needs a plan with it (402); \"off\" and \"\" work on every plan. `levels` sets a group's level (affordable, balanced, best or custom): 402 where the plan doesn't include it, 400 where the server doesn't offer it or its models cost more than the server allows",
   method: "PATCH",

@@ -16,6 +16,7 @@ const propertyFormatsInput = z.record(z.string().trim().min(1).max(64), property
 
 export const getProject = defineOperation({
   name: "project.get",
+  title: "Get the project",
   summary: "Get the project the key belongs to, with its portal URL and what the team said it will use (`uses`, project.update's)",
   method: "GET",
   path: "/project",
@@ -30,6 +31,7 @@ export const getProject = defineOperation({
 
 export const updateProject = defineOperation({
   name: "project.update",
+  title: "Update the project",
   summary:
     "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), pick `userColumns`: the properties Users shows as columns, in order (up to 10), or set `propertyFormats`: how the app shows each property, by name (a `label` of the team's own, and a `format`: text, number, money in a `currency`, or date; all of them at once, up to 100), or say what the team will `uses` (feedback, docs, changelog, support: Home's Get set up follows it; none: every step)",
   method: "PATCH",
@@ -106,6 +108,7 @@ async function writeFormats(
 
 export const updatePropertyFormats = defineOperation({
   name: "propertyFormats.update",
+  title: "Set property formats",
   summary:
     "Set how the app shows some of your users' properties, by name, keeping the rest (project.update's `propertyFormats` sets them all at once): a `label` of the team's own and a `format` (text, number, money in a `currency`, or date); one with neither is cleared",
   method: "PATCH",
@@ -147,6 +150,7 @@ function keptFormats(formats: PropertyFormats): PropertyFormats {
 
 export const listTeam = defineOperation({
   name: "team.list",
+  title: "List the team",
   summary: "List the project's team: names and roles",
   method: "GET",
   path: "/team",
@@ -165,6 +169,7 @@ export const listTeam = defineOperation({
 
 export const setVote = defineOperation({
   name: "votes.set",
+  title: "Vote for a post",
   summary: "Vote for a post or take the vote back, as the key's creator or on behalf of someone from your app",
   method: "POST",
   path: "/posts/{number}/vote",
@@ -203,6 +208,7 @@ export const setVote = defineOperation({
 
 export const likeComment = defineOperation({
   name: "comments.like",
+  title: "Like a comment",
   summary: "Like a post's comment or take the like back (one each), as the key's creator or on behalf of someone from your app",
   method: "POST",
   path: "/posts/{number}/comments/{id}/like",
@@ -241,6 +247,7 @@ export const likeComment = defineOperation({
 
 export const setSubscription = defineOperation({
   name: "subscriptions.set",
+  title: "Follow a post",
   summary: "Follow a post without voting for it, or stop: its followers are emailed as it moves forward and when it ships, as its voters are",
   method: "POST",
   path: "/posts/{number}/subscription",
@@ -274,6 +281,7 @@ export const setSubscription = defineOperation({
 
 export const listDuplicates = defineOperation({
   name: "duplicates.list",
+  title: "List possible duplicates",
   summary: "List possible duplicates waiting for the team: a newer post that may repeat an older one",
   method: "GET",
   path: "/duplicates",
@@ -298,6 +306,7 @@ export const listDuplicates = defineOperation({
 
 export const dismissDuplicate = defineOperation({
   name: "duplicates.dismiss",
+  title: "Dismiss a possible duplicate",
   summary: "Mark a possible duplicate as not a duplicate (it won't be suggested again)",
   method: "POST",
   path: "/duplicates/{id}/dismiss",

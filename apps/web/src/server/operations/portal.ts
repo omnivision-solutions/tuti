@@ -31,6 +31,7 @@ export async function portalAccess(projectId: string): Promise<{ access: PortalA
 
 export const getPortal = defineOperation({
   name: "portal.get",
+  title: "Get the portal settings",
   summary:
     "Get who may read the portal: public (anyone) or private (only the team, people your app signs in with SSO and readers added by email); and what its home page opens: feedback (the first board), roadmap, changelog or docs",
   method: "GET",
@@ -43,6 +44,7 @@ export const getPortal = defineOperation({
 
 export const updatePortal = defineOperation({
   name: "portal.update",
+  title: "Update the portal settings",
   summary:
     "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in; where plans are sold, on a plan with private portals: 402 otherwise, and on a lower plan a private portal is its team's only); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs)",
   method: "PATCH",
@@ -109,6 +111,7 @@ export async function portalReaders(projectId: string) {
 
 export const listPortalReaders = defineOperation({
   name: "portalReaders.list",
+  title: "List portal readers",
   summary:
     "List who may read the private portal: the people (by email) allowed besides the team and people your app signs in with SSO; newest first",
   method: "GET",
@@ -121,6 +124,7 @@ export const listPortalReaders = defineOperation({
 
 export const addPortalReaders = defineOperation({
   name: "portalReaders.add",
+  title: "Add portal readers",
   summary: `Let people read the portal while it's private, by email (up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all): any account with that address, once it's verified (an emailed sign-in link verifies it). An entry can be a whole domain ("@acme.com"): everyone with a verified address there (not free email providers, where anyone can get one). On a private portal, each new one is emailed a link to it unless \`notify\` is false (up to ${READER_EMAILS_PER_PROJECT_PER_DAY} such emails a day per portal, and ${READER_EMAILS_PER_ADDRESS_PER_DAY} per address; past them, readers are added without one, and \`emailed\` says how many were sent). Addresses already there are left as they are`,
   method: "POST",
   path: "/portal/readers",
@@ -211,6 +215,7 @@ async function claimReaderEmails(tx: Prisma.TransactionClient, projectId: string
 
 export const removePortalReader = defineOperation({
   name: "portalReaders.remove",
+  title: "Remove a portal reader",
   summary:
     "Stop letting someone read the private portal: an address, or a domain (\"@acme.com\"); the team and SSO users keep their access, and accounts stay",
   method: "DELETE",

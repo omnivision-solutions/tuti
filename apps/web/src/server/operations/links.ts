@@ -8,6 +8,7 @@ import { findPost, postNumber } from "./read";
 
 export const removeLink = defineOperation({
   name: "links.remove",
+  title: "Remove a link",
   summary: "Remove a link from a post",
   method: "DELETE",
   path: "/posts/{number}/links/{id}",

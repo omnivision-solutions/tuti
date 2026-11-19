@@ -17,6 +17,8 @@ export type ApiKeyActor = Extract<Actor, { kind: "apiKey" }>;
 export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   /** Stable name, e.g. "posts.list" (MCP tool names derive from it). */
   name: string;
+  /** A heading, at most 30 characters, verb first, plain text: "List posts" (the spec's `summary`, MCP's `title`). */
+  title: string;
   /** One line for the API docs and MCP tool descriptions. */
   summary: string;
   method: "GET" | "POST" | "PATCH" | "DELETE";

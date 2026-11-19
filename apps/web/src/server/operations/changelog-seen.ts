@@ -44,6 +44,7 @@ export async function hasUnseenAnnouncement(projectId: string, userId: string): 
 
 export const markChangelogSeen = defineOperation({
   name: "changelog.seen",
+  title: "Mark entries seen",
   summary:
     "Mark the announced changelog entries published up to `at` (default: now) as seen, as the key's creator or on behalf of someone from your app; it never moves back",
   method: "POST",

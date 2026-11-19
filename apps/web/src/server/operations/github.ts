@@ -7,6 +7,7 @@ import { defineOperation } from "./define";
 
 export const listGithubRepositories = defineOperation({
   name: "githubRepositories.list",
+  title: "List GitHub repositories",
   summary:
     "List the GitHub repositories the project added (Settings › Integrations › GitHub), by name: each one's `id` (GitHub's, which stays when it's renamed or moved: apiReferences.create's `github.repoId`) and `fullName` (owner/name, as last heard from GitHub). Empty when GitHub isn't connected",
   method: "GET",

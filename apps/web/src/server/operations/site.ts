@@ -55,6 +55,7 @@ export async function siteCheckToken(slug: string, path?: string): Promise<strin
 
 export const getSite = defineOperation({
   name: "site.get",
+  title: "Get the site address",
   summary:
     "Get where the portal is on your own site (null if nowhere): its address (e.g. https://example.com/portal), whether it's verified, what your site must forward, and the check Tuti makes",
   method: "GET",
@@ -67,6 +68,7 @@ export const getSite = defineOperation({
 
 export const setSite = defineOperation({
   name: "site.set",
+  title: "Set a site address",
   summary:
     "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify. Where plans are sold, on a plan with a portal under a path of your site (402 otherwise; on a lower plan a path set before isn't served, and the portal is at its Tuti address)",
   method: "POST",
@@ -106,6 +108,7 @@ export const setSite = defineOperation({
 
 export const verifySite = defineOperation({
   name: "site.verify",
+  title: "Verify the site address",
   summary:
     "Check that your site forwards the portal's path to Tuti (Tuti fetches <address>/.well-known/tuti-site through it and expects this project's token): once it does, the portal answers there and every link Tuti makes uses that address",
   method: "POST",
@@ -156,6 +159,7 @@ export const verifySite = defineOperation({
 
 export const removeSite = defineOperation({
   name: "site.remove",
+  title: "Remove the site address",
   summary: "Stop putting the portal under your site's path: it answers at its own address again",
   method: "DELETE",
   path: "/site",

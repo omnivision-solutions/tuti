@@ -1070,6 +1070,7 @@ const noPublish = z
 
 export const listCodeChanges = defineOperation({
   name: "codeChanges.list",
+  title: "List code changes",
   summary: "List code changes (Autopilot): merged pull requests, each with the updates it suggests (those with updates waiting first)",
   method: "GET",
   path: "/code-changes",
@@ -1081,6 +1082,7 @@ export const listCodeChanges = defineOperation({
 
 export const listCodeChangeTargets = defineOperation({
   name: "codeChanges.targets",
+  title: "List updates by target",
   summary:
     "Autopilot's review by what it updates: the posts (`feedback`) and articles (`helpCenter`: edits, and new articles' drafts) with updates waiting for the team or going out by themselves, the ones that reach the most people first (`reach`: a post's author, voters, commenters and subscribers; an article's views in 30 days). With `view: decided`, those whose updates were all decided, the latest first, each with its `outcome` (what became of it: `completed`, `in_progress`, `published`, `approved` (an edit kept unpublished), `drafted`, `linked`, `dismissed` or `undone`; who decided it, as `line`; and `at`, when). Each has its `badge` (`completing`, `in_progress`, `updated`, `new`, from its updates waiting or applied; null once all were dismissed or undone), the pull requests behind it, its `group` (where it is: a post's board, an article's collection with its `icon`; null for an article in none or a new article's draft), and its `path` for codeChanges.target. The changelog line isn't here: it's written into the running draft by itself",
   method: "GET",
@@ -1094,6 +1096,7 @@ export const listCodeChangeTargets = defineOperation({
 
 export const getCodeChangeTarget = defineOperation({
   name: "codeChanges.target",
+  title: "Get a target's updates",
   summary:
     "Get a post's or an article's review in Autopilot (`type`: feedback or articles; `id`: the post's id, or the article's, or for a new article's draft not written yet, its update's id): the pull requests behind it and every update on it, waiting or decided; for a post, its `update` waiting: each pull request's part as one status change with one comment, and `asked`: what its users asked (its description's first lines as `excerpt`, its first voters of `voteCount`, its Inbox `conversations`); for a new article's draft, its `place`: where approving saves it (an existing `collection`, or a `newCollection` approving makes, readers seeing it once an article in it is published; after `afterArticle`, or `first`, else last; null: in no collection); and `also`: what the pull requests behind its waiting updates update elsewhere that still waits (each with its pull request's `number`, its review's `path`, its `title`, `kind`, and `stale` when it's out of date)",
   method: "GET",
@@ -1112,6 +1115,7 @@ export const getCodeChangeTarget = defineOperation({
 
 export const getCodeChange = defineOperation({
   name: "codeChanges.get",
+  title: "Get a code change",
   summary: "Get a code change with its proposed actions",
   method: "GET",
   path: "/code-changes/{id}",
@@ -1129,6 +1133,7 @@ export const getCodeChange = defineOperation({
 
 export const analyseCodeChange = defineOperation({
   name: "codeChanges.analyse",
+  title: "Analyse a code change",
   summary:
     "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); one already being analysed (`state` analysing, for up to 30 minutes) isn't queued again; refused (402) out of AI credits or where the project's plan doesn't include code changes",
   method: "POST",
@@ -1183,6 +1188,7 @@ export const analyseCodeChange = defineOperation({
 
 export const resumeCodeChanges = defineOperation({
   name: "codeChanges.resume",
+  title: "Resume paused code changes",
   summary:
     "Resume every paused code change, paused because the project was out of AI credits or its plan didn't include code changes (\"Resume all\"): each is analysed again (`resumed`: queued, or where jobs run inline, analysed; `failed`: those whose analysis failed at once, inline); refused (402) while the project is still out, or its plan still doesn't include them",
   method: "POST",
@@ -1270,6 +1276,7 @@ const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context
 
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
+  title: "Apply an action",
   summary:
     "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed; on a draft, its edits are approved and stay in the draft, unpublished, `published: false`, and only with `reviewedAs: \"draft\"` and its `revision`, else a 409 `draft`); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
@@ -1617,6 +1624,7 @@ export const applyCodeChangeAction = defineOperation({
 
 export const applyCodeChangeActions = defineOperation({
   name: "codeChangeActions.applyMany",
+  title: "Apply several actions",
   summary:
     "Apply several proposed actions at once (the review page's Approve), each as codeChangeActions.apply does, with its edits (`comment`, `line`) and the version reviewed (`revision`): in order, each on its own, so one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once. `results` says, for each, `applied` or why not",
   method: "POST",
@@ -2103,6 +2111,7 @@ const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | n
 
 export const undoCodeChangeAction = defineOperation({
   name: "codeChangeActions.undo",
+  title: "Undo an action",
   summary:
     "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes (of a draft's text, on a draft), everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
   method: "POST",
@@ -2249,6 +2258,7 @@ export const undoCodeChangeAction = defineOperation({
 
 export const publishCodeChangeActionNow = defineOperation({
   name: "codeChangeActions.publishNow",
+  title: "Publish an action now",
   summary: "Publish a scheduled action now: it (going out by itself after the hold) is applied at once, as codeChangeActions.apply does, by whoever asks",
   method: "POST",
   path: "/code-change-actions/{id}/publish-now",
@@ -2321,6 +2331,7 @@ export const publishCodeChangeActionNow = defineOperation({
 
 export const stopCodeChangeAction = defineOperation({
   name: "codeChangeActions.stop",
+  title: "Stop a scheduled action",
   summary:
     "Stop a scheduled action: it doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss). A post's part stops all of its post's update (it goes out as one)",
   method: "POST",
@@ -2593,6 +2604,7 @@ async function announceWaiting(codeChangeId: string) {
 
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",
+  title: "Dismiss an action",
   summary:
     "Dismiss a proposed action, with an optional reason (it isn't proposed again for this code change). A post's part, waiting or going out by itself, takes only its part out of the post's update; with `revision` (the post's update's version, as `apply` takes it), every part of that update is dismissed at once, refused (409) when it changed since. An article's edit is taken out of the article's unpublished changes by section, everything else in them staying; refused (409) when an edit on top of it changed the same sections",
   method: "POST",

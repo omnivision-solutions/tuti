@@ -175,6 +175,7 @@ async function teamMemberByEmail(projectId: string, email: string) {
 
 export const listConversations = defineOperation({
   name: "conversations.list",
+  title: "List conversations",
   summary: "List conversations, latest message first; spam is left out unless asked for. `snoozed` true lists only those snoozed now, false leaves them out",
   method: "GET",
   path: "/conversations",
@@ -227,6 +228,7 @@ export const listConversations = defineOperation({
 
 export const getConversation = defineOperation({
   name: "conversations.get",
+  title: "Get a conversation",
   summary: "Get a conversation by its number, with its messages, oldest first",
   method: "GET",
   path: "/conversations/{number}",
@@ -265,6 +267,7 @@ export const getConversation = defineOperation({
 /** Acknowledges only the customer message shown on the open page, never a newer one that arrived meanwhile. */
 export const markConversationRead = defineOperation({
   name: "conversations.markRead",
+  title: "Mark a conversation read",
   summary: "Mark a conversation read for the signed-in teammate (API keys cannot mark someone else's inbox read)",
   method: "POST",
   path: "/conversations/{number}/read",
@@ -293,6 +296,7 @@ export const markConversationRead = defineOperation({
 
 export const createConversation = defineOperation({
   name: "conversations.create",
+  title: "Start a conversation",
   summary: "Start a conversation from someone in your app (`user`, by their id there) or an email address, with their first message",
   method: "POST",
   path: "/conversations",
@@ -528,6 +532,7 @@ export async function addMessage(
 
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
+  title: "Reply to a conversation",
   summary:
     "Reply in a conversation as the team (and close it with `close`: `closed` says whether it did; `keptOpen`, that it stays open and waiting on the team as the user wrote after what the team saw, `seen`, unanswered), write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
   method: "POST",
@@ -612,6 +617,7 @@ export const replyToConversation = defineOperation({
 
 export const updateConversation = defineOperation({
   name: "conversations.update",
+  title: "Update a conversation",
   summary:
     "Change a conversation's status (waiting on the user only once the team's reply is its latest message: replying sets it), assign it to a team member (by email; null to unassign), mark it as spam, or snooze it till a time to come (`snoozedUntil`, up to a year; null wakes it): out of the inbox's views till then, or till the user writes, and open again after",
   method: "PATCH",
@@ -703,6 +709,7 @@ async function linkedPosts(conversationId: string) {
 
 export const linkConversationPost = defineOperation({
   name: "conversations.linkPost",
+  title: "Link a conversation to a post",
   summary: "Link a conversation to a post it's about; merging the post takes the link along",
   method: "POST",
   path: "/conversations/{number}/posts",
@@ -733,6 +740,7 @@ export const linkConversationPost = defineOperation({
 
 export const unlinkConversationPost = defineOperation({
   name: "conversations.unlinkPost",
+  title: "Unlink a conversation's post",
   summary: "Unlink a conversation from a post",
   method: "DELETE",
   path: "/conversations/{number}/posts/{post}",

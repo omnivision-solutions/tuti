@@ -88,6 +88,7 @@ export const MAX_POST_TITLE = 120;
 
 export const createPost = defineOperation({
   name: "posts.create",
+  title: "Create a post",
   summary:
     "Create a post, as the key's creator or on behalf of someone from your app (`author`); who sees it (`visibility`: public, private for its author and the team, team for the team only) is its board's choice unless the team says",
   method: "POST",
@@ -172,6 +173,7 @@ export const createPost = defineOperation({
 
 export const createComment = defineOperation({
   name: "comments.create",
+  title: "Comment on a post",
   summary:
     "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`). `replyTo`: a comment's id, to reply to it (replies are one level deep: a reply to a reply goes under the comment it replies to)",
   method: "POST",

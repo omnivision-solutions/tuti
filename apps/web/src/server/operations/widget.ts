@@ -123,6 +123,7 @@ export { luminance, textColorOn } from "@/lib/colors";
 
 export const getWidgetSettings = defineOperation({
   name: "widget.get",
+  title: "Get the widget settings",
   summary: "Get the widget's settings: the launcher's name (label), colour, corner and icon, and the panel's Home: quick links, heading (title), greeting and the parts turned off (hidden), whether the launcher shows on the project's own portal (onPortal), and whether a new message in Messages goes to the AI first (aiFirst)",
   method: "GET",
   path: "/widget",
@@ -134,6 +135,7 @@ export const getWidgetSettings = defineOperation({
 
 export const updateWidgetSettings = defineOperation({
   name: "widget.update",
+  title: "Update the widget settings",
   summary: `Set the widget's launcher, a round button: its name (label: read out by screen readers and its tooltip), colour (#rrggbb; null follows the portal's accent colour where it stands out on light and dark pages, else the brand green; sending the launcher's own stored colour keeps it, and sending that default otherwise is null), corner, up to ${MAX_WIDGET_LINKS} quick links (replaces the list), and its icon (${WIDGET_ICON_CHOICES.join(", ")}; "image" with iconImage, the id of an image uploaded in the app). Where plans are sold, an icon other than chat needs a plan with the launcher's icon (402 otherwise); on a lower plan the one set is kept and the launcher shows chat. The panel's Home: its heading (title) and the greeting above it (empty for "How can we help?" and "Hi there 👋", with the visitor's first name once their site signs them in), and the parts turned off (hidden, replaces the list: ${WIDGET_PARTS.join(", ")}), gone from Home and the tabs. onPortal: the launcher on every page of the project's own portal too (true for new projects). aiFirst: a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with "Ask a person" to pass it to the team; one with files goes to the team (true for new projects)`,
   method: "PATCH",
   path: "/widget",

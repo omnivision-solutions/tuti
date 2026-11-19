@@ -59,6 +59,7 @@ const domainAndParents = (domain: string) =>
 
 export const setEmailDomain = defineOperation({
   name: "support.setEmailDomain",
+  title: "Set the email domain",
   summary:
     "Send replies by email from your own address (`support@yourcompany.com`): adds its domain to Amazon SES, whose 3 DKIM CNAMEs (`support.get`, `email.ownDomain.records`) go in your DNS. Replies come from it once SES finds them (`support.checkEmailDomain`); until then, from the project's support address. A domain is one project's alone. Where plans are sold, on a plan with email from your own domain (402 otherwise)",
   method: "POST",
@@ -123,6 +124,7 @@ export const setEmailDomain = defineOperation({
 
 export const checkEmailDomainOperation = defineOperation({
   name: "support.checkEmailDomain",
+  title: "Check the email domain",
   summary: "Ask Amazon SES now whether your domain's DKIM records are in place (it checks again daily on its own)",
   method: "POST",
   path: "/support/email-domain/check",
@@ -139,6 +141,7 @@ export const checkEmailDomainOperation = defineOperation({
 
 export const removeEmailDomain = defineOperation({
   name: "support.removeEmailDomain",
+  title: "Remove the email domain",
   summary: "Stop sending from your own domain: replies come from the project's support address again, and Amazon SES forgets the domain",
   method: "DELETE",
   path: "/support/email-domain",
@@ -153,6 +156,7 @@ export const removeEmailDomain = defineOperation({
 
 export const getSupportSettings = defineOperation({
   name: "support.get",
+  title: "Get the support settings",
   summary:
     "Get the support inbox's settings: whether it's on (Messages in the widget; \"Ask a person\" starts a conversation), the team's instructions for replies drafted by AI (`draftInstructions`), and its email address (null until it has one; `email` is null where the server doesn't receive email)",
   method: "GET",
@@ -165,6 +169,7 @@ export const getSupportSettings = defineOperation({
 
 export const updateSupportSettings = defineOperation({
   name: "support.update",
+  title: "Update the support settings",
   summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate; turning it on gives the project its support email address where the server receives email), or (`email: true`) give the project its support email address, which is its for good, or (`draftInstructions`) set the team's standing instructions for replies drafted by AI (conversations.suggestReply): their tone and form, up to 2,000 characters; a draft still says only what the docs say",
   method: "PATCH",
   path: "/support",

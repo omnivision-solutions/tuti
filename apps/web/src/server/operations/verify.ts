@@ -110,6 +110,7 @@ export const verifyUnavailable = async (projectId: string, published: boolean) =
 
 export const verifyArticle = defineOperation({
   name: "articles.verify",
+  title: "Verify an article",
   summary:
     "Verify a published docs article against the project's GitHub repository (its default branch at its latest commit): what it says that's still true, out of date or can't be told, with the files that show it, and an Autopilot update fixing what's out of date (it waits for the team on the article's review, codeChanges.target). Checks the article's newest version (its unpublished changes, with every edit waiting in them). Sends repository files (secrets left out) to the AI provider, and costs AI credits where they're used (402 when out). Only while the project analyses merged pull requests and has a repository (409 otherwise). One runs per article at a time: starting it again returns the one running. Run again at the same commit on the same version, it's skipped",
   method: "POST",
@@ -175,6 +176,7 @@ export const verifyArticle = defineOperation({
 
 export const listVerifications = defineOperation({
   name: "articles.verifications",
+  title: "List an article's checks",
   summary: "A docs article's verification history (articles.verify), newest first: each run's commit, what it found per statement, and its fix",
   method: "GET",
   path: "/articles/{slug}/verifications",
@@ -296,6 +298,7 @@ export const verifyAllUnavailable = async (projectId: string) => (await whyNot(p
 
 export const verifyAll = defineOperation({
   name: "articles.verifyAll",
+  title: "Verify every article",
   summary:
     "Verify every published docs article (articles.verify on each, one after another, most read first; each its own run, so one failing doesn't stop the rest), with one email to the owners at the end for the fixes it wrote. Only people can start it, in the app, after seeing what it costs: API keys and MCP get 403. One runs per project at a time: starting it again returns the one running, with its progress. With AI credits, running out stops it, saying how far it got (402 when there are none to start with). Articles verified at the same commit and unchanged since are skipped",
   method: "POST",

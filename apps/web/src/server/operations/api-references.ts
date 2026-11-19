@@ -203,6 +203,7 @@ async function lastIn(tx: Prisma.TransactionClient, projectId: string, tabId: st
 
 export const listApiReferences = defineOperation({
   name: "apiReferences.list",
+  title: "List API references",
   summary:
     "List the docs' API references in order (by tab, then their order in it): each one's slug, name, tab, format (`openapi` or `graphql`), where its spec is read from (`source`), how many operations it has, how many are on the help center and how many are new (`counts`), whether it's published, when it was last read (`syncedAt`) and last changed (`changedAt`), and why the last read failed (`syncError`)",
   method: "GET",
@@ -219,6 +220,7 @@ export const listApiReferences = defineOperation({
 
 export const getApiReference = defineOperation({
   name: "apiReferences.get",
+  title: "Get an API reference",
   summary:
     "Get an API reference as the team sees it: its groups in the team's order and its operations (each with whether it's on the help center, `onHelpCenter`, whether the team took it off itself, `hidden`: it's off too while a group it's in is, and whether a read added it since the team last looked, `new`), its types (one has a page only while an operation on the help center uses it), what the reader couldn't read (`warnings`, by kind: how many and the first 20 places), how it sits in the docs' tree (`treeStyle`), where requests go when the spec's servers have no host (`baseUrl`), and whether readers can send requests from its pages (`tryIt`). `spec=true` adds the spec's text",
   method: "GET",
@@ -285,6 +287,7 @@ export const getApiReference = defineOperation({
 
 export const createApiReference = defineOperation({
   name: "apiReferences.create",
+  title: "Create an API reference",
   summary:
     "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it), or a file in a repository the project added on GitHub (`github`: GitHub's id for the repository, `repoId`, as githubRepositories.list gives it; the file's `path` in it; and a branch, `ref`, left out for the repository's default branch; 5 MB at most, read again when a pull request into the branch that changes the file merges, every 6 hours and on apiReferences.sync). Each is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL or GitHub, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
   method: "POST",
@@ -338,6 +341,7 @@ export const createApiReference = defineOperation({
 
 export const updateApiReference = defineOperation({
   name: "apiReferences.update",
+  title: "Update an API reference",
   summary:
     "Change an API reference: its `name` (its address stays), its address (`newSlug`: one no tab, collection, article or other reference has; 409 otherwise), its `tab` (it goes last there), whether it's `published`, how it sits in the docs' tree (`treeStyle`: each group a folder, `folders`; a heading, `headings`; or one `entry`), the groups' order (`groupOrder`: groups' keys, the ones left out after them), where requests go when the spec's servers have no host (`baseUrl`, an https address; null removes it), and whether readers can send requests from its pages (`tryIt`). `hide` and `show` take operations off and put them on the help center by their keys (\"GET /posts\"), `hideGroups` and `showGroups` whole groups by theirs; an operation is off when it's hidden or a group it's in is. `seen` says the team has looked: `true`, and nothing is new any more; or the keys of the operations it saw, and what a read added since is still new (a key it doesn't have is passed over). In the others, a key the reference doesn't have is refused",
   method: "PATCH",
@@ -439,6 +443,7 @@ export const updateApiReference = defineOperation({
 
 export const replaceApiReference = defineOperation({
   name: "apiReferences.replace",
+  title: "Replace a reference's spec",
   summary:
     "Replace an uploaded API reference's spec with a new one (`spec`, as in apiReferences.create). The team's choices stay: an operation there before (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center while any operation the spec had before is off it. The answer says what the new spec did, by operations' keys (`changes`: how many it `added` and `removed`, and whether anything at all `changed`). A spec that can't be read, or has no operations, changes nothing and is refused with the reason",
   method: "POST",
@@ -475,6 +480,7 @@ export const replaceApiReference = defineOperation({
 
 export const syncApiReference = defineOperation({
   name: "apiReferences.sync",
+  title: "Sync an API reference",
   summary:
     "Read a URL's or a GitHub file's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `failure` says why (and `syncError`, the reference's page too, until a sync works). A sync that another (the 6-hourly one, a second Sync now, a change of its source) overtook writes nothing, as that one's answer is newer: `changes` and `failure` are null. The rest of the answer is the reference as it is once this sync is done. With `url` (a URL's reference), or `github` (a GitHub file's: any of its `repoId`, `path` and `ref`, the rest kept), the reference is read from there from now on: it's read first, with apiReferences.create's checks, and one that can't be is refused (400) with the source left as it was; so is one overtaken by another change of the source, or by a sync (409). The address is kept as a URL parser writes it. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
   method: "POST",
@@ -556,6 +562,7 @@ export const syncApiReference = defineOperation({
 
 export const deleteApiReference = defineOperation({
   name: "apiReferences.delete",
+  title: "Delete an API reference",
   summary: "Delete an API reference, with its pages and the team's choices about them",
   method: "DELETE",
   path: "/api-references/{slug}",
