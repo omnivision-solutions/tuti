@@ -126,7 +126,7 @@ An error has a status and a JSON body: \`code\` for code to check, \`message\` f
 
 ## Paging
 
-Lists that page take \`limit\` and \`cursor\` and return \`nextCursor\`: send it back as \`cursor\` for the next page; \`null\` means there are no more. Other lists return everything at once.
+Lists that page take \`limit\` and \`cursor\` and return \`nextCursor\`: send it back as \`cursor\` for the next page; \`null\` means there are no more. Other lists return everything at once, or at most a fixed number (their description gives it).
 
 ## Rate limits
 
