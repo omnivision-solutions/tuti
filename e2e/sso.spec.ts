@@ -194,6 +194,7 @@ test("a private portal whose plan no longer has private portals keeps its sign-i
 });
 
 test("a collection for one reader group: people the app signs in with that group see it, everyone else doesn't", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -221,6 +222,16 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(groups).toContainText("No groups yet");
   await groups.getByRole("button", { name: "New group" }).click();
   const groupDialog = owner.getByRole("dialog");
+  // A try that's refused, then closed: opened again, the dialog is a fresh one, the error gone with what was typed.
+  await groupDialog.getByLabel("Name", { exact: true }).fill("   ");
+  await groupDialog.getByRole("button", { name: "Add group" }).click();
+  const refused = groupDialog.getByText(/Name is required|A group needs a condition/);
+  await expect(refused).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(groupDialog).toBeHidden();
+  await groups.getByRole("button", { name: "New group" }).click();
+  await expect(groupDialog.getByLabel("Name", { exact: true })).toHaveValue("");
+  await expect(refused).toBeHidden();
   await groupDialog.getByLabel("Name", { exact: true }).fill("Enterprise customers");
   const firstCondition = groupDialog.getByRole("group", { name: "Condition 1" });
   await firstCondition.getByLabel("Property").fill("groups");
