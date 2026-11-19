@@ -240,6 +240,7 @@ export const reactToChangelogEntry = defineOperation({
   path: "/changelog/{number}/reactions",
   scope: "write",
   access: "anyone",
+  errors: [409],
   input: z.object({ number: entryNumber, reaction: z.enum(REACTIONS), reacted: z.boolean(), author }),
   example: { reaction: "tada", reacted: true, author: { id: "user-42" } },
   run: async (context, input) => {
@@ -282,6 +283,7 @@ export const createChangelogEntry = defineOperation({
   path: "/changelog",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]) }),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
@@ -328,6 +330,7 @@ export const updateChangelogEntry = defineOperation({
   path: "/changelog/{number}",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     number: entryNumber,
     title: fields.title.optional(),
@@ -401,6 +404,7 @@ export const draftChangelogEntry = defineOperation({
   path: "/changelog/{number}/draft",
   scope: "write",
   access: "team",
+  errors: [402, 409, 502, 503],
   input: z.object({ number: entryNumber }),
   run: async ({ projectId }, { number }) => {
     const portal = await projectPortal(projectId);
@@ -462,6 +466,7 @@ export const rewriteChangelogEntry = defineOperation({
   path: "/changelog/{number}/rewrite",
   scope: "write",
   access: "team",
+  errors: [402, 502, 503],
   input: z.object({
     number: entryNumber,
     mode: z.enum(REWRITE_MODES),

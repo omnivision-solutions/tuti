@@ -18,6 +18,7 @@ export const updatePost = defineOperation({
   path: "/posts/{number}",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z
     .object({
       number: postNumber,
@@ -121,6 +122,7 @@ export const mergePost = defineOperation({
   path: "/posts/{number}/merge",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ number: postNumber, into: z.number().int().positive() }),
   example: { into: 12 },
   run: async ({ projectId }, input) => {

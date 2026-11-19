@@ -5,7 +5,7 @@ import { log } from "@tuti/shared";
 
 import { type ApiKey, authenticate, refusal } from "@/server/api-auth";
 import { OperationError, operations, toolName } from "@/server/operations";
-import { inputSchema } from "@/server/operations/openapi";
+import { errorsLine, inputSchema, outputSchema } from "@/server/operations/openapi";
 
 /**
  * The MCP server (Streamable HTTP, stateless): every operation is a tool, so AI
@@ -35,13 +35,17 @@ function mcpServer(actor: ApiKey) {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map((operation) => ({
-      name: toolName(operation),
-      title: operation.title,
-      description: operation.summary,
-      inputSchema: { type: "object" as const, ...inputSchema(operation) },
-      annotations: { readOnlyHint: operation.scope === "read" },
-    })),
+    tools: tools.map((operation) => {
+      const output = outputSchema(operation);
+      return {
+        name: toolName(operation),
+        title: operation.title,
+        description: [operation.summary, errorsLine(operation)].filter(Boolean).join("\n\n"),
+        inputSchema: { type: "object" as const, ...inputSchema(operation) },
+        ...(output && { outputSchema: { type: "object" as const, ...output } }),
+        annotations: { readOnlyHint: operation.scope === "read" },
+      };
+    }),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
@@ -56,8 +60,9 @@ function mcpServer(actor: ApiKey) {
       return failure(issue ? `${issue.path.join(".") || "input"}: ${issue.message}` : "Invalid input");
     }
     try {
-      const result = (await operation.run({ actor, projectId: actor.projectId }, input.data)) as Record<string, unknown>;
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], structuredContent: result };
+      const text = JSON.stringify(await operation.run({ actor, projectId: actor.projectId }, input.data), null, 2);
+      // As JSON, like the text: what `outputSchema` describes (a date is its ISO string).
+      return { content: [{ type: "text", text }], structuredContent: JSON.parse(text) as Record<string, unknown> };
     } catch (error) {
       if (error instanceof OperationError) {
         return failure(error.message);

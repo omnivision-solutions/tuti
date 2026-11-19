@@ -196,6 +196,7 @@ export const updateBranding = defineOperation({
   path: "/branding",
   scope: "write",
   access: "admin",
+  errors: [409],
   input: z.object({
     logo: upload,
     logoDark: upload,

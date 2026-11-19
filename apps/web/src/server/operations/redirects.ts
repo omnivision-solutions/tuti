@@ -51,6 +51,7 @@ export const createRedirect = defineOperation({
   path: "/redirects",
   scope: "write",
   access: "admin",
+  errors: [409],
   input: z.object({ from: z.string().max(2000), to: z.string().max(2000) }),
   example: { from: "/hc/en-us/articles/123-billing", to: "/docs/billing" },
   run: async ({ projectId }, input) => {

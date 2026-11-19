@@ -563,5 +563,12 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   if (operation.name === "conversations.summarize") {
     model.reply("They want an invoice for October.");
   }
-  expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });
+  const result = await call(operation, input(), keys.write);
+  expect(result).toMatchObject({ status: 200 });
+  // What it says it returns: every field it declares, of its type, and none it doesn't (parsing drops those, so the
+  // parsed result would differ), so the spec and MCP's outputSchema stay whole.
+  if (operation.output) {
+    const body = JSON.parse(result.text) as unknown;
+    expect(operation.output.parse(body)).toEqual(body);
+  }
 });

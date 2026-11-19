@@ -880,6 +880,7 @@ export const createArticle = defineOperation({
   path: "/articles",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: z.object({
     ...articleFields,
     ...accessFields,
@@ -973,6 +974,7 @@ export const updateArticle = defineOperation({
   path: "/articles/{slug}",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: updateInput,
   example: { body: "Owners and admins invite from the Team page.", publish: true, revision: "cm3x9a1b2c3d4e5f6g7h8i9j0" },
   run: saveArticle,
@@ -1083,6 +1085,7 @@ export const restoreArticle = defineOperation({
   path: "/articles/{slug}/restore",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: z.object({
     slug,
     revision: z.string().trim().min(1).max(100).optional(),
@@ -1172,6 +1175,7 @@ export const publishArticle = defineOperation({
   path: "/articles/{slug}/publish",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: z.object({
     slug,
     edits: z.array(z.string().min(1).max(100)).max(500).optional(),
@@ -1253,6 +1257,7 @@ export const publishChanges = defineOperation({
   path: "/articles/{slug}/publish-changes",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: changesInput,
   run: (context, input) => publishArticleChanges(context, input),
 });
@@ -1299,6 +1304,7 @@ export const discardChanges = defineOperation({
   path: "/articles/{slug}/discard-changes",
   scope: "write",
   access: "team",
+  errors: [409],
   input: changesInput,
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
@@ -1627,6 +1633,7 @@ export const createCollection = defineOperation({
   path: "/collections",
   scope: "write",
   access: "team",
+  errors: [402],
   input: collectionInput,
   example: { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" },
   run: async ({ projectId }, input) =>
@@ -1668,6 +1675,7 @@ export const updateCollection = defineOperation({
   path: "/collections/{slug}",
   scope: "write",
   access: "team",
+  errors: [402],
   input: z.object({
     slug,
     name: collectionFields.name.optional(),
@@ -1849,6 +1857,7 @@ export const createTab = defineOperation({
   path: "/tabs",
   scope: "write",
   access: "team",
+  errors: [402],
   input: z.object({ name: tabName, ...accessFields }),
   example: { name: "Guides" },
   run: async ({ projectId }, input) =>
@@ -1886,6 +1895,7 @@ export const updateTab = defineOperation({
   path: "/tabs/{slug}",
   scope: "write",
   access: "team",
+  errors: [402],
   input: z.object({ slug, name: tabName.optional(), landing: z.enum(LANDINGS).optional(), landingPage: slug.optional(), ...accessFields }),
   example: { name: "API reference", landing: "page", landingPage: "getting-started" },
   run: async ({ projectId }, input) => {
@@ -1987,6 +1997,7 @@ export const deleteTab = defineOperation({
   path: "/tabs/{slug}",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
     // Locked, so a collection being saved into it lands first (and moves) or finds it gone.

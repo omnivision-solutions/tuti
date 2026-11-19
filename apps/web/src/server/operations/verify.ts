@@ -117,6 +117,7 @@ export const verifyArticle = defineOperation({
   path: "/articles/{slug}/verify",
   scope: "write",
   access: "team",
+  errors: [402, 409, 503],
   input: z.object({ slug }),
   run: async ({ actor, projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
@@ -305,6 +306,7 @@ export const verifyAll = defineOperation({
   path: "/docs/verify-all",
   scope: "write",
   access: "team",
+  errors: [402, 409],
   input: z.object({}),
   run: async ({ actor, projectId }) => {
     // It costs AI for every article: a person starts it, having seen what it costs (the app's confirmation).

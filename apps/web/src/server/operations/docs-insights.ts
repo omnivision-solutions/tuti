@@ -236,6 +236,7 @@ export const getDocsInsights = defineOperation({
   path: "/docs/insights",
   scope: "read",
   access: "team",
+  errors: [402],
   input: z.object({}),
   run: async ({ projectId }) => {
     await requirePlan(projectId, "reporting");

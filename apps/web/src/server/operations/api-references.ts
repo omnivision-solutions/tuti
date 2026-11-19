@@ -348,6 +348,7 @@ export const updateApiReference = defineOperation({
   path: "/api-references/{slug}",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     slug,
     name: name.optional(),
@@ -450,6 +451,7 @@ export const replaceApiReference = defineOperation({
   path: "/api-references/{slug}/replace",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ slug, spec }),
   example: { spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '2'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
   run: async ({ projectId }, input) => {
@@ -487,6 +489,7 @@ export const syncApiReference = defineOperation({
   path: "/api-references/{slug}/sync",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ slug, url: sourceUrl.optional(), github: z.object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.optional() }).optional() }),
   example: { url: "https://api.example.com/openapi.json" },
   run: async (context, input) => {

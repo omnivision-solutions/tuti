@@ -51,6 +51,7 @@ export const updatePortal = defineOperation({
   path: "/portal",
   scope: "write",
   access: "admin",
+  errors: [402],
   input: z.object({
     access: z.enum(ACCESS, { error: "Pick public or private" }).optional(),
     home: z.enum(HOMES, { error: "Pick feedback, roadmap, changelog or docs" }).optional(),
@@ -130,6 +131,7 @@ export const addPortalReaders = defineOperation({
   path: "/portal/readers",
   scope: "write",
   access: "admin",
+  errors: [402],
   input: z.object({
     emails: z.array(readerEntry).min(1, "Enter an email address").max(READERS_PER_ADD, `Add up to ${READERS_PER_ADD} at once`),
     notify: z.boolean().default(true),

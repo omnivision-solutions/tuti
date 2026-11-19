@@ -310,6 +310,7 @@ export const askDocs = defineOperation({
   path: "/docs/ask",
   scope: "read",
   access: "anyone",
+  errors: [503],
   input: askFields,
   example: { q: "And on mobile?", followUpTo: "cm3q5x0a1000008l4h2gk7v9e" },
   run: async ({ actor, projectId }, input) =>

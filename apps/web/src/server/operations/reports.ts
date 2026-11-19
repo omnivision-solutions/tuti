@@ -390,6 +390,7 @@ export const getReports = defineOperation({
   path: "/reports",
   scope: "read",
   access: "team",
+  errors: [402],
   // Unpicked: the default range, or the longest the plan has where that's locked (defaultRange).
   input: z.object({ range: z.enum(RANGE_KEYS).optional() }),
   example: { range: "7d" },

@@ -130,6 +130,7 @@ export const startImport = defineOperation({
   path: "/imports",
   scope: "write",
   access: "admin",
+  errors: [502],
   // `key`: the source's API key, or its site's address (import-parts IMPORT_SOURCES' credential); `parts`: only those it has.
   input: z
     .object({

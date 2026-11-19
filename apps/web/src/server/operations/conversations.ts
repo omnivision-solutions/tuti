@@ -539,6 +539,7 @@ export const replyToConversation = defineOperation({
   path: "/conversations/{number}/messages",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     number: conversationNumber,
     body,
@@ -624,6 +625,7 @@ export const updateConversation = defineOperation({
   path: "/conversations/{number}",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z
     .object({
       number: conversationNumber,
@@ -715,6 +717,7 @@ export const linkConversationPost = defineOperation({
   path: "/conversations/{number}/posts",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({ number: conversationNumber, post: postNumber }),
   example: { post: 12 },
   run: async ({ projectId }, input) => {

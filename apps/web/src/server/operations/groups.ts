@@ -139,6 +139,7 @@ export const createGroup = defineOperation({
   path: "/groups",
   scope: "write",
   access: "admin",
+  errors: [402],
   input: z.object({
     name: groupFields.name,
     description: groupFields.description.default(""),
@@ -174,6 +175,7 @@ export const updateGroup = defineOperation({
   path: "/groups/{group}",
   scope: "write",
   access: "admin",
+  errors: [402],
   input: z.object({
     group: readerGroup,
     name: groupFields.name.optional(),
@@ -203,6 +205,7 @@ export const deleteGroup = defineOperation({
   path: "/groups/{group}",
   scope: "write",
   access: "admin",
+  errors: [409],
   input: z.object({ group: readerGroup }),
   run: async ({ projectId }, input) => {
     // Locked, so a tab, collection or article being saved with it lands first (and is named here) or finds it gone.

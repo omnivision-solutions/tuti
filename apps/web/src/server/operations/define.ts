@@ -34,7 +34,19 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
    * creator's current role (server/api-auth.ts: refusal); only owners and admins create them.
    */
   access: "team" | "admin" | "owner" | "anyone";
+  /**
+   * The statuses besides those every operation may answer with (openapi.ts: `errorStatuses`) that its run, or a helper
+   * it calls, can raise: 402 (its plan or AI credits), 409 (a conflict with how things are now), 502 (a service Tuti
+   * uses failed: the AI, Stripe, DNS, email), 503 (a feature that isn't set up on this server).
+   */
+  errors?: (402 | 409 | 502 | 503)[];
   input: I;
+  /**
+   * What it returns, as JSON (dates as ISO strings): the spec's 200 response and MCP's `outputSchema`. Fields say what
+   * they are with `.describe()` and show a value with `.meta({ examples: [...] })`; a type several operations return
+   * gets `.meta({ id })`, its name in the spec. The operations matrix parses every result with it.
+   */
+  output?: z.ZodObject;
   /** An example request body or query, for the docs. */
   example?: Record<string, unknown>;
   run: (context: { actor: Actor; projectId: string }, input: z.infer<I>) => Promise<O>;

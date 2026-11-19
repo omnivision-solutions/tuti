@@ -157,6 +157,23 @@ export const listTeam = defineOperation({
   scope: "read",
   access: "anyone",
   input: z.object({}),
+  output: z
+    .object({
+      team: z
+        .array(
+          z
+            .object({
+              name: z.string().describe("Their name in Tuti").meta({ examples: ["Olive Owner"] }),
+              role: z
+                .enum(["owner", "admin", "member"])
+                .describe("What they may do: owners and admins change the project's settings, and only owners change some, like Autopilot's")
+                .meta({ examples: ["owner"] }),
+            })
+            .meta({ id: "TeamMember", description: "Someone on the project's team" }),
+        )
+        .describe("Everyone on the team, in the order they joined"),
+    })
+    .describe("The project's team"),
   run: async ({ projectId }) => {
     const team = await prisma.teamMember.findMany({
       where: { projectId },
@@ -175,6 +192,7 @@ export const setVote = defineOperation({
   path: "/posts/{number}/vote",
   scope: "write",
   access: "anyone",
+  errors: [409],
   input: z.object({ number: postNumber, voted: z.boolean(), author }),
   example: { voted: true, author: { id: "user-42" } },
   run: async (context, input) => {
@@ -214,6 +232,7 @@ export const likeComment = defineOperation({
   path: "/posts/{number}/comments/{id}/like",
   scope: "write",
   access: "anyone",
+  errors: [409],
   input: z.object({ number: postNumber, id: z.string().min(1).max(64), liked: z.boolean(), author }),
   example: { liked: true, author: { id: "user-42" } },
   run: async (context, input) => {
@@ -253,6 +272,7 @@ export const setSubscription = defineOperation({
   path: "/posts/{number}/subscription",
   scope: "write",
   access: "anyone",
+  errors: [409],
   input: z.object({ number: postNumber, subscribed: z.boolean(), author }),
   example: { subscribed: true, author: { id: "user-42" } },
   run: async (context, input) => {

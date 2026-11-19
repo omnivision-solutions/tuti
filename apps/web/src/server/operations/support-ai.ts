@@ -59,6 +59,7 @@ export const suggestReply = defineOperation({
   path: "/conversations/{number}/suggested-reply",
   scope: "write",
   access: "team",
+  errors: [503],
   input: z.object({ number: conversationNumber }),
   run: async ({ projectId }, { number }) => {
     if (!answersEnabled()) {
@@ -132,6 +133,7 @@ export const summarizeConversation = defineOperation({
   path: "/conversations/{number}/summary",
   scope: "write",
   access: "team",
+  errors: [402, 502, 503],
   input: z.object({ number: conversationNumber }),
   run: async ({ projectId }, { number }) => {
     if (!aiEnabled()) {

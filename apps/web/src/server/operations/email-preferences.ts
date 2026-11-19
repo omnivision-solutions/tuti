@@ -67,6 +67,7 @@ export const updateEmailPreferences = defineOperation({
   path: "/email-preferences",
   scope: "write",
   access: "anyone",
+  errors: [409],
   input: z.object({ ownPosts: z.boolean().optional(), followedPosts: z.boolean().optional(), unsubscribed: z.boolean().optional(), changelog: z.boolean().optional(), author }),
   example: { followedPosts: false, author: { id: "user-42" } },
   run: async (context, input) => {

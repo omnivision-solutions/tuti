@@ -102,6 +102,7 @@ export const setDomain = defineOperation({
   path: "/domain",
   scope: "write",
   access: "admin",
+  errors: [402, 409],
   input: z.object({ hostname: z.string().max(300) }),
   example: { hostname: "help.example.com" },
   run: async ({ actor, projectId }, input) => {
@@ -155,6 +156,7 @@ export const verifyDomain = defineOperation({
   path: "/domain/verify",
   scope: "write",
   access: "admin",
+  errors: [409, 502],
   input: z.object({}),
   run: async ({ projectId }) => {
     const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
