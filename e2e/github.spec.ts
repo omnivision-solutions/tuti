@@ -4,6 +4,7 @@ import { expect, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
+import { setAnalysis } from "./autopilot";
 import { APP_URL } from "./env";
 import { connectGithub, nextInstall } from "./github";
 import { createProject, signUp } from "./helpers";
@@ -266,4 +267,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   expect(await owner.evaluate(() => window.history.length)).toBe(history);
   await expect(owner.getByRole("link", { name: "Connect GitHub" })).toBeVisible();
   await checkpoint(owner, "settings-integrations");
+  // Not connected, the row names Autopilot only while the project has it on.
+  await expect(owner.getByText("Pull requests for the changelog and Autopilot", { exact: true })).toBeVisible();
+  await setAnalysis(mobile, false);
+  await owner.reload();
+  await expect(owner.getByText("Pull requests for the changelog", { exact: true })).toBeVisible();
 });
