@@ -1085,7 +1085,7 @@ export const restoreArticle = defineOperation({
   path: "/articles/{slug}/restore",
   scope: "write",
   access: "team",
-  errors: [402, 409],
+  errors: [409],
   input: z.object({
     slug,
     revision: z.string().trim().min(1).max(100).optional(),

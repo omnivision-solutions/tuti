@@ -87,7 +87,6 @@ export const getAiModels = defineOperation({
   path: "/ai-models",
   scope: "read",
   access: "admin",
-  errors: [502],
   input: z.object({}),
   run: ({ projectId }) => aiModels(projectId),
 });

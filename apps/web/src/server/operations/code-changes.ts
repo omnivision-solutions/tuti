@@ -2121,7 +2121,7 @@ export const undoCodeChangeAction = defineOperation({
   path: "/code-change-actions/{id}/undo",
   scope: "write",
   access: "team",
-  errors: [402, 409],
+  errors: [409],
   input: z.object({ id }),
   run: async (context, input) => {
     const { projectId } = context;
