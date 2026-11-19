@@ -25,21 +25,6 @@ import { errorStatuses, errorsLine, inputSchema, openApiSpec, outputSchema, path
  */
 const notRewrittenYet = new Set<OperationName>([
   // B3: Feedback
-  "boards.list",
-  "comments.create",
-  "comments.like",
-  "comments.list",
-  "duplicates.dismiss",
-  "duplicates.list",
-  "links.remove",
-  "posts.create",
-  "posts.get",
-  "posts.list",
-  "posts.merge",
-  "posts.update",
-  "roadmap.get",
-  "subscriptions.set",
-  "votes.set",
   // B4: Changelog
   // B5: Docs
   "articles.create",
