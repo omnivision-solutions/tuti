@@ -185,13 +185,18 @@ function isHtml(tag: string, rest: string): boolean {
   if (!name || UNCLOSED.has(name) || (tag.startsWith("</") && ELEMENTS.has(name))) return true;
   if (!ELEMENTS.has(name)) return false;
   // Closed later on: by a close no later open of its name takes, outside code (`</code>` in a code span closes nothing).
+  // It gives up after OPENS more opens of its name (none nests that deep), so many tags in a row stay fast.
   let open = 0;
-  for (const [, close] of rest.replace(/(`+)[^]*?\1/g, "").matchAll(new RegExp(`<(/?)${name}(?=[\\s/>])`, "gi"))) {
+  let opens = 0;
+  for (const [, , close] of rest.matchAll(new RegExp(`(\`+)[^\`]*\\1|<(/?)${name}(?=[\\s/>])`, "gi"))) {
+    if (close === undefined) continue;
+    if (!close && ++opens > OPENS) return false;
     open += close ? -1 : 1;
     if (open < 0) return true;
   }
   return false;
 }
+const OPENS = 50;
 
 /** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`, `<code>`) kept as text. */
 export function specHtml(markdown: string): string {
