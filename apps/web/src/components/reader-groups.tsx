@@ -98,7 +98,7 @@ function GroupActions({ projectSlug, properties, group }: { projectSlug: string;
         group={group}
         trigger={(show) => (
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Actions for ${group.name}`} />}>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} focusableWhenDisabled aria-label={`Actions for ${group.name}`} />}>
               <MoreHorizontalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-auto min-w-32">
