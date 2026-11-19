@@ -9,6 +9,7 @@ import { BadgeAddOn, ManagePlan, PlanPicker, UnassignLicense } from "@/component
 import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { planPriceText } from "@/lib/plans";
@@ -23,6 +24,21 @@ const LICENSE_SOURCES: Record<string, string> = { appsumo: "AppSumo", tuti: "Tut
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
+
+const sum = (grants: { credits: number; remaining: number }[], field: "credits" | "remaining") => grants.reduce((total, grant) => total + grant[field], 0);
+
+/** One of This month's allowances: what's `left` `of` it, as a bar that empties; without a limit (`of` null), `used`. */
+function Meter({ label, left, of, used }: { label: string; left: number | null; of: number | null; used?: string }) {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <div className="flex justify-between gap-3">
+        <span className="font-medium">{label}</span>
+        <span className="text-muted-foreground tabular-nums">{of === null || left === null ? used : `${credits(left)} of ${credits(of)} left`}</span>
+      </div>
+      {of !== null && left !== null && <Progress aria-label={`${label} left`} value={Math.min(left, of)} max={of} />}
+    </div>
+  );
+}
 
 /**
  * Settings → Billing: the project's plan (where plans are sold), its AI credits (where AI is paid with
@@ -69,6 +85,11 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const licensed = Boolean(license && !license.revokedAt);
   // A licensed project's add-on is billed monthly where it's sold so, else yearly (plan.badge).
   const licensedBilling = badgePrice("month") ? "monthly" : "yearly";
+  // A license's AI credits for its month (they end with it, as its emails do: emails.until) are This month's; the rest
+  // (a trial's, the free ones, top-ups) are listed under it.
+  // ponytail: a Stripe plan's credits stay in the list; into This month too when its period is a month, if asked for.
+  const monthly = grants.filter((grant) => grant.source === "PLAN" && emails?.until && grant.expiresAt?.getTime() === emails.until.getTime());
+  const extra = grants.filter((grant) => !monthly.includes(grant));
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -110,16 +131,6 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 <AlertDescription>The last payment didn&apos;t go through. Stripe tries again; update the card in Manage plan.</AlertDescription>
               </Alert>
             )}
-            {emails && (
-              <p className="text-sm text-muted-foreground">
-                {emails.limit === null
-                  ? `${emails.emails.toLocaleString("en")} emails sent this month`
-                  : emails.until
-                    ? // A license's emails are its month's, wherever it was: what this project sent says little.
-                      `${emails.left!.toLocaleString("en")} of the license's ${emails.limit.toLocaleString("en")} emails left until ${formatDate(emails.until)}`
-                    : `${emails.emails.toLocaleString("en")} of ${emails.limit.toLocaleString("en")} emails sent this month`}
-              </p>
-            )}
             {license?.revokedAt && (
               <Alert variant="destructive">
                 <AlertDescription>This project&apos;s {license.from} license was deactivated. {planSalesEnabled() ? "Unassign it to choose a plan." : "Unassign it to take it off this project."}</AlertDescription>
@@ -136,6 +147,16 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 Plans can&apos;t be bought here right now.
               </p>
             )}
+          </SettingBlock>
+        </SettingsCard>
+      )}
+      {emails && (
+        // What the plan gives each month, apart from the plan itself (a lifetime license's has no end; its month has).
+        <SettingsCard title="This month" description={emails.until ? `Resets ${formatDate(emails.until)}` : undefined}>
+          <SettingBlock className="@min-[34rem]/settings:grid @min-[34rem]/settings:grid-cols-2 @min-[34rem]/settings:gap-x-8">
+            {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}
+            <Meter label="Emails" left={emails.left} of={emails.limit} used={`${emails.emails.toLocaleString("en")} sent`} />
+            {monthly.length > 0 && <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />}
           </SettingBlock>
         </SettingsCard>
       )}
@@ -174,7 +195,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       )}
       {creditsEnabled() && (
         <SettingsCard
-          title={`${credits(balance)} AI credits`}
+          title={monthly.length > 0 ? "Extra AI credits" : `${credits(balance)} AI credits`}
           description={
             <>
               {CREDIT_FEATURES} spend credits as they&apos;re used; what each spent is in{" "}
@@ -186,8 +207,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           }
         >
           <SettingBlock>
-            {grants.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No credits left.</p>
+            {extra.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{monthly.length > 0 ? "None: the month's are all this project has." : "No credits left."}</p>
             ) : (
               <table className="w-full text-sm" aria-label="AI credits left">
                 <thead className="text-left text-xs text-muted-foreground">
@@ -199,7 +220,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {grants.map((grant) => (
+                  {extra.map((grant) => (
                     <tr key={grant.id}>
                       <td className="py-2">
                         {SOURCES[grant.source]} <span className="text-muted-foreground">({formatDate(grant.createdAt)})</span>

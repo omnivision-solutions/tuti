@@ -147,8 +147,10 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByText("Given by a license from AppSumo, a lifetime deal: it doesn't renew or bill.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
   await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
-  // Its emails are the license's month's: what's left of them, and until when.
-  await expect(owner.getByText(/^4,000 of the license's 4,000 emails left until \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
+  // This month: what's left of the license's month's emails, and when the month resets.
+  await expect(owner.getByText(/^Resets \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
+  await expect(owner.getByText("4,000 of 4,000 left")).toBeVisible();
+  await expect(owner.getByRole("progressbar", { name: "Emails left" })).toHaveAttribute("aria-valuenow", "4000");
   await checkpoint(owner, "team-settings-billing-license");
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
@@ -331,7 +333,8 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await useUpLicenseEmails(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  const until = /^0 of the license's 4,000 emails left until (\d{1,2}) ([A-Z][a-z]+) \d{4}$/;
+  await expect(owner.getByText("0 of 4,000 left")).toBeVisible();
+  const until = /^Resets (\d{1,2}) ([A-Z][a-z]+) \d{4}$/;
   await expect(owner.getByText(until)).toBeVisible();
   // Billing writes the month in full ("5 September 2026"), the inbox short as en-GB has it ("5 Sept").
   const [, date, month] = until.exec((await owner.getByText(until).textContent())!)!;

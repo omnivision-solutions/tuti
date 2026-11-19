@@ -120,22 +120,36 @@ test("a project still paying for a plan the file no longer lists is offered the 
   expect(await billing()).toContain("hide it for $39 a month");
 });
 
-test("the plan's card counts this month's email to the project's users against its plan's limit; without plans, nothing", async () => {
+/** "This month"'s meter `label`, as the page says it. */
+const meter = (label: string, text: string) => new RegExp(`>${label}</span><span[^>]*>${text}<`);
+
+test("This month counts down the month's email to the project's users from its plan's limit; without plans, nothing", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   // Mid-month, so the count and the page read the same month.
   const month = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
   vi.useFakeTimers({ toFake: ["Date"], now: new Date(month.getTime() + 14 * 24 * 60 * 60_000) });
   onTestFinished(() => void vi.useRealTimers());
   await prisma.projectEmailMonth.create({ data: { projectId, month, emails: 1234 } });
-  expect(await billing()).toContain("1,234 of 1,000 emails sent this month");
+  let page = await billing();
+  expect(page).toContain(">This month</h2>");
+  expect(page).toMatch(meter("Emails", "0 of 1,000 left"));
+  await prisma.projectEmailMonth.update({ where: { projectId_month: { projectId, month } }, data: { emails: 400 } });
+  page = await billing();
+  expect(page).toMatch(meter("Emails", "600 of 1,000 left"));
+  expect(page).toMatch(/aria-valuemax="1000" aria-valuenow="600"[^>]*aria-label="Emails left"/);
+  // A calendar month's, as the title says: no date.
+  expect(page).not.toContain("Resets");
   await prisma.project.update({ where: { id: projectId }, data: { plan: "business" } });
-  expect(await billing()).toContain("1,234 emails sent this month");
+  expect(await billing()).toMatch(meter("Emails", "400 sent"));
   vi.stubEnv("BILLING_CONFIG", "");
-  expect(await billing()).not.toContain("emails sent this month");
+  expect(await billing()).not.toContain("This month");
 });
 
-test("on a license, the card says what's left of the license's emails for its month, and until when", async () => {
+test("on a license, This month has what's left of its month's emails and AI credits and when they reset; the credits under it are the others", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
+  vi.stubEnv("AI_CREDITS", "on");
+  // A trial's, from before the license: not the month's.
+  await prisma.creditGrant.create({ data: { projectId, source: "PLAN", credits: 500, remaining: 500, note: "Starter trial", expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000) } });
   const holder = (await prisma.teamMember.findFirstOrThrow({ where: { projectId }, select: { userId: true } })).userId;
   const license = await prisma.planLicense.create({
     data: { source: "tuti", externalKey: crypto.randomUUID(), plan: "pro", userId: holder, projectId, claimedAt: new Date(), assignedAt: new Date() },
@@ -144,9 +158,23 @@ test("on a license, the card says what's left of the license's emails for its mo
   await grantLicenseCredits(license.id);
   const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
   const until = formatDate(creditsThrough!);
-  expect(await billing()).toContain(`10,000 of the license's 10,000 emails left until ${until}`);
+  const month = await prisma.creditGrant.findFirstOrThrow({ where: { planLicenseId: license.id, kind: "AI" } });
+  const monthly = month.credits.toNumber().toLocaleString("en");
+  let page = await billing();
+  expect(page).toContain(`Resets ${until}`);
+  expect(page).toMatch(meter("Emails", "10,000 of 10,000 left"));
+  expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
+  // The rest, without the month's: the trial's alone.
+  expect(page).toContain(">Extra AI credits</h2>");
+  const table = page.slice(page.indexOf("<table"), page.indexOf("</table>"));
+  expect(table.match(/<tr/g)).toHaveLength(2);
+  expect(table).toContain(">500</td>");
+  expect(page).not.toContain("emails left until");
   expect(await claimProjectEmail(projectId)).toBe(true);
-  expect(await billing()).toContain(`9,999 of the license's 10,000 emails left until ${until}`);
+  await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 1 } });
+  page = await billing();
+  expect(page).toMatch(meter("Emails", "9,999 of 10,000 left"));
+  expect(page).toMatch(meter("AI credits", `1 of ${monthly} left`));
 });
 
 test("the credits table's dates read day first: when a grant was made, and when it expires", async () => {
@@ -162,9 +190,9 @@ test("the credits table's dates read day first: when a grant was made, and when 
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
   await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
-  expect(await billing()).toContain("0 of 500 emails sent this month");
+  expect(await billing()).toMatch(meter("Emails", "500 of 500 left"));
   await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
-  expect(await billing()).toContain("0 of 1,000 emails sent this month");
+  expect(await billing()).toMatch(meter("Emails", "1,000 of 1,000 left"));
 });
 
 test("where plans can't be bought, a deactivated license's alert says to unassign it, and the line saying so can take the keyboard's place", async () => {
