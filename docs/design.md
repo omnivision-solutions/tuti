@@ -684,6 +684,8 @@ Use these instead of hand-rolling layout:
   - A list is read first: a row shows values, changed on click (a badge that
     opens a menu, like `PostStatusMenu`), in a preview pane or in bulk; no
     form controls (selects, checkboxes for settings) in rows, on phones too.
+    Settings → Team & roles is the exception: a role is a dropdown on its row, for whoever may change it (a badge
+    for everyone else), saved as it's picked.
   - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
     width: `?post=<number>` in the address (shareable, Back works), the list
     left as it was, the open row highlighted out to its list's edges
@@ -828,6 +830,8 @@ widths, in light and dark (in development only).
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
     repeat the page's, and so no count: its "New" button is in the pane's header (`SettingsPane`'s `actions`).
+    What can't be done says why when it's tried, not in a line that's always there (Team & roles' "Leave project"
+    for the only owner).
   - An upload is its thumbnail and an Upload button on the row; what files it takes is said when one is refused.
   - A number carries its unit in the field ("25 people").
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its

@@ -7,6 +7,11 @@ import { emailConfigured } from "@tuti/email";
  */
 export const asksToVerifyEmail = (user: { emailVerified: boolean }) => !user.emailVerified && emailConfigured();
 
-/** The invite form's line: invites are only emailed from a verified address (server/invitations.ts); until then, links. */
+const linkUntilVerified = "Verify your email to email invites; until then you'll get a link to send them.";
+
+/** Setup's invite step's line: invites are only emailed from a verified address (server/invitations.ts); until then, links. */
 export const inviteNote = (user: { emailVerified: boolean }) =>
-  `${asksToVerifyEmail(user) ? "Verify your email to email invites; until then you'll get a link to send them." : "We'll email them an invite."} Only that email address can accept it.`;
+  `${asksToVerifyEmail(user) ? linkUntilVerified : "We'll email them an invite."} Only that email address can accept it.`;
+
+/** Team & roles' invite dialog says so only while it's a link they'll get. */
+export const inviteLinkNote = (user: { emailVerified: boolean }) => (asksToVerifyEmail(user) ? linkUntilVerified : null);
