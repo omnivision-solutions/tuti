@@ -145,6 +145,9 @@ and the variables beside it), Custom is models the project picks. Affordable and
 models each: point `AI_LEVELS_CONFIG` at a JSON file like `packages/shared/ai-levels.example.json`, on the
 web app and the worker alike (mount the same file into both). Without a file, Tuti's own rows are used,
 unless you set a model variable: then only Balanced and Custom are offered. An invalid file stops start-up.
+Tuti's own Best row uses Claude Opus where the model writes (answers, drafted replies, changelog entries, Autopilot's
+articles and checks) and Claude Sonnet for the rest; with `AI_MODEL_MAX_PRICE` under Opus's price, Best isn't offered
+until you raise the cap or give Best cheaper models in your file.
 
 ### Autopilot's settings
 
