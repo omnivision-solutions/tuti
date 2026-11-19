@@ -204,7 +204,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             {/* The next AI request takes what's owed from the credits there (chargeCredits); with none over, AI is paused (aiPaused). */}
             {monthly.length > 0 && owed >= 0.01 && (
               <p className="text-sm text-muted-foreground">
-                {balance <= 0 ? `AI is paused: this project owes ${credits(owed)} credits.` : `${credits(owed)} credits owed: they come out of these first.`}
+                {balance <= 0 ? `AI is paused: this project owes ${credits(owed)} credits.` : `${credits(owed)} credits owed, taken at the next AI use.`}
               </p>
             )}
           </SettingBlock>
