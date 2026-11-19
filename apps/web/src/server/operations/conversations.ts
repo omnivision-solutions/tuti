@@ -45,7 +45,7 @@ const conversationUserOutput = z
   .object({
     id: z.string().nullable().describe("Their id in your app, when they came through SSO or the API; null otherwise (an email, a portal account, a signed-out visitor)").meta({ examples: ["user-42"] }),
     name: z.string().nullable().describe("Their name: for someone known by email only, the name their email came from, once its address is verified").meta({ examples: ["Sam Lee"] }),
-    email: z.string().nullable().describe("Their email address; null for a signed-out visitor in the widget").meta({ examples: ["sam@example.com"] }),
+    email: z.string().nullable().describe("Their email address; null for a signed-out visitor, or someone from your app who hasn't given one").meta({ examples: ["sam@example.com"] }),
     verified: z.boolean().describe("Whether the address is known to be theirs: always for someone from your app").meta({ examples: [true] }),
   })
   .meta({ id: "ConversationUser", description: "Who a conversation is with: someone from your app or with a portal account, an email address, or a signed-out visitor" });
