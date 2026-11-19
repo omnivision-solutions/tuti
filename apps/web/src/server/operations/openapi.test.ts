@@ -282,6 +282,8 @@ test("errors by status: what every operation can give, and what it declares", ()
   expect(responses("/team", "get")).toEqual(["200", "401", "429"]);
   // A write naming a post, which may have been merged.
   expect(responses("/posts/{number}/vote", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429"]);
+  // A post on a board that isn't there: a 404 its path doesn't make, so it declares it.
+  expect(responses("/posts", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429"]);
   // Settings for owners and admins on a paid plan, checked with the DNS.
   expect(responses("/domain", "post")).toEqual(["200", "400", "401", "402", "403", "409", "429"]);
   for (const operation of operations) {

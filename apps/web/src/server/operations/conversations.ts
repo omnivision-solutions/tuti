@@ -181,6 +181,7 @@ export const listConversations = defineOperation({
   path: "/conversations",
   scope: "read",
   access: "team",
+  errors: [404],
   input: z.object({
     status: z.enum(CONVERSATION_STATUSES).optional(),
     /** A team member's email, or "none" for unassigned ones. */

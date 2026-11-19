@@ -131,6 +131,7 @@ export const checkEmailDomainOperation = defineOperation({
   path: "/support/email-domain/check",
   scope: "write",
   access: "admin",
+  errors: [404],
   input: z.object({}),
   run: async ({ projectId }) => {
     if (!(await checkEmailDomain(projectId))) {

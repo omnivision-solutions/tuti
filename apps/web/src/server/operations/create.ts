@@ -95,7 +95,7 @@ export const createPost = defineOperation({
   path: "/posts",
   scope: "write",
   access: "anyone",
-  errors: [409],
+  errors: [404, 409],
   input: z.object({
     board: z.string().min(1),
     title: z.string().trim().min(3, "Title is too short").max(MAX_POST_TITLE),

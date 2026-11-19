@@ -10,6 +10,7 @@ import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { type Operation, type OperationName, operations } from "./index";
+import { errorStatuses } from "./openapi";
 
 /**
  * Every operation on the API surface (REST; MCP serves the same operations with
@@ -451,6 +452,8 @@ async function call(operation: Operation, input: Record<string, unknown>, key: s
   });
   const handler = { GET, POST, PATCH, DELETE }[operation.method];
   const response = await handler(request, { params: Promise.resolve({ path: url.pathname.split("/").slice(3) }) });
+  // Whatever it answers, the spec lists: an error it can give and doesn't list goes in its `errors`.
+  expect([200, ...errorStatuses(operation)], `${operation.name} answered ${response.status}`).toContain(response.status);
   return { status: response.status, text: await response.text() };
 }
 

@@ -156,7 +156,7 @@ export const verifyDomain = defineOperation({
   path: "/domain/verify",
   scope: "write",
   access: "admin",
-  errors: [409, 502],
+  errors: [404, 409, 502],
   input: z.object({}),
   run: async ({ projectId }) => {
     const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
@@ -229,6 +229,7 @@ export const removeDomain = defineOperation({
   path: "/domain",
   scope: "write",
   access: "admin",
+  errors: [404],
   input: z.object({}),
   run: async ({ projectId }) => {
     const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: { hostname: true, cloudflareId: true } });

@@ -36,10 +36,11 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   access: "team" | "admin" | "owner" | "anyone";
   /**
    * The statuses besides those every operation may answer with (openapi.ts: `errorStatuses`) that its run, or a helper
-   * it calls, can raise: 402 (its plan or AI credits), 409 (a conflict with how things are now), 502 (a service Tuti
-   * uses failed: the AI, Stripe, DNS, email), 503 (a feature that isn't set up on this server).
+   * it calls, can raise: 402 (its plan or AI credits), 404 (something its input names, where its path names nothing),
+   * 409 (a conflict with how things are now), 502 (a service Tuti uses failed: the AI, Stripe, DNS, email), 503 (a
+   * feature that isn't set up on this server).
    */
-  errors?: (402 | 409 | 502 | 503)[];
+  errors?: (402 | 404 | 409 | 502 | 503)[];
   input: I;
   /**
    * What it returns, as JSON (dates as ISO strings): the spec's 200 response and MCP's `outputSchema`. Fields say what

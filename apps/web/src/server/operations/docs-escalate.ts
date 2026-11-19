@@ -275,7 +275,7 @@ export const escalateDocs = defineOperation({
   path: "/docs/escalate",
   scope: "write",
   access: "anyone",
-  errors: [409],
+  errors: [404, 409],
   input: escalateFields,
   example: { questionId: "cm3q5x0a1000008l4h2gk7v9e", email: "ada@example.com", note: "I need this for an audit on Friday." },
   run: async ({ actor, projectId }, input) => {

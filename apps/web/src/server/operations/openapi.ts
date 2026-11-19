@@ -80,7 +80,7 @@ const ERRORS = {
 /**
  * The error statuses an operation answers with: 401 and 429 always, 400 when it takes input (a POST or PATCH always
  * reads a JSON body), 403 when it writes or is for owners and admins, 404 when its path names something, and what it
- * declares (`errors`).
+ * declares (`errors`: a 404 too where its input, not its path, names what may not be there).
  */
 export function errorStatuses(operation: (typeof operations)[number]): (keyof typeof ERRORS)[] {
   const takesInput = Object.keys(inputSchema(operation).properties ?? {}).length > 0 || operation.method === "POST" || operation.method === "PATCH";
@@ -91,7 +91,9 @@ export function errorStatuses(operation: (typeof operations)[number]): (keyof ty
     ...(pathParams(operation.path).length > 0 ? [404 as const] : []),
     429 as const,
     ...(operation.errors ?? []),
-  ].sort((a, b) => a - b);
+  ]
+    .filter((status, at, all) => all.indexOf(status) === at)
+    .sort((a, b) => a - b);
 }
 
 /** MCP's line about a tool's errors: those a call can give (a bad key or too many requests fail the whole request). */
