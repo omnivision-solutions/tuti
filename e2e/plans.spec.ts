@@ -72,10 +72,10 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // Stripe's page (the fake), then back to Billing on Pro, with its credits for the month.
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);
-  await expect(owner.getByText("Pro plan", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Pro plan", exact: true })).toBeVisible();
   await expect(owner.getByText(/^\$39 a month · Renews on \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
   await expect(owner.getByText("10,000 of 10,000 left")).toBeVisible();
-  await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Plan/ })).toContainText("1,000");
+  await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Pro plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
 
   // The "Powered by tuti" add-on: added to the plan, the badge is gone from the portal.

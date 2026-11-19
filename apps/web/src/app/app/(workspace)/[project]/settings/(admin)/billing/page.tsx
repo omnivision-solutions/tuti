@@ -109,6 +109,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         ).map((grant) => ({ id: grant.id, credits: grant.credits.toNumber(), remaining: grant.remaining.toNumber() }))
       : [];
   const extra = grants.filter((grant) => !monthly.some(({ id }) => id === grant.id));
+  // What gave a plan's credits ("Starter trial", "Pro plan": the grant's note, written by Tuti), so two of them aren't
+  // both "Plan". Other notes are the operator's own (credits given by hand), and stay theirs.
+  const titles = new Map(
+    (await prisma.creditGrant.findMany({ where: { id: { in: extra.filter(({ source }) => source === "PLAN").map(({ id }) => id) }, note: { not: "" } }, select: { id: true, note: true } })).map(
+      ({ id, note }) => [id, note],
+    ),
+  );
   // What the project owes (a refund's credits already spent, a request that ran past the last): the balance has it
   // taken off, the meter and the list don't, so with a meter it's said.
   const owed = sum(monthly, "remaining") + sum(extra, "remaining") - balance;
@@ -229,7 +236,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 <tbody className="divide-y">
                   {extra.map((grant) => (
                     <tr key={grant.id}>
-                      <td className="w-1/3 py-2">{SOURCES[grant.source]}</td>
+                      <td className="w-1/3 py-2">{titles.get(grant.id) ?? SOURCES[grant.source]}</td>
                       <td className="w-20 py-2 text-right tabular-nums">{credits(grant.remaining)}</td>
                       <td className="py-2 text-right text-muted-foreground">{grant.expiresAt ? `until ${formatShortDate(grant.expiresAt)}` : "Never"}</td>
                     </tr>

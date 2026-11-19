@@ -173,6 +173,8 @@ test("on a license, This month has what's left of its month's emails and AI cred
   const table = page.slice(page.indexOf("<table"), page.indexOf("</table>"));
   expect(table.match(/<tr/g)).toHaveLength(2);
   expect(table).toContain(">500</td>");
+  // Named for what gave them, not "Plan".
+  expect(table).toContain(">Starter trial</td>");
   expect(page).not.toContain("emails left until");
   expect(await claimProjectEmail(projectId)).toBe(true);
   await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 1 } });
@@ -256,13 +258,16 @@ test("the credits list says until when each lasts, day first and short, with the
   onTestFinished(() => void vi.useRealTimers());
   await prisma.creditGrant.createMany({
     data: [
-      { projectId, source: "MANUAL", credits: 100, remaining: 100, expiresAt: new Date("2031-01-05T12:00:00Z") },
+      { projectId, source: "MANUAL", credits: 100, remaining: 100, note: "Refund for a support case", expiresAt: new Date("2031-01-05T12:00:00Z") },
       { projectId, source: "TOPUP", credits: 50, remaining: 50, expiresAt: new Date("2026-12-18T12:00:00Z") },
     ],
   });
   const page = await billing();
   expect(page).toContain(">until 5 Jan 2031</td>");
   expect(page).toContain(">until 18 Dec</td>");
+  // The operator's note on credits given by hand is theirs: not shown.
+  expect(page).toContain(">Given by Tuti</td>");
+  expect(page).not.toContain("Refund for a support case");
 });
 
 test("on a free trial, the month's email is counted against the trial's own allowance; once it ends, against the default plan's", async () => {
