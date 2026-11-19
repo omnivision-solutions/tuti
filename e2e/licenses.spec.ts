@@ -44,7 +44,7 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   await createProject(buyer, "Acme", slug, cloudPortalUrl);
   await buyer.goto(`/app/${slug}/settings/billing`);
-  await expect(buyer.getByText("AppSumo Tier 2 plan")).toBeVisible();
+  await expect(buyer.getByRole("heading", { name: "AppSumo Tier 2", exact: true })).toBeVisible();
   await expect(buyer.getByText(/left in your trial/)).toBeHidden();
   // In their menu now that they hold one.
   await buyer.getByRole("button", { name: /Bea Buyer/ }).click();
@@ -143,12 +143,14 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
 
   // Billing: the license's plan, nothing to manage in Stripe; the add-on is bought on its own.
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
-  await expect(owner.getByText("Given by a license from AppSumo, a lifetime deal: it doesn't renew or bill.")).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "AppSumo Tier 1", exact: true })).toBeVisible();
+  await expect(owner.getByText("Lifetime", { exact: true })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
-  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
-  // Its emails are the license's month's: what's left of them, and until when.
-  await expect(owner.getByText(/^4,000 of the license's 4,000 emails left until \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
+  await expect(owner.getByText("$49 a month, billed monthly on its own.")).toBeVisible();
+  // This month: what's left of the license's month's emails, and when the month resets.
+  await expect(owner.getByText(/^Resets \d{1,2} [A-Z][a-z]+( \d{4})?$/)).toBeVisible();
+  await expect(owner.getByText("4,000 of 4,000 left")).toBeVisible();
+  await expect(owner.getByRole("progressbar", { name: "Emails left" })).toHaveAttribute("aria-valuenow", "4000");
   await checkpoint(owner, "team-settings-billing-license");
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
@@ -158,7 +160,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
   await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
-  await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "AppSumo Tier 1", exact: true })).toBeVisible();
   // Its card and invoices are in Stripe's portal.
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license-badge");
@@ -175,7 +177,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await show.getByRole("button", { name: "Show the badge again" }).click();
   await expect(owner.getByText('"Powered by tuti" is back on your portal')).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
-  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  await expect(owner.getByText("$49 a month, billed monthly on its own.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toBeFocused();
   // Hidden again, for what follows. While Stripe's page is made (held here), the dialog's button is off and keeps the keyboard.
   await owner.getByRole("button", { name: "Hide the badge" }).click();
@@ -211,21 +213,23 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.getByRole("button", { name: `Assign AppSumo Tier 1 license ${key}`, exact: true }).click();
   await expect(owner.getByText("License assigned")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("The badge at the foot of the portal: hide it for $49 a month, billed monthly on its own.")).toBeVisible();
+  await expect(owner.getByText("$49 a month, billed monthly on its own.")).toBeVisible();
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   await confirm.getByRole("button", { name: "Hide the badge" }).click();
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
   await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
-  // Unassigning it here asks first: only its holder can assign it again.
-  await owner.getByRole("button", { name: "Unassign license" }).click();
+  // Unassigning it here (behind "⋯") asks first: only its holder can assign it again.
+  await owner.getByRole("button", { name: "License options" }).click();
+  await owner.getByRole("menuitem", { name: "Unassign license" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Unassign this license?" });
   await expect(dialog).toContainText(`This project loses the license's plan until the license's holder assigns it again. Its "Powered by tuti" add-on stops now, and what's left of the month or year isn't refunded.`);
   await checkpoint(owner, "team-settings-billing-unassign-license", { fullPage: false });
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
-  await expect(owner.getByText("AppSumo Tier 1 plan")).toBeVisible();
-  await owner.getByRole("button", { name: "Unassign license" }).click();
+  await expect(owner.getByRole("heading", { name: "AppSumo Tier 1", exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: "License options" }).click();
+  await owner.getByRole("menuitem", { name: "Unassign license" }).click();
   // While it runs (its request held here), the dialog's button is off: a second press can't send it again.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
@@ -300,8 +304,8 @@ test("a license Tuti issues to a project gives its plan, named as Tuti's", async
   const key = /tuti-[0-9a-f-]+/.exec(stdout)![0];
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("AppSumo Tier 2 plan")).toBeVisible();
-  await expect(owner.getByText("Given by a license from Tuti: it doesn't renew or bill.")).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "AppSumo Tier 2", exact: true })).toBeVisible();
+  await expect(owner.getByText("Tuti license", { exact: true })).toBeVisible();
   await owner.goto("/app/licenses");
   await expect(owner.getByText("Plan licenses on your account, such as AppSumo lifetime deals.", { exact: false })).toBeVisible();
   await expect(owner.getByText(`Tuti · ${key}`)).toBeVisible();
@@ -331,11 +335,11 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await useUpLicenseEmails(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  const until = /^0 of the license's 4,000 emails left until (\d{1,2}) ([A-Z][a-z]+) \d{4}$/;
+  await expect(owner.getByText("0 of 4,000 left", { exact: true })).toBeVisible();
+  // Billing and the inbox write the day alike, short as en-GB has it ("5 Sept").
+  const until = /^Resets (\d{1,2} [A-Z][a-z]+)( \d{4})?$/;
   await expect(owner.getByText(until)).toBeVisible();
-  // Billing writes the month in full ("5 September 2026"), the inbox short as en-GB has it ("5 Sept").
-  const [, date, month] = until.exec((await owner.getByText(until).textContent())!)!;
-  const day = `${date} ${month === "September" ? "Sept" : month!.slice(0, 3)}`;
+  const [, day] = until.exec((await owner.getByText(until).textContent())!)!;
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.locator(".inbox-email-waits")).toHaveText(`This month's emails from your license are used: replies are emailed on ${day}. Billing`);
   await checkpoint(owner, "reply-waits-for-license-month");
