@@ -305,6 +305,8 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(value).toHaveAccessibleDescription("Totals a number property over each post's voters. Only your team sees it.");
   await value.click();
   await expect(owner.getByRole("option")).toHaveText(["None", "MRRSuggested", "Account ID"]);
+  // Said as two words.
+  await expect(owner.getByRole("option", { name: "MRR Suggested", exact: true })).toBeVisible();
   await checkpoint(owner, "settings-whos-asking-suggested");
   // Picked with the keyboard, focus stays on the box once it's saved.
   await owner.keyboard.press("ArrowDown");
@@ -316,7 +318,9 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await value.click();
   await expect(owner.getByRole("option")).toHaveText(["None", "Account ID", "MRR"]);
   await owner.keyboard.press("Escape");
-  await expect(owner.getByText("Feedback totals MRR over each post's voters")).toBeHidden({ timeout: 10_000 });
+  // Saved: there after a reload (and its toast gone).
+  await owner.reload();
+  await expect(value).toContainText("MRR");
   await owner.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(owner, "settings-whos-asking");
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -402,7 +406,7 @@ test("on a phone, Who's asking's suggestion of a long-named property stays insid
   const value = card.getByRole("combobox", { name: "Value of a post" });
   await value.click();
   // Cut short to fit, its name whole and "Suggested" in sight.
-  const option = owner.getByRole("option", { name: "Averyveryveryverylongnumberpropertynamewithoutanyspaces" });
+  const option = owner.getByRole("option", { name: "Averyveryveryverylongnumberpropertynamewithoutanyspaces Suggested", exact: true });
   const tag = (await option.getByText("Suggested").boundingBox())!;
   const list = (await owner.getByRole("listbox").boundingBox())!;
   expect(tag.x + tag.width).toBeLessThanOrEqual(list.x + list.width);
