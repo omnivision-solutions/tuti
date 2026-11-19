@@ -69,12 +69,13 @@ test("saved topics are chips, each a field of the form; Enter adds one, trimmed,
   await enter();
   expect(chips()).toEqual(["refund", "legal advice", "pricing"]);
   expect(sent()).toEqual(["refund", "legal advice", "pricing", ""]);
-  // A comma adds one too (and isn't typed), so two topics never become one.
-  await type("shipping");
-  const comma = new KeyboardEvent("keydown", { key: ",", bubbles: true, cancelable: true });
-  await act(async () => void box.dispatchEvent(comma));
-  expect(comma.defaultPrevented).toBe(true);
+  // A comma ends a topic too, typed or pasted (no key press needed), so two topics never become one: what's before
+  // each is a chip, never one already there, and the rest stays in the box.
+  await type("shipping, refund, , returns");
   expect(chips()).toEqual(["refund", "legal advice", "pricing", "shipping"]);
+  expect(box.value).toBe("returns");
+  expect(status()).toBe("Added shipping");
+  await type("");
   expect(document.getElementById(box.getAttribute("aria-describedby")!)!.textContent).toBe("Press Enter or a comma to add a topic");
   await act(async () => button("Remove shipping").click());
   // A topic typed and not added yet is sent with the rest.
@@ -106,6 +107,10 @@ test("at the limit no more can be added, until one is removed", async () => {
   await type("c");
   await enter();
   expect(chips()).toEqual(["b", "c"]);
+  // Commas stop at the limit too.
+  await act(async () => button("Remove b").click());
+  await type("d, e, f");
+  expect(chips()).toEqual(["c", "d"]);
 });
 
 test("the form has one box for instructions and none for a tone", async () => {

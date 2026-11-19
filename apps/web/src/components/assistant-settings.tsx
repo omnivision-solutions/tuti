@@ -132,12 +132,22 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
         id="assistant-off-limits"
         name="offLimits"
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          // A comma ends a topic, typed or pasted (as the text changes: phones' keyboards don't say which key was
+          // pressed): what's before each becomes a chip, and the rest stays in the box.
+          const pieces = event.target.value.split(",");
+          const rest = pieces.pop()!;
+          const added = [...new Set(pieces.map((piece) => piece.trim()))].filter((piece) => piece && !topics.includes(piece)).slice(0, max - topics.length);
+          if (added.length > 0) {
+            setTopics([...topics, ...added]);
+            setStatus(`Added ${added.join(", ")}`);
+          }
+          setDraft(pieces.length > 0 ? rest.trimStart() : rest);
+        }}
         onKeyDown={(event) => {
           // Enter adds the topic; it doesn't save the form. Not the Enter that confirms an input method's candidate (Safari sends that one
           // after the composition ends, with key code 229).
-          // A comma adds it too: typed between two topics, it would otherwise make one topic of both.
-          if ((event.key === "Enter" || event.key === ",") && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
             event.preventDefault();
             add();
           }
