@@ -2715,7 +2715,7 @@ export const publishCodeChangeActionNow = defineOperation({
   scope: "write",
   access: "team",
   errors: [402, 409],
-  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets from a pull request (a Verify run's fix can't be published now or stopped here)").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
   output: appliedOut,
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
@@ -2791,7 +2791,7 @@ export const stopCodeChangeAction = defineOperation({
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets from a pull request (a Verify run's fix can't be published now or stopped here)").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
   output: z
     .object({
       id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
