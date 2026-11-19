@@ -2249,7 +2249,7 @@ export const undoCodeChangeAction = defineOperation({
 
 export const publishCodeChangeActionNow = defineOperation({
   name: "codeChangeActions.publishNow",
-  summary: "Publish now: a scheduled action (going out by itself after the hold) is applied at once, as codeChangeActions.apply does, by whoever asks",
+  summary: "Publish a scheduled action now: it (going out by itself after the hold) is applied at once, as codeChangeActions.apply does, by whoever asks",
   method: "POST",
   path: "/code-change-actions/{id}/publish-now",
   scope: "write",
@@ -2322,7 +2322,7 @@ export const publishCodeChangeActionNow = defineOperation({
 export const stopCodeChangeAction = defineOperation({
   name: "codeChangeActions.stop",
   summary:
-    "Stop: a scheduled action doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss). A post's part stops all of its post's update (it goes out as one)",
+    "Stop a scheduled action: it doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss). A post's part stops all of its post's update (it goes out as one)",
   method: "POST",
   path: "/code-change-actions/{id}/stop",
   scope: "write",

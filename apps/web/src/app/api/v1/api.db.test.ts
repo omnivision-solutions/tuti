@@ -7,6 +7,7 @@ import { createPost as createPostOperation } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { firstLine } from "@/server/api-reference-queries";
 import { matchOperation, operations } from "@/server/operations";
 
 import { DELETE, GET, PATCH, POST } from "./[...path]/route";
@@ -388,6 +389,28 @@ describe("OpenAPI", () => {
       { required: ["eta"] },
       { required: ["visibility"] },
     ]);
+    // A short title in `summary`, the operation's whole text in `description` (and what key it needs).
+    expect(spec.paths["/project"].get).toMatchObject({
+      summary: "Get the project the key belongs to",
+      description: expect.stringMatching(/^Get the project the key belongs to, with its portal URL/),
+    });
+    expect(create.summary).toBe("Create a post");
+    expect(create.description).toMatch(/\n\nNeeds a read \+ write key\.$/);
+    for (const methods of Object.values(spec.paths as Record<string, Record<string, { summary: string }>>)) {
+      for (const op of Object.values(methods)) {
+        expect(op.summary.length).toBeLessThanOrEqual(101);
+        expect(op.summary).not.toContain("`");
+      }
+    }
+    // Titles name what they act on, not just the verb.
+    expect(spec.paths["/code-change-actions/{id}/stop"].post.summary).toBe("Stop a scheduled action");
+    expect(spec.paths["/portal/readers/{email}"].delete.summary).toBe("Stop letting someone read the private portal");
+    expect(spec.paths["/portal/readers"].get.summary).toBe("List who may read the private portal");
+    // Written as plain text: rendered as the Markdown a description is, the words come back as written.
+    const words = (name: string) => operations.find((operation) => operation.name === name)!.summary;
+    const shown = async (path: string, method: string) => firstLine(spec.paths[path][method].description);
+    expect(await shown("/site/verify", "post")).toBe(words("site.verify"));
+    expect(await shown("/groups", "get")).toBe(words("groups.list").replace(/`/g, ""));
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
     ]);

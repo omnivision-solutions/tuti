@@ -110,7 +110,7 @@ export async function portalReaders(projectId: string) {
 export const listPortalReaders = defineOperation({
   name: "portalReaders.list",
   summary:
-    "List the people (by email) who may read the portal while it's private, besides the team and people your app signs in with SSO; newest first",
+    "List who may read the private portal: the people (by email) allowed besides the team and people your app signs in with SSO; newest first",
   method: "GET",
   path: "/portal/readers",
   scope: "read",
@@ -212,7 +212,7 @@ async function claimReaderEmails(tx: Prisma.TransactionClient, projectId: string
 export const removePortalReader = defineOperation({
   name: "portalReaders.remove",
   summary:
-    "Stop letting someone (an address) or a domain (\"@acme.com\") read the private portal (the team and SSO users keep their access); accounts stay",
+    "Stop letting someone read the private portal: an address, or a domain (\"@acme.com\"); the team and SSO users keep their access, and accounts stay",
   method: "DELETE",
   path: "/portal/readers/{email}",
   scope: "write",
