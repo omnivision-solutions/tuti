@@ -31,28 +31,51 @@ function onPortal(to: string, addresses: string[]): string {
   return to;
 }
 
+const redirectOutput = z
+  .object({
+    id: z.string().describe("The redirect's id").meta({ examples: ["cm3redirect0001"] }),
+    from: z.string().describe("The old address: a path of the portal, lowercase").meta({ examples: ["/hc/en-us/articles/123-billing"] }),
+    to: z.string().describe("Where requests for it are sent: a path of the portal, or a whole https address").meta({ examples: ["/docs/billing"] }),
+  })
+  .meta({ id: "Redirect", description: "An old address on the portal sent on to a new one" });
+
 export const listRedirects = defineOperation({
   name: "redirects.list",
   title: "List redirects",
-  summary: "List the portal's redirects, newest first: each sends requests for `from` (a path of the portal) to `to` (a path of it, or a whole https address)",
+  summary: `List the portal's redirects, newest first (up to ${MAX_REDIRECTS}).`,
   method: "GET",
   path: "/redirects",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z.object({ redirects: z.array(redirectOutput).describe("Each redirect, newest first: it sends requests for `from` to `to`") }).describe("The portal's redirects"),
   run: async ({ projectId }) => ({ redirects: await prisma.portalRedirect.findMany({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: view }) }),
 });
 
 export const createRedirect = defineOperation({
   name: "redirects.create",
   title: "Create a redirect",
-  summary: `Send an old address on the portal on to a new one: \`from\` is the old path (or a whole URL of the old site, whose path is taken), matched lowercase whatever the query; \`to\` is a path of the portal or a whole https address, which gets the request's query unless it has its own. Not the portal's own addresses (sign-in, /api, /widget, …) or its home, one rule per \`from\`, no rule to or from another rule's address (so they can't go round in circles), up to ${MAX_REDIRECTS}`,
+  summary: `Send an old address on the portal on to a new one. One rule per address (409 for a second), none to or from another rule's address (so they can't go round in circles), up to ${MAX_REDIRECTS}.`,
   method: "POST",
   path: "/redirects",
   scope: "write",
   access: "admin",
   errors: [409],
-  input: z.object({ from: z.string().max(2000), to: z.string().max(2000) }),
+  input: z.object({
+    from: z
+      .string()
+      .max(2000)
+      .describe(
+        "The old path (or a whole URL of the old site, whose path is taken), matched lowercase whatever the query. Not the portal's own addresses (sign-in, /api, /widget, …) or its home",
+      )
+      .meta({ examples: ["/hc/en-us/articles/123-billing"] }),
+    to: z
+      .string()
+      .max(2000)
+      .describe("A path of the portal or a whole https address, which gets the request's query unless it has its own")
+      .meta({ examples: ["/docs/billing"] }),
+  }),
+  output: z.object({ redirect: redirectOutput.describe("The redirect, as saved") }).describe("The new redirect"),
   example: { from: "/hc/en-us/articles/123-billing", to: "/docs/billing" },
   run: async ({ projectId }, input) => {
     const from = redirectFrom(input.from);
@@ -95,12 +118,13 @@ export const createRedirect = defineOperation({
 export const deleteRedirect = defineOperation({
   name: "redirects.delete",
   title: "Delete a redirect",
-  summary: "Stop a redirect (`id`, from redirects.list): its old address is the portal's again",
+  summary: "Stop a redirect: its old address is the portal's again.",
   method: "DELETE",
   path: "/redirects/{id}",
   scope: "write",
   access: "admin",
-  input: z.object({ id: z.string() }),
+  input: z.object({ id: z.string().describe("The redirect's id, from redirects.list").meta({ examples: ["cm3redirect0001"] }) }),
+  output: z.object({ deleted: z.string().describe("The id of the redirect deleted").meta({ examples: ["cm3redirect0001"] }) }).describe("The redirect deleted"),
   run: async ({ projectId }, input) => {
     const { count } = await prisma.portalRedirect.deleteMany({ where: { id: input.id, projectId } });
     if (count === 0) {

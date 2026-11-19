@@ -14,15 +14,27 @@ import { findVisiblePost, postNumber } from "./read";
 /** Formats by property name, as the API takes them. */
 const propertyFormatsInput = z.record(z.string().trim().min(1).max(64), propertyFormat);
 
+/** The project as project.get and project.update return it. */
+const projectFields = {
+  slug: z.string().describe("The project's name in addresses, like its portal's Tuti address (acme.tuti.so); it never changes").meta({ examples: ["acme"] }),
+  name: z.string().describe("The name its portal, emails and the app show").meta({ examples: ["Acme"] }),
+  uses: z
+    .array(z.string())
+    .describe("What the team said it will use (feedback, docs, changelog, support; set with project.update): Home's Get set up follows it")
+    .meta({ examples: [["feedback", "changelog"]] }),
+  portalUrl: z.string().describe("The portal's address: its own domain or site path once verified, else its Tuti address").meta({ examples: ["https://acme.tuti.so"] }),
+};
+
 export const getProject = defineOperation({
   name: "project.get",
   title: "Get the project",
-  summary: "Get the project the key belongs to, with its portal URL and what the team said it will use (`uses`, project.update's)",
+  summary: "Get the project the key belongs to, with its portal URL.",
   method: "GET",
   path: "/project",
   scope: "read",
   access: "anyone",
   input: z.object({}),
+  output: z.object(projectFields).describe("The project"),
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, uses: true } });
     return { ...project, portalUrl: await portalAddress(project.slug) };
@@ -32,26 +44,65 @@ export const getProject = defineOperation({
 export const updateProject = defineOperation({
   name: "project.update",
   title: "Update the project",
-  summary:
-    "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), pick `userColumns`: the properties Users shows as columns, in order (up to 10), or set `propertyFormats`: how the app shows each property, by name (a `label` of the team's own, and a `format`: text, number, money in a `currency`, or date; all of them at once, up to 100), or say what the team will `uses` (feedback, docs, changelog, support: Home's Get set up follows it; none: every step)",
+  summary: "Change the project's name and how the app shows your users' properties, or say what the team will use. Fields left out stay as they are.",
   method: "PATCH",
   path: "/project",
   scope: "write",
   access: "admin",
   input: z.object({
-    name: z.string().trim().min(2, "Give the project a name of 2 characters or more").max(60, "Keep the name under 60 characters").optional(),
-    askingProperty: z.string().trim().min(1, "Pick one of your users' properties").max(64, "Properties are up to 64 characters").nullable().optional(),
+    name: z
+      .string()
+      .trim()
+      .min(2, "Give the project a name of 2 characters or more")
+      .max(60, "Keep the name under 60 characters")
+      .optional()
+      .describe("Rename the project: the name its portal, emails and the app show (its address stays the same); 2 to 60 characters")
+      .meta({ examples: ["Acme"] }),
+    askingProperty: z
+      .string()
+      .trim()
+      .min(1, "Pick one of your users' properties")
+      .max(64, "Properties are up to 64 characters")
+      .nullable()
+      .optional()
+      .describe("Pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team; null: none")
+      .meta({ examples: ["mrr"] }),
     userColumns: z
       .array(z.string().trim().min(1, "Pick one of your users' properties").max(64, "Properties are up to 64 characters"))
       .max(10, "Pick up to 10 columns")
       .transform((names) => [...new Set(names)])
-      .optional(),
-    propertyFormats: propertyFormatsInput.optional(),
+      .optional()
+      .describe("The properties Users shows as columns, in order (up to 10)")
+      .meta({ examples: [["company", "plan", "mrr"]] }),
+    propertyFormats: propertyFormatsInput
+      .optional()
+      .describe("How the app shows each property, by name: a `label` of the team's own, and a `format` (text, number, money in a `currency`, or date). All of them at once, up to 100")
+      .meta({ examples: [{ mrr: { label: "MRR", format: "money", currency: "USD" } }] }),
     uses: z
       .array(z.enum(PROJECT_USE_KEYS))
       .transform((uses) => [...new Set(uses)])
-      .optional(),
+      .optional()
+      .describe("What the team will use: Home's Get set up follows it; none: every step")
+      .meta({ examples: [["feedback", "changelog"]] }),
   }),
+  output: z
+    .object({
+      ...projectFields,
+      askingProperty: z.string().nullable().describe("Who's asking: the property totalled over each post's voters; null: none").meta({ examples: ["mrr"] }),
+      userColumns: z.array(z.string()).describe("The properties Users shows as columns, in order").meta({ examples: [["company", "plan", "mrr"]] }),
+      propertyFormats: z
+        .record(
+          z.string(),
+          z.object({
+            label: z.string().optional().describe("The team's own name for it").meta({ examples: ["MRR"] }),
+            format: z.string().optional().describe("How it's shown: number, money or date (text without one)").meta({ examples: ["money"] }),
+            currency: z.string().optional().describe("A money property's currency").meta({ examples: ["USD"] }),
+          }),
+        )
+        .describe("How the app shows each property, by name")
+        .meta({ examples: [{ mrr: { label: "MRR", format: "money", currency: "USD" } }] }),
+    })
+    .describe("The project, as changed"),
   example: {
     name: "Acme",
     askingProperty: "mrr",

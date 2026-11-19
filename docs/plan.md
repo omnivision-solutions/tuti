@@ -995,7 +995,7 @@ Decided (2026-11-19):
 - [ ] B7. Inbox's.
 - [ ] B8. Autopilot's.
 - [ ] B9. Users'.
-- [ ] B10. Portal's, Project's and Billing's; the list of operations not yet rewritten goes.
+- [x] B10. Portal's, Project's and Billing's; the list of operations not yet rewritten goes. Done (2026-11-19): their 32 operations rewritten (portal, site, domain, redirects, branding, widget; project, imports, reports, AI models; plan, licence, usage, credits): summaries of one or two sentences, what they said about a field on that field, outputs with example values (named `PortalSettings`, `SiteAddress`, `CustomDomain`, `Redirect`, `Branding`, `WidgetSettings`, `PortalLink`, `UploadedImage`, `Import`, `AiRoleModel`, `AiGroupLevel`, `AiUsageMonth`, `AiFeatureUsage`, `CreditGrant`), and no word an agent read lost. The list itself goes once every area is in
 
 ## Later
 

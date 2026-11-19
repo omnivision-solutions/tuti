@@ -78,35 +78,87 @@ export async function aiModels(projectId: string, known?: Map<string, AiModelLis
   } as AiModels;
 }
 
+/** What each role's model and each group's level are, as aiModels.get and aiModels.update return them. */
+const roleModelOutput = z
+  .object({
+    model: z.string().nullable().describe("The model the project picked (`off`: skipped), or null for the server's default").meta({ examples: [null] }),
+    default: z.string().describe("The server's default model for the role").meta({ examples: ["anthropic/claude-sonnet-5.5"] }),
+    used: z.string().describe("The model its work runs on now").meta({ examples: ["anthropic/claude-sonnet-5.5"] }),
+  })
+  .meta({ id: "AiRoleModel", description: "The model an AI role uses" });
+const ROLE_LINES: Record<AiRole, string> = {
+  answers: "Answers to readers' questions in the help center and the widget",
+  escalations: "Passing a question the help center couldn't answer to the team",
+  support_draft: "The Inbox's drafted replies",
+  support_summary: "The Inbox's summaries of a conversation",
+  changelog: "Drafting and rewriting changelog entries",
+  code_changes_decide: "Autopilot deciding what a code change means for the docs, changelog and posts",
+  code_changes_check: "Autopilot checking its own work (`off` skips the checks)",
+  code_changes: "Autopilot writing, and Verify",
+};
+const groupLevelOutput = z
+  .object({
+    level: z.enum(AI_LEVELS).describe("The level saved").meta({ examples: ["balanced"] }),
+    used: z
+      .enum(AI_LEVELS)
+      .describe("The level its work runs on: balanced when the plan doesn't include the saved one or the server no longer offers it")
+      .meta({ examples: ["balanced"] }),
+    available: z.array(z.enum(AI_LEVELS)).describe("The levels this plan may pick on this server").meta({ examples: [["affordable", "balanced", "best"]] }),
+  })
+  .meta({ id: "AiGroupLevel", description: "A group of roles' level" });
+const aiModelsOutput = z
+  .object({
+    ...(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, roleModelOutput.describe(ROLE_LINES[role])])) as Record<AiRole, typeof roleModelOutput>),
+    levels: z
+      .object(Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, groupLevelOutput])) as Record<AiGroup, typeof groupLevelOutput>)
+      .describe("Each group's level (answers, support, changelog, code_changes), which its roles run on"),
+  })
+  .describe("Each AI role's model and each group's level");
+
 export const getAiModels = defineOperation({
   name: "aiModels.get",
   title: "Get the AI models",
-  summary:
-    "Get the model each AI role uses (answers, escalations, support_draft and support_summary: the Inbox's drafted replies and summaries, changelog, and Autopilot's three: code_changes_decide deciding, code_changes_check checking its own work, code_changes writing, and Verify): the one the project picked (null for the server's default), the default, and the one its work runs on (`used`). `levels` has each group's level (answers, support, changelog, code_changes): the one saved, the one `used` (balanced when the plan doesn't include the saved one or the server no longer offers it), and those `available`",
+  summary: "Get the model each AI role uses (Autopilot has three), and each group of roles' level.",
   method: "GET",
   path: "/ai-models",
   scope: "read",
   access: "admin",
   input: z.object({}),
+  output: aiModelsOutput,
   run: ({ projectId }) => aiModels(projectId),
 });
 
-const modelId = z.string().trim().max(200, "Model ids are under 200 characters").optional();
+const modelId = z
+  .string()
+  .trim()
+  .max(200, "Model ids are under 200 characters")
+  .optional()
+  .describe(
+    "A model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default; \"off\" skips Autopilot's checks (code_changes_check only: 400 for another role). Picking a model puts the role's group on the custom level, which needs a plan with it (402); \"off\" and \"\" work on every plan",
+  )
+  .meta({ examples: ["anthropic/claude-sonnet-5.5"] });
 
 export const updateAiModels = defineOperation({
   name: "aiModels.update",
   title: "Update the AI models",
   summary:
-    "Pick the model an AI role uses for this project: a model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default; \"off\" for code_changes_check skips Autopilot's checks. Autopilot's roles take only models with tool calls. The server may cap a model's price (AI_MODEL_MAX_PRICE). Roles left out keep theirs. Picking a model puts the role's group on the custom level, which needs a plan with it (402); \"off\" and \"\" work on every plan. `levels` sets a group's level (affordable, balanced, best or custom): 402 where the plan doesn't include it, 400 where the server doesn't offer it or its models cost more than the server allows",
+    "Pick the model an AI role uses for this project, or each group's level. Roles left out keep theirs. Autopilot's roles take only models with tool calls, and the server may cap a model's price (AI_MODEL_MAX_PRICE).",
   method: "PATCH",
   path: "/ai-models",
   scope: "write",
   access: "admin",
   errors: [402, 502],
   input: z.object({
-    ...(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, modelId])) as Record<AiRole, typeof modelId>),
-    levels: z.object(Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, z.enum(AI_LEVELS).optional()])) as Record<AiGroup, z.ZodOptional<z.ZodEnum<{ [L in AiLevel]: L }>>>).optional(),
+    ...(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, modelId.describe(`${ROLE_LINES[role]}. ${modelId.description}`)])) as Record<AiRole, typeof modelId>),
+    levels: z
+      .object(Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, z.enum(AI_LEVELS).optional()])) as Record<AiGroup, z.ZodOptional<z.ZodEnum<{ [L in AiLevel]: L }>>>)
+      .optional()
+      .describe(
+        "Sets a group's level (affordable, balanced, best or custom): 402 where the plan doesn't include it, 400 where the server doesn't offer it or its models cost more than the server allows",
+      )
+      .meta({ examples: [{ answers: "best" }] }),
   }),
+  output: aiModelsOutput,
   example: { answers: "anthropic/claude-sonnet-5.5", changelog: "" },
   run: async ({ projectId }, { levels: sent = {}, ...input }) => {
     const picked = Object.entries(input).filter((entry): entry is [AiRole, string] => entry[1] !== undefined);

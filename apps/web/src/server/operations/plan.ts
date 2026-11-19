@@ -46,13 +46,37 @@ const billingUrl = async (projectId: string) => new URL(`/app/${await projectSlu
 export const getPlan = defineOperation({
   name: "plan.get",
   title: "Get the plan",
-  summary:
-    "The project's plan, on a server that sells plans (`enabled`): its key (`plan`; the server's default plan without a paid one, the trial's plan during a free trial), its free trial (`trial`: when it ends, `endsAt`, and whether it has, `ended`; null without one or once a plan is bought), and for a paid plan how it's billed (`interval`: month or year), Stripe's `status` (`past_due` while a failed payment is retried), when its period ends (`periodEnd`: it renews then), if it's cancelled, when it ends (`endsAt`), and whether it has the add-on hiding \"Powered by tuti\" (`badge`; see plan.badge)",
+  summary: "The project's plan: which one, its free trial, and for a paid plan how it's billed with Stripe.",
   method: "GET",
   path: "/plan",
   scope: "read",
   access: "admin",
   input: z.object({}),
+  output: z
+    .object({
+      enabled: z.boolean().describe("Whether this server sells plans").meta({ examples: [true] }),
+      plan: z
+        .string()
+        .describe("The plan's key: the server's default plan without a paid one, the trial's plan during a free trial")
+        .meta({ examples: ["pro"] }),
+      trial: z
+        .object({
+          endsAt: z.string().describe("When the trial ends (ISO 8601)").meta({ examples: ["2026-12-03T09:00:00.000Z"] }),
+          ended: z.boolean().describe("Whether it has ended").meta({ examples: [false] }),
+        })
+        .nullable()
+        .describe("The free trial; null without one or once a plan is bought"),
+      interval: z.enum(["month", "year"]).nullable().describe("How a paid plan is billed; null without one").meta({ examples: ["month"] }),
+      status: z
+        .string()
+        .nullable()
+        .describe("Stripe's status of a paid plan (`past_due` while a failed payment is retried); null without one")
+        .meta({ examples: ["active"] }),
+      periodEnd: z.string().nullable().describe("When a paid plan's period ends (ISO 8601): it renews then").meta({ examples: ["2026-12-19T09:00:00.000Z"] }),
+      endsAt: z.string().nullable().describe("If the plan is cancelled, when it ends (ISO 8601)").meta({ examples: [null] }),
+      badge: z.boolean().describe('Whether it has the add-on hiding "Powered by tuti" (see plan.badge)').meta({ examples: [false] }),
+    })
+    .describe("The project's plan"),
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({
       where: { id: projectId },
@@ -78,13 +102,19 @@ export const subscribePlan = defineOperation({
   name: "plan.subscribe",
   title: "Subscribe to a plan",
   summary:
-    "Start a paid plan (`plan`: its key, one the server sells; billed each `month` or `year`): a Stripe Checkout page (`url`) to pay on; the plan starts once Stripe says it's paid. Refused (409) while the project has a plan (change it with plan.manage), and off (503) where plans aren't sold",
+    "Start a paid plan: a Stripe Checkout page to pay on; the plan starts once Stripe says it's paid. Refused (409) while the project has a plan (change it with plan.manage), and off (503) where plans aren't sold.",
   method: "POST",
   path: "/plan/subscribe",
   scope: "write",
   access: "admin",
   errors: [409, 502, 503],
-  input: z.object({ plan: z.string().min(1), interval: z.enum(["month", "year"]).default("month") }),
+  input: z.object({
+    plan: z.string().min(1).describe("The plan's key, one the server sells").meta({ examples: ["pro"] }),
+    interval: z.enum(["month", "year"]).default("month").describe("Billed each month or year (default month)").meta({ examples: ["month"] }),
+  }),
+  output: z
+    .object({ url: z.string().describe("The Stripe Checkout page to pay on").meta({ examples: ["https://checkout.stripe.com/c/pay/cs_test_a1b2c3"] }) })
+    .describe("The payment page"),
   example: { plan: "pro", interval: "month" },
   run: async ({ actor, projectId }, input) => {
     const price = planSalesEnabled() ? planPrice(input.plan, input.interval) : null;
@@ -128,13 +158,16 @@ export const managePlan = defineOperation({
   name: "plan.manage",
   title: "Open the billing portal",
   summary:
-    "Stripe's customer portal for the project (`url`): change or cancel its plan, update the card, and download invoices. Refused (409) for a project that has never had a plan",
+    "Stripe's customer portal for the project: change or cancel its plan, update the card, and download invoices. Refused (409) for a project that has never had a plan.",
   method: "POST",
   path: "/plan/manage",
   scope: "write",
   access: "admin",
   errors: [409, 502],
   input: z.object({}),
+  output: z
+    .object({ url: z.string().describe("Stripe's customer portal, for a short while").meta({ examples: ["https://billing.stripe.com/p/session/test_a1b2c3"] }) })
+    .describe("The customer portal"),
   run: async ({ projectId }) => {
     const [project, billing] = await Promise.all([
       prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { stripeCustomerId: true } }),
@@ -157,13 +190,33 @@ export const setBadgeAddOn = defineOperation({
   name: "plan.badge",
   title: "Set the badge add-on",
   summary:
-    'The add-on hiding "Powered by tuti" on the portal (on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. On a project whose plan comes from a plan license, it\'s a subscription of its own: `on` gives a Stripe Checkout page (`url`) to pay on, and it hides the badge once Stripe says it\'s paid; `on: false` cancels it; it ends with the license. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
+    'Add or remove the add-on hiding "Powered by tuti" on the portal, on a paid plan; it ends with the plan (or license). Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works.',
   method: "POST",
   path: "/plan/badge",
   scope: "write",
   access: "admin",
   errors: [402, 409, 502, 503],
-  input: z.object({ on: z.boolean() }),
+  input: z.object({
+    on: z
+      .boolean()
+      .describe(
+        "true adds it to the plan, charging what's left of the period at once, and hides the badge; false removes it (what's left of the period is credited to the next invoice) and shows the badge again. On a project whose plan comes from a plan license it's a subscription of its own: true gives a Stripe Checkout page to pay on, false cancels it",
+      )
+      .meta({ examples: [true] }),
+  }),
+  output: z
+    .object({
+      on: z
+        .boolean()
+        .describe("Whether the project has the add-on now (on the free plan there's nothing to remove: false). Still false while a Checkout page waits to be paid")
+        .meta({ examples: [true] }),
+      url: z
+        .string()
+        .optional()
+        .describe("For a project whose plan comes from a plan license: the Stripe Checkout page to pay on; it hides the badge once Stripe says it's paid")
+        .meta({ examples: ["https://checkout.stripe.com/c/pay/cs_test_a1b2c3"] }),
+    })
+    .describe("The add-on, now"),
   example: { on: true },
   run: async ({ actor, projectId }, { on }) => {
     const project = await prisma.project.findUniqueOrThrow({

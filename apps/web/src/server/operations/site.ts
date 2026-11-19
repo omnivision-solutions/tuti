@@ -53,16 +53,42 @@ export async function siteCheckToken(slug: string, path?: string): Promise<strin
   return mount && `tuti-site=${mount.verificationToken}`;
 }
 
+/** The portal on the team's site, as siteView makes it. */
+const siteOutput = z
+  .object({
+    url: z.string().describe("The portal's address on your site (e.g. https://example.com/portal)").meta({ examples: ["https://example.com/portal"] }),
+    status: z.enum(["pending", "verified"]).describe("verified once site.verify found your site forwards to Tuti; pending until then").meta({ examples: ["pending"] }),
+    verifiedAt: z.string().nullable().describe("When it was verified (ISO 8601), or null").meta({ examples: [null] }),
+    forward: z
+      .array(
+        z.object({
+          from: z.string().describe("The paths on your site").meta({ examples: ["/portal/*"] }),
+          to: z.string().describe("Where your site must forward them, paths and all").meta({ examples: ["https://acme.tuti.so/portal/*"] }),
+        }),
+      )
+      .describe("What your site must forward to the portal's Tuti address: everything under the path, and /_tuti (the portal's scripts and styles)"),
+    check: z
+      .object({
+        urls: z
+          .array(z.string())
+          .describe("What site.verify fetches through your site, one per rule in `forward`")
+          .meta({ examples: [["https://example.com/portal/.well-known/tuti-site", "https://example.com/_tuti/.well-known/tuti-site"]] }),
+        token: z.string().describe("What each must answer with: this project's token").meta({ examples: ["tuti-site=3f9a1c0e5b7d2a4c6e8f0a1b2c3d4e5f"] }),
+      })
+      .describe("The check Tuti makes"),
+  })
+  .meta({ id: "SiteAddress", description: "The portal under a path of your own site" });
+
 export const getSite = defineOperation({
   name: "site.get",
   title: "Get the site address",
-  summary:
-    "Get where the portal is on your own site (null if nowhere): its address (e.g. https://example.com/portal), whether it's verified, what your site must forward, and the check Tuti makes",
+  summary: "Get where the portal is on your own site, whether it's verified, what your site must forward, and the check Tuti makes.",
   method: "GET",
   path: "/site",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z.object({ site: siteOutput.nullable().describe("The portal on your site; null if nowhere") }).describe("The portal on your site"),
   run: async ({ projectId }) => ({ site: await siteMountView(projectId) }),
 });
 
@@ -70,13 +96,22 @@ export const setSite = defineOperation({
   name: "site.set",
   title: "Set a site address",
   summary:
-    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify. Where plans are sold, on a plan with a portal under a path of your site (402 otherwise; on a lower plan a path set before isn't served, and the portal is at its Tuti address)",
+    "Put the portal under a path of your own site, replacing any other (one per project), then make your site forward what `forward` says and run site.verify. Refused (409) while the portal has a custom domain (domain.set): remove that first.",
   method: "POST",
   path: "/site",
   scope: "write",
   access: "admin",
   errors: [402, 409],
-  input: z.object({ url: z.string().max(500) }),
+  input: z.object({
+    url: z
+      .string()
+      .max(500)
+      .describe(
+        "The address, e.g. https://example.com/portal. Where plans are sold, it needs a plan with a portal under a path of your site (402 otherwise; on a lower plan a path set before isn't served, and the portal is at its Tuti address)",
+      )
+      .meta({ examples: ["https://example.com/portal"] }),
+  }),
+  output: z.object({ site: siteOutput.describe("The portal on your site, pending until verified") }).describe("The portal on your site"),
   example: { url: "https://example.com/portal" },
   run: async ({ projectId }, input) => {
     await requirePlan(projectId, "sitePath");
@@ -111,13 +146,14 @@ export const verifySite = defineOperation({
   name: "site.verify",
   title: "Verify the site address",
   summary:
-    "Check that your site forwards the portal's path to Tuti (Tuti fetches <address>/.well-known/tuti-site through it and expects this project's token): once it does, the portal answers there and every link Tuti makes uses that address",
+    "Check that your site forwards the portal's path to Tuti (Tuti fetches <address>/.well-known/tuti-site through it and expects this project's token): once it does, the portal answers there and every link Tuti makes uses that address.",
   method: "POST",
   path: "/site/verify",
   scope: "write",
   access: "admin",
   errors: [404, 409, 502],
   input: z.object({}),
+  output: z.object({ site: siteOutput.describe("The portal on your site, verified") }).describe("The portal on your site"),
   run: async ({ projectId }) => {
     const mount = await prisma.siteMount.findUnique({ where: { projectId }, select: mountSelect });
     if (!mount) {
@@ -162,13 +198,14 @@ export const verifySite = defineOperation({
 export const removeSite = defineOperation({
   name: "site.remove",
   title: "Remove the site address",
-  summary: "Stop putting the portal under your site's path: it answers at its own address again",
+  summary: "Stop putting the portal under your site's path: it answers at its own address again.",
   method: "DELETE",
   path: "/site",
   scope: "write",
   access: "admin",
   errors: [404],
   input: z.object({}),
+  output: z.object({ removed: z.string().describe("The address removed").meta({ examples: ["https://example.com/portal"] }) }).describe("The address removed"),
   run: async ({ projectId }) => {
     const mount = await prisma.siteMount.findUnique({ where: { projectId }, select: { origin: true, path: true } });
     if (!mount) {

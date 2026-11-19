@@ -10,13 +10,23 @@ import { defineOperation } from "./define";
 export const checkLicense = defineOperation({
   name: "license.check",
   title: "Check the licence",
-  summary:
-    "Check tuti.so for the project's licence now (bought at tuti.so/app/license): status licensed, not_licensed (none yet, or cancelled), in_use (on another installation), unreachable (tuti.so didn't answer; the current key stays) or busy (just checked), and licensedUntil",
+  summary: "Ask tuti.so about the project's licence now (bought at tuti.so/app/license), and keep it checked daily from then on.",
   method: "POST",
   path: "/license/check",
   scope: "write",
   access: "admin",
   input: z.object({}),
+  output: z
+    .object({
+      status: z
+        .enum(["licensed", "not_licensed", "in_use", "unreachable", "busy"])
+        .describe(
+          "What tuti.so said: licensed, not_licensed (none yet, or cancelled), in_use (on another installation), unreachable (tuti.so didn't answer; the current key stays) or busy (just checked)",
+        )
+        .meta({ examples: ["licensed"] }),
+      licensedUntil: z.string().nullable().describe("Until when the project is licensed (ISO 8601), or null without a licence").meta({ examples: ["2027-11-19T00:00:00.000Z"] }),
+    })
+    .describe("The check's answer"),
   run: async ({ projectId }) => {
     // From now on this project's licence is checked (daily, after portal pages) until it has one.
     await prisma.project.updateMany({ where: { id: projectId, licenseRequestedAt: null }, data: { licenseRequestedAt: new Date() } });

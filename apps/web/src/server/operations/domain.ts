@@ -80,16 +80,39 @@ async function releaseCustomHostname(cloudflareId: string | null) {
   }
 }
 
+/** A custom domain, as domainView makes it. */
+const domainOutput = z
+  .object({
+    hostname: z.string().describe("The domain").meta({ examples: ["help.example.com"] }),
+    status: z.enum(["pending", "verified"]).describe("verified once domain.verify found its TXT record; pending until then").meta({ examples: ["pending"] }),
+    verifiedAt: z.string().nullable().describe("When it was verified (ISO 8601), or null").meta({ examples: [null] }),
+    certificate: z
+      .enum(["pending", "active", "failed"])
+      .nullable()
+      .describe("Where Tuti gets certificates through Cloudflare, when HTTPS works there: pending until the CNAME points at Tuti, then active (or failed); null otherwise")
+      .meta({ examples: [null] }),
+    records: z
+      .array(
+        z.object({
+          type: z.enum(["CNAME", "TXT"]).describe("The record's type").meta({ examples: ["CNAME"] }),
+          name: z.string().describe("Its name").meta({ examples: ["help.example.com"] }),
+          value: z.string().describe("Its value").meta({ examples: ["portals.tuti.example"] }),
+        }),
+      )
+      .describe("The DNS records to add: a CNAME pointing it at Tuti, and a TXT record that proves it's yours"),
+  })
+  .meta({ id: "CustomDomain", description: "The portal's own domain" });
+
 export const getDomain = defineOperation({
   name: "domain.get",
   title: "Get the custom domain",
-  summary:
-    "Get the portal's custom domain (null if none): its hostname, whether it's verified, and the DNS records to add (a CNAME pointing it at Tuti, and a TXT record that proves it's yours)",
+  summary: "Get the portal's custom domain, whether it's verified, and the DNS records to add.",
   method: "GET",
   path: "/domain",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z.object({ domain: domainOutput.nullable().describe("The custom domain; null if none") }).describe("The portal's custom domain"),
   run: async ({ projectId }) => ({ domain: await customDomain(projectId) }),
 });
 
@@ -97,13 +120,22 @@ export const setDomain = defineOperation({
   name: "domain.set",
   title: "Set a custom domain",
   summary:
-    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is. Where plans are sold, on a plan with a custom domain (402 otherwise; on a lower plan a domain set before isn't served, and the portal is at its Tuti address)",
+    "Use your own domain for the portal and its docs, replacing any other (one per project): add the DNS records it returns, then domain.verify; until then the portal stays where it is. Refused (409) while the portal is under a path of your site (site.set): remove that first.",
   method: "POST",
   path: "/domain",
   scope: "write",
   access: "admin",
   errors: [402, 409],
-  input: z.object({ hostname: z.string().max(300) }),
+  input: z.object({
+    hostname: z
+      .string()
+      .max(300)
+      .describe(
+        "The domain, e.g. help.example.com. Where plans are sold, it needs a plan with a custom domain (402 otherwise; on a lower plan a domain set before isn't served, and the portal is at its Tuti address)",
+      )
+      .meta({ examples: ["help.example.com"] }),
+  }),
+  output: z.object({ domain: domainOutput.describe("The custom domain, pending until verified") }).describe("The portal's custom domain"),
   example: { hostname: "help.example.com" },
   run: async ({ actor, projectId }, input) => {
     if (!customDomainTarget()) {
@@ -151,13 +183,14 @@ export const verifyDomain = defineOperation({
   name: "domain.verify",
   title: "Verify the custom domain",
   summary:
-    "Check the custom domain's TXT record (see domain.get): once it's there, the domain is verified and the portal answers on it (where Tuti gets certificates through Cloudflare, `certificate` says when HTTPS works there: pending until the CNAME points at Tuti, then active). DNS changes can take a few minutes to show",
+    "Check the custom domain's TXT record (see domain.get): once it's there, the domain is verified and the portal answers on it (`certificate` says when HTTPS works there). DNS changes can take a few minutes to show.",
   method: "POST",
   path: "/domain/verify",
   scope: "write",
   access: "admin",
   errors: [404, 409, 502],
   input: z.object({}),
+  output: z.object({ domain: domainOutput.describe("The custom domain, verified") }).describe("The portal's custom domain"),
   run: async ({ projectId }) => {
     const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
     if (!domain) {
@@ -224,13 +257,14 @@ export const verifyDomain = defineOperation({
 export const removeDomain = defineOperation({
   name: "domain.remove",
   title: "Remove the custom domain",
-  summary: "Stop using the custom domain: the portal answers only at its Tuti address again",
+  summary: "Stop using the custom domain: the portal answers only at its Tuti address again.",
   method: "DELETE",
   path: "/domain",
   scope: "write",
   access: "admin",
   errors: [404],
   input: z.object({}),
+  output: z.object({ removed: z.string().describe("The domain removed").meta({ examples: ["help.example.com"] }) }).describe("The domain removed"),
   run: async ({ projectId }) => {
     const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: { hostname: true, cloudflareId: true } });
     if (!domain) {
