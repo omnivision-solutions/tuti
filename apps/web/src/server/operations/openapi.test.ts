@@ -29,14 +29,6 @@ const notRewrittenYet = new Set<OperationName>([
   // B4: Changelog
   // B5: Docs
   // B6: API references
-  "apiReferences.create",
-  "apiReferences.delete",
-  "apiReferences.get",
-  "apiReferences.list",
-  "apiReferences.replace",
-  "apiReferences.sync",
-  "apiReferences.update",
-  "githubRepositories.list",
   // B7: Inbox
   // B8: Autopilot
   "codeChangeActions.apply",

@@ -43,7 +43,13 @@ const sourceUrl = z.string().trim().min(1, "Enter the spec's address").max(2000,
 
 /** A file in a repository the project added on GitHub: GitHub's id for the repository, the file's path, and a branch. */
 // Stored as a 32-bit Int: a larger one is no repository's.
-const repoId = z.number().int().positive().max(2_147_483_647, "That isn't a repository's id");
+const repoId = z
+  .number()
+  .int()
+  .positive()
+  .max(2_147_483_647, "That isn't a repository's id")
+  .describe("GitHub's id for the repository, as githubRepositories.list gives it")
+  .meta({ examples: [123456789] });
 const repoPath = z
   .string()
   .trim()
@@ -54,7 +60,9 @@ const repoPath = z
       .min(1, "Enter the file's path in the repository")
       .max(1000, "Keep the path to 1,000 characters")
       .refine((path) => !repoPathRefusal(path), "Enter the file's path in the repository, like openapi.yaml"),
-  );
+  )
+  .describe("The file's path in the repository")
+  .meta({ examples: ["openapi.yaml"] });
 // What git allows in a branch's name, roughly: no spaces, control characters or ~^:?*[\ (GitHub answers the rest).
 const branch = z
   .string()
@@ -63,7 +71,9 @@ const branch = z
   .max(255, "Keep the branch to 255 characters")
   .regex(/^[^\s~^:?*[\\\x00-\x1f\x7f]+$/, "That isn't a branch's name")
   // Nor ".." (git refuses it), which would move the branch's lookup elsewhere on GitHub's API.
-  .refine((ref) => !ref.includes(".."), "That isn't a branch's name");
+  .refine((ref) => !ref.includes(".."), "That isn't a branch's name")
+  .describe("A branch; left out, the repository's default branch")
+  .meta({ examples: ["main"] });
 
 /** A file on GitHub, as adding a reference from one takes it (`ref` left out: the repository's default branch). */
 export const githubSource = z.object({ repoId, path: repoPath, ref: branch.optional() });
@@ -145,6 +155,74 @@ export async function countSpecFetch({ actor, projectId }: { actor: Actor; proje
 
 const counts = referenceCounts;
 
+/** The reference a path names. */
+const referenceSlug = slug.describe("The API reference's slug: its address in the docs").meta({ examples: ["public-api"] });
+
+/** An API reference as lists and changes return it (`summary`): everything but its spec and what it read into. */
+const reference = z.object({
+  slug: z
+    .string()
+    .describe("Its address in the docs (`/docs/<slug>`): from its name when it was added, and kept when it's renamed")
+    .meta({ examples: ["public-api"] }),
+  name: z.string().describe("Its name in the docs' tree").meta({ examples: ["Public API"] }),
+  tab: z.string().nullable().describe("Its tab's slug; null when the docs have no tabs").meta({ examples: ["developers"] }),
+  format: z.enum(["openapi", "graphql"]).describe("What the spec is: OpenAPI, or a GraphQL schema").meta({ examples: ["openapi"] }),
+  source: z
+    .enum(["upload", "url", "github"])
+    .describe(
+      "Where the spec is read from: text uploaded and replaced by hand (apiReferences.replace), an address (`sourceUrl`) or a file on GitHub (`repoId`, `path`, `ref`), read again every 6 hours and on apiReferences.sync",
+    )
+    .meta({ examples: ["url"] }),
+  sourceUrl: z
+    .string()
+    .nullable()
+    .describe("The address a `url` reference's spec is read from, as a URL parser writes it; null otherwise")
+    .meta({ examples: ["https://api.example.com/openapi.json"] }),
+  repoId: z
+    .number()
+    .int()
+    .nullable()
+    .describe("GitHub's id for a `github` reference's repository (githubRepositories.list); null otherwise")
+    .meta({ examples: [null] }),
+  path: z.string().nullable().describe("The file's path in that repository; null otherwise").meta({ examples: [null] }),
+  ref: z.string().nullable().describe("The branch the file is read on; null otherwise").meta({ examples: [null] }),
+  baseUrl: z
+    .string()
+    .nullable()
+    .describe("Where requests go when the spec's servers have no host; null when none is set")
+    .meta({ examples: ["https://api.example.com"] }),
+  treeStyle: z
+    .enum(TREE_STYLES)
+    .describe("How it sits in the docs' tree: each group a folder (`folders`) or a heading (`headings`), or one `entry` that lists the operations")
+    .meta({ examples: ["folders"] }),
+  tryIt: z.boolean().describe("Whether readers can send requests from its pages").meta({ examples: [true] }),
+  counts: z
+    .object({
+      operations: z.number().int().describe("How many operations the spec has").meta({ examples: [24] }),
+      onHelpCenter: z.number().int().describe("How many of them are on the help center").meta({ examples: [22] }),
+      new: z.number().int().describe("How many a read added since the team last looked").meta({ examples: [2] }),
+    })
+    .describe("Its operations, counted"),
+  published: z.boolean().describe("Whether it's on the help center: a draft is on it nowhere").meta({ examples: [true] }),
+  syncedAt: z.string().describe("When the spec was last read successfully").meta({ examples: ["2026-11-19T09:00:00.000Z"] }),
+  syncTriedAt: z.string().describe("When its source was last read, whether that worked or not").meta({ examples: ["2026-11-19T09:00:00.000Z"] }),
+  changedAt: z.string().describe("When a read last changed what the spec has").meta({ examples: ["2026-11-18T16:30:00.000Z"] }),
+  syncError: z
+    .string()
+    .nullable()
+    .describe("Why the last read failed, or found no operations, so the pages stayed as they were; null once one works")
+    .meta({ examples: [null] }),
+});
+
+/** What a new spec did (respec), by operations' keys. */
+const specChanges = z
+  .object({
+    added: z.number().int().describe("How many operations the new spec added").meta({ examples: [2] }),
+    removed: z.number().int().describe("How many it removed").meta({ examples: [0] }),
+    changed: z.boolean().describe("Whether anything at all changed: the pages are rebuilt only then").meta({ examples: [true] }),
+  })
+  .meta({ id: "SpecChanges", description: "What a new spec did to the reference's operations, by their keys" });
+
 /**
  * A URL source's address as it's kept: as a URL parser writes it ("https:Example.com/x" is "https://example.com/x"),
  * so the 6-hourly job's grouping by host, in SQL, sees the host its reads go to. An address that doesn't parse is
@@ -205,12 +283,17 @@ export const listApiReferences = defineOperation({
   name: "apiReferences.list",
   title: "List API references",
   summary:
-    "List the docs' API references in order (by tab, then their order in it): each one's slug, name, tab, format (`openapi` or `graphql`), where its spec is read from (`source`), how many operations it has, how many are on the help center and how many are new (`counts`), whether it's published, when it was last read (`syncedAt`) and last changed (`changedAt`), and why the last read failed (`syncError`)",
+    "List the docs' API references in order: by tab, then their order in it.",
   method: "GET",
   path: "/api-references",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z
+    .object({
+      apiReferences: z.array(reference.meta({ id: "ApiReference", description: "An API reference in the docs" })).describe("Every API reference, in order"),
+    })
+    .describe("The docs' API references"),
   run: async ({ projectId }) => ({
     apiReferences: (
       await prisma.apiReference.findMany({ where: { projectId }, orderBy: [{ tab: { order: "asc" } }, { order: "asc" }, { name: "asc" }], select: summarySelect })
@@ -222,12 +305,87 @@ export const getApiReference = defineOperation({
   name: "apiReferences.get",
   title: "Get an API reference",
   summary:
-    "Get an API reference as the team sees it: its groups in the team's order and its operations (each with whether it's on the help center, `onHelpCenter`, whether the team took it off itself, `hidden`: it's off too while a group it's in is, and whether a read added it since the team last looked, `new`), its types (one has a page only while an operation on the help center uses it), what the reader couldn't read (`warnings`, by kind: how many and the first 20 places), how it sits in the docs' tree (`treeStyle`), where requests go when the spec's servers have no host (`baseUrl`), and whether readers can send requests from its pages (`tryIt`). `spec=true` adds the spec's text",
+    "Get an API reference as the team sees it: its groups in the team's order, its operations and types, which of them are on the help center, and what the spec's reader couldn't read.",
   method: "GET",
   path: "/api-references/{slug}",
   scope: "read",
   access: "team",
-  input: z.object({ slug, spec: z.union([z.boolean(), z.stringbool()]).default(false) }),
+  input: z.object({
+    slug: referenceSlug,
+    spec: z
+      .union([z.boolean(), z.stringbool()])
+      .default(false)
+      .describe("`true` adds the spec's text (`spec`)")
+      .meta({ examples: [true] }),
+  }),
+  output: reference
+    .extend({
+      title: z.string().describe("The API's own name, from the spec; empty when it has none").meta({ examples: ["Acme API"] }),
+      version: z.string().nullable().describe("The API's version, from the spec").meta({ examples: ["1.0.0"] }),
+      description: z.string().describe("The API's description, from the spec, in Markdown").meta({ examples: ["The Acme REST API."] }),
+      groups: z
+        .array(
+          z.object({
+            key: z
+              .string()
+              .describe("What the team's order and choices go by: its name in the spec (an OpenAPI tag), or GraphQL's `queries`, `mutations` and `subscriptions`")
+              .meta({ examples: ["Posts"] }),
+            name: z.string().describe("Its name").meta({ examples: ["Posts"] }),
+            description: z.string().describe("What it's for, from the spec, in Markdown").meta({ examples: ["Everything about posts."] }),
+            onHelpCenter: z.boolean().describe("Whether the team left the group on the help center").meta({ examples: [true] }),
+          }),
+        )
+        .describe("Its groups, in the team's order"),
+      groupOrder: z.array(z.string()).describe("The groups' keys the team ordered, in that order; the others come after").meta({ examples: [["Posts"]] }),
+      operations: z
+        .array(
+          z.object({
+            key: z
+              .string()
+              .describe("What it's known by across reads, so the team's choices stay: its method and path with each parameter's name left out, or `mutation createPost`")
+              .meta({ examples: ["GET /posts/{}"] }),
+            slug: z.string().describe("Its page's address under the reference").meta({ examples: ["list-posts"] }),
+            title: z.string().describe("Its title on its page").meta({ examples: ["List posts"] }),
+            kind: z
+              .enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "query", "mutation", "subscription"])
+              .describe("Its method, or GraphQL's `query`, `mutation` or `subscription`")
+              .meta({ examples: ["GET"] }),
+            path: z.string().describe("OpenAPI: its path with its parameters. GraphQL: the field's name").meta({ examples: ["/posts/{number}"] }),
+            group: z.string().describe("The key of the group it's listed in").meta({ examples: ["Posts"] }),
+            alsoIn: z.array(z.string()).describe("The keys of the other groups it's in").meta({ examples: [[]] }),
+            deprecated: z.boolean().describe("Whether the spec marks it deprecated").meta({ examples: [false] }),
+            onHelpCenter: z
+              .boolean()
+              .describe("Whether it's on the help center: it's off when the team took it off itself (`hidden`), and while a group it's in is")
+              .meta({ examples: [true] }),
+            hidden: z.boolean().describe("Whether the team took it off the help center itself").meta({ examples: [false] }),
+            new: z.boolean().describe("Whether a read added it since the team last looked").meta({ examples: [false] }),
+          }),
+        )
+        .describe("Its operations, in the spec's order"),
+      types: z
+        .array(
+          z.object({
+            name: z.string().describe("Its name in the spec").meta({ examples: ["Post"] }),
+            slug: z.string().describe("Its page's address under the reference").meta({ examples: ["post"] }),
+            kind: z.enum(["object", "input", "enum", "scalar", "union", "interface"]).describe("What kind of type it is").meta({ examples: ["object"] }),
+            onHelpCenter: z.boolean().describe("Whether it has a page: only while an operation on the help center uses it").meta({ examples: [true] }),
+          }),
+        )
+        .describe("Its named types (OpenAPI's schemas, GraphQL's types)"),
+      warnings: z
+        .array(
+          z.object({
+            code: z.string().describe("The kind of problem").meta({ examples: ["UNKNOWN_REF"] }),
+            message: z.string().describe("The problem in a sentence").meta({ examples: ["A $ref names a schema the spec doesn't have"] }),
+            count: z.number().int().describe("How many places have it").meta({ examples: [1] }),
+            where: z.array(z.string()).describe("The first 20 places in the spec").meta({ examples: [["POST /posts › responses › 400"]] }),
+          }),
+        )
+        .describe("What the reader couldn't read, by kind: its pages are built without it"),
+      spec: z.string().optional().describe("The spec's text, with `spec=true`").meta({ examples: ["openapi: 3.1.0\n…"] }),
+    })
+    .describe("The API reference"),
   run: async ({ projectId }, input) => {
     const row = await prisma.apiReference.findUnique({
       where: { projectId_slug: { projectId, slug: input.slug } },
@@ -257,7 +415,6 @@ export const getApiReference = defineOperation({
     }
     return {
       ...summary(rest),
-      /** The API's own name, version and description, from the spec. */
       title: doc.title,
       version: doc.version,
       description: doc.description,
@@ -289,18 +446,33 @@ export const createApiReference = defineOperation({
   name: "apiReferences.create",
   title: "Create an API reference",
   summary:
-    "Add an API reference to the docs from a spec: its text (`spec`, 5 MB at most), the address it's at (`url`: https, a public address, 5 MB at most, read again every 6 hours and on apiReferences.sync; its relative servers are on the address that served it), or a file in a repository the project added on GitHub (`github`: GitHub's id for the repository, `repoId`, as githubRepositories.list gives it; the file's `path` in it; and a branch, `ref`, left out for the repository's default branch; 5 MB at most, read again when a pull request into the branch that changes the file merges, every 6 hours and on apiReferences.sync). Each is OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result. It goes in `tab` (left out, the first one, if the docs have tabs) after the others there, published, with a page per operation; its slug comes from the name, and no tab, collection or article has it. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (adding from a URL or GitHub, apiReferences.sync) are limited: 10 a minute per member (across their projects), 120 an hour per project (429)",
+    "Add an API reference to the docs, published, with a page per operation. A spec that can't be read or fetched, or has no operations, is refused with the reason. Fetches the team asks for (from a URL or GitHub, syncs) are limited: 10 a minute per member across projects, 120 an hour per project (429).",
   method: "POST",
   path: "/api-references",
   scope: "write",
   access: "team",
   errors: [429],
   input: z
-    .object({ name, spec: spec.optional(), url: sourceUrl.optional(), github: githubSource.optional(), tab: slug.optional() })
+    .object({
+      name: name.describe("Its name in the docs' tree; its slug comes from it, one no tab, collection or article has").meta({ examples: ["Public API"] }),
+      spec: spec
+        .describe("The spec's text, 5 MB at most: OpenAPI 3.0 or 3.1 in JSON or YAML, a GraphQL schema file, or a GraphQL endpoint's introspection result")
+        .optional(),
+      url: sourceUrl
+        .describe("The address the spec is at instead: https, a public address, 5 MB at most. Its relative servers are on the address that served it")
+        .meta({ examples: ["https://api.example.com/openapi.json"] })
+        .optional(),
+      github: githubSource
+        .describe("Adding from GitHub instead: a file in a repository the project added, 5 MB at most; also read again when a pull request into the branch that changes the file merges")
+        .optional(),
+      tab: slug.describe("The tab it goes in, last, by slug; left out, the first one, if the docs have tabs").meta({ examples: ["developers"] }).optional(),
+    })
     .refine(
       (input) => [input.spec, input.url, input.github].filter((given) => given !== undefined).length === 1,
       "Give one of the spec's text (spec), its address (url) or its file on GitHub (github)",
-    ),
+    )
+    .meta({ oneOf: [{ required: ["spec"] }, { required: ["url"] }, { required: ["github"] }] }),
+  output: reference.describe("The API reference added"),
   example: { name: "API reference", spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '1'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
   run: async (context, input) => {
     const { projectId } = context;
@@ -344,28 +516,44 @@ export const updateApiReference = defineOperation({
   name: "apiReferences.update",
   title: "Update an API reference",
   summary:
-    "Change an API reference: its `name` (its address stays), its address (`newSlug`: one no tab, collection, article or other reference has; 409 otherwise), its `tab` (it goes last there), whether it's `published`, how it sits in the docs' tree (`treeStyle`: each group a folder, `folders`; a heading, `headings`; or one `entry`), the groups' order (`groupOrder`: groups' keys, the ones left out after them), where requests go when the spec's servers have no host (`baseUrl`, an https address; null removes it), and whether readers can send requests from its pages (`tryIt`). `hide` and `show` take operations off and put them on the help center by their keys (\"GET /posts\"), `hideGroups` and `showGroups` whole groups by theirs; an operation is off when it's hidden or a group it's in is. `seen` says the team has looked: `true`, and nothing is new any more; or the keys of the operations it saw, and what a read added since is still new (a key it doesn't have is passed over). In the others, a key the reference doesn't have is refused",
+    "Change an API reference: the fields given, the rest kept. An operation is off the help center when it's hidden or a group it's in is. In `groupOrder`, `hide`, `show`, `hideGroups` and `showGroups`, a key the reference doesn't have is refused.",
   method: "PATCH",
   path: "/api-references/{slug}",
   scope: "write",
   access: "team",
   errors: [409],
   input: z.object({
-    slug,
-    name: name.optional(),
-    newSlug: customSlug.optional(),
-    tab: slug.optional(),
-    published: z.boolean().optional(),
-    treeStyle: z.enum(TREE_STYLES).optional(),
-    groupOrder: keys.optional(),
-    baseUrl: baseUrl.nullable().optional(),
-    tryIt: z.boolean().optional(),
-    hide: keys.optional(),
-    show: keys.optional(),
-    hideGroups: keys.optional(),
-    showGroups: keys.optional(),
-    seen: z.union([z.literal(true), keys]).optional(),
+    slug: referenceSlug,
+    name: name.describe("Its name in the docs' tree; its address stays").meta({ examples: ["Public API"] }).optional(),
+    newSlug: customSlug
+      .describe("A new address: lowercase letters, digits and hyphens, one no tab, collection, article or other reference has (409 otherwise)")
+      .meta({ examples: ["public-api-v2"] })
+      .optional(),
+    tab: slug.describe("The tab it moves to, by slug: it goes last there").meta({ examples: ["developers"] }).optional(),
+    published: z.boolean().describe("Whether it's on the help center").optional(),
+    treeStyle: z
+      .enum(TREE_STYLES)
+      .describe("How it sits in the docs' tree: each group a folder (`folders`) or a heading (`headings`), or one `entry` that lists the operations")
+      .optional(),
+    groupOrder: keys.describe("The groups' order, by their keys: the ones left out come after them").meta({ examples: [["Posts", "Comments"]] }).optional(),
+    baseUrl: baseUrl
+      .nullable()
+      .describe("Where requests go when the spec's servers have no host: an https address; null removes it")
+      .meta({ examples: ["https://api.example.com"] })
+      .optional(),
+    tryIt: z.boolean().describe("Whether readers can send requests from its pages").optional(),
+    hide: keys.describe("Operations to take off the help center, by their keys (`GET /posts/{}`)").meta({ examples: [["DELETE /posts/{}"]] }).optional(),
+    show: keys.describe("Operations to put back on the help center, by their keys").optional(),
+    hideGroups: keys.describe("Whole groups to take off the help center, by their keys (`hide` takes operations by theirs)").meta({ examples: [["Internal"]] }).optional(),
+    showGroups: keys.describe("Whole groups to put back on the help center, by their keys").optional(),
+    seen: z
+      .union([z.literal(true), keys])
+      .describe(
+        "Says the team has looked: `true`, and nothing is new any more; or the keys of the operations it saw, and what a read added since is still new (a key it doesn't have is passed over)",
+      )
+      .optional(),
   }),
+  output: reference.describe("The API reference as changed"),
   example: { hide: ["DELETE /posts/{}"], hideGroups: ["Internal"], treeStyle: "headings" },
   run: async ({ projectId }, input) => {
     const { id, ...updated } = await prisma.$transaction(async (tx) => {
@@ -447,13 +635,19 @@ export const replaceApiReference = defineOperation({
   name: "apiReferences.replace",
   title: "Replace a reference's spec",
   summary:
-    "Replace an uploaded API reference's spec with a new one (`spec`, as in apiReferences.create). The team's choices stay: an operation there before (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center while any operation the spec had before is off it. The answer says what the new spec did, by operations' keys (`changes`: how many it `added` and `removed`, and whether anything at all `changed`). A spec that can't be read, or has no operations, changes nothing and is refused with the reason",
+    "Replace an uploaded API reference's spec. The team's choices stay: an operation (by its key) and a type (by its name) keep their addresses, and what's hidden stays hidden. What the new spec adds is new until the team has looked, and starts off the help center while any earlier operation is off it.",
   method: "POST",
   path: "/api-references/{slug}/replace",
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ slug, spec }),
+  input: z.object({
+    slug: referenceSlug,
+    spec: spec.describe(
+      "The new spec's text, as in apiReferences.create. One that can't be read, or has no operations, changes nothing and is refused with the reason",
+    ),
+  }),
+  output: reference.extend({ changes: specChanges }).describe("The answer: the API reference with its new spec; `changes` says what the new spec did"),
   example: { spec: "openapi: 3.1.0\ninfo:\n  title: Acme\n  version: '2'\npaths:\n  /posts:\n    get:\n      summary: List posts\n" },
   run: async ({ projectId }, input) => {
     const next = read(input.spec);
@@ -485,13 +679,39 @@ export const syncApiReference = defineOperation({
   name: "apiReferences.sync",
   title: "Sync an API reference",
   summary:
-    "Read a URL's or a GitHub file's API reference again now, as the 6-hourly sync does, with the same rules as apiReferences.replace: the team's choices stay, and what's new is new until the team has looked. The answer says what it did (`changes`, as replace's). A read that fails, or finds no operations, keeps the pages as they were: `changes` is null and `failure` says why (and `syncError`, the reference's page too, until a sync works). A sync that another (the 6-hourly one, a second Sync now, a change of its source) overtook writes nothing, as that one's answer is newer: `changes` and `failure` are null. The rest of the answer is the reference as it is once this sync is done. With `url` (a URL's reference), or `github` (a GitHub file's: any of its `repoId`, `path` and `ref`, the rest kept), the reference is read from there from now on: it's read first, with apiReferences.create's checks, and one that can't be is refused (400) with the source left as it was; so is one overtaken by another change of the source, or by a sync (409). The address is kept as a URL parser writes it. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429)",
+    "Read a URL's or a GitHub file's API reference again now, as the 6-hourly sync does, with apiReferences.replace's rules: the team's choices stay. An uploaded reference is refused: replace its spec instead. Counted against the fetch limits apiReferences.create gives (429).",
   method: "POST",
   path: "/api-references/{slug}/sync",
   scope: "write",
   access: "team",
   errors: [409, 429],
-  input: z.object({ slug, url: sourceUrl.optional(), github: z.object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.optional() }).optional() }),
+  input: z.object({
+    slug: referenceSlug,
+    url: sourceUrl
+      .describe(
+        "A URL reference's new address, read from now on (kept as a URL parser writes it). It's read first, with apiReferences.create's checks: one that can't be is refused (400) with the source left as it was; so is one overtaken by another change of the source, or by a sync (409)",
+      )
+      .meta({ examples: ["https://api.example.com/openapi.json"] })
+      .optional(),
+    github: z
+      .object({ repoId: repoId.optional(), path: repoPath.optional(), ref: branch.meta({ description: "A branch; left out, the one it's read from now", examples: ["main"] }).optional() })
+      .describe("A GitHub file reference's new file: any of its `repoId`, `path` and `ref`, the rest kept. Read first, as `url` is")
+      .optional(),
+  }),
+  output: reference
+    .extend({
+      changes: specChanges
+        .nullable()
+        .describe(
+          "What this sync did, as replace's. Null when the read fails or finds no operations (`failure`), or when another sync (the 6-hourly one, a second Sync now, a change of its source) overtook this one: it writes nothing, as that one's answer is newer",
+        ),
+      failure: z
+        .string()
+        .nullable()
+        .describe("Why the read failed or found no operations: the reference keeps the pages as they were, and `syncError` (the reference's page too) says it until a sync works. Null otherwise")
+        .meta({ examples: [null] }),
+    })
+    .describe("The rest of the answer is the API reference as it is once this sync is done"),
   example: { url: "https://api.example.com/openapi.json" },
   run: async (context, input) => {
     const { projectId } = context;
@@ -572,7 +792,8 @@ export const deleteApiReference = defineOperation({
   path: "/api-references/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug: referenceSlug }),
+  output: z.object({ deleted: z.string().describe("The deleted reference's slug").meta({ examples: ["public-api"] }) }).describe("The API reference deleted"),
   run: async ({ projectId }, input) => {
     const { count } = await prisma.apiReference.deleteMany({ where: { projectId, slug: input.slug } });
     if (count === 0) {
