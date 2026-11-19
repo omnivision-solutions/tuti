@@ -388,6 +388,16 @@ describe("OpenAPI", () => {
       { required: ["eta"] },
       { required: ["visibility"] },
     ]);
+    // A short title in `summary`, the operation's whole text in `description` (and what key it needs).
+    expect(spec.paths["/project"].get).toMatchObject({
+      summary: "Get the project the key belongs to",
+      description: expect.stringMatching(/^Get the project the key belongs to, with its portal URL/),
+    });
+    expect(create.summary).toBe("Create a post");
+    expect(create.description).toMatch(/\n\nNeeds a read \+ write key\.$/);
+    for (const methods of Object.values(spec.paths as Record<string, Record<string, { summary: string }>>)) {
+      for (const op of Object.values(methods)) expect(op.summary.length).toBeLessThanOrEqual(101);
+    }
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
     ]);

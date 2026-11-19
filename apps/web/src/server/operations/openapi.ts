@@ -14,6 +14,23 @@ export function inputSchema(operation: (typeof operations)[number]): JsonSchema 
 /** Path parameters of an operation, e.g. ["number"] for /posts/{number}. */
 export const pathParams = (path: string) => [...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!);
 
+/**
+ * An operation's title: its summary's first clause ("Rename the project (the name its portal…)" → "Rename the project"),
+ * at most about 100 characters. OpenAPI's `summary` is a short title, and docs built from the spec (an API reference
+ * in a help center, Tuti's own included) make each endpoint's heading and address from it; the whole text goes in
+ * `description`.
+ */
+export function shortTitle(summary: string): string {
+  let title = summary;
+  for (const separator of [". ", ": ", "; ", " (", ", ", " — "]) {
+    const at = title.indexOf(separator);
+    if (at > 0) title = title.slice(0, at);
+  }
+  if (title.length <= 100) return title;
+  const cut = title.slice(0, 100);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 50 ? cut.lastIndexOf(" ") : 100)}…`;
+}
+
 /** The OpenAPI 3.1 description of the REST API, generated from the operations so it can't drift from them. */
 export function openApiSpec(serverUrl: string) {
   const paths: Record<string, Record<string, unknown>> = {};
@@ -50,11 +67,11 @@ export function openApiSpec(serverUrl: string) {
     paths[operation.path] ??= {};
     paths[operation.path]![operation.method.toLowerCase()] = {
       operationId: operation.name,
-      summary: operation.summary,
+      summary: shortTitle(operation.summary),
+      description: operation.scope === "write" ? `${operation.summary}\n\nNeeds a read + write key.` : operation.summary,
       tags: [operation.name.split(".")[0]],
       ...(parameters.length > 0 && { parameters }),
       ...(body && { requestBody: body }),
-      ...(operation.scope === "write" && { description: "Needs a read + write key." }),
       responses: {
         "200": { description: "OK", content: { "application/json": { schema: { type: "object" } } } },
         default: { $ref: "#/components/responses/Error" },
