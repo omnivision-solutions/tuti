@@ -8,7 +8,16 @@ import { postOrderBy } from "@/lib/post-filters";
 import { displayDoc } from "../content";
 import { portalAddress } from "../custom-domains";
 import { actorReader } from "../portal-access";
-import { actorPostViewer, canSeePost, type PostViewer, shownBoards, toApiVisibility, visiblePosts, visiblePostsSql } from "../post-visibility";
+import {
+  actorPostViewer,
+  canSeePost,
+  type PostViewer,
+  shownBoards,
+  toApiVisibility,
+  VISIBILITIES,
+  visiblePosts,
+  visiblePostsSql,
+} from "../post-visibility";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { linkSelect, linkView } from "./link-view";
 
@@ -26,15 +35,72 @@ export async function projectPortal(projectId: string) {
   return portalAddress(await projectSlug(projectId));
 }
 
+/** A post's number, as an operation's input takes it (from the path, or a field). */
+export const postNumber = z.coerce.number().int().positive();
+
+/** Who sees a post besides the team, as the API's outputs say it. */
+const visibilityOutput = z
+  .enum(VISIBILITIES)
+  .describe("Who sees it besides the team: everyone (public), its author (private), or nobody (team: Team only, or on a board turned off)")
+  .meta({ examples: ["public"] });
+
+/** A rich document (@tuti/content's format), as outputs give a post's or comment's text. */
+export const docOutput = z
+  .record(z.string(), z.unknown())
+  .describe("Its text as a rich document (Tuti's content format, as the editor writes it: paragraphs, lists, images…)")
+  .meta({ examples: [{ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "The dashboard is too bright at night." }] }] }] });
+
+const postTitle = z.string().describe("Its title").meta({ examples: ["Dark mode"] });
+const postNumberOutput = z.number().int().describe("Its number in the project, which the API names it by").meta({ examples: [42] });
+
+/** A post's fields as the API returns them (postSummary). */
+export const postShape = {
+  number: postNumberOutput,
+  title: postTitle,
+  status: z.enum(STATUSES).describe("Where it stands").meta({ examples: ["planned"] }),
+  board: z.string().describe("The slug of the board it's on").meta({ examples: ["feature-requests"] }),
+  votes: z.number().int().describe("How many vote for it (its author's own vote counts)").meta({ examples: [12] }),
+  comments: z.number().int().describe("How many comments it has, the team's internal notes left out").meta({ examples: [3] }),
+  author: z.object({ name: z.string().describe("Their name").meta({ examples: ["Sam"] }) }).describe("Who posted it"),
+  visibility: visibilityOutput,
+  createdAt: z.string().describe("When it was posted (ISO 8601)").meta({ examples: ["2026-11-03T09:24:00.000Z"] }),
+  url: z.string().describe("Its page on the project's portal").meta({ examples: ["https://acme.example.com/feedback/feature-requests/dark-mode-42"] }),
+};
+
+export const postOutput = z.object(postShape).meta({ id: "Post", description: "A post: an idea or problem on a board, that people vote and comment on" });
+
+/** A post named by its number and title (a possible duplicate's two). */
+export const postRef = z.object({ number: postNumberOutput, title: postTitle });
+
 export const listBoards = defineOperation({
   name: "boards.list",
   title: "List boards",
-  summary: "List the project's boards",
+  summary: "List the project's boards the caller may see, oldest first, with how many posts each has",
   method: "GET",
   path: "/boards",
   scope: "read",
   access: "anyone",
   input: z.object({}),
+  output: z
+    .object({
+      boards: z
+        .array(
+          z
+            .object({
+              slug: z.string().describe("How the API names it: a post's `board`").meta({ examples: ["feature-requests"] }),
+              name: z.string().describe("Its name on the portal").meta({ examples: ["Feature requests"] }),
+              posts: z.number().int().describe("How many posts on it the caller may see, merged duplicates left out").meta({ examples: [24] }),
+              postVisibility: z
+                .enum(VISIBILITIES)
+                .describe("Who sees a new post on it besides the team, unless the team says otherwise: everyone (public), its author (private), or nobody (team)")
+                .meta({ examples: ["public"] }),
+              off: z.boolean().describe("Turned off: the team's alone, off the portal (only the team and its keys see it)").meta({ examples: [false] }),
+            })
+            .meta({ id: "Board", description: "A board of posts" }),
+        )
+        .describe("The boards, oldest first: to the team (its keys, its members) every one, to others those on the portal"),
+    })
+    .describe("The project's boards"),
   run: async ({ actor, projectId }) => {
     // Those the caller sees, and the posts on them they see (post-visibility.ts).
     const viewer = await actorPostViewer(actor, projectId);
@@ -55,18 +121,24 @@ export const summary = postSummary;
 export const listPosts = defineOperation({
   name: "posts.list",
   title: "List posts",
-  summary: "List posts, most voted or newest first; merged duplicates are left out",
+  summary: "List the posts the caller may see, a page at a time, most voted or newest first; merged duplicates are left out",
   method: "GET",
   path: "/posts",
   scope: "read",
   access: "anyone",
   input: z.object({
-    board: z.string().optional(),
-    status: z.enum(STATUSES).optional(),
-    sort: z.enum(["top", "new"]).default("top"),
-    limit: z.coerce.number().int().min(1).max(100).default(25),
-    cursor: z.coerce.number().int().min(0).default(0),
+    board: z.string().optional().describe("Only the posts on this board, by its slug").meta({ examples: ["feature-requests"] }),
+    status: z.enum(STATUSES).optional().describe("Only the posts with this status").meta({ examples: ["planned"] }),
+    sort: z.enum(["top", "new"]).default("top").describe("`top`: most voted first (the default); `new`: newest first").meta({ examples: ["top"] }),
+    limit: z.coerce.number().int().min(1).max(100).default(25).describe("How many to return, 1 to 100 (25 by default)").meta({ examples: [10] }),
+    cursor: z.coerce.number().int().min(0).default(0).describe("Where the page starts: the previous page's `nextCursor`").meta({ examples: [25] }),
   }),
+  output: z
+    .object({
+      posts: z.array(postOutput).describe("The page's posts, in the order asked for"),
+      nextCursor: z.string().nullable().describe("Send it as `cursor` for the next page; null when there are no more").meta({ examples: ["25"] }),
+    })
+    .describe("A page of posts"),
   example: { status: "planned", sort: "top", limit: 10 },
   run: async ({ actor, projectId }, input) => {
     // ponytail: offset cursors; switch to keyset pagination if projects get very large.
@@ -91,8 +163,6 @@ export const listPosts = defineOperation({
     };
   },
 });
-
-export const postNumber = z.coerce.number().int().positive();
 
 export async function findPost(projectId: string, number: number) {
   const post = await prisma.post.findUnique({
@@ -129,13 +199,51 @@ export async function findVisiblePost(actor: Actor, projectId: string, number: n
 export const getPost = defineOperation({
   name: "posts.get",
   title: "Get a post",
-  summary:
-    "Get a post by its number, with its text and rich content and `eta`: the month the team expects it (the portal hides it once it has passed or the post is completed or closed); to the team, who looks after it (`owner`)",
+  summary: "Get a post by its number, with its text, its links and when the team expects it",
   method: "GET",
   path: "/posts/{number}",
   scope: "read",
   access: "anyone",
-  input: z.object({ number: postNumber }),
+  input: z.object({ number: postNumber.describe("The post's number").meta({ examples: [42] }) }),
+  output: z
+    .object({
+      ...postShape,
+      body: z.string().describe("Its text, as plain text").meta({ examples: ["The dashboard is too bright at night."] }),
+      content: docOutput,
+      mergedInto: z.number().int().nullable().describe("The number of the post it was merged into; null when it wasn't").meta({ examples: [null] }),
+      links: z
+        .array(
+          z.object({
+            id: z.string().describe("The link's id: links.remove takes it").meta({ examples: ["cm3k8x2qp0001ab12cd34ef56"] }),
+            kind: z.enum(["pull_request", "issue", "release"]).describe("What it links to on GitHub").meta({ examples: ["pull_request"] }),
+            repo: z.string().describe("The GitHub repository, as owner/name").meta({ examples: ["acme/app"] }),
+            number: z.number().int().nullable().describe("The pull request's or issue's number; null for a release").meta({ examples: [128] }),
+            tag: z.string().nullable().describe("The release's tag; null for a pull request or issue").meta({ examples: [null] }),
+            url: z.string().describe("Its page on GitHub").meta({ examples: ["https://github.com/acme/app/pull/128"] }),
+            title: z.string().nullable().describe("Its title on GitHub, when known").meta({ examples: ["Add a dark theme"] }),
+            codeChange: z
+              .string()
+              .nullable()
+              .describe("The code change whose applied action added it (codeChanges.get), if one did")
+              .meta({ examples: [null] }),
+          }),
+        )
+        .describe("The GitHub pull requests, issues and releases that work on or ship it, oldest first"),
+      eta: z
+        .string()
+        .nullable()
+        .describe("The month the team expects it, like 2026-12; null when not said. The portal hides it once it has passed or the post is completed or closed")
+        .meta({ examples: ["2026-12"] }),
+      owner: z
+        .object({
+          name: z.string().describe("Their name").meta({ examples: ["Olive Owner"] }),
+          email: z.string().describe("Their email").meta({ examples: ["olive@example.com"] }),
+        })
+        .nullable()
+        .optional()
+        .describe("Who on the team looks after it; null for nobody. Only the team (its keys, its members) gets it"),
+    })
+    .describe("The post"),
   run: async ({ actor, projectId }, { number }) => {
     const post = await findVisiblePost(actor, projectId, number);
     const [links, ofTeam] = await Promise.all([
@@ -156,16 +264,60 @@ export const getPost = defineOperation({
   },
 });
 
+/** A comment's fields that comments.create returns too. */
+export const commentShape = {
+  id: z.string().describe("The comment's id: comments.like and a reply's `replyTo` take it").meta({ examples: ["cm3k9a1bc0002ab12cd34ef56"] }),
+  author: z
+    .object({
+      name: z.string().describe("Their name").meta({ examples: ["Olive Owner"] }),
+      team: z.boolean().describe("Whether they wrote it as the team: a team member, not signed in as a portal reader").meta({ examples: [true] }),
+    })
+    .describe("Who wrote it"),
+  body: z.string().describe("Its text, as plain text").meta({ examples: ["Thanks! This is planned for next month."] }),
+  content: docOutput,
+  createdAt: z.string().describe("When it was written (ISO 8601)").meta({ examples: ["2026-11-04T14:02:00.000Z"] }),
+};
+
+const replyToOutput = z.string().nullable().describe("The id of the comment it replies to; null for one that replies to none").meta({ examples: [null] });
+const internalOutput = z
+  .literal(true)
+  .optional()
+  .describe("Only on an internal note, and `true`: only the team sees it, never on the portal, in emails or webhooks")
+  .meta({ examples: [true] });
+
 export const listComments = defineOperation({
   name: "comments.list",
   title: "List comments",
-  summary:
-    "List a post's comments, oldest first (`sort: \"newest\"`: newest first), each followed by its replies (`replyTo`: the comment's id), oldest first; with how many like each (`likes`) and whether the caller does (`liked`). To the team (an API key, a team member) with its internal notes (`internal: true`)",
+  summary: "List a post's comments, each followed by its replies; to the team (an API key, a team member), with its internal notes between them",
   method: "GET",
   path: "/posts/{number}/comments",
   scope: "read",
   access: "anyone",
-  input: z.object({ number: postNumber, sort: z.enum(COMMENT_SORTS).default("oldest") }),
+  input: z.object({
+    number: postNumber.describe("The post's number").meta({ examples: [42] }),
+    sort: z
+      .enum(COMMENT_SORTS)
+      .default("oldest")
+      .describe("Comments oldest first (the default) or newest first; each one's replies follow it, oldest first")
+      .meta({ examples: ["newest"] }),
+  }),
+  output: z
+    .object({
+      comments: z
+        .array(
+          z
+            .object({
+              ...commentShape,
+              replyTo: replyToOutput,
+              likes: z.number().int().describe("How many like it").meta({ examples: [2] }),
+              liked: z.boolean().describe("Whether the caller likes it (a key: its creator)").meta({ examples: [false] }),
+              internal: internalOutput,
+            })
+            .meta({ id: "Comment", description: "A comment on a post, or a reply to one, or the team's internal note" }),
+        )
+        .describe("The comments in order, each followed by its replies"),
+    })
+    .describe("The post's comments"),
   example: { sort: "newest" },
   run: async ({ actor, projectId }, { number, sort }) => {
     const post = await findVisiblePost(actor, projectId, number);
@@ -255,12 +407,20 @@ export async function roadmapColumns(projectId: string, viewer: PostViewer, { bo
 export const getRoadmap = defineOperation({
   name: "roadmap.get",
   title: "Get the roadmap",
-  summary: "The public roadmap: planned, in progress and completed posts",
+  summary:
+    "Get the public roadmap: the planned, in progress and completed posts the caller may see, up to 50 a column. Planned and in progress are most voted first; completed, most recently finished first",
   method: "GET",
   path: "/roadmap",
   scope: "read",
   access: "anyone",
   input: z.object({}),
+  output: z
+    .object({
+      planned: z.array(postOutput).describe("Planned posts, up to 50"),
+      inProgress: z.array(postOutput).describe("Posts in progress, up to 50"),
+      completed: z.array(postOutput).describe("Completed posts, up to 50"),
+    })
+    .describe("The roadmap's columns"),
   run: async ({ actor, projectId }) => {
     const [columns, portal] = await Promise.all([roadmapColumns(projectId, await actorPostViewer(actor, projectId)), projectPortal(projectId)]);
     return Object.fromEntries(ROADMAP.map(({ key }, i) => [key, columns[i]!.map((post) => summary(post, portal))])) as Record<

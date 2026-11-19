@@ -10,7 +10,7 @@ import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content
 import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
-import { findVisiblePost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
+import { commentShape, findVisiblePost, postNumber, postShape, postSummarySelect, projectPortal, summary } from "./read";
 import { onTeam, signedInAsReader } from "../session";
 
 /** A comment that isn't (or is no longer) on the post: replied to or liked. */
@@ -86,24 +86,40 @@ export async function saving<T>(save: () => Promise<T>): Promise<T> {
 
 export const MAX_POST_TITLE = 120;
 
+/** `content`'s fields, described for a post's or comment's operation. */
+const describedContent = {
+  body: content.body.describe("Its text, as plain text; ignored when `content` is sent").meta({ examples: ["The dashboard is too bright at night."] }),
+  content: content.content.describe("Its text as a rich document (Tuti's content format, as the editor writes it), instead of `body`"),
+};
+
+/** `author`, described for the operations that write as someone from your app. */
+export const describedAuthor = author
+  .describe(
+    "Someone from your app to write as, matched by their `id` there (created on first sight, with their `name` and `email`); without it, the key's creator. API keys only",
+  )
+  .meta({ examples: [{ id: "user-42", name: "Sam", email: "sam@example.com" }] });
+
 export const createPost = defineOperation({
   name: "posts.create",
   title: "Create a post",
-  summary:
-    "Create a post, as the key's creator or on behalf of someone from your app (`author`); who sees it (`visibility`: public, private for its author and the team, team for the team only) is its board's choice unless the team says",
+  summary: "Create a post, as the key's creator or on behalf of someone from your app (`author`), who votes for it",
   method: "POST",
   path: "/posts",
   scope: "write",
   access: "anyone",
   errors: [404, 409],
   input: z.object({
-    board: z.string().min(1),
-    title: z.string().trim().min(3, "Title is too short").max(MAX_POST_TITLE),
-    ...content,
-    author,
-    /** Who sees it besides the team; its board's choice when not sent. The team's only. */
-    visibility: z.enum(VISIBILITIES).optional(),
+    board: z.string().min(1).describe("The slug of the board to post on (boards.list)").meta({ examples: ["feature-requests"] }),
+    title: z.string().trim().min(3, "Title is too short").max(MAX_POST_TITLE).describe("Its title, 3 to 120 characters").meta({ examples: ["Dark mode"] }),
+    ...describedContent,
+    author: describedAuthor,
+    visibility: z
+      .enum(VISIBILITIES)
+      .optional()
+      .describe("Who sees it besides the team: public (everyone), private (its author and the team) or team (the team only). Its board's choice unless the team says; the team's only")
+      .meta({ examples: ["public"] }),
   }),
+  output: z.object(postShape).describe("The post created"),
   example: {
     board: "feature-requests",
     title: "Dark mode",
@@ -176,23 +192,48 @@ export const createComment = defineOperation({
   name: "comments.create",
   title: "Comment on a post",
   summary:
-    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`). `replyTo`: a comment's id, to reply to it (replies are one level deep: a reply to a reply goes under the comment it replies to)",
+    "Comment on a post or reply to a comment, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note. The team's reply can be emailed to the post's voters too",
   method: "POST",
   path: "/posts/{number}/comments",
   scope: "write",
   access: "anyone",
   errors: [409],
   input: z.object({
-    number: postNumber,
-    ...content,
-    author,
-    /** An internal note: only the team sees it (never on the portal, in emails or webhooks; over the API, only to the team). The team's only. */
-    internal: z.boolean().optional(),
-    /** The team's reply emailed to the post's voters too (those who may still read it and haven't unsubscribed). The team's only; not with a note. */
-    emailVoters: z.boolean().optional(),
-    /** The id of the post's comment it replies to (comments.list); a reply's id puts it under that reply's comment. Not with a note. */
-    replyTo: z.string().min(1).max(64).optional(),
+    number: postNumber.describe("The post's number").meta({ examples: [42] }),
+    ...describedContent,
+    author: describedAuthor,
+    internal: z
+      .boolean()
+      .optional()
+      .describe("`true`: an internal note. Only the team sees it, never on the portal, in emails or webhooks (over the API, only the team). The team's only")
+      .meta({ examples: [false] }),
+    emailVoters: z
+      .boolean()
+      .optional()
+      .describe("`true`: the reply is emailed to the post's voters too (those who may still read it and haven't unsubscribed). The team's only; not with a note")
+      .meta({ examples: [false] }),
+    replyTo: z
+      .string()
+      .min(1)
+      .max(64)
+      .optional()
+      .describe(
+        "The id of the post's comment it replies to (comments.list). Replies are one level deep: a reply to a reply goes under the comment it replies to. Not with a note",
+      )
+      .meta({ examples: ["cm3k9a1bc0002ab12cd34ef56"] }),
   }),
+  output: z
+    .object({
+      ...commentShape,
+      replyTo: z
+        .string()
+        .nullable()
+        .optional()
+        .describe("The id of the comment it went under; null for one that replies to none. Not on a note")
+        .meta({ examples: [null] }),
+      internal: z.literal(true).optional().describe("Only on an internal note, and `true`: only the team sees it").meta({ examples: [true] }),
+    })
+    .describe("The comment, or note, written"),
   example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
     const { projectId } = context;

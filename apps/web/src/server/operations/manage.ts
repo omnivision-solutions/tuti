@@ -5,7 +5,7 @@ import { z } from "zod";
 import { fromApiVisibility, VISIBILITIES } from "../post-visibility";
 import { lockSampleContent } from "../sample-content";
 import { defineOperation, OperationError } from "./define";
-import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
+import { findPost, fromApiStatus, postNumber, postShape, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
 
 /** Team actions on posts: status, board and merging duplicates. */
 
@@ -13,7 +13,7 @@ export const updatePost = defineOperation({
   name: "posts.update",
   title: "Update a post",
   summary:
-    "Change a post's status, move it to another board, say who sees it (`visibility`: public, private for its author and the team, team for the team only; its votes and comments go with it), or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said). `from` changes the status only while the post still has that one: changed since, nothing is written (409 `changed`)",
+    "Change a post's status, board, who sees it, who looks after it or when it's expected; send at least one. A new status goes on the post's activity and to webhooks, and may email its voters",
   method: "PATCH",
   path: "/posts/{number}",
   scope: "write",
@@ -21,18 +21,28 @@ export const updatePost = defineOperation({
   errors: [409],
   input: z
     .object({
-      number: postNumber,
-      status: z.enum(STATUSES).optional(),
-      from: z.enum(STATUSES).optional(),
-      board: z.string().optional(),
-      owner: z.email().nullable().optional(),
+      number: postNumber.describe("The post's number").meta({ examples: [42] }),
+      status: z.enum(STATUSES).optional().describe("Its new status").meta({ examples: ["planned"] }),
+      from: z
+        .enum(STATUSES)
+        .optional()
+        .describe("The status it has now: `from` changes the status only while the post still has this one. Changed since, nothing is written (409 `changed`)")
+        .meta({ examples: ["under_review"] }),
+      board: z.string().optional().describe("The slug of the board to move it to: another board").meta({ examples: ["feature-requests"] }),
+      owner: z.email().nullable().optional().describe("Who on the team looks after it: a team member's email; null for nobody").meta({ examples: ["olive@example.com"] }),
       eta: z
         .string()
         // A month this century, as 2026-12 (a year typed halfway, like 0002, isn't one).
         .regex(/^20\d{2}-(0[1-9]|1[0-2])$/, "Say the month as 2026-12")
         .nullable()
-        .optional(),
-      visibility: z.enum(VISIBILITIES).optional(),
+        .optional()
+        .describe("When it's expected: a month like 2026-12; null for not said")
+        .meta({ examples: ["2026-12"] }),
+      visibility: z
+        .enum(VISIBILITIES)
+        .optional()
+        .describe("Who sees it besides the team: public (everyone), private (its author and the team) or team (the team only); its votes and comments go with it")
+        .meta({ examples: ["public"] }),
     })
     .refine(
       (input) => [input.status, input.board, input.owner, input.eta, input.visibility].some((value) => value !== undefined),
@@ -40,6 +50,7 @@ export const updatePost = defineOperation({
     )
     // The same rule, for the OpenAPI spec (a refine doesn't show up in JSON Schema).
     .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }, { required: ["owner"] }, { required: ["eta"] }, { required: ["visibility"] }] }),
+  output: z.object(postShape).describe("The post as it is now"),
   example: { status: "planned" },
   run: async (context, input) => {
     const { actor, projectId } = context;
@@ -117,13 +128,23 @@ export const updatePost = defineOperation({
 export const mergePost = defineOperation({
   name: "posts.merge",
   title: "Merge a duplicate post",
-  summary: "Merge a duplicate into another post: votes and comments move over, and the duplicate leaves every list",
+  summary:
+    "Merge a duplicate into another post: votes, followers and comments move over, and the duplicate leaves every list (its page redirects to the other). There's no undo",
   method: "POST",
   path: "/posts/{number}/merge",
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ number: postNumber, into: z.number().int().positive() }),
+  input: z.object({
+    number: postNumber.describe("The duplicate's number").meta({ examples: [57] }),
+    into: z.number().int().positive().describe("The number of the post to merge it into; one merged itself takes it to the post that one ended up in").meta({ examples: [12] }),
+  }),
+  output: z
+    .object({
+      merged: z.number().int().describe("The duplicate's number").meta({ examples: [57] }),
+      into: z.number().int().describe("The number of the post it ended up in").meta({ examples: [12] }),
+    })
+    .describe("The merge"),
   example: { into: 12 },
   run: async ({ projectId }, input) => {
     const [post, target] = await Promise.all([findPost(projectId, input.number), findPost(projectId, input.into)]);

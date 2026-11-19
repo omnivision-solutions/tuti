@@ -5,9 +5,9 @@ import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
-import { author, authorId, noSuchComment, orNoSuchComment } from "./create";
+import { authorId, describedAuthor, noSuchComment, orNoSuchComment } from "./create";
 import { defineOperation, OperationError } from "./define";
-import { findVisiblePost, postNumber } from "./read";
+import { findVisiblePost, postNumber, postRef } from "./read";
 
 /** The project, its team, votes and duplicate suggestions. */
 
@@ -244,7 +244,18 @@ export const setVote = defineOperation({
   scope: "write",
   access: "anyone",
   errors: [409],
-  input: z.object({ number: postNumber, voted: z.boolean(), author }),
+  input: z.object({
+    number: postNumber.describe("The post's number").meta({ examples: [42] }),
+    voted: z.boolean().describe("`true` to vote for it, `false` to take the vote back").meta({ examples: [true] }),
+    author: describedAuthor,
+  }),
+  output: z
+    .object({
+      number: z.number().int().describe("The post's number").meta({ examples: [42] }),
+      voted: z.boolean().describe("Whether they vote for it now").meta({ examples: [true] }),
+      votes: z.number().int().describe("How many vote for it now").meta({ examples: [13] }),
+    })
+    .describe("The vote"),
   example: { voted: true, author: { id: "user-42" } },
   run: async (context, input) => {
     const post = await findVisiblePost(context.actor, context.projectId, input.number);
@@ -284,7 +295,19 @@ export const likeComment = defineOperation({
   scope: "write",
   access: "anyone",
   errors: [409],
-  input: z.object({ number: postNumber, id: z.string().min(1).max(64), liked: z.boolean(), author }),
+  input: z.object({
+    number: postNumber.describe("The post's number").meta({ examples: [42] }),
+    id: z.string().min(1).max(64).describe("The comment's id (comments.list)").meta({ examples: ["cm3k9a1bc0002ab12cd34ef56"] }),
+    liked: z.boolean().describe("`true` to like it, `false` to take the like back").meta({ examples: [true] }),
+    author: describedAuthor,
+  }),
+  output: z
+    .object({
+      id: z.string().describe("The comment's id").meta({ examples: ["cm3k9a1bc0002ab12cd34ef56"] }),
+      liked: z.boolean().describe("Whether they like it now").meta({ examples: [true] }),
+      likes: z.number().int().describe("How many like it now").meta({ examples: [3] }),
+    })
+    .describe("The like"),
   example: { liked: true, author: { id: "user-42" } },
   run: async (context, input) => {
     const post = await findVisiblePost(context.actor, context.projectId, input.number);
@@ -324,7 +347,20 @@ export const setSubscription = defineOperation({
   scope: "write",
   access: "anyone",
   errors: [409],
-  input: z.object({ number: postNumber, subscribed: z.boolean(), author }),
+  input: z.object({
+    number: postNumber.describe("The post's number").meta({ examples: [42] }),
+    subscribed: z
+      .boolean()
+      .describe("`true` to follow it, `false` to stop; a completed or closed post can't be followed (409 `finished`)")
+      .meta({ examples: [true] }),
+    author: describedAuthor,
+  }),
+  output: z
+    .object({
+      number: z.number().int().describe("The post's number").meta({ examples: [42] }),
+      subscribed: z.boolean().describe("Whether they follow it now").meta({ examples: [true] }),
+    })
+    .describe("Whether they follow the post"),
   example: { subscribed: true, author: { id: "user-42" } },
   run: async (context, input) => {
     const post = await findVisiblePost(context.actor, context.projectId, input.number);
@@ -353,12 +389,28 @@ export const setSubscription = defineOperation({
 export const listDuplicates = defineOperation({
   name: "duplicates.list",
   title: "List possible duplicates",
-  summary: "List possible duplicates waiting for the team: a newer post that may repeat an older one",
+  summary: "List possible duplicates waiting for the team, most alike first, up to 100: a newer post that may repeat an older one",
   method: "GET",
   path: "/duplicates",
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: z
+    .object({
+      duplicates: z
+        .array(
+          z
+            .object({
+              id: z.string().describe("The suggestion's id: duplicates.dismiss takes it").meta({ examples: ["cm3kb7de10003ab12cd34ef56"] }),
+              similarity: z.number().describe("How alike the two read, up to 1 (the same)").meta({ examples: [0.91] }),
+              post: postRef.describe("The newer post, which may repeat `original`"),
+              original: postRef.describe("The older post"),
+            })
+            .meta({ id: "PossibleDuplicate", description: "A newer post that may repeat an older one" }),
+        )
+        .describe("Up to 100, most alike first; merged posts left out"),
+    })
+    .describe("The possible duplicates"),
   run: async ({ projectId }) => {
     const suggestions = await prisma.duplicateSuggestion.findMany({
       where: { projectId, status: "PENDING", post: { duplicateOfId: null }, original: { duplicateOfId: null } },
@@ -383,7 +435,8 @@ export const dismissDuplicate = defineOperation({
   path: "/duplicates/{id}/dismiss",
   scope: "write",
   access: "team",
-  input: z.object({ id: z.string().min(1) }),
+  input: z.object({ id: z.string().min(1).describe("The suggestion's id (duplicates.list)").meta({ examples: ["cm3kb7de10003ab12cd34ef56"] }) }),
+  output: z.object({ dismissed: z.string().describe("The id of the suggestion dismissed").meta({ examples: ["cm3kb7de10003ab12cd34ef56"] }) }).describe("The suggestion dismissed"),
   run: async ({ projectId }, { id }) => {
     const { count } = await prisma.duplicateSuggestion.updateMany({ where: { id, projectId }, data: { status: "DISMISSED" } });
     if (count === 0) {
