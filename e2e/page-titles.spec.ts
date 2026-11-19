@@ -70,6 +70,7 @@ test("The app's tabs say the page and the project, its pages keep out of search,
 
   // An invite link: its tab says what it's for, like the page, while the card a shared link shows stays Tuti's.
   await owner.goto(`/app/${slug}/team`);
+  await owner.getByRole("button", { name: "Invite people" }).click();
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill("e2e-invitee@example.com");
   await owner.getByRole("button", { name: "Send invite" }).click();
   const link = await owner.getByRole("alert").locator("code").innerText();
@@ -78,6 +79,7 @@ test("The app's tabs say the page and the project, its pages keep out of search,
   expect(await meta(visitor, 'property="og:title"')).toBe("Tuti");
   expect(await meta(visitor, 'name="twitter:title"')).toBe("Tuti");
   // Revoked, it names no project.
+  await owner.keyboard.press("Escape");
   await owner.getByRole("button", { name: "Revoke" }).click();
   await expect(owner.getByText("Invite revoked")).toBeVisible();
   await visitor.reload();

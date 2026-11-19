@@ -684,6 +684,8 @@ Use these instead of hand-rolling layout:
   - A list is read first: a row shows values, changed on click (a badge that
     opens a menu, like `PostStatusMenu`), in a preview pane or in bulk; no
     form controls (selects, checkboxes for settings) in rows, on phones too.
+    Settings → Team & roles is the exception: a role is a dropdown on its row, for whoever may change it (a badge
+    for everyone else), saved as it's picked.
   - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
     width: `?post=<number>` in the address (shareable, Back works), the list
     left as it was, the open row highlighted out to its list's edges
@@ -826,7 +828,10 @@ widths, in light and dark (in development only).
     `Select`. No radios with a sentence each, no native `<select>`.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
-    is one muted line in the card, not an `EmptyState`.
+    is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
+    repeat the page's, and so no count: its "New" button is in the pane's header (`SettingsPane`'s `actions`).
+    What can't be done says why when it's tried, not in a line that's always there (Team & roles' "Leave project"
+    for the only owner).
   - An upload is its thumbnail and an Upload button on the row; what files it takes is said when one is refused.
   - A number carries its unit in the field ("25 people").
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its
@@ -884,8 +889,8 @@ widths, in light and dark (in development only).
 - Feedback for actions goes in a toast (`sonner`): short and in the past tense
   ("Merged into #12", "Status: Planned").
 - Disable buttons while their action runs.
-- A setting left empty offers the obvious pick in one click (Who's asking's
-  "Use Seats"); it isn't picked for the team.
+- A setting left empty offers the obvious pick first in its list, marked
+  "Suggested" (Who's asking's Seats); it isn't picked for the team.
 - Users' properties show in words until the team names them: the key in
   sentence case (`company_size` is Company size, `mrr` MRR), a number as a
   number unless its key says it's an id, a time, a year, a zip code or a

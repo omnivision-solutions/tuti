@@ -396,6 +396,7 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
     const other = `e2e-${randomUUID().slice(0, 8)}`;
     await createProject(inviter, name, other);
     await inviter.goto(`/app/${other}/team`);
+    await inviter.getByRole("button", { name: "Invite people" }).click();
     await inviter.getByRole("textbox", { name: "Email of the person to invite" }).fill(owner.email);
     await inviter.getByRole("button", { name: "Send invite" }).click();
     await expect(inviter.getByText(`Invite sent to ${owner.email}`)).toBeVisible();
