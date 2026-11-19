@@ -122,7 +122,7 @@ An error has a status and a JSON body: \`code\` for code to check, \`message\` f
 - 429: too many requests
 - 500: something went wrong on Tuti's side
 - 502: a service Tuti uses failed (e.g. the AI model)
-- 503: a feature isn't set up on this server
+- 503: a feature isn't set up on this server, or Tuti couldn't start the work just now (try again in a moment)
 
 ## Paging
 
@@ -130,7 +130,7 @@ Lists that page take \`limit\` and \`cursor\` and return \`nextCursor\`: send it
 
 ## Rate limits
 
-Up to ${API_RATE_LIMIT} requests a minute per key. Past that, requests get a 429 with a \`Retry-After\` header: the seconds until the next minute starts.`;
+Up to ${API_RATE_LIMIT} requests a minute per key. Past that, requests get a 429 with a \`Retry-After\` header: the seconds until the next minute starts. Some operations have limits of their own, per hour or per day (their description gives them); their 429 has no \`Retry-After\`.`;
 
 /** The OpenAPI 3.1 description of the REST API, generated from the operations so it can't drift from them. */
 export function openApiSpec(serverUrl: string) {
