@@ -147,6 +147,37 @@ test("An API reference's Settings: its name and address, base address, tree, gro
   // By now the moves' refreshes have come (Try it's came after them): each order showed once, in turn.
   expect(await team.evaluate(() => (window as unknown as { groupOrders: string[] }).groupOrders)).toEqual(["Posts, Comments, Admin", "Posts, Admin, Comments", "Admin, Posts, Comments"]);
 
+  // Two styles picked in a row, the first save held here and then lost: its failure puts back nothing of the second
+  // pick, which shows until its own save has answered.
+  let failFirst = () => {};
+  let releaseSecond = () => {};
+  const first = new Promise<void>((resolve) => (failFirst = resolve));
+  const second = new Promise<void>((resolve) => (releaseSecond = resolve));
+  let saves = 0;
+  const settingsPage = `**/docs/references/acme-api/settings`;
+  await team.route(settingsPage, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    if (saves++ === 0) {
+      await first;
+      return route.abort();
+    }
+    await second;
+    await route.continue();
+  });
+  const style = (name: string) => team.getByRole("radio", { name: new RegExp(`^${name}`) });
+  await style("Groups as folders").check();
+  await style("One entry").check();
+  failFirst();
+  await expect(team.getByText("Couldn't save that. Try again.")).toBeVisible();
+  await expect(style("One entry")).toBeChecked();
+  releaseSecond();
+  await expect(team.getByText("One entry saved")).toBeVisible();
+  await expect(style("One entry")).toBeChecked();
+  await team.unroute(settingsPage);
+  // Back to headings for the help center below.
+  await style("Groups as headings").check();
+  await expect(team.getByText("Groups as headings saved").last()).toBeVisible();
+
   // All kept.
   await team.reload();
   await expect(base).toHaveValue("https://api.acme.example");
