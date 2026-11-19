@@ -5,11 +5,11 @@ import { notFound } from "next/navigation";
 import { CopyValue } from "@/components/dns-setup";
 import { EmailDomainSettings } from "@/components/inbox/email-domain";
 import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
-import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 import { mailProvider } from "@/lib/mail-providers";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { mxHosts } from "@/server/custom-domains";
 import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
@@ -65,7 +65,7 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                   supportAddress={settings.email.address}
                   oneClick={oneClick}
                   receiver={receiver}
-                  planNotice={<PlanNotice feature="emailDomain" projectSlug={project.slug} admin />}
+                  upgrade={settings.email.ownDomain.included ? null : upgradePrompt("emailDomain", project.slug, true)}
                 />
               )}
             </>

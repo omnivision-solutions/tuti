@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLinkIcon } from "lucide-react";
-import { type ReactNode, Suspense, use, useActionState, useState, useTransition } from "react";
+import { Suspense, use, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CopyRows, type DnsStatus, DnsRecords, SetupStep, SetupSteps, SetupValue, WaitingNotice } from "@/components/dns-setup";
 import { OneClickDnsButton } from "@/components/one-click-dns";
+import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -26,6 +27,7 @@ import { timeAgo } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
 import { EMAIL_FORWARDING_DOCS, type MailProvider } from "@/lib/mail-providers";
 import type { OneClickDns } from "@/server/domain-connect";
+import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import type { FormState } from "@/server/form-state";
 import { checkEmailDomain, forgetEmailDomain, saveEmailDomain, sendEmailDomainTest } from "@/server/inbox";
 
@@ -73,7 +75,7 @@ export function EmailDomainSettings({
   supportAddress,
   oneClick,
   receiver,
-  planNotice,
+  upgrade,
 }: {
   projectSlug: string;
   own: OwnDomain;
@@ -82,12 +84,12 @@ export function EmailDomainSettings({
   oneClick?: Promise<OneClickDns | null> | null;
   /** Who receives the domain's email (lib/mail-providers.ts), while it isn't forwarded yet. */
   receiver?: Promise<Receiver> | null;
-  /** Shown in place of "Set up" where the project's plan doesn't include it. */
-  planNotice?: ReactNode;
+  /** Where the project's plan doesn't include it: what "Set up" says instead of starting (docs/design.md, Interaction). */
+  upgrade?: UpgradePrompt | null;
 }) {
   if (!own.address) {
     // Its own component: "Set up" starts closed again once an address is removed.
-    return <SetUp projectSlug={projectSlug} included={own.included} planNotice={planNotice} />;
+    return <SetUp projectSlug={projectSlug} supportAddress={supportAddress} upgrade={upgrade} />;
   }
   const sending = own.verified && own.included;
   // SES checks the 3 together. A failure isn't always theirs (SES may have lost the domain): it says
@@ -162,34 +164,43 @@ export function EmailDomainSettings({
   );
 }
 
-/** No address yet: the row with "Set up", which shows the steps (the address first) under it. */
-function SetUp({ projectSlug, included, planNotice }: { projectSlug: string; included: boolean; planNotice?: ReactNode }) {
+/**
+ * No address yet: the row with "Set up", which shows the steps (the address first) under it. On a plan without it the
+ * row looks the same, and "Set up" opens the upgrade prompt.
+ */
+function SetUp({ projectSlug, supportAddress, upgrade }: { projectSlug: string; supportAddress: string; upgrade?: UpgradePrompt | null }) {
   const [started, setStarted] = useState(false);
+  const open = started && !upgrade;
   return (
     <>
-      <SettingRow label={LABEL} description="Replies come from support@yourcompany.com." info={INFO} inline>
-        {included && (
-          <Button variant="outline" size="sm" aria-expanded={started} aria-controls="email-domain-setup" onClick={() => setStarted(!started)}>
-            {started ? "Cancel" : "Set up"}
-          </Button>
+      <SettingRow label={LABEL} description={`Replies come from ${supportAddress}.`} info={INFO} inline>
+        {upgrade && (
+          <span id="email-domain-plan" hidden>
+            {upgrade.title}
+          </span>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          {...(upgrade ? { "aria-describedby": "email-domain-plan", "aria-haspopup": "dialog" } : { "aria-expanded": open, "aria-controls": "email-domain-setup" })}
+          onClick={() => setStarted(!started)}
+        >
+          {open ? "Cancel" : "Set up"}
+        </Button>
+        {upgrade && <UpgradeDialog prompt={upgrade} open={started} onOpenChange={setStarted} />}
       </SettingRow>
-      {!included ? (
-        <SettingBlock>{planNotice}</SettingBlock>
-      ) : (
-        started && (
-          <SettingBlock>
-            <div id="email-domain-setup">
-              <SetupSteps>
-                <SetupStep title="Your address" state="current" description="Your company's address. Your users' replies to it still land in the Inbox.">
-                  <AddAddressForm projectSlug={projectSlug} />
-                </SetupStep>
-                <SetupStep title="Sending emails" state="upcoming" description="Replies to your users come from it once 3 DNS records are in." />
-                <SetupStep title="Receiving emails" state="upcoming" description="Forward it to your support address, so emails to it land in the Inbox." />
-              </SetupSteps>
-            </div>
-          </SettingBlock>
-        )
+      {open && (
+        <SettingBlock>
+          <div id="email-domain-setup">
+            <SetupSteps>
+              <SetupStep title="Your address" state="current" description="Your company's address. Your users' replies to it still land in the Inbox.">
+                <AddAddressForm projectSlug={projectSlug} />
+              </SetupStep>
+              <SetupStep title="Sending emails" state="upcoming" description="Replies to your users come from it once 3 DNS records are in." />
+              <SetupStep title="Receiving emails" state="upcoming" description="Forward it to your support address, so emails to it land in the Inbox." />
+            </SetupSteps>
+          </div>
+        </SettingBlock>
       )}
     </>
   );

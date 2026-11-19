@@ -1942,18 +1942,18 @@ test("with an address for the project, an email to it lands in the inbox without
   await expect(row("Support address")).toContainText("Your project gets one of its own, for good.");
   await owner.getByRole("button", { name: "Get a support address" }).click();
   const address = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
-  await expect(owner.getByText(address)).toBeVisible();
+  await expect(row("Support address").getByText(address)).toBeVisible();
   // Until an email comes the row says what the address is for, not that none came. Its own address is one row too.
   await expect(row("Support address")).toContainText("Forward your own address here.");
   await expect(owner.getByText("No email received yet")).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
-  await expect(row("Send from your own address")).toContainText("Replies come from support@yourcompany.com.");
+  await expect(row("Send from your own address")).toContainText(`Replies come from ${address}.`);
   await expect(owner.getByRole("button", { name: "Set up", exact: true })).toBeVisible();
   const desktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 1440, height: 900 });
   // On a wide screen the address is beside its label.
   const labelBox = async () => (await row("Support address").getByText("Support address", { exact: true }).boundingBox())!;
-  const addressBox = async () => (await owner.getByText(address).boundingBox())!;
+  const addressBox = async () => (await row("Support address").getByText(address).boundingBox())!;
   expect((await addressBox()).x).toBeGreaterThan((await labelBox()).x + (await labelBox()).width);
   await checkpoint(owner, "support-email-settings");
   // On a phone it goes under its label, and nothing is wider than the screen.
