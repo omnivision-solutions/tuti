@@ -127,6 +127,10 @@ test("a post's or article's review: every update on it from each pull request, t
   expect(review).toMatchObject({ type: "articles", title: "Change the theme", article: { title: "Change the theme" }, post: null });
   expect(review.pullRequests.map((pr) => pr.number)).toEqual([2, 1]);
   expect(review.changes.map((change) => change.summary)).toEqual(["What 2 changed", "What 1 changed"]);
+  // Each pull request with only what its chip and the API document, nothing of its stored analysis.
+  const shown = ["author", "id", "mergedAt", "number", "repo", "title", "url"];
+  expect(review.pullRequests.map((pr) => Object.keys(pr).sort())).toEqual([shown, shown]);
+  expect(review.changes.map((pr) => Object.keys(pr).sort())).toEqual([[...shown, "summary", "why"].sort(), [...shown, "summary", "why"].sort()]);
   expect(review.actions.map((action) => [action.id, action.codeChangeId, action.reviewPath]).sort()).toEqual(
     [
       [first.id, one.id, `articles/${read.id}`],

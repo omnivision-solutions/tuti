@@ -659,7 +659,16 @@ export async function toReviewCounts(projectIds: string[]): Promise<Map<string, 
 
 /** A pull request as its chip shows it. */
 const pullRequestSelect = { id: true, repo: true, number: true, url: true, title: true, author: true, mergedAt: true } satisfies Prisma.CodeChangeSelect;
-const pullRequestView = (pr: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }>) => ({ ...pr, mergedAt: pr.mergedAt.toISOString() });
+// Only these fields, whatever else the row was read with (codeChanges.target reads its analysis too).
+const pullRequestView = ({ id, repo, number, url, title, author, mergedAt }: Prisma.CodeChangeGetPayload<{ select: typeof pullRequestSelect }>) => ({
+  id,
+  repo,
+  number,
+  url,
+  title,
+  author,
+  mergedAt: mergedAt.toISOString(),
+});
 export type PullRequestView = ReturnType<typeof pullRequestView>;
 
 /** Each pull request once, the latest merged first (a Verify fix has none). */
@@ -1314,18 +1323,11 @@ const appliedOut = z
   })
   .describe("The action, applied");
 
-/** A pull request on codeChanges.target, with its analysis as stored. */
+/** A pull request on codeChanges.target's `changes`: what it changed for users, and why. */
 const reviewPullRequestOut = z.object({
   ...pullRequestOut.shape,
   summary: z.string().describe("What it changed for users").meta({ examples: ["Events can repeat weekly."] }),
   why: z.string().describe("Why Autopilot suggests its updates").meta({ examples: ["Two posts ask for this."] }),
-  // ponytail: the stored analysis fields as read (state in capitals, unlike codeChanges.get's); a later change can trim them.
-  state: z
-    .enum(["ANALYSING", "READY", "NOTHING_TO_DO", "FAILED", "PAUSED"])
-    .describe("Its analysis, as stored: codeChanges.get's `state` in capitals")
-    .meta({ examples: ["READY"] }),
-  reason: z.string().describe("Why there's nothing to do, where its analysis failed, or why it's paused; empty otherwise").meta({ examples: [""] }),
-  updatedAt: when("When its analysis last changed"),
 });
 
 /** codeChanges.target's result (targetReview). */
@@ -1393,7 +1395,7 @@ const targetReviewOut = z
     also: z.array(alsoOut).describe("What the pull requests behind its waiting updates update elsewhere that still waits"),
     post: postOut.nullable().describe("The post (feedback)"),
     article: actionFields.article.describe("The article (or null, for a new article's draft not written yet)"),
-    pullRequests: z.array(reviewPullRequestOut).describe("The pull requests behind its waiting updates (all of them, once none waits), the latest merged first"),
+    pullRequests: z.array(pullRequestOut).describe("The pull requests behind its waiting updates (all of them, once none waits), the latest merged first"),
     changes: z.array(reviewPullRequestOut).describe("Every pull request behind its updates: what it changed for users, and why Autopilot suggests them"),
     actions: z
       .array(
