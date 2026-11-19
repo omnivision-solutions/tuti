@@ -98,7 +98,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // ponytail: a Stripe plan's credits stay in the list; into This month too when its period is a month, if asked for.
   // The license's month while it runs (its own: a plan with no email limit has it too): over and the next not given
   // yet (the hourly job late), there's none to show.
-  const until = licensed && license?.creditsThrough && license.creditsThrough > new Date() ? license.creditsThrough : null;
+  const until = emails && licensed && license?.creditsThrough && license.creditsThrough > new Date() ? license.creditsThrough : null;
   const monthly =
     licensed && until && creditsEnabled()
       ? (

@@ -225,6 +225,12 @@ test("a license on a plan with no email limit still has its month: the AI credit
   expect(page).toMatch(meter("Emails", "0 sent"));
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
   expect(page).toContain(`>Resets ${formatShortDate(creditsThrough!)}</span>`);
+  // Where plans are off, there's no This month: the license's credits are in the list, with the rest.
+  vi.stubEnv("BILLING_CONFIG", "");
+  const without = await billing();
+  expect(without).not.toContain("This month");
+  expect(without).not.toContain("Extra AI credits");
+  expect(without).toContain(`>${monthly}</td>`);
 });
 
 test("the credits list says until when each lasts, day first and short, with the year when it isn't this one", async () => {
