@@ -201,7 +201,12 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               />
               {monthly.length > 0 && <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />}
             </div>
-            {monthly.length > 0 && owed >= 0.01 && <p className="text-sm text-muted-foreground">{credits(owed)} credits owed: new credits pay that first.</p>}
+            {/* The next AI request takes what's owed from the credits there (chargeCredits); with none over, AI is paused (aiPaused). */}
+            {monthly.length > 0 && owed >= 0.01 && (
+              <p className="text-sm text-muted-foreground">
+                {balance <= 0 ? `AI is paused: this project owes ${credits(owed)} credits.` : `${credits(owed)} credits owed: they come out of these first.`}
+              </p>
+            )}
           </SettingBlock>
         </SettingsCard>
       )}

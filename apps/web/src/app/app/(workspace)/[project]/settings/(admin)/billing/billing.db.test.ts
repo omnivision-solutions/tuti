@@ -185,7 +185,13 @@ test("on a license, This month has what's left of its month's emails and AI cred
   page = await billing();
   expect(page).toMatch(meter("AI credits", `0 of ${monthly} left`));
   expect(page).toContain(">Extra AI credits</h2>");
-  expect(page).toContain("700 credits owed: new credits pay that first.");
+  // More owed than is left (the trial's 500): AI is paused, and the page says so.
+  expect(page).toContain("AI is paused: this project owes 700 credits.");
+  // Less owed than is left: it comes out of what's shown at the next AI use.
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 100 } });
+  page = await billing();
+  expect(page).toContain("100 credits owed: they come out of these first.");
+  expect(page).not.toContain("AI is paused");
   // Its month over and the next not given yet (the hourly job late): the month's credits can't be spent, so they
   // aren't shown as left, nor as owed, and no day past is given as the reset.
   await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 0 } });
