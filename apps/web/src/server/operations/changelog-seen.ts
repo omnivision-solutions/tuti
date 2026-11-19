@@ -46,12 +46,22 @@ export const markChangelogSeen = defineOperation({
   name: "changelog.seen",
   title: "Mark entries seen",
   summary:
-    "Mark the announced changelog entries published up to `at` (default: now) as seen, as the key's creator or on behalf of someone from your app; it never moves back",
+    "Mark the announced changelog entries published up to a time as seen, as the key's creator or on behalf of someone from your app, on all their devices at once. It never moves back",
   method: "POST",
   path: "/changelog/seen",
   scope: "write",
   access: "anyone",
-  input: z.object({ at: z.iso.datetime({ offset: true }).optional(), author }),
+  input: z.object({
+    at: z.iso
+      .datetime({ offset: true })
+      .optional()
+      .describe("Up to when (default: now); a time still to come counts as now")
+      .meta({ examples: ["2026-10-20T09:00:00Z"] }),
+    author: author.describe("Who saw them: someone from your app, by their id there (created the first time); without it, the key's creator"),
+  }),
+  output: z
+    .object({ seenAt: z.string().describe("Up to when they've seen announcements now: the later of this and any time marked before").meta({ examples: ["2026-10-20T09:00:00.000Z"] }) })
+    .describe("How far they've seen"),
   example: { at: "2026-10-20T09:00:00Z", author: { id: "user-42" } },
   run: async (context, input) => {
     const userId = await authorId(context, input.author);

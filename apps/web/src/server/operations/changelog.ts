@@ -32,19 +32,96 @@ import { onTeam } from "../session";
 const TAGS = ["new", "improved", "fixed", "breaking"] as const;
 const toTag = (tag: (typeof TAGS)[number]) => tag.toUpperCase() as ChangelogTag;
 
-const entryNumber = z.coerce.number().int().positive();
+const doc = z.record(z.string(), z.unknown());
+const exampleDoc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Switch themes from your profile menu." }] }] };
+
+const entryNumber = z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] });
 const fields = {
-  title: z.string().trim().min(3, "Title is too short").max(120),
-  /** Plain text; ignored when `content` is sent. */
-  body: z.string().max(MAX_ENTRY_LENGTH).optional(),
-  /** Rich content (the editor's JSON, "changelog" profile). */
-  content: z.unknown().optional(),
-  tags: z.array(z.enum(TAGS)).max(TAGS.length),
-  /** The posts this entry completes, by number. */
-  posts: z.array(postNumber).max(50),
-  /** An image uploaded in the app shown above it (its id), or null for none. */
-  cover: z.string().trim().min(1).nullable().optional(),
+  title: z.string().trim().min(3, "Title is too short").max(120).describe("Its title, 3 to 120 characters").meta({ examples: ["Dark mode"] }),
+  body: z
+    .string()
+    .max(MAX_ENTRY_LENGTH)
+    .optional()
+    .describe("Its text, as plain text; ignored when `content` is sent")
+    .meta({ examples: ["Switch themes from your profile menu."] }),
+  content: z
+    .unknown()
+    .optional()
+    .describe("Its text as rich content: the editor's JSON (a `doc`, the changelog profile)")
+    .meta({ examples: [exampleDoc] }),
+  tags: z
+    .array(z.enum(TAGS))
+    .max(TAGS.length)
+    .describe("What kind of change it is: new, improved, fixed or breaking")
+    .meta({ examples: [["new"]] }),
+  posts: z.array(postNumber).max(50).describe("The posts it completes, by number: pick up to 50").meta({ examples: [[12]] }),
+  cover: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .optional()
+    .describe("Its featured image, also its link-preview image: an image upload's id (uploaded in the app); null for none, or to remove it")
+    .meta({ examples: ["cm3k9q2xv0001abcd1234efgh"] }),
 };
+
+
+const reactionsOutput = z
+  .object({
+    thumbs_up: z.number().int().describe("👍").meta({ examples: [4] }),
+    heart: z.number().int().describe("❤️").meta({ examples: [2] }),
+    tada: z.number().int().describe("🎉").meta({ examples: [1] }),
+  })
+  .meta({ id: "ChangelogReactions", description: "How many readers reacted with each: thumbs_up 👍, heart ❤️, tada 🎉" });
+
+const entryOutput = z
+  .object({
+    number: z.number().int().describe("The entry's number in the project").meta({ examples: [7] }),
+    title: z.string().describe("Its title").meta({ examples: ["Dark mode"] }),
+    status: z.enum(["published", "draft"]).describe("Published on the portal, or a draft only the team sees").meta({ examples: ["published"] }),
+    publishedAt: z
+      .string()
+      .nullable()
+      .describe("When it was published (an imported one: when the other tool published it); null for a draft")
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
+    announced: z.boolean().describe("Published with an announcement (shown as new in the widget), not quietly").meta({ examples: [true] }),
+    collecting: z.boolean().describe("The running draft: merged pull requests are being added to it").meta({ examples: [false] }),
+    tags: z.array(z.enum(TAGS)).describe("What kind of change it is").meta({ examples: [["new"]] }),
+    body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
+    content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
+    cover: z
+      .object({
+        id: z.string().describe("The upload's id").meta({ examples: ["cm3k9q2xv0001abcd1234efgh"] }),
+        url: z.string().describe("A lasting link to its smallest stored size").meta({ examples: ["https://media.example.com/images/cm3k9q2xv0001abcd1234efgh-480.webp"] }),
+        width: z.number().int().describe("Its width in pixels").meta({ examples: [1600] }),
+        height: z.number().int().describe("Its height in pixels").meta({ examples: [900] }),
+      })
+      .nullable()
+      .describe("Its featured image (cover), also its link-preview image; null for none"),
+    posts: z
+      .array(
+        z.object({
+          number: z.number().int().describe("The post's number").meta({ examples: [12] }),
+          title: z.string().describe("Its title").meta({ examples: ["Add a dark mode"] }),
+          url: z.string().describe("Its page on the portal").meta({ examples: ["https://feedback.example.com/feedback/ideas/add-a-dark-mode-12"] }),
+        }),
+      )
+      .describe("The posts it completes; off the team, only the public ones"),
+    pullRequests: z
+      .array(
+        z.object({
+          repo: z.string().describe("The repository, owner/name").meta({ examples: ["acme/app"] }),
+          number: z.number().int().describe("The pull request's number").meta({ examples: [418] }),
+          url: z.string().describe("Its page").meta({ examples: ["https://github.com/acme/app/pull/418"] }),
+          title: z.string().describe("Its title").meta({ examples: ["Add a dark theme"] }),
+        }),
+      )
+      .describe("Merged pull requests the running draft collected"),
+    reactions: reactionsOutput,
+    url: z.string().describe("Its page on the portal").meta({ examples: ["https://feedback.example.com/changelog/7"] }),
+    createdAt: z.string().describe("When it was written").meta({ examples: ["2026-11-01T14:30:00.000Z"] }),
+  })
+  .meta({ id: "ChangelogEntry", description: "An entry in the project's changelog" });
 
 const entrySelect = {
   id: true,
@@ -177,16 +254,26 @@ function keepsPublishedPosts(entry: { publishedAt: Date | null; posts: { post: {
 export const listChangelog = defineOperation({
   name: "changelog.list",
   title: "List changelog entries",
-  summary: "List changelog entries, newest first: published ones, or the team's drafts",
+  summary: "List changelog entries: published ones, newest first, or the team's drafts, the most recently changed first",
   method: "GET",
   path: "/changelog",
   scope: "read",
   access: "anyone",
   input: z.object({
-    status: z.enum(["published", "draft"]).default("published"),
-    limit: z.coerce.number().int().min(1).max(50).default(20),
-    cursor: z.coerce.number().int().min(0).default(0),
+    status: z
+      .enum(["published", "draft"])
+      .default("published")
+      .describe("Which ones: published (the default), or drafts, which only the team sees")
+      .meta({ examples: ["published"] }),
+    limit: z.coerce.number().int().min(1).max(50).default(20).describe("How many a page, 1 to 50 (default 20)").meta({ examples: [10] }),
+    cursor: z.coerce.number().int().min(0).default(0).describe("Where the page starts: the previous page's `nextCursor`").meta({ examples: [10] }),
   }),
+  output: z
+    .object({
+      entries: z.array(entryOutput).describe("A page of entries"),
+      nextCursor: z.string().nullable().describe("The `cursor` for the next page; null on the last one").meta({ examples: ["10"] }),
+    })
+    .describe("A page of changelog entries"),
   example: { status: "published", limit: 10 },
   run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
@@ -214,12 +301,13 @@ export const listChangelog = defineOperation({
 export const getChangelogEntry = defineOperation({
   name: "changelog.get",
   title: "Get a changelog entry",
-  summary: "Get a changelog entry by its number (drafts only for the team)",
+  summary: "Get a changelog entry by its number. Drafts only for the team: to anyone else a draft isn't there (404)",
   method: "GET",
   path: "/changelog/{number}",
   scope: "read",
   access: "anyone",
   input: z.object({ number: entryNumber }),
+  output: entryOutput.describe("The entry"),
   run: async ({ actor, projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     const [entry, team] = await Promise.all([findEntry(projectId, number), isTeam(actor, projectId)]);
@@ -235,13 +323,26 @@ export const reactToChangelogEntry = defineOperation({
   name: "changelog.react",
   title: "React to an entry",
   summary:
-    "React to a published changelog entry (thumbs_up 👍, heart ❤️ or tada 🎉) or take the reaction back, as the key's creator or on behalf of someone from your app",
+    "React to a published changelog entry or take the reaction back, as the key's creator or on behalf of someone from your app. One of each reaction a person; repeating one changes nothing. A draft takes none (409)",
   method: "POST",
   path: "/changelog/{number}/reactions",
   scope: "write",
   access: "anyone",
   errors: [409],
-  input: z.object({ number: entryNumber, reaction: z.enum(REACTIONS), reacted: z.boolean(), author }),
+  input: z.object({
+    number: entryNumber,
+    reaction: z.enum(REACTIONS).describe("Which: thumbs_up 👍, heart ❤️ or tada 🎉").meta({ examples: ["tada"] }),
+    reacted: z.boolean().describe("True to react, false to take the reaction back").meta({ examples: [true] }),
+    author: author.describe("Who reacts: someone from your app, by their id there (created the first time); without it, the key's creator"),
+  }),
+  output: z
+    .object({
+      number: z.number().int().describe("The entry's number").meta({ examples: [7] }),
+      reaction: z.enum(REACTIONS).describe("The reaction").meta({ examples: ["tada"] }),
+      reacted: z.boolean().describe("Whether they now react with it").meta({ examples: [true] }),
+      reactions: reactionsOutput,
+    })
+    .describe("The reaction and the entry's counts now"),
   example: { reaction: "tada", reacted: true, author: { id: "user-42" } },
   run: async (context, input) => {
     const { projectId } = context;
@@ -278,13 +379,14 @@ export const reactToChangelogEntry = defineOperation({
 export const createChangelogEntry = defineOperation({
   name: "changelog.create",
   title: "Create a changelog entry",
-  summary: "Write a changelog entry (a draft until it's published), pick the posts it completes and its featured image (cover: an upload's id; also its link-preview image)",
+  summary: "Write a changelog entry: a draft until it's published, with the posts it completes and its featured image",
   method: "POST",
   path: "/changelog",
   scope: "write",
   access: "team",
   errors: [409],
   input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]) }),
+  output: entryOutput.describe("The entry, a draft"),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
@@ -324,8 +426,7 @@ export const createChangelogEntry = defineOperation({
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
   title: "Update a changelog entry",
-  summary:
-    "Change a changelog entry: its title, text, tags, featured image (cover: an upload's id, null to remove; also its link-preview image) or the posts it completes (posts replace the list; only while it's a draft)",
+  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
   method: "PATCH",
   path: "/changelog/{number}",
   scope: "write",
@@ -337,11 +438,17 @@ export const updateChangelogEntry = defineOperation({
     body: fields.body,
     content: fields.content,
     tags: fields.tags.optional(),
-    posts: fields.posts.optional(),
+    posts: fields.posts
+      .optional()
+      .describe("The posts it completes, by number: they replace the list. Only while it's a draft (published, the same list or a 409)"),
     cover: fields.cover,
-    /** Save only if the entry hasn't changed since this (e.g. the `expectedUpdatedAt` changelog.rewrite returns). */
-    expectedUpdatedAt: z.iso.datetime().optional(),
+    expectedUpdatedAt: z.iso
+      .datetime()
+      .optional()
+      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the `expectedUpdatedAt` changelog.rewrite returns")
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
   }),
+  output: entryOutput.describe("The entry"),
   example: { tags: ["new", "improved"] },
   run: async ({ projectId }, input) => {
     const portal = await projectPortal(projectId);
@@ -399,13 +506,14 @@ export const draftChangelogEntry = defineOperation({
   name: "changelog.draft",
   title: "Draft an entry with AI",
   summary:
-    "Replace a draft entry's text with release notes the AI writes from its pull requests and the posts it completes (and name it, if it still has the running draft's title)",
+    "Replace a draft entry's text with release notes the AI writes from its pull requests, the public posts it completes and its text, and name it if it still has the running draft's title. A published entry is a 409",
   method: "POST",
   path: "/changelog/{number}/draft",
   scope: "write",
   access: "team",
   errors: [402, 409, 502, 503],
   input: z.object({ number: entryNumber }),
+  output: entryOutput.describe("The entry, with the AI's text"),
   run: async ({ projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     if (!aiEnabled()) {
@@ -460,8 +568,7 @@ export const AI_EDITS_PER_HOUR = 60;
 export const rewriteChangelogEntry = defineOperation({
   name: "changelog.rewrite",
   title: "Rewrite an entry with AI",
-  summary:
-    "Propose an AI edit of an entry's text, without saving it: `shorten` it, explain it for non-developers (`plain`), or rewrite a `section`; the whole text, or one section (`section`: its heading, or its number: 1 for the first heading, 0 for the text before it), with an optional `instruction`. To accept it, send `proposed.content` to changelog.update with `expectedUpdatedAt`",
+  summary: `Propose an AI edit of an entry's text, without saving it. To accept it, send \`proposed.content\` to changelog.update with \`expectedUpdatedAt\`. Up to ${AI_EDITS_PER_HOUR} AI edits an hour per project, its whole team together (then a 429)`,
   method: "POST",
   path: "/changelog/{number}/rewrite",
   scope: "write",
@@ -469,14 +576,47 @@ export const rewriteChangelogEntry = defineOperation({
   errors: [402, 429, 502, 503],
   input: z.object({
     number: entryNumber,
-    mode: z.enum(REWRITE_MODES),
-    section: z.union([z.number().int().min(0), z.string().trim().min(1).max(200)]).optional(),
+    mode: z
+      .enum(REWRITE_MODES)
+      .describe("The edit: `shorten` it, explain it for non-developers (`plain`), or rewrite a `section` so it reads better (needs `section`)")
+      .meta({ examples: ["shorten"] }),
+    section: z
+      .union([z.number().int().min(0), z.string().trim().min(1).max(200)])
+      .optional()
+      .describe("The one section to edit: its heading, or its number (1 for the first heading, 0 for the text before it); without it, the whole text")
+      .meta({ examples: ["Dark mode"] }),
     instruction: z
       .string()
       .trim()
       .max(MAX_INSTRUCTION_LENGTH, `Keep the instruction under ${MAX_INSTRUCTION_LENGTH} characters`)
-      .optional(),
+      .optional()
+      .describe(`Optional: what the AI should do too, under ${MAX_INSTRUCTION_LENGTH} characters`)
+      .meta({ examples: ["Mention it follows the system setting"] }),
   }),
+  output: z
+    .object({
+      number: z.number().int().describe("The entry's number").meta({ examples: [7] }),
+      mode: z.enum(REWRITE_MODES).describe("The edit").meta({ examples: ["shorten"] }),
+      section: z
+        .object({
+          index: z.number().int().describe("Its number: 1 for the first heading, 0 for the text before it").meta({ examples: [1] }),
+          heading: z.string().nullable().describe("Its heading; null for the text before the first one").meta({ examples: ["Dark mode"] }),
+        })
+        .nullable()
+        .describe("The section it edited; null for the whole text"),
+      body: z.string().describe("The entry's text now, as plain text").meta({ examples: ["Dark mode\nYou can now switch to a dark theme from your profile menu, any time of day."] }),
+      proposed: z
+        .object({
+          content: doc.describe("The whole entry's text with the edit, as rich content: send it to changelog.update to accept it").meta({ examples: [exampleDoc] }),
+          body: z.string().describe("The same, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
+        })
+        .describe("The whole entry's text with the edit, not saved"),
+      expectedUpdatedAt: z
+        .string()
+        .describe("Send it with the proposed content to changelog.update: saving it then only works if the entry hasn't changed since")
+        .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
+    })
+    .describe("The proposed edit"),
   example: { mode: "section", section: "Dark mode", instruction: "Mention it follows the system setting" },
   run: async ({ projectId }, input) => {
     const portal = await projectPortal(projectId);
@@ -587,6 +727,20 @@ async function changelogStyle(projectId: string) {
   return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)) };
 }
 
+const styleOutput = z
+  .object({
+    tone: z.string().describe("Notes on the tone to write in").meta({ examples: ["Friendly, short sentences, no jargon. Address the reader as you."] }),
+    examples: z
+      .array(
+        z.object({
+          number: z.number().int().describe("The entry's number").meta({ examples: [3] }),
+          title: z.string().describe("Its title").meta({ examples: ["Faster search"] }),
+        }),
+      )
+      .describe("Published entries to write like, in the order picked"),
+  })
+  .meta({ id: "ChangelogStyle", description: "The changelog's writing style: the tone notes and example entries AI drafts follow" });
+
 const styleView = ({ tone, examples }: Awaited<ReturnType<typeof changelogStyle>>) => ({
   tone,
   examples: examples.map(({ number, title }) => ({ number, title })),
@@ -601,21 +755,34 @@ export const getChangelogStyle = defineOperation({
   scope: "read",
   access: "team",
   input: z.object({}),
+  output: styleOutput.describe("The writing style"),
   run: async ({ projectId }) => styleView(await changelogStyle(projectId)),
 });
 
 export const updateChangelogStyle = defineOperation({
   name: "changelogStyle.update",
   title: "Update the writing style",
-  summary: `Set the changelog's writing style for AI drafts: tone notes, and up to ${MAX_STYLE_EXAMPLES} published entries (by number) as examples (replaces the list)`,
+  summary: "Set the changelog's writing style for AI drafts: tone notes and example entries. What's left out stays as it is",
   method: "PATCH",
   path: "/changelog-style",
   scope: "write",
   access: "admin",
   input: z.object({
-    tone: z.string().trim().max(MAX_TONE_LENGTH, "Keep the tone notes under 1,000 characters").optional(),
-    examples: z.array(entryNumber).max(MAX_STYLE_EXAMPLES, `Pick up to ${MAX_STYLE_EXAMPLES} examples`).optional(),
+    tone: z
+      .string()
+      .trim()
+      .max(MAX_TONE_LENGTH, "Keep the tone notes under 1,000 characters")
+      .optional()
+      .describe("Notes on the tone to write in, under 1,000 characters")
+      .meta({ examples: ["Friendly, short sentences, no jargon. Address the reader as you."] }),
+    examples: z
+      .array(entryNumber)
+      .max(MAX_STYLE_EXAMPLES, `Pick up to ${MAX_STYLE_EXAMPLES} examples`)
+      .optional()
+      .describe(`Up to ${MAX_STYLE_EXAMPLES} published entries to write like, by number: replaces the list`)
+      .meta({ examples: [[3]] }),
   }),
+  output: styleOutput.describe("The writing style now"),
   example: { tone: "Friendly, short sentences, no jargon. Address the reader as you.", examples: [3] },
   run: async ({ projectId }, input) => {
     let exampleIds: string[] | undefined;
@@ -646,12 +813,25 @@ export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   title: "Publish a changelog entry",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers (a public portal's), the first time it's published that way only. Sample entries (Home's sample content) are always published quietly, and never emailed; so is an entry imported as a draft though it was published in the other tool, the first time, and it keeps its date there",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ number: entryNumber, announce: z.boolean().default(true), emailSubscribers: z.boolean().default(false) }),
+  input: z.object({
+    number: entryNumber,
+    announce: z
+      .boolean()
+      .default(true)
+      .describe("Announced (the default), it shows as new in the widget; false publishes it quietly")
+      .meta({ examples: [true] }),
+    emailSubscribers: z
+      .boolean()
+      .default(false)
+      .describe("Email it to the changelog's confirmed subscribers (a public portal's): the first time it's published that way only")
+      .meta({ examples: [true] }),
+  }),
+  output: entryOutput.describe("The entry, published"),
   example: { announce: true, emailSubscribers: true },
   run: async ({ actor, projectId }, { number, announce, emailSubscribers }) => {
     const entry = await teamEntry(projectId, number);
@@ -755,12 +935,13 @@ export const publishChangelogEntry = defineOperation({
 export const unpublishChangelogEntry = defineOperation({
   name: "changelog.unpublish",
   title: "Unpublish a changelog entry",
-  summary: "Take a changelog entry off the portal (back to a draft); posts keep their status",
+  summary: "Take a changelog entry off the portal, back to a draft; the posts it completed keep their status",
   method: "POST",
   path: "/changelog/{number}/unpublish",
   scope: "write",
   access: "team",
   input: z.object({ number: entryNumber }),
+  output: entryOutput.describe("The entry, a draft again"),
   run: async ({ projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, number);
@@ -775,12 +956,13 @@ export const unpublishChangelogEntry = defineOperation({
 export const deleteChangelogEntry = defineOperation({
   name: "changelog.delete",
   title: "Delete a changelog entry",
-  summary: "Delete a changelog entry",
+  summary: "Delete a changelog entry, for good",
   method: "DELETE",
   path: "/changelog/{number}",
   scope: "write",
   access: "team",
   input: z.object({ number: entryNumber }),
+  output: z.object({ deleted: z.number().int().describe("The deleted entry's number").meta({ examples: [7] }) }).describe("What was deleted"),
   run: async ({ projectId }, { number }) => {
     const entry = await teamEntry(projectId, number);
     await prisma.changelogEntry.delete({ where: { id: entry.id } });
