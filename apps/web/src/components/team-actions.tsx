@@ -2,7 +2,7 @@
 
 import type { TeamRole } from "@tuti/db";
 import { MoreHorizontalIcon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -29,16 +29,19 @@ import { changeTeamRole, leaveProject, removeMember } from "@/server/team";
 /** A member's role on their row, for whoever may change it: the roles they may give, saved as one is picked. */
 export function MemberRoleSelect({ projectSlug, memberId, name, role, assignable }: { projectSlug: string; memberId: string; name: string; role: TeamRole; assignable: TeamRole[] }) {
   const [pending, startTransition] = useTransition();
+  // The role picked shows while it saves, and goes back to the saved one if that fails.
+  const [shown, setShown] = useOptimistic(role);
   return (
     <Select
       items={ROLE_LABELS}
-      value={role}
+      value={shown}
       // Not disabled while it saves: focus comes back to it once its list closes. A pick made meanwhile is ignored.
       onValueChange={(value) => {
-        if (value === role || pending) {
+        if (value === shown || pending) {
           return;
         }
         startTransition(async () => {
+          setShown(value as TeamRole);
           const result = await changeTeamRole(projectSlug, memberId, String(value));
           if (result.error) {
             toast.error(result.error);
@@ -55,7 +58,7 @@ export function MemberRoleSelect({ projectSlug, memberId, name, role, assignable
         });
       }}
     >
-      <SelectTrigger className="w-30" aria-label={`Role of ${name}`}>
+      <SelectTrigger className="w-30" aria-label={`Role of ${name}`} aria-busy={pending}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

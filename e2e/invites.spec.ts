@@ -30,6 +30,9 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(owner.getByText(`Verify your email to email invites: for now, send ${inviteeEmail} this link`)).toBeVisible();
   await expect(owner.getByRole("button", { name: "Copy link" })).toBeInViewport({ ratio: 1 });
   await checkpoint(owner, "team-invite-unverified", { fullPage: false });
+  // A click beside the dialog leaves it open: the link isn't shown again.
+  await owner.mouse.click(20, 400);
+  await expect(owner.getByRole("button", { name: "Copy link" })).toBeVisible();
   expect(countEmailsTo(inviteeEmail)).toBe(0);
 
   // Verified, the owner invites again (replacing that one); the pending invite shows who it's for.

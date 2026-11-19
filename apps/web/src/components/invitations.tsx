@@ -33,7 +33,8 @@ import { acceptInvitation, createInvitation, revokeInvitation, sendAllInvitation
  */
 export function InviteDialog({ projectSlug, roles, note }: { projectSlug: string; roles: TeamRole[]; note?: ReactNode }) {
   return (
-    <Dialog>
+    // A tap beside it doesn't close it: the link it shows after an invite isn't shown again.
+    <Dialog disablePointerDismissal>
       <DialogTrigger render={<Button id="invite-people" size="sm" />}>
         <PlusIcon />
         Invite people
