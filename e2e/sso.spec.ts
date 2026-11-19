@@ -283,6 +283,9 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(groups.getByRole("button", { name: "New group" })).toBeVisible();
   // The pane's body scrolls what's too wide for it, so it's the one to measure.
   expect(await groups.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const nameBox = (await groups.getByText("Enterprise customers", { exact: true }).boundingBox())!;
+  expect((await groups.getByText("groups is enterprise", { exact: true }).boundingBox())!.y).toBeGreaterThanOrEqual(nameBox.y + nameBox.height);
   await checkpoint(owner, "team-settings-groups-phone", { fullPage: false });
   await owner.setViewportSize(desktop);
   await groups.getByRole("button", { name: "Actions for Enterprise customers" }).click();
