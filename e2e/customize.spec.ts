@@ -4,7 +4,7 @@ import { expect, type Locator, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, png, signUp } from "./helpers";
 import { latestEmailTo, linkIn, verifyEmail } from "./mail";
 
 test("the team sets what readers can do with an article and the docs' home, seeing each change before saving it", async ({ browser }, testInfo) => {
@@ -139,22 +139,72 @@ test("the team sets what readers can do with an article and the docs' home, seei
 });
 
 test("the team sets the portal's search listing, seeing it as a search result and a shared link", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/settings/seo`);
   const result = owner.getByRole("figure", { name: "Search result preview" });
+  const shared = owner.getByRole("figure", { name: "Shared link preview" });
+  const settings = owner.locator('[data-slot="portal-settings"]');
   await expect(result).toContainText("Acme");
+  // One card of rows under the page's title: no headings of its own, and no line on what files the image takes.
+  await expect(settings.locator('[data-slot="setting-row"]')).toHaveCount(2);
+  await expect(settings.getByRole("heading")).toHaveCount(0);
+  await expect(settings.getByText(/PNG|drop an image|works best/)).toHaveCount(0);
+  // Without a page title the project's name is the title, so it's the field's placeholder.
+  await expect(owner.getByLabel("Page title")).toHaveAttribute("placeholder", "Acme");
+  await expect(owner.getByText("0/160")).toBeVisible();
   await owner.getByLabel("Page title").fill("Acme Help Center");
   await owner.getByLabel("Meta description").fill("Answers about Acme, from the team that makes it.");
   await expect(result).toContainText("Acme Help Center");
-  await expect(owner.getByRole("figure", { name: "Shared link preview" })).toContainText("Answers about Acme, from the team that makes it.");
+  await expect(shared).toContainText("Answers about Acme, from the team that makes it.");
   await expect(owner.getByText("48/160")).toBeVisible();
+  // The share image is a row: its size under the label, then its thumbnail and "Upload", named for the image.
+  const image = owner.getByLabel("Share image", { exact: true });
+  await expect(owner.getByRole("button", { name: "Upload share image" })).toHaveAccessibleDescription("1200×630");
+  await expect(shared).toContainText("No share image");
+  await image.setInputFiles({ name: "share.png", mimeType: "image/png", buffer: png(1200, 630) });
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  await expect(shared.locator("img")).toBeVisible();
+  // It can be taken away again (focus goes to "Upload", not out of the row), and put back.
+  await owner.getByRole("button", { name: "Remove share image" }).click();
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Upload share image" })).toBeFocused();
+  await expect(shared).toContainText("No share image");
+  await image.setInputFiles({ name: "share.png", mimeType: "image/png", buffer: png(1200, 630) });
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  await expect(shared.locator("img")).toBeVisible();
   await checkpoint(owner, "customize-seo");
+
+  // On a phone nothing runs off the side, and the image's buttons stay on its label's line.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await settings.evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
+  const label = (await settings.getByText("Share image", { exact: true }).boundingBox())!;
+  for (const name of ["Upload share image", "Remove share image"]) {
+    const button = (await owner.getByRole("button", { name }).boundingBox())!;
+    expect(button.x, name).toBeGreaterThan(label.x + label.width);
+    expect(button.y, name).toBeLessThan(label.y + label.height);
+    expect(button.x + button.width, name).toBeLessThanOrEqual(390);
+  }
+  // The title's field is under its label, at the card's width.
+  const title = (await owner.getByLabel("Page title").boundingBox())!;
+  expect(title.y).toBeGreaterThanOrEqual((await settings.getByText("Page title", { exact: true }).boundingBox())!.y + 16);
+  expect(title.width).toBeGreaterThan(300);
+  await checkpoint(owner, "customize-seo-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("SEO saved")).toBeVisible();
+  // Saved with the rest: still there when the page is opened again.
+  await owner.reload();
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  await expect(owner.getByLabel("Page title")).toHaveValue("Acme Help Center");
 
   // Its title follows each page's; pages without a description of their own (signing in) have the portal's.
   const visitor = await newPerson(browser, portalUrl(slug));
