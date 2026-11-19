@@ -5,7 +5,7 @@ import { log } from "@tuti/shared";
 
 import { type ApiKey, authenticate, refusal } from "@/server/api-auth";
 import { OperationError, operations, toolName } from "@/server/operations";
-import { errorsLine, inputSchema, outputSchema } from "@/server/operations/openapi";
+import { agentOutputSchema, errorsLine, inputSchema } from "@/server/operations/openapi";
 
 /**
  * The MCP server (Streamable HTTP, stateless): every operation is a tool, so AI
@@ -36,7 +36,7 @@ function mcpServer(actor: ApiKey) {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((operation) => {
-      const output = outputSchema(operation);
+      const output = agentOutputSchema(operation);
       return {
         name: toolName(operation),
         title: operation.title,

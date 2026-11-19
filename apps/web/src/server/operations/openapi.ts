@@ -21,7 +21,42 @@ export function outputSchema(operation: (typeof operations)[number]): JsonSchema
   if (!operation.output) return null;
   const schema = z.toJSONSchema(operation.output, { io: "output", unrepresentable: "any" }) as JsonSchema;
   delete schema.$schema;
-  return schema;
+  return open(schema) as JsonSchema;
+}
+
+/**
+ * A result may carry more than its output says (a field the next release added, kept in stored JSON), so no object is
+ * closed: zod's `additionalProperties: false` goes, everywhere.
+ */
+function open(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(open);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, field]) => !(key === "additionalProperties" && field === false))
+      .map(([key, field]) => [key, open(field)]),
+  );
+}
+
+/**
+ * MCP's `outputSchema`: clients check a tool's result against it, so a value its list doesn't have yet (a feature or a
+ * status the other release wrote, during a deploy) mustn't fail the call. Each `enum` becomes `examples`, which name the
+ * values without checking them; the spec keeps its enums for readers.
+ */
+export function agentOutputSchema(operation: (typeof operations)[number]): JsonSchema | null {
+  // `named`: a map of names to schemas (`properties`, `$defs`), where a field may be called "enum".
+  const loosen = (value: unknown, named = false): unknown => {
+    if (Array.isArray(value)) return value.map((item) => loosen(item));
+    if (value === null || typeof value !== "object") return value;
+    if (named) return Object.fromEntries(Object.entries(value).map(([key, field]) => [key, loosen(field)]));
+    const { enum: values, examples, ...rest } = value as Record<string, unknown>;
+    return {
+      ...Object.fromEntries(Object.entries(rest).map(([key, field]) => [key, loosen(field, key === "properties" || key === "$defs")])),
+      ...(Array.isArray(values) ? { examples: [...new Set([...((examples as unknown[]) ?? []), ...values])] } : examples !== undefined && { examples }),
+    };
+  };
+  const schema = outputSchema(operation);
+  return schema && (loosen(schema) as JsonSchema);
 }
 
 /** Each error status: its response's name in the spec, what it means, a short form for MCP, and an example body. */

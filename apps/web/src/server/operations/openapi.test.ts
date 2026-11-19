@@ -11,7 +11,7 @@ vi.hoisted(() => {
 });
 
 import { type OperationName, operations } from "./index";
-import { errorStatuses, errorsLine, inputSchema, openApiSpec, outputSchema, pathParams } from "./openapi";
+import { agentOutputSchema, errorStatuses, errorsLine, inputSchema, openApiSpec, outputSchema, pathParams } from "./openapi";
 
 /**
  * How the operations read in the API reference and MCP (docs/plan.md, "Tuti's API spec that reads well"): an operation
@@ -302,6 +302,18 @@ test("rules across fields reach the request body: anyOf and oneOf", () => {
   expect(body("/conversations", "post").oneOf).toEqual([{ required: ["user"] }, { required: ["email"] }]);
   // At least one change.
   expect(body("/conversations/{number}", "patch").anyOf).toEqual(expect.arrayContaining([{ required: ["status"] }]));
+});
+
+test("outputs stay open to what the other release writes: no closed objects, and MCP names values without checking them", () => {
+  const teamList = operations.find((operation) => operation.name === "team.list")!;
+  // A field a later release added, or a role it knows, still passes a client that checks the result.
+  expect(JSON.stringify(outputSchema(teamList))).not.toContain('"additionalProperties":false');
+  const member = (agentOutputSchema(teamList) as { properties: { team: { items: { $ref?: string } } }; $defs: Record<string, { properties: Record<string, Record<string, unknown>> }> });
+  const role = member.$defs.TeamMember!.properties.role!;
+  expect(role.enum).toBeUndefined();
+  expect(role.examples).toEqual(["owner", "admin", "member"]);
+  // Readers of the spec still see the list.
+  expect(JSON.stringify(openApiSpec("https://tuti.example.com/api/v1").components)).toContain('"enum":["owner","admin","member"]');
 });
 
 test("every example request is one the operation takes", () => {
