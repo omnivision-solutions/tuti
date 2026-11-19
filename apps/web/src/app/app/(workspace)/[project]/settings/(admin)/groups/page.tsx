@@ -4,8 +4,8 @@ import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { PlanNotice } from "@/components/plan-notice";
-import { ReaderGroups } from "@/components/reader-groups";
-import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { NewGroupButton, ReaderGroups } from "@/components/reader-groups";
+import { SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { groupsWithReaders, propertyNames } from "@/server/operations/groups";
 
@@ -26,12 +26,8 @@ export default async function GroupsSettingsPage(props: PageProps<"/app/[project
   return (
     <SettingsPane
       title="Groups"
-      description={
-        <>
-          Your users, grouped by their properties: plan, support tier, the <code>groups</code> in your app&apos;s sign-in token… A tab, collection or
-          article in your docs can be for some groups only.
-        </>
-      }
+      description="Users grouped by their properties, to limit who reads which docs"
+      actions={<NewGroupButton projectSlug={project.slug} properties={properties} />}
     >
       {!planIncludes(plan, "privatePortal") && (
         <PlanNotice feature="privatePortal" projectSlug={project.slug} admin>
@@ -39,9 +35,7 @@ export default async function GroupsSettingsPage(props: PageProps<"/app/[project
         </PlanNotice>
       )}
       <SettingsCard>
-        <SettingBlock>
-          <ReaderGroups projectSlug={project.slug} groups={groups} properties={properties} />
-        </SettingBlock>
+        <ReaderGroups projectSlug={project.slug} groups={groups} properties={properties} />
       </SettingsCard>
     </SettingsPane>
   );

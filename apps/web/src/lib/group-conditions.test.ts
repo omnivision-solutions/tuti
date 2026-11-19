@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { CONDITION_CASES } from "./group-conditions.cases";
-import { conditionsMatch, type GroupCondition, groupConditions, inGroup, storedConditions, storedRule } from "./group-conditions";
+import { conditionsMatch, type GroupCondition, groupConditions, inGroup, ruleSummary, storedConditions, storedRule } from "./group-conditions";
 
 const is = (property: string, value: string): GroupCondition => ({ property, op: "is", value });
 const isNot = (property: string, value: string): GroupCondition => ({ property, op: "is_not", value });
@@ -54,4 +54,16 @@ test("stored conditions that don't read are none, which lets nobody in", () => {
   for (const bad of [null, {}, "plan", [{ property: "plan", op: "matches", value: "p" }], [{ property: "plan" }]]) {
     expect(storedConditions(bad)).toEqual([]);
   }
+});
+
+test("a rule in a line: each condition as it reads, lists with \"or\", joined by whether all or any must match", () => {
+  expect(ruleSummary(all(is("plan", "business")))).toBe("plan is business");
+  expect(ruleSummary(all({ property: "plan", op: "is_any_of", value: ["pro", "business"] }))).toBe("plan is pro or business");
+  expect(ruleSummary(all({ property: "plan", op: "is_none_of", value: ["free", "trial", "pro"] }, { property: "seats", op: "is_set" }))).toBe(
+    "plan is not free, trial or pro and seats is set",
+  );
+  expect(ruleSummary({ match: "any", conditions: [{ property: "email", op: "contains", value: "@acme.example" }, { property: "seats", op: "is_not_set" }] })).toBe(
+    "email contains @acme.example or seats is not set",
+  );
+  expect(ruleSummary(all())).toBe("");
 });

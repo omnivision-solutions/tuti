@@ -194,6 +194,7 @@ test("a private portal whose plan no longer has private portals keeps its sign-i
 });
 
 test("a collection for one reader group: people the app signs in with that group see it, everyone else doesn't", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -221,6 +222,16 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(groups).toContainText("No groups yet");
   await groups.getByRole("button", { name: "New group" }).click();
   const groupDialog = owner.getByRole("dialog");
+  // A try that's refused, then closed: opened again, the dialog is a fresh one, the error gone with what was typed.
+  await groupDialog.getByLabel("Name", { exact: true }).fill("   ");
+  await groupDialog.getByRole("button", { name: "Add group" }).click();
+  const refused = groupDialog.getByText(/Name is required|A group needs a condition/);
+  await expect(refused).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(groupDialog).toBeHidden();
+  await groups.getByRole("button", { name: "New group" }).click();
+  await expect(groupDialog.getByLabel("Name", { exact: true })).toHaveValue("");
+  await expect(refused).toBeHidden();
   await groupDialog.getByLabel("Name", { exact: true }).fill("Enterprise customers");
   const firstCondition = groupDialog.getByRole("group", { name: "Condition 1" });
   await firstCondition.getByLabel("Property").fill("groups");
@@ -229,9 +240,9 @@ test("a collection for one reader group: people the app signs in with that group
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  // How many are in it and what it's for; its conditions are in Edit.
+  // How many are in it, what it's for and its rule.
   await expect(groups).toContainText("0 users · On the Enterprise plan");
-  await expect(groups).not.toContainText("groups is enterprise");
+  await expect(groups).toContainText("groups is enterprise");
 
   // "Specific groups" on a new collection: the group, picked from the list.
   await owner.goto(`/app/${slug}/docs`);
@@ -277,7 +288,19 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(groups).toContainText("1 user · On the Enterprise plan");
   await groups.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-settings-groups", { fullPage: false });
-  await groups.getByRole("button", { name: "Delete Enterprise customers" }).click();
+  // On a phone the rule goes under the name, and nothing is wider than the screen.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(groups.getByRole("button", { name: "New group" })).toBeVisible();
+  // The pane's body scrolls what's too wide for it, so it's the one to measure.
+  expect(await groups.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const nameBox = (await groups.getByText("Enterprise customers", { exact: true }).boundingBox())!;
+  expect((await groups.getByText("groups is enterprise", { exact: true }).boundingBox())!.y).toBeGreaterThanOrEqual(nameBox.y + nameBox.height);
+  await checkpoint(owner, "team-settings-groups-phone", { fullPage: false });
+  await owner.setViewportSize(desktop);
+  await groups.getByRole("button", { name: "Actions for Enterprise customers" }).click();
+  await owner.getByRole("menuitem", { name: "Delete" }).click();
   await owner.getByRole("alertdialog", { name: "Delete Enterprise customers?" }).getByRole("button", { name: "Delete" }).click();
   await expect(owner.getByText("Used by Enterprise; remove it from them first")).toBeVisible();
   await checkpoint(owner, "team-settings-group-in-use", { fullPage: false });
@@ -556,6 +579,7 @@ test("a group from conditions: readers whose properties match read its collectio
   await dialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
   await expect(groups).toContainText("1 user");
+  await expect(groups).toContainText("plan is pro or enterprise");
   // Who they are is in Edit, not the list.
   await expect(groups).not.toContainText("Ada from Acme");
   await checkpoint(owner, "team-settings-groups-with-conditions", { fullPage: false });
@@ -575,7 +599,9 @@ test("a group from conditions: readers whose properties match read its collectio
   await expect(preview).toHaveText("2 matching users");
   await dialog.getByRole("button", { name: "Add group" }).click();
   await expect(groups).toContainText("2 users");
-  await groups.getByRole("button", { name: "Edit Pro or seatless" }).click();
+  await expect(groups).toContainText("plan is pro or seats is not set");
+  await groups.getByRole("button", { name: "Actions for Pro or seatless" }).click();
+  await owner.getByRole("menuitem", { name: "Edit" }).click();
   await expect(dialog.getByRole("combobox", { name: "Which must match" })).toContainText("Any can match");
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Group saved")).toBeVisible();
