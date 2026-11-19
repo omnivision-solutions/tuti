@@ -108,5 +108,6 @@ describe("specHtml", () => {
     // An element's name is a placeholder too unless the text closes it.
     expect(specHtml("Back to /callback?code=<code>, titled <title>.")).toBe("<p>Back to /callback?code=&lt;code&gt;, titled &lt;title&gt;.</p>\n");
     expect(specHtml("Run <code>make</code>.")).toBe("<p>Run <code>make</code>.</p>\n");
+    expect(specHtml("Wrap it in `<code>…</code>`, from /callback?code=<code>.")).toBe("<p>Wrap it in <code>&lt;code&gt;…&lt;/code&gt;</code>, from /callback?code=&lt;code&gt;.</p>\n");
   });
 });

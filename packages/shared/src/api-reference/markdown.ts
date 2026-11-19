@@ -183,13 +183,21 @@ const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "
 
 /** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`, `<code>`) kept as text. */
 export function specHtml(markdown: string): string {
-  const closed = new Set([...markdown.matchAll(/<\/([a-zA-Z][\w-]*)/g)].map((match) => match[1]!.toLowerCase()));
+  const closed = new Set<string>();
   const isHtml = (name: string) => UNCLOSED.has(name) || (ELEMENTS.has(name) && closed.has(name));
-  return new Marked({
+  const marked = new Marked({
     gfm: true,
     renderer: {
       // Raw HTML goes through as written, except a tag that isn't HTML: that's a placeholder, shown as its text.
       html: ({ text }) => text.replace(/<\/?([a-zA-Z][\w-]*)[^<>]*>/g, (tag, name: string) => (isHtml(name.toLowerCase()) ? tag : escapeHtml(tag))),
     },
-  }).parse(markdown, { async: false });
+  });
+  const tokens = marked.lexer(markdown);
+  // Closing tags in its raw HTML only: one in code (`</code>`) closes nothing.
+  marked.walkTokens(tokens, (token) => {
+    if (token.type === "html") {
+      for (const match of token.raw.matchAll(/<\/([a-zA-Z][\w-]*)/g)) closed.add(match[1]!.toLowerCase());
+    }
+  });
+  return marked.parser(tokens);
 }
