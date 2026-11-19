@@ -1269,7 +1269,7 @@ const targetOut = z
       .meta({ examples: [37] }),
     waiting: z.number().int().describe("Updates on it waiting for the team (not those going out by themselves)").meta({ examples: [1] }),
     stopped: z.string().nullable().describe("Who stopped one going out by itself (\"Stopped by Olive\"); null when nobody did").meta({ examples: [null] }),
-    scheduled: z.array(z.string()).describe("Updates going out by themselves (for publishNow and stop), by id").meta({ examples: [[]] }),
+    scheduled: z.array(z.string()).describe("Updates going out by themselves, by id: those from a pull request can be published now or stopped (codeChangeActions.publishNow, stop); a Verify run's fix can't (its `codeChangeId` in codeChanges.target is null)").meta({ examples: [[]] }),
     nextDueAt: z.string().nullable().describe("When the first of those goes").meta({ examples: [null] }),
     sure: z
       .object({
