@@ -815,7 +815,7 @@ widths, in light and dark (in development only).
   the control goes under them at the card's width; `inline` keeps a short control (a switch, a button) on the right.
   **Settings rows**, the rules every settings page follows:
   - A setting is one row. Under its label, at most one short line; a label that says it needs none. What takes longer
-    to explain goes in `info` (an ⓘ beside the label, opening on hover, focus or a tap) or behind a link ("See
+    to explain goes in `info` (an ⓘ beside the label, opening on hover or a press) or behind a link ("See
     details", "Show example"). No intro paragraphs, and no card title repeating the page's title or a field's label.
   - The page's description is one short line beside its title in the header (`SettingsPane`'s `description`; above
     the cards under 56rem, where the header has no room), or nothing. One given as elements (a link in it) stays above

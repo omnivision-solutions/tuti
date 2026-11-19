@@ -32,7 +32,7 @@ export function SettingsCard({
           <div className="flex min-w-0 flex-col">
             <h2 className="text-base font-semibold">
               {title}
-              {count !== undefined && <span className="ml-1.5 font-normal text-muted-foreground">{count}</span>}
+              {count !== undefined && <> <span className="font-normal text-muted-foreground">{count}</span></>}
             </h2>
             {description && <p className="text-sm text-muted-foreground">{description}</p>}
           </div>
@@ -46,7 +46,7 @@ export function SettingsCard({
 
 /**
  * One setting: its label and at most one short line on what it does on the left, its control on the right. What takes
- * longer to say goes in `info`, behind an ⓘ beside the label (on hover, focus or a tap). In a card under 34rem wide
+ * longer to say goes in `info`, behind an ⓘ beside the label (on hover or a press). In a card under 34rem wide
  * (phones) the control goes under them at the card's width, so the line isn't squeezed a word a row; `inline` keeps a
  * short control (a switch, a button) on the right there too. `htmlFor`: the control's id, labelled by the label; the
  * description is `<htmlFor>-description`, for the control's `aria-describedby`.

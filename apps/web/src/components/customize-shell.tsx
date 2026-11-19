@@ -99,8 +99,8 @@ export function useCustomizeForm({
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, data) => {
     const result = await save(prev, data);
     if (!result.error) {
-      // What's in the form now is what's saved.
-      baseline.current = null;
+      // What was sent is what's saved: a change made while it saved is still one to save.
+      baseline.current = snapshotOf(data);
       read();
       onSaved?.();
     }
