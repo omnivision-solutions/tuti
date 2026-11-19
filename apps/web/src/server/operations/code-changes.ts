@@ -1269,7 +1269,7 @@ const targetOut = z
       .meta({ examples: [37] }),
     waiting: z.number().int().describe("Updates on it waiting for the team (not those going out by themselves)").meta({ examples: [1] }),
     stopped: z.string().nullable().describe("Who stopped one going out by itself (\"Stopped by Olive\"); null when nobody did").meta({ examples: [null] }),
-    scheduled: z.array(z.string()).describe("Updates going out by themselves, by id: those from a pull request can be published now or stopped (codeChangeActions.publishNow, stop); a Verify run's fix can't (its `codeChangeId` in codeChanges.target is null)").meta({ examples: [[]] }),
+    scheduled: z.array(z.string()).describe("Updates going out by themselves, by id: any can be published now or stopped (codeChangeActions.publishNow, stop). A Verify run's fix is never one: it always waits for the team").meta({ examples: [[]] }),
     nextDueAt: z.string().nullable().describe("When the first of those goes").meta({ examples: [null] }),
     sure: z
       .object({
@@ -2715,7 +2715,7 @@ export const publishCodeChangeActionNow = defineOperation({
   scope: "write",
   access: "team",
   errors: [402, 409],
-  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets from a pull request (a Verify run's fix can't be published now or stopped here)").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  input: z.object({ id: id.describe("The action's id: any of `scheduled` in codeChanges.list or codeChanges.targets").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
   output: appliedOut,
   run: async (context, input) => {
     const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true, kind: true, postId: true } });
@@ -2791,7 +2791,7 @@ export const stopCodeChangeAction = defineOperation({
   scope: "write",
   access: "team",
   errors: [409],
-  input: z.object({ id: id.describe("The action's id: one of `scheduled` in codeChanges.list or codeChanges.targets from a pull request (a Verify run's fix can't be published now or stopped here)").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
+  input: z.object({ id: id.describe("The action's id: any of `scheduled` in codeChanges.list or codeChanges.targets").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }) }),
   output: z
     .object({
       id: z.string().describe("The action's id").meta({ examples: ["cm3x9a1b2c3d4e5f6g7h8i9j1"] }),
