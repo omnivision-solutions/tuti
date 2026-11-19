@@ -625,7 +625,8 @@ export function PoweredBySettings({
               setOpen(true);
               return;
             }
-            setShown(event.target.checked);
+            // Switched back to what's saved, the pick is forgotten: a later change elsewhere then shows, and isn't undone by a save.
+            setShown(event.target.checked === saved ? null : event.target.checked);
           }}
         />
       </SettingRow>
