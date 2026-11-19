@@ -189,6 +189,14 @@ test("an admin picks the changelog's style examples: published entries from a se
   expect(list!.y).toBeGreaterThanOrEqual(label!.y + label!.height);
   expect(await team.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   expect(await team.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  // A long title wraps in its chip, in full.
+  await team.setViewportSize({ width: 320, height: 740 });
+  const long = chips.filter({ hasText: "Calendar sharing links" });
+  await expect(long).toHaveText("Calendar sharing links for teams and guests");
+  expect(await long.locator("span").evaluate((title) => title.scrollWidth - title.clientWidth)).toBeLessThanOrEqual(0);
+  expect((await long.boundingBox())!.height).toBeGreaterThan((await chips.first().boundingBox())!.height);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await team.setViewportSize({ width: 390, height: 844 });
   await checkpoint(team, "team-settings-changelog-examples-phone");
   // The dialog fits the phone too.
   await team.getByRole("button", { name: "Remove Search by attendee" }).click();

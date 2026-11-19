@@ -345,6 +345,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("dialog", { name: "Pick a style example" }).getByRole("button", { name: "Dark mode is here" }).click();
   const examples = team.getByRole("list", { name: "Style examples" });
   await expect(examples.getByRole("listitem")).toHaveText(["Dark mode is here"]);
+  // The one published entry is picked: there's no other to pick.
+  await expect(team.getByRole("button", { name: "Pick a style example" })).toBeDisabled();
   // While it saves, the form is locked (an edit then wouldn't be saved).
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));

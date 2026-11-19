@@ -915,7 +915,8 @@ export function ChangelogStyleForm({
       return result;
     },
   });
-  const full = picked.length >= MAX_EXAMPLES;
+  // No more to pick: 3 are, or every published entry is.
+  const full = picked.length >= Math.min(MAX_EXAMPLES, published.length);
   const words = query.trim().toLowerCase();
   const matches = published.filter((entry) => !picked.includes(entry.number) && entry.title.toLowerCase().includes(words));
 
@@ -958,9 +959,10 @@ export function ChangelogStyleForm({
               {published
                 .filter((entry) => picked.includes(entry.number))
                 .map((entry) => (
-                  <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-full bg-muted py-0.5 pr-0.5 pl-2.5 text-sm @min-[34rem]/settings:max-w-56">
+                  <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-2xl bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
                     <input type="hidden" name="examples" value={entry.number} />
-                    <span className="min-w-0 truncate">{entry.title}</span>
+                    {/* A long title wraps: cut short, two that start alike would read the same. */}
+                    <span className="min-w-0 break-words">{entry.title}</span>
                     <button
                       type="button"
                       aria-label={`Remove ${entry.title}`}
@@ -983,7 +985,7 @@ export function ChangelogStyleForm({
               size="sm"
               className="rounded-full"
               aria-label="Pick a style example"
-              // With 3 picked there's room for no more; focusable all the same (removing a chip sends focus here).
+              // Focusable all the same (removing a chip sends focus here).
               disabled={full}
               focusableWhenDisabled
               onClick={() => {
