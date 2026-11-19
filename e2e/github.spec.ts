@@ -221,8 +221,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   const url = owner.url();
   const actions = owner.getByRole("button", { name: "GitHub connection actions" });
   await actions.click();
-  // It says when GitHub was connected too.
-  await expect(owner.getByRole("menu").getByText(/^Connected \S/)).toBeVisible();
+  // It says which account and when GitHub was connected too.
+  await expect(owner.getByRole("menu").getByText(/^Connected to @acme-e2e on \d/)).toBeVisible();
   await checkpoint(owner, "settings-github-menu", { fullPage: false });
   await owner.getByRole("menuitem", { name: "Refresh list" }).click();
   await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();

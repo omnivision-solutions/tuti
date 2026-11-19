@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { disconnectGithub, refreshGithubRepositories, setAutoApplyLinks, setCodeChangeAnalysis, setGithubRepository } from "@/server/github";
 
 /**
- * Settings → Integrations → GitHub's ⋯ menu, in the pane's header: when it was connected (`connected`, a date), Refresh
+ * Settings → Integrations → GitHub's ⋯ menu, in the pane's header: the account and when it was connected (`connected`, a date), Refresh
  * list and Switch account (`switchUrl`, both only where the server has a GitHub App), and Disconnect, which asks first.
  */
 export function GithubConnectionMenu({ projectSlug, account, connected, switchUrl }: { projectSlug: string; account: string; connected: string; switchUrl: string | null }) {
@@ -33,12 +33,15 @@ export function GithubConnectionMenu({ projectSlug, account, connected, switchUr
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} aria-label="GitHub connection actions" />}>
+        <DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" disabled={pending} aria-label="GitHub connection actions" />}>
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-40">
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Connected {connected}</DropdownMenuLabel>
+            {/* The account in full: the header's pill cuts the longest logins. */}
+            <DropdownMenuLabel className="max-w-72 wrap-anywhere">
+              Connected to @{account} on {connected}
+            </DropdownMenuLabel>
           </DropdownMenuGroup>
           {switchUrl && (
             <>
