@@ -2,7 +2,7 @@
 
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -159,6 +159,8 @@ export function GithubRepositories({
       }
     });
   };
+  // The repository whose Remove was just pressed: its menu then hands focus to "Add repository".
+  const removed = useRef<GithubRepositoryRow["id"] | null>(null);
   const ours = repositories.filter((repo) => included.has(repo.id));
   const query = search.trim().toLowerCase();
   const others = repositories.filter((repo) => !included.has(repo.id) && name(repo).toLowerCase().includes(query));
@@ -225,8 +227,14 @@ export function GithubRepositories({
                     <MoreHorizontalIcon />
                   </DropdownMenuTrigger>
                   {/* Removed, its row and this menu's button go: focus moves to "Add repository" instead of being lost. */}
-                  <DropdownMenuContent align="end" className="w-auto min-w-32" finalFocus={() => (included.has(repo.id) ? true : document.getElementById("add-repository"))}>
-                    <DropdownMenuItem variant="destructive" onClick={() => change(repo, false)}>
+                  <DropdownMenuContent align="end" className="w-auto min-w-32" finalFocus={() => (removed.current === repo.id ? document.getElementById("add-repository") : true)}>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => {
+                        removed.current = repo.id;
+                        change(repo, false);
+                      }}
+                    >
                       Remove
                     </DropdownMenuItem>
                   </DropdownMenuContent>
