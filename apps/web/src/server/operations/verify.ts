@@ -306,7 +306,6 @@ export const verifyAll = defineOperation({
   path: "/docs/verify-all",
   scope: "write",
   access: "team",
-  errors: [402, 409],
   input: z.object({}),
   run: async ({ actor, projectId }) => {
     // It costs AI for every article: a person starts it, having seen what it costs (the app's confirmation).

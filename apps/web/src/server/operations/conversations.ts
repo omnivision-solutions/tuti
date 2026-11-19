@@ -540,7 +540,6 @@ export const replyToConversation = defineOperation({
   path: "/conversations/{number}/messages",
   scope: "write",
   access: "team",
-  errors: [409],
   input: z.object({
     number: conversationNumber,
     body,
