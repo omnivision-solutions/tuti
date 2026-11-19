@@ -130,7 +130,7 @@ Lists that page take \`limit\` and \`cursor\` and return \`nextCursor\`: send it
 
 ## Rate limits
 
-Up to ${API_RATE_LIMIT} requests a minute per key. Past that, requests get a 429 with a \`Retry-After\` header: the seconds until the next minute starts. Some operations have limits of their own, per hour or per day (their description gives them); their 429 has no \`Retry-After\`.`;
+Up to ${API_RATE_LIMIT} requests a minute per key. Past that, requests get a 429 with a \`Retry-After\` header: the seconds until the next minute starts. Some operations have limits of their own (their description gives them); their 429 has no \`Retry-After\`.`;
 
 /** The OpenAPI 3.1 description of the REST API, generated from the operations so it can't drift from them. */
 export function openApiSpec(serverUrl: string) {
