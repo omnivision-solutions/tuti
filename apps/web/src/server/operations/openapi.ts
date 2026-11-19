@@ -21,7 +21,8 @@ export const pathParams = (path: string) => [...path.matchAll(/\{(\w+)\}/g)].map
  * `description`.
  */
 export function shortTitle(summary: string): string {
-  let title = summary;
+  // A title is plain text: a code span's backticks would show.
+  let title = summary.replace(/`/g, "");
   for (const separator of [". ", ": ", "; ", " (", ", ", " — "]) {
     const at = title.indexOf(separator);
     if (at > 0) title = title.slice(0, at);

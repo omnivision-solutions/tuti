@@ -397,7 +397,10 @@ describe("OpenAPI", () => {
     expect(create.summary).toBe("Create a post");
     expect(create.description).toMatch(/\n\nNeeds a read \+ write key\.$/);
     for (const methods of Object.values(spec.paths as Record<string, Record<string, { summary: string }>>)) {
-      for (const op of Object.values(methods)) expect(op.summary.length).toBeLessThanOrEqual(101);
+      for (const op of Object.values(methods)) {
+        expect(op.summary.length).toBeLessThanOrEqual(101);
+        expect(op.summary).not.toContain("`");
+      }
     }
     // Titles name what they act on, not just the verb.
     expect(spec.paths["/code-change-actions/{id}/stop"].post.summary).toBe("Stop a scheduled action");
