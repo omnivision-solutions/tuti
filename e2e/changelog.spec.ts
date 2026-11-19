@@ -340,8 +340,12 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/settings/changelog`);
   await expect(team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Changelog" })).toHaveAttribute("aria-current", "page");
   await team.getByLabel("Instructions").fill(tone);
-  await team.getByRole("checkbox", { name: "Dark mode is here" }).check();
-  // While it saves, the fields are locked (an edit then wouldn't be saved).
+  // An example is picked from the published entries and shows as a chip.
+  await team.getByRole("button", { name: "Pick a style example" }).click();
+  await team.getByRole("dialog", { name: "Pick a style example" }).getByRole("button", { name: "Dark mode is here" }).click();
+  const examples = team.getByRole("list", { name: "Style examples" });
+  await expect(examples.getByRole("listitem")).toHaveText(["Dark mode is here"]);
+  // While it saves, the form is locked (an edit then wouldn't be saved).
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
   const saving = `**/app/${slug}/settings/changelog`;
@@ -353,15 +357,18 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByLabel("Instructions")).toBeDisabled();
+  // The page's one Save, in its header.
+  await team.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expect(team.locator("form:has(#style-tone)")).toHaveAttribute("inert");
   releaseSave();
   await expect(team.getByText("Changelog saved")).toBeVisible();
   await team.unroute(saving);
   // Saved, not just left in the form: it's there after a reload.
   await team.reload();
   await expect(team.getByLabel("Instructions")).toHaveValue(tone);
-  await expect(team.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
+  await expect(examples.getByRole("listitem")).toHaveText(["Dark mode is here"]);
+  await expect(team.getByRole("button", { name: "Save changes" })).toBeDisabled();
 
   // The AI model, on the same page: a level, saved as it's chosen, with the model drafts run on under its label.
   // (A server without plans has every level; changelog-settings.spec.ts has the plans.)

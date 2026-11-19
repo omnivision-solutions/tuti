@@ -4,7 +4,7 @@ import type { Editor } from "@tiptap/react";
 import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { cn } from "cn";
-import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import {
   createContext,
@@ -24,10 +24,12 @@ import { toast } from "sonner";
 import { keepingFields } from "@/lib/forms";
 import { useImageUpload } from "@/components/branding-settings";
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
+import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
+import { SettingBlock, SettingRow } from "@/components/settings-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -876,7 +878,13 @@ function AiHelpers({
   );
 }
 
-/** Settings → Changelog: the team's instructions for AI drafts (stored as tone notes), and up to 3 published entries as examples. */
+/** The most examples a style takes (changelog.updateStyle's MAX_STYLE_EXAMPLES, which checks it). */
+const MAX_EXAMPLES = 3;
+
+/**
+ * Settings → Changelog: the team's instructions for AI drafts (stored as tone notes), and up to 3 published entries as
+ * examples, as rows of the page's card, saved by the page's "Save changes".
+ */
 export function ChangelogStyleForm({
   projectSlug,
   tone,
@@ -891,71 +899,132 @@ export function ChangelogStyleForm({
   published: { number: number; title: string }[];
 }) {
   const [picked, setPicked] = useState(examples);
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveChangelogStyle(projectSlug, prev, formData);
-    if (result.error) {
-      toast.error(result.error);
-    } else {
-      toast.success("Changelog saved");
-    }
-    return result;
-  }, {});
+  const [picking, setPicking] = useState(false);
+  const [query, setQuery] = useState("");
+  const pick = useRef<HTMLButtonElement>(null);
+  // Chips come and go without anyone typing: the form is told, for "Save changes".
+  useFieldChanged(pick, picked);
+  const { state, pending, form } = useCustomizeForm({
+    save: async (prev, formData) => {
+      const result = await saveChangelogStyle(projectSlug, prev, formData);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Changelog saved");
+      }
+      return result;
+    },
+  });
+  const full = picked.length >= MAX_EXAMPLES;
+  const words = query.trim().toLowerCase();
+  const matches = published.filter((entry) => !picked.includes(entry.number) && entry.title.toLowerCase().includes(words));
 
   return (
-    <form {...keepingFields(action)}>
-      {/* Locked while saving: an edit made then wouldn't be in what's saved. */}
-      <fieldset disabled={pending} className="contents">
-        <FieldGroup>
-          <Field data-invalid={state.error ? true : undefined}>
-            <FieldLabel htmlFor="style-tone">Instructions</FieldLabel>
-            <Textarea
-              id="style-tone"
-              name="tone"
-              defaultValue={tone}
-              maxLength={1000}
-              placeholder="Friendly, short sentences, no jargon. Address the reader as you."
-              aria-invalid={state.error ? true : undefined}
-              aria-describedby={state.error ? "style-error" : undefined}
-            />
-            {state.error && <FieldError id="style-error">{state.error}</FieldError>}
-          </Field>
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">Examples</legend>
-            {published.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Publish an entry to use it as an example.</p>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground">Pick up to 3 published entries that read the way you like.</p>
-                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
-                  {published.map((entry) => (
-                    <li key={entry.number}>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          name="examples"
-                          value={entry.number}
-                          checked={picked.includes(entry.number)}
-                          disabled={!picked.includes(entry.number) && picked.length >= 3}
-                          onChange={(event) =>
-                            setPicked(
-                              event.target.checked ? [...picked, entry.number] : picked.filter((n) => n !== entry.number),
-                            )
-                          }
-                          className="size-4 accent-primary"
-                        />
-                        <span className="min-w-0 flex-1 break-words">{entry.title}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </>
+    // Locked while saving: the form is new once saved, so an edit made meanwhile would be lost. `inert`, not disabled
+    // fields: those would drop out of what the form holds, which "Save changes" compares with what's saved.
+    <form {...form} inert={pending} className="flex flex-col divide-y">
+      <SettingBlock className="gap-2">
+        <label htmlFor="style-tone" className="font-medium">
+          Instructions
+        </label>
+        <Textarea
+          id="style-tone"
+          name="tone"
+          defaultValue={tone}
+          maxLength={1000}
+          placeholder="Friendly, short sentences, no jargon. Address the reader as you."
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby={state.error ? "style-error" : undefined}
+        />
+        {state.error && <FieldError id="style-error">{state.error}</FieldError>}
+      </SettingBlock>
+      <SettingRow
+        label={
+          <>
+            Style examples{" "}
+            {published.length > 0 && (
+              <span className="font-normal text-muted-foreground tabular-nums">
+                {picked.length}/{MAX_EXAMPLES}
+              </span>
             )}
-          </fieldset>
-          <Button type="submit" disabled={pending} focusableWhenDisabled className="self-end">
-            {pending ? "Saving…" : "Save"}
-          </Button>
-        </FieldGroup>
-      </fieldset>
+          </>
+        }
+        description={published.length === 0 ? "Publish an entry to use it as an example." : "Entries that read the way you like."}
+      >
+        {published.length > 0 && (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
+            {/* In the changelog's order whatever the order picked, so the same examples are never a change to save. */}
+            <ul aria-label="Style examples" className="contents">
+              {published
+                .filter((entry) => picked.includes(entry.number))
+                .map((entry) => (
+                  <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-full bg-muted py-0.5 pr-0.5 pl-2.5 text-sm @min-[34rem]/settings:max-w-56">
+                    <input type="hidden" name="examples" value={entry.number} />
+                    <span className="min-w-0 truncate">{entry.title}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${entry.title}`}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      onClick={() => {
+                        setPicked(picked.filter((n) => n !== entry.number));
+                        // Its button is gone: focus goes to Pick, not to the top of the page.
+                        pick.current?.focus();
+                      }}
+                    >
+                      <XIcon aria-hidden className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+            </ul>
+            <Button
+              ref={pick}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              aria-label="Pick a style example"
+              // With 3 picked there's room for no more; focusable all the same (removing a chip sends focus here).
+              disabled={full}
+              focusableWhenDisabled
+              onClick={() => {
+                setQuery("");
+                setPicking(true);
+              }}
+            >
+              <PlusIcon />
+              Pick
+            </Button>
+          </div>
+        )}
+      </SettingRow>
+      {/* Outside the form in the page (a portal): typing in its search isn't a change to save. */}
+      <Dialog open={picking} onOpenChange={setPicking}>
+        {/* Closed, by a pick or without one, focus goes back to Pick. */}
+        <DialogContent finalFocus={pick}>
+          <DialogHeader>
+            <DialogTitle>Pick a style example</DialogTitle>
+            <DialogDescription>A published entry that reads the way you like.</DialogDescription>
+          </DialogHeader>
+          <Input autoFocus placeholder="Search by title" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search published entries" autoComplete="off" />
+          <ul className="-mx-2 max-h-72 overflow-y-auto">
+            {matches.map((entry) => (
+              <li key={entry.number}>
+                <button
+                  type="button"
+                  className="w-full rounded-md px-2 py-2 text-left text-sm break-words hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  onClick={() => {
+                    setPicked([...picked, entry.number]);
+                    setPicking(false);
+                  }}
+                >
+                  {entry.title}
+                </button>
+              </li>
+            ))}
+            {matches.length === 0 && <li className="px-2 py-2 text-sm text-muted-foreground">No matching entries.</li>}
+          </ul>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

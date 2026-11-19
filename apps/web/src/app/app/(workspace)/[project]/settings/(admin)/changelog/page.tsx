@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 
 import { AiModelSetting } from "@/components/ai-model-setting";
 import { ChangelogStyleForm } from "@/components/changelog";
-import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { SettingsCard, SettingsPane } from "@/components/settings-card";
 import { aiModelSetting } from "@/lib/ai-model-setting";
 import { getAdminProject } from "@/server/membership";
 
@@ -31,19 +31,17 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
   // The picked examples that are still published.
   const examples = published.filter((entry) => changelogExampleIds.includes(entry.id)).map((entry) => entry.number);
   return (
-    <SettingsPane title="Changelog">
+    <SettingsPane title="Changelog" description="How AI drafts your changelog entries">
       <SettingsCard>
         <AiModelSetting {...model} />
-        <SettingBlock>
-          <ChangelogStyleForm
-            // A fresh form when what's saved changes (an example unpublished, say), so stale picks don't count.
-            key={`${changelogTone}|${examples.join(",")}`}
-            projectSlug={slug}
-            tone={changelogTone}
-            examples={examples}
-            published={published.map(({ number, title }) => ({ number, title }))}
-          />
-        </SettingBlock>
+        <ChangelogStyleForm
+          // A fresh form when what's saved changes (an example unpublished, say), so stale picks don't count.
+          key={`${changelogTone}|${examples.join(",")}`}
+          projectSlug={slug}
+          tone={changelogTone}
+          examples={examples}
+          published={published.map(({ number, title }) => ({ number, title }))}
+        />
       </SettingsCard>
     </SettingsPane>
   );
