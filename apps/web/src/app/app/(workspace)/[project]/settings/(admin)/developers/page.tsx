@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
+import { ArrowUpRightIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { ApiKeys } from "@/components/api-keys";
-import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
-import { Webhooks } from "@/components/webhooks";
+import { ApiKeys, CreateKeyDialog } from "@/components/api-keys";
+import { SettingsCard, SettingsPane } from "@/components/settings-card";
+import { AddWebhookDialog, Webhooks } from "@/components/webhooks";
 import { appUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Developers · Settings" };
 
-/** Settings → Developers: API keys (REST and MCP) and webhooks. */
+/** Settings → Developers: API keys (REST and MCP) and webhooks, each a list with its count (once it has any) and its "add" dialog. */
 export default async function DevelopersSettingsPage(props: PageProps<"/app/[project]/settings/developers">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
@@ -40,31 +41,24 @@ export default async function DevelopersSettingsPage(props: PageProps<"/app/[pro
   ]);
 
   return (
-    <SettingsPane title="Developers">
-      <SettingsCard
-        title="API keys"
-        description={
-          <>
-            Use this project&apos;s feedback, docs, changelog and inbox from your own code (REST API) or an AI assistant (MCP). Keys are shown once; revoke any you no longer
-            use. <a href="/api/docs" className="text-primary underline underline-offset-4">API docs</a>
-          </>
-        }
-      >
-        <SettingBlock>
-          <ApiKeys projectSlug={project.slug} keys={keys} apiUrl={`${appUrl().origin}/api/v1`} />
-        </SettingBlock>
+    <SettingsPane
+      title="Developers"
+      actions={
+        <a href="/api/docs" className="inline-flex items-center gap-0.5 text-sm text-primary underline underline-offset-4">
+          API docs
+          <ArrowUpRightIcon aria-hidden className="size-3.5" />
+        </a>
+      }
+    >
+      <SettingsCard title="API keys" count={keys.length || undefined} action={<CreateKeyDialog projectSlug={project.slug} apiUrl={`${appUrl().origin}/api/v1`} />}>
+        <ApiKeys projectSlug={project.slug} keys={keys} />
       </SettingsCard>
 
-      <SettingsCard
-        title="Webhooks"
-        description="Tuti sends a signed POST to your endpoint when something happens, and retries for about a day until it answers with a 2xx."
-      >
-        <SettingBlock>
-          <Webhooks
-            projectSlug={project.slug}
-            webhooks={webhooks.map(({ deliveries, ...webhook }) => ({ ...webhook, lastDelivery: deliveries[0] ?? null }))}
-          />
-        </SettingBlock>
+      <SettingsCard title="Webhooks" count={webhooks.length || undefined} action={<AddWebhookDialog projectSlug={project.slug} />}>
+        <Webhooks
+          projectSlug={project.slug}
+          webhooks={webhooks.map(({ deliveries, ...webhook }) => ({ ...webhook, lastDelivery: deliveries[0] ?? null }))}
+        />
       </SettingsCard>
     </SettingsPane>
   );
