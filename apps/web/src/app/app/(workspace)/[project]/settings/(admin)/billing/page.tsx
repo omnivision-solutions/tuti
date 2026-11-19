@@ -68,7 +68,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         planEndsAt: true,
         badgeAddOn: true,
         trialEndsAt: true,
-        planLicense: { select: { id: true, source: true, revokedAt: true } },
+        planLicense: { select: { id: true, source: true, revokedAt: true, creditsThrough: true } },
       },
     }),
     // Its email to its users this month, against its plan's limit (null without plans).
@@ -96,8 +96,9 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // A license's AI credits for its month (they end with it, as its emails do: emails.until) are This month's, spent
   // ones too (the meter then reads 0); the rest (a trial's, the free ones, top-ups) are listed under it.
   // ponytail: a Stripe plan's credits stay in the list; into This month too when its period is a month, if asked for.
-  // The license's month while it runs: over and the next not given yet (the hourly job late), there's none to show.
-  const until = emails?.until && emails.until > new Date() ? emails.until : null;
+  // The license's month while it runs (its own: a plan with no email limit has it too): over and the next not given
+  // yet (the hourly job late), there's none to show.
+  const until = licensed && license?.creditsThrough && license.creditsThrough > new Date() ? license.creditsThrough : null;
   const monthly =
     licensed && until && creditsEnabled()
       ? (

@@ -209,6 +209,24 @@ test("on a license, This month has what's left of its month's emails and AI cred
   expect(page).not.toContain("<table");
 });
 
+test("a license on a plan with no email limit still has its month: the AI credits' meter and the reset day, beside the emails sent", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  vi.stubEnv("AI_CREDITS", "on");
+  const holder = (await prisma.teamMember.findFirstOrThrow({ where: { projectId }, select: { userId: true } })).userId;
+  const license = await prisma.planLicense.create({
+    data: { source: "tuti", externalKey: crypto.randomUUID(), plan: "business", userId: holder, projectId, claimedAt: new Date(), assignedAt: new Date() },
+  });
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "business" } });
+  await grantLicenseCredits(license.id);
+  const { creditsThrough } = await prisma.planLicense.findUniqueOrThrow({ where: { id: license.id } });
+  const month = await prisma.creditGrant.findFirstOrThrow({ where: { planLicenseId: license.id, kind: "AI" } });
+  const monthly = month.credits.toNumber().toLocaleString("en");
+  const page = await billing();
+  expect(page).toMatch(meter("Emails", "0 sent"));
+  expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
+  expect(page).toContain(`>Resets ${formatShortDate(creditsThrough!)}</span>`);
+});
+
 test("the credits list says until when each lasts, day first and short, with the year when it isn't this one", async () => {
   vi.stubEnv("AI_CREDITS", "on");
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
