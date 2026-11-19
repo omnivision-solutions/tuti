@@ -169,23 +169,27 @@ function fieldRows(schema: ApiSchema, prefix: string): Row[] {
 /** HTML's elements (and a few old ones specs still write). Any other tag in a spec's Markdown is a placeholder, `/docs/<slug>`. */
 const ELEMENTS = new Set(
   (
-    "a abbr address area article aside audio b bdi bdo big blockquote body br button canvas caption center cite code col colgroup data " +
-    "datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup " +
-    "hr html i iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object ol optgroup option output p " +
-    "picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup svg " +
-    "table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr"
+    "a abbr address article aside audio b bdi bdo big blockquote body button canvas caption center cite code colgroup data " +
+    "datalist dd del details dfn dialog div dl dt em fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup " +
+    "html i iframe ins kbd label legend li main map mark menu meter nav noscript object ol optgroup option output p " +
+    "picture pre progress q rp rt ruby s samp script search section select slot small span strike strong style sub summary sup svg " +
+    "table tbody td template textarea tfoot th thead time title tr tt u ul var video"
   ).split(" "),
 );
+/** Elements HTML lets go unclosed (and `<br>`'s kind, never closed). Any other element is HTML only when the text closes it: `<code>` alone is a placeholder. */
+const UNCLOSED = new Set("br hr img wbr p li dt dd tr td th thead tbody tfoot".split(" "));
 
 const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const specMarked = new Marked({
-  gfm: true,
-  renderer: {
-    // Raw HTML goes through as written, except a tag that isn't HTML's: that's a placeholder, shown as its text.
-    html: ({ text }) => text.replace(/<\/?([a-zA-Z][\w-]*)[^<>]*>/g, (tag, name: string) => (ELEMENTS.has(name.toLowerCase()) ? tag : escapeHtml(tag))),
-  },
-});
-
-/** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`) kept as text. */
-export const specHtml = (markdown: string): string => specMarked.parse(markdown, { async: false });
+/** A spec's Markdown (a description) as HTML, for the converter to make content of: its placeholders (`<slug>`, `<code>`) kept as text. */
+export function specHtml(markdown: string): string {
+  const closed = new Set([...markdown.matchAll(/<\/([a-zA-Z][\w-]*)/g)].map((match) => match[1]!.toLowerCase()));
+  const isHtml = (name: string) => UNCLOSED.has(name) || (ELEMENTS.has(name) && closed.has(name));
+  return new Marked({
+    gfm: true,
+    renderer: {
+      // Raw HTML goes through as written, except a tag that isn't HTML: that's a placeholder, shown as its text.
+      html: ({ text }) => text.replace(/<\/?([a-zA-Z][\w-]*)[^<>]*>/g, (tag, name: string) => (isHtml(name.toLowerCase()) ? tag : escapeHtml(tag))),
+    },
+  }).parse(markdown, { async: false });
+}
