@@ -279,13 +279,13 @@ test("errors by status: what every operation can give, and what it declares", ()
   const spec = openApiSpec("https://tuti.example.com/api/v1");
   const responses = (path: string, method: string) => Object.keys((spec.paths[path]![method] as { responses: object }).responses);
   // A read without input: a bad key and too many requests only.
-  expect(responses("/team", "get")).toEqual(["200", "401", "429"]);
+  expect(responses("/team", "get")).toEqual(["200", "401", "429", "500"]);
   // A write naming a post, which may have been merged.
-  expect(responses("/posts/{number}/vote", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429"]);
+  expect(responses("/posts/{number}/vote", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429", "500"]);
   // A post on a board that isn't there: a 404 its path doesn't make, so it declares it.
-  expect(responses("/posts", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429"]);
+  expect(responses("/posts", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429", "500"]);
   // Settings for owners and admins on a paid plan, checked with the DNS.
-  expect(responses("/domain", "post")).toEqual(["200", "400", "401", "402", "403", "409", "429"]);
+  expect(responses("/domain", "post")).toEqual(["200", "400", "401", "402", "403", "409", "429", "500"]);
   for (const operation of operations) {
     expect(new Set(operation.errors).size, `${operation.name} lists an error twice`).toBe(operation.errors?.length ?? 0);
   }
@@ -309,7 +309,7 @@ test("the help center reads Tuti's spec whole: what team.list returns, with exam
   });
   expect(doc.types.find((type) => type.name === "TeamMember")?.schema.properties?.map((property) => property.name)).toEqual(["name", "role"]);
   expect(team.responses.find((response) => response.status === "429")).toMatchObject({
-    description: expect.stringContaining("600 a minute"),
+    description: expect.stringContaining("600 a minute per key"),
     example: { error: { code: "rate_limited", message: expect.any(String) } },
   });
   // An example request in the spec is the one the page shows.

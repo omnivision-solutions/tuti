@@ -59,9 +59,9 @@ const ERRORS = {
   },
   429: {
     name: "RateLimited",
-    description: "Too many requests: up to 600 a minute per key. Try again after the seconds in the Retry-After header.",
+    description: `Too many requests: past ${API_RATE_LIMIT} a minute per key, try again after the seconds in the Retry-After header. Some operations have limits of their own (their description gives them), whose 429 has no Retry-After.`,
     brief: "rate limited",
-    example: { code: "rate_limited", message: "Up to 600 requests a minute per key" },
+    example: { code: "rate_limited", message: `Up to ${API_RATE_LIMIT} requests a minute per key` },
   },
   502: {
     name: "BadGateway",
@@ -75,6 +75,13 @@ const ERRORS = {
     brief: "not set up on this server",
     example: { code: "ai_unavailable", message: "AI isn't set up on this server" },
   },
+  // Any operation, but never on purpose: not one of the statuses an operation lists (errorStatuses), so tests fail on it.
+  500: {
+    name: "InternalError",
+    description: "Something went wrong on Tuti's side. Try again in a moment.",
+    brief: "something went wrong",
+    example: { code: "internal_error", message: "Something went wrong" },
+  },
 } as const;
 
 /**
@@ -82,7 +89,7 @@ const ERRORS = {
  * a JSON body it's sent), 403 when it writes or is for owners and admins, 404 when its path names something, and what it
  * declares (`errors`: a 404 too where its input, not its path, names what may not be there).
  */
-export function errorStatuses(operation: (typeof operations)[number]): (keyof typeof ERRORS)[] {
+export function errorStatuses(operation: (typeof operations)[number]): Exclude<keyof typeof ERRORS, 500>[] {
   const takesInput = Object.keys(inputSchema(operation).properties ?? {}).length > 0 || operation.method !== "GET";
   return [
     ...(takesInput ? [400 as const] : []),
@@ -299,7 +306,9 @@ export function openApiSpec(serverUrl: string) {
       ...(body && { requestBody: body }),
       responses: {
         "200": ok(operation, schemas),
-        ...Object.fromEntries(errorStatuses(operation).map((status) => [String(status), { $ref: `#/components/responses/${ERRORS[status].name}` }])),
+        ...Object.fromEntries(
+          [...errorStatuses(operation), 500 as const].map((status) => [String(status), { $ref: `#/components/responses/${ERRORS[status].name}` }]),
+        ),
       },
     };
   }
