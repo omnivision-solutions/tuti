@@ -1637,13 +1637,13 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const length = team.getByRole("radiogroup", { name: "Answer length" });
   await length.getByText("Short", { exact: true }).click();
   await expect(length.getByRole("radio", { name: "Short" })).toBeChecked();
-  // Topics are chips in their field: Enter adds one, trimmed, and each has a button that removes it.
+  // Topics are chips in their field: Enter or a comma adds one, trimmed, and each has a button that removes it.
   const topic = team.getByLabel("Off-limits topics");
   const topics = team.getByRole("listitem").filter({ has: team.getByRole("button", { name: /^Remove / }) });
   await topic.fill("refund");
   await topic.press("Enter");
   await topic.fill("  legal advice  ");
-  await topic.press("Enter");
+  await topic.press(",");
   await topic.fill("pricing");
   await topic.press("Enter");
   await expect(topics).toHaveText(["refund", "legal advice", "pricing"]);

@@ -35,7 +35,7 @@ async function render(saved: string[], max = 20) {
 afterEach(() => document.body.replaceChildren());
 
 test("saved topics are chips, each a field of the form; Enter adds one, trimmed, and never twice", async () => {
-  const { root, box, type, enter, chips, sent, status } = await render(["refund"]);
+  const { root, box, type, enter, button, chips, sent, status } = await render(["refund"]);
   expect(chips()).toEqual(["refund"]);
   await type("  legal advice ");
   // A chip coming or going tells the form, for "Save changes".
@@ -69,6 +69,14 @@ test("saved topics are chips, each a field of the form; Enter adds one, trimmed,
   await enter();
   expect(chips()).toEqual(["refund", "legal advice", "pricing"]);
   expect(sent()).toEqual(["refund", "legal advice", "pricing", ""]);
+  // A comma adds one too (and isn't typed), so two topics never become one.
+  await type("shipping");
+  const comma = new KeyboardEvent("keydown", { key: ",", bubbles: true, cancelable: true });
+  await act(async () => void box.dispatchEvent(comma));
+  expect(comma.defaultPrevented).toBe(true);
+  expect(chips()).toEqual(["refund", "legal advice", "pricing", "shipping"]);
+  expect(document.getElementById(box.getAttribute("aria-describedby")!)!.textContent).toBe("Press Enter or a comma to add a topic");
+  await act(async () => button("Remove shipping").click());
   // A topic typed and not added yet is sent with the rest.
   await type("billing");
   expect(sent()).toEqual(["refund", "legal advice", "pricing", "billing"]);

@@ -70,7 +70,7 @@ export function AssistantSettings({ projectSlug, settings, limits }: { projectSl
 
 /**
  * Off-limits topics as chips in their field: each a field of the form (`offLimits`), removed with its button; the box
- * after them adds one with Enter. The box is a field too, so a topic typed and not yet added is saved with the rest.
+ * after them adds one with Enter or a comma (said to screen readers; there's no Add button). The box is a field too, so a topic typed and not yet added is saved with the rest.
  */
 export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; max: number; maxLength: number }) {
   const [topics, setTopics] = useState(saved);
@@ -136,7 +136,8 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
         onKeyDown={(event) => {
           // Enter adds the topic; it doesn't save the form. Not the Enter that confirms an input method's candidate (Safari sends that one
           // after the composition ends, with key code 229).
-          if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+          // A comma adds it too: typed between two topics, it would otherwise make one topic of both.
+          if ((event.key === "Enter" || event.key === ",") && !event.nativeEvent.isComposing && event.keyCode !== 229) {
             event.preventDefault();
             add();
           }
@@ -146,8 +147,12 @@ export function OffLimitsTopics({ saved, max, maxLength }: { saved: string[]; ma
         placeholder={full ? `${max} topics is the most` : "Add a topic…"}
         autoComplete="off"
         enterKeyHint="done"
+        aria-describedby="assistant-off-limits-hint"
         className="h-7 min-w-32 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground/75 md:text-sm"
       />
+      <span id="assistant-off-limits-hint" className="sr-only">
+        Press Enter or a comma to add a topic
+      </span>
       <span role="status" className="sr-only">
         {status}
       </span>

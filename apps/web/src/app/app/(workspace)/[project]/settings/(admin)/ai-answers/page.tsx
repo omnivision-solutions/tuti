@@ -26,7 +26,7 @@ export default async function AiAnswersSettingsPage(props: PageProps<"/app/[proj
     assistantSettings(project.id),
   ]);
   return (
-    <SettingsPane title="AI answers" description="Answers come only from your published articles">
+    <SettingsPane title="AI answers" description="Answers come only from your published articles and API reference">
       <SettingsCard>
         {model && <AiModelSetting {...model} />}
         {/* A new form once saved, showing what was saved (trimmed), not what was typed. */}
