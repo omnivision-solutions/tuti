@@ -112,8 +112,8 @@ test("a section with a table or code isn't rewritten whole: it lists its passage
   const { notes, edit } = articleNotes({ type: "doc", content });
   expect(notes[0]).toMatchObject({
     editable: false,
-    // "Free" is there twice (a cell and a paragraph), so it can't be named: it isn't offered.
-    passages: ["Export", "Run it from Settings.", "Plan", "Seats", "3", "It takes a minute."],
+    // "Free" is there twice (a cell and a paragraph), so it can't be named: it isn't offered. The code block is one, fenced.
+    passages: ["Export", "Run it from Settings.", "```bash\nnpm run export\n```", "Plan", "Seats", "3", "It takes a minute."],
   });
   // Its whole text can't be sent back.
   expect(edit({ sections: { "1": "## Export\n\nRun it from Team." } })).toBeNull();
@@ -150,6 +150,36 @@ test("a passage that can't be replaced refuses the whole edit, as a section that
   }
   // The same passage named twice: the second isn't found any more.
   expect(edit({ passages: [good, good] })).toBeNull();
+});
+
+test("in a section that isn't editable, a passage is taken out or has text added after it, code is changed in place, and one passage operation does one thing", () => {
+  const { notes, edit } = articleNotes({ type: "doc", content: [para("Run it from Settings."), code, para("It takes a minute.")] });
+  expect(notes[0]!.passages).toEqual(["Run it from Settings.", "```bash\nnpm run export\n```", "It takes a minute."]);
+  const next = edit({
+    passages: [
+      { section: 1, find: "```bash\nnpm run export\n```", replace: "```bash\nnpm run download\n```" },
+      { section: 1, find: "It takes a minute.", replace: "" },
+      { section: 1, after: "Run it from Settings.", insert: "Only admins see it." },
+    ],
+  })!;
+  expect(next.content).toEqual([para("Run it from Settings."), para("Only admins see it."), { ...code, attrs: { language: "bash", filename: null }, content: text("npm run download") }]);
+  // A find with an insert, or an after with a replace, is neither: refused, not guessed.
+  expect(edit({ passages: [{ section: 1, find: "It takes a minute.", replace: "", insert: "More." }] })).toBeNull();
+  expect(edit({ passages: [{ section: 1, after: "It takes a minute.", insert: "More.", replace: "Less." }] })).toBeNull();
+  expect(edit({ passages: [{ section: 1, after: "It takes a minute.", insert: 3 }] })).toBeNull();
+  // Keys left null or "" are keys not used: the operation is the one the other two name.
+  expect(edit({ passages: [{ section: 1, find: "It takes a minute.", replace: "", after: null, insert: "" }] })!.content).toEqual([para("Run it from Settings."), { ...code, attrs: { language: "bash", filename: null } }]);
+  expect(edit({ passages: [{ section: 1, find: null, replace: "", after: "It takes a minute.", insert: "More." }] })!.content).toEqual([para("Run it from Settings."), { ...code, attrs: { language: "bash", filename: null } }, para("It takes a minute."), para("More.")]);
+});
+
+test("a section is taken out whole by taking out every passage in it, its heading too; its heading alone can't go", () => {
+  const head = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: text(value) });
+  const { edit } = articleNotes({ type: "doc", content: [para("Intro."), head("Contact button"), para("It sits in the header."), code, head("Links"), para("Add links.")] });
+  const out = (find: string) => ({ section: 2, find, replace: "" });
+  expect(edit({ passages: [out("Contact button"), out("It sits in the header."), out("```bash\nnpm run export\n```")] })?.content).toEqual([para("Intro."), head("Links"), para("Add links.")]);
+  // Its heading alone, or with some of its text left: that text would join the section above.
+  expect(edit({ passages: [out("Contact button")] })).toBeNull();
+  expect(edit({ passages: [out("Contact button"), out("It sits in the header.")] })).toBeNull();
 });
 
 const mixed = () => articleNotes({ type: "doc", content: [para("Run it from Settings."), code, { type: "heading", attrs: { level: 2 }, content: text("More") }, para("See below.")] });
@@ -221,18 +251,22 @@ test("the three writers (an edit, a new article, Verify's fix) share one set of 
     expect(prompt).toContain(ADD_RULE);
     expect(prompt).toContain(PASSAGES_RULE);
     expect(prompt).toContain('"passages": [{"section": <number>, "find"');
+    // The format line doesn't contradict what a passage keeps.
+    expect(prompt).toContain('In "passages", also *italics*, <br> and code, as the passage has them.');
   }
-  // A correction is made where the old text stands: the section for the end isn't its way out any more.
-  expect(ADD_RULE).toContain('Never use "add" to correct a sentence you can change where it stands.');
-  expect(ADD_RULE).not.toContain("the statement that's wrong is in a section that isn't editable;");
+  // A correction is made where the old text stands (E1): code, italics and something gone are changed or taken out by
+  // passages, so the note at the end is only for what nothing can change (a person's section, text that's no passage),
+  // so the team still hears of it.
+  expect(ADD_RULE).toContain('Never use "add" to correct anything you can change where it stands: change it there.');
+  expect(ADD_RULE).toContain('a statement is wrong where nothing can be changed (in a section marked "edited_by_team", or text that\'s neither in an editable section nor among the passages)');
+  expect(ADD_RULE).not.toMatch(/what's wrong is in code|a passage describes something that's gone/);
   // Its heading is a new one: one the article has already is refused (edit), so the rule can't ask for it.
-  expect(ADD_RULE).toContain("under a new heading that says what the note corrects, never a heading the article already has");
-  expect(ADD_RULE).not.toContain("under a heading that names that section");
-  // A passage for something that's gone can't be taken out or turned into something else: both rules send it to the end section.
-  expect(PASSAGES_RULE).toContain("don't reuse the passage for something else");
-  expect(ADD_RULE).toContain("or a passage describes something that's gone");
-  // Something missing whose place is a section that only takes passages still has a way in.
-  expect(ADD_RULE).toContain("there's no editable section to add it to");
+  expect(ADD_RULE).toContain("it starts with a ## heading that isn't one the article already has");
+  // A passage for something that's gone is taken out, never turned into something else.
+  expect(PASSAGES_RULE).toContain("When what a passage describes is gone, take it out; don't reuse it for something else.");
+  // Something missing goes after a passage of the section it belongs in; the end only takes what belongs in no section.
+  expect(PASSAGES_RULE).toContain('To add after one, "after" is the passage exactly as listed and "insert" the new text');
+  expect(ADD_RULE).toContain("it belongs in none of its sections")
   expect(NEW_SYSTEM).not.toContain('"add"');
   // Only the edit's writer gets waiting edits marked (E4); Verify reads the article as it is.
   expect(EDIT_SYSTEM).toContain(WAITING_RULE);

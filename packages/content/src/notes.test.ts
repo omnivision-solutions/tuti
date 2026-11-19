@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, test } from "vitest";
 
-import { passagesIn, readNotes, replacePassage } from "./notes";
+import { insertAfterPassage, passagesIn, readNotes, replacePassage } from "./notes";
 
 const text = (value: string) => [{ type: "text", text: value }];
 const item = (value: string) => ({ type: "listItem", content: [{ type: "paragraph", content: text(value) }] });
@@ -92,10 +92,10 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(replacePassage(section, "each plan has seats.", "Each plan has a price.")).toBeNull();
     expect(replacePassage(section, "Each plan", "Each plan has a price.")).toBeNull();
     expect(replacePassage(twice, "Each plan has seats.", "Each plan has a price.")).toBeNull();
-    // A code block's text is no passage, nor is a block with what can't be written back (italics, a line break).
+    // A code block is quoted whole, fenced: its code alone isn't found. An empty block is no passage.
     expect(replacePassage(section, "npm run export", "npm run exports")).toBeNull();
-    expect(passagesIn([para(text("Really", { type: "italic" })), para(text("One"), { type: "hardBreak" }, text("Two")), para()])).toEqual([]);
-    expect(passagesIn(section).map((passage) => passage.text)).toEqual(["Plans", "Each plan has seats.", "Plan", "Seats", "Free", "3", "Open **Billing**.", "Pick a plan."]);
+    expect(passagesIn([para(), { type: "codeBlock", attrs: { language: null }, content: [] }])).toEqual([]);
+    expect(passagesIn(section).map((passage) => passage.text)).toEqual(["Plans", "Each plan has seats.", "Plan", "Seats", "Free", "3", "```bash\nnpm run export\n```", "Open **Billing**.", "Pick a plan."]);
   });
 
   test("the replacement is one line of text, bold and the passage's own links; a link it had can't be lost", () => {
@@ -106,18 +106,20 @@ describe("passages: a block's text replaced where it stands", () => {
       para(text("Compare "), text("every plan", docs), text(".")),
     );
     expect(replacePassage(linked, "See [the plans](https://example.com/plans).", "Compare every plan.")).toBeNull();
-    // A link it didn't have stays text; markup that isn't bold or a link is never a node.
-    expect(replacePassage(section, "Each plan has seats.", "See [pricing](https://evil.example/x) and <img src=x> *now*.")![1]!.content).toEqual([
+    // A link it didn't have stays text; markup that isn't bold, italics or a link is never a node.
+    expect(replacePassage(section, "Each plan has seats.", "See [pricing](https://evil.example/x) and <img src=x> *now*, 2 * 3 \\*4\\*.")![1]!.content).toEqual([
       text("See "),
       text("pricing"),
-      text(" and <img src=x> *now*."),
+      text(" and <img src=x> "),
+      text("now", { type: "italic" }),
+      text(", 2 * 3 *4*."),
     ]);
-    for (const refused of ["", "  ", "Each plan has seats.\n\nAnd a price.", "Each plan has seats.\n- And a price."]) {
+    for (const refused of ["Each plan has seats.\n\nAnd a price.", "Each plan has seats.\n- And a price."]) {
       expect(replacePassage(section, "Each plan has seats.", refused)).toBeNull();
     }
   });
 
-  test("inline code is kept as it was: the text around it changes, the code node comes back the same; code changed, dropped, added or moved is refused", () => {
+  test("inline code keeps its place: what's in a span may change (a renamed flag), its marks kept; code dropped, added or made from text is refused", () => {
     const run = text("npm run export", { type: "code" });
     const flag = text("--csv", { type: "code" });
     const block = [para(text("Run "), run, text(" with "), flag, text(" to get a file."))];
@@ -127,13 +129,21 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(next[0]!.content).toEqual([text("Run "), run, text(" with "), flag, text(" to download a CSV file.")]);
     expect(next[0]!.content![1]).toBe(run);
     expect(next[0]!.content![3]).toBe(flag);
+    // A span's code changed, as Markdown writes it (more backticks around a backtick, a space inside each end).
+    expect(replacePassage(block, find, "Run `npm run download` with `` --format `csv` `` to get a file.")![0]!.content).toEqual([
+      text("Run "),
+      text("npm run download", { type: "code" }),
+      text(" with "),
+      text("--format `csv`", { type: "code" }),
+      text(" to get a file."),
+    ]);
     for (const refused of [
-      "Run `npm run exports` with `--csv` to get a file.",
       "Run `npm run export` to get a file.",
-      "Run `--csv` with `npm run export` to get a file.",
       "Run `npm run export` with `--csv` to get a `file`.",
       "Run `npm run export` with `--csv` and `--csv` to get a file.",
       "Run npm run export with --csv to get a file.",
+      "Run `npm run export` with `` to get a file.",
+      "Run `npm run export` with `--csv to get a file.",
     ]) {
       expect(replacePassage(block, find, refused)).toBeNull();
     }
@@ -194,6 +204,9 @@ describe("passages: a block's text replaced where it stands", () => {
     // A divider, and a marker with nothing after it, are blocks too.
     expect(replacePassage(section, "Plans", "---")).toBeNull();
     expect(replacePassage(section, "Plans", "1.")).toBeNull();
+    // One that reads as no text would leave the block blank.
+    expect(replacePassage(section, "Each plan has seats.", "**")).toBeNull();
+    expect(replacePassage(section, "Plans", "**")).toBeNull();
     for (const refused of ["- Each plan has a price.", "* Each plan has a price.", "+ Each plan has a price.", "2) Each plan has a price.", "> Each plan has a price.", "# Plans"]) {
       expect(replacePassage(section, "Each plan has seats.", refused)).toBeNull();
     }
@@ -212,5 +225,104 @@ describe("passages: a block's text replaced where it stands", () => {
     expect(replacePassage(twice, find, "Read [Set up](https://example.com/docs), then [Exports](https://example.com/docs).")![0]).toEqual(
       para(text("Read "), text("Set up", docs), text(", then "), text("Exports", docs), text(".")),
     );
+  });
+
+  test("italics and line breaks are passages too: listed as *italics* and <br>, each kept or changed in the replacement", () => {
+    const italic = { type: "italic" };
+    const block = [para(text("Exports are "), text("never", italic), text(" emailed."), { type: "hardBreak" }, text("Find them in "), text("Files", { type: "bold" }), text("."))];
+    const find = "Exports are *never* emailed.<br>Find them in **Files**.";
+    expect(passagesIn(block).map((passage) => passage.text)).toEqual([find]);
+    // Read back as it was, so it's listed.
+    expect(replacePassage(block, find, find)).toEqual(block);
+    expect(replacePassage(block, find, "Exports are *always* emailed.<br>Find them in **Downloads** too.")![0]).toEqual(
+      para(text("Exports are "), text("always", italic), text(" emailed."), { type: "hardBreak" }, text("Find them in "), text("Downloads", { type: "bold" }), text(" too.")),
+    );
+    // A line break dropped is a change like any other; an escaped <br> is text, never a break.
+    expect(replacePassage(block, find, "Exports are *never* emailed.")![0]).toEqual(para(text("Exports are "), text("never", italic), text(" emailed.")));
+    expect(replacePassage(block, find, "Use \\<br> tags.")![0]).toEqual(para(text("Use <br> tags.")));
+    // A break at either end is refused: Markdown doesn't write one at the end, so the block couldn't be found again.
+    expect(replacePassage(block, find, "Exports are *never* emailed.<br>")).toBeNull();
+    expect(replacePassage(block, find, "<br>Exports are *never* emailed.")).toBeNull();
+    // Still one line: a real line feed is refused, as before.
+    expect(replacePassage(block, find, "Exports are *never* emailed.\nFind them in **Files**.")).toBeNull();
+    // A break at the end isn't written back by Markdown, and bold italics keep one mark per run: neither is listed.
+    expect(passagesIn([para(text("One"), { type: "hardBreak" })])).toEqual([]);
+    expect(passagesIn([para(text("Very", { type: "bold" }, italic))])).toEqual([]);
+  });
+
+  test("a code block is a passage, fenced: its code replaced by a fenced block, its language and file name kept", () => {
+    const block = { type: "codeBlock", attrs: { language: "bash", filename: "export.sh" }, content: [text("npm run export\nls out")] };
+    const blocks = [para(text("Run:")), block];
+    const find = "```bash\nnpm run export\nls out\n```";
+    expect(passagesIn(blocks).map((passage) => passage.text)).toEqual(["Run:", find]);
+    // Whatever language its fence names, the block's is kept.
+    const next = replacePassage(blocks, find, "```sh\nnpm run download\nls out\n```")!;
+    expect(next[1]).toEqual({ type: "codeBlock", attrs: { language: "bash", filename: "export.sh" }, content: [text("npm run download\nls out")] });
+    expect(next[0]).toBe(blocks[0]);
+    // Not fenced, or blank inside: refused.
+    for (const refused of ["npm run download", "```bash\n\n```", "```bash\nnpm run download", "```bash\nnpm run export\n```\n\nThen:\n\n```bash\nnpm run upload\n```"]) {
+      expect(replacePassage(blocks, find, refused)).toBeNull();
+    }
+  });
+
+  test("an empty replacement takes the passage out: a paragraph, a heading, a code block or a list's item; a cell or a step's title stays", () => {
+    const list = section[5] as JSONContent;
+    expect(replacePassage(section, "Each plan has seats.", "")).toEqual([section[0], section[2], section[3], section[4], section[5]]);
+    expect(replacePassage(section, "```bash\nnpm run export\n```", " ")).toEqual([section[0], section[1], section[2], section[4], section[5]]);
+    expect(replacePassage(section, "Open **Billing**.", "")![5]).toEqual({ ...list, content: [list.content![1]] });
+    // One with a link isn't: the link would be lost, which no edit may do.
+    const linked = [para(text("See "), text("Billing", { type: "link", attrs: { href: "https://example.com/billing" } }), text(".")), para(text("More."))];
+    expect(replacePassage(linked, "See [Billing](https://example.com/billing).", "")).toBeNull();
+    expect(replacePassage(linked, "More.", "")).toEqual([linked[0]]);
+    // Its list's last item takes the list with it.
+    const one = [para(text("Plans:")), { type: "bulletList", content: [{ type: "listItem", content: [para(text("Free"))] }] }];
+    expect(replacePassage(one, "Free", "")).toEqual([one[0]]);
+    expect(replacePassage(section, "Plans", "")).toEqual(section.slice(1));
+    // A cell or a step's title has no place to leave; an item with more than its text ("Pick a plan." has a list under
+    // it) would lose that too.
+    const steps = [{ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [text("Open Billing")] }] }] }];
+    for (const [blocks, find] of [[section, "3"], [section, "Pick a plan."], [steps, "Open Billing"]] as const) {
+      expect(replacePassage(blocks as JSONContent[], find, "")).toBeNull();
+    }
+  });
+
+  test("text is added after a passage: paragraphs after its block, or items of its list after a list's item", () => {
+    const next = insertAfterPassage(section, "Each plan has seats.", "Seats can be added at any time.\n\nSee **Billing**.")!;
+    expect(next.slice(0, 4)).toEqual([section[0], section[1], para(text("Seats can be added at any time.")), para(text("See "), text("Billing", { type: "bold" }), text("."))]);
+    expect(next.slice(4)).toEqual(section.slice(2));
+    // Italics, as in a passage.
+    expect(insertAfterPassage(section, "Each plan has seats.", "Seats are *per project*.")![2]).toEqual(para(text("Seats are "), text("per project", { type: "italic" }), text(".")));
+    // After a heading, and after a code block.
+    expect(insertAfterPassage(section, "Plans", "Pick one.")!.slice(0, 2)).toEqual([section[0], para(text("Pick one."))]);
+    // A <br> would be stored as text: refused. An escaped one is text the writer meant.
+    expect(insertAfterPassage(section, "Each plan has seats.", "Open **Export**.<br>Pick CSV.")).toBeNull();
+    expect(insertAfterPassage(section, "```bash\nnpm run export\n```", "It writes a CSV file.")![4]).toEqual(para(text("It writes a CSV file.")));
+    // After a list's item, the new items join its list, whatever their marker; the list keeps its kind and start.
+    const list = section[5] as JSONContent;
+    expect(insertAfterPassage(section, "Open **Billing**.", "1. Pick **Plans**.")![5]).toEqual({
+      ...list,
+      content: [list.content![0], { type: "listItem", content: [para(text("Pick "), text("Plans", { type: "bold" }), text("."))] }, list.content![1]],
+    });
+    // Only the links these blocks have; others stay text.
+    const linked = [para(text("See "), text("plans", { type: "link", attrs: { href: "https://example.com/plans" } }), text(".")), section[3]];
+    expect(insertAfterPassage(linked as JSONContent[], "```bash\nnpm run export\n```", "[Plans](https://example.com/plans) or [this](https://evil.example).")![2]).toEqual(
+      para(text("Plans", { type: "link", attrs: { href: "https://example.com/plans" } }), text(" or "), text("this"), text(".")),
+    );
+    for (const [after, insert] of [
+      // Not found once, or no place to add (a cell, an item with more than its text).
+      ["Each plan", "More."],
+      ["3", "More."],
+      ["Pick a plan.", "- More."],
+      // Nothing, a heading (it would start a section), an image's placeholder, or more than items after an item.
+      ["Each plan has seats.", "  "],
+      ["Each plan has seats.", "## Prices\n\nMore."],
+      ["Each plan has seats.", "{{media 1}}"],
+      ["Open **Billing**.", "Pick a plan."],
+      ["Open **Billing**.", "- Pick a plan.\n\nThen pay."],
+      // Code: none is made up (its backticks would be dropped, the code shown as text).
+      ["Each plan has seats.", "Run `npm run seats` to list them."],
+    ]) {
+      expect(insertAfterPassage(section, after!, insert!)).toBeNull();
+    }
   });
 });
