@@ -33,9 +33,9 @@ export function MemberRoleSelect({ projectSlug, memberId, name, role, assignable
     <Select
       items={ROLE_LABELS}
       value={role}
-      disabled={pending}
+      // Not disabled while it saves: focus comes back to it once its list closes. A pick made meanwhile is ignored.
       onValueChange={(value) => {
-        if (value === role) {
+        if (value === role || pending) {
           return;
         }
         startTransition(async () => {

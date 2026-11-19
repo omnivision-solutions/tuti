@@ -109,9 +109,15 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
 
   // The new admin sees all of Settings; made a member again, only Team & roles (Access is the owners' and admins').
-  await role.click();
-  await owner.getByRole("option", { name: "Member" }).click();
+  // By keyboard this time: focus stays on the dropdown once the role is saved.
+  await role.focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("option", { name: "Member" })).toBeVisible();
+  await owner.keyboard.press("ArrowDown");
+  await owner.keyboard.press("Enter");
   await expect(owner.getByText("Role changed to Member")).toBeVisible();
+  await expect(role).toContainText("Member");
+  await expect(role).toBeFocused();
   await invitee.goto(`/app/${slug}/settings`);
   await invitee.waitForURL(`**/app/${slug}/settings/team`);
   await expect(invitee.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText(["Team & roles"]);
