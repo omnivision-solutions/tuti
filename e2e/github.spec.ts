@@ -53,6 +53,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("button", { name: "Actions for acme-e2e/ios" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
+  // Its row is gone, and its menu's button with it: focus is on "Add repository", not lost.
+  await expect(owner.getByRole("button", { name: "Add repository" })).toBeFocused();
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
   await expect(owner.getByRole("heading", { name: "Repositories 1" })).toBeVisible();
   // Which repositories the app can see is the account's to choose, on GitHub.
@@ -276,6 +278,10 @@ test("an admin connects two projects to one GitHub account, gives each its repos
     await owner.setViewportSize({ width, height: 900 });
     await expect(connectedTo(labs.account)).toBeVisible();
     await expect.poll(() => title.evaluate(uncut)).toBe(true);
+    // On a wide screen the header has room for the whole name.
+    if (width === 1280) {
+      await expect.poll(() => connectedTo(labs.account).evaluate(uncut)).toBe(true);
+    }
   }
   await expect.poll(() => connectedTo(labs.account).evaluate(uncut)).toBe(true);
   await checkpoint(owner, "settings-github-long-name-tablet");

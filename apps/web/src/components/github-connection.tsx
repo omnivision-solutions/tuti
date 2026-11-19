@@ -2,7 +2,7 @@
 
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -30,16 +30,18 @@ export function GithubConnectionMenu({ projectSlug, account, connected, switchUr
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const id = useId();
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" disabled={pending} aria-label="GitHub connection actions" />}>
+        <DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" disabled={pending} focusableWhenDisabled aria-label="GitHub connection actions" />}>
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto min-w-40">
+        {/* Described by its first line, so a screen reader reads when it was connected as the menu opens. */}
+        <DropdownMenuContent align="end" className="w-auto min-w-40" aria-describedby={`${id}-connected`}>
           <DropdownMenuGroup>
             {/* The account in full: the header's pill cuts the longest logins. */}
-            <DropdownMenuLabel className="max-w-72 wrap-anywhere">
+            <DropdownMenuLabel id={`${id}-connected`} className="max-w-72 wrap-anywhere">
               Connected to @{account} on {connected}
             </DropdownMenuLabel>
           </DropdownMenuGroup>
@@ -167,7 +169,7 @@ export function GithubRepositories({
       count={ours.length}
       action={
         <Dialog open={adding} onOpenChange={setAdding}>
-          <DialogTrigger render={<Button variant="outline" size="sm" className="shrink-0" disabled={pending} />}>
+          <DialogTrigger render={<Button id="add-repository" variant="outline" size="sm" className="shrink-0" disabled={pending} focusableWhenDisabled />}>
             <PlusIcon />
             Add repository
           </DialogTrigger>
@@ -219,10 +221,11 @@ export function GithubRepositories({
             <li key={repo.id}>
               <SettingRow label={<span className="font-mono text-sm font-normal break-all">{name(repo)}</span>} inline>
                 <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Actions for ${name(repo)}`} />}>
+                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} focusableWhenDisabled aria-label={`Actions for ${name(repo)}`} />}>
                     <MoreHorizontalIcon />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-auto min-w-32">
+                  {/* Removed, its row and this menu's button go: focus moves to "Add repository" instead of being lost. */}
+                  <DropdownMenuContent align="end" className="w-auto min-w-32" finalFocus={() => (included.has(repo.id) ? true : document.getElementById("add-repository"))}>
                     <DropdownMenuItem variant="destructive" onClick={() => change(repo, false)}>
                       Remove
                     </DropdownMenuItem>
