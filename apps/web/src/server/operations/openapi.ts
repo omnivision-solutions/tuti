@@ -6,11 +6,27 @@ import { operations } from "./index";
 
 type JsonSchema = { properties?: Record<string, JsonSchema>; required?: string[]; description?: string; [key: string]: unknown };
 
-/** An operation's input as JSON Schema (what callers send, before defaults and coercion). */
-export function inputSchema(operation: (typeof operations)[number]): JsonSchema {
-  const schema = z.toJSONSchema(operation.input, { io: "input", unrepresentable: "any" }) as JsonSchema;
+/**
+ * A zod type as JSON Schema. Zod bounds every `.int()` by the safe integers (±2^53 − 1), which isn't a limit anyone
+ * set: those bounds go, so the docs don't print "at most 9007199254740991". Real ones (`.max(100)`) stay.
+ */
+function toJsonSchema(type: z.ZodType, io: "input" | "output"): JsonSchema {
+  const schema = z.toJSONSchema(type, {
+    io,
+    unrepresentable: "any",
+    override: ({ jsonSchema }) => {
+      for (const key of ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"] as const) {
+        if (Math.abs(jsonSchema[key] as number) === Number.MAX_SAFE_INTEGER) delete jsonSchema[key];
+      }
+    },
+  }) as JsonSchema;
   delete schema.$schema;
   return schema;
+}
+
+/** An operation's input as JSON Schema (what callers send, before defaults and coercion). */
+export function inputSchema(operation: (typeof operations)[number]): JsonSchema {
+  return toJsonSchema(operation.input, "input");
 }
 
 /**
@@ -18,9 +34,7 @@ export function inputSchema(operation: (typeof operations)[number]): JsonSchema 
  * under `$defs`, as MCP's `outputSchema` takes it.
  */
 export function outputSchema(operation: (typeof operations)[number]): JsonSchema {
-  const schema = z.toJSONSchema(operation.output, { io: "output", unrepresentable: "any" }) as JsonSchema;
-  delete schema.$schema;
-  return opened(schema) as JsonSchema;
+  return opened(toJsonSchema(operation.output, "output")) as JsonSchema;
 }
 
 /** Keys whose values are data, not schemas: left as they are. */
