@@ -16,6 +16,7 @@ import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
+import { supportSignIn } from "./support-sign-in";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
 import { socialSignInConfig } from "./social-sign-in";
 import { jwtSso } from "./sso";
@@ -288,6 +289,7 @@ export const auth = betterAuth({
   plugins: [
     jwtSso(),
     portalHandoff(),
+    supportSignIn(),
     magicLink({ expiresIn: SIGN_IN_LINK_MINUTES * 60, storeToken: "hashed", sendMagicLink: sendSignInLink }),
     // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
     genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
