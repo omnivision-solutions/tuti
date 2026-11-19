@@ -147,7 +147,8 @@ web app and the worker alike (mount the same file into both). Without a file, Tu
 unless you set a model variable: then only Balanced and Custom are offered. An invalid file stops start-up.
 Tuti's own Best row uses Claude Opus where the model writes (answers, drafted replies, changelog entries, Autopilot's
 articles and checks) and Claude Sonnet for the rest; with `AI_MODEL_MAX_PRICE` under Opus's price, Best isn't offered
-until you raise the cap or give Best cheaper models in your file.
+until you raise the cap or give Best cheaper models in your file. The cap is checked when a level is
+saved: a project already on Best keeps it, and runs on Opus, until it picks another level.
 
 ### Autopilot's settings
 
