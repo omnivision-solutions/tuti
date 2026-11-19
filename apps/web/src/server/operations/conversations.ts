@@ -43,12 +43,12 @@ const at = (description: string) => z.string().describe(`${description} (ISO 860
 
 const conversationUserOutput = z
   .object({
-    id: z.string().nullable().describe("Their id in your app, when they came through SSO or the API; null for someone known by email only").meta({ examples: ["user-42"] }),
+    id: z.string().nullable().describe("Their id in your app, when they came through SSO or the API; null otherwise (an email, a portal account, a signed-out visitor)").meta({ examples: ["user-42"] }),
     name: z.string().nullable().describe("Their name: for someone known by email only, the name their email came from, once its address is verified").meta({ examples: ["Sam Lee"] }),
-    email: z.string().nullable().describe("Their email address").meta({ examples: ["sam@example.com"] }),
+    email: z.string().nullable().describe("Their email address; null for a signed-out visitor in the widget").meta({ examples: ["sam@example.com"] }),
     verified: z.boolean().describe("Whether the address is known to be theirs: always for someone from your app").meta({ examples: [true] }),
   })
-  .meta({ id: "ConversationUser", description: "Who a conversation is with: someone from your app, or an email address" });
+  .meta({ id: "ConversationUser", description: "Who a conversation is with: someone from your app or with a portal account, an email address, or a signed-out visitor" });
 
 const conversationFields = {
   number: z.number().int().describe("The conversation's number in the project").meta({ examples: [12] }),
@@ -108,7 +108,7 @@ const messageOutput = z
     body: z.string().describe("What it says, plain text").meta({ examples: ["The export button does nothing on the reports page."] }),
     note: z.boolean().describe("An internal note: only the team sees it, never sent").meta({ examples: [false] }),
     attachments: z.array(attachmentOutput).describe("The files it came with"),
-    attachmentsDropped: z.number().int().describe("How many files it came with couldn't be kept (no media storage)").meta({ examples: [0] }),
+    attachmentsDropped: z.number().int().describe("How many files it came with couldn't be kept (no media storage, or an import couldn't copy them)").meta({ examples: [0] }),
     createdAt: at("When it was written"),
   })
   .meta({ id: "ConversationMessage", description: "A message in a conversation, or the team's note" });
