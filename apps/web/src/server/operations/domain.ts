@@ -125,7 +125,7 @@ export const setDomain = defineOperation({
   path: "/domain",
   scope: "write",
   access: "admin",
-  errors: [402, 409],
+  errors: [402, 409, 503],
   input: z.object({
     hostname: z
       .string()
@@ -139,7 +139,7 @@ export const setDomain = defineOperation({
   example: { hostname: "help.example.com" },
   run: async ({ actor, projectId }, input) => {
     if (!customDomainTarget()) {
-      throw new OperationError(400, "invalid_input", OFF);
+      throw new OperationError(503, "domains_unavailable", OFF);
     }
     await requirePlan(projectId, "customDomain");
     const normalized = normalizeHostname(input.hostname);

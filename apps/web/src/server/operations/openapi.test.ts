@@ -221,8 +221,8 @@ test("errors by status: what every operation can give, and what it declares", ()
   expect(responses("/posts/{number}/vote", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429", "500"]);
   // A post on a board that isn't there: a 404 its path doesn't make, so it declares it.
   expect(responses("/posts", "post")).toEqual(["200", "400", "401", "403", "404", "409", "429", "500"]);
-  // Settings for owners and admins on a paid plan, checked with the DNS.
-  expect(responses("/domain", "post")).toEqual(["200", "400", "401", "402", "403", "409", "429", "500"]);
+  // Settings for owners and admins on a paid plan, on a server where custom domains are set up.
+  expect(responses("/domain", "post")).toEqual(["200", "400", "401", "402", "403", "409", "429", "500", "503"]);
   for (const operation of operations) {
     expect(new Set(operation.errors).size, `${operation.name} lists an error twice`).toBe(operation.errors?.length ?? 0);
   }
