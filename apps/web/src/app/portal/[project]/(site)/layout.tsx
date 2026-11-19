@@ -131,7 +131,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
         <header className="portal-header border-b">
         {/* One width on every page (the docs' columns'), so the header doesn't move between parts. */}
-        <div className="mx-auto flex min-h-14 max-w-[82rem] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
+        <div className="mx-auto flex min-h-14 max-w-[82rem] flex-wrap 2xl:max-w-[100rem] items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">

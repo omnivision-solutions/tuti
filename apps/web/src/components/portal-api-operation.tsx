@@ -480,7 +480,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
   );
   return (
     <DocsLayout tree={tree} current={null} wide extra={<ReferenceTree page={page} references={tree.references} current={operation.slug} />}>
-      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start">
+      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_26rem] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_minmax(26rem,0.75fr)]">
         <article className="flex min-w-0 flex-col gap-8" aria-labelledby={ARTICLE_TITLE_ID}>
           <div className="flex flex-col gap-3">
             {/* The way up, and the page's actions at the row's end on wide screens, under the title on phones (as an article's). */}

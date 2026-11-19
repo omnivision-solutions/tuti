@@ -40,7 +40,7 @@ test("navigating between articles with and without sections keeps the docs align
     ];
     return Promise.all(elements.map(async (element) => (await element.boundingBox())!.x));
   };
-  for (const width of [1440, 1280]) {
+  for (const width of [1728, 1440, 1280]) {
     await reader.setViewportSize({ width, height: 900 });
     await expect(outline).toBeVisible();
     // The way back to the docs' home names it as the header does.
@@ -58,9 +58,27 @@ test("navigating between articles with and without sections keeps the docs align
     await expect(outline).toBeVisible();
     expect(await positions()).toEqual(withSections);
   }
+  // On a big screen the header and the docs widen together (the tree still at the logo), and the article sits in the
+  // middle of the room between the tree and "On this page", which is at the container's right edge.
+  await reader.setViewportSize({ width: 1728, height: 900 });
+  const [logoBox, layout, treeColumn, article, outlineColumn] = await Promise.all(
+    [
+      reader.locator("header").getByRole("link", { name: "Acme", exact: true }),
+      reader.locator("[data-docs-layout]"),
+      reader.locator("[data-docs-layout] > aside").first(),
+      reader.getByRole("article", { name: "Import events" }),
+      reader.locator("[data-docs-layout] > aside").last(),
+    ].map(async (element) => (await element.boundingBox())!),
+  );
+  expect(layout.width).toBe(97 * 16);
+  expect(Math.abs((await tree.boundingBox())!.x - logoBox.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(outlineColumn.x + outlineColumn.width - (layout.x + layout.width))).toBeLessThanOrEqual(1);
+  const [before, after] = [article.x - (treeColumn.x + treeColumn.width), outlineColumn.x - (article.x + article.width)];
+  expect(before).toBeGreaterThan(64);
+  expect(Math.abs(before - after)).toBeLessThanOrEqual(1);
   // The header is the same width on every part: its logo doesn't move going from Docs to the others and back.
   const logoX = async () => (await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!.x;
-  for (const width of [1440, 1280, 1200]) {
+  for (const width of [1728, 1440, 1280, 1200]) {
     await reader.setViewportSize({ width, height: 900 });
     await reader.goto("/docs/import-events");
     await expect(reader.getByRole("heading", { name: "Import events", level: 1 })).toBeVisible();

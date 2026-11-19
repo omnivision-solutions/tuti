@@ -180,6 +180,12 @@ test("a reader opens an API reference's operation: its method, path and fields, 
   await expect(response.getByText('"error": "Title is required"')).toBeVisible();
   await expect(response.getByText('"number": 128')).toBeHidden();
   await checkpoint(reader, "operation-python-and-400", { fullPage: false });
+  // On a big screen both columns get the extra room: the examples wider than their 26rem, the page wider than at 1440px.
+  const narrow = (await page.boundingBox())!.width;
+  await reader.setViewportSize({ width: 1728, height: 900 });
+  expect((await request.boundingBox())!.width).toBeGreaterThan(30 * 16);
+  expect((await page.boundingBox())!.width).toBeGreaterThan(narrow + 100);
+  await reader.setViewportSize({ width: 1440, height: 900 });
 
   // A deprecated operation says so, and its path's parameter is marked.
   await tree.getByRole("link", { name: "Delete a post (deprecated) DELETE", exact: true }).click();

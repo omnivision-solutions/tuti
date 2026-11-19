@@ -678,8 +678,8 @@ export function DocsLayout({
   const sections = outlined(headings);
   return (
     // At least the window's height (flex-1 in <main>), so the tree runs to the bottom on a short page.
-    // In the header's 82rem container, less its padding, so the tree's left edge is the logo's.
-    <div data-docs-layout className={cn("mx-auto flex w-full flex-1 xl:max-w-[79rem] xl:gap-8", sections ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
+    // In the header's 82rem container (100rem on big screens), less its padding, so the tree's left edge is the logo's.
+    <div data-docs-layout className={cn("mx-auto flex w-full flex-1 xl:max-w-[79rem] xl:gap-8 2xl:max-w-[97rem]", sections ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
       {/* From the header to the bottom of the page; the tree scrolls on its own, under the header. */}
       {column(
         <aside className={cn("-my-10 hidden w-64 shrink-0 md:block", reading && READING_HIDES)}>
@@ -689,8 +689,23 @@ export function DocsLayout({
         </aside>
       )}
       {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines.
-          Only the overview takes the container's width; tree-less search results and short articles keep their cap. */}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem] xl:[:root:not([data-docs-reading])_&]:ml-0" : wide ? "max-w-[43rem] xl:ml-0 xl:max-w-none" : shown ? "max-w-[43rem] xl:ml-0" : overview ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem] xl:ml-0")}>
+          Only the overview takes the container's width; tree-less search results and short articles keep their cap.
+          On big screens, beside the tree, the page is centred between the tree and "On this page" (at the container's
+          right edge); a short one keeps the longer one's left edge (46rem, less the 3rem it doesn't use). */}
+      <div
+        className={cn(
+          "mx-auto flex w-full min-w-0 flex-col gap-6",
+          sections
+            ? cn("max-w-[46rem] xl:[:root:not([data-docs-reading])_&]:ml-0", shown && "2xl:[:root:not([data-docs-reading])_&]:ml-auto")
+            : wide
+              ? "max-w-[43rem] xl:ml-0 xl:max-w-none"
+              : shown
+                ? "max-w-[43rem] xl:ml-0 2xl:ml-auto 2xl:max-w-[46rem] 2xl:pr-12"
+                : overview
+                  ? "max-w-[71rem] xl:max-w-none"
+                  : "max-w-[71rem] xl:ml-0",
+        )}
+      >
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
