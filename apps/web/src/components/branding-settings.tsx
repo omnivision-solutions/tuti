@@ -607,7 +607,8 @@ export function PoweredBySettings({
 
   return (
     <div id="powered-by" className="scroll-mt-4">
-      <input ref={field} type="hidden" name="poweredBy" value={change} />
+      {/* `data-saved`: what the page last said is saved, whatever is picked (a journey waits on it). */}
+      <input ref={field} type="hidden" name="poweredBy" value={change} data-saved={saved ? "on" : "off"} />
       <SettingRow
         label={'"Powered by tuti"'}
         htmlFor={id}

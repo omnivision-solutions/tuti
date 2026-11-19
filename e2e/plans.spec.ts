@@ -130,13 +130,11 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await save.click();
   await expect(owner.getByRole("button", { name: "Saving…" })).toBeVisible();
   await badgeSwitch.click();
-  // The page asks for what's saved once the save lands: that answer is what the checks below wait for.
-  const refreshed = owner.waitForResponse((response) => response.request().method() === "GET" && response.request().headers().rsc === "1");
   land();
   await owner.unroute("**/*");
   await expect(owner.getByText("Branding saved")).toBeVisible();
   // Once the page has what's saved (the badge on): the pick made meanwhile is what shows, not what's saved.
-  await (await refreshed).finished();
+  await expect(owner.locator('input[name="poweredBy"]')).toHaveAttribute("data-saved", "on");
   await expect(save).toBeEnabled();
   await expect(badgeSwitch).not.toBeChecked();
   await badgeSwitch.click();
