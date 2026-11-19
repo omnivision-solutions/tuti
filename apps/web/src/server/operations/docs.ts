@@ -178,7 +178,7 @@ const articleOutput = z
       .enum(LISTINGS)
       .describe("Where it's served once published: `everywhere`, `unlisted` (at its link only), `hidden` (nowhere public) or `ai_only` (only a source for AI answers)")
       .meta({ examples: ["everywhere"] }),
-    deletedAt: z.string().optional().describe("When it was deleted (ISO 8601): only in the list of deleted articles"),
+    deletedAt: z.string().optional().describe("When it was deleted (ISO 8601): only in the list of deleted articles").meta({ examples: ["2026-11-10T08:00:00.000Z"] }),
     collection: collectionRef.describe("The collection it's in, or null for none").meta({ examples: [{ slug: "basics", name: "Basics" }] }),
     order: z.number().int().describe("Its place among the articles in its collection (or in none), 0 first: readers list them by this, then by title").meta({ examples: [0] }),
     body: z.string().describe("Its text as plain text").meta({ examples: ["Create a board, then share your portal."] }),
