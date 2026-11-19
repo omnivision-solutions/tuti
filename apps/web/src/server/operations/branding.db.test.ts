@@ -392,10 +392,12 @@ test("Customize's forms each save their part:an empty image field removes it, em
   expect(await saveBranding(project.slug, {}, form({ part: "look", logo: "", color: "#5b21b6" }))).toEqual({});
   expect(await saveBranding(project.slug, {}, form({ part: "links" }))).toEqual({});
   expect(await get()).toMatchObject({ logo: null, headerLinks: [], poweredBy: false });
-  // Branding's own form sends the switch with the look: on, or the empty field beside it alone for off.
+  // Branding's own form sends the switch with the look once it was changed there ("on" or "off"), else an empty field.
   expect(await saveBranding(project.slug, {}, form({ part: "look", logo: "", color: "#5b21b6", poweredBy: "on" }))).toEqual({});
   expect(await get()).toMatchObject({ poweredBy: true });
   expect(await saveBranding(project.slug, {}, form({ part: "look", logo: "", color: "#5b21b6", poweredBy: "" }))).toEqual({});
+  expect(await get()).toMatchObject({ poweredBy: true });
+  expect(await saveBranding(project.slug, {}, form({ part: "look", logo: "", color: "#5b21b6", poweredBy: "off" }))).toEqual({});
   expect(await get()).toMatchObject({ poweredBy: false });
   await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();

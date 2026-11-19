@@ -181,6 +181,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await badge.getByRole("button", { name: "More about this setting" }).click();
   await expect(owner.getByText("The badge at the foot of your portal. Hiding it needs a licence for this project.")).toBeVisible();
   await owner.keyboard.press("Escape");
+  await expect(poweredBy).toHaveAccessibleDescription("Hiding it needs a licence for this project.");
   await poweredBy.click();
   const dialog = owner.getByRole("dialog", { name: 'Keep "Powered by tuti"?' });
   await expect(dialog).toBeVisible();

@@ -104,10 +104,21 @@ export function BrandingSettings({
   children?: ReactNode;
 }) {
   const [uploading, setUploading] = useState(0);
-  const { state, form } = useBrandingForm(
-    projectSlug,
-    "Branding saved",
-    (data) => ({
+  const preview = usePreview();
+  const { state, form } = useCustomizeForm({
+    save: async (prev, data) => {
+      const result = await saveBranding(projectSlug, prev, data);
+      if (!result.error && data.has("poweredBy")) {
+        // The badge's change is saved, so the form holds none (see PoweredBySettings): what it sent, for "Save changes".
+        data.set("poweredBy", "");
+      }
+      return result;
+    },
+    onSaved: () => {
+      toast.success("Branding saved");
+      preview.reload();
+    },
+    toDraft: (data) => ({
       color: text(data, "color") === defaultColor ? null : text(data, "color") || null,
       logo: image(data, "logo"),
       logoDark: image(data, "logoDark"),
@@ -118,8 +129,8 @@ export function BrandingSettings({
       logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
       fonts: { heading: fontOf(data, "headingFont"), body: fontOf(data, "bodyFont") },
     }),
-    uploading > 0,
-  );
+    busy: uploading > 0,
+  });
   const busy = (delta: number) => setUploading((count) => count + delta);
   const id = useId();
 
@@ -516,8 +527,9 @@ type BadgePlan = { addOn: boolean; billingUrl: string; perMonth: number | null }
  * badge matters, and where to buy a licence (and Check now), or where plans are sold, the add-on on Billing. What it
  * takes to hide is behind the row's ⓘ; a licence's date and the add-on's state show under the label.
  *
- * The form sends the switch only once it's been changed here: saving a colour from a page opened before the badge was
- * hidden elsewhere (Billing's add-on, another tab) leaves the badge as it is, and the switch then shows what's saved.
+ * The form sends the switch only while it differs from what's saved (`poweredBy`: "on" or "off", else empty): saving a
+ * colour from a page opened before the badge was hidden elsewhere (Billing's add-on, another tab) leaves the badge as
+ * it is, and the switch then shows what's saved.
  */
 export function PoweredBySettings({
   projectSlug,
@@ -536,23 +548,20 @@ export function PoweredBySettings({
   plan: BadgePlan | null;
 }) {
   const [shown, setShown] = useState(poweredBy);
-  // What's saved, as the page last said, and whether a change made here has been: from then on the form keeps
-  // sending the switch, so what it holds stays what it sent ("Save changes" goes by that).
+  // What's saved, as the page last said (after each save it says again).
   const [saved, setSaved] = useState(poweredBy);
-  const [sent, setSent] = useState(false);
   if (saved !== poweredBy) {
     setSaved(poweredBy);
     if (shown === saved) {
       // Nothing changed here: it was changed elsewhere.
       setShown(poweredBy);
-    } else if (shown === poweredBy) {
-      setSent(true);
     }
   }
-  const changed = sent || shown !== saved;
+  const change = shown === saved ? "" : shown ? "on" : "off";
   const id = useId();
-  const box = useRef<HTMLInputElement>(null);
-  useFieldChanged(box, shown);
+  // The form's field: it says when the change is made, taken back or saved, for "Save changes".
+  const field = useRef<HTMLInputElement>(null);
+  useFieldChanged(field, change);
   // The preview shows it as it's switched (the form's own draft only has what it sends).
   const { setDraft } = usePreview();
   useEffect(() => setDraft({ poweredBy: shown }), [setDraft, shown]);
@@ -592,24 +601,23 @@ export function PoweredBySettings({
   ) : licensedUntil ? (
     licensedLine(licensedUntil)
   ) : undefined;
+  // What hiding it takes, without either: behind the ⓘ, and the switch's description for screen readers.
+  const needs = status ? null : plan ? "Hiding it is an add-on to a paid plan." : "Hiding it needs a licence for this project.";
 
   return (
     <div id="powered-by" className="scroll-mt-4">
-      {/* Sent off or on (see saveBranding), once changed. */}
-      {changed && <input type="hidden" name="poweredBy" value="" />}
+      <input ref={field} type="hidden" name="poweredBy" value={change} />
       <SettingRow
         label={'"Powered by tuti"'}
         htmlFor={id}
         description={status}
-        info={`The badge at the foot of your portal.${status ? "" : plan ? " Hiding it is an add-on to a paid plan." : " Hiding it needs a licence for this project."}`}
+        info={`The badge at the foot of your portal.${needs ? ` ${needs}` : ""}`}
         inline
       >
         <Switch
-          ref={box}
           id={id}
-          name={changed ? "poweredBy" : undefined}
           checked={shown}
-          aria-describedby={status ? `${id}-description` : undefined}
+          aria-describedby={status ? `${id}-description` : `${id}-needs`}
           onChange={(event) => {
             if (!event.target.checked && !licensedUntil && !plan?.addOn) {
               setMessage(null);
@@ -620,6 +628,11 @@ export function PoweredBySettings({
           }}
         />
       </SettingRow>
+      {needs && (
+        <span id={`${id}-needs`} className="sr-only">
+          {needs}
+        </span>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

@@ -40,8 +40,8 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
           ...(formData.has("bodyFont") && { body: (text("bodyFont") || null) as PortalFont | null }),
         },
       }),
-      // Branding's own form has "Powered by tuti" too, sent as the theme's switch is, and only once it was changed there.
-      ...(formData.has("poweredBy") && { poweredBy: formData.getAll("poweredBy").includes("on") }),
+      // Branding's own form has "Powered by tuti" too: "on" or "off" once the switch was changed there, else empty.
+      ...(["on", "off"].includes(text("poweredBy")) && { poweredBy: text("poweredBy") === "on" }),
     }),
     links: () => ({
       headerLinks: linksFrom(formData, "headerLink"),
