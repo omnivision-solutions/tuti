@@ -13,7 +13,6 @@ import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { formatDate } from "@/lib/format";
 import { githubConfig } from "@/lib/github";
 import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
@@ -49,13 +48,13 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
   // Back from "Connect GitHub" with the accounts the person has the app on.
   const accounts =
     githubResult === "choose" ? accountsFromCookie((await cookies()).get(ACCOUNTS_COOKIE)?.value ?? "", project.id) : [];
-  const installation = await prisma.githubInstallation.findUnique({
-    where: { projectId: project.id },
-    select: { accountLogin: true, createdAt: true, project: { select: { analyseCodeChanges: true } } },
-  });
+  const [installation, { analyseCodeChanges }] = await Promise.all([
+    prisma.githubInstallation.findUnique({ where: { projectId: project.id }, select: { accountLogin: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { analyseCodeChanges: true } }),
+  ]);
 
-  // As GitHub's own page: once connected, Autopilot reads pull requests only while the project has it on.
-  const githubFor = codeChangesEnabled() && installation?.project.analyseCodeChanges !== false ? "Pull requests for the changelog and Autopilot" : "Pull requests for the changelog";
+  // As GitHub's own page: Autopilot reads pull requests only while the project has it on.
+  const githubFor = codeChangesEnabled() && analyseCodeChanges ? "Pull requests for the changelog and Autopilot" : "Pull requests for the changelog";
 
   return (
     <SettingsPane title="Integrations">
@@ -72,7 +71,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
               <span className="font-medium wrap-anywhere">GitHub · {installation.accountLogin}</span>
               <span className="text-sm text-muted-foreground">{githubFor}</span>
             </span>
-            <Badge title={`Connected ${formatDate(installation.createdAt)}`}>Connected</Badge>
+            <Badge>Connected</Badge>
             <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           </Link>
         ) : (
@@ -121,7 +120,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
         </h2>
         <ul className="grid grid-cols-2 gap-2 @min-[34rem]:grid-cols-4">
           {COMING_SOON.map(({ name, icon: Icon }) => (
-            <li key={name} className="flex min-w-0 items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 font-medium">
+            <li key={name} className="flex min-w-0 items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 font-medium">
               <Icon aria-hidden className="size-4 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{name}</span>
               <Badge variant="secondary">Soon</Badge>

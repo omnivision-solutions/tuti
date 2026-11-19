@@ -30,7 +30,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await checkpoint(owner, "settings-integrations");
   // On a phone the tiles go two to a row, and nothing reaches past the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(() => owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // The pane's body scrolls what's too wide for it, so it's the one to measure.
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   await checkpoint(owner, "settings-integrations-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
@@ -230,7 +231,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ })).toBeVisible();
   await checkpoint(owner, "settings-integrations-connected");
   await owner.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(() => owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // The pane's body scrolls what's too wide for it, so it's the one to measure.
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   await checkpoint(owner, "settings-integrations-connected-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("link", { name: /GitHub · acme-e2e.*Connected/ }).click();
