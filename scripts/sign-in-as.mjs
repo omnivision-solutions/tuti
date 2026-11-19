@@ -26,7 +26,9 @@ try {
   }
   const token = randomBytes(32).toString("base64url");
   await client.query(
-    `INSERT INTO verification (id, identifier, value, "expiresAt", "updatedAt") VALUES ($1, $2, $3, now() + interval '10 minutes', now())`,
+    // Prisma's timestamps are UTC without a zone: now() alone would be the connection's local time.
+    `INSERT INTO verification (id, identifier, value, "expiresAt", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, (now() AT TIME ZONE 'UTC') + interval '10 minutes', now() AT TIME ZONE 'UTC', now() AT TIME ZONE 'UTC')`,
     [randomUUID(), `support-sign-in:${createHash("sha256").update(token).digest("hex")}`, rows[0].id],
   );
   const link = new URL("/api/auth/support/sign-in", new URL(process.env.APP_URL).origin);

@@ -10,8 +10,13 @@ import { auth } from "./auth";
 
 const script = fileURLToPath(new URL("../../../../scripts/sign-in-as.mjs", import.meta.url));
 
-/** What the maintainers' script prints: the link. */
-const mintLink = (email: string) => new URL(execFileSync("node", [script, email], { encoding: "utf8" }).trim().split("\n").at(-1)!);
+/** What the maintainers' script prints: the link. Its connection is in a zone behind UTC, which timestamps mustn't follow. */
+function mintLink(email: string) {
+  const database = new URL(process.env.DATABASE_URL!);
+  database.searchParams.set("options", "-c TimeZone=America/New_York");
+  const env = { ...process.env, DATABASE_URL: database.href };
+  return new URL(execFileSync("node", [script, email], { encoding: "utf8", env }).trim().split("\n").at(-1)!);
+}
 
 /** A browser opens `link` on `host`: where it's sent, and who it's then signed in as. */
 async function open(link: URL, host = link.host) {
