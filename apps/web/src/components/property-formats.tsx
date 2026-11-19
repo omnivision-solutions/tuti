@@ -16,6 +16,8 @@ import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats, isAmou
 import { setPropertyFormats } from "@/server/groups";
 
 const FORMATS = { text: "Text", number: "Number", money: "Money", date: "Date" } as const;
+/** For an amount with number values, which is a number until it's something else: "text" isn't kept (it's what a property is with nothing set), so it isn't offered. */
+const AMOUNT_FORMATS = { number: FORMATS.number, money: FORMATS.money, date: FORMATS.date };
 const CURRENCY_ITEMS = Object.fromEntries(CURRENCIES.map((currency) => [currency, currency]));
 
 /** One property's row saved on top of the rest (setPropertyFormats); the error to show, if any. */
@@ -53,6 +55,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
   const [format, setFormat] = useOptimistic(saved);
   const [renaming, setRenaming] = useState(false);
   const shown = format.format ?? (amount ? "number" : "text");
+  const offered = amount ? AMOUNT_FORMATS : FORMATS;
 
   const pick = (change: PropertyFormat) =>
     startTransition(async () => {
@@ -68,12 +71,12 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
       {/* As wide with a currency as without, so the keys the app sends line up in a column of their own. */}
       <div className="flex items-center gap-2 @min-[34rem]/settings:w-96">
         <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{name}</code>
-        <Select items={FORMATS} value={shown} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
+        <Select items={offered} value={shown} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
           <SelectTrigger className="w-28 shrink-0" aria-label={`Format of ${name}`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(FORMATS).map(([value, label]) => (
+            {Object.entries(offered).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
               </SelectItem>

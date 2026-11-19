@@ -823,7 +823,8 @@ widths, in light and dark (in development only).
   - One Save: "Save changes" in the pane's header, there once the page has a form (`useCustomizeForm`), enabled once
     something differs. A switch that acts alone saves at once.
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
-    `Select`. No radios with a sentence each, no native `<select>`.
+    `Select`. No radios with a sentence each, no native `<select>`. A list's rows that each hold the choice beside other
+    things (User properties' format, beside the key and a currency) use a `Select` whatever the count, so they fit a phone.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`.

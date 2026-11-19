@@ -325,7 +325,12 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Number");
   await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toHaveCount(0);
   // Picked on the row, it's saved at once; money then has its currency beside it.
+  // A number can't be shown as text (nothing is kept for that), so Text isn't offered for one; it is for the rest.
+  await properties.getByRole("combobox", { name: "Format of plan" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["Text", "Number", "Money", "Date"]);
+  await owner.keyboard.press("Escape");
   await mrr.getByRole("combobox", { name: "Format of mrr" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["Number", "Money", "Date"]);
   await owner.getByRole("option", { name: "Money" }).click();
   await expect(owner.getByText("Saved how mrr shows")).toBeVisible();
   await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Money");
@@ -337,6 +342,11 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveAttribute("placeholder", "MRR");
   await dialog.getByRole("textbox", { name: "Name shown" }).fill("Not kept");
   await checkpoint(owner, "settings-user-property");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await mrr.getByRole("button", { name: "Actions for mrr" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveValue("");
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
   const plan = properties.getByRole("listitem").filter({ hasText: "plan" });
