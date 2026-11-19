@@ -45,9 +45,11 @@ type Preview = {
   setDraft: (draft: Draft) => void;
   /** A form's state, by its id; null once it's gone. */
   register: (id: string, form: SaveForm | null) => void;
+  /** While "Save changes" is saving one of the page's forms. */
+  saving: boolean;
 };
 
-const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, draft: {}, setDraft: () => {}, register: () => {} });
+const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, draft: {}, setDraft: () => {}, register: () => {}, saving: false });
 
 /** The preview beside a Customize section's settings (a no-op anywhere else). */
 export const usePreview = () => useContext(PreviewContext);
@@ -263,7 +265,7 @@ export function usePreviewPage(title: string) {
     };
   }, [dirty]);
 
-  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register }}>{children}</PreviewContext>;
+  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register, saving: pending }}>{children}</PreviewContext>;
   const leaveDialog = (
     <AlertDialog open={leaving !== null} onOpenChange={(open) => !open && setLeaving(null)}>
       <AlertDialogContent>

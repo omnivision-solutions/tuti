@@ -564,7 +564,7 @@ export function PoweredBySettings({
   const field = useRef<HTMLInputElement>(null);
   useFieldChanged(field, change);
   // The preview shows it as it's switched (the form's own draft only has what it sends).
-  const { setDraft } = usePreview();
+  const { setDraft, saving } = usePreview();
   useEffect(() => setDraft({ poweredBy: shown }), [setDraft, shown]);
   const [licensedUntil, setLicensedUntil] = useState(initial);
   const [open, setOpen] = useState(false);
@@ -589,7 +589,7 @@ export function PoweredBySettings({
       return;
     }
     setLicensedUntil(outcome.licensedUntil);
-    setShown(false);
+    setShown(!saving && !saved ? null : false);
     setOpen(false);
     toast.success(`${licensedLine(outcome.licensedUntil)} Save your changes to hide the badge.`);
   };
@@ -625,9 +625,10 @@ export function PoweredBySettings({
               setOpen(true);
               return;
             }
-            // Kept even when it's what's saved: while a save runs, "what's saved" is about to change, and a pick made
-            // then has to stay one to save.
-            setShown(event.target.checked);
+            // Switched back to what's saved, the pick is forgotten: a change made elsewhere then shows, and a later
+            // save doesn't undo it. Not while a save runs: "what's saved" is about to change, and a pick made then
+            // has to stay one to save.
+            setShown(!saving && event.target.checked === saved ? null : event.target.checked);
           }}
         />
       </SettingRow>

@@ -145,6 +145,10 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(badgeSwitch).toBeChecked();
   await reader.goto(cloudPortalUrl(slug));
   await expect(reader.getByRole("link", { name: /Powered by/ })).toBeVisible();
+  // Switched off and back on here with nothing being saved: a pick taken back, forgotten.
+  await badgeSwitch.click();
+  await badgeSwitch.click();
+  await expect(save).toBeDisabled();
   // Switched off and saved in another tab, it's gone again.
   const other = await owner.context().newPage();
   await other.goto(`/app/${slug}/settings/branding`);
