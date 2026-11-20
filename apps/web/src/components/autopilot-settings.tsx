@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
@@ -360,11 +361,20 @@ export function AutopilotRecipientsForm({
   );
 }
 
-/** Account → Autopilot's email: as each change is analysed, a daily digest, or off. Saved as it's picked. */
 /** Where the browser says they are; null on the server (it can't know). */
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const noSubscribe = () => () => {};
 
+const EMAILS = [
+  { value: "AS_THEY_HAPPEN", label: "As they happen" },
+  { value: "DIGEST", label: "Daily digest" },
+  { value: "OFF", label: "Off" },
+] as const;
+
+/**
+ * Account → Notifications' "Autopilot emails" row: as each change is analysed, a daily digest, or off. Saved as it's
+ * picked; while that's on its way another pick waits (the options stay focusable).
+ */
 export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_HAPPEN" | "DIGEST" | "OFF"; timeZone: string | null }) {
   const [pending, startTransition] = useTransition();
   const here = useSyncExternalStore(noSubscribe, browserZone, () => null);
@@ -387,6 +397,9 @@ export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_H
     setZone(timeZone);
   }
   const pick = (value: typeof choice) => {
+    if (pending) {
+      return;
+    }
     setPicked(value);
     startTransition(async () => {
       // The digest comes in the morning where they are: the time zone their browser reports.
@@ -403,37 +416,42 @@ export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_H
       }
     });
   };
+  const digest = picked === "DIGEST" && zone;
   return (
-    <fieldset disabled={pending} className="flex flex-col gap-2">
-      <legend className="sr-only">Autopilot&apos;s email</legend>
-      {(
-        [
-          ["AS_THEY_HAPPEN", "As they happen", "An email when a merged pull request has updates (several merged within ten minutes in one)."],
-          [
-            "DIGEST",
-            "A daily digest",
-            `One email at 8 am${picked === "DIGEST" && zone ? ` (${zone})` : ""} with everything still waiting for you; none on a day with nothing.${picked === "DIGEST" && zone && here && here !== zone ? ` Pick it again to use ${here}.` : ""}`,
-          ],
-          ["OFF", "Off", "None. If you own a project, you still hear what goes out by itself."],
-        ] as const
-      ).map(([value, label, description]) => (
-        <label key={value} className="flex items-start gap-2 text-sm">
-          <input
-            type="radio"
-            name="autopilotEmails"
-            value={value}
-            checked={picked === value}
-            className="mt-0.5 size-4 accent-primary"
-            onChange={() => pick(value)}
-            // The digest picked again (moved since): saved again, with where their browser says they are now.
-            onClick={() => value === "DIGEST" && picked === value && pick(value)}
-          />
-          <span className="flex flex-col">
-            <span className="font-medium">{label}</span>
-            <span className="text-muted-foreground">{description}</span>
-          </span>
-        </label>
-      ))}
-    </fieldset>
+    <SettingRow
+      label={<span id="autopilot-emails">Autopilot emails</span>}
+      description={
+        <span id="autopilot-emails-description">
+          {digest ? `Daily at 8 am (${zone}).${here && here !== zone ? ` Pick it again to use ${here}.` : ""}` : "About merged pull requests in your projects."}
+        </span>
+      }
+      info={
+        <div className="flex flex-col gap-2">
+          <p>
+            <span className="font-medium">As they happen:</span> an email when a merged pull request has updates (several merged within ten minutes in one).
+          </p>
+          <p>
+            <span className="font-medium">Daily digest:</span> one email at 8 am with everything still waiting for you; none on a day with nothing.
+          </p>
+          <p>
+            <span className="font-medium">Off:</span> none. If you own a project, you still hear what goes out by itself.
+          </p>
+        </div>
+      }
+    >
+      {/* The digest picked again (moved since): saved again, with where their browser says they are now. A click, as a
+          radio that's already checked doesn't change; a key's or a label's click arrives as the radio's too. */}
+      <div className="flex" aria-busy={pending || undefined} onClick={(event) => picked === "DIGEST" && event.target instanceof HTMLInputElement && event.target.value === "DIGEST" && pick("DIGEST")}>
+        <Segmented
+          name="autopilotEmails"
+          options={EMAILS}
+          value={picked}
+          onValueChange={pick}
+          aria-labelledby="autopilot-emails"
+          aria-describedby="autopilot-emails-description"
+          className="@max-[34rem]/settings:w-full"
+        />
+      </div>
+    </SettingRow>
   );
 }

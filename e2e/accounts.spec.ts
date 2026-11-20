@@ -51,14 +51,17 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByRole("button", { name: /Olive Owner/ }).click();
   await olive.getByRole("menuitem", { name: "Account settings" }).click();
   await olive.waitForURL("**/app/account");
-  // One pane, its settings in cards of rows: the address first, then the name.
+  // One pane, its settings in cards of rows, and one Save in its header: off until something differs from what's saved.
   const account = olive.getByRole("region", { name: "Account settings" });
   await expect(account.getByRole("heading", { level: 1, name: "Account settings" })).toBeVisible();
   await expect(account.getByRole("heading", { name: "Profile" })).toBeVisible();
   await expect(account.getByText(olive.email)).toBeVisible();
+  const save = account.getByRole("button", { name: /^(Save changes|Saving…)$/ });
+  await expect(save).toBeDisabled();
   await olive.getByLabel("Name").fill("Olive Q. Owner");
-  await olive.getByRole("button", { name: "Save" }).click();
+  await save.click();
   await expect(olive.getByText("Profile updated")).toBeVisible();
+  await expect(save).toBeDisabled();
   // Initials, coloured, until there's a photo; then the photo, uploaded and saved with the name.
   const me = olive.getByRole("button", { name: /Olive Q\. Owner/ });
   await expect(me.locator('[data-slot="avatar-fallback"]')).toHaveClass(/bg-avatar-/);
@@ -66,33 +69,98 @@ test("a team member switches projects, edits their account, signs out and back i
   await scratch.setContent('<div id="face" style="width:96px;height:96px;background:#e07a5f"></div>');
   const face = await scratch.locator("#face").screenshot();
   await scratch.close();
+  // The photo's row shows them as they're shown everywhere: their initials, then the photo picked with Upload.
+  const photo = account.locator('[data-slot="setting-row"]').filter({ hasText: "Photo" });
+  await expect(photo.locator('[data-slot="avatar-fallback"]')).toHaveText("OQ");
   await olive.getByLabel("Photo", { exact: true }).setInputFiles({ name: "me.png", mimeType: "image/png", buffer: face });
   await expect(olive.getByRole("img", { name: "Photo preview" })).toBeVisible();
-  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await save.click();
   await expect(me.locator('[data-slot="avatar-image"]')).toHaveAttribute("src", /\/media\//);
   // Saving only a new name keeps it; Remove and Save puts the initials back.
   const saved = await me.locator('[data-slot="avatar-image"]').getAttribute("src");
   await olive.getByLabel("Name").fill("Olive Owner");
-  // Saved from the keyboard: focus stays on Save while it's off for the save.
-  const save = olive.getByRole("button", { name: "Save", exact: true });
+  // Saved from the keyboard: focus stays on Save while it's off for the save, and after (nothing left to save).
   await save.press("Enter");
   await expect(olive.getByRole("button", { name: /Olive Owner/ })).toBeVisible();
-  await expect(save).toBeEnabled();
   await expect(save).toBeFocused();
+  await expect(save).toBeDisabled();
   await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-image"]')).toHaveAttribute("src", saved!);
   await checkpoint(olive, "account-photo", { fullPage: false });
-  await olive.getByRole("button", { name: "Remove", exact: true }).click();
-  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await olive.getByRole("button", { name: "Remove photo" }).click();
+  await expect(photo.locator('[data-slot="avatar-fallback"]')).toHaveText("OO");
+  await save.click();
   await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-image"]')).toHaveCount(0);
   await expect(olive.getByRole("button", { name: /Olive Owner/ }).locator('[data-slot="avatar-fallback"]')).toHaveText("OO");
   await olive.getByLabel("Name").fill("Olive Q. Owner");
-  await olive.getByRole("button", { name: "Save", exact: true }).click();
+  await save.click();
   await expect(me).toBeVisible();
-  await olive.getByLabel("Current password").fill(PASSWORD);
-  await olive.getByLabel("New password").fill("a brand new passphrase");
-  await olive.getByRole("button", { name: "Change password" }).click();
+  // The password is one row: its button opens a dialog, with focus in its first field.
+  const change = account.getByRole("button", { name: "Change password" });
+  await expect(olive.getByLabel("Current password")).toHaveCount(0);
+  await change.click();
+  const dialog = olive.getByRole("dialog", { name: "Change password" });
+  await expect(dialog.getByLabel("Current password")).toBeFocused();
+  // Refused (not the current password): that field says so, and what was typed stays.
+  await dialog.getByLabel("Current password").fill("not the password");
+  await dialog.getByLabel("New password").fill("a brand new passphrase");
+  await dialog.getByRole("button", { name: "Change password" }).click();
+  await expect(dialog.getByLabel("Current password")).toHaveAccessibleDescription("Invalid password");
+  await expect(dialog.getByLabel("Current password")).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByLabel("New password")).not.toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByLabel("New password")).toHaveValue("a brand new passphrase");
+  await checkpoint(olive, "account-password-refused", { fullPage: false });
+  // Answered, it can be closed: focus goes back to its button, and it opens again empty, without the error.
+  await olive.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(change).toBeFocused();
+  await change.click();
+  await expect(dialog.getByLabel("Current password")).toHaveValue("");
+  await expect(dialog.getByLabel("Current password")).not.toHaveAttribute("aria-invalid", "true");
+  // While the change is on its way it can't be closed (Cancel is off, yet keeps focus; Escape does nothing).
+  let arrived!: () => void;
+  let release!: () => void;
+  const reached = new Promise<void>((resolve) => (arrived = resolve));
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await olive.route("**/api/auth/change-password", async (route) => {
+    arrived();
+    await held;
+    await route.continue();
+  });
+  await dialog.getByLabel("Current password").fill(PASSWORD);
+  await dialog.getByLabel("New password").fill("a brand new passphrase");
+  await dialog.getByRole("button", { name: "Change password" }).click();
+  await reached;
+  const cancel = dialog.getByRole("button", { name: "Cancel" });
+  await expect(cancel).toBeDisabled();
+  await cancel.focus();
+  await expect(cancel).toBeFocused();
+  await cancel.press("Enter");
+  await olive.keyboard.press("Escape");
+  await expect(dialog.getByLabel("New password")).toHaveValue("a brand new passphrase");
+  release();
+  // Changed: it says so and closes by itself.
   await expect(olive.getByText("Password changed")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await olive.unroute("**/api/auth/change-password");
+  await expect(olive.getByText("Password changed")).toBeHidden({ timeout: 15_000 });
+  // On a phone nothing runs off the side, the name's field is under its label, and the dialog fits the screen.
+  await olive.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => olive.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await olive.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  const nameLabel = (await account.getByText("Name", { exact: true }).boundingBox())!;
+  expect((await olive.getByLabel("Name").boundingBox())!.y).toBeGreaterThanOrEqual(nameLabel.y + nameLabel.height);
+  await checkpoint(olive, "account-settings-phone");
+  await change.click();
+  const box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(box.height).toBeLessThanOrEqual(844);
+  await checkpoint(olive, "account-password-phone", { fullPage: false });
+  await olive.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await olive.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(olive, "account-settings");
+  await olive.setViewportSize({ width: 1280, height: 720 });
 
   // Signing out, then in: the old password no longer works.
   await olive.getByRole("button", { name: /Olive Q\. Owner/ }).click();

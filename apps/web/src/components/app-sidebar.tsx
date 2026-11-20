@@ -290,7 +290,7 @@ function SearchButton() {
   );
 }
 
-function initials(name: string) {
+export function initials(name: string) {
   return name
     .split(/\s+/)
     .map((part) => part[0])
