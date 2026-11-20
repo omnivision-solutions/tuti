@@ -21,6 +21,7 @@ async function query(sql: string, values: unknown[]) {
 }
 
 test("an owner sets the Inbox's AI model and instructions for drafts, and a reply drafted with AI is asked for with them", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -51,22 +52,56 @@ test("an owner sets the Inbox's AI model and instructions for drafts, and a repl
   await expect(aiModel.getByRole("radio", { name: "Best", exact: true })).toBeChecked();
   expect((await query(`SELECT "aiLevels" AS levels FROM project WHERE slug = $1`, [slug]))[0].levels).toEqual({ support: "best" });
 
-  // Instructions for drafts, with one Save.
+  // The page says what it's for in one line beside its title.
+  const description = "AI drafts and summaries in the Inbox";
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect(owner.getByText(`· ${description}`, { exact: true })).toBeVisible();
+  const paneBody = owner.locator('[data-slot="pane-body"]').last();
+  await expect(paneBody.getByText(description, { exact: true })).toBeHidden();
+
+  // Instructions for drafts, saved by the page's one Save, in its header: nothing to save until they differ.
   const instructions = owner.getByRole("textbox", { name: "Instructions for drafts" });
+  const save = owner.getByRole("button", { name: "Save changes" });
+  await expect(owner.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   await expect(instructions).toHaveValue("");
   await expect(instructions).toHaveAttribute("placeholder", "Keep replies short and friendly. End by asking whether that helped.");
-  await instructions.fill(`End by asking whether that helped ${slug}.`);
-  // Saved from the keyboard: focus stays on Save and the box keeps what was typed.
-  await owner.keyboard.press("Tab");
+  await expect(save).toBeDisabled();
+  await instructions.fill(`  End by asking whether that helped ${slug}.\n`);
+  await expect(save).toBeEnabled();
+  // Leaving with them not saved asks first.
+  await menu.and(owner.locator('[href$="/settings/ai-answers"]')).click();
+  await expect(owner.getByRole("alertdialog", { name: "Leave without saving?" })).toBeVisible();
+  await owner.getByRole("button", { name: "Keep editing" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/settings/inbox-ai$`));
+  // Saved from the keyboard: while it saves the box can't be edited, and focus stays on Save, then and after.
+  let releaseSave = () => {};
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await owner.route(`**/app/${slug}/settings/inbox-ai`, async (route) => {
+    if (route.request().method() === "POST") {
+      await saveHeld;
+    }
+    await route.continue();
+  });
+  await save.focus();
   await owner.keyboard.press("Enter");
+  const saving = owner.getByRole("button", { name: "Saving…" });
+  await expect(saving).toBeFocused();
+  await expect(instructions).toHaveAttribute("readonly", "");
+  releaseSave();
   await expect(owner.getByText("Instructions saved")).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Save", exact: true })).toBeFocused();
+  await owner.unroute(`**/app/${slug}/settings/inbox-ai`);
+  await expect(save).toBeFocused();
+  // The box shows them as saved (trimmed), and there's nothing left to save.
   await expect(instructions).toHaveValue(`End by asking whether that helped ${slug}.`);
+  await expect(save).toBeDisabled();
   await checkpoint(owner, "team-settings-inbox-ai");
   await owner.reload();
   await expect(instructions).toHaveValue(`End by asking whether that helped ${slug}.`);
-  // On a phone the page is no wider than the window.
-  await owner.setViewportSize({ width: 360, height: 740 });
+  // On a phone nothing is wider than the window, and the description moves from the header to above the card.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(paneBody.getByText(description, { exact: true })).toBeVisible();
+  await expect(owner.getByText(`· ${description}`, { exact: true })).toBeHidden();
+  expect(await paneBody.evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await checkpoint(owner, "team-settings-inbox-ai-phone");
   await owner.setViewportSize({ width: 1440, height: 900 });

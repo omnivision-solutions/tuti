@@ -27,12 +27,12 @@ export default async function InboxAiSettingsPage(props: PageProps<"/app/[projec
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { supportDraftInstructions: true } }),
   ]);
   return (
-    <SettingsPane title="Inbox">
+    <SettingsPane title="Inbox" description="AI drafts and summaries in the Inbox">
       <SettingsCard>
         <AiModelSetting {...model} />
         {answersEnabled() && (
           <SettingBlock>
-            {/* Not keyed on what's saved: a new form after a save would take focus off its button. */}
+            {/* Not keyed on what's saved: the form trims what it sends, so the box already shows what was saved. */}
             <DraftInstructionsForm projectSlug={slug} instructions={supportDraftInstructions} />
           </SettingBlock>
         )}
