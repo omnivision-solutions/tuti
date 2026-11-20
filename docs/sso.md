@@ -6,12 +6,13 @@ to Tuti, which signs them in.
 
 ## 1. Enable SSO
 
-In the Tuti app, open your project's **Settings** (owners and admins) and click
-**Enable SSO**. Copy the secret (`tsso_…`) — it's shown once. Store it on your
-server only, e.g. as `TUTI_SSO_SECRET`. Never send it to the browser.
+In the Tuti app, open your project's **Settings → Single sign-on** (owners and
+admins) and turn on **Single sign-on**. Copy the secret (`tsso_…`) — it's shown
+once. Store it on your server only, e.g. as `TUTI_SSO_SECRET`. Never send it to
+the browser.
 
 **Rotate secret** issues a new one and invalidates the old one immediately.
-**Disable** turns SSO off.
+Turning the switch off (it asks first) turns SSO off.
 
 ## 2. Sign a token on your server
 
