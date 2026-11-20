@@ -9,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } fro
 import { importSummary } from "@/lib/import-parts";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, redirectTarget, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 import { homeOverview } from "./home";
@@ -150,12 +150,6 @@ test("Send emails one invitation, once, from whoever sends it, with a link that 
   const admin = await signUp("Avery Admin");
   await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
   actAs(admin);
-
-  // Not from an unverified address.
-  expect(await sendInvitation(project.slug, first!.id)).toEqual({ error: "Verify your email to send invites: open the link we emailed you." });
-  expect(await sendAllInvitations(project.slug)).toEqual({ error: "Verify your email to send invites: open the link we emailed you." });
-  expect(emailsTo(first!.email!, second!.email!, third!.email!)).toHaveLength(0);
-  await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
 
   expect(await sendInvitation(project.slug, first!.id)).toEqual({ sent: 1, waiting: 0 });
   const [email] = emailsTo(first!.email!);
@@ -381,9 +375,9 @@ test("end to end: Team and Feedback imported, the admin's invitation sent and ac
   expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ sent: 1, waiting: 0 });
   const [email] = emailsTo(fern);
   const token = /https?:\/\/\S+\/invite\/([\w-]+)/.exec(email!.text)![1]!;
-  const joiner = await signUp("Fern Former", fern);
+  const joiner = await signUp("Fern Former", fern, { verified: false });
   actAs(joiner);
-  expect(await redirectTarget(acceptInvitation(token))).toBe(`/app/${project.slug}`);
+  expect(await redirectTarget(withoutEmail(() => acceptInvitation(token)))).toBe(`/app/${project.slug}`);
   // Joined by the invite to their address: the project's placeholder is theirs, though the address isn't verified.
   expect(await prisma.user.findUniqueOrThrow({ where: { id: joiner.id } })).toMatchObject({ emailVerified: false });
   expect(await prisma.post.findMany({ where: { id: { in: theirs.map((post) => post.id) } }, select: { authorId: true } })).toEqual(theirs.map(() => ({ authorId: joiner.id })));

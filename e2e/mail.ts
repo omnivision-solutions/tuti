@@ -1,13 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Page } from "@playwright/test";
 import type { CapturedEmail } from "@tuti/testkit/smtp";
 
 /** Emails the app sent during the run; the global setup writes each one here. */
 export const MAIL_DIR = "e2e-mail";
 
-function emailsTo(address: string): CapturedEmail[] {
+/** Every email to `address` so far, oldest first. */
+export function emailsTo(address: string): CapturedEmail[] {
   return readdirSync(MAIL_DIR)
     .filter((file) => file.endsWith(".json"))
     .sort()
@@ -34,11 +34,6 @@ export async function latestEmailTo(address: string, { after = 0, subject }: { a
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`No new email to ${address} arrived`);
-}
-
-/** Opens the link in the email that asked `person` to verify their address, as inviting by email needs. */
-export async function verifyEmail(person: Page & { email: string }) {
-  await person.goto(linkIn(await latestEmailTo(person.email, { subject: /verify/i }), new URL("/api/auth/verify-email", person.url()).href));
 }
 
 /** The first link in an email that starts with `prefix` (e.g. an app URL). */

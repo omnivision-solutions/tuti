@@ -359,23 +359,16 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));
   await expect(ada.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
 
-  // Cy hasn't confirmed his address yet: the switches, and above them what's still needed, with Resend email.
+  // Cy, new here: the switches, on.
   const cy = await signUp(browser, portalUrl(slug), "Cy");
   await cy.goto("/account");
-  await expect(cy.getByText("Confirm your email address to get these.")).toBeVisible();
   await expect(cy.getByRole("switch", { name: "Posts I wrote" })).toBeChecked();
-  // Stopping the project's emails waits for the confirmed address (it would count against the address).
-  await expect(cy.getByRole("switch", { name: "Email me nothing from Acme" })).toBeDisabled();
-  // So does the changelog: it's the address's subscription.
-  await expect(cy.getByRole("switch", { name: "The changelog" })).toBeDisabled();
-  await cy.getByRole("button", { name: "Resend email" }).click();
-  await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
   // No posts or votes: each says so on a soft fill, with the way to the boards.
   const noVotes = cy.getByRole("region", { name: "Your votes" });
   await expect(noVotes).toContainText("You haven't voted on others' posts here yet.");
   await expect(noVotes.getByRole("link", { name: "Browse ideas" })).toHaveAttribute("href", /\/feedback$/);
   await expect(cy.getByRole("region", { name: "Your posts" })).toContainText("You haven't posted here yet.");
-  await checkpoint(cy, "portal-account-unconfirmed");
+  await checkpoint(cy, "portal-account-new");
   // A page short enough to fit a tall window, which can't scroll: its first section is the current one, not the last.
   const tall = await (await browser.newContext({ baseURL: portalUrl(slug), viewport: { width: 1280, height: 3000 }, storageState: await cy.context().storageState() })).newPage();
   await tall.goto("/account");

@@ -211,10 +211,14 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   await address.fill(`${siteUrl()}${moved}`);
   await expect(source.getByRole("button", { name: "Change" })).toBeDisabled();
   await checkpoint(team, "Settings' Source for a URL");
-  // Synced from the new address from now on: the old one's gone, and Sync now still works.
+  // Synced from the new address from now on: the old one's gone, and Sync now still works. This journey has made ten
+  // fetches in seconds by now, the member's limit a minute (api-reference-url.db.test.ts has it): a minute on, as it were.
+  // And this sync's own toast, not the earlier one still showing.
   await siteAnswers(path, null);
+  await query(`DELETE FROM api_reference_fetch WHERE "userId" = (SELECT id FROM "user" WHERE email = $1)`, [team.email]);
+  await expect(team.getByText("No changes", { exact: true })).toHaveCount(0);
   await source.getByRole("button", { name: "Sync now" }).click();
-  await expect(team.getByText("No changes", { exact: true }).last()).toBeVisible();
+  await expect(team.getByText("No changes", { exact: true })).toBeVisible();
   await expect(source).not.toContainText("Last sync failed");
 
   // A teammate moves it on while this page is open: once the page refreshes, the field shows their address, not the

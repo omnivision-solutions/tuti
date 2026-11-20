@@ -14,7 +14,7 @@ import { PREVIEW } from "@/lib/portal-base";
 import { previewToken } from "@/lib/preview-session";
 import { widgetToken } from "@/lib/widget-session";
 import { proxy } from "@/proxy";
-import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, onPortal, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -52,8 +52,7 @@ const form = (fields: Record<string, string>) => {
 
 /** Someone the team added as a reader by email, verified or not. */
 async function readerOf(projectId: string, verified: boolean) {
-  const user = await signUp("Reader");
-  await prisma.user.update({ where: { id: user.id }, data: { emailVerified: verified } });
+  const user = await signUp("Reader", undefined, { verified });
   await prisma.portalReader.create({ data: { projectId, email: user.email.toLowerCase() } });
   return user;
 }
@@ -205,6 +204,9 @@ const cases = (["PUBLIC", "PRIVATE"] as const).flatMap((access) =>
 test.each(cases)("$access portal, $visitor: $reader.name → $expected", async ({ access, visitor, reader, expected }) => {
   await setAccess(project.id, access);
   actAs(visitors[visitor]);
+  if (visitor === "unverified reader") {
+    await onPortal(visitors[visitor]!, project);
+  }
   expect(await reader.served(project.slug)).toBe(expected);
 });
 

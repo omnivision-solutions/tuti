@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { headers } from "next/headers";
 import { cache } from "react";
 
@@ -9,10 +10,26 @@ import { sessionWorksOn } from "./custom-domains";
 /**
  * The session a request's cookie carries, if it works on the request's host (a portal's on that portal only).
  * Better Auth's hook (lib/auth.ts) already leaves others out; checked again here, where everything reads it.
+ * On a server that sends email, a session counts only once its address is verified: signing in with a password needs
+ * that (lib/auth.ts), and one from before it did (or the previous release's, while a deploy overlaps) is signed out here:
+ * on the app, and on a portal a password account's ("Continue as" from the app). Not a portal's single sign-on user's:
+ * the project's app vouches for them.
  */
 export async function sessionFrom(requestHeaders: Headers) {
   const session = await auth.api.getSession({ headers: requestHeaders });
+  if (session && !session.user.emailVerified && emailConfigured() && (session.session.boundTo === "app" || (await unprovenPassword(session.user.id)))) {
+    return null;
+  }
   return session && (await sessionWorksOn(session.session.boundTo, requestHeaders.get("host"))) ? session : null;
+}
+
+/** Whether an unverified account has a password and no single sign-on identity: its address is only what it typed. */
+async function unprovenPassword(userId: string): Promise<boolean> {
+  const [password, sso] = await Promise.all([
+    prisma.account.count({ where: { userId, providerId: "credential" } }),
+    prisma.ssoIdentity.count({ where: { userId } }),
+  ]);
+  return password > 0 && sso === 0;
 }
 
 /** The request's session (sessionFrom), read once per request however many times it's asked for. */

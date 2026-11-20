@@ -5,7 +5,7 @@ import { changelogByEmail } from "@/components/changelog-pages";
 import { SignInLink } from "@/components/sign-in-link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ResendVerificationButton } from "@/components/verify-email-banner";
+import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { cn } from "@/lib/utils";
 import { emailReach } from "@/server/post-lists";
 import { portalLinks } from "@/server/portal-base";

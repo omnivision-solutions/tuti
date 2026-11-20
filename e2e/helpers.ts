@@ -4,6 +4,7 @@ import { deflateSync } from "node:zlib";
 import { type Browser, expect, type Locator, type Page, type Route } from "@playwright/test";
 
 import { APP_URL, CLOUD_URL, portalUrl, TRIAL_URL } from "./env";
+import { latestEmailTo, linkIn } from "./mail";
 
 export type TestPage = Page & { email: string; ip: string };
 
@@ -63,15 +64,28 @@ export async function signInWithPassword(page: Page, email: string, password = "
   await backToPortal(page);
 }
 
-/** Fills and submits the sign-up form on the current page (the email may be prefilled). */
+/**
+ * Fills and submits the sign-up form on the current page (the email may be prefilled), then opens the emailed link that
+ * verifies the address and signs in (lib/auth.ts). From a portal, that link comes back through a new handoff: its
+ * "Continue as" goes on to the app's "Continue as" button (backToPortal), as before verifying.
+ */
 export async function fillSignUp(page: Page, name: string, email?: string) {
   await page.getByLabel("Name").fill(name);
   if (email) {
     await page.getByLabel("Email").fill(email);
   }
+  const address = await page.getByLabel("Email").inputValue();
   await page.getByLabel("Password").fill("correct horse battery staple");
   // "Start free trial" on a cloud with trials (TRIAL_URL).
   await page.getByRole("button", { name: /^(Sign up|Start free trial)$/ }).click();
+  await expect(page.getByText("Check your email")).toBeVisible();
+  const verify = new URL("/api/auth/verify-email", page.url()).href;
+  await page.goto(linkIn(await latestEmailTo(address, { subject: /^Verify your email/ }), verify));
+  const landed = new URL(page.url());
+  if (landed.pathname === "/app/auth/continue" && landed.searchParams.has("mac")) {
+    await page.getByRole("link", { name: /^Continue as / }).click();
+    await page.waitForURL((url) => url.pathname === "/app/auth/continue" && url.searchParams.has("state"));
+  }
 }
 
 /** Creates a project from /app/new, skips the first run's setup and waits for its Home (`portal`: the portal's address on the page's server). */

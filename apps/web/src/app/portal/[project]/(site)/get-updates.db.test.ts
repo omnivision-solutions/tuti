@@ -3,7 +3,7 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, onPortal, signUp } from "@/test/helpers";
 
 import BoardPage from "./feedback/[board]/page";
 
@@ -42,9 +42,12 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
   };
   const getUpdates = async () => (await getUpdatesHtml()).replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
   const accountLink = /<a [^>]*href="[^"]*\/account"[^>]*>You&#x27;ve unsubscribed from these emails.<\/a>/;
-  const person = async (name: string, emailVerified: boolean) => {
-    const user = await signUp(name);
-    await prisma.user.update({ where: { id: user.id }, data: { emailVerified } });
+  // Not verified: signed in on the portal (onPortal), as signing in on the app needs a verified address.
+  const person = async (name: string, verified: boolean) => {
+    const user = await signUp(name, undefined, { verified });
+    if (!verified) {
+      await onPortal(user, project);
+    }
     return user;
   };
   const promise = "Vote for an idea to get an email as it moves forward and when it ships.";

@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
-import { passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
+import { emailConfigured, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -107,21 +107,29 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
  * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
  * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
  * the app's /continue); in its place go when it was made and the app's MAC for this account (isOwnWayBack), with which
- * /continue starts a new handoff. Only for the sign-up's own email (`signingUp`): sending it again takes any address and
- * callbackURL from anyone, so there it would sign a way back for someone else's account. Elsewhere it goes to the app.
+ * /continue starts a new handoff. Only for the email a sign-up, or a sign-in before verifying, sends its own account
+ * (`signingUp`): sending it again takes any address and callbackURL from anyone, so there it would sign a way back for
+ * someone else's account. Elsewhere it goes to the app, as does a link with none (Better Auth's "/", on Tuti's cloud its
+ * marketing site).
  */
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
-  if (back?.startsWith("/app/auth/continue?") && !signingUp) {
-    url.searchParams.set("callbackURL", "/");
+  if (!back || back === "/" || (back.startsWith("/app/auth/continue?") && !signingUp)) {
+    url.searchParams.set("callbackURL", "/app");
   } else if (back?.startsWith("/app/auth/continue?")) {
     const callback = new URL(back, url);
     const portal = callback.searchParams.get("portal");
-    url.searchParams.set("callbackURL", portal ? await signedWayBack(portal, callback.searchParams.get("redirect") ?? "", userId) : "/");
+    url.searchParams.set("callbackURL", portal ? await signedWayBack(portal, callback.searchParams.get("redirect") ?? "", userId) : "/app");
   }
   return url.toString();
 }
+
+/**
+ * Sign-ins whose verification email just failed to send (sendVerificationEmail), by address, for hooks.after to say so:
+ * one each, so sign-ins at once for an address each answer for their own. Better Auth awaits the send before the hook.
+ */
+const unsentOnSignIn = new Map<string, number>();
 
 /** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
 const handOverPlaceholdersLogged = (userId: string) =>
@@ -207,9 +215,25 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    // A password account works once its address is verified (sign-up signs no one in; the emailed link does), so no one
+    // signs up with an address that isn't theirs. Not on a server without email, where no link could arrive.
+    requireEmailVerification: emailConfigured(),
     sendResetPassword: sendPasswordReset,
     resetPasswordTokenExpiresIn: PASSWORD_RESET_MINUTES * 60,
     revokeSessionsOnPasswordReset: true,
+    // Signing up with an address that has an account answers as for a new one (requireEmailVerification), so its owner
+    // gets something to use: a password reset (under its limits), verified or not. Never the verification link: the
+    // account's password may be someone else's, who signed up with this address first, and verifying would let them in.
+    onExistingUserSignUp: async ({ user }) => {
+      try {
+        const form = new FormData();
+        form.set("email", user.email);
+        // Imported here: server/password-reset.ts imports this file.
+        await (await import("@/server/password-reset")).emailPasswordReset(form);
+      } catch (error) {
+        log.error("Emailing an existing account's owner about a sign-up failed", { error });
+      }
+    },
     onPasswordReset: async ({ user }) => {
       await prisma.$transaction([
         // Opening the emailed link proved they own the inbox.
@@ -232,6 +256,24 @@ export const auth = betterAuth({
       // auth.api calls too (a session's IP address): the visitor's IP address as the auth route gives it.
       return headers && { context: { headers: withClientIp(headers) } };
     }),
+    // A password sign-in's callbackURL is where the link it sends before verifying goes. Signed in, the form goes there
+    // itself: Better Auth's client would reload the page for it, and a tab's state is kept across signing in.
+    after: createAuthMiddleware(async (ctx) => {
+      const returned = ctx.context.returned;
+      const email = typeof ctx.body?.email === "string" ? ctx.body.email.toLowerCase() : "";
+      const unsent = ctx.path === "/sign-in/email" ? (unsentOnSignIn.get(email) ?? 0) : 0;
+      if (unsent > 0) {
+        if (unsent === 1) {
+          unsentOnSignIn.delete(email);
+        } else {
+          unsentOnSignIn.set(email, unsent - 1);
+        }
+        throw new APIError("SERVICE_UNAVAILABLE", { message: "We couldn't send the email. Try again in a minute." });
+      }
+      if (ctx.path === "/sign-in/email" && returned && typeof returned === "object" && "redirect" in returned && returned.redirect) {
+        return ctx.json({ ...returned, redirect: false });
+      }
+    }),
   },
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
@@ -250,22 +292,30 @@ export const auth = betterAuth({
   },
   // Reset tokens are stored hashed: a copy of the database mustn't be able to reset passwords.
   verification: { storeIdentifier: { default: "plain", overrides: { "reset-password:": "hashed" } } },
-  // Verify ownership of the email address (invites are sent to addresses).
-  // Signing in doesn't need it; the link signs people in if they aren't yet.
+  // Verify ownership of the email address; signing in with a password needs it (requireEmailVerification above), and
+  // trying to before sends the link again. The link signs people in.
   emailVerification: {
     sendOnSignUp: true,
+    sendOnSignIn: true,
     autoSignInAfterVerification: true,
     expiresIn: VERIFICATION_SECONDS,
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
-        const signingUp = !!request && new URL(request.url).pathname.endsWith("/sign-up/email");
+        // Signing up, or signing in before verifying (its password checked): the account's own email.
+        const signingUp = !!request && /\/(sign-up|sign-in)\/email$/.test(new URL(request.url).pathname);
         await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
-        // A failed email mustn't fail a sign-up (it can be sent again), but asking
-        // to send it again should say it failed.
-        if (request && new URL(request.url).pathname.endsWith("/send-verification-email")) {
+        // A failed email mustn't fail a sign-up (it can be sent again), but asking to send it again should say it failed,
+        // as should signing in before verifying (which sends it, and fails anyway): not "Check your email". Better Auth
+        // swallows a sign-in's error, so hooks.after answers for it.
+        const path = request ? new URL(request.url).pathname : "";
+        if (path.endsWith("/send-verification-email")) {
           throw error;
+        }
+        if (path.endsWith("/sign-in/email")) {
+          const address = user.email.toLowerCase();
+          unsentOnSignIn.set(address, (unsentOnSignIn.get(address) ?? 0) + 1);
         }
       }
     },

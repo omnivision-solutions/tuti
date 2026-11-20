@@ -19,10 +19,15 @@ if (!email || !process.env.DATABASE_URL || !process.env.APP_URL) {
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 try {
-  const { rows } = await client.query(`SELECT id, name FROM "user" WHERE lower(email) = $1`, [email]);
+  const { rows } = await client.query(`SELECT id, name, "emailVerified" FROM "user" WHERE lower(email) = $1`, [email]);
   if (!rows[0]) {
     console.error(`No account with the email ${email}`);
     process.exit(1);
+  }
+  // On a server that sends email, the app has no session for an unverified account (apps/web/src/server/session.ts):
+  // the link would end on the sign-in page.
+  if (!rows[0].emailVerified) {
+    console.warn(`${email} isn't verified: on a server that sends email, the app won't sign it in until it is`);
   }
   const token = randomBytes(32).toString("base64url");
   await client.query(

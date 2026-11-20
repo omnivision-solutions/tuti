@@ -6,7 +6,6 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { fillSignUp, newPerson, signUp, type TestPage } from "./helpers";
-import { latestEmailTo, linkIn } from "./mail";
 
 /** Who `page`'s browser is when it next continues with Google or GitHub (the fakes, by its X-Forwarded-For); `sub`: which Google account (default a new one). */
 async function nextSignIn(page: { ip: string }, provider: "google" | "github", person: { email: string; name: string; verified?: boolean; sub?: string }) {
@@ -66,10 +65,9 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   // Signed in with it, and nothing of Google's kept: no token to read anything with.
   expect(await storedTokens(email, "google")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
   await expect(gina.getByRole("region", { name: "Welcome to Tuti" }).getByRole("heading", { level: 1, name: "Welcome to Tuti" })).toBeVisible();
-  // Google's name, and an address Google verified: no strip asking to verify it.
+  // Google's name.
   await gina.goto("/app/account");
   await expect(gina.getByLabel("Name")).toHaveValue("Gina Google");
-  await expect(gina.getByText("Not verified")).toHaveCount(0);
   // No password to change: one can be set by email.
   await expect(gina.getByText("You sign in with Google.")).toBeVisible();
   await expect(gina.getByRole("link", { name: "set one by email" })).toHaveAttribute("href", "/app/auth/forgot-password");
@@ -89,7 +87,6 @@ test("someone signs up with Google, and later in with it again", async ({ browse
 
 test("someone with a verified account continues with GitHub and is signed in to it", async ({ browser }) => {
   const olive = await signUp(browser, APP_URL, "Olive Owner");
-  await olive.goto(linkIn(await latestEmailTo(olive.email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
   await signOut(olive);
 
   await olive.goto("/app/auth/sign-in");
@@ -105,9 +102,15 @@ test("someone with a verified account continues with GitHub and is signed in to 
 
 test("Continue with Google doesn't sign in to an account whose address isn't verified", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
-  // Someone signed up with this address (not verified): continuing with Google as it doesn't sign in to that account.
-  const ivy = await signUp(browser, APP_URL, "Ivy");
-  await signOut(ivy);
+  // Someone signed up with this address and hasn't opened the emailed link: continuing with Google as it doesn't sign in
+  // to that account.
+  const ivy = Object.assign(await newPerson(browser, APP_URL), { email: `e2e-${randomUUID()}@example.com` });
+  await ivy.goto("/app/auth/sign-up");
+  await ivy.getByLabel("Name").fill("Ivy");
+  await ivy.getByLabel("Email").fill(ivy.email);
+  await ivy.getByLabel("Password").fill("correct horse battery staple");
+  await ivy.getByRole("button", { name: "Sign up" }).click();
+  await expect(ivy.getByText("Check your email")).toBeVisible();
   await ivy.goto("/app/auth/sign-in");
   await nextSignIn(ivy, "google", { email: ivy.email, name: "Ivy" });
   await ivy.getByRole("button", { name: "Continue with Google" }).click();

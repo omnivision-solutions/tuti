@@ -53,7 +53,7 @@ describe("when a post ships", () => {
       await verified("Author"),
       await verified("Voter"),
       await verified("Commenter"),
-      await signUp("Unverified"),
+      await signUp("Unverified", undefined, { verified: false }),
     ];
     const ssoEmail = `e2e-${randomUUID()}@example.com`;
     const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "From the app", email: ssoEmail });
@@ -143,7 +143,7 @@ describe("when a post ships", () => {
 
   test("on a private portal, only people who may still read it hear about it: its SSO users and verified readers", async () => {
     const [author, voter, reader] = [await verified("Author"), await verified("Voter"), await verified("Reader")];
-    const unverified = await signUp("Unverified reader");
+    const unverified = await signUp("Unverified reader", undefined, { verified: false });
     await prisma.portalReader.createMany({
       data: [reader, unverified].map((person) => ({ projectId: project.id, email: person.email.toUpperCase() })),
     });

@@ -6,7 +6,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
-import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
+import { latestEmailTo } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -24,27 +24,6 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("button", { name: "Create project" }).click();
   await skipSetup(team, slug);
   await checkpoint(team, "team-new-project");
-
-  // Until they verify their email, the dashboard asks them to; the emailed link does it.
-  const banner = team.getByRole("status").filter({ hasText: "Verify your email" });
-  await expect(banner).toContainText(team.email);
-  const emailsBefore = countEmailsTo(team.email);
-  await team.getByRole("button", { name: "Resend email" }).click();
-  await expect(team.getByRole("button", { name: "Sent" })).toBeDisabled();
-  await checkpoint(team, "team-verify-email-banner");
-  const email = await latestEmailTo(team.email, { after: emailsBefore });
-  expect(email.subject).toBe("Verify your email for Tuti");
-  // Verified in another tab: this one notices when it's back in focus, without reloading.
-  const otherTab = await team.context().newPage();
-  await otherTab.goto(linkIn(email, `${APP_URL}/api/auth/verify-email`));
-  await otherTab.waitForURL(`**/app/${slug}`); // /app opens the last project
-  await otherTab.close();
-  await team.bringToFront();
-  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
-  await expect(async () => {
-    await team.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-    await expect(banner).toHaveCount(0, { timeout: 500 });
-  }).toPass({ timeout: 15_000 });
 
   // Two people post on the portal; the second also upvotes the first post.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
@@ -93,13 +72,12 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // The merged duplicate no longer waits for triage.
   await expect(feedbackItem).toContainText("1 to triage");
 
-  // …then answers and plans it, emailing the answer to its voters: Ada, once she's verified her address (Bo hasn't).
-  await ada.goto(linkIn(await latestEmailTo(ada.email), "http"));
+  // …then answers and plans it, emailing the answer to its voters: Ada and Bo, whose addresses their sign-ups verified.
   await team.reload();
   await team.getByRole("textbox", { name: "Comment" }).fill("Thanks! We're on it.");
   // Switched on once the page is ready for it (before then, a click isn't heard).
   await expect(async () => {
-    await team.getByRole("switch", { name: "Email voters (1 person)" }).check();
+    await team.getByRole("switch", { name: "Email voters (2 people)" }).check();
     await expect(team.getByRole("button", { name: "Comment and email" })).toBeVisible({ timeout: 1000 });
   }).toPass();
   await checkpoint(team, "team-reply-email-voters");
@@ -1138,19 +1116,9 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   // It's in the page twice (under the list for phones), yet each id is once.
   const ids = await ada.evaluate(() => [...document.querySelectorAll("[id]")].map((element) => element.id));
   expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
-  // Get updates (a button in the board's card, a popover) says what reaches her: not confirmed yet, the shipped email
-  // wouldn't, so it asks her to confirm (the link comes back here).
+  // Get updates (a button in the board's card, a popover) says what reaches her: her address, confirmed on signing up.
   const updates = ada.getByRole("dialog", { name: "Get updates" });
   await expect(sidebar.getByRole("button", { name: "Get updates" })).toHaveCount(0);
-  await main.getByRole("button", { name: "Get updates" }).click();
-  await expect(updates).toContainText("Confirm your email to hear as ideas you vote on move forward and when they ship.");
-  await expect(updates).not.toContainText("get an email when it's planned");
-  const emailsBefore = countEmailsTo(ada.email);
-  await updates.getByRole("button", { name: "Resend email" }).click();
-  await expect(updates.getByRole("button", { name: "Sent" })).toBeDisabled();
-  const confirm = await latestEmailTo(ada.email, { after: emailsBefore });
-  await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
-  await ada.waitForURL(/\/feedback\/feature-requests$/);
   await main.getByRole("button", { name: "Get updates" }).click();
   await expect(updates).toContainText("Vote for an idea to get an email as it moves forward and when it ships.");
   await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);

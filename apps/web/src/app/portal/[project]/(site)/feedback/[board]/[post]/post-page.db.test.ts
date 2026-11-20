@@ -6,7 +6,7 @@ import { expect, onTestFinished, test, vi } from "vitest";
 import { CommentList } from "@/components/comments";
 import { stillToCome, SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, onPortal, signUp } from "@/test/helpers";
 
 import PostPage from "./page";
 
@@ -118,8 +118,7 @@ test("Subscribe is there while a post may still ship, signed out and for people 
   const post = await prisma.post.create({
     data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode", body: "" },
   });
-  const [verified, unverified] = [await signUp("Verified"), await signUp("Unverified")];
-  await prisma.user.update({ where: { id: verified.id }, data: { emailVerified: true } });
+  const [verified, unverified] = [await signUp("Verified"), await signUp("Unverified", undefined, { verified: false })];
   const subscribe = async () =>
     propsOf(
       await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never),
@@ -143,7 +142,9 @@ test("Subscribe is there while a post may still ship, signed out and for people 
   // The team isn't emailed: no Subscribe.
   expect(await subscribe()).toBeUndefined();
   actAs(verified);
+  // Not verified: signed in on the portal, as signing in on the app needs a verified address.
   actAs(unverified);
+  await onPortal(unverified, project);
   expect(await subscribe()).toBeUndefined();
   // As voting: signed in through another project's single sign-on, they can't act here, so it says sign in.
   const fromSso = await signUp("From another app");

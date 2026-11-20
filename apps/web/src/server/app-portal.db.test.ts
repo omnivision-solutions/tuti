@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import { proxy } from "@/proxy";
-import { actAs, createProject as newProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject as newProject, redirectTarget, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 
 import { forgetCustomDomain, portalAddress } from "./custom-domains";
 import { createPost } from "./operations/create";
@@ -84,11 +84,11 @@ test("its slug may be a reserved one (help), and only its owner (ownPortal.owner
   const someone = await signUp("Someone");
   actAs(someone);
   expect(await createProject(null as never, form())).toEqual({ error: "That URL is reserved" });
-  const maintainer = await signUp("Maintainer");
+  const maintainer = await signUp("Maintainer", undefined, { verified: false });
   vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "help", owner: maintainer.email.toUpperCase() } }));
   actAs(maintainer);
   // Only once the address is verified.
-  expect(await createProject(null as never, form())).toEqual({ error: "That URL is reserved" });
+  expect(await withoutEmail(() => createProject(null as never, form()))).toEqual({ error: "That URL is reserved" });
   await prisma.user.update({ where: { id: maintainer.id }, data: { emailVerified: true } });
   // Created: the first run's setup.
   expect(await redirectTarget(createProject(null as never, form()))).toBe("/app/help/setup");

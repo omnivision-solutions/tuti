@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 
 import { appUrl } from "@/lib/hosts";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, onPortal, signUp } from "@/test/helpers";
 
 import AccountPage from "./account/page";
 
@@ -22,9 +22,12 @@ test("the Account's email switches for people its emails about posts may reach; 
   const other = await createProject(owner);
   const account = async () =>
     renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never)).replace(/&#x27;/g, "'");
-  const person = async (name: string, emailVerified: boolean) => {
-    const user = await signUp(name);
-    await prisma.user.update({ where: { id: user.id }, data: { emailVerified } });
+  // Not verified: signed in on the portal (onPortal), as signing in on the app needs a verified address.
+  const person = async (name: string, verified: boolean) => {
+    const user = await signUp(name, undefined, { verified });
+    if (!verified) {
+      await onPortal(user, project);
+    }
     return user;
   };
   const switches = 'role="switch"';
@@ -37,7 +40,9 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(confirmed).toContain("Posts I voted on or follow");
   expect(confirmed).not.toContain("about posts.");
   expect(confirmed).not.toContain("Confirm your email address");
-  // Not confirmed yet: the switches (confirming is all it takes), and above them what to do, with Resend email.
+  // Not confirmed yet (signed in only on a server that sends no email, server/session.ts): the switches (confirming is all
+  // it takes), and above them what to do, with Resend email.
+  const smtp = process.env.SMTP_HOST;
   actAs(await person("Unconfirmed", false));
   const unconfirmed = await account();
   expect(unconfirmed).toContain(switches);
@@ -48,6 +53,7 @@ test("the Account's email switches for people its emails about posts may reach; 
   const stop = /<input [^>]*id="email-unsubscribed"[^>]*>/;
   expect(unconfirmed.match(stop)![0]).toContain('disabled=""');
   expect(confirmed.match(stop)![0]).not.toContain('disabled=""');
+  vi.stubEnv("SMTP_HOST", smtp);
 
   // The team: audienceReach never emails it about posts (the changelog, which it gets like anyone, keeps its switch).
   actAs(owner);

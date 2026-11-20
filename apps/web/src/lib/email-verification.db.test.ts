@@ -9,7 +9,10 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { auth, VERIFICATION_SECONDS } from "./auth";
+import { getSession } from "@/server/session";
+
 import { randomSecret } from "./portal-handoff";
+import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "./sign-in-link";
 
 const APP_URL = process.env.APP_URL!;
 
@@ -84,6 +87,108 @@ test("signing up sends a verification email; its link verifies the address and s
   expect(await isVerified(email)).toBe(true);
 });
 
+test("a password account isn't signed in until its address is verified: signing in before sends the link again", async () => {
+  const email = `e2e-${randomUUID()}@example.com`;
+  const password = "correct horse battery staple";
+  const signedUp = await postOnApp("sign-up/email", { email, name: "Ada", password, callbackURL: "/app" });
+  expect(signedUp.ok).toBe(true);
+  expect(signedUp.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  const first = (await verificationLink(email)).message;
+
+  const early = await postOnApp("sign-in/email", { email, password });
+  expect(early.status).toBe(403);
+  expect(await early.json()).toMatchObject({ code: "EMAIL_NOT_VERIFIED" });
+  expect(early.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  const { message, link } = await verificationLink(email);
+  expect(message).not.toBe(first);
+
+  await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
+  const later = await postOnApp("sign-in/email", { email, password });
+  expect(later.ok).toBe(true);
+  expect(later.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(true);
+});
+
+test("signing in before verifying sends a link to where it was going: a portal through a new handoff; none, the app", async () => {
+  const project = await createProject(await signUpUser("Owner"));
+  const email = await signUp("/app");
+  const password = "correct horse battery staple";
+  // No way given: the app (Better Auth's "/" is Tuti's cloud's marketing site).
+  expect((await postOnApp("sign-in/email", { email, password })).status).toBe(403);
+  expect((await verificationLink(email)).link.searchParams.get("callbackURL")).toBe("/app");
+  // An invite's page, say: the link comes back to it.
+  expect((await postOnApp("sign-in/email", { email, password, callbackURL: "/app/auth/invite/abc" })).status).toBe(403);
+  expect((await verificationLink(email)).link.searchParams.get("callbackURL")).toBe("/app/auth/invite/abc");
+  // A portal's: its handoff's state is used up by then, so the way back is signed for this account, as signing up's is.
+  const state = randomSecret();
+  const continuing = `/app/auth/continue?${new URLSearchParams({ portal: project.slug, state, redirect: "/feedback" })}`;
+  expect((await postOnApp("sign-in/email", { email, password, callbackURL: continuing })).status).toBe(403);
+  const { link } = await verificationLink(email);
+  const back = new URL(link.searchParams.get("callbackURL")!, link);
+  expect(back.pathname).toBe("/app/auth/continue");
+  expect(Object.fromEntries(back.searchParams)).toEqual({ portal: project.slug, redirect: "/feedback", issued: expect.stringMatching(/^\d+$/), mac: expect.any(String) });
+  expect(link.toString()).not.toContain(state);
+
+  // Signed in, the answer doesn't ask the browser to go there (the form does, without reloading the page).
+  await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
+  const signedIn = await postOnApp("sign-in/email", { email, password, callbackURL: "/app" });
+  expect(signedIn.ok).toBe(true);
+  expect(await signedIn.json()).toMatchObject({ redirect: false });
+});
+
+test("signing up with an address that has an account answers as for a new one, and emails its owner a password reset", async () => {
+  request.host = new URL(APP_URL).host;
+  const subjects = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).map((e) => e.subject);
+  // Someone signed up first with an address that isn't theirs, and never verified it.
+  const email = await signUp("/app");
+  await verificationLink(email);
+  // Its owner signs up: the same answer as a new account, and a password reset, never the verification link, which
+  // would let the first password in. Resetting sets theirs (and verifies the address).
+  const again = await postOnApp("sign-up/email", { email, name: "Owner", password: "the owner's own password", callbackURL: "/app" });
+  expect(again.ok).toBe(true);
+  expect(again.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  await expect.poll(() => subjects(email)).toEqual(["Verify your email for Tuti", "Reset your password"]);
+  // Under the emailed links' hourly limit per address: anyone can sign up with it.
+  for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR + 2; i++) {
+    expect((await postOnApp("sign-up/email", { email, name: "Owner", password: "the owner's own password" })).ok).toBe(true);
+  }
+  await expect.poll(() => subjects(email).length).toBe(1 + SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
+  expect(await isVerified(email)).toBe(false);
+
+  // Verified: a password reset too, and the account as it was.
+  const owner = await signUpUser("Olive");
+  expect((await postOnApp("sign-up/email", { email: owner.email, name: "Someone", password: "another password entirely", callbackURL: "/app" })).ok).toBe(true);
+  await expect.poll(() => subjects(owner.email).at(-1)).toBe("Reset your password");
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { name: true } })).toEqual({ name: "Olive" });
+});
+
+test("a session from before its address was verified is no session, on the app or a portal, unless the server sends no email; a single sign-on user's is", async () => {
+  const project = await createProject(await signUpUser("Owner"));
+  const smtp = process.env.SMTP_HOST;
+  const sessionAs = async (user: { id: string; cookie: string }, host: string) => {
+    request.host = host;
+    actAs(user as never);
+    return (await getSession())?.user.id;
+  };
+  const portalHost = `${project.slug}.localhost:3100`;
+  // An unverified password account: its app session, and a portal one ("Continue as", or the previous release's while a
+  // deploy overlaps).
+  const ada = await signUpUser("Ada", undefined, { verified: false });
+  expect(await sessionAs(ada, new URL(APP_URL).host)).toBeUndefined();
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: project.id } });
+  expect(await sessionAs(ada, portalHost)).toBeUndefined();
+  // A single sign-on user's address is the project's app's to vouch for: their portal session works.
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ada", userId: ada.id } });
+  expect(await sessionAs(ada, portalHost)).toBe(ada.id);
+  await prisma.ssoIdentity.deleteMany({ where: { userId: ada.id } });
+  // A server that sends no email can't verify anyone: sessions work as before.
+  vi.stubEnv("SMTP_HOST", "");
+  try {
+    expect(await sessionAs(ada, portalHost)).toBe(ada.id);
+  } finally {
+    vi.stubEnv("SMTP_HOST", smtp);
+  }
+});
+
 test("a tampered link doesn't verify anything", async () => {
   const email = await signUp("/app");
   const { link } = await verificationLink(email);
@@ -94,7 +199,7 @@ test("a tampered link doesn't verify anything", async () => {
   expect(await isVerified(email)).toBe(false);
 });
 
-test("with the mail server down, signing up still works but asking to resend says it failed", async () => {
+test("with the mail server down, signing up still works but asking to resend, or signing in before verifying, says it failed", async () => {
   const { createServer } = await import("node:net");
   const closed = createServer();
   await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
@@ -103,11 +208,12 @@ test("with the mail server down, signing up still works but asking to resend say
 
   const origin = process.env.APP_URL!;
   const email = `e2e-${randomUUID()}@example.com`;
-  const resend = (cookie: string) =>
+  // Signed out: signing up signs no one in until the address is verified.
+  const resend = () =>
     auth.handler(
       new Request(`${origin}/api/auth/send-verification-email`, {
         method: "POST",
-        headers: { "content-type": "application/json", cookie, origin },
+        headers: { "content-type": "application/json", origin },
         body: JSON.stringify({ email, callbackURL: "/app" }),
       }),
     );
@@ -115,19 +221,19 @@ test("with the mail server down, signing up still works but asking to resend say
   const workingPort = process.env.SMTP_PORT;
   process.env.SMTP_PORT = closedPort;
   try {
-    const { headers } = await auth.api.signUpEmail({
-      body: { email, name: "Ada", password: "correct horse battery staple" },
-      returnHeaders: true,
-    });
-    const cookie = headers
-      .getSetCookie()
-      .map((c) => c.split(";")[0])
-      .join("; ");
+    await auth.api.signUpEmail({ body: { email, name: "Ada", password: "correct horse battery staple" } });
     expect(await prisma.user.count({ where: { email } })).toBe(1);
-    expect((await resend(cookie)).ok).toBe(false);
+    expect((await resend()).ok).toBe(false);
+    // Not "Check your email" (EMAIL_NOT_VERIFIED): the email didn't go.
+    const early = await postOnApp("sign-in/email", { email, password: "correct horse battery staple" });
+    expect(early.ok).toBe(false);
+    const answer = await early.json();
+    expect(answer).toMatchObject({ message: "We couldn't send the email. Try again in a minute." });
+    expect(answer.code).not.toBe("EMAIL_NOT_VERIFIED");
 
     process.env.SMTP_PORT = workingPort;
-    expect((await resend(cookie)).ok).toBe(true);
+    expect(await (await postOnApp("sign-in/email", { email, password: "correct horse battery staple" })).json()).toMatchObject({ code: "EMAIL_NOT_VERIFIED" });
+    expect((await resend()).ok).toBe(true);
     expect((await mailbox.latestTo(email)).subject).toBe("Verify your email for Tuti");
   } finally {
     process.env.SMTP_PORT = workingPort;
@@ -256,13 +362,13 @@ test("asking for a verification email again never signs a way back: anyone can a
   const asked = await postOnApp("send-verification-email", { email, callbackURL: `/app/auth/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}` });
   expect(asked.ok).toBe(true);
   const { link } = await verificationLink(email);
-  // No way back to the portal in it: the app's home.
-  expect(link.searchParams.get("callbackURL")).toBe("/");
+  // No way back to the portal in it: the app.
+  expect(link.searchParams.get("callbackURL")).toBe("/app");
   expect(link.toString()).not.toContain(theirs.slug);
 
-  // Bea opens it: verified and signed in, on the app's home, not that portal.
+  // Bea opens it: verified and signed in, on the app, not that portal.
   const response = await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
-  expect(response.headers.get("location")).toBe("/");
+  expect(response.headers.get("location")).toBe("/app");
   expect(await isVerified(email)).toBe(true);
 });
 

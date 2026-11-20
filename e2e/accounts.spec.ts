@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { query } from "./db";
 import { APP_URL, portalUrl } from "./env";
 import { backToPortal, createProject, newPerson, signInWithPassword, signUp } from "./helpers";
-import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, emailsTo, latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
 
@@ -260,48 +260,68 @@ test("the app's sign-in and sign-up pages link to each other under /app/auth, ke
   await expect(page.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", /^\/app\/auth\/sign-up\?/);
 });
 
-test("the strip asking to verify an email stays on every page until the email is verified", async ({ browser }, testInfo) => {
+test("a new account is signed in by its emailed link only; signing in before sends it again", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const olive = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(olive, "Acme", slug);
-  const strip = olive.getByRole("status").filter({ hasText: "Verify your email" });
-  await expect(strip).toContainText(`We sent a link to ${olive.email}.`);
-  await checkpoint(olive, "verify-email-strip", { fullPage: false });
-  // It can't be dismissed, and it's on the next page and after reloading.
-  await expect(strip.getByRole("button", { name: "Dismiss" })).toHaveCount(0);
-  await olive.goto(`/app/${slug}/feedback`);
-  await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
-  await expect(strip).toBeVisible();
-  // Home's Get set up doesn't ask for it too.
-  await olive.goto(`/app/${slug}`);
-  await expect(olive.getByRole("list", { name: "Get set up" })).toBeVisible();
-  await expect(olive.getByRole("list", { name: "Get set up" })).not.toContainText("Verify your email");
-  // Account settings offers to send the email again too, beside the address.
+  const olive = await newPerson(browser, APP_URL);
+  const email = `e2e-${randomUUID()}@example.com`;
+  await olive.goto("/app/auth/sign-up");
+  await olive.getByLabel("Name").fill("Olive Owner");
+  await olive.getByLabel("Email").fill(email);
+  await olive.getByLabel("Password").fill(PASSWORD);
+  await olive.getByRole("button", { name: "Sign up" }).click();
+  await expect(olive.getByText("Check your email")).toBeVisible();
+  await expect(olive.getByText(`We sent a link to ${email}. Open it to verify your email and sign in.`)).toBeVisible();
+  await checkpoint(olive, "verify-email-sent");
+  // Not signed in: the app sends them to sign in.
+  await olive.goto("/app");
+  await olive.waitForURL((url) => url.pathname === "/app/auth/sign-in");
+
+  // Signing in before verifying: the same card, and the link again.
+  const sent = countEmailsTo(email);
+  await olive.getByLabel("Email").fill(email);
+  await olive.getByLabel("Password").fill(PASSWORD);
+  await olive.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(olive.getByText("Check your email")).toBeVisible();
+  await latestEmailTo(email, { after: sent, subject: /^Verify your email/ });
+  // Send another link: one more.
+  const before = countEmailsTo(email);
+  await olive.getByRole("button", { name: "Send another link" }).click();
+  await expect(olive.getByText("Another link is on its way.")).toBeVisible();
+  const again = await latestEmailTo(email, { after: before, subject: /^Verify your email/ });
+
+  // The link verifies the address and signs in.
+  await olive.goto(linkIn(again, `${APP_URL}/api/auth/verify-email`));
+  await olive.waitForURL((url) => url.pathname.startsWith("/app") && !url.pathname.startsWith("/app/auth"));
   await olive.goto("/app/account");
-  await expect(olive.getByText("Not verified")).toBeVisible();
+  await expect(olive.getByRole("heading", { level: 1, name: "Account settings" })).toBeVisible();
   // On phones, Account settings' path names Tuti rather than the last project.
   await olive.setViewportSize({ width: 390, height: 844 });
   await expect(olive.locator("header").first()).toContainText("Tuti");
-  await expect(olive.locator("header").first()).not.toContainText("Acme");
   await olive.setViewportSize({ width: 1280, height: 720 });
   await expect(olive.locator("main > header")).toBeHidden();
-  await expect(olive.getByRole("paragraph").filter({ hasText: "Not verified" }).getByRole("button", { name: "Resend email" })).toBeVisible();
-  // Verified in another tab, the strip and Account settings stop asking once this tab is back in focus.
-  const otherTab = await olive.context().newPage();
-  await otherTab.goto(linkIn(await latestEmailTo(olive.email), `${APP_URL}/api/auth/verify-email`));
-  await otherTab.close();
-  await olive.bringToFront();
-  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
-  await expect(async () => {
-    await olive.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-    await expect(olive.getByText("Not verified")).toHaveCount(0, { timeout: 500 });
-    await expect(strip).toHaveCount(0, { timeout: 500 });
-  }).toPass({ timeout: 15_000 });
-  // And it's gone on the next page.
-  await olive.goto(`/app/${slug}/feedback`);
-  await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
-  await expect(strip).toHaveCount(0);
+});
+
+test("signing up with an address someone else signed up first emails its owner a reset, never a link that lets them in", async ({ browser }) => {
+  const email = `e2e-${randomUUID()}@example.com`;
+  const signUpAs = async (password: string) => {
+    const person = await newPerson(browser, APP_URL);
+    await person.goto("/app/auth/sign-up");
+    await person.getByLabel("Name").fill("Olive Owner");
+    await person.getByLabel("Email").fill(email);
+    await person.getByLabel("Password").fill(password);
+    await person.getByRole("button", { name: "Sign up" }).click();
+    await expect(person.getByText("Check your email")).toBeVisible();
+    return person;
+  };
+  const subjects = () => emailsTo(email).map((message) => message.subject);
+  await signUpAs("someone else's password");
+  await expect.poll(subjects).toEqual(["Verify your email for Tuti"]);
+  // The owner: the same card, a reset, and Send another link sends no verification link for the first password.
+  const owner = await signUpAs(PASSWORD);
+  await expect.poll(subjects).toEqual(["Verify your email for Tuti", "Reset your password"]);
+  await owner.getByRole("button", { name: "Send another link" }).click();
+  await expect(owner.getByText("Another link is on its way.")).toBeVisible();
+  expect(subjects()).toEqual(["Verify your email for Tuti", "Reset your password"]);
 });
 
 test("an owner renames the project in Settings → General, and the app and its portal show the new name", async ({ browser }, testInfo) => {
@@ -450,15 +470,17 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await ada.getByLabel("Email").fill(email);
   await ada.getByLabel("Password").fill(PASSWORD);
   await ada.getByRole("button", { name: "Sign up" }).click();
-  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/continue");
-  await expect(ada.getByText("Continue to Acme")).toBeVisible();
-  await backToPortal(ada);
-  await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
-  await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
+  await expect(ada.getByText("Check your email")).toBeVisible();
+  // Sent again (signing in once more), the link still comes back to Acme.
+  await latestEmailTo(email, { subject: /verify/i });
+  const sent = countEmailsTo(email);
+  await ada.getByRole("button", { name: "Send another link" }).click();
+  await expect(ada.getByText("Another link is on its way.")).toBeVisible();
+  const again = await latestEmailTo(email, { after: sent, subject: /verify/i });
 
-  // Later, "Verify your email" from the inbox: that handoff is used up, so it comes back through a new one.
+  // Signed in by the emailed link, opened later: the sign-up's handoff is used up, so it comes back through a new one.
   // It doesn't go on by itself: the page says where (the portal's address), and Ada clicks.
-  await ada.goto(linkIn(await latestEmailTo(email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
+  await ada.goto(linkIn(again, `${APP_URL}/api/auth/verify-email`));
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/continue" && url.searchParams.has("mac"));
   await expect(ada.getByText(`Use your Tuti account on Acme's portal, at ${new URL(portalUrl(slug)).host}.`)).toBeVisible();
   await ada.getByRole("link", { name: "Continue as Ada" }).click();

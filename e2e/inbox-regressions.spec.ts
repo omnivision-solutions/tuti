@@ -4,14 +4,12 @@ import pg from "pg";
 import { APP_URL } from "./env";
 import { checkpoints } from "./checkpoint";
 import { apiFor, createProject, signUp } from "./helpers";
-import { verifyEmail } from "./mail";
 import { sesComplaint } from "./ses";
 
 async function inbox(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await verifyEmail(owner);
   // A support address, so replies are emailed at all (replyRecipient).
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();

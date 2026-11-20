@@ -46,7 +46,7 @@ async function votedFor(...voters: TestUser[]) {
 
 test("the team's reply with Email voters goes to the post's voters, each once; not to the team, nor without it", async () => {
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
-  const [voter, other, unverified] = [await verified("Voter"), await verified("Other"), await signUp("Unverified")];
+  const [voter, other, unverified] = [await verified("Voter"), await verified("Other"), await signUp("Unverified", undefined, { verified: false })];
   const { post, author } = await votedFor(voter, other, unverified, owner);
 
   // Without it: nobody's emailed.
@@ -125,7 +125,7 @@ test("the reply's images are in the email to voters, at lasting links", async ()
 });
 
 test("the team's reply form says how many voters it emails, and emails them when switched on", async () => {
-  const [voter, unverified] = [await verified("Voter"), await signUp("Unverified")];
+  const [voter, unverified] = [await verified("Voter"), await signUp("Unverified", undefined, { verified: false })];
   const { post } = await votedFor(voter, unverified, owner);
   const { id } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
   // Its author and Voter: not an address nobody verified, nor the team.

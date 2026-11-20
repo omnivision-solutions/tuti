@@ -16,7 +16,7 @@ import { VoteCount } from "@/components/vote-button";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { SignOutButton } from "@/components/user-menu";
-import { ResendVerificationButton } from "@/components/verify-email-banner";
+import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { appUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 import { accountEmails } from "@/server/operations/email-preferences";

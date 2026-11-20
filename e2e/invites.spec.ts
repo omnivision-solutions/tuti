@@ -5,7 +5,7 @@ import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { fillSignUp, newPerson, png, signUp, skipSetup } from "./helpers";
-import { countEmailsTo, latestEmailTo, linkIn, verifyEmail } from "./mail";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("an owner invites someone by email, who signs up from the email and joins", async ({ browser }, testInfo) => {
   test.setTimeout(90_000); // two people, a dozen pages and the team's screen at three widths
@@ -20,32 +20,20 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await owner.getByRole("button", { name: "Create project" }).click();
   await skipSetup(owner, slug);
 
-  // Until the owner's email is verified, an invite isn't emailed (the card says so): its link is there to copy.
+  // The owner invites someone; the pending invite shows who it's for.
   await owner.goto(`/app/${slug}/team`);
   await owner.getByRole("button", { name: "Invite people" }).click();
   const inviting = owner.getByRole("dialog", { name: "Invite people" });
-  await expect(inviting).toContainText("Verify your email to email invites; until then you'll get a link to send them.");
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
-  await expect(owner.getByText(`Verify your email to email invites: for now, send ${inviteeEmail} this link`)).toBeVisible();
+  await expect(owner.getByText(`Invite sent to ${inviteeEmail}`)).toBeVisible();
   await expect(owner.getByRole("button", { name: "Copy link" })).toBeInViewport({ ratio: 1 });
-  await checkpoint(owner, "team-invite-unverified", { fullPage: false });
+  await checkpoint(owner, "team-invite-sent", { fullPage: false });
   // A click beside the dialog leaves it open: the link isn't shown again.
   await owner.mouse.click(20, 400);
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).click(); // still there to use, not fading out
   await expect(inviting).toHaveAttribute("data-open");
   await expect(owner.getByRole("button", { name: "Copy link" })).toBeVisible();
-  expect(countEmailsTo(inviteeEmail)).toBe(0);
-
-  // Verified, the owner invites again (replacing that one); the pending invite shows who it's for.
-  await verifyEmail(owner);
-  await owner.goto(`/app/${slug}/team`);
-  await owner.getByRole("button", { name: "Invite people" }).click();
-  await expect(inviting).not.toContainText("Verify your email");
-  await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
-  await owner.getByRole("button", { name: "Send invite" }).click();
-  await expect(owner.getByText(`Invite sent to ${inviteeEmail}`)).toBeVisible();
-  await checkpoint(owner, "team-invite-sent", { fullPage: false });
   await owner.keyboard.press("Escape");
   await expect(inviting).toHaveCount(0);
   await expect(owner.getByRole("list", { name: "Pending invites" }).getByText(`${inviteeEmail} · Member`)).toBeVisible();
@@ -66,8 +54,6 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await invitee.waitForURL("**/invite/**");
   await invitee.getByRole("button", { name: "Accept invite" }).click();
   await invitee.waitForURL(`**/app/${slug}`);
-  // Accepting doesn't verify the address (whoever invited them has the link too): their sign-up email's link does.
-  await expect(invitee.getByText("Verify your email.")).toBeVisible();
   await checkpoint(invitee, "invitee-joined");
 
   // Team is in Settings now, as Team & roles; its old address still lands there.
@@ -212,7 +198,6 @@ test("an invite for someone else says so", async ({ browser }, testInfo) => {
   const inviteeEmail = `e2e-${randomUUID()}@example.com`;
 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await verifyEmail(owner);
   await owner.goto("/app/new");
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);
@@ -246,7 +231,6 @@ test("someone with an account sees invites on the dashboard, declines one and ac
 
   // An owner invites her to two projects.
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await verifyEmail(owner);
   for (const [slug, name] of [
     [first, "Acme"],
     [second, "Globex"],
