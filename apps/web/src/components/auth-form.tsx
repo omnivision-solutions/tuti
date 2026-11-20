@@ -81,8 +81,9 @@ export function AuthForm({
   const [pending, setPending] = useState(false);
   // The sent card's: "Send another link" went out, and the address "Use a different email" brings back to the form.
   const [resent, setResent] = useState(false);
-  // The sent card's email is the password account's verification link (signing up, or signing in before verifying), not a sign-in link.
-  const [verifying, setVerifying] = useState(false);
+  // The sent card's email is the password account's verification link (signing up, or signing in before verifying), not
+  // a sign-in link: the password typed, which "Send another link" signs in with again.
+  const [verifying, setVerifying] = useState<string>();
   const [email, setEmail] = useState(defaultEmail);
   // A portal's sign-up: the name the link's account gets, sent again with "Send another link".
   const [name, setName] = useState<string>();
@@ -139,9 +140,20 @@ export function AuthForm({
         setPending(true);
         setLinkError(undefined);
         try {
-          const { error } = await authClient.sendVerificationEmail({ email: sentTo, callbackURL: at(next ?? redirectTo) });
-          setLinkError(error ? (error.message ?? "We couldn't send the email. Try again.") : undefined);
-          setResent(!error);
+          // Signing in again, never Better Auth's resend by address: only the account's own password sends its link. Someone
+          // who signed up first with this address chose that account's password, and verifying it would let them in.
+          const { error } = await authClient.signIn.email({ email: sentTo, password: verifying });
+          if (!error) {
+            // Verified meanwhile (in another tab, say): signed in.
+            router.push(at(next ?? redirectTo));
+            router.refresh();
+            return;
+          }
+          // Sent again; or, with another password on the account, nothing more: its owner was emailed a reset on signing
+          // up (lib/auth.ts), and the answer is the same.
+          const sent = error.code === "EMAIL_NOT_VERIFIED" || error.code === "INVALID_EMAIL_OR_PASSWORD";
+          setLinkError(sent ? undefined : (error.message ?? "We couldn't send the email. Try again."));
+          setResent(sent);
         } catch {
           // Offline, or the server didn't answer.
           setLinkError("We couldn't send the email. Try again.");
@@ -200,7 +212,7 @@ export function AuthForm({
               setEmail(sentTo);
               setChangingEmail(true);
               setSentTo(undefined);
-              setVerifying(false);
+              setVerifying(undefined);
               setResent(false);
               setLinkError(undefined);
             }}
@@ -244,7 +256,7 @@ export function AuthForm({
     if ((isSignUp && data && !data.token) || error?.code === "EMAIL_NOT_VERIFIED") {
       setEmail(email);
       setName(isSignUp ? String(form.get("name")) : undefined);
-      setVerifying(true);
+      setVerifying(password);
       setSentTo(email);
       return;
     }

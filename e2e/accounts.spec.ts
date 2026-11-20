@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { query } from "./db";
 import { APP_URL, portalUrl } from "./env";
 import { backToPortal, createProject, newPerson, signInWithPassword, signUp } from "./helpers";
-import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, emailsTo, latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
 
@@ -299,6 +299,29 @@ test("a new account is signed in by its emailed link only; signing in before sen
   await expect(olive.locator("header").first()).toContainText("Tuti");
   await olive.setViewportSize({ width: 1280, height: 720 });
   await expect(olive.locator("main > header")).toBeHidden();
+});
+
+test("signing up with an address someone else signed up first emails its owner a reset, never a link that lets them in", async ({ browser }) => {
+  const email = `e2e-${randomUUID()}@example.com`;
+  const signUpAs = async (password: string) => {
+    const person = await newPerson(browser, APP_URL);
+    await person.goto("/app/auth/sign-up");
+    await person.getByLabel("Name").fill("Olive Owner");
+    await person.getByLabel("Email").fill(email);
+    await person.getByLabel("Password").fill(password);
+    await person.getByRole("button", { name: "Sign up" }).click();
+    await expect(person.getByText("Check your email")).toBeVisible();
+    return person;
+  };
+  const subjects = () => emailsTo(email).map((message) => message.subject);
+  await signUpAs("someone else's password");
+  await expect.poll(subjects).toEqual(["Verify your email for Tuti"]);
+  // The owner: the same card, a reset, and Send another link sends no verification link for the first password.
+  const owner = await signUpAs(PASSWORD);
+  await expect.poll(subjects).toEqual(["Verify your email for Tuti", "Reset your password"]);
+  await owner.getByRole("button", { name: "Send another link" }).click();
+  await expect(owner.getByText("Another link is on its way.")).toBeVisible();
+  expect(subjects()).toEqual(["Verify your email for Tuti", "Reset your password"]);
 });
 
 test("an owner renames the project in Settings → General, and the app and its portal show the new name", async ({ browser }, testInfo) => {

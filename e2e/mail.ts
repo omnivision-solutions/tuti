@@ -6,7 +6,8 @@ import type { CapturedEmail } from "@tuti/testkit/smtp";
 /** Emails the app sent during the run; the global setup writes each one here. */
 export const MAIL_DIR = "e2e-mail";
 
-function emailsTo(address: string): CapturedEmail[] {
+/** Every email to `address` so far, oldest first. */
+export function emailsTo(address: string): CapturedEmail[] {
   return readdirSync(MAIL_DIR)
     .filter((file) => file.endsWith(".json"))
     .sort()
