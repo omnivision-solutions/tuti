@@ -193,9 +193,10 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = fa
         }}
       />
     ) : (
-      // Someone else here: their own Messages, from their list.
+      // Someone else here: their own Messages, from their list. The same person signed in again (a view asking the
+      // page for its token, as this one does as it opens) has a new token but keeps what's open here.
       <Messages
-        key={auth.token ?? auth.visitor ?? "portal"}
+        key={auth.token && signedIn ? `user:${signedIn.id}` : (auth.visitor ?? "portal")}
         projectSlug={projectSlug}
         auth={auth}
         team={team}

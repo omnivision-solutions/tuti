@@ -2283,20 +2283,25 @@ test("with the support inbox on, someone the page signs in messages the team fro
   let released = new Promise<"fail" | "pass">((resolve) => (release = resolve));
   // Whether the list's read has started (so the list, not the wait for the page's answer, is what's loading).
   let listRead = false;
+  // The widget tokens the list's reads carried.
+  const listTokens = new Set<string>();
   // Reading the list (and saying they're here) sends [project, { token }]; trading a sign-in, a string.
-  const readsList = (body: string | null) => {
+  const listToken = (body: string | null) => {
     try {
-      return typeof (JSON.parse(body ?? "") as unknown[])[1] === "object";
+      const auth = (JSON.parse(body ?? "") as unknown[])[1];
+      return typeof auth === "object" && auth ? String((auth as { token?: unknown }).token) : null;
     } catch {
-      return false;
+      return null;
     }
   };
   await visitor.route(
     (url) => url.pathname === "/widget",
     async (route) => {
       // Only the list's reads: a held sign-in would hold up the tab's navigation behind it too.
-      if (route.request().headers()["next-action"] && readsList(route.request().postData())) {
+      const token = route.request().headers()["next-action"] ? listToken(route.request().postData()) : null;
+      if (token !== null) {
         listRead = true;
+        listTokens.add(token);
         const then = reads === "hold" ? await released : reads;
         if (then === "fail") {
           await route.abort();
@@ -2327,9 +2332,17 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // The team's card stays as the list comes (their photos don't blink back to initials): marked now, still marked then.
   await expect.poll(() => listRead).toBe(true);
   await team.evaluate((element) => element.setAttribute("data-kept", ""));
+  // The page signs the same person in again, as it does whenever a view asks it for their token (Messages did as it
+  // opened): traded after the held reads (server actions go one at a time) and a second on, a new widget token, their
+  // list read with it. Still them: the card stays (below).
+  const tokensBefore = listTokens.size;
+  const signedInBy = Math.floor(Date.now() / 1000);
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await expect.poll(() => Math.floor(Date.now() / 1000)).toBeGreaterThan(signedInBy);
   // The list can't be read: not a skeleton for ever, but the error and Try again (New message still there).
   reads = "fail";
   release("fail");
+  await expect.poll(() => listTokens.size).toBeGreaterThan(tokensBefore);
   await expect(widget.getByText("Couldn't load your conversations.").and(widget.locator(":not([role=status])"))).toBeVisible();
   // Screen readers are told too.
   await expect(widget.getByRole("status").filter({ hasText: "Couldn't load your conversations." })).toBeAttached();
