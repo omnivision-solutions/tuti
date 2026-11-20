@@ -41,9 +41,11 @@ export type ApiKeyView = {
  * once; closed and opened again, it's empty.
  */
 export function CreateKeyDialog({ projectSlug, apiUrl }: { projectSlug: string; apiUrl: string }) {
+  const [open, setOpen] = useState(false);
+  const transition = useTransition();
   return (
-    // A tap beside it doesn't close it: the key it shows isn't shown again.
-    <Dialog disablePointerDismissal>
+    // A tap beside it doesn't close it, and nothing does while the key is being made: the key it shows isn't shown again.
+    <Dialog disablePointerDismissal open={open} onOpenChange={(next) => (next || !transition[0]) && setOpen(next)}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <PlusIcon />
         Create key
@@ -53,17 +55,16 @@ export function CreateKeyDialog({ projectSlug, apiUrl }: { projectSlug: string; 
           <DialogTitle>Create an API key</DialogTitle>
           <DialogDescription>For your own code (REST API) or an AI assistant (MCP). The key is shown once.</DialogDescription>
         </DialogHeader>
-        <CreateKeyForm projectSlug={projectSlug} apiUrl={apiUrl} />
+        <CreateKeyForm projectSlug={projectSlug} apiUrl={apiUrl} transition={transition} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function CreateKeyForm({ projectSlug, apiUrl }: { projectSlug: string; apiUrl: string }) {
+function CreateKeyForm({ projectSlug, apiUrl, transition: [pending, startTransition] }: { projectSlug: string; apiUrl: string; transition: ReturnType<typeof useTransition> }) {
   const [scope, setScope] = useState<Scope>("READ");
   const [created, setCreated] = useState<{ name: string; key: string }>();
   const [copied, setCopied] = useState(false);
-  const [pending, startTransition] = useTransition();
 
   return (
     <div className="flex flex-col gap-3">
@@ -179,7 +180,7 @@ function KeyActions({ projectSlug, apiKey }: { projectSlug: string; apiKey: ApiK
       </DropdownMenu>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">Revoke {apiKey.name}?</AlertDialogTitle>
+          <AlertDialogTitle className="wrap-anywhere">Revoke {apiKey.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             Anything using this key stops working right away. This can&apos;t be undone.
           </AlertDialogDescription>

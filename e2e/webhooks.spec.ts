@@ -38,9 +38,27 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     await endpoint.fill(url);
     await expect(dialog.getByRole("checkbox")).toHaveCount(7);
     await dialog.getByRole("checkbox", { name: /Status changed/ }).uncheck();
+    // While the webhook is added nothing closes the dialog: its secret couldn't be shown.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const developers = `**/app/${slug}/settings/developers`;
+    await owner.route(developers, async (route) => {
+      if (route.request().method() !== "POST") {
+        return route.fallback();
+      }
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    });
     await dialog.getByRole("button", { name: "Add webhook" }).click();
+    await expect(dialog.getByRole("button", { name: "Adding…" })).toBeVisible();
+    await owner.keyboard.press("Escape");
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(dialog).toBeVisible();
+    release();
     const secret = dialog.getByRole("alert").filter({ hasText: "Copy the signing secret now" }).locator("code");
     await expect(secret).toHaveText(/^whsec_/);
+    await owner.unroute(developers);
     await checkpoint(owner, "settings-webhook-added", { fullPage: false });
     // A tap beside the dialog doesn't close it: the secret isn't shown again.
     await owner.mouse.click(5, 5);

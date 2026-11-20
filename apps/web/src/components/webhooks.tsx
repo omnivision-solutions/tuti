@@ -34,9 +34,11 @@ export type WebhookView = {
  * signing secret, which is shown once; closed and opened again, it's empty.
  */
 export function AddWebhookDialog({ projectSlug }: { projectSlug: string }) {
+  const [open, setOpen] = useState(false);
+  const transition = useTransition();
   return (
-    // A tap beside it doesn't close it: the secret it shows isn't shown again.
-    <Dialog disablePointerDismissal>
+    // A tap beside it doesn't close it, and nothing does while the webhook is being added: the secret it shows isn't shown again.
+    <Dialog disablePointerDismissal open={open} onOpenChange={(next) => (next || !transition[0]) && setOpen(next)}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <PlusIcon />
         Add webhook
@@ -46,16 +48,15 @@ export function AddWebhookDialog({ projectSlug }: { projectSlug: string }) {
           <DialogTitle>Add a webhook</DialogTitle>
           <DialogDescription>Tuti sends a signed POST to your endpoint when something happens, and retries for about a day until it answers with a 2xx.</DialogDescription>
         </DialogHeader>
-        <AddWebhookForm projectSlug={projectSlug} />
+        <AddWebhookForm projectSlug={projectSlug} transition={transition} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function AddWebhookForm({ projectSlug }: { projectSlug: string }) {
+function AddWebhookForm({ projectSlug, transition: [pending, startTransition] }: { projectSlug: string; transition: ReturnType<typeof useTransition> }) {
   const [secret, setSecret] = useState<string>();
   const [copied, setCopied] = useState(false);
-  const [pending, startTransition] = useTransition();
 
   return (
     <div className="flex flex-col gap-3">

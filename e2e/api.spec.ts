@@ -43,6 +43,11 @@ test("an admin creates an API key, reads posts with it and revokes it", async ({
   await expect(create).toHaveText("Creating…");
   await expect(create).toHaveAttribute("aria-disabled", "true");
   await expect(create).toBeFocused();
+  // Nothing closes the dialog meanwhile: the key couldn't be shown.
+  await owner.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeVisible();
+  await create.focus();
   release();
   await expect(create).toHaveText("Create key");
   await expect(create).toBeFocused();
@@ -85,9 +90,10 @@ test("an admin creates an API key, reads posts with it and revokes it", async ({
 
   // On a phone nothing runs off the side, and the dialog and its key fit the window.
   await owner.getByRole("button", { name: "Create key" }).click();
-  await name.fill("A key with quite a long name to wrap on a phone");
+  const long = "production-crm-sync-integration-key-for-zapier";
+  await name.fill(long);
   await create.click();
-  await expect(dialog.getByRole("alert")).toContainText("Copy the key for A key with quite a long name");
+  await expect(dialog.getByRole("alert")).toContainText(`Copy the key for ${long} now`);
   await owner.setViewportSize({ width: 390, height: 844 });
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
@@ -101,6 +107,14 @@ test("an admin creates an API key, reads posts with it and revokes it", async ({
   await expect(owner.getByRole("link", { name: "API docs" })).toHaveAttribute("href", "/api/docs");
   await expect(owner.getByRole("link", { name: "API docs" })).toBeInViewport({ ratio: 1 });
   await checkpoint(owner, "settings-developers-phone");
+  await owner.getByRole("button", { name: `Actions for ${long}` }).click();
+  await owner.getByRole("menuitem", { name: "Revoke" }).click();
+  const revoke = owner.getByRole("alertdialog", { name: `Revoke ${long}?` });
+  await expect(revoke).toBeVisible();
+  expect(await revoke.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await expect(revoke.getByRole("button", { name: "Revoke key" })).toBeInViewport({ ratio: 1 });
+  await revoke.getByRole("button", { name: "Cancel" }).click();
+  await expect(revoke).toBeHidden();
   await owner.setViewportSize({ width: 1280, height: 720 });
 
   // The API is how a team takes its data out: there's no separate export.
