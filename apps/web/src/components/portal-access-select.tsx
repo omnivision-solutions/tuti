@@ -3,6 +3,7 @@
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { SettingRow } from "@/components/settings-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
@@ -16,17 +17,25 @@ const ACCESS: Record<PortalAccess, string> = {
 
 const DESCRIPTIONS: Record<PortalAccess, string> = {
   public: "Anyone can read it, and sign up to post and vote.",
-  private:
-    "Only your team, people your app signs in with single sign-on, and the readers you add below. Everyone else gets the sign-in page; sign-up is off and search engines are kept out.",
+  private: "Only your team, single sign-on users and the readers below.",
 };
 
-/** `upgrade`: the plan has no private portal, so choosing Private opens the upgrade prompt and the portal stays as it is. */
+/** Behind the row's ⓘ: what the setting covers, and on a private portal what everyone else gets. */
+const COVERS = "It covers the portal, its docs and changelog, and the widget.";
+const KEPT_OUT = "Everyone else gets the sign-in page; sign-up is off and search engines are kept out.";
+
+/** Settings → Access's row. `upgrade`: the plan has no private portal, so choosing Private opens the upgrade prompt and the portal stays as it is. */
 export function PortalAccessSelect({ projectSlug, access, upgrade }: { projectSlug: string; access: PortalAccess; upgrade?: UpgradePrompt }) {
   const [pending, startTransition] = useTransition();
   const [upgrading, setUpgrading] = useState(false);
   const needsId = useId();
   return (
-    <div className="flex flex-col gap-2 text-sm">
+    <SettingRow
+      label="Who can see your portal"
+      description={DESCRIPTIONS[access]}
+      info={access === "private" ? `${COVERS} ${KEPT_OUT}` : COVERS}
+      htmlFor="portal-access"
+    >
       <Select
         items={ACCESS}
         value={access}
@@ -46,7 +55,7 @@ export function PortalAccessSelect({ projectSlug, access, upgrade }: { projectSl
           });
         }}
       >
-        <SelectTrigger className="w-full sm:w-48" aria-label="Portal access">
+        <SelectTrigger id="portal-access" aria-describedby="portal-access-description" className="w-full @min-[34rem]/settings:w-48">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -65,7 +74,6 @@ export function PortalAccessSelect({ projectSlug, access, upgrade }: { projectSl
           <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />
         </>
       )}
-      <p className="text-muted-foreground">{DESCRIPTIONS[access]}</p>
-    </div>
+    </SettingRow>
   );
 }

@@ -148,7 +148,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
 
   // The team's own HTML (Customize → Custom code) runs on their domain, scripts too, and never on a Tuti address.
   await owner.goto(`/app/${slug}/settings/custom-code`);
-  await expect(owner.getByText(`It runs on ${domain}`, { exact: false })).toBeVisible();
+  await expect(owner.getByText(new RegExp(`^Runs on ${domain}(:\\d+)?, not in this preview\\.$`))).toBeVisible();
   // An external script, then one that needs it: they run in that order, as on a page of their own.
   await owner
     .getByLabel("Custom HTML")
