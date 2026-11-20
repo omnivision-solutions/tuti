@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon, MoreHorizontalIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -36,9 +36,11 @@ export type WebhookView = {
 export function AddWebhookDialog({ projectSlug }: { projectSlug: string }) {
   const [open, setOpen] = useState(false);
   const transition = useTransition();
+  // While the request itself runs, not the refresh after it: once the secret shows, Close closes.
+  const sending = useRef(false);
   return (
     // A tap beside it doesn't close it, and nothing does while the webhook is being added: the secret it shows isn't shown again.
-    <Dialog disablePointerDismissal open={open} onOpenChange={(next) => (next || !transition[0]) && setOpen(next)}>
+    <Dialog disablePointerDismissal open={open} onOpenChange={(next) => (next || !sending.current) && setOpen(next)}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <PlusIcon />
         Add webhook
@@ -48,13 +50,13 @@ export function AddWebhookDialog({ projectSlug }: { projectSlug: string }) {
           <DialogTitle>Add a webhook</DialogTitle>
           <DialogDescription>Tuti sends a signed POST to your endpoint when something happens, and retries for about a day until it answers with a 2xx.</DialogDescription>
         </DialogHeader>
-        <AddWebhookForm projectSlug={projectSlug} transition={transition} />
+        <AddWebhookForm projectSlug={projectSlug} sending={sending} transition={transition} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function AddWebhookForm({ projectSlug, transition: [pending, startTransition] }: { projectSlug: string; transition: ReturnType<typeof useTransition> }) {
+function AddWebhookForm({ projectSlug, transition: [pending, startTransition], sending }: { sending: React.RefObject<boolean>; projectSlug: string; transition: ReturnType<typeof useTransition> }) {
   const [secret, setSecret] = useState<string>();
   const [copied, setCopied] = useState(false);
 
@@ -67,7 +69,8 @@ function AddWebhookForm({ projectSlug, transition: [pending, startTransition] }:
           const form = event.currentTarget;
           const data = new FormData(form);
           startTransition(async () => {
-            const result = await createWebhook(projectSlug, String(data.get("url")), data.getAll("events").map(String));
+            sending.current = true;
+            const result = await createWebhook(projectSlug, String(data.get("url")), data.getAll("events").map(String)).finally(() => (sending.current = false));
             if (result.error || !result.secret) {
               toast.error(result.error ?? "Couldn't add the webhook");
               return;

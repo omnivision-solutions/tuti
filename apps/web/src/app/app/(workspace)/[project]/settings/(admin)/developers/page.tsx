@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { ArrowUpRightIcon } from "lucide-react";
+import { BookOpenIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ApiKeys, CreateKeyDialog } from "@/components/api-keys";
+import { IconTooltip } from "@/components/icon-tooltip";
 import { SettingsCard, SettingsPane } from "@/components/settings-card";
+import { buttonVariants } from "@/components/ui/button";
 import { AddWebhookDialog, Webhooks } from "@/components/webhooks";
 import { appUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
@@ -44,10 +46,11 @@ export default async function DevelopersSettingsPage(props: PageProps<"/app/[pro
     <SettingsPane
       title="Developers"
       actions={
-        <a href="/api/docs" className="inline-flex items-center gap-0.5 text-sm text-primary underline underline-offset-4">
-          API docs
-          <ArrowUpRightIcon aria-hidden className="size-3.5" />
-        </a>
+        <IconTooltip label="API docs">
+          <a href="/api/docs" aria-label="API docs" className={buttonVariants({ variant: "outline", size: "icon-sm" })}>
+            <BookOpenIcon aria-hidden />
+          </a>
+        </IconTooltip>
       }
     >
       <SettingsCard title="API keys" count={keys.length || undefined} action={<CreateKeyDialog projectSlug={project.slug} apiUrl={`${appUrl().origin}/api/v1`} />}>

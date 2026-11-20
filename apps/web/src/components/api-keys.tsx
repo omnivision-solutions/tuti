@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon, MoreHorizontalIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -43,9 +43,11 @@ export type ApiKeyView = {
 export function CreateKeyDialog({ projectSlug, apiUrl }: { projectSlug: string; apiUrl: string }) {
   const [open, setOpen] = useState(false);
   const transition = useTransition();
+  // While the request itself runs, not the refresh after it: once the secret shows, Close closes.
+  const sending = useRef(false);
   return (
     // A tap beside it doesn't close it, and nothing does while the key is being made: the key it shows isn't shown again.
-    <Dialog disablePointerDismissal open={open} onOpenChange={(next) => (next || !transition[0]) && setOpen(next)}>
+    <Dialog disablePointerDismissal open={open} onOpenChange={(next) => (next || !sending.current) && setOpen(next)}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <PlusIcon />
         Create key
@@ -55,13 +57,13 @@ export function CreateKeyDialog({ projectSlug, apiUrl }: { projectSlug: string; 
           <DialogTitle>Create an API key</DialogTitle>
           <DialogDescription>For your own code (REST API) or an AI assistant (MCP). The key is shown once.</DialogDescription>
         </DialogHeader>
-        <CreateKeyForm projectSlug={projectSlug} apiUrl={apiUrl} transition={transition} />
+        <CreateKeyForm projectSlug={projectSlug} sending={sending} apiUrl={apiUrl} transition={transition} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function CreateKeyForm({ projectSlug, apiUrl, transition: [pending, startTransition] }: { projectSlug: string; apiUrl: string; transition: ReturnType<typeof useTransition> }) {
+function CreateKeyForm({ projectSlug, apiUrl, transition: [pending, startTransition], sending }: { sending: React.RefObject<boolean>; projectSlug: string; apiUrl: string; transition: ReturnType<typeof useTransition> }) {
   const [scope, setScope] = useState<Scope>("READ");
   const [created, setCreated] = useState<{ name: string; key: string }>();
   const [copied, setCopied] = useState(false);
@@ -75,7 +77,8 @@ function CreateKeyForm({ projectSlug, apiUrl, transition: [pending, startTransit
           const form = event.currentTarget;
           const name = String(new FormData(form).get("name"));
           startTransition(async () => {
-            const result = await createApiKey(projectSlug, name, scope);
+            sending.current = true;
+            const result = await createApiKey(projectSlug, name, scope).finally(() => (sending.current = false));
             if (result.error || !result.key) {
               toast.error(result.error ?? "Couldn't create the key");
               return;
