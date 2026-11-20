@@ -6,6 +6,7 @@ export * from "./chat";
 export * from "./code-changes-settings";
 export * from "./code-changes-tuning";
 export * from "./embeddings";
+export * from "./duplicates";
 export * from "./log";
 export * from "./usage";
 export * from "./credits";

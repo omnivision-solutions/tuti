@@ -349,7 +349,7 @@ export type DecisionQuestion =
 export type DecisionAnswer = { type: "noul"; noul: number } | { type: "choice"; choice: string; probabilities: Record<string, number> };
 
 /**
- * Asks the decision model (decisionModel) about `state` through OpenRouter's Decisions API (beside
+ * Asks the decision model (`model`, by default Autopilot's: decisionModel) about `state` through OpenRouter's Decisions API (beside
  * the chat API: /api/alpha/decisions for /api/v1; only OpenRouter has it). Decision models only answer, with calibrated
  * probabilities: no text. Throws on any failure (an endpoint that can't serve the model too), or if a
  * question comes back unanswered.
@@ -357,7 +357,7 @@ export type DecisionAnswer = { type: "noul"; noul: number } | { type: "choice"; 
 export async function decide(
   state: unknown,
   questions: Record<string, DecisionQuestion>,
-  { timeoutMs = 30_000, meter }: { timeoutMs?: number; meter: Meter },
+  { timeoutMs = 30_000, meter, model = decisionModel() }: { timeoutMs?: number; meter: Meter; model?: string },
 ): Promise<Record<string, DecisionAnswer>> {
   const apiKey = chatKey();
   const { response, json } = await askProvider<{
@@ -368,7 +368,7 @@ export async function decide(
   }>(new URL("../alpha/decisions", `${baseUrl()}/`), {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: decisionModel(), state, questions, provider: PROVIDER }),
+    body: JSON.stringify({ model, state, questions, provider: PROVIDER }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
@@ -376,7 +376,7 @@ export async function decide(
   }
   await meter({
     kind: "decision",
-    model: answeredBy(json?.model, decisionModel()),
+    model: answeredBy(json?.model, model),
     inputTokens: tokens(json?.usage?.input_tokens),
     outputTokens: tokens(json?.usage?.output_tokens),
     cost: replyCost(json?.usage),

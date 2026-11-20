@@ -796,6 +796,39 @@
         }
       },
       "additionalProperties": false
+    },
+    "duplicates": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "posted": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "typesafe/jev-1.14",
+              "type": "string",
+              "pattern": "^\\S{1,200}$",
+              "description": "After a post is created: the decision model saying which of the 8 most similar posts it duplicates (they become \"Possible duplicates\"); `off` for similarity alone"
+            }
+          },
+          "additionalProperties": false
+        },
+        "typing": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "typesafe/jev-1.14",
+              "type": "string",
+              "pattern": "^\\S{1,200}$",
+              "description": "While a title is typed, on the portal and in the widget: the decision model saying which similar posts to suggest voting on instead; `off` for similarity alone"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

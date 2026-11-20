@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
-import { DUPLICATE_MIN_SIMILARITY, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit";
+import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_DUPLICATES_MODEL, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
+import { configFile, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -158,5 +158,112 @@ describe("suggestions while typing a title", () => {
     const found = await findSimilarPosts(project.slug, "dark mode");
     expect(openai.inputs.length).toBe(sent);
     expect(found.map((p) => p.title)).toEqual(["Dark mode soon"]);
+  });
+});
+
+describe("with a decision model (OpenRouter)", () => {
+  let model: ModelFake;
+  beforeAll(async () => {
+    model = await startModelFake({ embeddings: openai });
+  });
+  afterAll(() => model.close());
+  beforeEach(() => {
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+  });
+  beforeEach(() => model.decisions.splice(0));
+  afterEach(() => model.done());
+
+  const DUPLICATE = { duplicate: 0.9, related: 0.08, different: 0.02 };
+  const RELATED = { duplicate: 0.2, related: 0.7, different: 0.1 };
+  const DIFFERENT = { duplicate: 0.01, related: 0.2, different: 0.79 };
+
+  test("after posting, only the candidates it calls duplicates are suggested, from a wider net than similarity alone", async () => {
+    // Most similar to "Articles in other languages": Inbox (0.536), then Translations (0.37: under DUPLICATE_MIN_SIMILARITY).
+    openai.setVector("Translations for articles", [1, 0, 0, 0]);
+    openai.setVector("Live translations for Inbox", [0.8, 0.6, 0, 0]);
+    openai.setVector("Articles in other languages", [0.37, 0.4, Math.sqrt(1 - 0.37 ** 2 - 0.4 ** 2), 0]);
+    openai.setVector("Auto translation of articles", [DUPLICATE_CANDIDATE_MIN_SIMILARITY - 0.01, 0, 0, Math.sqrt(1 - (DUPLICATE_CANDIDATE_MIN_SIMILARITY - 0.01) ** 2)]);
+    model.decide({ duplicate_0: RELATED }, "Live translations for Inbox");
+    model.decide({ duplicate_0: DIFFERENT, duplicate_1: DUPLICATE }, "Articles in other languages");
+    const original = await post("Translations for articles");
+    await post("Live translations for Inbox");
+    const languages = await post("Articles in other languages");
+    // Its candidates are all under the cut-off, so it isn't asked about.
+    await post("Auto translation of articles");
+
+    expect(model.decisions).toHaveLength(2);
+    expect(model.decisions[1]).toMatchObject({
+      model: DEFAULT_DUPLICATES_MODEL,
+      state: { new: "Articles in other languages", existing_0: "Live translations for Inbox", existing_1: "Translations for articles" },
+    });
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: languages.id, originalId: original.id, status: "PENDING" })]);
+  });
+
+  test("when it fails, posts are suggested by similarity alone", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
+    const original = await post("Dark mode");
+    const duplicate = await post("Night theme please");
+    expect(model.decisions).toHaveLength(1);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: duplicate.id, originalId: original.id })]);
+    // Nothing was scripted, so the fake turned it down.
+    expect(() => model.done()).toThrow("no answers scripted");
+  });
+
+  test("duplicates.posted.model off asks nothing and uses similarity alone", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Dark mode", [1, 0, 0]);
+    openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
+    openai.setVector("Darker colours", [DUPLICATE_MIN_SIMILARITY - 0.01, 0, Math.sqrt(1 - (DUPLICATE_MIN_SIMILARITY - 0.01) ** 2)]);
+    await post("Dark mode");
+    const night = await post("Night theme please");
+    await post("Darker colours");
+    expect(model.decisions).toHaveLength(0);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id })]);
+  });
+
+  test("while typing, it keeps the duplicates, likeliest first, with duplicates.typing.model", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" }, typing: { model: "acme/judge" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Translations for articles", along(0.9));
+    openai.setVector("Article translation", along(0.8));
+    openai.setVector("Live translations for Inbox", along(0.7));
+    await post("Translations for articles");
+    await post("Article translation");
+    await post("Live translations for Inbox");
+    model.decide({ duplicate_0: { duplicate: 0.6, related: 0.3, different: 0.1 }, duplicate_1: DUPLICATE, duplicate_2: DIFFERENT });
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Article translation", "Translations for articles"]);
+    expect(model.decisions.at(-1)).toMatchObject({ model: "acme/judge", state: { new: "Translate articles please" } });
+  });
+
+  test("while typing, a failure shows the posts as found", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Translations for articles", along(0.9));
+    await post("Translations for articles");
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Translations for articles"]);
+    expect(() => model.done()).toThrow("no answers scripted");
+  });
+
+  test("while typing, a project's checks stop at 300 an hour: the rest show the posts as found", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    model.otherwiseDecide({ "*": DIFFERENT }, "Translate articles please");
+
+    for (let i = 0; i < 300; i++) {
+      expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
+    }
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(300);
   });
 });

@@ -32,7 +32,8 @@ export type DecisionRequest = { model: string; state: unknown; questions: Record
 
 /**
  * A scripted decision, per question name: a number answers a yes/no ("noul") question with that
- * probability; an object of probabilities answers a choice question (its choice is the likeliest).
+ * probability; an object of probabilities answers a choice question (its choice is the likeliest). `*` answers every
+ * question the others don't name.
  */
 export type FakeDecision = Record<string, number | Record<string, number>>;
 
@@ -88,6 +89,8 @@ export type ModelFake = {
    * A question the answers leave out is an error, like a step nobody scripted.
    */
   decide(answers: FakeDecision, match?: string): void;
+  /** Every decision request whose state contains `match` that no scripted answers take gets these, until `done()`; never counted as unused. */
+  otherwiseDecide(answers: FakeDecision, match: string): void;
   /** Throws if a step wasn't used or a request came with no step left. */
   done(): void;
   close(): Promise<void>;
@@ -118,6 +121,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
   const requests: ModelRequest[] = [];
   const decisionSteps: { answers: FakeDecision; match?: string }[] = [];
   const decisions: DecisionRequest[] = [];
+  const standingDecisions: { answers: FakeDecision; match: string }[] = [];
   const unexpected: string[] = [];
 
   const server = createServer((req, res) => {
@@ -204,14 +208,14 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
         if (index === -1) {
           index = decisionSteps.findIndex((step) => step.match === undefined);
         }
-        const [step] = index === -1 ? [] : decisionSteps.splice(index, 1);
+        const step = index === -1 ? standingDecisions.find((standing) => state.includes(standing.match)) : decisionSteps.splice(index, 1)[0];
         if (!step) {
           unexpected.push(`a decision request with no answers scripted: ${state.slice(0, 200)}`);
           return send(500, { error: { message: "the model fake has no decision scripted" } });
         }
         const answers: Record<string, unknown> = {};
         for (const [name, question] of Object.entries(request.questions)) {
-          const answer = step.answers[name];
+          const answer = step.answers[name] ?? step.answers["*"];
           if (answer === undefined) {
             unexpected.push(`a decision question with no answer scripted: ${name}`);
             return send(500, { error: { message: `no answer scripted for ${name}` } });
@@ -322,8 +326,12 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     decide(answers, match) {
       decisionSteps.push({ answers, match });
     },
+    otherwiseDecide(answers, match) {
+      standingDecisions.push({ answers, match });
+    },
     done() {
       standing.splice(0);
+      standingDecisions.splice(0);
       const problems = [
         ...unexpected.splice(0),
         ...steps
