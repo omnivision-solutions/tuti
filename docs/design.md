@@ -825,7 +825,8 @@ widths, in light and dark (in development only).
   - One Save: "Save changes" in the pane's header, there once the page has a form (`useCustomizeForm`), enabled once
     something differs. A switch that acts alone saves at once.
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
-    `Select`. No radios with a sentence each, no native `<select>`.
+    `Select`. No radios with a sentence each, no native `<select>`. A choice that saves as it's picked and changes
+    who can see something (Access's Public or Private) stays a `Select`: in a `Segmented`, an arrow key would pick it.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would

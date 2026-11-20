@@ -113,7 +113,7 @@ see the dot on their laptop.
 
 ## Private portals
 
-With **Settings → Access → Portal access → Private**, only your team and the people your app signs in
+With **Settings → Access → Who can see your portal → Private**, only your team and the people your app signs in
 this way can read the portal, its docs, changelog and feeds; everyone else gets the
 sign-in page, and sign-up is off. In the widget, the panel asks visitors to sign in until
 `getToken` gives it a token, then shows the portal to them.

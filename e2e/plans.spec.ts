@@ -204,7 +204,7 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   // A private portal and reader groups are on Business: Private looks like any other option and says what it needs.
   await owner.goto(`/app/${slug}/settings/access`);
   await expect(owner.getByText("A private portal and reader groups need the Business plan.")).toBeHidden();
-  const access = owner.getByRole("combobox", { name: "Portal access" });
+  const access = owner.getByRole("combobox", { name: "Who can see your portal" });
   await access.click();
   const makePrivate = owner.getByRole("option", { name: "Private" });
   await expect(makePrivate).toBeEnabled();
