@@ -355,6 +355,28 @@ describe("with a decision model (OpenRouter)", () => {
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
   });
 
+  test("a post checked before is checked again only against the older posts the backfill has just embedded", async () => {
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Darker colours", along(0.9));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DIFFERENT }, "Darker colours");
+    const dark = await post("Dark mode");
+    await post("Darker colours");
+    model.decide({ duplicate_0: DIFFERENT, duplicate_1: DIFFERENT }, "Night theme please");
+    const night = await post("Night theme please");
+    // "Dark mode" was never embedded: neither newer post was compared with it.
+    await prisma.postEmbedding.delete({ where: { postId: dark.id } });
+    const asked = model.decisions.length;
+
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await backfillEmbeddings({ info: () => {}, warn: () => {} });
+    const night2 = model.decisions.slice(asked).find((d) => (d.state as { new: string }).new === "Night theme please");
+    // Against "Dark mode" alone: "Darker colours" was judged already.
+    expect(night2?.state).toEqual({ new: "Night theme please", existing_0: "Dark mode" });
+    expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
+  });
+
   test("while typing, a balance that can't be read shows the posts as found", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));

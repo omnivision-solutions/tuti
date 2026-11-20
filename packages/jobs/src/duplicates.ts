@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import {
   contentHash,
   DUPLICATE_CANDIDATE_MIN_SIMILARITY,
@@ -56,10 +56,11 @@ export async function embedPosts(posts: PostText[]): Promise<number> {
 /**
  * Suggests older posts in the same project that this post may duplicate: the 8 most similar by embedding, those the
  * decision model (the config file's `duplicates.posted.model`) calls duplicates. Without one, out of AI credits, or when it fails, the 3 most similar at
- * DUPLICATE_MIN_SIMILARITY or above. Existing suggestions (including dismissed ones) are left as they are.
+ * DUPLICATE_MIN_SIMILARITY or above. Existing suggestions (including dismissed ones) are left as they are. With `among`,
+ * only those posts are candidates (the backfill, checking a post again against posts it has just embedded).
  * Returns how many new suggestions were added.
  */
-export async function detectDuplicates(postId: string): Promise<number> {
+export async function detectDuplicates(postId: string, among?: string[]): Promise<number> {
   // The model only while the project has AI credits (with credits on): out of them, similarity alone.
   const project = await prisma.post.findUnique({ where: { id: postId }, select: { projectId: true } });
   const configured = duplicatesModel("posted");
@@ -76,6 +77,7 @@ export async function detectDuplicates(postId: string): Promise<number> {
       AND p."duplicateOfId" IS NULL
       AND op."duplicateOfId" IS NULL
       AND op."createdAt" < p."createdAt"
+      ${among ? Prisma.sql`AND o."postId" = ANY(${among})` : Prisma.empty}
     ORDER BY o.embedding <=> e.embedding
     LIMIT ${model ? 8 : 3}`;
 

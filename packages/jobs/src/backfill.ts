@@ -28,25 +28,29 @@ export async function backfillEmbeddings(log: JobLogger) {
         select: { id: true, projectId: true, title: true, body: true, createdAt: true },
       });
       // Posts embedded before were checked for duplicates when they were (each check is a charged model request): only
-      // the others are checked, and in their project every post since the oldest of them (a post is compared with older
-      // ones, so a newer post never saw it). A rerun asks nothing again.
+      // the others are checked, against every older post. A post embedded before but newer than one of them never saw
+      // it (a post is compared with older ones): it's checked against those alone. A rerun asks nothing again.
       const before = new Set((await prisma.postEmbedding.findMany({ select: { postId: true } })).map((e) => e.postId));
-      const since = new Map<string, Date>();
+      const fresh = new Map<string, { id: string; createdAt: Date }[]>();
       for (const row of rows.filter((row) => !before.has(row.id))) {
-        if (!since.has(row.projectId)) {
-          since.set(row.projectId, row.createdAt);
-        }
+        fresh.set(row.projectId, [...(fresh.get(row.projectId) ?? []), row]);
       }
       // Embed everything first, then compare, so every post sees all older ones.
       const embedded = await embedPosts(rows);
       let suggestions = 0;
       let failed: unknown = null;
-      for (const post of rows.filter((row) => row.createdAt >= (since.get(row.projectId) ?? new Date(8.64e15)))) {
+      for (const post of rows) {
+        const older = (fresh.get(post.projectId) ?? []).filter((row) => row.createdAt < post.createdAt).map((row) => row.id);
+        if (before.has(post.id) && older.length === 0) {
+          continue;
+        }
         try {
-          suggestions += await detectDuplicates(post.id);
+          suggestions += await detectDuplicates(post.id, before.has(post.id) ? older : undefined);
         } catch (error) {
-          // Unembedded again, so the next run checks it; the rest carry on.
-          await prisma.postEmbedding.deleteMany({ where: { postId: post.id } });
+          // One this run embedded is unembedded again, so the next run checks it; the rest carry on.
+          if (!before.has(post.id)) {
+            await prisma.postEmbedding.deleteMany({ where: { postId: post.id } });
+          }
           failed ??= error;
         }
       }
