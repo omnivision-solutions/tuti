@@ -148,7 +148,7 @@ export function useCustomizeForm({
         if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || !(field instanceof HTMLInputElement) || !dirty || pending || busy) {
           return;
         }
-        if (["checkbox", "radio", "file", "button", "submit", "reset"].includes(field.type)) {
+        if (["checkbox", "radio", "file", "color", "range", "button", "image", "submit", "reset"].includes(field.type)) {
           return;
         }
         event.preventDefault();
