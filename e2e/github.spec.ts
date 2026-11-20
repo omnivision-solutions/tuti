@@ -67,6 +67,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("heading", { name: "Repositories 1" })).toBeVisible();
   // Its row is gone, and its menu's button with it: focus is on "Add repository", not lost, and still there once the
   // page has what's saved.
+  // (Enabled again: the removal's transition is over, and the page's own data came in with it.)
+  await expect(owner.getByRole("button", { name: "Add repository" })).toBeEnabled();
   await expect(owner.getByRole("button", { name: "Add repository" })).toBeFocused();
   // And stays there: Enter opens its dialog, which it wouldn't with focus back on the page.
   await owner.keyboard.press("Enter");
