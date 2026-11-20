@@ -271,7 +271,8 @@ describe("with a decision model (OpenRouter)", () => {
     vi.setSystemTime(new Date("2026-11-20T11:00:00Z"));
     expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
     expect(model.decisions).toHaveLength(301);
-  });
+    // 301 searches, each a few database queries and requests to the fakes.
+  }, 60_000);
 
   test("while typing, an answer that takes over a second shows the posts as found", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -320,6 +321,15 @@ describe("with a decision model (OpenRouter)", () => {
     const created = await post("The new one");
     const mine = (await suggestions()).filter((s) => s.postId === created.id).map((s) => s.originalId);
     expect(mine.sort()).toEqual([a!.id, b!.id, c!.id].sort());
+    expect(() => model.done()).toThrow("no answers scripted");
+  });
+
+  test("after posting, a failed answer leaves out what's under 0.45, even among the 3 most similar", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [a, b] = await olderPosts([0.9, 0.8, 0.4, 0.38]);
+    const created = await post("The new one");
+    const mine = (await suggestions()).filter((s) => s.postId === created.id).map((s) => s.originalId);
+    expect(mine.sort()).toEqual([a!.id, b!.id].sort());
     expect(() => model.done()).toThrow("no answers scripted");
   });
 });
