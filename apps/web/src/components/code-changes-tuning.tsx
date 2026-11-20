@@ -111,6 +111,7 @@ export function CodeChangesTuningSettings({
       }
     }
     setResets([...new Set([...resets, ...keys.filter((key) => tuning.values[key].saved !== null)])]);
+    setTyped(offDefault().length > 0);
     // A row's Reset goes once used: focus goes to the field it reset ("Reset to defaults" stays, and keeps it).
     if (row) {
       const input = fields?.namedItem(keys[0]!);
@@ -129,6 +130,12 @@ export function CodeChangesTuningSettings({
     });
   };
   const [typed, setTyped] = useState(false);
+  // Saved (the form starts again from what's saved): nothing typed is left.
+  const [typedFor, setTypedFor] = useState(stored);
+  if (typedFor !== stored) {
+    setTypedFor(stored);
+    setTyped(false);
+  }
   /** "Reset to defaults": every field back to its default, saved or only typed; the saved ones are reset when saved. */
   const resetAll = () => {
     const typedOnly = offDefault().filter((key) => !resettable.includes(key));
