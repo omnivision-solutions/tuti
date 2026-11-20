@@ -15,7 +15,7 @@ async function inbox(browser: Browser) {
   // A support address, so replies are emailed at all (replyRecipient).
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();
-  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
   const api = await apiFor(owner, slug);
   await api("/conversations", { email: "e2e-reader@example.com", subject: "Reports", body: "First message" });
   await owner.setViewportSize({ width: 1440, height: 900 });

@@ -391,7 +391,7 @@ test("the widget's panel under a path of the team's site keeps the path in its t
 
   // Private, the panel asks people to sign in there.
   await owner.goto(`/app/${slug}/settings/access`);
-  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
   const stranger = await newPerson(browser, siteUrl());

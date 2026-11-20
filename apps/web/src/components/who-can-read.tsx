@@ -1,9 +1,12 @@
 "use client";
 
-import { ExternalLinkIcon, ChevronRightIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { SettingBlock, SettingRow } from "@/components/settings-card";
+import { buttonVariants } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type Access, ANYONE, type WithoutAccess } from "@/lib/read-access";
 
 export type GroupOption = { key: string; name: string };
@@ -25,7 +28,7 @@ export function WhoCanRead({
   defaultGroups = [],
   defaultNoAccess = "inherit",
   preview,
-  compact = false,
+  rows = false,
   control,
 }: {
   /** Unique on the page, for the fields' ids. */
@@ -43,8 +46,8 @@ export function WhoCanRead({
   defaultNoAccess?: WithoutAccess;
   /** The page on the portal, for "Preview as a reader" (none for a page that isn't there yet). */
   preview?: string;
-  /** Settings pages keep the less common visibility choices behind a disclosure. */
-  compact?: boolean;
+  /** In a settings card (SettingsCard): a row each, the choices as dropdowns, in place of the radios. */
+  rows?: boolean;
   /** A parent that survives a panel moving between layouts can own the unsaved choices. */
   control?: { value: ReadAccessDraft; onChange: (value: ReadAccessDraft) => void };
 }) {
@@ -52,6 +55,8 @@ export function WhoCanRead({
   const [ownNoAccess, setOwnNoAccess] = useState<WithoutAccess>(defaultNoAccess);
   const access = control?.value.access ?? ownAccess;
   const noAccess = control?.value.noAccess ?? ownNoAccess;
+  // The ticked groups, where the rows own them (the radios' boxes keep their own).
+  const [ownGroups, setOwnGroups] = useState(defaultGroups);
   const setAccess = (access: Access) => control ? control.onChange({ ...control.value, access }) : setOwnAccess(access);
   const setNoAccess = (noAccess: WithoutAccess) => control ? control.onChange({ ...control.value, noAccess }) : setOwnNoAccess(noAccess);
   const choices: [Access, string, string][] = [
@@ -80,6 +85,86 @@ export function WhoCanRead({
   ];
   // Only for a page some people can't read.
   const forSome = access !== "inherit" || inherit.description !== ANYONE;
+  if (rows) {
+    const ticked = control?.value.groups ?? ownGroups;
+    const setTicked = (groups: string[]) => (control ? control.onChange({ ...control.value, groups }) : setOwnGroups(groups));
+    return (
+      <>
+        <SettingRow label="Who can read" htmlFor={`${id}-access`} description={choices.find(([choice]) => choice === access)?.[2]}>
+          <Picker id={`${id}-access`} name="access" choices={choices} value={access} onChange={setAccess} />
+        </SettingRow>
+        {access === "groups" ? (
+          <SettingBlock className="gap-2">
+            {groups.length > 0 ? (
+              <fieldset className="flex flex-col gap-2">
+                <legend className="sr-only">Groups</legend>
+                <div className="flex flex-wrap gap-x-5 gap-y-1">
+                  {groups.map((group) => (
+                    <label key={group.key} className="flex min-h-8 items-center gap-2 text-sm break-words">
+                      <input
+                        type="checkbox"
+                        name="groups"
+                        value={group.key}
+                        checked={ticked.includes(group.key)}
+                        onChange={(event) => setTicked(event.target.checked ? [...ticked, group.key] : ticked.filter((key) => key !== group.key))}
+                        className="size-4 accent-primary"
+                      />
+                      {group.name}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-sm text-muted-foreground">With none ticked, only your team can read it.</p>
+              </fieldset>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                You don&apos;t have any groups yet.{" "}
+                <Link href={`/app/${projectSlug}/settings/groups`} className="text-primary underline underline-offset-4">
+                  Create one
+                </Link>
+              </p>
+            )}
+          </SettingBlock>
+        ) : (
+          // The ticks stay while another choice is picked, and are sent as the boxes were.
+          ticked.map((key) => <input key={key} type="hidden" name="groups" value={key} />)
+        )}
+        {forSome ? (
+          <SettingRow
+            label="People without access"
+            htmlFor={`${id}-no-access`}
+            description={noAccess === "inherit" ? noAccessChoices[0]![2] : undefined}
+            info={
+              <>
+                <b>Show with a lock:</b> {noAccessChoices[1]![2]}
+                <br />
+                <b>Hide:</b> {noAccessChoices[2]![2]}
+              </>
+            }
+          >
+            <Picker id={`${id}-no-access`} name="noAccess" choices={noAccessChoices} value={noAccess} onChange={setNoAccess} />
+          </SettingRow>
+        ) : (
+          // Its choice is still sent, so it's kept for when it's for some people again.
+          <input type="hidden" name="noAccess" value={noAccess} />
+        )}
+        {forSome && preview && (
+          <SettingRow inline label={<span id={`${id}-preview-label`}>View as a reader</span>} description="See it signed out">
+            <a
+              id={`${id}-preview`}
+              href={preview}
+              target="_blank"
+              rel="noreferrer"
+              aria-labelledby={`${id}-preview ${id}-preview-label`}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Open
+              <ExternalLinkIcon aria-hidden />
+            </a>
+          </SettingRow>
+        )}
+      </>
+    );
+  }
   return (
     <div className="flex flex-col gap-6">
       <Choices
@@ -133,74 +218,50 @@ export function WhoCanRead({
       </Choices>
       {/* Hidden, its choice is still sent, so it's kept for when it's for some people again. */}
       <div hidden={!forSome}>
-        {compact ? (
-          <>
-            <details className="group/visibility text-[13px]">
-              <summary className="flex min-h-10 cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
-                <span>People without access</span>
-                <span className="ml-auto text-muted-foreground">
-                  {noAccess === "lock" ||
-                  (noAccess === "inherit" && inherit.shows === "lock")
-                    ? "Shown with a lock"
-                    : "Hidden"}
-                </span>
-                <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open/visibility:rotate-90" />
-              </summary>
-              <div className="py-3 sm:[&_fieldset]:pl-0! [&_legend]:sr-only">
-                <Choices
-                  id={`${id}-no-access`}
-                  legend="People without access"
-                  name="noAccess"
-                  choices={noAccessChoices}
-                  value={noAccess}
-                  onChange={setNoAccess}
-                />
-              </div>
-            </details>
-            {preview && (
+        <Choices
+          id={`${id}-no-access`}
+          legend="People without access"
+          name="noAccess"
+          choices={noAccessChoices}
+          value={noAccess}
+          onChange={setNoAccess}
+        >
+          {preview && (
+            <p className="text-sm text-muted-foreground">
               <a
                 href={preview}
                 target="_blank"
                 rel="noreferrer"
-                className="flex min-h-10 items-center gap-3 text-[13px] text-primary"
+                className="inline-flex items-center gap-1 text-primary underline underline-offset-4"
               >
-                <span>View as a reader</span>
-                <span className="ml-auto text-muted-foreground">
-                  See it signed out
-                </span>
-                <ExternalLinkIcon className="size-3.5" />
-              </a>
-            )}
-          </>
-        ) : (
-          <>
-            <Choices
-              id={`${id}-no-access`}
-              legend="People without access"
-              name="noAccess"
-              choices={noAccessChoices}
-              value={noAccess}
-              onChange={setNoAccess}
-            >
-              {preview && (
-                <p className="text-sm text-muted-foreground">
-                  <a
-                    href={preview}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-primary underline underline-offset-4"
-                  >
-                    Preview as a reader
-                    <ExternalLinkIcon aria-hidden className="size-3.5" />
-                  </a>{" "}
-                  opens its page on your portal as people signed out see it.
-                </p>
-              )}
-            </Choices>
-          </>
-        )}
+                Preview as a reader
+                <ExternalLinkIcon aria-hidden className="size-3.5" />
+              </a>{" "}
+              opens its page on your portal as people signed out see it.
+            </p>
+          )}
+        </Choices>
       </div>
     </div>
+  );
+}
+
+/** A row's dropdown of `choices` (a form field, `name`), named by the row's label and described by its line. */
+function Picker<T extends string>({ id, name, choices, value, onChange }: { id: string; name: string; choices: [T, string, string][]; value: T; onChange: (value: T) => void }) {
+  const items = choices.map(([choice, label]) => ({ value: choice, label }));
+  return (
+    <Select name={name} items={items} value={value} onValueChange={(next) => onChange(next as T)}>
+      <SelectTrigger id={id} aria-describedby={`${id}-description`} className="w-full @min-[34rem]/settings:w-60">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((item) => (
+          <SelectItem key={item.value} value={item.value}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
