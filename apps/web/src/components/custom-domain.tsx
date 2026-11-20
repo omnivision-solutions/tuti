@@ -146,7 +146,7 @@ function AddDomainForm({ projectSlug }: { projectSlug: string }) {
         <Input id="custom-domain" name="hostname" required maxLength={253} placeholder="help.yourcompany.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
         {state.error && <FieldError>{state.error}</FieldError>}
       </Field>
-      <Button type="submit" disabled={pending} className="self-start">
+      <Button type="submit" disabled={pending} focusableWhenDisabled className="self-start">
         {pending ? "Connecting…" : "Connect domain"}
       </Button>
     </form>
@@ -179,7 +179,7 @@ function CheckDnsButton({ projectSlug, hostname }: { projectSlug: string; hostna
     }
   });
   return (
-    <Button disabled={pending} onClick={check}>
+    <Button disabled={pending} focusableWhenDisabled onClick={check}>
       {pending ? "Checking…" : "Check DNS"}
     </Button>
   );

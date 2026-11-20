@@ -5,7 +5,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, backToPortal, createProject, fillSignUp, newPerson, signUp } from "./helpers";
+import { apiFor, backToPortal, createProject, fillSignUp, holdActions, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -27,7 +27,26 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByRole("radio", { name: /Sub-folder/ }).click();
   await owner.getByRole("textbox", { name: "Your site" }).fill(siteUrl());
   await owner.getByRole("textbox", { name: "Path" }).fill("/portal");
+  // A row each. What takes longer to say is behind the row's ⓘ.
+  const pathRow = owner.locator('[data-slot="setting-row"]', { hasText: "Where on it, like /help or /support." });
+  await pathRow.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText(`Until it's checked, your portal stays at ${new URL(portalUrl(slug)).host}.`)).toBeVisible();
+  await owner.keyboard.press("Escape");
+  // On a phone each field goes under its label; nothing runs off the side.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const pathLabel = (await pathRow.getByText("Where on it, like /help or /support.").boundingBox())!;
+  expect((await owner.getByRole("textbox", { name: "Path" }).boundingBox())!.y).toBeGreaterThanOrEqual(pathLabel.y + pathLabel.height);
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-site-form-phone");
+  await owner.setViewportSize(desktop);
+  // While it's set up the button is off, and keeps focus.
+  let release = await holdActions(owner);
   await owner.getByRole("button", { name: "Set up sub-folder" }).click();
+  await expect(owner.getByRole("button", { name: "Setting up…" })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByRole("button", { name: "Setting up…" })).toBeFocused();
+  await release();
   await expect(owner.getByText("Waiting for your site")).toBeVisible();
   // Not both: with the path set, there's no domain to add until it's removed.
   await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
@@ -41,10 +60,19 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await checkpoint(owner, "settings-site-guide", { fullPage: false });
   await owner.keyboard.press("Escape");
   await expect(guide).toBeHidden();
-  // Not forwarded yet.
+  // Not forwarded yet. While it checks, the button is off and keeps focus.
+  release = await holdActions(owner);
   await owner.getByRole("button", { name: "Check setup" }).click();
+  await expect(owner.getByRole("button", { name: "Checking…" })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByRole("button", { name: "Checking…" })).toBeFocused();
+  await release();
   await expect(owner.getByText("didn't answer with this portal's check", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-site-pending");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-site-pending-phone");
+  await owner.setViewportSize(desktop);
 
   // The team's site forwards /portal to the portal, path and all; the check says /_tuti (scripts and styles) is missing.
   await forwardToPortal("/portal", portalUrl(slug));
@@ -173,7 +201,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByRole("button", { name: "Remove sub-folder" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${siteUrl()}/portal removed`)).toBeVisible();
-  // And either can be picked again.
+  // Its Remove button went with it: focus is on the option still picked. And either can be picked again.
+  await expect(owner.getByRole("radio", { name: /Sub-folder/ })).toBeFocused();
   await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "false");
   await expect(async () => {
     await elsewhere.goto("/roadmap");

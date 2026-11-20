@@ -14,6 +14,7 @@ import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { customDomain } from "@/server/operations/domain";
 import { siteMountView } from "@/server/operations/site";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 
 export const metadata: Metadata = { title: "Domain · Settings" };
 
@@ -63,6 +64,10 @@ export default async function DomainSettingsPage(props: PageProps<"/app/[project
         notIncluded={{
           domain: planIncludes(plan, "customDomain") ? null : planNeeded("customDomain"),
           site: planIncludes(plan, "sitePath") ? null : planNeeded("sitePath"),
+        }}
+        upgrade={{
+          domain: planIncludes(plan, "customDomain") ? null : upgradePrompt("customDomain", slug, true),
+          site: planIncludes(plan, "sitePath") ? null : upgradePrompt("sitePath", slug, true),
         }}
         portalAddress={portal.host}
         protocol={portal.protocol}

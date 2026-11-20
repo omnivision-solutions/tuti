@@ -18,7 +18,8 @@ import {
 import { CopyButton, CopyField } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { SettingBlock, SettingRow } from "@/components/settings-card";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { keepingFields } from "@/lib/forms";
@@ -130,21 +131,39 @@ function SiteGuides({ path, tutiAddress }: { path: string; tutiAddress: string }
 function AddSiteForm({ projectSlug, portalAddress }: { projectSlug: string; portalAddress: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>((prev, formData) => saveSite(projectSlug, prev, formData), {});
   return (
-    <form {...keepingFields(action)} className="flex flex-col gap-3">
-      <Field data-invalid={state.error ? true : undefined}>
-        <FieldLabel htmlFor="site-origin">Your site</FieldLabel>
-        <Input id="site-origin" name="site" required maxLength={300} placeholder="https://yourcompany.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
-        <FieldDescription>The site your portal goes under.</FieldDescription>
-      </Field>
-      <Field data-invalid={state.error ? true : undefined}>
-        <FieldLabel htmlFor="site-path">Path</FieldLabel>
-        <Input id="site-path" name="path" required maxLength={200} placeholder="/help" autoComplete="off" aria-invalid={state.error ? true : undefined} />
-        <FieldDescription>Where on it, like /help or /support. Until it&apos;s checked, the portal stays at {portalAddress}.</FieldDescription>
-        {state.error && <FieldError>{state.error}</FieldError>}
-      </Field>
-      <Button type="submit" disabled={pending} className="self-end">
-        {pending ? "Setting up…" : "Set up sub-folder"}
-      </Button>
+    <form {...keepingFields(action)} className="flex flex-col divide-y">
+      <SettingRow label="Your site" description="The site your portal goes under." htmlFor="site-origin">
+        <Input
+          id="site-origin"
+          name="site"
+          required
+          maxLength={300}
+          placeholder="https://yourcompany.com"
+          autoComplete="off"
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby="site-origin-description"
+          className="@min-[34rem]/settings:w-72"
+        />
+      </SettingRow>
+      <SettingRow label="Path" description="Where on it, like /help or /support." info={`Until it's checked, your portal stays at ${portalAddress}.`} htmlFor="site-path">
+        <Input
+          id="site-path"
+          name="path"
+          required
+          maxLength={200}
+          placeholder="/help"
+          autoComplete="off"
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby={state.error ? "site-path-description site-error" : "site-path-description"}
+          className="@min-[34rem]/settings:w-72"
+        />
+      </SettingRow>
+      <SettingBlock className="gap-3">
+        {state.error && <FieldError id="site-error">{state.error}</FieldError>}
+        <Button type="submit" disabled={pending} focusableWhenDisabled className="self-end">
+          {pending ? "Setting up…" : "Set up sub-folder"}
+        </Button>
+      </SettingBlock>
     </form>
   );
 }
@@ -154,6 +173,7 @@ function CheckSiteButton({ projectSlug, url }: { projectSlug: string; url: strin
   return (
     <Button
       disabled={pending}
+      focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
           const result = await verifySiteSetup(projectSlug);

@@ -831,7 +831,8 @@ widths, in light and dark (in development only).
     who can see something (Access's Public or Private) stays a `Select`: in a `Segmented`, an arrow key would pick it.
     A list's rows that each hold the choice beside other things (User properties' format, beside the key and a
     currency) use a `Select` whatever the count, so they fit a phone.
-  - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
+  - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card) has its count beside the
+    card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
     repeat the page's, and so no count: its "New" button is in the pane's header (`SettingsPane`'s `actions`).

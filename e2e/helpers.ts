@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 
-import { type Browser, expect, type Locator, type Page } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page, type Route } from "@playwright/test";
 
 import { APP_URL, CLOUD_URL, portalUrl, TRIAL_URL } from "./env";
 
@@ -217,4 +217,22 @@ export async function openPersonDetails(page: Page) {
     .getByRole("complementary", { name: "About them" })
     .locator("details")
     .evaluateAll((sections) => sections.forEach((section) => { (section as HTMLDetailsElement).open = true; }));
+}
+
+/**
+ * Holds the page's server actions until the returned `release()` is called, so what a page shows while one runs (a
+ * button that's off, still focused) is asserted without racing it.
+ */
+export async function holdActions(page: Page) {
+  let letGo!: () => void;
+  const held = new Promise<void>((resolve) => (letGo = resolve));
+  const handler = async (route: Route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) await held;
+    await route.fallback();
+  };
+  await page.route("**/*", handler);
+  return async () => {
+    letGo();
+    await page.unroute("**/*", handler);
+  };
 }
