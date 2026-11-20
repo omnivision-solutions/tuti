@@ -14,6 +14,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useTransition,
@@ -899,12 +900,30 @@ export function ChangelogStyleForm({
   published: { number: number; title: string }[];
 }) {
   const [picked, setPicked] = useState(examples);
+  // Saved elsewhere meanwhile (another tab), what isn't edited here follows: the examples as the server sends them…
+  const [examplesWere, setExamplesWere] = useState(examples);
+  if (examplesWere.join() !== examples.join()) {
+    setExamplesWere(examples);
+    if ([...picked].sort().join() === [...examplesWere].sort().join()) {
+      setPicked(examples);
+    }
+  }
+  // …and the instructions (before the form compares with what's saved, in useCustomizeForm's effect).
+  const toneField = useRef<HTMLTextAreaElement>(null);
+  const toneWas = useRef(tone);
+  useLayoutEffect(() => {
+    if (toneField.current?.value === toneWas.current.replace(/\r\n?/g, "\n")) {
+      toneField.current.value = tone;
+    }
+    toneWas.current = tone;
+  }, [tone]);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
   // The dialog, opened, has had its pick.
   const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
+    saved: [["tone", tone], ...examples.map((number): [string, string] => ["examples", String(number)])],
     save: async (prev, formData) => {
       const result = await saveChangelogStyle(projectSlug, prev, formData);
       if (result.error) {
@@ -934,6 +953,7 @@ export function ChangelogStyleForm({
           Instructions
         </label>
         <Textarea
+          ref={toneField}
           id="style-tone"
           name="tone"
           defaultValue={tone}

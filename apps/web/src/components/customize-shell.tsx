@@ -55,25 +55,31 @@ const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, dr
 /** The preview beside a Customize section's settings (a no-op anywhere else). */
 export const usePreview = () => useContext(PreviewContext);
 
-const snapshotOf = (data: FormData) => JSON.stringify([...data.entries()].map(([name, value]) => [name, typeof value === "string" ? value : ""]));
+// Line breaks as a field holds them (\n), whatever the server stored.
+const snapshotOf = (entries: Iterable<[string, FormDataEntryValue]>) =>
+  JSON.stringify([...entries].map(([name, value]) => [name, typeof value === "string" ? value.replace(/\r\n?/g, "\n") : ""]));
 
 /**
  * A Customize section's form: "Save changes" in the panel's header submits it (`save`, an action like
  * useActionState's), enabled once something in it differs from what was saved and while nothing is
  * `busy` (an upload); `toDraft` (when given) turns what's in it into a change for the preview, shown as
  * it's made. Spread `form` on the form. Fields set by code rather than typing say so with useFieldChanged.
+ * `saved` (when given): what's saved, as the form's fields would hold it, in their order. It's what the form compares
+ * with, and it follows fresh server data (a teammate's save in another tab), so the form needn't start again.
  */
 export function useCustomizeForm({
   save,
   onSaved,
   toDraft,
   busy = false,
+  saved,
 }: {
   save: (state: FormState, data: FormData) => Promise<FormState>;
   /** After a save that went through. */
   onSaved?: () => void;
   toDraft?: (data: FormData) => Draft;
   busy?: boolean;
+  saved?: [name: string, value: string][];
 }) {
   const id = useId();
   const ref = useRef<HTMLFormElement>(null);
@@ -131,6 +137,13 @@ export function useCustomizeForm({
       form.removeEventListener("change", edited);
     };
   }, [read]);
+  const savedSnapshot = saved && snapshotOf(saved);
+  useEffect(() => {
+    if (savedSnapshot !== undefined) {
+      baseline.current = savedSnapshot;
+      read();
+    }
+  }, [savedSnapshot, read]);
   useEffect(() => register(id, { dirty, pending: pending || busy, saving: pending }), [register, id, dirty, pending, busy]);
   useEffect(() => () => register(id, null), [register, id]);
 
