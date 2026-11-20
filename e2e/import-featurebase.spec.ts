@@ -229,6 +229,21 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   await checkpoint(owner, "settings-import-phone");
   await owner.setViewportSize(desktop);
 
+  // A help center comes by its address, not a key: its one part is ticked and can't be unticked, so there's nothing to select.
+  await tile("Your help center").check();
+  await expect(owner.getByRole("textbox", { name: "Address" })).toHaveAttribute("placeholder", "https://help.example.com");
+  await expect(owner.getByRole("textbox", { name: "API key" })).toHaveCount(0);
+  await expect(owner.getByRole("link", { name: /^Get your API key/ })).toHaveCount(0);
+  await expect(owner.locator('[data-slot="setting-row"]').filter({ hasText: "Address" })).toContainText("Your help center's home page, like https://help.example.com.");
+  await expect(bring).toHaveCount(1);
+  await expect(owner.getByRole("checkbox", { name: "Help center", exact: true })).toBeChecked();
+  await expect(owner.getByRole("checkbox", { name: "Help center", exact: true })).toBeDisabled();
+  await expect(owner.locator('[data-slot="brings"]')).toHaveText("Its articles, as drafts");
+  await expect(owner.getByRole("button", { name: "Select all" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Start import" })).toBeEnabled();
+  await tile("Featurebase").check();
+  await expect(bring.and(owner.locator(":checked"))).toHaveCount(3);
+
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Start import" }).press("Enter");

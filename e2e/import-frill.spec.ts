@@ -81,12 +81,16 @@ test("in the first run the team comes from Frill: a bad key is refused, a good o
   await expect(owner.getByRole("region", { name: "Comments" }).getByRole("listitem").getByText("Internal note", { exact: true })).toBeVisible();
 });
 
-test("in Settings → Import, Frill's ideas go onto the board picked: Private to begin with, Public once picked", async ({ browser }) => {
+test("in Settings → Import from Frill, each part says what Frill has, a bad key is refused on the key's row, and ideas go onto the board picked: Private to begin with, Public once picked", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/import`);
   await owner.getByRole("radio", { name: "Frill", exact: true }).check();
+  // The few words on each part are Frill's: it gives no custom fields, and one board of ideas.
+  const brings = (part: string) => owner.locator('[data-slot="setting-row"]').filter({ has: owner.getByRole("checkbox", { name: part, exact: true }) }).locator('[data-slot="brings"]');
+  await expect(brings("Contacts")).toHaveText("Your users' names and email addresses");
+  await expect(brings("Feedback")).toHaveText("Your ideas, votes and comments, in one board");
   // Asked only while Feedback is picked.
   const where = owner.getByRole("radiogroup", { name: "Ideas from Frill" });
   await expect(where).toHaveCount(0);
@@ -99,7 +103,15 @@ test("in Settings → Import, Frill's ideas go onto the board picked: Private to
   await owner.keyboard.press("Escape");
   await where.getByText("On a Public board").click();
   await expect(where.getByRole("radio", { name: "On a Public board" })).toBeChecked();
-  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FRILL_KEY);
+  // A key Frill refuses: said under the field, on its row, which is marked invalid; nothing started.
+  const key = owner.getByRole("textbox", { name: "API key" });
+  await key.fill("not_a_real_key");
+  await owner.getByRole("button", { name: "Start import" }).click();
+  const keyRow = owner.locator('[data-slot="setting-row"]').filter({ has: key });
+  await expect(keyRow.getByRole("alert")).toHaveText("Frill didn't accept this API key. Check you copied all of it, or make a new one.");
+  await expect(key).toHaveAttribute("aria-invalid", "true");
+  await expect(where.getByRole("radio", { name: "On a Public board" })).toBeChecked();
+  await key.fill(FAKE_FRILL_KEY);
   await owner.getByRole("button", { name: "Start import" }).click();
   await expect(owner.getByRole("status").filter({ hasText: "Frill" })).toContainText("Imported from Frill.", { timeout: 30_000 });
 

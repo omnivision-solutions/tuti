@@ -2,7 +2,7 @@ import type { ImportSource } from "@tuti/db";
 import { IMPORT_SOURCES as JOB_SOURCES } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, IMPORT_SOURCES, importProgress, importSummary, kindCount, missingNeed, onHome, partDescription, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, IMPORT_SOURCES, type ImportSourceInfo, importProgress, importSummary, kindCount, missingNeed, onHome, partBrings, partDescription, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -151,4 +151,16 @@ test("a source says what a part brings from it where that isn't what it brings f
   expect(partDescription(IMPORT_SOURCES.ferndesk, "inbox")).toBe("Your AI assistant's conversations with readers, closed, as the Inbox.");
   expect(partDescription(IMPORT_SOURCES.ferndesk, "docs")).toBe(IMPORT_PARTS.docs.description);
   expect(partDescription(IMPORT_SOURCES.featurebase, "contacts")).toBe(IMPORT_PARTS.contacts.description);
+});
+
+test("a source's few words on a part never promise what it hasn't: wherever it describes a part its own way, it has its own few words too", () => {
+  // Frill and Nolt give no custom fields.
+  expect(partBrings(IMPORT_SOURCES.frill, "contacts")).toBe("Your users' names and email addresses");
+  expect(partBrings(IMPORT_SOURCES.nolt, "contacts")).toBe("Your board's users");
+  expect(partBrings(IMPORT_SOURCES.featurebase, "contacts")).toBe(IMPORT_PARTS.contacts.brings);
+  for (const source of Object.values(IMPORT_SOURCES) as ImportSourceInfo[]) {
+    // Canny's changelog differs only in what the few words don't say (types, scheduled entries).
+    const own = Object.keys(source.partDescriptions ?? {}).filter((part) => !(source === IMPORT_SOURCES.canny && part === "changelog"));
+    expect(Object.keys(source.partBrings ?? {}).sort()).toEqual(own.sort());
+  }
 });

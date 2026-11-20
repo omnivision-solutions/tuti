@@ -13,7 +13,7 @@ import { ImportSourceLogo } from "@/components/import-source-logo";
 import { Input } from "@/components/ui/input";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import { Segmented } from "@/components/ui/segmented";
-import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, partDescription, pickPart } from "@/lib/import-parts";
+import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, partBrings, partDescription, pickPart } from "@/lib/import-parts";
 import { cn } from "@/lib/utils";
 import { startImport } from "@/server/imports";
 import type { ImportView } from "@/server/operations/imports";
@@ -380,7 +380,7 @@ export function SetupImport({
                   }
                 >
                   <span data-slot="brings" className="text-sm text-muted-foreground">
-                    {part.brings}
+                    {partBrings(source, key)}
                   </span>
                 </SettingRow>
               ))}
