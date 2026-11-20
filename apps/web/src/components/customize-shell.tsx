@@ -141,10 +141,11 @@ export function useCustomizeForm({
       id,
       ref,
       // Enter in a field saves, as "Save changes" would: a form with several fields and no button of its own doesn't
-      // by itself. Not where Enter already did something (a chip added), nor in a text area, where it's a new line.
+      // by itself. Not where Enter already did something (a chip added), nor in a text area, where it's a new line, nor
+      // the Enter that confirms an input method's text (Safari sends that one after the composition, as key code 229).
       onKeyDown: (event: React.KeyboardEvent<HTMLFormElement>) => {
         const field = event.target;
-        if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing || !(field instanceof HTMLInputElement) || !dirty || pending || busy) {
+        if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || !(field instanceof HTMLInputElement) || !dirty || pending || busy) {
           return;
         }
         if (["checkbox", "radio", "file", "button", "submit", "reset"].includes(field.type)) {
