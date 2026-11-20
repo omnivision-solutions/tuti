@@ -84,6 +84,10 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await expect(owner.getByRole("radiogroup", { name: "Thinking" }).getByRole("radio", { name: "Off" })).toBeDisabled();
   await expect(owner.getByRole("button", { name: "Save changes" })).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Reset to defaults" })).toHaveCount(0);
+  // What's behind a label's ⓘ still opens there.
+  await owner.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("From 1,000 to 500,000.", { exact: false })).toBeVisible();
+  await owner.keyboard.press("Escape");
   await checkpoint(owner, "team-settings-ai-tuning-locked");
 
   await owner.goto(`/app/${slug}/settings/billing`);
@@ -171,6 +175,12 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await save.click();
   await expect.poll(async () => (await stored(slug))["decide.reasoning"]).toBe("high");
   await expect(thinking).toHaveAccessibleDescription(/Changed from Off/);
+  // On a phone its Reset sits beside the options, all within the card.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await thinking.evaluate((group) => group.getBoundingClientRect().right - group.closest('[data-slot="setting-row"]')!.getBoundingClientRect().right)).toBeLessThan(0);
+  await checkpoint(owner, "team-settings-ai-tuning-phone-thinking");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Reset Thinking" }).click();
   await expect(thinking.getByRole("radio", { name: "Off" })).toBeChecked();
   await expect(thinking.getByRole("radio", { name: "Off" })).toBeFocused();

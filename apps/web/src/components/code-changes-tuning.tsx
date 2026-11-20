@@ -138,9 +138,7 @@ export function CodeChangesTuningSettings({
         {editable ? (
           <TuningForm key={stored} {...props} resets={resets} setResets={setResets} onReset={(key) => putBack([key], true)} />
         ) : (
-          <fieldset disabled className="flex min-w-0 flex-col gap-7">
-            <TuningCards tuning={tuning} resets={resets} />
-          </fieldset>
+          <TuningCards tuning={tuning} resets={resets} />
         )}
       </div>
       {lastChanged && <p className="-mt-3 text-xs text-muted-foreground">Last changed {lastChanged}</p>}
@@ -201,7 +199,7 @@ function TuningForm({ projectSlug, tuning, resets, setResets, onReset }: Props &
   );
 }
 
-/** The values' rows in their two cards. `onReset`: they can be changed, so a changed one has its Reset. */
+/** The values' rows in their two cards. `onReset`: they can be changed, so a changed one has its Reset; without it the fields are disabled (not the ⓘ beside a label). */
 function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; resets: Key[]; onReset?: (key: Key) => void }) {
   const row = (key: Key) => {
     const value = tuning.values[key];
@@ -235,7 +233,8 @@ function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; r
         }
       >
         {changed && onReset && (
-          <Button type="button" variant="ghost" size="xs" onClick={() => onReset(key)} aria-label={`Reset ${label}`}>
+          // Its own width on phones too, where a row's control takes the card's (Thinking's options).
+          <Button type="button" variant="ghost" size="xs" className="@max-[34rem]/settings:w-auto!" onClick={() => onReset(key)} aria-label={`Reset ${label}`}>
             Reset
           </Button>
         )}
@@ -246,7 +245,8 @@ function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; r
             defaultValue={String(own)}
             aria-labelledby={`${id}-label`}
             aria-describedby={`${id}-help`}
-            className="has-disabled:pointer-events-none has-disabled:opacity-50"
+            disabled={!onReset}
+            className="min-w-0"
           />
         ) : (
           <span className="relative block">
@@ -256,6 +256,7 @@ function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; r
               type="number"
               inputMode="numeric"
               required
+              disabled={!onReset}
               min={bounds![0]}
               max={bounds![1]}
               step={1}
