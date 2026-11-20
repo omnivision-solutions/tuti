@@ -339,12 +339,26 @@ test("what a teammate saves in another tab is what Save changes compares with, o
     await expect(team.getByText(`Drafts ${model}`, { exact: true })).toBeVisible();
     await expect(team.getByText("AI model saved")).toBeVisible();
   };
+  // A teammate's tab, open from before: its instructions are empty, and it's long ready by the time they type.
+  const other = await team.context().newPage();
+  await other.goto(`/app/${slug}/settings/changelog`);
+  await expect(other.getByRole("button", { name: "Pick a style example" })).toBeVisible();
+
+  // Instructions stored with Windows line breaks (as the API may save them) are no change to save: the field holds \n.
+  await query(`UPDATE project SET "changelogTone" = $1 WHERE slug = $2`, ["Short.\r\nPlain.", slug]);
   await team.goto(`/app/${slug}/settings/changelog`);
+  await expect(instructions(team)).toHaveValue("Short.\nPlain.");
+  await expect(save(team)).toBeDisabled();
+  // Edited and typed back, it's still what's saved, and follows a teammate's save like a field never touched. (Typed
+  // again till Save reacts: what's typed into a filled field before the page's scripts start is lost as they do.)
+  await expect(async () => {
+    await instructions(team).fill("Short.");
+    await expect(save(team)).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
+  await instructions(team).fill("Short.\nPlain.");
   await expect(save(team)).toBeDisabled();
 
   // Saved in another tab while this one has nothing edited: this one shows it, with nothing to save.
-  const other = await team.context().newPage();
-  await other.goto(`/app/${slug}/settings/changelog`);
   await instructions(other).fill("From the other tab.");
   await pickExample(other, "Agenda view");
   await save(other).click();
