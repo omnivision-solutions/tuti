@@ -2,7 +2,7 @@ import { fileKey, originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { mediaStorage } from "@tuti/shared/storage";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readContent } from "@/server/content";
@@ -249,11 +249,11 @@ describe("uploads", () => {
     expect(await createUpload(project.slug, { name: "a.pdf", type: "application/pdf", size: 10 })).toEqual({ error: "Only the team can attach files" });
   });
 
-  test("files can be up to 25 MB, or what MEDIA_MAX_FILE_MB_TEAM says; they share the project's quota", async () => {
+  test("files can be up to 25 MB, or what the config file says; they share the project's quota", async () => {
     expect(await createUpload(project.slug, { name: "big.pdf", type: "", size: 26 * MB })).toEqual({ error: "Files can be up to 25 MB" });
-    vi.stubEnv("MEDIA_MAX_FILE_MB_TEAM", "30");
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamFile: 30 } } }));
     expect(await createUpload(project.slug, { name: "big.pdf", type: "", size: 26 * MB })).toHaveProperty("mediaId");
-    vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "27");
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamFile: 30 }, projectQuotaMb: 27 } }));
     expect(await createUpload(project.slug, { name: "more.pdf", type: "", size: 2 * MB })).toEqual({ error: "This project has no space left for files" });
   });
 });

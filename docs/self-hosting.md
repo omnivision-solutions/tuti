@@ -128,6 +128,7 @@ Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tut
 | `OPENAI_BASE_URL` | Optional: the AI provider's OpenAI-compatible address, `https://openrouter.ai/api/v1` by default. Embeddings need OpenAI's `text-embedding-3-small` there (OpenAI serves it, and OpenRouter as `openai/text-embedding-3-small`); the start-up check says when the provider doesn't. Autopilot and Verify need OpenRouter's Decisions API, which only OpenRouter has: they're on at `openrouter.ai` or with an OpenRouter key (`sk-or-…`, e.g. through a proxy in front of OpenRouter), and off with another provider's key elsewhere, which the server logs at start-up |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log |
 | `TRUSTED_IP_HEADER` | Set it behind a proxy: the header your proxy sets to the visitor's IP address (e.g. `cf-connecting-ip` behind Cloudflare; if it holds a list, the last value counts, the one your proxy added). It tells visitors apart for the limits on password sign-in, sign-up and verification emails, and for a per-visitor limit on emailed sign-in and password reset links (only a keyed hash of the address is stored, for an hour). Without it, sign-in limits go by `X-Forwarded-For`, which a visitor can set, and which puts everyone in one bucket when the proxy adds to it; emailed links have no per-visitor limit |
+| `TUTI_CONFIG` | Optional: the path of the config file, a JSON file of what you tune by feature (see below), on the web app and the worker alike |
 
 Every app's `.env.example` lists its variables; the web app refuses to start without the
 required ones. Put the app behind a proxy that passes `Host` and `X-Forwarded-*` headers.
@@ -149,6 +150,24 @@ Tuti's own Best row uses Claude Opus where the model writes (answers, drafted re
 articles and checks) and Claude Sonnet for the rest; with `AI_MODEL_MAX_PRICE` under Opus's price, Best isn't offered
 until you raise the cap or give Best cheaper models in your file. The cap is checked when a level is
 saved: a project already on Best keeps it, and runs on Opus, until it picks another level.
+
+### The config file
+
+What you tune, by feature, is in one JSON file: point `TUTI_CONFIG` at it, on the web app and the worker alike (mount
+the same file into both). Secrets and where things are (addresses, hosts, keys) stay in env vars; no value is read
+from both. Every key is optional: what the file leaves out keeps its default, and without a file every value is its
+default. `packages/shared/tuti.config.example.json` is an example, and `tuti.config.schema.json` beside it its JSON
+Schema (`"$schema"` in the file gives editors completion and checks). A file that can't be read, isn't valid or has
+a key Tuti doesn't know stops start-up, naming the key; so does an env var the file replaced, naming its key.
+
+| Key | Default | |
+|---|---|---|
+| `media.maxMb.teamImage` | `10` | An image the team uploads, in megabytes |
+| `media.maxMb.userImage` | `5` | An image a reader uploads (to a post, a comment or a message), in megabytes |
+| `media.maxMb.importImage` | `25` | An image an import copies from another tool, before it's re-encoded, in megabytes |
+| `media.maxMb.teamFile` | `25` | A file the team attaches to an article, in megabytes |
+| `media.maxMb.teamVideo` | `200` | A video the team uploads, in megabytes |
+| `media.projectQuotaMb` | `1024` | All of a project's uploads together, in megabytes |
 
 ### Autopilot's settings
 

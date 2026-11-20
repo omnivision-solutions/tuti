@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileKey, imageKey, videoKey } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { prisma } from "@tuti/db";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -93,7 +93,7 @@ beforeEach(async () => {
     vi.stubEnv(name, value);
   }
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "2");
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { importImage: 2 } } }));
   const slug = `import-${Math.random().toString(36).slice(2, 10)}`;
   projectId = (await prisma.project.create({ data: { slug, name: "Import" } })).id;
   uploaderId = (await prisma.user.create({ data: { id: slug, name: "Importer", email: `e2e-${slug}@example.com` } })).id;
@@ -159,7 +159,7 @@ test("an attached document in an article is copied as a file, checked by its con
 });
 
 test("an uploaded video in an article is copied, checked by its content, and plays from the copy", async () => {
-  vi.stubEnv("MEDIA_MAX_VIDEO_MB_TEAM", "1");
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamVideo: 1 } } }));
   // Streamed from a temporary file (in a directory of this test's own), never whole in the worker's memory, and the file
   // gone after. The first PUT meets a storage hiccup: it's sent again, from the file.
   const temporary = await mkdtemp(join(tmpdir(), "import-media-test-"));
@@ -277,24 +277,21 @@ test("a private address is refused before anything is fetched", async () => {
 });
 
 test("a large image counts against the quota no more than the app's per-image limit while it's processed", async () => {
-  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "");
-  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "11");
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 11 } }));
   // Room for 10 MB more, not for the whole original.
   await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024 - 100, status: "READY" } });
   expect(await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" })).toMatchObject({ mediaId: expect.any(String) });
 });
 
 test("a self-hoster's lower upload limit doesn't shrink what an imported image reserves while it's processed", async () => {
-  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "");
-  vi.stubEnv("MEDIA_MAX_IMAGE_MB_TEAM", "1");
-  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "6");
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamImage: 1 }, projectQuotaMb: 6 } }));
   // Room for 5 MB: the image reserves the fixed 10 MB bound, not the 1 MB editor limit, so it doesn't fit.
   await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024, status: "READY" } });
   expect(await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" })).toEqual({ leftOut: "quota" });
 });
 
 test("a full project's quota leaves the image out", async () => {
-  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "1");
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 1 } }));
   await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024 - 100, status: "READY" } });
   const copy = await importer()({ kind: "image", url: `${origin}/a.png`, key: "a" });
   expect(copy).toEqual({ leftOut: "quota" });

@@ -96,12 +96,12 @@ export async function createUpload(
     return { error: "Only the team can attach files" };
   }
   const maxSize = video
-    ? mediaLimit("MEDIA_MAX_VIDEO_MB_TEAM")
+    ? mediaLimit("teamVideo")
     : attachment
-    ? mediaLimit("MEDIA_MAX_FILE_MB_TEAM")
+    ? mediaLimit("teamFile")
     : isTeam
-      ? mediaLimit("MEDIA_MAX_IMAGE_MB_TEAM")
-      : mediaLimit("MEDIA_MAX_IMAGE_MB_USER");
+      ? mediaLimit("teamImage")
+      : mediaLimit("userImage");
   if (parsed.data.size > maxSize) {
     return { error: `${video ? "Videos" : attachment ? "Files" : "Images"} can be up to ${Math.round(maxSize / MB)} MB` };
   }
@@ -119,7 +119,7 @@ export async function createUpload(
       where: { projectId: project.id, status: { not: "FAILED" } },
       _sum: { size: true },
     });
-    if ((_sum.size ?? 0) + parsed.data.size > mediaLimit("MEDIA_PROJECT_QUOTA_MB")) {
+    if ((_sum.size ?? 0) + parsed.data.size > mediaLimit("projectQuota")) {
       return { error: `This project has no space left for ${attachment ? "files" : "images"}` };
     }
     return tx.media.create({

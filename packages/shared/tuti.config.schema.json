@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "media": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "maxMb": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "teamImage": {
+              "default": 10,
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "An image the team uploads, in megabytes"
+            },
+            "userImage": {
+              "default": 5,
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "An image a reader uploads (to a post, a comment or a message), in megabytes"
+            },
+            "importImage": {
+              "default": 25,
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "An image an import copies from another tool, before it's re-encoded, in megabytes"
+            },
+            "teamFile": {
+              "default": 25,
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "A file the team attaches to an article, in megabytes"
+            },
+            "teamVideo": {
+              "default": 200,
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "A video the team uploads, in megabytes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "projectQuotaMb": {
+          "default": 1024,
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "All of a project's uploads together, in megabytes"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

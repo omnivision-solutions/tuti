@@ -1,5 +1,5 @@
 import { codeChange, handlers } from "@tuti/jobs";
-import { aiLevelRows, assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, jobs, log, type JobKey } from "@tuti/shared";
+import { aiLevelRows, assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, checkConfig, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
 
@@ -10,6 +10,7 @@ import { taskOptions } from "./tasks";
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
 assertSesSettings();
+checkConfig();
 checkCodeChangesSettings();
 // An invalid billing file stops start-up, rather than selling the wrong thing.
 billingConfig();

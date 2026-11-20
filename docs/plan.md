@@ -440,6 +440,17 @@ Labels must mean one thing: an "I don't know" today can be no section close enou
 - [ ] Gaps: cluster unanswered questions by embedding instead of exact text; the model only names the clusters
 - [ ] Feedback triage: suggested board, spam and urgency from embeddings against labelled examples per project
 
+## Deployment config file (asked 2026-11-20)
+
+What an operator tunes moves out of env vars into one JSON file (`TUTI_CONFIG`), by feature, every key optional with its default in code; secrets and where things are (URLs, hosts, keys) stay in env vars, and no value is read from both. A section per feature in `packages/shared/src/config/`, read as `config().<section>`; the JSON Schema and docs/self-hosting.md's table come from it; an env var a section replaced, still set, stops start-up naming its key. No users yet, so the old variables simply go.
+
+- [x] The file, its loader and checks, and its first section: `media` (the `MEDIA_MAX_*` upload limits and `MEDIA_PROJECT_QUOTA_MB`)
+- [ ] `duplicates`: the decision models that say which similar posts are duplicates
+- [ ] `ai`: `AI_MODEL`, `AI_MODEL_<FEATURE>`, `AI_MODEL_MAX_PRICE`, and the AI levels' rows (`AI_LEVELS_CONFIG`'s file)
+- [ ] `autopilot`: the `CODE_CHANGES_*` settings
+- [ ] `ownPortal`, `customDomains`, `analytics`: `APP_PORTAL_*`, `APP_WIDGET_PROJECT`, `APP_LINKS`, `CUSTOM_DOMAIN_TARGET`, `CLOUDFLARE_ZONE_ID`, `POSTHOG_*`
+- [ ] AI credits (`AI_CREDITS*`) and `STRIPE_PORTAL_LOGIN_URL` into the billing file, which already says what the server sells
+
 ## AI usage per project (asked 2026-10-24)
 
 Every AI request a project causes is tracked; on Tuti's cloud, projects will pay for it with prepaid AI credits (decided 2026-10-24, planned below). Self-hosted, credits will be off: AI is as unlimited as the server's own keys.

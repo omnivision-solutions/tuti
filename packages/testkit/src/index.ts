@@ -18,3 +18,4 @@ export * from "./frill-fake";
 export * from "./nolt-fake";
 export * from "./billing";
 export * from "./api-fake";
+export * from "./config-file";

@@ -1,0 +1,7 @@
+{
+  "$schema": "./tuti.config.schema.json",
+  "media": {
+    "maxMb": { "teamVideo": 500 },
+    "projectQuotaMb": 5120
+  }
+}
