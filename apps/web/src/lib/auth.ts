@@ -108,17 +108,18 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
  * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
  * the app's /continue); in its place go when it was made and the app's MAC for this account (isOwnWayBack), with which
  * /continue starts a new handoff. Only for the sign-up's own email (`signingUp`): sending it again takes any address and
- * callbackURL from anyone, so there it would sign a way back for someone else's account. Elsewhere it goes to the app.
+ * callbackURL from anyone, so there it would sign a way back for someone else's account. Elsewhere it goes to the app, as
+ * does a link with none (Better Auth's "/", on Tuti's cloud its marketing site): signing in before verifying sends one.
  */
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
-  if (back?.startsWith("/app/auth/continue?") && !signingUp) {
-    url.searchParams.set("callbackURL", "/");
+  if (!back || back === "/" || (back.startsWith("/app/auth/continue?") && !signingUp)) {
+    url.searchParams.set("callbackURL", "/app");
   } else if (back?.startsWith("/app/auth/continue?")) {
     const callback = new URL(back, url);
     const portal = callback.searchParams.get("portal");
-    url.searchParams.set("callbackURL", portal ? await signedWayBack(portal, callback.searchParams.get("redirect") ?? "", userId) : "/");
+    url.searchParams.set("callbackURL", portal ? await signedWayBack(portal, callback.searchParams.get("redirect") ?? "", userId) : "/app");
   }
   return url.toString();
 }
@@ -213,6 +214,22 @@ export const auth = betterAuth({
     sendResetPassword: sendPasswordReset,
     resetPasswordTokenExpiresIn: PASSWORD_RESET_MINUTES * 60,
     revokeSessionsOnPasswordReset: true,
+    // Signing up with an address that has an account answers as for a new one (requireEmailVerification), so its owner
+    // gets something to use: the verification link again, or, verified already, a password reset (with its limits).
+    onExistingUserSignUp: async ({ user }) => {
+      try {
+        if (!user.emailVerified) {
+          await auth.api.sendVerificationEmail({ body: { email: user.email, callbackURL: "/app" } });
+          return;
+        }
+        const form = new FormData();
+        form.set("email", user.email);
+        // Imported here: server/password-reset.ts imports this file.
+        await (await import("@/server/password-reset")).emailPasswordReset(form);
+      } catch (error) {
+        log.error("Emailing an existing account's owner about a sign-up failed", { error });
+      }
+    },
     onPasswordReset: async ({ user }) => {
       await prisma.$transaction([
         // Opening the emailed link proved they own the inbox.

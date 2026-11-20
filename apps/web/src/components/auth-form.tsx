@@ -229,7 +229,9 @@ export function AuthForm({
     setLinkError(undefined);
     const { data, error } = isSignUp
       ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: at(next ?? redirectTo) })
-      : await authClient.signIn.email({ email, password });
+      : // No callbackURL: with one, Better Auth's client would reload the page to go there, and a tab's state is kept
+        // across signing in (the link it sends before verifying goes to the app, lib/auth.ts).
+        await authClient.signIn.email({ email, password });
     setPending(false);
 
     // Not signed in until the address is verified (lib/auth.ts): signing up, or signing in before, sends its link.

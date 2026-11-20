@@ -296,6 +296,60 @@ test("a new account is signed in by its emailed link only; signing in before sen
   await expect(olive.locator("main > header")).toBeHidden();
 });
 
+test("an owner renames the project in Settings → General, and the app and its portal show the new name", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const olive = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(olive, "Acme", slug);
+  await olive.goto(`/app/${slug}/settings/general`);
+  await expect(olive.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
+  // The page's one Save: nothing to save until the name differs.
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await olive.getByLabel("Project name").fill("A");
+  // Leaving with the change not saved asks first.
+  await olive.getByRole("link", { name: "Change the portal address in Domain" }).click();
+  await expect(olive.getByRole("alertdialog", { name: "Leave without saving?" })).toBeVisible();
+  await olive.getByRole("button", { name: "Keep editing" }).click();
+  await expect(olive.getByLabel("Project name")).toHaveValue("A");
+  await olive.getByRole("button", { name: "Save changes" }).click();
+  await expect(olive.getByText("Give the project a name of 2 characters or more")).toBeVisible();
+  await olive.getByLabel("Project name").fill("  Acme Help  ");
+  // Saved from the keyboard, focus stays on Save while it saves and after.
+  await olive.getByRole("button", { name: "Save changes" }).focus();
+  await olive.keyboard.press("Enter");
+  await expect(olive.getByText("Project renamed")).toBeVisible();
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeFocused();
+  // The field shows the name as saved.
+  await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
+  await checkpoint(olive, "settings-general");
+  // A change typed while a save runs stays in the field, still to save.
+  let releaseSave = () => {};
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await olive.route(`**/app/${slug}/settings/general`, async (route) => {
+    if (route.request().method() === "POST") {
+      await saveHeld;
+    }
+    await route.continue();
+  });
+  await olive.getByLabel("Project name").fill("Acme Docs");
+  await olive.getByRole("button", { name: "Save changes" }).click();
+  await expect(olive.getByRole("button", { name: "Saving…" })).toBeVisible();
+  await olive.getByLabel("Project name").fill("Acme Help");
+  releaseSave();
+  await expect(olive.getByRole("button", { name: /Acme Docs/ }).first()).toBeVisible();
+  await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await olive.unroute(`**/app/${slug}/settings/general`);
+  await olive.getByRole("button", { name: "Save changes" }).click();
+  await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible();
+  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/");
+  await expect(visitor.getByRole("banner")).toContainText("Acme Help");
+});
+
 test("a teammate renames the project in another tab: once this tab hears of it, the name not edited here follows, what's typed here stays", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const olive = await signUp(browser, APP_URL, "Olive Owner");
@@ -362,6 +416,8 @@ test("a teammate renames the project in another tab: once this tab hears of it, 
   await hears(olive, /Acme Help/);
   await expect(name(olive)).toHaveValue("Acme Help");
   await expect(save(olive)).toBeDisabled();
+});
+
 });
 
 test("someone signs up from a portal, signs out and signs back in there; their password is typed on the app", async ({ browser }, testInfo) => {

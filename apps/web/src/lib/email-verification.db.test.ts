@@ -107,6 +107,31 @@ test("a password account isn't signed in until its address is verified: signing 
   expect(later.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(true);
 });
 
+test("the link signing in before verifying sends goes to the app", async () => {
+  const email = await signUp("/app");
+  expect((await postOnApp("sign-in/email", { email, password: "correct horse battery staple" })).status).toBe(403);
+  expect((await verificationLink(email)).link.searchParams.get("callbackURL")).toBe("/app");
+});
+
+test("signing up with an address that has an account answers as for a new one, and emails its owner something to use", async () => {
+  const password = "correct horse battery staple";
+  // Not verified yet: the link again.
+  const email = await signUp("/app");
+  const first = (await verificationLink(email)).message;
+  const again = await postOnApp("sign-up/email", { email, name: "Someone", password: "another password entirely", callbackURL: "/app" });
+  expect(again.ok).toBe(true);
+  expect(again.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  const { message } = await verificationLink(email);
+  expect(message).not.toBe(first);
+
+  // Verified: a password reset, and the account as it was.
+  const owner = await signUpUser("Olive");
+  request.host = new URL(APP_URL).host;
+  expect((await postOnApp("sign-up/email", { email: owner.email, name: "Someone", password, callbackURL: "/app" })).ok).toBe(true);
+  await expect.poll(() => mailbox.emails.filter((e) => e.to.includes(owner.email)).at(-1)?.subject).toBe("Reset your password");
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { name: true } })).toEqual({ name: "Olive" });
+});
+
 test("an app session from before its address was verified is no session, unless the server sends no email", async () => {
   const ada = await signUpUser("Ada", undefined, { verified: false });
   request.host = new URL(APP_URL).host;
@@ -286,13 +311,13 @@ test("asking for a verification email again never signs a way back: anyone can a
   const asked = await postOnApp("send-verification-email", { email, callbackURL: `/app/auth/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}` });
   expect(asked.ok).toBe(true);
   const { link } = await verificationLink(email);
-  // No way back to the portal in it: the app's home.
-  expect(link.searchParams.get("callbackURL")).toBe("/");
+  // No way back to the portal in it: the app.
+  expect(link.searchParams.get("callbackURL")).toBe("/app");
   expect(link.toString()).not.toContain(theirs.slug);
 
-  // Bea opens it: verified and signed in, on the app's home, not that portal.
+  // Bea opens it: verified and signed in, on the app, not that portal.
   const response = await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
-  expect(response.headers.get("location")).toBe("/");
+  expect(response.headers.get("location")).toBe("/app");
   expect(await isVerified(email)).toBe(true);
 });
 
