@@ -57,7 +57,7 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
   const shown = format.format ?? (amount ? "number" : "text");
   const offered = amount ? AMOUNT_FORMATS : FORMATS;
 
-  // One save at a time on a row, its name's too, until the page has what was saved: its controls are off meanwhile, so
+  // One save at a time on a row, its name's too, until the page has what was saved: its controls can't be changed meanwhile (read-only, so focus stays where it is), so
   // nothing is sent with a name or format that isn't kept yet.
   const [saving, startSaving] = useTransition();
   const save = (next: PropertyFormat) =>
@@ -82,8 +82,8 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
       {/* As wide with a currency as without, so the keys the app sends line up in a column of their own. */}
       <div className="flex items-center gap-2 @min-[34rem]/settings:w-96">
         <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{name}</code>
-        <Select items={offered} value={shown} disabled={saving} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
-          <SelectTrigger className="w-28 shrink-0" aria-label={`Format of ${name}`}>
+        <Select items={offered} value={shown} readOnly={saving} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
+          <SelectTrigger className="w-28 shrink-0 data-readonly:opacity-60" aria-label={`Format of ${name}`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -95,8 +95,8 @@ function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string
           </SelectContent>
         </Select>
         {format.format === "money" && (
-          <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} disabled={saving} onValueChange={(value) => pick({ currency: value as (typeof CURRENCIES)[number] })}>
-            <SelectTrigger className="w-22 shrink-0" aria-label={`Currency of ${name}`}>
+          <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} readOnly={saving} onValueChange={(value) => pick({ currency: value as (typeof CURRENCIES)[number] })}>
+            <SelectTrigger className="w-22 shrink-0 data-readonly:opacity-60" aria-label={`Currency of ${name}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

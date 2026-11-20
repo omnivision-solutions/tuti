@@ -393,13 +393,15 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await dialog.getByRole("button", { name: "Save" }).click();
   await owner.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(company.getByRole("combobox", { name: "Format of company" })).toBeDisabled();
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toHaveAttribute("aria-readonly", "true");
   releaseRename();
   await expect(owner.getByText("Saved how company shows")).toBeVisible();
   await owner.unroute(`**/app/${slug}/settings/properties`);
-  await expect(company.getByRole("combobox", { name: "Format of company" })).toBeEnabled();
+  await expect(company.getByRole("combobox", { name: "Format of company" })).not.toHaveAttribute("aria-readonly", "true");
   await company.getByRole("combobox", { name: "Format of company" }).click();
   await owner.getByRole("option", { name: "Date" }).click();
+  // Focus stays on the dropdown while its pick saves.
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toBeFocused();
   await expect(owner.getByText("Saved how company shows")).toHaveCount(2);
   await owner.reload();
   await expect(company).toContainText("Employer");
