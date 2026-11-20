@@ -140,6 +140,19 @@ export function useCustomizeForm({
       ...submit,
       id,
       ref,
+      // Enter in a field saves, as "Save changes" would: a form with several fields and no button of its own doesn't
+      // by itself. Not where Enter already did something (a chip added), nor in a text area, where it's a new line.
+      onKeyDown: (event: React.KeyboardEvent<HTMLFormElement>) => {
+        const field = event.target;
+        if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing || !(field instanceof HTMLInputElement) || !dirty || pending || busy) {
+          return;
+        }
+        if (["checkbox", "radio", "file", "button", "submit", "reset"].includes(field.type)) {
+          return;
+        }
+        event.preventDefault();
+        event.currentTarget.requestSubmit();
+      },
       // Saves trim what's typed: so does the form first, so what it shows (and counts as saved) is what's saved.
       onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
         for (const field of event.currentTarget.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input:not([type]), input[type="text"], input[type="url"], textarea')) {

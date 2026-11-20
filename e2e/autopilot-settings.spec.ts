@@ -276,10 +276,13 @@ test("Autopilot's limits read as sentences with their unit in the field and save
   await expect(owner.getByText("How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)")).toBeVisible();
   await expect(hold).toHaveValue("12");
   await expect(save).toBeEnabled();
-  await owner.getByRole("spinbutton", { name: "A post has at least" }).fill("40");
-  await save.click();
+  // Enter in a field saves too, and focus stays in it.
+  const reach = owner.getByRole("spinbutton", { name: "A post has at least" });
+  await reach.fill("40");
+  await reach.press("Enter");
   await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
   await expect(save).toBeDisabled();
+  await expect(reach).toBeFocused();
   expect((await query(`SELECT "autopilotHoldHours" AS hold, "autopilotMaxReach" AS reach, "autopilotMinSure" AS sure, "autopilotMaxViews" AS views FROM project WHERE slug = $1`, [slug]))[0]).toEqual({
     hold: 12,
     reach: 40,
