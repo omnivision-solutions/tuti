@@ -244,6 +244,8 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(pick).toBeDisabled();
   await api("/changelog/2/unpublish", {});
   await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
   await expect(team.getByText("AI model saved")).toBeVisible();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
   await expect(row.getByText("2/3")).toBeVisible();
@@ -259,6 +261,8 @@ test("an admin picks the changelog's style examples: published entries from a se
   const modelSaved = team.getByText("AI model saved");
   await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
   await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
   await expect(modelSaved).toBeVisible();
   await expect(chips).toHaveCount(3);
   await expect(row.getByText("3/3")).toBeVisible();
@@ -277,6 +281,8 @@ test("an admin picks the changelog's style examples: published entries from a se
   await api("/changelog/2/unpublish", {});
   await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
   await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
   await expect(modelSaved).toBeVisible();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
   await team.getByRole("button", { name: "Remove Faster month view" }).click();
@@ -284,6 +290,8 @@ test("an admin picks the changelog's style examples: published entries from a se
   await api("/changelog/2/publish", { announce: false });
   await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
   await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
   await expect(modelSaved).toBeVisible();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
   await pick.click();
