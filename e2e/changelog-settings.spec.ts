@@ -116,6 +116,7 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
 });
 
 test("an admin picks the changelog's style examples: published entries from a searchable dialog, shown as chips, up to 3, saved by the page's Save changes", async ({ browser }, testInfo) => {
+  test.setTimeout(150_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -253,7 +254,14 @@ test("an admin picks the changelog's style examples: published entries from a se
   await dialog.getByRole("button", { name: "Search by attendee" }).click();
   await expect(row.getByText("3/3")).toBeVisible();
   await api("/changelog/2/publish", { announce: false });
+  // The AI model's save brings the page what's published now: once it has landed (its own toast, the last one gone),
+  // the three picked are still the three chips.
+  const modelSaved = team.getByText("AI model saved");
+  await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
   await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  await expect(modelSaved).toBeVisible();
+  await expect(chips).toHaveCount(3);
+  await expect(row.getByText("3/3")).toBeVisible();
   await team.getByRole("button", { name: "Remove Search by attendee" }).click();
   // Once the page hears it's published again, it's one to pick, not a chip.
   await pick.click();
@@ -262,6 +270,25 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(dialog).toBeHidden();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
   await expect(row.getByText("2/3")).toBeVisible();
+  // A chip removed while a pick has dropped out forgets that pick too: published again, it doesn't come back.
+  await pick.click();
+  await dialog.getByRole("button", { name: "Agenda view" }).click();
+  await expect(row.getByText("3/3")).toBeVisible();
+  await api("/changelog/2/unpublish", {});
+  await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" }).click();
+  await expect(modelSaved).toBeVisible();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await team.getByRole("button", { name: "Remove Faster month view" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await api("/changelog/2/publish", { announce: false });
+  await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  await expect(modelSaved).toBeVisible();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await pick.click();
+  await dialog.getByRole("button", { name: "Faster month view" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
   // What was typed is still there.
   await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
   // A saved example unpublished goes the same way, and what's typed and not saved stays.
