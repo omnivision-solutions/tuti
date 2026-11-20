@@ -95,14 +95,22 @@ test("in Settings → Import from Frill, each part says what Frill has, a bad ke
   const where = owner.getByRole("radiogroup", { name: "Ideas from Frill" });
   await expect(where).toHaveCount(0);
   await owner.getByRole("checkbox", { name: "Feedback", exact: true }).check();
-  await expect(where.getByRole("radio", { name: "On a Private board" })).toBeChecked();
+  await expect(where.getByRole("radio", { name: "Private board" })).toBeChecked();
+  // On a phone the two boards fit the card: nothing runs off the side.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 360, height: 800 });
+  await expect(where).toBeVisible();
+  expect(await owner.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect((await where.boundingBox())!.x + (await where.boundingBox())!.width).toBeLessThanOrEqual(360);
+  await owner.setViewportSize(desktop);
   // Why it's asked, and what each answer does, behind the ⓘ.
   const row = owner.locator('[data-slot="setting-row"]').filter({ has: where });
   await row.getByRole("button", { name: "More about this setting" }).click();
-  await expect(owner.getByText(/Frill doesn't tell Tuti which ideas only some people could see, so a Public board could show private ones\. On a Private board: each idea is seen only by its author and your team\./)).toBeVisible();
+  await expect(owner.getByText(/Frill doesn't tell Tuti which ideas only some people could see, so a Public board could show private ones\. Private board: each idea is seen only by its author and your team\./)).toBeVisible();
   await owner.keyboard.press("Escape");
-  await where.getByText("On a Public board").click();
-  await expect(where.getByRole("radio", { name: "On a Public board" })).toBeChecked();
+  await where.getByText("Public board").click();
+  await expect(where.getByRole("radio", { name: "Public board" })).toBeChecked();
   // A key Frill refuses: said under the field, on its row, which is marked invalid; nothing started.
   const key = owner.getByRole("textbox", { name: "API key" });
   await key.fill("not_a_real_key");
@@ -110,7 +118,7 @@ test("in Settings → Import from Frill, each part says what Frill has, a bad ke
   const keyRow = owner.locator('[data-slot="setting-row"]').filter({ has: key });
   await expect(keyRow.getByRole("alert")).toHaveText("Frill didn't accept this API key. Check you copied all of it, or make a new one.");
   await expect(key).toHaveAttribute("aria-invalid", "true");
-  await expect(where.getByRole("radio", { name: "On a Public board" })).toBeChecked();
+  await expect(where.getByRole("radio", { name: "Public board" })).toBeChecked();
   await key.fill(FAKE_FRILL_KEY);
   await owner.getByRole("button", { name: "Start import" }).click();
   await expect(owner.getByRole("status").filter({ hasText: "Frill" })).toContainText("Imported from Frill.", { timeout: 30_000 });

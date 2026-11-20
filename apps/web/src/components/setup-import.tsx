@@ -404,7 +404,7 @@ export function SetupImport({
               {asksVisibility && (
                 <SettingRow
                   label={`Ideas from ${source.name}`}
-                  info={`${source.name} doesn't tell Tuti which ideas only some people could see, so a Public board could show private ones. On a Private board: each idea is seen only by its author and your team. On a Public board: everyone sees them, as on a public board there.`}
+                  info={`${source.name} doesn't tell Tuti which ideas only some people could see, so a Public board could show private ones. Private board: each idea is seen only by its author and your team. Public board: everyone sees them, as on a public board there.`}
                 >
                   <Segmented
                     name="publicPosts"
@@ -412,8 +412,8 @@ export function SetupImport({
                     value={publicPosts ? "public" : "private"}
                     onValueChange={(value) => setPublicPosts(value === "public")}
                     options={[
-                      { value: "private", label: "On a Private board" },
-                      { value: "public", label: "On a Public board" },
+                      { value: "private", label: "Private board" },
+                      { value: "public", label: "Public board" },
                     ]}
                   />
                 </SettingRow>
