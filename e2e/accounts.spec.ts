@@ -282,7 +282,12 @@ test("a new account is signed in by its emailed link only; signing in before sen
   await olive.getByLabel("Password").fill(PASSWORD);
   await olive.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(olive.getByText("Check your email")).toBeVisible();
-  const again = await latestEmailTo(email, { after: sent, subject: /^Verify your email/ });
+  await latestEmailTo(email, { after: sent, subject: /^Verify your email/ });
+  // Send another link: one more.
+  const before = countEmailsTo(email);
+  await olive.getByRole("button", { name: "Send another link" }).click();
+  await expect(olive.getByText("Another link is on its way.")).toBeVisible();
+  const again = await latestEmailTo(email, { after: before, subject: /^Verify your email/ });
 
   // The link verifies the address and signs in.
   await olive.goto(linkIn(again, `${APP_URL}/api/auth/verify-email`));
