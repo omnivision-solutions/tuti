@@ -3,7 +3,7 @@
 import { CircleCheckIcon, CircleDashedIcon, CircleXIcon, ExternalLinkIcon, LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useId, useRef, useState, useTransition } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -11,7 +11,9 @@ import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { ImportSourceLogo } from "@/components/import-source-logo";
 import { Input } from "@/components/ui/input";
-import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, partDescription, pickPart } from "@/lib/import-parts";
+import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
+import { Segmented } from "@/components/ui/segmented";
+import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, partBrings, partDescription, pickPart } from "@/lib/import-parts";
 import { cn } from "@/lib/utils";
 import { startImport } from "@/server/imports";
 import type { ImportView } from "@/server/operations/imports";
@@ -162,7 +164,8 @@ export function RefreshWhile({ on }: { on: boolean }) {
 /**
  * The first run's "Where are you coming from?": starting fresh, or a tool to import from (IMPORT_SOURCES), with its API
  * key (or its site's address) and the parts to bring (imports.start). Started, only the import's progress shows while it runs (the picker comes back once it ends), and Continue goes on with setup meanwhile.
- * Without `next` it's Settings → Import: only the tools to import from, any time.
+ * Without `next` it's Settings → Import: only the tools to import from, any time, laid out as settings rows (a grid of
+ * the tools' logos, the key's row, a checklist of the parts); what it asks, starts and shows is the setup step's.
  */
 export function SetupImport({
   projectSlug,
@@ -232,31 +235,214 @@ export function SetupImport({
   // Images and files need media storage: said before starting, while a part that has them is offered.
   const noMedia = !mediaStorage && parts.some(([, part]) => part.media);
 
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const field = event.currentTarget.elements.namedItem("key") as HTMLInputElement;
+    const key = field.value;
+    startTransition(async () => {
+      const result = await startImport(projectSlug, from, key, chosen, asksPublish ? publishArticles : undefined, asksVisibility ? publicPosts : undefined);
+      setError(result.error ?? null);
+      if (result.import) {
+        // Kept on the server while it runs, not in the page.
+        field.value = "";
+        setStarted(result.import.id);
+        router.refresh();
+      }
+    });
+  };
+  // While a check runs, its answer is the picked source's: no switching under it.
+  const pick = (value: typeof from) => {
+    if (pending) {
+      return;
+    }
+    setFrom(value);
+    // The last source's refusal isn't this one's.
+    setError(null);
+  };
+  const submitLabel = pending ? (byAddress ? "Checking the address…" : "Checking the key…") : shown?.state === "done" ? "Import again" : null;
+
+  if (!next) {
+    // Where the key is made (the help's first sentence) shows on its row; the rest of the help is behind the row's ⓘ.
+    const [where, ...more] = source?.credential.help.split(/(?<=\.) /) ?? [];
+    return (
+      <form className="contents" onSubmit={onSubmit}>
+        <RefreshWhile on={running} />
+        {/* While an import runs only its progress shows: one runs at a time, so there's nothing to pick until it ends. */}
+        {source && !running && (
+          <SettingsCard title="From">
+            <SettingBlock>
+              {/* Two a row on phones, so each tool's name stays readable beside its logo. */}
+              <div role="radiogroup" aria-label="Where are you coming from?" className="grid grid-cols-2 gap-2 @min-[34rem]/settings:grid-cols-4">
+                {(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => (
+                  // Native radios, invisible over their tiles, as in the setup step; what a tool brings is its tooltip
+                  // (the checklist below lists it once the tool is picked).
+                  <label
+                    key={value}
+                    title={description}
+                    className="relative flex min-w-0 cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft has-checked:ring-1 has-checked:ring-primary has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+                  >
+                    <input
+                      type="radio"
+                      name="from"
+                      value={value}
+                      checked={from === value}
+                      // aria-disabled, not disabled, so a radio with focus keeps it (a disabled one drops it to the page).
+                      aria-disabled={pending || undefined}
+                      onChange={() => pick(value)}
+                      className="absolute inset-0 size-full cursor-pointer appearance-none rounded-xl opacity-0"
+                    />
+                    <ImportSourceLogo source={value} className="size-7 rounded-md" />
+                    <span className="min-w-0 break-words">{name[0]!.toUpperCase() + name.slice(1)}</span>
+                  </label>
+                ))}
+              </div>
+            </SettingBlock>
+            <SettingRow
+              label={source.credential.kind === "key" ? "API key" : "Address"}
+              htmlFor={`${from}-key`}
+              info={more.length > 0 ? more.join(" ") : undefined}
+              description={
+                <>
+                  {where}
+                  {source.credential.kind === "key" && (
+                    <>
+                      {" "}
+                      {/* A new tab, so the form stays as it is. */}
+                      <a href={source.credential.keysUrl} target="_blank" rel="noreferrer" className="font-medium text-primary underline underline-offset-4">
+                        Get your API key
+                        <span className="sr-only"> ({source.name}, opens in a new tab)</span>
+                      </a>
+                    </>
+                  )}
+                </>
+              }
+            >
+              <div className="flex w-72 flex-col gap-1.5">
+                {/* One field per source (`key`), so one tool's key is never sent to another after switching. */}
+                <Input
+                  key={from}
+                  id={`${from}-key`}
+                  name="key"
+                  type={source.credential.kind === "key" ? "password" : "url"}
+                  placeholder={byAddress ? "https://help.example.com" : "Paste your key"}
+                  autoComplete="off"
+                  required
+                  aria-invalid={error ? true : undefined}
+                />
+                {error && <FieldError>{error}</FieldError>}
+              </div>
+            </SettingRow>
+          </SettingsCard>
+        )}
+        {/* On the page before there's anything in it, so screen readers hear the import start and end. */}
+        <p role="status" className="sr-only">
+          {source && shown ? (running ? importTitle(shown) : `${importTitle(shown)}. ${importSummary(shown)}`) : ""}
+        </p>
+        {source && shown && (
+          <div ref={progressRef} tabIndex={-1} className="scroll-mt-2 rounded-xl bg-card p-4 ring-1 ring-border outline-none sm:px-5">
+            <p className="mb-3 text-sm font-medium">
+              {importTitle(shown)}
+              <span className="block font-normal text-muted-foreground">{[importNote(shown), running && "It goes on in the background; Home shows how it's going."].filter(Boolean).join(" ")}</span>
+            </p>
+            <ImportProgress projectSlug={projectSlug} run={shown} invitations={shown.invitationsToSend} />
+          </div>
+        )}
+        {source && !running && (
+          <>
+            <SettingsCard
+              title="What to bring"
+              action={
+                parts.length > 1 && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setPicked([...source.parts])}>
+                    Select all
+                  </Button>
+                )
+              }
+            >
+              {parts.map(([key, part]) => (
+                // What it brings in a few words on the row (under its name on phones); all of it behind the ⓘ.
+                <SettingRow
+                  key={key}
+                  htmlFor={`bring-${key}`}
+                  info={partDescription(source, key)}
+                  label={
+                    <span className="flex cursor-pointer items-center gap-2.5">
+                      <input
+                        id={`bring-${key}`}
+                        type="checkbox"
+                        checked={chosen.includes(key)}
+                        disabled={parts.length === 1}
+                        onChange={(event) => setPicked(pickPart(picked, key, event.target.checked, IMPORT_PARTS))}
+                        className="size-4 accent-primary"
+                      />
+                      {part.label}
+                    </span>
+                  }
+                >
+                  <span data-slot="brings" className="text-sm text-muted-foreground">
+                    {partBrings(source, key)}
+                  </span>
+                </SettingRow>
+              ))}
+              {asksPublish && (
+                <SettingRow
+                  label={`Articles and changelog entries published in ${source.name}`}
+                  info={`${source.name} doesn't tell Tuti which articles and changelog entries only some people could read, so bringing them as published could put internal ones live. As drafts: you check them, then publish them here. As published: published here as they are there, up to your plan's article limit.`}
+                >
+                  <Segmented
+                    name="publishArticles"
+                    aria-label={`Articles and changelog entries published in ${source.name}`}
+                    value={publishArticles ? "published" : "drafts"}
+                    onValueChange={(value) => setPublishArticles(value === "published")}
+                    options={[
+                      { value: "drafts", label: "As drafts" },
+                      { value: "published", label: "As published" },
+                    ]}
+                  />
+                </SettingRow>
+              )}
+              {asksVisibility && (
+                <SettingRow
+                  label={`Ideas from ${source.name}`}
+                  info={`${source.name} doesn't tell Tuti which ideas only some people could see, so a Public board could show private ones. Private board: each idea is seen only by its author and your team. Public board: everyone sees them, as on a public board there.`}
+                >
+                  <Segmented
+                    name="publicPosts"
+                    aria-label={`Ideas from ${source.name}`}
+                    value={publicPosts ? "public" : "private"}
+                    onValueChange={(value) => setPublicPosts(value === "public")}
+                    options={[
+                      { value: "private", label: "Private board" },
+                      { value: "public", label: "Public board" },
+                    ]}
+                  />
+                </SettingRow>
+              )}
+              {((boardsNotes && chosen.includes("feedback")) || noMedia) && (
+                <SettingBlock className="gap-1 text-sm text-muted-foreground">
+                  {boardsNotes && chosen.includes("feedback") && <p>{boardsNotes[from as ImportSourceKey]}</p>}
+                  {noMedia && <p>This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
+                </SettingBlock>
+              )}
+            </SettingsCard>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={pending || chosen.length === 0} focusableWhenDisabled>
+                {submitLabel ?? "Start import"}
+              </Button>
+            </div>
+          </>
+        )}
+      </form>
+    );
+  }
+
   return (
-    <form
-      className="contents"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const field = event.currentTarget.elements.namedItem("key") as HTMLInputElement;
-        const key = field.value;
-        startTransition(async () => {
-          const result = await startImport(projectSlug, from, key, chosen, asksPublish ? publishArticles : undefined, asksVisibility ? publicPosts : undefined);
-          setError(result.error ?? null);
-          if (result.import) {
-            // Kept on the server while it runs, not in the page.
-            field.value = "";
-            setStarted(result.import.id);
-            router.refresh();
-          }
-        });
-      }}
-    >
+    <form className="contents" onSubmit={onSubmit}>
       <RefreshWhile on={running} />
       {/* While an import runs only its progress shows: one runs at a time, so there's nothing to pick until it ends. */}
       {!running && (
         <CardContent role="radiogroup" aria-label="Where are you coming from?" className="grid gap-3 sm:grid-cols-2">
           {[["fresh", "Starting fresh", "Set Tuti up from scratch."] as const, ...(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => [value, name[0]!.toUpperCase() + name.slice(1), description] as const)]
-            .filter(([value]) => next || value !== "fresh")
             .map(([value, label, description]) => (
             // Native radios, invisible over their cards (so a click anywhere on one is on it): arrow keys move between them; the card
             // shows the pick (its border, fill and tick) and the focus.
@@ -269,17 +455,9 @@ export function SetupImport({
                 name="from"
                 value={value}
                 checked={from === value}
-                // While a check runs, its answer is the picked source's: no switching under it. aria-disabled, not
-                // disabled, so a radio with focus keeps it (a disabled one drops it to the page).
+                // aria-disabled, not disabled, so a radio with focus keeps it (a disabled one drops it to the page).
                 aria-disabled={pending || undefined}
-                onChange={() => {
-                  if (pending) {
-                    return;
-                  }
-                  setFrom(value);
-                  // The last source's refusal isn't this one's.
-                  setError(null);
-                }}
+                onChange={() => pick(value)}
                 className="absolute inset-0 size-full cursor-pointer appearance-none rounded-xl opacity-0"
               />
               <ImportSourceLogo source={value} />
@@ -303,7 +481,7 @@ export function SetupImport({
             <p className="mb-3 text-sm font-medium">
               {importTitle(shown)}
               <span className="block font-normal text-muted-foreground">
-                {[importNote(shown), running && (next ? "It goes on while you finish setting up; Home shows how it's going." : "It goes on in the background; Home shows how it's going.")].filter(Boolean).join(" ")}
+                {[importNote(shown), running && "It goes on while you finish setting up; Home shows how it's going."].filter(Boolean).join(" ")}
               </span>
             </p>
             <ImportProgress projectSlug={projectSlug} run={shown} invitations={shown.invitationsToSend} />
@@ -420,13 +598,13 @@ export function SetupImport({
           <>
             {/* Done, going on is the main action; importing again (more parts, say) the other. */}
             {shown?.state !== "done" && skip}
-            <Button type="submit" variant={shown?.state === "done" && next ? "outline" : "default"} disabled={pending || chosen.length === 0} focusableWhenDisabled>
-              {pending ? (byAddress ? "Checking the address…" : "Checking the key…") : shown?.state === "done" ? "Import again" : byAddress ? "Check the address and start" : "Check the key and start"}
+            <Button type="submit" variant={shown?.state === "done" ? "outline" : "default"} disabled={pending || chosen.length === 0} focusableWhenDisabled>
+              {submitLabel ?? (byAddress ? "Check the address and start" : "Check the key and start")}
             </Button>
           </>
         )}
         {/* One Continue in one place, so it keeps focus as the import goes from running to done. */}
-        {next && (!source || running || shown?.state === "done") && (
+        {(!source || running || shown?.state === "done") && (
           <Link ref={continueRef} href={next} className={buttonVariants()}>
             Continue
           </Link>

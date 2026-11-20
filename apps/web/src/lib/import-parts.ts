@@ -139,6 +139,7 @@ export const IMPORT_SOURCES = {
       changelog: "Your changelog entries (from every changelog, into one) with their images and dates; published ones come as drafts or published, as you pick, and drafts stay drafts. Tags like New, Improved and Fixed become Tuti's. Nothing is emailed.",
       inbox: "Your AI assistant's conversations with readers, closed, as the Inbox.",
     },
+    partBrings: { contacts: "Your help center's users", changelog: "Your changelog entries, with their images", inbox: "Your AI assistant's conversations" },
     askPublish: true,
     credential: {
       kind: "key",
@@ -175,6 +176,7 @@ export const IMPORT_SOURCES = {
       changelog:
         "Your announcements, published at their dates (drafts and scheduled ones as drafts), with their images; categories like New, Improved and Fixed become tags, and each is linked to the ideas it shipped (a published one only to those already completed) when Feedback comes in with it or before. Nothing is emailed.",
     },
+    partBrings: { contacts: "Your users' names and email addresses", feedback: "Your ideas, votes and comments, in one board", changelog: "Your announcements, with their images" },
     credential: {
       kind: "key",
       keysUrl: "https://app.frill.co/settings/company",
@@ -189,6 +191,7 @@ export const IMPORT_SOURCES = {
     partDescriptions: {
       docs: "Its articles, as drafts, in collections from its folders, with their images and the links between them.",
     },
+    partBrings: { docs: "Its articles, as drafts" },
     credential: {
       kind: "url",
       help: "Your help center's home page, like https://help.example.com. Tuti reads its public pages; articles arrive as drafts for you to review and publish, and up to 200 of their old addresses redirect to them once your help center's domain is your portal's own domain (on plans that have one).",
@@ -204,6 +207,7 @@ export const IMPORT_SOURCES = {
       feedback:
         "Your board, with its posts, upvotes and comments and their dates. It comes turned off (seen only by your team), as Nolt's API doesn't say who can see it: turn it on in Feedback → Boards once you've checked. Posts and comments waiting for moderation stay out.",
     },
+    partBrings: { contacts: "Your board's users", feedback: "Your board's posts, upvotes and comments" },
     credential: {
       kind: "key",
       // Each board has its own settings; Nolt's API docs say where its key is.
@@ -219,6 +223,8 @@ export type ImportSourceInfo = {
   parts: readonly ImportPart[];
   /** What a part brings from it, where that isn't what IMPORT_PARTS says for every source (partDescription). */
   partDescriptions?: Partial<Record<ImportPart, string>>;
+  /** The same in a few words, where IMPORT_PARTS' `brings` would promise what it hasn't (partBrings). */
+  partBrings?: Partial<Record<ImportPart, string>>;
   /** Its API doesn't say who may read each article: picking the help center asks whether its published ones come published or as drafts. */
   askPublish?: true;
   /** Its API doesn't say who may see each post: picking Feedback asks whether its posts come onto a Public board or a Private one. */
@@ -229,6 +235,9 @@ export type ImportSourceKey = keyof typeof IMPORT_SOURCES;
 
 /** What a part brings from a source, as the setup step and Settings → Import offer it. */
 export const partDescription = (source: ImportSourceInfo, part: ImportPart): string => (source.partDescriptions?.[part] ?? IMPORT_PARTS[part].description).replace("{source}", source.name);
+
+/** What a part brings from a source in a few words, as Settings → Import's checklist says it beside the part. */
+export const partBrings = (source: ImportSourceInfo, part: ImportPart): string => source.partBrings?.[part] ?? IMPORT_PARTS[part].brings;
 
 /**
  * The picked parts after ticking (`on`) or unticking one: ticking one ticks what it needs, unticking one unticks what

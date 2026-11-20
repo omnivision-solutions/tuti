@@ -5,7 +5,7 @@ import { FAKE_FERNDESK_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { moreView, newPerson, signUp } from "./helpers";
+import { createProject, moreView, newPerson, signUp } from "./helpers";
 
 test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center and changelog to the portal, its users as Users and its AI conversations to the Inbox", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -128,4 +128,30 @@ test("changelog entries published in Ferndesk come as drafts by default; publish
   await dialog.getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published without announcing")).toBeVisible();
   await expect(owner.getByText("Published 2 April 2024")).toBeVisible();
+});
+
+test("in Settings → Import, Ferndesk's published changelog entries come as drafts to begin with, as published once picked", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/import`);
+  await owner.getByRole("radio", { name: "Ferndesk", exact: true }).check();
+  await owner.getByRole("checkbox", { name: "Contacts", exact: true }).uncheck();
+  // Asked only while the changelog or the help center is picked.
+  const publishAs = owner.getByRole("radiogroup", { name: "Articles and changelog entries published in Ferndesk" });
+  await expect(publishAs).toHaveCount(0);
+  await owner.getByRole("checkbox", { name: "Changelog", exact: true }).check();
+  await expect(publishAs.getByRole("radio", { name: "As drafts" })).toBeChecked();
+  // Why it's asked, and what each answer does, behind the ⓘ.
+  const row = owner.locator('[data-slot="setting-row"]').filter({ has: publishAs });
+  await row.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText(/bringing them as published could put internal ones live\. As drafts: you check them, then publish them here\./)).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await publishAs.getByText("As published").click();
+  await expect(publishAs.getByRole("radio", { name: "As published" })).toBeChecked();
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FERNDESK_KEY);
+  await owner.getByRole("button", { name: "Start import" }).click();
+  const status = owner.getByRole("status").filter({ hasText: "Ferndesk" });
+  await expect(status).toContainText("Imported from Ferndesk. 3 changelog entries", { timeout: 15_000 });
+  await expect(status).not.toContainText("as drafts");
 });

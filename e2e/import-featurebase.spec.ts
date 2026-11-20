@@ -175,15 +175,81 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   // Only the tools to import from: starting fresh is the first run's.
   await expect(owner.getByRole("radio", { name: /^Featurebase/ })).toBeChecked();
   await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toHaveCount(0);
+  // Said once, beside the title: importing again brings only what's new.
+  await expect(owner.getByText("Run it again any time: only what's new comes across").filter({ visible: true })).toHaveCount(1);
+  // The tools are a grid of logos, four a row: what each brings is its tooltip, and the checklist below.
+  const tile = (name: string) => owner.getByRole("radio", { name, exact: true });
+  await expect(owner.locator("label").filter({ has: tile("Featurebase") })).toHaveAttribute("title", "Bring your team, users, feedback, help center and inbox across with an API key.");
+  await expect(owner.getByText("Bring your team, users, feedback, help center and inbox across with an API key.")).toHaveCount(0);
+  const top = async (name: string) => (await tile(name).boundingBox())!.y;
+  expect(await top("Canny")).toBe(await top("Featurebase"));
+  // The key's row: where it's made, with the rest of its help behind the ⓘ.
+  const keyRow = owner.locator('[data-slot="setting-row"]').filter({ hasText: "API key" });
+  await expect(keyRow).toContainText("In Featurebase, Settings → API.");
+  await expect(keyRow.getByRole("link", { name: /^Get your API key.*Featurebase, opens in a new tab/ })).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
+  await expect(owner.getByText("It's kept only while the import runs.")).toHaveCount(0);
+  await keyRow.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("It's kept only while the import runs.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByText("It's kept only while the import runs.")).toHaveCount(0);
+  // What to bring: a checklist, a few words on each beside its name and all it brings behind its ⓘ.
+  const teamRow = owner.locator('[data-slot="setting-row"]').filter({ has: owner.getByRole("checkbox", { name: "Team", exact: true }) });
+  const teamLabel = owner.locator('label[for="bring-team"]');
+  const teamBrings = teamRow.locator('[data-slot="brings"]');
+  await expect(teamBrings).toHaveText("Your team, as invitations to send");
+  expect((await teamBrings.boundingBox())!.x).toBeGreaterThan((await teamLabel.boundingBox())!.x + (await teamLabel.boundingBox())!.width);
+  await expect(owner.getByText(/They join as members/)).toHaveCount(0);
+  await teamRow.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByText(/They join as members/)).toHaveCount(0);
+  // Select all ticks every part; the ones not wanted come off again.
+  const bring = owner.getByRole("checkbox");
+  await expect(bring).toHaveCount(7);
+  await expect(bring.and(owner.locator(":checked"))).toHaveCount(3);
+  await owner.getByRole("button", { name: "Select all" }).click();
+  await expect(bring.and(owner.locator(":checked"))).toHaveCount(7);
+  for (const part of ["Feedback", "Changelog", "Help center", "Inbox"]) {
+    await owner.getByRole("checkbox", { name: part, exact: true }).uncheck();
+  }
+  await expect(bring.and(owner.locator(":checked"))).toHaveCount(3);
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 1440, height: 1000 });
   await checkpoint(owner, "settings-import");
+
+  // On a phone the tools go two a row (not seven squeezed), a part's few words go under its name, and nothing runs
+  // off the side.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await top("Ferndesk")) > (await top("Featurebase"))).toBe(true);
+  expect(await top("Intercom")).toBe(await top("Featurebase"));
+  expect((await tile("Featurebase").boundingBox())!.width).toBeGreaterThan(140);
+  expect((await teamBrings.boundingBox())!.y).toBeGreaterThanOrEqual((await teamLabel.boundingBox())!.y + (await teamLabel.boundingBox())!.height);
+  expect(await owner.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-import-phone");
+  await owner.setViewportSize(desktop);
+
+  // A help center comes by its address, not a key: its one part is ticked and can't be unticked, so there's nothing to select.
+  await tile("Your help center").check();
+  await expect(owner.getByRole("textbox", { name: "Address" })).toHaveAttribute("placeholder", "https://help.example.com");
+  await expect(owner.getByRole("textbox", { name: "API key" })).toHaveCount(0);
+  await expect(owner.getByRole("link", { name: /^Get your API key/ })).toHaveCount(0);
+  await expect(owner.locator('[data-slot="setting-row"]').filter({ hasText: "Address" })).toContainText("Your help center's home page, like https://help.example.com.");
+  await expect(bring).toHaveCount(1);
+  await expect(owner.getByRole("checkbox", { name: "Help center", exact: true })).toBeChecked();
+  await expect(owner.getByRole("checkbox", { name: "Help center", exact: true })).toBeDisabled();
+  await expect(owner.locator('[data-slot="brings"]')).toHaveText("Its articles, as drafts");
+  await expect(owner.getByRole("button", { name: "Select all" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Start import" })).toBeEnabled();
+  await tile("Featurebase").check();
+  await expect(bring.and(owner.locator(":checked"))).toHaveCount(3);
 
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
-  await owner.getByRole("button", { name: "Check the key and start" }).press("Enter");
+  await owner.getByRole("button", { name: "Start import" }).press("Enter");
   await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.", { timeout: 15_000 });
   // With no Continue here, focus is on the import's progress, not lost with the form.
   await expect(owner.locator(":focus")).toContainText("Imported from Featurebase");
-  await expect(owner.getByText("Importing again brings only what's new since: nothing comes twice.")).toBeVisible();
   await checkpoint(owner, "settings-import-done");
 
   // The document clears the toolbar; progress needs only an 8px gap on desktop and phones.
