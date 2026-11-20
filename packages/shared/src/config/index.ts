@@ -15,8 +15,12 @@ import { media, MEDIA_REPLACED } from "./media";
  * One file per feature in this folder, each a section of the schema below, read as config().<section>. A new value is a
  * new key in its section, with its default and description: the JSON Schema (`pnpm test -u` rewrites
  * tuti.config.schema.json) and docs/self-hosting.md's table follow from it.
+ *
+ * A section this release doesn't know is ignored, with a warning: an upgrade adds a new section's keys to the file first,
+ * while the previous release still runs, then removes the env vars the section replaced. Keys inside a known section are
+ * checked strictly, so a typo there stops start-up.
  */
-export const configSchema = z.strictObject({
+export const configSchema = z.object({
   $schema: z.string().optional(),
   media,
   ai,
@@ -53,6 +57,10 @@ function read(path: string): Config {
     json = JSON.parse(text);
   } catch (error) {
     throw new Error(`TUTI_CONFIG (${path}) isn't JSON: ${(error as Error).message}`);
+  }
+  const unknown = json && typeof json === "object" ? Object.keys(json).filter((key) => !(key in configSchema.shape)) : [];
+  if (unknown.length > 0) {
+    log.warn(`TUTI_CONFIG (${path}) has sections this release doesn't know, ignored: ${unknown.join(", ")} (a newer release's, or a typo)`);
   }
   const parsed = configSchema.safeParse(json);
   if (!parsed.success) {

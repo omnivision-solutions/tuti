@@ -4,9 +4,13 @@ import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod";
 
+import { log } from "../log";
 import { checkConfig, config, configSchema, configTable } from ".";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 test("without a file, every value is its default", () => {
   expect(config().media).toEqual({ maxMb: { teamImage: 10, userImage: 5, importImage: 25, teamFile: 25, teamVideo: 200 }, projectQuotaMb: 1024 });
@@ -24,6 +28,13 @@ test("a wrong value or an unknown key names where it is", () => {
   expect(() => config()).toThrow(/isn't valid:[\s\S]*projectQuota/);
   vi.stubEnv("TUTI_CONFIG", "/nowhere/tuti.json");
   expect(() => config()).toThrow("TUTI_CONFIG (/nowhere/tuti.json) can't be read");
+});
+
+test("a section this release doesn't know is ignored with a warning, so the previous release starts with a newer file", () => {
+  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 7 }, later: { anything: true } }));
+  expect(config().media.projectQuotaMb).toBe(7);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining("ignored: later"));
 });
 
 test("a variable the file replaced, still set, stops start-up and names its key", () => {
