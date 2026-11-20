@@ -29,9 +29,7 @@ export function ProjectNameForm({ projectSlug, name }: { projectSlug: string; na
     save: async (prev, formData) => {
       sent.current = String(formData.get("name"));
       const result = await renameProject(projectSlug, prev, formData);
-      if (result.error) {
-        sent.current = null;
-      } else {
+      if (!result.error) {
         toast.success("Project renamed");
       }
       return result;
