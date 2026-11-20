@@ -231,8 +231,22 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   };
   await deciding.fill("08");
   const first = await saved();
+  // While a save runs "Reset to defaults" waits: the form starts again once saved, and a reset made then would be lost.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route(`**/app/${slug}/settings/autopilot/tuning`, async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.continue();
+  });
+  await expect(resetAll).toBeEnabled();
   await save.click();
+  await expect(resetAll).toBeDisabled();
+  release();
   await first.answer;
+  await owner.unroute(`**/app/${slug}/settings/autopilot/tuning`);
+  await expect(resetAll).toBeEnabled();
   expect((await stored(slug))["decide.rounds"]).toBe(8);
   // The form starts again showing it as saved, with nothing to save; typed that way again, it's a save of nothing.
   await expect(deciding).toHaveValue("8");

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
@@ -97,6 +97,8 @@ export function CodeChangesTuningSettings({
   const resets = reset.stored === stored ? reset.keys : [];
   const setResets = (keys: Key[]) => setReset({ stored, keys });
   const cards = useRef<HTMLDivElement>(null);
+  // While it saves, nothing is reset: the form starts again once saved, and a reset made meanwhile would be lost.
+  const [saving, setSaving] = useState(false);
   /** Puts the server's value back in each field, for Save. */
   const putBack = (keys: Key[], row = false) => {
     const fields = cards.current?.querySelector("form")?.elements;
@@ -126,7 +128,7 @@ export function CodeChangesTuningSettings({
         editable && (
           // There with nothing to reset too, so it keeps focus once used.
           // "Reset" on phones, where the header has no room for the rest beside the way back.
-          <Button type="button" variant="ghost" aria-label="Reset to defaults" disabled={resettable.length === 0} focusableWhenDisabled onClick={() => putBack(resettable)}>
+          <Button type="button" variant="ghost" aria-label="Reset to defaults" disabled={resettable.length === 0 || saving} focusableWhenDisabled onClick={() => putBack(resettable)}>
             <span className="@max-[48rem]/app:hidden">Reset to defaults</span>
             <span className="@min-[48rem]/app:hidden">Reset</span>
           </Button>
@@ -136,7 +138,7 @@ export function CodeChangesTuningSettings({
       {notice}
       <div ref={cards} className="flex flex-col gap-7">
         {editable ? (
-          <TuningForm key={stored} {...props} resets={resets} setResets={setResets} onReset={(key) => putBack([key], true)} />
+          <TuningForm key={stored} {...props} resets={resets} setResets={setResets} onReset={(key) => putBack([key], true)} onPending={setSaving} />
         ) : (
           <TuningCards tuning={tuning} resets={resets} />
         )}
@@ -147,7 +149,14 @@ export function CodeChangesTuningSettings({
 }
 
 /** The cards as a form of the page's, saved by "Save changes" in its header. */
-function TuningForm({ projectSlug, tuning, resets, setResets, onReset }: Props & { resets: Key[]; setResets: (keys: Key[]) => void; onReset: (key: Key) => void }) {
+function TuningForm({
+  projectSlug,
+  tuning,
+  resets,
+  setResets,
+  onReset,
+  onPending,
+}: Props & { resets: Key[]; setResets: (keys: Key[]) => void; onReset: (key: Key) => void; /** Told while it saves. */ onPending: (pending: boolean) => void }) {
   const { state, pending, form } = useCustomizeForm({
     save: async (prev, formData) => {
       // Only what differs from what's saved is sent, so a page opened earlier doesn't undo another owner's values: a field
@@ -175,6 +184,7 @@ function TuningForm({ projectSlug, tuning, resets, setResets, onReset }: Props &
   });
   // What was reset is a field of the form: a reset that leaves a field's text as it was (0.495 shows as the server's
   // 50%) is still a change to save, and "Save changes" hears of each reset, which no one typed.
+  useEffect(() => onPending(pending), [onPending, pending]);
   const reset = useRef<HTMLInputElement>(null);
   useFieldChanged(reset, resets.join());
   return (
