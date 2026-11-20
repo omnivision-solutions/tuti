@@ -4,7 +4,7 @@ import { z } from "zod";
 export const analytics = z
   .strictObject({
     posthogKey: z.string().describe("PostHog's project key (a public one). Empty: nothing is sent").default(""),
-    posthogHost: z.string().describe("PostHog's address").default("https://eu.i.posthog.com"),
+    posthogHost: z.url().describe("PostHog's address").default("https://eu.i.posthog.com"),
   })
   .prefault({});
 

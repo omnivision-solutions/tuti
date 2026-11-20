@@ -748,6 +748,7 @@
         "posthogHost": {
           "default": "https://eu.i.posthog.com",
           "type": "string",
+          "format": "uri",
           "description": "PostHog's address"
         }
       },
