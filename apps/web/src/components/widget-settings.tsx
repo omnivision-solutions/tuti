@@ -154,7 +154,9 @@ export function WidgetSettings({
             inline={!upgrade}
           >
             <Segmented
-              name="icon"
+              // Without the plan, the icon as loaded isn't sent (as on the server, it stays as set): from a stale page it
+              // would replace a teammate's switch to the chat bubble, and need the plan.
+              name={upgrade && icon === initialIcon ? "iconKept" : "icon"}
               aria-labelledby="widget-icon"
               aria-describedby={upgrade ? "widget-icon-plan" : undefined}
               value={icon}

@@ -347,9 +347,14 @@ test("on Tuti's cloud, the widget launcher's icon on the free plan opens the upg
   await expect(icons).toHaveCSS("opacity", "1");
   await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeEnabled();
   await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
-  // Choosing one opens the upgrade prompt, and the chat bubble stays.
-  await icons.locator("label").filter({ hasText: "Megaphone" }).click();
+  // Choosing one opens the upgrade prompt, and the chat bubble stays. Chosen again until it opens: before the page
+  // hydrates, a click only checks the radio (Chat first puts it back).
   const needsPro = owner.getByRole("dialog", { name: "Choosing the launcher's icon needs the Pro plan." });
+  await expect(async () => {
+    await icons.locator("label").filter({ hasText: "Chat" }).click();
+    await icons.locator("label").filter({ hasText: "Megaphone" }).click();
+    await expect(needsPro).toBeVisible({ timeout: 1_000 });
+  }).toPass();
   await expect(needsPro.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "widget-settings-icon-upgrade");
   await needsPro.getByRole("button", { name: "Not now" }).click();
@@ -392,6 +397,21 @@ test("on Tuti's cloud, the widget launcher's icon on the free plan opens the upg
   await icons.locator("label").filter({ hasText: "Megaphone" }).click();
   await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeChecked();
   await expect(needsPro).toHaveCount(0);
+  // Left as it was, it isn't sent: a teammate's switch to the chat bubble meanwhile stays, and the colour saves.
+  const teammate = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await teammate.connect();
+  try {
+    await teammate.query(`UPDATE project SET "widgetIcon" = 'chat' WHERE slug = $1`, [slug]);
+  } finally {
+    await teammate.end();
+  }
+  await owner.getByLabel("Colour", { exact: true }).fill("#4c1d95");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await owner.reload();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await expect(icons).toHaveAccessibleDescription("Choosing the launcher's icon needs the Pro plan.");
+  await expect(owner.getByLabel("Colour", { exact: true })).toHaveValue("#4c1d95");
 });
 
 test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointing to Billing; on Pro, ranges up to a month, the longer ones locked", async ({ browser }, testInfo) => {
