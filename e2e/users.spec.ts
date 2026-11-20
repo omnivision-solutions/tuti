@@ -395,8 +395,8 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(dialog).toBeHidden();
   await expect(company.getByRole("combobox", { name: "Format of company" })).toBeDisabled();
   releaseRename();
-  await owner.unroute(`**/app/${slug}/settings/properties`);
   await expect(owner.getByText("Saved how company shows")).toBeVisible();
+  await owner.unroute(`**/app/${slug}/settings/properties`);
   await expect(company.getByRole("combobox", { name: "Format of company" })).toBeEnabled();
   await company.getByRole("combobox", { name: "Format of company" }).click();
   await owner.getByRole("option", { name: "Date" }).click();
