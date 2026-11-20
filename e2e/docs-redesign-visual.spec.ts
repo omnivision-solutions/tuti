@@ -199,7 +199,8 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
         await expect(team.locator('.docs-editor-actions .docs-article-save')).toHaveText("Saved");
       }
       if (path.endsWith("/settings")) {
-        await team.getByRole("region", { name: "Access", exact: true }).getByRole("radio", { name: "Signed-in readers", exact: true }).check();
+        await team.getByRole("region", { name: "Access", exact: true }).getByRole("combobox", { name: "Who can read" }).click();
+        await team.getByRole("option", { name: "Signed-in readers", exact: true }).click();
         await expect(team.getByText("1 unsaved change", { exact: true })).toBeVisible();
       }
       if (name === "01-overview") await expect(async () => {
