@@ -140,16 +140,22 @@ test("a team member switches projects, edits their account, signs out and back i
   await expect(other.getByRole("img", { name: "Photo preview" })).toBeVisible();
   await other.getByRole("button", { name: "Save changes" }).click();
   await expect(other.getByText("Profile updated")).toBeVisible();
-  const elsewhere = await other.getByRole("img", { name: "Photo preview" }).getAttribute("src");
+  // Its upload's id: the preview's address and the saved photo's differ, the id doesn't.
+  const mediaId = (src: string | null) => src?.match(/\/(c[a-z0-9]{20,})\//)?.[1];
+  const elsewhere = mediaId(await other.getByRole("img", { name: "Photo preview" }).getAttribute("src"));
   await other.close();
-  expect(elsewhere).not.toBe(saved);
+  expect(elsewhere).toBeTruthy();
+  expect(elsewhere).not.toBe(mediaId(saved));
   await olive.getByText("Daily digest", { exact: true }).click();
   await expect(olive.getByText("Saved", { exact: true })).toBeVisible();
   await olive.getByLabel("Name").fill("Olive Q. Owner");
   await save.click();
   await expect(olive.getByRole("button", { name: /Olive Q\. Owner/ })).toBeVisible();
   await olive.reload();
-  await expect(olive.getByRole("img", { name: "Photo preview" })).toHaveAttribute("src", elsewhere!);
+  await expect(olive.getByRole("img", { name: "Photo preview" })).toHaveAttribute("src", new RegExp(`/${elsewhere}/`));
+  await olive.getByLabel("Name").fill("Olive Owner");
+  await save.click();
+  await expect(olive.getByRole("button", { name: /Olive Owner/ })).toBeVisible();
   await olive.getByRole("button", { name: "Remove photo" }).click();
   await expect(photo.locator('[data-slot="avatar-fallback"]')).toHaveText("OO");
   await save.click();
