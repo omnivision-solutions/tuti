@@ -8,7 +8,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { spendCredits } from "./credits";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
+import { apiFor, createApiKey, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
 import { heldModelReply, modelRequests, nextModelReply, releaseModelReply } from "./model";
@@ -127,13 +127,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await createProject(owner, "Acme", slug);
 
   // The team publishes a changelog entry with an API key.
-  await owner.goto(`/app/${slug}/settings/developers`);
-  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget test");
-  await owner.getByRole("combobox", { name: "What the key can do" }).click();
-  await owner.getByRole("option", { name: "Read and write" }).click();
-  await owner.getByRole("button", { name: "Create key" }).click();
-  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget test now" });
-  const key = (await shown.locator("code").first().innerText()).trim();
+  const key = await createApiKey(owner, slug, "Widget test");
   const api = (path: string, body: object) =>
     fetch(`${APP_URL}/api/v1${path}`, {
       method: "POST",
@@ -609,12 +603,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
-  await owner.goto(`/app/${slug}/settings/developers`);
-  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget seen test");
-  await owner.getByRole("combobox", { name: "What the key can do" }).click();
-  await owner.getByRole("option", { name: "Read and write" }).click();
-  await owner.getByRole("button", { name: "Create key" }).click();
-  const key = (await owner.getByRole("alert").filter({ hasText: "Copy the key for Widget seen test now" }).locator("code").first().innerText()).trim();
+  const key = await createApiKey(owner, slug, "Widget seen test");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method: "POST",
@@ -1220,13 +1209,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings/developers`);
-  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget help test");
-  await owner.getByRole("combobox", { name: "What the key can do" }).click();
-  await owner.getByRole("option", { name: "Read and write" }).click();
-  await owner.getByRole("button", { name: "Create key" }).click();
-  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget help test now" });
-  const key = (await shown.locator("code").first().innerText()).trim();
+  const key = await createApiKey(owner, slug, "Widget help test");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method: "POST",
@@ -1392,13 +1375,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   // SSO, so the customer's site signs its visitor in to the widget's Feedback tab.
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
-  await owner.goto(`/app/${slug}/settings/developers`);
-  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget answers test");
-  await owner.getByRole("combobox", { name: "What the key can do" }).click();
-  await owner.getByRole("option", { name: "Read and write" }).click();
-  await owner.getByRole("button", { name: "Create key" }).click();
-  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget answers test now" });
-  const key = (await shown.locator("code").first().innerText()).trim();
+  const key = await createApiKey(owner, slug, "Widget answers test");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method: "POST",
@@ -1728,13 +1705,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings/developers`);
-  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget launcher test");
-  await owner.getByRole("combobox", { name: "What the key can do" }).click();
-  await owner.getByRole("option", { name: "Read and write" }).click();
-  await owner.getByRole("button", { name: "Create key" }).click();
-  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget launcher test now" });
-  const key = (await shown.locator("code").first().innerText()).trim();
+  const key = await createApiKey(owner, slug, "Widget launcher test");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method: "POST",

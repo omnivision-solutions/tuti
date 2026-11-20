@@ -106,14 +106,29 @@ export async function postFeedback(page: Page, title: string) {
   await expect(page.getByRole("link", { name: title })).toBeVisible({ timeout: 15_000 });
 }
 
-export async function apiFor(team: Page, slug: string) {
+/**
+ * Makes an API key named `name` in project `slug`'s settings (Developers' Create key dialog) and gives the key, which
+ * the dialog shows once. Read and write unless `write` is false.
+ */
+export async function createApiKey(team: Page, slug: string, name: string, { write = true } = {}) {
   await team.goto(`/app/${slug}/settings/developers`);
-  await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
-  await team.getByRole("combobox", { name: "What the key can do" }).click();
-  await team.getByRole("option", { name: "Read and write" }).click();
   await team.getByRole("button", { name: "Create key" }).click();
-  const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help test now" });
+  const dialog = team.getByRole("dialog", { name: "Create an API key" });
+  await dialog.getByRole("textbox", { name: "Key name" }).fill(name);
+  if (write) {
+    await dialog.getByRole("combobox", { name: "What the key can do" }).click();
+    await team.getByRole("option", { name: "Read and write" }).click();
+  }
+  await dialog.getByRole("button", { name: "Create key" }).click();
+  const shown = dialog.getByRole("alert").filter({ hasText: `Copy the key for ${name} now` });
   const key = (await shown.locator("code").first().innerText()).trim();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
+  return key;
+}
+
+export async function apiFor(team: Page, slug: string) {
+  const key = await createApiKey(team, slug, "Help test");
   return async (path: string, body?: object, method = "POST") => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method,
