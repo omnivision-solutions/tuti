@@ -398,8 +398,12 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await expect(instructions(other)).toHaveValue("Typed here.");
   await expect(chips(other)).toHaveText(["Agenda view", "Faster month view"]);
 
-  // After a save here (which marks the field as edited), what a teammate saves next still comes in.
-  await instructions(other).fill("Saved there last.");
+  // After a save here (which marks the field as edited), what a teammate saves next still comes in. (Typed again till
+  // Save reacts: the other tab was just reloaded.)
+  await expect(async () => {
+    await instructions(other).fill("Saved there last.");
+    await expect(save(other)).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
   await save(other).click();
   await expect(other.getByText("Changelog saved")).toBeVisible();
   await hearAgain("Balanced", "Claude Haiku 5.5");
@@ -410,7 +414,11 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await team.getByRole("button", { name: "Remove Faster month view" }).click();
   await expect(save(team)).toBeEnabled();
   await other.reload();
-  await other.getByRole("button", { name: "Remove Agenda view" }).click();
+  // Removed once the reloaded page reacts: a click before its scripts start does nothing.
+  await expect(async () => {
+    if (await other.getByRole("button", { name: "Remove Agenda view" }).isVisible()) await other.getByRole("button", { name: "Remove Agenda view" }).click();
+    await expect(save(other)).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
   await save(other).click();
   await expect(other.getByText("Changelog saved")).toBeVisible();
   await hearAgain("Best", "Claude Opus 5.5");
