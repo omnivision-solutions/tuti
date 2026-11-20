@@ -33,7 +33,8 @@ export type SeoDraft = { title: string; description: string; image: string | nul
 export type Draft = Partial<PortalLook> & { widget?: WidgetDraft; seo?: SeoDraft };
 
 /** A form of the section's that "Save changes" in the panel's header submits (see useCustomizeForm); a section may have several. */
-type SaveForm = { dirty: boolean; pending: boolean };
+/** `pending`: saving, or busy (an upload): "Save changes" waits. `saving`: its save is running. */
+type SaveForm = { dirty: boolean; pending: boolean; saving: boolean };
 
 /** What a Customize section's settings can ask of the preview beside them. */
 type Preview = {
@@ -130,7 +131,7 @@ export function useCustomizeForm({
       form.removeEventListener("change", edited);
     };
   }, [read]);
-  useEffect(() => register(id, { dirty, pending: pending || busy }), [register, id, dirty, pending, busy]);
+  useEffect(() => register(id, { dirty, pending: pending || busy, saving: pending }), [register, id, dirty, pending, busy]);
   useEffect(() => () => register(id, null), [register, id]);
 
   const { onSubmit, ...submit } = keepingFields(action);
@@ -265,7 +266,7 @@ export function usePreviewPage(title: string) {
     };
   }, [dirty]);
 
-  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register, saving: pending }}>{children}</PreviewContext>;
+  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register, saving: Object.values(forms).some((form) => form.saving) }}>{children}</PreviewContext>;
   const leaveDialog = (
     <AlertDialog open={leaving !== null} onOpenChange={(open) => !open && setLeaving(null)}>
       <AlertDialogContent>
