@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, cloudPortalUrl } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
-import { createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp } from "./helpers";
 
 /** A query on the journeys' database. */
 async function query(sql: string, values: unknown[]) {
@@ -113,4 +113,204 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await expect(owner.getByText("Custom isn't available on this plan.")).toBeVisible();
   await expect(drafts).toHaveCount(0);
   await expect(owner.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
+});
+
+test("an admin picks the changelog's style examples: published entries from a searchable dialog, shown as chips, up to 3, saved by the page's Save changes", async ({ browser }, testInfo) => {
+  test.setTimeout(150_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+
+  // Nothing published yet: the row says what it needs, with nothing to pick.
+  await team.goto(`/app/${slug}/settings/changelog`);
+  // One line on what the page is for, beside its title (above the card where the header has no room).
+  await expect(team.getByText("How AI drafts your changelog entries").locator("visible=true")).toHaveCount(1);
+  await expect(team.getByText("Publish an entry to use it as an example.")).toBeVisible();
+  const pick = team.getByRole("button", { name: "Pick a style example" });
+  await expect(pick).toHaveCount(0);
+
+  // Four published entries (the fourth made is the newest, so the first listed), one a draft.
+  const api = await apiFor(team, slug);
+  const titles = ["Faster month view", "Agenda view", "Calendar sharing links for teams and guests", "Search by attendee"];
+  for (const [index, title] of titles.entries()) {
+    await api("/changelog", { title, body: "What changed." });
+    await api(`/changelog/${index + 1}/publish`, { announce: false });
+  }
+  await api("/changelog", { title: "Still a draft", body: "Not out yet." });
+  await team.goto(`/app/${slug}/settings/changelog`);
+  const save = team.getByRole("button", { name: "Save changes" });
+  const row = team.locator('[data-slot="setting-row"]').filter({ hasText: "Style examples" });
+  const chips = team.getByRole("list", { name: "Style examples" }).getByRole("listitem");
+  await expect(save).toBeDisabled();
+  await expect(row.getByText("0/3")).toBeVisible();
+  await expect(row.getByText("Entries that read the way you like.")).toBeVisible();
+
+  // The dialog lists the published entries, newest first; its search narrows them by title.
+  await pick.click();
+  const dialog = team.getByRole("dialog", { name: "Pick a style example" });
+  const search = dialog.getByRole("textbox", { name: "Search published entries" });
+  await expect(dialog.getByRole("listitem")).toHaveText([...titles].reverse());
+  await search.fill("zzz");
+  await expect(dialog.getByRole("listitem")).toHaveText(["No matching entries."]);
+  await search.fill("VIEW");
+  await expect(dialog.getByRole("listitem")).toHaveText(["Agenda view", "Faster month view"]);
+  // Searching is not a change to save, and opened again the search starts empty.
+  await team.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(save).toBeDisabled();
+  await pick.click();
+  await expect(search).toHaveValue("");
+  await expect(dialog.getByRole("listitem")).toHaveCount(4);
+  // Picking one closes the dialog and adds its chip; focus is back on Pick. A second press as it closes picks nothing.
+  await dialog.getByRole("list").evaluate((list) => {
+    const press = (title: string) => [...list.querySelectorAll("button")].find((button) => button.textContent === title)!.click();
+    press("Faster month view");
+    press("Agenda view");
+  });
+  await expect(dialog).toBeHidden();
+  await expect(chips).toHaveText(["Faster month view"]);
+  await expect(row.getByText("1/3")).toBeVisible();
+  await expect(save).toBeEnabled();
+  await expect(pick).toBeFocused();
+  // The one picked is no longer offered.
+  await pick.click();
+  await expect(dialog.getByRole("listitem")).toHaveText(["Search by attendee", "Calendar sharing links for teams and guests", "Agenda view"]);
+  await dialog.getByRole("button", { name: "Search by attendee" }).click();
+  // Chips are in the changelog's order, not the order picked.
+  await expect(chips).toHaveText(["Search by attendee", "Faster month view"]);
+  await team.setViewportSize({ width: 1440, height: 900 });
+  await checkpoint(team, "team-settings-changelog-examples-desktop");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await pick.click();
+  await dialog.getByRole("button", { name: "Calendar sharing links for teams and guests" }).click();
+  // Three is the most: Pick is off.
+  await expect(row.getByText("3/3")).toBeVisible();
+  await expect(pick).toBeDisabled();
+
+  // On a phone the chips go under the label at the card's width, and nothing runs off the side.
+  await team.setViewportSize({ width: 390, height: 844 });
+  const [label, list] = await Promise.all([row.getByText("Entries that read the way you like.").boundingBox(), chips.first().boundingBox()]);
+  expect(list!.y).toBeGreaterThanOrEqual(label!.y + label!.height);
+  expect(await team.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  // A long title wraps in its chip, in full.
+  await team.setViewportSize({ width: 320, height: 740 });
+  const long = chips.filter({ hasText: "Calendar sharing links" });
+  await expect(long).toHaveText("Calendar sharing links for teams and guests");
+  expect(await long.locator("span").evaluate((title) => title.scrollWidth - title.clientWidth)).toBeLessThanOrEqual(0);
+  expect((await long.boundingBox())!.height).toBeGreaterThan((await chips.first().boundingBox())!.height);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-settings-changelog-examples-phone");
+  // The dialog fits the phone too.
+  await team.getByRole("button", { name: "Remove Search by attendee" }).click();
+  await expect(pick).toBeFocused();
+  await pick.click();
+  const box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await checkpoint(team, "team-settings-changelog-examples-pick-phone", { fullPage: false });
+  await team.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // Saved from the header, and there after a reload.
+  await save.click();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
+  await team.reload();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await expect(save).toBeDisabled();
+  // A chip removed is a change to save; the same one picked again is none.
+  await team.getByRole("button", { name: "Remove Faster month view" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await expect(save).toBeEnabled();
+  await pick.click();
+  await dialog.getByRole("button", { name: "Faster month view" }).click();
+  await expect(save).toBeDisabled();
+
+  // Leaving with a change not saved asks first.
+  await team.getByLabel("Instructions").fill("Short and plain.");
+  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" }).click();
+  const leave = team.getByRole("alertdialog", { name: "Leave without saving?" });
+  await leave.getByRole("button", { name: "Keep editing" }).click();
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+
+  // A pick not saved yet whose entry is unpublished meanwhile stops counting once the page hears of it (here, as the
+  // AI model saves): its chip goes, and there's room to pick another.
+  await pick.click();
+  await dialog.getByRole("button", { name: "Agenda view" }).click();
+  await expect(row.getByText("3/3")).toBeVisible();
+  await expect(pick).toBeDisabled();
+  await api("/changelog/2/unpublish", {});
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
+  await expect(team.getByText("AI model saved")).toBeVisible();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await expect(row.getByText("2/3")).toBeVisible();
+  await expect(pick).toBeEnabled();
+  // Another picked in its place, the one that dropped out is gone for good: published again, it doesn't come back as
+  // a fourth.
+  await pick.click();
+  await dialog.getByRole("button", { name: "Search by attendee" }).click();
+  await expect(row.getByText("3/3")).toBeVisible();
+  await api("/changelog/2/publish", { announce: false });
+  // The AI model's save brings the page what's published now: once it has landed (its own toast, the last one gone),
+  // the three picked are still the three chips.
+  const modelSaved = team.getByText("AI model saved");
+  await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
+  await expect(modelSaved).toBeVisible();
+  await expect(chips).toHaveCount(3);
+  await expect(row.getByText("3/3")).toBeVisible();
+  await team.getByRole("button", { name: "Remove Search by attendee" }).click();
+  // Once the page hears it's published again, it's one to pick, not a chip.
+  await pick.click();
+  await expect(dialog.getByRole("button", { name: "Agenda view" })).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await expect(row.getByText("2/3")).toBeVisible();
+  // A chip removed while a pick has dropped out forgets that pick too: published again, it doesn't come back.
+  await pick.click();
+  await dialog.getByRole("button", { name: "Agenda view" }).click();
+  await expect(row.getByText("3/3")).toBeVisible();
+  await api("/changelog/2/unpublish", {});
+  await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Best" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
+  await expect(modelSaved).toBeVisible();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await team.getByRole("button", { name: "Remove Faster month view" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await api("/changelog/2/publish", { announce: false });
+  await expect(modelSaved).toHaveCount(0, { timeout: 15_000 });
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  // The row's line comes from the page's own data: once it names this level's model, what's published now is in too.
+  await expect(team.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
+  await expect(modelSaved).toBeVisible();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await pick.click();
+  await dialog.getByRole("button", { name: "Faster month view" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  // What was typed is still there.
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+  // A saved example unpublished goes the same way, and what's typed and not saved stays.
+  await api("/changelog/1/unpublish", {});
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Affordable" }).click();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
+  await expect(row.getByText("1/3")).toBeVisible();
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+  await expect(save).toBeEnabled();
+  // Saved, the page has nothing more to save.
+  await save.click();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
+  await expect(save).toBeDisabled();
+  await team.reload();
+  await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
 });
