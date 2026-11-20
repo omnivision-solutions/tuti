@@ -98,7 +98,30 @@ test("a team member switches projects, edits their account, signs out and back i
   expect(savedEarly).toBe(false);
   await olive.unroute("**/app/account");
   await olive.unroute("**/api/auth/update-user");
-  await save.click();
+  // Saved with Enter in Name: what's typed while it saves stays, with focus there, and is the next change to save.
+  let saveArrived!: () => void;
+  let releaseSave!: () => void;
+  const saveReached = new Promise<void>((resolve) => (saveArrived = resolve));
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await olive.route("**/api/auth/update-user", async (route) => {
+    saveArrived();
+    await saveHeld;
+    await route.continue();
+  });
+  const nameField = olive.getByLabel("Name");
+  await nameField.press("End");
+  await nameField.press("Enter");
+  await saveReached;
+  await nameField.pressSequentially("!");
+  releaseSave();
+  await expect(me.locator('[data-slot="avatar-image"]')).toHaveAttribute("src", /\/media\//);
+  await olive.unroute("**/api/auth/update-user");
+  await expect(nameField).toHaveValue("Olive Q. Owner!");
+  await expect(nameField).toBeFocused();
+  await expect(save).toBeEnabled();
+  // Put back, nothing is left to save: the photo is saved as the form holds it.
+  await nameField.fill("Olive Q. Owner");
+  await expect(save).toBeDisabled();
   await expect(me.locator('[data-slot="avatar-image"]')).toHaveAttribute("src", /\/media\//);
   // Saving only a new name keeps it; Remove and Save puts the initials back.
   const saved = await me.locator('[data-slot="avatar-image"]').getAttribute("src");

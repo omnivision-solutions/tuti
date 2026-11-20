@@ -35,8 +35,6 @@ export function AccountForms({ name, email, photo, noPassword }: { name: string;
   return (
     <>
       <ProfileForm
-        // Afresh once the saved photo changes (or its row goes): what's saved is what the new form starts from.
-        key={photo ? (photo.image ?? "") : "none"}
         name={name}
         email={email}
         photo={photo}
@@ -66,6 +64,9 @@ function ProfileForm({
   const router = useRouter();
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState<string>();
+  // The photo's row as the page was opened: it stays through a save (what the form holds is then what was saved, so
+  // nothing typed meanwhile is lost), also once its photo is removed for someone who can't upload another.
+  const [row] = useState(photo);
   const { form } = useCustomizeForm({
     busy: uploading > 0,
     save: async (_, data) => {
@@ -102,7 +103,7 @@ function ProfileForm({
       }}
     >
       <SettingsCard title="Profile">
-        {photo && <PhotoRow name={name} photo={photo} onBusy={(delta) => setUploading((count) => count + delta)} />}
+        {row && <PhotoRow name={name} photo={row} onBusy={(delta) => setUploading((count) => count + delta)} />}
         <SettingRow label="Name" htmlFor="account-name">
           <div className="flex flex-col gap-1.5 @min-[34rem]/settings:w-72">
             <Input id="account-name" name="name" defaultValue={name} required maxLength={100} aria-invalid={error ? true : undefined} />

@@ -197,8 +197,9 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await save.click();
   await expect(invitee.getByText("Profile updated")).toBeVisible();
   await expect(invitee.getByRole("button", { name: /Ivy I\. Invitee/ }).locator('[data-slot="avatar-fallback"]')).toHaveText("II");
-  // Its row goes with the photo, and what's saved is the page as it is now: a name typed and put back is nothing to save.
-  await expect(invitee.getByText("Photo", { exact: true })).toHaveCount(0);
+  // Its row stays while the page is open (their initials, Upload still off), and what the form holds is what's saved:
+  // a name typed and put back is nothing to save.
+  await expect(upload).toBeDisabled();
   await invitee.getByLabel("Name").fill("Ivy");
   await expect(save).toBeEnabled();
   await invitee.getByLabel("Name").fill("Ivy I. Invitee");
