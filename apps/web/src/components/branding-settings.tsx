@@ -1,15 +1,14 @@
 "use client";
 
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
-import { ImageIcon, MonitorIcon, MoonIcon, SunIcon, UploadIcon, XIcon } from "lucide-react";
+import { ImageIcon, MonitorIcon, MoonIcon, PlusIcon, SunIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ColorField } from "@/components/color-field";
-import { CustomizeSection, type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
+import { type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { SettingRow, SettingsCard } from "@/components/settings-card";
-import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
@@ -288,7 +287,13 @@ function ImageRow({
   );
 }
 
-/** Customize → Navigation (see branding.update): links in the header, the footer and above the docs' tree. */
+/** As many links as the header, the footer or the docs' sidebar takes (see branding.update). */
+const MAX_LINKS = 5;
+
+/**
+ * Settings → Portal → Navigation (see branding.update): the links in the header, above the docs' tree and in the
+ * footer, a row each in one card, saved with the pane's "Save changes".
+ */
 export function NavigationSettings({
   projectSlug,
   headerLinks,
@@ -306,19 +311,95 @@ export function NavigationSettings({
     sidebarLinks: shownLinks(data, "sidebarLink"),
   }));
   return (
-    <form {...form} className="flex flex-col gap-6">
+    <form {...form} className="flex flex-col gap-4">
       <input type="hidden" name="part" value="links" />
-      <CustomizeSection title="Header links" description="Up to 5, such as your website or pricing.">
-        <LinkRows name="headerLink" item="Header link" legend="Header links" links={headerLinks} />
-      </CustomizeSection>
-      <CustomizeSection title="Docs sidebar links" description="Up to 5 above your docs' tree, such as your status page or changelog.">
-        <LinkRows name="sidebarLink" item="Sidebar link" legend="Docs sidebar links" links={sidebarLinks} />
-      </CustomizeSection>
-      <CustomizeSection title="Footer links" description="Up to 5, such as your terms and privacy policy.">
-        <LinkRows name="footerLink" item="Footer link" legend="Footer links" links={footerLinks} />
-      </CustomizeSection>
+      <SettingsCard title="Links">
+        <LinksRow name="headerLink" label="Header" item="Header link" legend="Header links" links={headerLinks} />
+        <LinksRow name="sidebarLink" label="Docs sidebar" item="Sidebar link" legend="Docs sidebar links" links={sidebarLinks} />
+        <LinksRow name="footerLink" label="Footer" item="Footer link" legend="Footer links" links={footerLinks} />
+      </SettingsCard>
       {state.error && <FieldError>{state.error}</FieldError>}
     </form>
+  );
+}
+
+/**
+ * One place's links as a row: how many of the 5 it has beside its label, "Add" on the right (off at 5), and under them
+ * a line per link, its label and https URL sent as `<name>Label` and `<name>Url` (read with `linksFrom`). `item` names
+ * a link for screen readers ("Header link 1 label").
+ */
+function LinksRow({ name, label, item, legend, links }: { name: string; label: string; item: string; legend: string; links: { label: string; url: string }[] }) {
+  const [rows, setRows] = useState(() => links.map((link, i) => ({ ...link, key: i })));
+  // The link "Add" just made: its label takes the focus.
+  const [added, setAdded] = useState<number | null>(null);
+  const fieldset = useRef<HTMLFieldSetElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  useFieldChanged(fieldset, rows);
+  const full = rows.length >= MAX_LINKS;
+  return (
+    <fieldset ref={fieldset} aria-label={legend} className="min-w-0">
+      <SettingRow
+        label={
+          <>
+            {label} <span className="font-normal text-muted-foreground">{rows.length}/{MAX_LINKS}</span>
+          </>
+        }
+        inline
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label={`Add ${item.toLowerCase()}`}
+          // Off at the limit, yet focusable (aria-disabled): removing a link puts the focus here.
+          disabled={full}
+          focusableWhenDisabled
+          ref={addButton}
+          onClick={() => {
+            const key = Math.max(-1, ...rows.map((row) => row.key)) + 1;
+            setRows([...rows, { label: "", url: "", key }]);
+            setAdded(key);
+          }}
+        >
+          <PlusIcon />
+          Add
+        </Button>
+      </SettingRow>
+      {rows.length > 0 && (
+        <ul className="flex flex-col gap-2 px-4 pb-3.5 @min-[34rem]/settings:px-5">
+          {rows.map((row, i) => (
+            <li key={row.key} className="flex items-center gap-2">
+              <Input
+                name={`${name}Label`}
+                aria-label={`${item} ${i + 1} label`}
+                placeholder="Label"
+                defaultValue={row.label}
+                maxLength={40}
+                autoComplete="off"
+                autoFocus={row.key === added}
+                // Narrower in the settings column at its narrowest, so the URL keeps room.
+                className="w-24 shrink-0 @min-[20rem]/settings:w-32"
+              />
+              <Input name={`${name}Url`} type="url" aria-label={`${item} ${i + 1} URL`} placeholder="https://" defaultValue={row.url} autoComplete="off" className="min-w-0 flex-1" />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${item.toLowerCase()} ${i + 1}`}
+                title="Remove"
+                onClick={() => {
+                  // Remove goes with its link: focus moves to "Add", not out of the page.
+                  addButton.current?.focus();
+                  setRows(rows.filter((r) => r.key !== row.key));
+                }}
+              >
+                <XIcon />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </fieldset>
   );
 }
 

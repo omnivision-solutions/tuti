@@ -133,7 +133,35 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // Settings → Navigation: the header's and footer's links.
   await rail.getByRole("link", { name: "Navigation" }).click();
   const links = owner.locator("form");
-  await links.getByRole("button", { name: "Add header link" }).click();
+  // One card of three rows: each says how many of its 5 links it has, with "Add" on its right.
+  await expect(links.getByRole("heading", { name: "Links" })).toBeVisible();
+  const header = links.getByRole("group", { name: "Header links" });
+  const addHeader = header.getByRole("button", { name: "Add header link" });
+  await expect(header).toContainText("Header 0/5");
+  await expect(links.getByRole("group", { name: "Docs sidebar links" })).toContainText("Docs sidebar 0/5");
+  await expect(links.getByRole("group", { name: "Footer links" })).toContainText("Footer 0/5");
+  await expect(addHeader).toHaveText("Add");
+  // A new link's label takes the focus.
+  await addHeader.click();
+  await expect(header).toContainText("Header 1/5");
+  await expect(links.getByLabel("Header link 1 label")).toBeFocused();
+  // At 5 "Add" is off; taking one away moves the focus to it (the link's own button is gone), on again.
+  for (let count = 2; count <= 5; count++) {
+    await addHeader.click();
+    await expect(links.getByLabel(`Header link ${count} label`)).toBeFocused();
+  }
+  await expect(header).toContainText("Header 5/5");
+  await expect(addHeader).toBeDisabled();
+  await addHeader.click({ force: true });
+  await expect(links.getByLabel(/^Header link \d label$/)).toHaveCount(5);
+  await links.getByRole("button", { name: "Remove header link 5" }).click();
+  await expect(addHeader).toBeFocused();
+  await expect(addHeader).toBeEnabled();
+  for (const count of [4, 3, 2]) {
+    await links.getByRole("button", { name: `Remove header link ${count}` }).click();
+    await expect(addHeader).toBeFocused();
+  }
+  await expect(header).toContainText("Header 1/5");
   await links.getByLabel("Header link 1 label").fill("Docs");
   await links.getByLabel("Header link 1 URL").fill("https://docs.example.com");
   await links.getByRole("button", { name: "Add footer link" }).click();
@@ -170,6 +198,26 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("Header link 1 URL")).toHaveValue("https://docs.example.com");
+  await expect(header).toContainText("Header 1/5");
+  const viewport = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
+  await checkpoint(owner, "settings-navigation", { fullPage: false });
+  // On a phone a link keeps one line (label, URL, its button) and "Add" stays beside the row's label; nothing runs off the side.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const boxOf = async (target: ReturnType<Page["locator"]>) => (await target.boundingBox())!;
+  const [label, url, remove] = [await boxOf(owner.getByLabel("Header link 1 label")), await boxOf(owner.getByLabel("Header link 1 URL")), await boxOf(owner.getByRole("button", { name: "Remove header link 1" }))];
+  expect(url.y).toBe(label.y);
+  expect(url.x).toBeGreaterThan(label.x + label.width);
+  expect(url.width).toBeGreaterThanOrEqual(120);
+  expect(remove.x).toBeGreaterThanOrEqual(url.x + url.width);
+  const addBox = await boxOf(addHeader);
+  expect(addBox.y).toBeLessThan(label.y);
+  expect(addBox.x + addBox.width).toBeLessThanOrEqual(390);
+  expect(await owner.locator('[data-slot="portal-settings"]').evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-navigation-phone", { fullPage: false });
+  await owner.setViewportSize(viewport);
 
   // "Powered by tuti" (in Branding now; its old address lands there): hiding the badge needs a licence for the
   // project; switching it off asks about one instead.
