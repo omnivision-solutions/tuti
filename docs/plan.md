@@ -446,7 +446,7 @@ What an operator tunes moves out of env vars into one JSON file (`TUTI_CONFIG`),
 
 - [x] The file, its loader and checks, and its first section: `media` (the `MEDIA_MAX_*` upload limits and `MEDIA_PROJECT_QUOTA_MB`)
 - [ ] `duplicates`: the decision models that say which similar posts are duplicates
-- [ ] `ai`: `AI_MODEL`, `AI_MODEL_<FEATURE>`, `AI_MODEL_MAX_PRICE`, and the AI levels' rows (`AI_LEVELS_CONFIG`'s file)
+- [x] `ai`: `AI_MODEL` → `ai.model`, `AI_MODEL_<FEATURE>` → `ai.features.<feature>`, `AI_MODEL_MAX_PRICE` → `ai.maxPrice`, and the AI levels' rows (`AI_LEVELS_CONFIG`'s file) → `ai.levels`
 - [ ] `autopilot`: the `CODE_CHANGES_*` settings
 - [ ] `ownPortal`, `customDomains`, `analytics`: `APP_PORTAL_*`, `APP_WIDGET_PROJECT`, `APP_LINKS`, `CUSTOM_DOMAIN_TARGET`, `CLOUDFLARE_ZONE_ID`, `POSTHOG_*`
 - [ ] AI credits (`AI_CREDITS*`) and `STRIPE_PORTAL_LOGIN_URL` into the billing file, which already says what the server sells

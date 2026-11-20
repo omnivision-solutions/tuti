@@ -54,6 +54,224 @@
         }
       },
       "additionalProperties": false
+    },
+    "ai": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Every AI feature's model (an OpenRouter model id, or one your endpoint serves), where its own isn't set; Tuti's default without"
+        },
+        "features": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "answers": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "AI answers' model, instead of `ai.model`"
+            },
+            "escalations": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Escalation summaries' model, instead of `ai.model`"
+            },
+            "support": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The inbox's drafted replies and summaries' model, instead of `ai.model`"
+            },
+            "changelog": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Changelog drafts' model, instead of `ai.model`"
+            },
+            "codeChanges": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Autopilot's articles' model, instead of `ai.model` (without either, Autopilot's write model)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxPrice": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The most a model projects pick may cost, in dollars per million output tokens (a model without a price can't be picked under a cap); no cap without"
+        },
+        "levels": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "affordable": {
+                  "type": "object",
+                  "properties": {
+                    "answers": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "escalations": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "support_draft": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "support_summary": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "changelog": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "code_changes_decide": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "code_changes_check": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "code_changes": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "best": {
+                  "type": "object",
+                  "properties": {
+                    "answers": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "escalations": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "support_draft": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "support_summary": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "changelog": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "code_changes_decide": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "code_changes_check": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "code_changes": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The Affordable and Best levels' models, by role: a level left out isn't offered, a role left out runs on Balanced's (the server's) model. Without, Tuti's own rows, unless a model above is set (then only Balanced and Custom)"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

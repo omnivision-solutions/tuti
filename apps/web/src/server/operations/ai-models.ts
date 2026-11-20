@@ -142,7 +142,7 @@ export const updateAiModels = defineOperation({
   name: "aiModels.update",
   title: "Update the AI models",
   summary:
-    "Pick the model an AI role uses for this project, or each group's level. Roles left out keep theirs. Autopilot's roles take only models with tool calls, and the server may cap a model's price (AI_MODEL_MAX_PRICE).",
+    "Pick the model an AI role uses for this project, or each group's level. Roles left out keep theirs. Autopilot's roles take only models with tool calls, and the server may cap a model's price (the config file's ai.maxPrice).",
   method: "PATCH",
   path: "/ai-models",
   scope: "write",

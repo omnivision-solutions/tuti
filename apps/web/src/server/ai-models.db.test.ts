@@ -1,10 +1,8 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL, resetCodeChangesSettings } from "@tuti/shared";
-import { billingFile, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
+import { billingFile, configFile, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { Children, isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -26,6 +24,8 @@ let openai: OpenAIFake;
 let model: ModelFake;
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+/** The server's config file with these `ai` values, every other at its default. */
+const serverAi = (ai: object) => vi.stubEnv("TUTI_CONFIG", configFile({ ai }));
 
 beforeAll(async () => {
   model = await startModelFake();
@@ -71,7 +71,7 @@ async function answeredWith(projectId: string) {
 
 test("each feature uses the server's default for it, unless the project picked another; empty goes back to the default", async () => {
   expect(await answeredWith(project.id)).toBe(DEFAULT_AI_MODEL);
-  vi.stubEnv("AI_MODEL_ANSWERS", "acme/tiny");
+  serverAi({ features: { answers: "acme/tiny" } });
   expect(await answeredWith(project.id)).toBe("acme/tiny");
 
   const other = await createProject(owner);
@@ -105,7 +105,7 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
 });
 
 test("under the server's cap only models priced at or under it can be picked; the default needs no check", async () => {
-  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  serverAi({ maxPrice: 5 });
   // Claude Haiku costs $5 per million output tokens in the fake's list, Sonnet $15.
   await call(updateAiModels, as(), { answers: "anthropic/claude-haiku-5.5" });
   await expect(call(updateAiModels, as(), { changelog: "acme/tiny", answers: "anthropic/claude-sonnet-5.5" })).rejects.toMatchObject({
@@ -119,7 +119,7 @@ test("under the server's cap only models priced at or under it can be picked; th
   });
   // Nothing of the refused requests was saved, not even acme/tiny, which is under the cap.
   expect((await call(getAiModels, as(), {})).changelog.model).toBeNull();
-  vi.stubEnv("AI_MODEL_CHANGELOG", "anthropic/claude-sonnet-5.5");
+  serverAi({ maxPrice: 5, features: { changelog: "anthropic/claude-sonnet-5.5" } });
   await call(updateAiModels, as(), { answers: "" });
   const models = await call(getAiModels, as(), {});
   expect([models.answers.model, models.changelog]).toEqual([null, { model: null, default: "anthropic/claude-sonnet-5.5", used: "anthropic/claude-sonnet-5.5" }]);
@@ -155,7 +155,7 @@ test("the migration: picks saved under the old names become their roles' (the In
 });
 
 test("every role is listed with its default: the Inbox's two share the support feature's", async () => {
-  vi.stubEnv("AI_MODEL_SUPPORT", "acme/tiny");
+  serverAi({ features: { support: "acme/tiny" } });
   const models = await call(getAiModels, as(), {});
   // Each role, and the groups' levels beside them.
   expect(Object.keys(models).sort()).toEqual([...AI_ROLE_NAMES, "levels"].sort());
@@ -227,13 +227,13 @@ test("levels: a group runs on its level's models; a plan picks levels with aiLev
 });
 
 test("levels: one the server doesn't offer, or whose models cost more than its cap, can't be saved", async () => {
-  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  serverAi({ maxPrice: 5 });
   // Best's row for answers is Opus, $25 per million output tokens in the fake's list; Affordable's is Haiku, $5.
   await expect(call(updateAiModels, as(), { levels: { answers: "best" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "The best level uses “anthropic/claude-opus-5.5”, which costs more than this server allows" });
   expect((await call(getAiModels, as(), {})).levels.answers.available).toEqual(["affordable", "balanced", "custom"]);
   expect((await call(updateAiModels, as(), { levels: { answers: "affordable" } })).levels.answers.level).toBe("affordable");
-  // A server that set its own models and has no levels file has only Balanced and Custom.
-  vi.stubEnv("AI_MODEL", "acme/tiny");
+  // A server that set its own models and has no ai.levels has only Balanced and Custom.
+  serverAi({ maxPrice: 5, model: "acme/tiny" });
   await expect(call(updateAiModels, as(), { levels: { support: "affordable" } })).rejects.toMatchObject({ status: 400, code: "level_unavailable", message: "This server doesn't offer the affordable level" });
   expect((await call(getAiModels, as(), {})).levels.answers).toEqual({ level: "affordable", used: "balanced", available: ["balanced", "custom"] });
 });
@@ -280,7 +280,7 @@ test("a settings page's AI model: every level the server offers, with the upgrad
 
   // Business: Custom, and a pick for one role; the other runs on the server's own. Only models under the server's cap are offered.
   await onPlan("business");
-  vi.stubEnv("AI_MODEL_MAX_PRICE", "15");
+  serverAi({ maxPrice: 15 });
   expect(await saveAiModel(project.slug, { levels: { answers: "custom" } })).toEqual({});
   expect(await saveAiModel(project.slug, { escalations: "acme/tiny" })).toEqual({});
   const business = await setting();
@@ -298,7 +298,7 @@ test("a settings page's AI model: every level the server offers, with the upgrad
   expect(await setting()).toMatchObject({ saved: "custom", used: "balanced", notice: "Custom isn't available on this plan." });
 
   // A level the server's cap rules out isn't offered as an upgrade: no plan would bring it.
-  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  serverAi({ maxPrice: 5 });
   await prisma.project.update({ where: { id: project.id }, data: { aiLevels: { answers: "best" } } });
   const capped = await setting();
   expect(capped.levels.map(({ level }) => level)).toEqual(["affordable", "balanced", "custom"]);
@@ -306,7 +306,7 @@ test("a settings page's AI model: every level the server offers, with the upgrad
 });
 
 test("a settings page's AI model on a server without plans: no prompts; a level over the server's cap isn't shown, and a saved one the server stopped offering is said", async () => {
-  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  serverAi({ maxPrice: 5 });
   const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "changelog", { changelog: "Drafts" });
   expect((await setting()).levels).toEqual([
     { level: "affordable", name: "Affordable", upgrade: null },
@@ -315,7 +315,7 @@ test("a settings page's AI model on a server without plans: no prompts; a level 
   ]);
   await call(updateAiModels, as(), { levels: { changelog: "affordable" } });
   expect(await setting()).toMatchObject({ used: "affordable", summary: "Drafts Claude Haiku 5.5" });
-  vi.stubEnv("AI_MODEL", "acme/tiny");
+  serverAi({ maxPrice: 5, model: "acme/tiny" });
   const own = await setting();
   expect(own).toMatchObject({ saved: "affordable", used: "balanced", summary: "Drafts Tiny", notice: "Affordable isn't available on this server." });
   expect(own.levels.map(({ level }) => level)).toEqual(["balanced", "custom"]);
@@ -374,9 +374,7 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
 });
 
 test("the Checks switch on a server whose own checks are off: none where they wouldn't run anyway; where the level in use has a model for them it's there, on, and switches them off and on", async () => {
-  const path = join(mkdtempSync(join(tmpdir(), "tuti-levels-")), "levels.json");
-  writeFileSync(path, JSON.stringify({ best: { code_changes_check: "anthropic/claude-sonnet-5.5" } }));
-  vi.stubEnv("AI_LEVELS_CONFIG", path);
+  serverAi({ levels: { best: { code_changes_check: "anthropic/claude-sonnet-5.5" } } });
   vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
   resetCodeChangesSettings();
   const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });

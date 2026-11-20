@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 
 import { log } from "../log";
+import { ai, AI_REPLACED } from "./ai";
 import { media, MEDIA_REPLACED } from "./media";
 
 /**
@@ -18,12 +19,13 @@ import { media, MEDIA_REPLACED } from "./media";
 export const configSchema = z.strictObject({
   $schema: z.string().optional(),
   media,
+  ai,
 });
 
 export type Config = z.output<typeof configSchema>;
 
 /** Env vars a section replaced, with their keys: one still set is a server not yet moved over. */
-export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED };
+export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED, ...AI_REPLACED };
 
 let loaded: { path: string; config: Config } | null = null;
 

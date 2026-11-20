@@ -138,18 +138,17 @@ and `OPENROUTER_BASE_URL` are no longer read (the server warns at start-up if th
 key in `OPENAI_API_KEY`, and a provider other than OpenRouter's address in `OPENAI_BASE_URL`. A server with
 only an OpenAI key in `OPENAI_API_KEY` keeps embeddings on OpenAI and chat off. A server that set
 `OPENAI_BASE_URL` for embeddings alone now sends chat there too: that
-endpoint must serve `AI_MODEL` (or Tuti's default), and the server logs at start-up which model it
+endpoint must serve the config file's `ai.model` (or Tuti's default), and the server logs at start-up which model it
 doesn't list. Autopilot and Verify stay off there: they need OpenRouter's Decisions API.
 
-**AI levels.** A project runs each feature's AI on a level: Balanced is your server's models (`AI_MODEL`
-and the variables beside it), Custom is models the project picks. Affordable and Best need a row of
-models each: point `AI_LEVELS_CONFIG` at a JSON file like `packages/shared/ai-levels.example.json`, on the
-web app and the worker alike (mount the same file into both). Without a file, Tuti's own rows are used,
-unless you set a model variable: then only Balanced and Custom are offered. An invalid file stops start-up.
-Tuti's own Best row uses Claude Opus where the model writes (answers, drafted replies, changelog entries, Autopilot's
-articles and checks) and Claude Sonnet for the rest; with `AI_MODEL_MAX_PRICE` under Opus's price, Best isn't offered
-until you raise the cap or give Best cheaper models in your file. The cap is checked when a level is
-saved: a project already on Best keeps it, and runs on Opus, until it picks another level.
+**AI levels.** A project runs each feature's AI on a level: Balanced is your server's models (the config file's
+`ai.model` and `ai.features`), Custom is models the project picks. Affordable and Best need a row of models each, the
+config file's `ai.levels` (a model id per role, by level; see `packages/shared/tuti.config.example.json`). Without
+it, Tuti's own rows are used, unless you set a model (`ai.model` or a feature's, or Autopilot's): then only Balanced
+and Custom are offered. Tuti's own Best row uses Claude Opus where the model writes (answers, drafted replies,
+changelog entries, Autopilot's articles and checks) and Claude Sonnet for the rest; with `ai.maxPrice` under Opus's
+price, Best isn't offered until you raise the cap or give Best cheaper models in `ai.levels`. The cap is checked when
+a level is saved: a project already on Best keeps it, and runs on Opus, until it picks another level.
 
 ### The config file
 
@@ -168,6 +167,14 @@ a key Tuti doesn't know stops start-up, naming the key; so does an env var the f
 | `media.maxMb.teamFile` | `25` | A file the team attaches to an article, in megabytes |
 | `media.maxMb.teamVideo` | `200` | A video the team uploads, in megabytes |
 | `media.projectQuotaMb` | `1024` | All of a project's uploads together, in megabytes |
+| `ai.model` | `null` | Every AI feature's model (an OpenRouter model id, or one your endpoint serves), where its own isn't set; Tuti's default without |
+| `ai.features.answers` | `null` | AI answers' model, instead of `ai.model` |
+| `ai.features.escalations` | `null` | Escalation summaries' model, instead of `ai.model` |
+| `ai.features.support` | `null` | The inbox's drafted replies and summaries' model, instead of `ai.model` |
+| `ai.features.changelog` | `null` | Changelog drafts' model, instead of `ai.model` |
+| `ai.features.codeChanges` | `null` | Autopilot's articles' model, instead of `ai.model` (without either, Autopilot's write model) |
+| `ai.maxPrice` | `null` | The most a model projects pick may cost, in dollars per million output tokens (a model without a price can't be picked under a cap); no cap without |
+| `ai.levels` | `null` | The Affordable and Best levels' models, by role: a level left out isn't offered, a role left out runs on Balanced's (the server's) model. Without, Tuti's own rows, unless a model above is set (then only Balanced and Custom) |
 
 ### Autopilot's settings
 

@@ -3,5 +3,31 @@
   "media": {
     "maxMb": { "teamVideo": 500 },
     "projectQuotaMb": 5120
+  },
+  "ai": {
+    "features": { "answers": "anthropic/claude-sonnet-5.5" },
+    "maxPrice": 15,
+    "levels": {
+      "affordable": {
+        "answers": "anthropic/claude-haiku-5.5",
+        "escalations": "anthropic/claude-haiku-5.5",
+        "support_draft": "anthropic/claude-haiku-5.5",
+        "support_summary": "anthropic/claude-haiku-5.5",
+        "changelog": "anthropic/claude-haiku-5.5",
+        "code_changes_decide": "anthropic/claude-haiku-5.5",
+        "code_changes_check": "anthropic/claude-haiku-5.5",
+        "code_changes": "anthropic/claude-haiku-5.5"
+      },
+      "best": {
+        "answers": "anthropic/claude-sonnet-5.5",
+        "escalations": "anthropic/claude-sonnet-5.5",
+        "support_draft": "anthropic/claude-sonnet-5.5",
+        "support_summary": "anthropic/claude-sonnet-5.5",
+        "changelog": "anthropic/claude-sonnet-5.5",
+        "code_changes_decide": "anthropic/claude-sonnet-5.5",
+        "code_changes_check": "anthropic/claude-sonnet-5.5",
+        "code_changes": "anthropic/claude-sonnet-5.5"
+      }
+    }
   }
 }
