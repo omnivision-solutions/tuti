@@ -443,6 +443,31 @@ test("on Tuti's cloud, the widget launcher's icon on the free plan opens the upg
   await owner.reload();
   await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
   await expect(owner.getByLabel("Colour", { exact: true })).toHaveValue("#3b0764");
+
+  // The kept icon swapped for the chat bubble and saved: the page, refreshed with it, has nothing more to save, and an
+  // edit taken back leaves nothing to save either.
+  const kept = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await kept.connect();
+  try {
+    await kept.query(`UPDATE project SET "widgetIcon" = 'megaphone' WHERE slug = $1`, [slug]);
+  } finally {
+    await kept.end();
+  }
+  await owner.reload();
+  await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeChecked();
+  await expect(async () => {
+    await icons.locator("label").filter({ hasText: "Chat" }).click();
+    await expect(owner.getByRole("button", { name: "Save changes" })).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await expect(icons).toHaveAccessibleDescription("Choosing the launcher's icon needs the Pro plan.");
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
+  await onPortal.click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await onPortal.click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
 });
 
 test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointing to Billing; on Pro, ranges up to a month, the longer ones locked", async ({ browser }, testInfo) => {
