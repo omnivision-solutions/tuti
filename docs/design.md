@@ -383,8 +383,8 @@ the list picks none to approve at once.
   Publish or Publish all before taking them live. Verify all and the live help center link sit below. Collections
   and tabs remain reachable in the tree. A collection's page is a flat ordered table with article state, views,
   helpful votes and updated date; Content and Settings sit under its header. Collection settings are Settings' cards of
-  rows (Settings rows): Details, then Access ("Who can read" and "People without access" as dropdowns with a line on
-  the choice picked, the groups to tick under "Specific groups"), a single Save beside the title and Delete in a card
+  rows (Settings rows): Details, then Access ("Who can read" and "People without access" as dropdowns, with a line on
+  the choice picked or what it inherits and the rest behind the ⓘ; the groups to tick under "Specific groups"), a single Save beside the title and Delete in a card
   of its own at the end. Tab pages
   keep Content, Access and Settings. Recently deleted articles can still be restored from the overview.
 
