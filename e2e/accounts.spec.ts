@@ -72,8 +72,32 @@ test("a team member switches projects, edits their account, signs out and back i
   // The photo's row shows them as they're shown everywhere: their initials, then the photo picked with Upload.
   const photo = account.locator('[data-slot="setting-row"]').filter({ hasText: "Photo" });
   await expect(photo.locator('[data-slot="avatar-fallback"]')).toHaveText("OQ");
+  // While it uploads nothing is saved, by Save (off till then) or by Enter in Name: the photo goes with the save after.
+  let uploadArrived!: () => void;
+  let releaseUpload!: () => void;
+  const uploadReached = new Promise<void>((resolve) => (uploadArrived = resolve));
+  const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
+  let savedEarly = false;
+  await olive.route("**/app/account", async (route) => {
+    if (route.request().method() === "POST") {
+      uploadArrived();
+      await uploadHeld;
+    }
+    await route.continue();
+  });
+  await olive.route("**/api/auth/update-user", (route) => {
+    savedEarly = true;
+    return route.continue();
+  });
   await olive.getByLabel("Photo", { exact: true }).setInputFiles({ name: "me.png", mimeType: "image/png", buffer: face });
+  await uploadReached;
+  await expect(save).toBeDisabled();
+  await olive.getByLabel("Name").press("Enter");
+  releaseUpload();
   await expect(olive.getByRole("img", { name: "Photo preview" })).toBeVisible();
+  expect(savedEarly).toBe(false);
+  await olive.unroute("**/app/account");
+  await olive.unroute("**/api/auth/update-user");
   await save.click();
   await expect(me.locator('[data-slot="avatar-image"]')).toHaveAttribute("src", /\/media\//);
   // Saving only a new name keeps it; Remove and Save puts the initials back.

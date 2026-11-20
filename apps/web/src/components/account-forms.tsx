@@ -90,7 +90,17 @@ function ProfileForm({
   });
 
   return (
-    <form {...form}>
+    <form
+      {...form}
+      onSubmit={(event) => {
+        // Enter in Name while a photo uploads: not saved yet (Save is off till then too), or the photo would be left out.
+        if (uploading > 0) {
+          event.preventDefault();
+          return;
+        }
+        form.onSubmit(event);
+      }}
+    >
       <SettingsCard title="Profile">
         {photo && <PhotoRow name={name} photo={photo} onBusy={(delta) => setUploading((count) => count + delta)} />}
         <SettingRow label="Name" htmlFor="account-name">
