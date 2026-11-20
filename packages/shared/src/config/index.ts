@@ -23,7 +23,7 @@ export const configSchema = z.strictObject({
 export type Config = z.output<typeof configSchema>;
 
 /** Env vars a section replaced, with their keys: one still set is a server not yet moved over. */
-const REPLACED: Record<string, string> = { ...MEDIA_REPLACED };
+export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED };
 
 let loaded: { path: string; config: Config } | null = null;
 
@@ -61,9 +61,9 @@ function read(path: string): Config {
 
 /** At start-up, on the web app and the worker: a bad file, or a variable the file replaced still set, stops it. */
 export function checkConfig(): void {
-  const replaced = Object.keys(REPLACED).filter((name) => process.env[name]?.trim());
+  const replaced = Object.keys(CONFIG_REPLACED).filter((name) => process.env[name]?.trim());
   if (replaced.length > 0) {
-    throw new Error(`Set in the config file (TUTI_CONFIG) now, not in env vars: ${replaced.map((name) => `${name} → ${REPLACED[name]}`).join(", ")}`);
+    throw new Error(`Set in the config file (TUTI_CONFIG) now, not in env vars: ${replaced.map((name) => `${name} → ${CONFIG_REPLACED[name]}`).join(", ")}`);
   }
   config();
   log.info(`Config: ${process.env.TUTI_CONFIG?.trim() || "no TUTI_CONFIG file, every default"}`);

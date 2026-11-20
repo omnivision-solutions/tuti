@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 
 import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
+import { CONFIG_REPLACED } from "../packages/shared/src/config";
 import { billingFile, withAppsumoPlans } from "../packages/testkit/src/billing";
 
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
@@ -58,8 +59,10 @@ export const serverEnv = {
   // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
   ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
   DECISION_MODEL: "",
-  // Every config file value at its default, whatever a local .env points at.
+  // Every config file value at its default, whatever a local .env points at (or still sets: a variable the file
+  // replaced stops start-up).
   TUTI_CONFIG: "",
+  ...Object.fromEntries(Object.keys(CONFIG_REPLACED).map((name) => [name, ""])),
   // No analytics: journeys never send page views to PostHog, whatever a local .env holds.
   POSTHOG_KEY: "",
   POSTHOG_HOST: "",
