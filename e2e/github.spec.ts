@@ -53,10 +53,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("button", { name: "Actions for acme-e2e/ios" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
-  // Its row is gone, and its menu's button with it: focus is on "Add repository", not lost.
-  await expect(owner.getByRole("button", { name: "Add repository" })).toBeFocused();
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
   await expect(owner.getByRole("heading", { name: "Repositories 1" })).toBeVisible();
+  // Its row is gone, and its menu's button with it: focus is on "Add repository", not lost, and still there once the
+  // page has what's saved.
+  await owner.waitForLoadState("networkidle");
+  await expect(owner.getByRole("button", { name: "Add repository" })).toBeFocused();
   // Which repositories the app can see is the account's to choose, on GitHub.
   await expect(owner.getByRole("link", { name: "Manage access on GitHub" })).toHaveAttribute(
     "href",

@@ -132,7 +132,16 @@ export function GithubRepositories({
   reconnectUrl: string;
 }) {
   const [pending, startTransition] = useTransition();
-  const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
+  const saved = () => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id));
+  const [included, setIncluded] = useState(saved);
+  // What's saved, when the page brings it again (a refresh, another tab's change): the card isn't remounted for it, so
+  // focus stays where it is (on "Add repository" after a removal).
+  const savedNow = JSON.stringify(repositories.map((repo) => [repo.id, repo.included]));
+  const [seen, setSeen] = useState(savedNow);
+  if (seen !== savedNow) {
+    setSeen(savedNow);
+    setIncluded(saved());
+  }
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
   // In full ("acme/app"), as GitHub and Autopilot's pages name it.

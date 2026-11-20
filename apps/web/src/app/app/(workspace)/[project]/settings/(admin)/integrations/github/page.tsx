@@ -127,8 +127,6 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       )}
 
       <GithubRepositories
-        // Fresh state after a refresh or another tab's change.
-        key={JSON.stringify([repositories, installation.included])}
         projectSlug={project.slug}
         account={installation.accountLogin}
         repositories={repositoryRows(
