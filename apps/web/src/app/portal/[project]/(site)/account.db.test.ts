@@ -40,7 +40,9 @@ test("the Account's email switches for people its emails about posts may reach; 
   expect(confirmed).toContain("Posts I voted on or follow");
   expect(confirmed).not.toContain("about posts.");
   expect(confirmed).not.toContain("Confirm your email address");
-  // Not confirmed yet: the switches (confirming is all it takes), and above them what to do, with Resend email.
+  // Not confirmed yet (signed in only on a server that sends no email, server/session.ts): the switches (confirming is all
+  // it takes), and above them what to do, with Resend email.
+  const smtp = process.env.SMTP_HOST;
   actAs(await person("Unconfirmed", false));
   const unconfirmed = await account();
   expect(unconfirmed).toContain(switches);
@@ -51,6 +53,7 @@ test("the Account's email switches for people its emails about posts may reach; 
   const stop = /<input [^>]*id="email-unsubscribed"[^>]*>/;
   expect(unconfirmed.match(stop)![0]).toContain('disabled=""');
   expect(confirmed.match(stop)![0]).not.toContain('disabled=""');
+  vi.stubEnv("SMTP_HOST", smtp);
 
   // The team: audienceReach never emails it about posts (the changelog, which it gets like anyone, keeps its switch).
   actAs(owner);

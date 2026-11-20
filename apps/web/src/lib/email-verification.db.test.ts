@@ -161,35 +161,31 @@ test("signing up with an address that has an account answers as for a new one, a
   expect(await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { name: true } })).toEqual({ name: "Olive" });
 });
 
-test("the deploy's migration ends an unverified password account's sessions, its portals' too; not a verified one's or a single sign-on user's", async () => {
+test("a session from before its address was verified is no session, on the app or a portal, unless the server sends no email; a single sign-on user's is", async () => {
   const project = await createProject(await signUpUser("Owner"));
-  const sessionsOf = (id: string) => prisma.session.count({ where: { userId: id } });
-  // Before this change: an unverified account's app session, and the portal session its "Continue as" made.
-  const unverified = await signUpUser("Una", undefined, { verified: false });
-  await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: unverified.id, expiresAt: new Date(Date.now() + 86_400_000), boundTo: project.id } });
-  const verified = await signUpUser("Vera");
-  // A single sign-on user: no password, an address the project's app vouches for.
-  const sso = await prisma.user.create({ data: { id: randomUUID(), name: "Sso", email: `e2e-${randomUUID()}@example.com`, emailVerified: false } });
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: sso.id } });
-  await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: sso.id, expiresAt: new Date(Date.now() + 86_400_000), boundTo: project.id } });
-  expect([await sessionsOf(unverified.id), await sessionsOf(verified.id), await sessionsOf(sso.id)]).toEqual([2, 1, 1]);
-
-  const { readFile } = await import("node:fs/promises");
-  const sql = await readFile(new URL("../../../../packages/db/prisma/migrations/20261120200000_unverified_password_sessions/migration.sql", import.meta.url), "utf8");
-  await prisma.$executeRawUnsafe(sql);
-  expect([await sessionsOf(unverified.id), await sessionsOf(verified.id), await sessionsOf(sso.id)]).toEqual([0, 1, 1]);
-});
-
-test("an app session from before its address was verified is no session, unless the server sends no email", async () => {
+  const smtp = process.env.SMTP_HOST;
+  const sessionAs = async (user: { id: string; cookie: string }, host: string) => {
+    request.host = host;
+    actAs(user as never);
+    return (await getSession())?.user.id;
+  };
+  const portalHost = `${project.slug}.localhost:3100`;
+  // An unverified password account: its app session, and a portal one ("Continue as", or the previous release's while a
+  // deploy overlaps).
   const ada = await signUpUser("Ada", undefined, { verified: false });
-  request.host = new URL(APP_URL).host;
-  actAs(ada);
-  expect(await getSession()).toBeNull();
+  expect(await sessionAs(ada, new URL(APP_URL).host)).toBeUndefined();
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: project.id } });
+  expect(await sessionAs(ada, portalHost)).toBeUndefined();
+  // A single sign-on user's address is the project's app's to vouch for: their portal session works.
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ada", userId: ada.id } });
+  expect(await sessionAs(ada, portalHost)).toBe(ada.id);
+  await prisma.ssoIdentity.deleteMany({ where: { userId: ada.id } });
+  // A server that sends no email can't verify anyone: sessions work as before.
   vi.stubEnv("SMTP_HOST", "");
   try {
-    expect((await getSession())?.user.id).toBe(ada.id);
+    expect(await sessionAs(ada, portalHost)).toBe(ada.id);
   } finally {
-    vi.unstubAllEnvs();
+    vi.stubEnv("SMTP_HOST", smtp);
   }
 });
 

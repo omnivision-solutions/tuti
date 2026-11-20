@@ -6,8 +6,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
-import { query } from "./db";
-import { countEmailsTo, latestEmailTo } from "./mail";
+import { latestEmailTo } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -1117,22 +1116,9 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   // It's in the page twice (under the list for phones), yet each id is once.
   const ids = await ada.evaluate(() => [...document.querySelectorAll("[id]")].map((element) => element.id));
   expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
-  // Get updates (a button in the board's card, a popover) says what reaches her: with her address not confirmed (as
-  // for a reader the project's single sign-on brought in), the shipped email wouldn't, so it asks her to confirm (the
-  // link comes back here).
-  await query(`UPDATE "user" SET "emailVerified" = false WHERE email = $1`, [ada.email]);
-  await ada.reload();
+  // Get updates (a button in the board's card, a popover) says what reaches her: her address, confirmed on signing up.
   const updates = ada.getByRole("dialog", { name: "Get updates" });
   await expect(sidebar.getByRole("button", { name: "Get updates" })).toHaveCount(0);
-  await main.getByRole("button", { name: "Get updates" }).click();
-  await expect(updates).toContainText("Confirm your email to hear as ideas you vote on move forward and when they ship.");
-  await expect(updates).not.toContainText("get an email when it's planned");
-  const emailsBefore = countEmailsTo(ada.email);
-  await updates.getByRole("button", { name: "Resend email" }).click();
-  await expect(updates.getByRole("button", { name: "Sent" })).toBeDisabled();
-  const confirm = await latestEmailTo(ada.email, { after: emailsBefore });
-  await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
-  await ada.waitForURL(/\/feedback\/feature-requests$/);
   await main.getByRole("button", { name: "Get updates" }).click();
   await expect(updates).toContainText("Vote for an idea to get an email as it moves forward and when it ships.");
   await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);

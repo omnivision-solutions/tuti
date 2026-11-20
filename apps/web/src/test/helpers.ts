@@ -41,14 +41,21 @@ export async function signUp(name = "Test user", email = `e2e-${randomUUID()}@ex
 }
 
 /**
- * `user`'s sessions as if started on the project's portal (an emailed sign-in link there), and requests on its host for
- * the rest of the test. Signing in on the app needs a verified address, so an unverified reader's session is one of these.
+ * `user`'s sessions as if started on the project's portal ("Continue as"), and requests on its host for the rest of the
+ * test. An unverified one's only on a server that sends no email, as the rest of the test then is.
  */
 export async function onPortal(user: TestUser, project: { id: string; slug: string }) {
   await prisma.session.updateMany({ where: { userId: user.id }, data: { boundTo: project.id } });
   request.host = `${project.slug}.localhost:3100`;
+  // An unverified password account is signed in only on a server that sends no email (server/session.ts).
+  const { emailVerified } = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { emailVerified: true } });
+  const smtp = process.env.SMTP_HOST;
+  if (!emailVerified) {
+    vi.stubEnv("SMTP_HOST", "");
+  }
   onTestFinished(() => {
     request.host = "";
+    vi.stubEnv("SMTP_HOST", smtp);
   });
 }
 

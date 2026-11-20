@@ -1191,15 +1191,25 @@ describe("the Account's opt-out", () => {
   test("someone who hasn't proven an address can't stop its changelog emails: signed up as a subscriber's address and never confirmed, Stop emails is refused and the entry still arrives", async () => {
     const victim = newAddress();
     await confirmed(victim);
-    // Signed up with the subscriber's address, never confirmed (signed in on the portal: the app needs a verified address).
+    // Signed up with the subscriber's address, never confirmed: on a server that sends email, not signed in at all, on
+    // the app or the portal (server/session.ts).
     const impostor = await signUp("Impostor", victim, { verified: false });
     actAs(impostor);
+    await prisma.session.updateMany({ where: { userId: impostor.id }, data: { boundTo: project.id } });
+    request.host = `${project.slug}.localhost:3100`;
+    onTestFinished(() => {
+      request.host = "";
+    });
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ error: "Sign in first" });
+    // Signed in where no email is sent (onPortal): still refused, the address isn't proven.
+    const smtp = process.env.SMTP_HOST;
     await onPortal(impostor, project);
     expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ error: "Confirm your email address to stop these emails" });
-    expect(await prisma.emailOptOut.count({ where: { userId: impostor.id } })).toBe(0);
-    expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("gets");
     // Their own switches only touch their own account: allowed.
     expect(await setEmailPreference(project.slug, "followedPosts", false)).toEqual({});
+    vi.stubEnv("SMTP_HOST", smtp);
+    expect(await prisma.emailOptOut.count({ where: { userId: impostor.id } })).toBe(0);
+    expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("gets");
     await publishEntry("Dark mode");
     expect(entryEmailsTo(victim)).toHaveLength(1);
 
@@ -1247,19 +1257,28 @@ describe("the Account's changelog switch", () => {
     await confirmed(victim);
     const impostor = await signUp("Impostor", victim, { verified: false });
     actAs(impostor);
+    await prisma.session.updateMany({ where: { userId: impostor.id }, data: { boundTo: project.id } });
+    request.host = `${project.slug}.localhost:3100`;
+    onTestFinished(() => {
+      request.host = "";
+    });
+    // On a server that sends email, not signed in at all (server/session.ts).
+    expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({ error: "Sign in first" });
+    // Signed in where no email is sent (onPortal): refused, either way, and their address's subscription isn't shown them
+    // (it would tell anyone who signs up as an address whether it's subscribed).
+    const smtp = process.env.SMTP_HOST;
     await onPortal(impostor, project);
-    // Their address's subscription isn't shown them: it would tell anyone who signs up as an address whether it's subscribed.
-    expect(await changelogSwitch()).toEqual({ on: false, disabled: true });
+    expect((await changelogSwitch())?.on ?? false).toBe(false);
     for (const on of [false, true]) {
       expect(await setEmailPreference(project.slug, "changelog", on)).toEqual({ error: "Confirm your email address first" });
     }
-    await publishEntry("Dark mode");
-    expect(entryEmailsTo(victim)).toHaveLength(1);
-
     const cy = await signUp("Cy", undefined, { verified: false });
     actAs(cy);
     await onPortal(cy, project);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Confirm your email address first" });
+    vi.stubEnv("SMTP_HOST", smtp);
+    await publishEntry("Dark mode");
+    expect(entryEmailsTo(victim)).toHaveLength(1);
     expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(1);
   });
 
