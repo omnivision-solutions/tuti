@@ -242,7 +242,8 @@ test("billing's usage anchor keeps only its gap below the pane's header, and its
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
   await owner.getByRole("link", { name: "Choose a plan" }).click();
-  const plans = (await owner.getByRole("dialog", { name: "Choose a plan" }).boundingBox())!;
-  expect(plans.y).toBeGreaterThanOrEqual(0);
-  expect(plans.y + plans.height).toBeLessThanOrEqual(844);
+  const plans = owner.getByRole("dialog", { name: "Choose a plan" });
+  await expect(plans).toBeVisible();
+  await expect.poll(async () => (await plans.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
+  await expect.poll(async () => { const box = await plans.boundingBox(); return box ? box.y + box.height : Infinity; }).toBeLessThanOrEqual(844);
 });
