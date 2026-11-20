@@ -1,142 +1,163 @@
 "use client";
 
+import { MoreHorizontalIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { ItemList, ItemRow } from "@/components/item-list";
+import { SettingRow } from "@/components/settings-card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats, isAmount, propertyLabel, readableName } from "@/lib/property-formats";
+import { CURRENCIES, formatOf, type PropertyFormat, type PropertyFormats, isAmount, readableName } from "@/lib/property-formats";
 import { setPropertyFormats } from "@/server/groups";
 
 const FORMATS = { text: "Text", number: "Number", money: "Money", date: "Date" } as const;
+/** For an amount with number values, which is a number until it's something else: "text" isn't kept (it's what a property is with nothing set), so it isn't offered. */
+const AMOUNT_FORMATS = { number: FORMATS.number, money: FORMATS.money, date: FORMATS.date };
 const CURRENCY_ITEMS = Object.fromEntries(CURRENCIES.map((currency) => [currency, currency]));
 
-/** How a property shows, in words: "Money, EUR", "Text". */
-const describe = (format: PropertyFormat | undefined, shown: keyof typeof FORMATS) => (shown === "money" ? `Money, ${format?.currency ?? "USD"}` : FORMATS[shown]);
-
-/**
- * Settings → Users → User properties: each of the users' properties as the app shows it (the team's name for it, else
- * its key in words; its format, else Number for an amount with number values: `numbers`); Edit changes one.
- */
-export function PropertyFormatsList({ projectSlug, properties, numbers, formats }: { projectSlug: string; properties: string[]; numbers: string[]; formats: PropertyFormats }) {
-  return (
-    <ItemList>
-      {properties.map((name) => {
-        const format = formatOf(formats, name);
-        const shown = format?.format ?? (numbers.includes(name) && isAmount(name) ? "number" : "text");
-        const label = propertyLabel(formats, name);
-        return (
-          <ItemRow
-            key={name}
-            title={<span className="break-all">{label}</span>}
-            meta={<span className="break-all">{[label !== name && name, describe(format, shown)].filter(Boolean).join(" · ")}</span>}
-            actions={<PropertyFormatDialog projectSlug={projectSlug} name={name} format={format ?? {}} shown={shown} />}
-          />
-        );
-      })}
-    </ItemList>
-  );
+/** One property's row saved on top of the rest (setPropertyFormats); the error to show, if any. */
+async function saveProperty(projectSlug: string, name: string, format: PropertyFormat) {
+  const result = await setPropertyFormats(projectSlug, { [name]: format }).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+  if (result.error) {
+    toast.error(result.error);
+  } else {
+    toast.success(`Saved how ${name} shows`);
+  }
+  return !result.error;
 }
 
 /**
- * One property's name shown and format (money's currency), saved on its own (on top of the rest: setPropertyFormats).
- * Left as they are, the name and format that show without them (`shown`) aren't saved, so they follow the values.
+ * Settings → Users → User properties: a row for each of the users' properties as the app shows it (the team's name for
+ * it, else its key in words; its format, else Number for an amount with number values: `numbers`). Its format (and
+ * money's currency) is changed on the row and saved at once; the name under its ⋯ menu.
  */
-function PropertyFormatDialog({ projectSlug, name, format, shown }: { projectSlug: string; name: string; format: PropertyFormat; shown: keyof typeof FORMATS }) {
+export function PropertyFormatsList({ projectSlug, properties, numbers, formats }: { projectSlug: string; properties: string[]; numbers: string[]; formats: PropertyFormats }) {
+  return (
+    <ul className="flex flex-col divide-y">
+      {properties.map((name) => (
+        <li key={name}>
+          <PropertyRow projectSlug={projectSlug} name={name} saved={formatOf(formats, name) ?? {}} amount={numbers.includes(name) && isAmount(name)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Left as they are, the name and format that show without the team's aren't saved, so they follow the values. */
+function PropertyRow({ projectSlug, name, saved, amount }: { projectSlug: string; name: string; saved: PropertyFormat; amount: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(format);
-  const [pending, startTransition] = useTransition();
+  // What was picked shows while it saves; a save that fails puts back what's kept.
+  const [format, setFormat] = useOptimistic(saved);
+  const [renaming, setRenaming] = useState(false);
+  const shown = format.format ?? (amount ? "number" : "text");
+  const offered = amount ? AMOUNT_FORMATS : FORMATS;
+
+  // One save at a time on a row, its name's too, until the page has what was saved: its controls can't be changed meanwhile (read-only, so focus stays where it is), so
+  // nothing is sent with a name or format that isn't kept yet.
+  const [saving, startSaving] = useTransition();
+  const save = (next: PropertyFormat) =>
+    new Promise<boolean>((resolve) => {
+      if (saving) {
+        resolve(false);
+        return;
+      }
+      startSaving(async () => {
+        setFormat(next);
+        const done = await saveProperty(projectSlug, name, next);
+        resolve(done);
+        if (done) {
+          startSaving(() => router.refresh());
+        }
+      });
+    });
+  const pick = (change: PropertyFormat) => void save({ ...format, ...change });
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        // Each time it opens, what's kept now.
-        if (next) {
-          setDraft(format);
+    <SettingRow label={<span className="break-all">{format.label || readableName(name)}</span>}>
+      {/* As wide with a currency as without, so the keys the app sends line up in a column of their own. */}
+      <div className="flex items-center gap-2 @min-[34rem]/settings:w-96">
+        <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{name}</code>
+        <Select items={offered} value={shown} readOnly={saving} onValueChange={(value) => pick({ format: value as keyof typeof FORMATS })}>
+          <SelectTrigger className="w-28 shrink-0 data-readonly:opacity-60" aria-label={`Format of ${name}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(offered).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {format.format === "money" && (
+          <Select items={CURRENCY_ITEMS} value={format.currency ?? "USD"} readOnly={saving} onValueChange={(value) => pick({ currency: value as (typeof CURRENCIES)[number] })}>
+            <SelectTrigger className="w-22 shrink-0 data-readonly:opacity-60" aria-label={`Currency of ${name}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CURRENCIES.map((currency) => (
+                <SelectItem key={currency} value={currency}>
+                  {currency}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="shrink-0" disabled={saving} focusableWhenDisabled aria-label={`Actions for ${name}`} />}>
+            <MoreHorizontalIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto min-w-32">
+            <DropdownMenuItem onClick={() => setRenaming(true)}>Rename</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {/* Mounted as it opens: each time, the name kept now. */}
+        <Dialog open={renaming} onOpenChange={setRenaming}>
+          <DialogContent>{renaming && <RenameForm name={name} label={format.label ?? ""} save={(label) => save({ ...format, label })} close={() => setRenaming(false)} />}</DialogContent>
+        </Dialog>
+      </div>
+    </SettingRow>
+  );
+}
+
+/** The team's own name for a property, saved by its row with the format it has (closed while it saves, it's saved all the same). */
+function RenameForm({ name, label: kept, save, close }: { name: string; label: string; save: (label: string) => Promise<boolean>; close: () => void }) {
+  const [label, setLabel] = useState(kept);
+  const [pending, setPending] = useState(false);
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setPending(true);
+        if (await save(label)) {
+          close();
         }
+        setPending(false);
       }}
     >
-      <DialogTrigger render={<Button variant="ghost" size="sm" aria-label={`Edit ${name}`} />}>Edit</DialogTrigger>
-      <DialogContent>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            startTransition(async () => {
-              const result = await setPropertyFormats(projectSlug, { [name]: draft }).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
-              if (result.error) {
-                toast.error(result.error);
-                return;
-              }
-              toast.success(`Saved how ${name} shows`);
-              setOpen(false);
-              router.refresh();
-            });
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle className="wrap-anywhere">{name}</DialogTitle>
-            <DialogDescription>How it shows on Users, beside a conversation and in Who&apos;s asking.</DialogDescription>
-          </DialogHeader>
-          {/* Still while it saves: an edit made meanwhile wouldn't be in what's sent. */}
-          <fieldset disabled={pending} className="flex flex-col gap-4">
-            <Field>
-              <FieldLabel htmlFor="property-label">Name shown</FieldLabel>
-              <Input id="property-label" value={draft.label ?? ""} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder={readableName(name)} maxLength={64} />
-            </Field>
-            <div className="flex gap-2">
-              <Field className="flex-1">
-                <FieldLabel>Format</FieldLabel>
-                <Select items={FORMATS} value={draft.format ?? shown} onValueChange={(value) => setDraft({ ...draft, format: value as keyof typeof FORMATS })}>
-                  <SelectTrigger className="w-full" aria-label="Format">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(FORMATS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              {draft.format === "money" && (
-                <Field className="flex-1">
-                  <FieldLabel>Currency</FieldLabel>
-                  <Select items={CURRENCY_ITEMS} value={draft.currency ?? "USD"} onValueChange={(value) => setDraft({ ...draft, currency: value as (typeof CURRENCIES)[number] })}>
-                    <SelectTrigger className="w-full" aria-label="Currency">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CURRENCIES.map((currency) => (
-                        <SelectItem key={currency} value={currency}>
-                          {currency}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </div>
-          </fieldset>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <DialogHeader>
+        <DialogTitle className="wrap-anywhere">{name}</DialogTitle>
+        <DialogDescription>How it shows on Users, beside a conversation and in Who&apos;s asking.</DialogDescription>
+      </DialogHeader>
+      <Field>
+        <FieldLabel htmlFor="property-label">Name shown</FieldLabel>
+        {/* Still while it saves: an edit made meanwhile wouldn't be in what's sent. */}
+        <Input id="property-label" value={label} onChange={(event) => setLabel(event.target.value)} placeholder={readableName(name)} maxLength={64} readOnly={pending} />
+      </Field>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={close} disabled={pending}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending} focusableWhenDisabled>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

@@ -829,6 +829,8 @@ widths, in light and dark (in development only).
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
     `Select`. No radios with a sentence each, no native `<select>`. A choice that saves as it's picked and changes
     who can see something (Access's Public or Private) stays a `Select`: in a `Segmented`, an arrow key would pick it.
+    A list's rows that each hold the choice beside other things (User properties' format, beside the key and a
+    currency) use a `Select` whatever the count, so they fit a phone.
   - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card) has its count beside the
     card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
@@ -875,7 +877,7 @@ widths, in light and dark (in development only).
   "More actions", as a post's pane header does under 48rem of the shell, Merge into… with it).
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
-  invite, Create key, Add webhook, Add redirect, Add readers) is an outline
+  invite, Add redirect, Add readers) is an outline
   button. An API reference's address (Settings' Source, for a URL) has its own outline Change, beside its field:
   changing it fetches and reads the new address first, a request out that can fail by itself, so it isn't held for
   the page's Save. A GitHub file's repository, file and branch share one outline Change, under them, for the same reason.

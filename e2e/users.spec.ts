@@ -274,6 +274,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
 });
 
 test("who's asking: Feedback totals the property the team picks over each post's voters, and lists what a group voted for", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -295,7 +296,10 @@ test("who's asking: Feedback totals the property the team picks over each post's
   // Settings → Users → User properties: the synced keys in words, mrr a number as its values are (an id isn't), and nothing the team set yet.
   await owner.goto(`/app/${slug}/settings/properties`);
   const properties = owner.getByRole("region", { name: "User properties" });
-  await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_id · Text/, /^Companycompany · Text/, /^MRRmrr · Number/, /^Planplan · Text/]);
+  await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_idText/, /^CompanycompanyText/, /^MRRmrrNumber/, /^PlanplanText/]);
+  // What they're for is one line beside the title; no Edit buttons, and no Save: a format saves as it's picked.
+  await expect(properties).toContainText("Names and formats for the properties your app sends");
+  await expect(properties.getByRole("button", { name: /^(Edit|Save)/ })).toHaveCount(0);
   // Who's asking, beside it in Users, is None, and lists the users' first amount first, as suggested (not their id, a number too).
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await menu.getByRole("link", { name: "Who's asking" }).click();
@@ -330,18 +334,115 @@ test("who's asking: Feedback totals the property the team picks over each post's
 
   // Under User properties, the team shows mrr as money (in dollars, as it's first offered); its name stays MRR.
   await menu.getByRole("link", { name: "User properties" }).click();
-  await properties.getByRole("button", { name: "Edit mrr" }).click();
+  const mrr = properties.getByRole("listitem").filter({ hasText: "MRR" });
+  await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Number");
+  await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toHaveCount(0);
+  // Picked on the row, it's saved at once; money then has its currency beside it.
+  // A number can't be shown as text (nothing is kept for that), so Text isn't offered for one; it is for the rest.
+  await properties.getByRole("combobox", { name: "Format of plan" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["Text", "Number", "Money", "Date"]);
+  await owner.keyboard.press("Escape");
+  await mrr.getByRole("combobox", { name: "Format of mrr" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["Number", "Money", "Date"]);
+  await owner.getByRole("option", { name: "Money" }).click();
+  await expect(owner.getByText("Saved how mrr shows")).toBeVisible();
+  await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Money");
+  await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toContainText("USD");
+  // Its name is under the row's menu: MRR until the team gives it one; a name typed and cancelled is gone the next time.
+  await mrr.getByRole("button", { name: "Actions for mrr" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
   const dialog = owner.getByRole("dialog");
   await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveAttribute("placeholder", "MRR");
-  await expect(dialog.getByRole("combobox", { name: "Format" })).toContainText("Number");
-  await dialog.getByRole("combobox", { name: "Format" }).click();
-  await owner.getByRole("option", { name: "Money" }).click();
-  await expect(dialog.getByRole("combobox", { name: "Currency" })).toContainText("USD");
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("Not kept");
   await checkpoint(owner, "settings-user-property");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await mrr.getByRole("button", { name: "Actions for mrr" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveValue("");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  const plan = properties.getByRole("listitem").filter({ hasText: "plan" });
+  await plan.getByRole("button", { name: "Actions for plan" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveValue("");
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("Tier");
   await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(owner.getByText("Saved how mrr shows")).toBeVisible();
-  await expect(properties.getByRole("listitem").filter({ hasText: "MRR" })).toContainText("mrr · Money, USD");
+  await expect(owner.getByText("Saved how plan shows")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(properties.getByRole("listitem")).toHaveText([/^Account IDaccount_id/, /^Companycompany/, /^MRRmrrMoney.*USD/, /^TierplanText/]);
+  // Saved, not only shown: it's all there after a reload, the name with the format it had.
+  await owner.reload();
+  await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toContainText("USD");
+  await expect(plan.getByRole("combobox", { name: "Format of plan" })).toContainText("Text");
+  await expect(plan).toContainText("Tier");
+  // A row saves one thing at a time. While its name is being saved, even with the dialog closed, its format can't be
+  // picked; picked once that's done, it's saved with the new name: both are there after a reload.
+  const company = properties.getByRole("listitem").filter({ hasText: "company" });
+  await company.getByRole("button", { name: "Actions for company" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("Employer");
+  let releaseRename = () => {};
+  const renameHeld = new Promise<void>((resolve) => (releaseRename = resolve));
+  await owner.route(`**/app/${slug}/settings/properties`, async (route) => {
+    if (route.request().method() === "POST") {
+      await renameHeld;
+    }
+    await route.continue();
+  });
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await owner.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toHaveAttribute("aria-readonly", "true");
+  releaseRename();
+  await expect(owner.getByText("Saved how company shows")).toBeVisible();
+  await owner.unroute(`**/app/${slug}/settings/properties`);
+  await expect(company.getByRole("combobox", { name: "Format of company" })).not.toHaveAttribute("aria-readonly", "true");
+  // The rename's toast gone, the next one is the format's.
+  await expect(owner.getByText("Saved how company shows")).toHaveCount(0, { timeout: 15_000 });
+  await company.getByRole("combobox", { name: "Format of company" }).click();
+  await owner.getByRole("option", { name: "Date" }).click();
+  // Focus stays on the dropdown while its pick saves.
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toBeFocused();
+  await expect(owner.getByText("Saved how company shows")).toBeVisible();
+  await owner.reload();
+  await expect(company).toContainText("Employer");
+  await expect(company.getByRole("combobox", { name: "Format of company" })).toContainText("Date");
+  await company.getByRole("combobox", { name: "Format of company" }).click();
+  await owner.getByRole("option", { name: "Text" }).click();
+  await expect(owner.getByText("Saved how company shows")).toBeVisible();
+  // A save that doesn't get through says so and puts the format back to what's kept.
+  await owner.route(`**/app/${slug}/settings/properties`, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await mrr.getByRole("combobox", { name: "Format of mrr" }).click();
+  await owner.getByRole("option", { name: "Date" }).click();
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Money");
+  // A name that doesn't get through either: its dialog stays open with what was typed, and the row keeps its name.
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toHaveCount(0, { timeout: 15_000 });
+  await mrr.getByRole("button", { name: "Actions for mrr" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("Monthly revenue");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveValue("Monthly revenue");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(mrr).toContainText("MRR");
+  await owner.unroute(`**/app/${slug}/settings/properties`);
+  // Beside its name on a wide card, a row's key and format are level with it; on a phone they go under it, and nothing runs past the edge.
+  const label = mrr.getByText("MRR", { exact: true });
+  const format = mrr.getByRole("combobox", { name: "Format of mrr" });
+  const box = async (locator: typeof label) => (await locator.boundingBox())!;
+  expect((await box(format)).y).toBeLessThan((await box(label)).y + (await box(label)).height);
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await box(format)).y - ((await box(label)).y + (await box(label)).height)).toBeGreaterThanOrEqual(0);
+  expect(await properties.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "settings-user-properties-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(owner, "settings-user-properties");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Each post's voters' total, on the list and the post.
   await owner.goto(`/app/${slug}/feedback`);

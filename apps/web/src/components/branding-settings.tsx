@@ -1,20 +1,22 @@
 "use client";
 
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
-import { MonitorIcon, MoonIcon, SunIcon, UploadIcon } from "lucide-react";
+import { ImageIcon, MonitorIcon, MoonIcon, SunIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
-import { useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ColorField } from "@/components/color-field";
 import { CustomizeSection, type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
-import { SwitchRow } from "@/components/docs-look-settings";
+import { SettingRow, SettingsCard } from "@/components/settings-card";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { formatDate } from "@/lib/format";
 import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
@@ -56,15 +58,22 @@ const image = (data: FormData, name: string) => (text(data, `${name}Url`) ? { ur
 /** Links as the portal would show them: rows with both a label and an address. */
 const shownLinks = (data: FormData, prefix: string) => linksFrom(data, prefix).filter((link) => link.label.trim() && link.url.trim());
 
+/** The default theme's options: an icon each (the column is narrow), named for screen readers. */
 const SCHEMES = [
-  ["system", "System", MonitorIcon],
-  ["light", "Light", SunIcon],
-  ["dark", "Dark", MoonIcon],
+  { value: "system", label: <span className="sr-only">System</span>, icon: <MonitorIcon aria-hidden /> },
+  { value: "light", label: <span className="sr-only">Light</span>, icon: <SunIcon aria-hidden /> },
+  { value: "dark", label: <span className="sr-only">Dark</span>, icon: <MoonIcon aria-hidden /> },
 ] as const;
 
+/** A text field and a select on a row's right: narrower in the settings column at its narrowest, so their labels keep one line. */
+const ROW_INPUT = "w-28 @min-[20rem]/settings:w-40";
+const ROW_SELECT = "w-32 @min-[20rem]/settings:w-40";
+
 /**
- * Customize → Branding (see branding.update): the default colour scheme and the accent colour; the
- * logos, the text beside them and where they link; the favicon.
+ * Settings → Branding (see branding.update): the default colour scheme and the accent colour; the
+ * logos, the text beside them and where they link; the fonts; the favicon, and after it in the last
+ * card `children` ("Powered by tuti", saved with the rest). A setting is a row (docs/design.md →
+ * Settings rows) that fits the settings column at its narrowest, 17rem of card.
  */
 export function BrandingSettings({
   projectSlug,
@@ -78,6 +87,7 @@ export function BrandingSettings({
   logoText,
   logoLink,
   fonts,
+  children,
 }: {
   projectSlug: string;
   logo: Image;
@@ -91,12 +101,24 @@ export function BrandingSettings({
   logoText: string;
   logoLink: string | null;
   fonts: { heading: PortalFont | null; body: PortalFont | null };
+  children?: ReactNode;
 }) {
   const [uploading, setUploading] = useState(0);
-  const { state, form } = useBrandingForm(
-    projectSlug,
-    "Branding saved",
-    (data) => ({
+  const preview = usePreview();
+  const { state, form } = useCustomizeForm({
+    save: async (prev, data) => {
+      const result = await saveBranding(projectSlug, prev, data);
+      if (!result.error && data.has("poweredBy")) {
+        // The badge's change is saved, so the form holds none (see PoweredBySettings): what it sent, for "Save changes".
+        data.set("poweredBy", "");
+      }
+      return result;
+    },
+    onSaved: () => {
+      toast.success("Branding saved");
+      preview.reload();
+    },
+    toDraft: (data) => ({
       color: text(data, "color") === defaultColor ? null : text(data, "color") || null,
       logo: image(data, "logo"),
       logoDark: image(data, "logoDark"),
@@ -107,90 +129,56 @@ export function BrandingSettings({
       logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
       fonts: { heading: fontOf(data, "headingFont"), body: fontOf(data, "bodyFont") },
     }),
-    uploading > 0,
-  );
+    busy: uploading > 0,
+  });
   const busy = (delta: number) => setUploading((count) => count + delta);
-  const themeId = useId();
+  const id = useId();
 
   return (
-    <form {...form} className="flex flex-col gap-6">
+    <form {...form} className="flex flex-col gap-4">
       <input type="hidden" name="part" value="look" />
-      <CustomizeSection title="Theme" description="Light or dark, and your colour.">
-        <Field>
-          <FieldLabel id={`${themeId}-label`}>Default theme</FieldLabel>
-          <div role="radiogroup" aria-labelledby={`${themeId}-label`} aria-describedby={`${themeId}-description`} className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-            {SCHEMES.map(([value, name, Icon]) => (
-              <label
-                key={value}
-                className="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm"
-              >
-                <input type="radio" name="colorScheme" value={value} defaultChecked={colorScheme === value} className="sr-only" />
-                <Icon aria-hidden className="size-3.5" />
-                {name}
-              </label>
-            ))}
-          </div>
-          <FieldDescription id={`${themeId}-description`}>What readers see first.</FieldDescription>
-        </Field>
-        {/* Sent off or on (see saveBranding). */}
-        <input type="hidden" name="themeSwitch" value="" />
-        <SwitchRow name="themeSwitch" label="Let readers switch theme" description="A light/dark switch in the portal's footer." defaultChecked={themeSwitch} />
-        <Field>
-          <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
+      <SettingsCard title="Theme">
+        <SettingRow label={<span id={`${id}-theme`}>Default theme</span>} inline>
+          <Segmented name="colorScheme" aria-labelledby={`${id}-theme`} defaultValue={colorScheme} options={SCHEMES} className="@max-[20rem]/settings:*:px-2" />
+        </SettingRow>
+        <SettingRow label="Readers can switch" htmlFor={`${id}-switch`} inline>
+          {/* Sent off or on (see saveBranding). */}
+          <input type="hidden" name="themeSwitch" value="" />
+          <Switch id={`${id}-switch`} name="themeSwitch" defaultChecked={themeSwitch} />
+        </SettingRow>
+        {/* Under its label: "Use the default green" and a wrong hex's error need the column's width. */}
+        <SettingRow
+          label="Accent colour"
+          htmlFor="brand-color"
+          info="For buttons and links. In light or dark mode, a colour too faint to read on the page uses a darker or lighter shade of it there (the text colour, for a grey or a very pale tint)."
+        >
           <ColorField id="brand-color" name="color" label="Accent colour" color={color} defaultColor={defaultColor} />
-          <FieldDescription>
-            For buttons and links. In light or dark mode, a colour too faint to read on the page uses a darker or
-            lighter shade of it there (the text colour, for a grey or a very pale tint).
-          </FieldDescription>
-        </Field>
-      </CustomizeSection>
-      <CustomizeSection title="Logo" description="What's at the top left of your portal and docs.">
-        <FieldGroup>
-          <ImageField
-            projectSlug={projectSlug}
-            name="logo"
-            label="Logo"
-            description="Shown instead of the project name in the header. PNG, JPEG, WebP or GIF (not SVG)."
-            image={logo}
-            look="light"
-            onBusy={busy}
-          />
-          <ImageField
-            projectSlug={projectSlug}
-            name="logoDark"
-            label="Logo for dark mode"
-            description="Optional: a version that reads on a dark background. Without it, the logo shows in both."
-            image={logoDark}
-            look="dark"
-            onBusy={busy}
-          />
-          <Field>
-            <FieldLabel htmlFor="logo-text">Logo text</FieldLabel>
-            <Input id="logo-text" name="logoText" defaultValue={logoText} maxLength={LOGO_TEXT_MAX} autoComplete="off" />
-            <FieldDescription>Beside your logo. Leave it empty to show the logo alone (or, without a logo, your project&apos;s name).</FieldDescription>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="logo-link">Logo link</FieldLabel>
-            <Input id="logo-link" name="logoLink" type="url" defaultValue={logoLink ?? ""} placeholder="Leave empty for your portal's home" autoComplete="off" />
-            <FieldDescription>Where the logo goes when it&apos;s clicked, such as your website.</FieldDescription>
-          </Field>
-        </FieldGroup>
-      </CustomizeSection>
-      <CustomizeSection title="Typography" description="Fonts for your portal's headings and text. They're served from Tuti, not Google.">
-        <FieldGroup>
-          <FontSelect id="heading-font" name="headingFont" label="Heading font" font={fonts.heading} />
-          <FontSelect id="body-font" name="bodyFont" label="Body font" font={fonts.body} />
-        </FieldGroup>
-      </CustomizeSection>
-      <CustomizeSection title="Favicon" description="The icon in the browser tab.">
-        <ImageField projectSlug={projectSlug} name="favicon" label="Favicon" description="A square image works best." image={favicon} look="light" onBusy={busy} />
-      </CustomizeSection>
+        </SettingRow>
+      </SettingsCard>
+      <SettingsCard title="Header">
+        <ImageRow projectSlug={projectSlug} name="logo" label="Logo" image={logo} look="light" onBusy={busy} />
+        <ImageRow projectSlug={projectSlug} name="logoDark" label="Dark mode logo" image={logoDark} look="dark" onBusy={busy} />
+        <SettingRow label="Text beside it" htmlFor="logo-text" inline>
+          <Input id="logo-text" name="logoText" defaultValue={logoText} maxLength={LOGO_TEXT_MAX} autoComplete="off" className={ROW_INPUT} />
+        </SettingRow>
+        <SettingRow label="Links to" htmlFor="logo-link" inline>
+          <Input id="logo-link" name="logoLink" type="url" defaultValue={logoLink ?? ""} placeholder="Portal home" autoComplete="off" className={ROW_INPUT} />
+        </SettingRow>
+      </SettingsCard>
+      <SettingsCard title="Fonts">
+        <FontSelect id="heading-font" name="headingFont" label="Headings" font={fonts.heading} />
+        <FontSelect id="body-font" name="bodyFont" label="Text" font={fonts.body} />
+      </SettingsCard>
+      <SettingsCard title="More">
+        <ImageRow projectSlug={projectSlug} name="favicon" label="Favicon" image={favicon} look="light" onBusy={busy} />
+        {children}
+      </SettingsCard>
       {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );
 }
 
-const FONT_ITEMS = [{ value: null, label: "Inter (default)" }, ...PORTAL_FONTS.map((font) => ({ value: font.id, label: font.name }))];
+const FONT_ITEMS = [{ value: null, label: "Inter" }, ...PORTAL_FONTS.map((font) => ({ value: font.id, label: font.name }))];
 
 /** A font for the portal, or the page's own (sent empty). */
 function FontSelect({ id, name, label, font }: { id: string; name: string; label: string; font: PortalFont | null }) {
@@ -199,10 +187,9 @@ function FontSelect({ id, name, label, font }: { id: string; name: string; label
   const field = useRef<HTMLInputElement>(null);
   useFieldChanged(field, value);
   return (
-    <Field>
-      <FieldLabel id={`${id}-label`}>{label}</FieldLabel>
+    <SettingRow label={<span id={`${id}-label`}>{label}</span>} inline>
       <Select name={name} items={FONT_ITEMS} value={value} onValueChange={(next) => setValue(next as PortalFont | null)} inputRef={field}>
-        <SelectTrigger className="w-full" aria-labelledby={`${id}-label`}>
+        <SelectTrigger className={ROW_SELECT} aria-labelledby={`${id}-label`}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -213,7 +200,91 @@ function FontSelect({ id, name, label, font }: { id: string; name: string; label
           ))}
         </SelectContent>
       </Select>
-    </Field>
+    </SettingRow>
+  );
+}
+
+/**
+ * An uploaded image as a row: its thumbnail on the background it's for, "Upload" (the row takes a dropped image
+ * too), and once there is one a button that removes it. What went wrong with a file shows under the row.
+ */
+function ImageRow({
+  projectSlug,
+  name,
+  label,
+  image: initial,
+  look,
+  onBusy,
+}: {
+  projectSlug: string;
+  name: string;
+  label: string;
+  image: Image;
+  look: "light" | "dark";
+  onBusy: (delta: number) => void;
+}) {
+  const id = useId();
+  const uploadButton = useRef<HTMLButtonElement>(null);
+  const { image, setImage, uploading, error, dragging, drop, inputs, pick } = useImageUpload({ projectSlug, name, id, image: initial, onBusy });
+  const what = `${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+
+  return (
+    <div {...drop} className={cn("transition-colors", dragging && "bg-soft")}>
+      <SettingRow label={label} htmlFor={id} inline>
+        {image ? (
+          // `light` / `dark` give the thumbnail that mode's background (globals.css).
+          <span className={cn(look, "flex h-9 w-9 items-center justify-center rounded-lg border bg-background p-1 @min-[23rem]/settings:w-14")}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
+            <img src={image.url} alt={`${label} preview`} className="max-h-full max-w-full object-contain" />
+          </span>
+        ) : (
+          <span className="flex size-9 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-muted-foreground">
+            <ImageIcon aria-hidden className="size-4" />
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label={`Upload ${what}`}
+          // Off while one uploads, yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
+          disabled={uploading}
+          focusableWhenDisabled
+          ref={uploadButton}
+          onClick={pick}
+        >
+          <UploadIcon />
+          {/* The icon alone where the row has no room for the word (less of it beside "Remove"). */}
+          <span className={image ? "@max-[22rem]/settings:sr-only" : "@max-[20rem]/settings:sr-only"}>Upload</span>
+        </Button>
+        {image && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Remove ${what}`}
+            title="Remove"
+            // Off while one uploads (its image would come back after), focusable all the same.
+            disabled={uploading}
+            focusableWhenDisabled
+            onClick={() => {
+              // Remove goes with the image: focus moves to Upload, not out of the row.
+              uploadButton.current?.focus();
+              setImage(null);
+            }}
+          >
+            <XIcon />
+          </Button>
+        )}
+        {inputs}
+      </SettingRow>
+      {uploading && (
+        <p role="status" className="px-4 pb-3.5 text-sm text-muted-foreground">
+          Uploading…
+        </p>
+      )}
+      {error && <FieldError className="px-4 pb-3.5">{error}</FieldError>}
+    </div>
   );
 }
 
@@ -247,38 +318,6 @@ export function NavigationSettings({
         <LinkRows name="footerLink" item="Footer link" legend="Footer links" links={footerLinks} />
       </CustomizeSection>
       {state.error && <FieldError>{state.error}</FieldError>}
-    </form>
-  );
-}
-
-/** What hiding the badge takes where plans are sold (tuti.so): the add-on on the project's plan, bought on Billing. */
-type BadgePlan = { addOn: boolean; billingUrl: string; perMonth: number | null };
-
-/** Customize → Branding → Powered by tuti: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
-export function PoweredBySettings({
-  projectSlug,
-  poweredBy,
-  licensedUntil,
-  buyLicenseUrl,
-  plan,
-}: {
-  projectSlug: string;
-  poweredBy: boolean;
-  /** When the project's licence expires; null without one. */
-  licensedUntil: Date | null;
-  /** tuti.so/app/license for this installation and project. */
-  buyLicenseUrl: string;
-  /** Where plans are sold; null elsewhere. */
-  plan: BadgePlan | null;
-}) {
-  const { state, form } = useBrandingForm(projectSlug, "Saved", (data) => ({ poweredBy: data.get("poweredBy") === "on" }));
-  return (
-    <form {...form}>
-      <input type="hidden" name="part" value="poweredBy" />
-      <FieldGroup>
-        <PoweredByField projectSlug={projectSlug} poweredBy={poweredBy} licensedUntil={licensedUntil} buyLicenseUrl={buyLicenseUrl} plan={plan} />
-        {state.error && <FieldError>{state.error}</FieldError>}
-      </FieldGroup>
     </form>
   );
 }
@@ -479,12 +518,20 @@ export function ImageField({
 /** The licence's line, and the start of the toast when a check finds one: one wording and one date for both. */
 const licensedLine = (until: Date) => `Licensed until ${formatDate(until)}.`;
 
+/** What hiding the badge takes where plans are sold (tuti.so): the add-on on the project's plan, bought on Billing. */
+type BadgePlan = { addOn: boolean; billingUrl: string; perMonth: number | null };
+
 /**
- * "Powered by tuti" in the footer: on, unless the project has a licence (or the add-on on its plan).
- * Without one, switching it off opens a dialog instead: why the badge matters, and where to buy a licence
- * (and Check now), or where plans are sold, the add-on on Billing.
+ * Settings → Branding's last row, in its form (see branding.update): "Powered by tuti" in the footer, on unless the
+ * project has a licence (or the add-on on its plan). Without one, switching it off opens a dialog instead: why the
+ * badge matters, and where to buy a licence (and Check now), or where plans are sold, the add-on on Billing. What it
+ * takes to hide is behind the row's ⓘ; a licence's date and the add-on's state show under the label.
+ *
+ * The form sends the switch only while it differs from what's saved (`poweredBy`: "on" or "off", else empty): saving a
+ * colour from a page opened before the badge was hidden elsewhere (Billing's add-on, another tab) leaves the badge as
+ * it is, and the switch then shows what's saved.
  */
-function PoweredByField({
+export function PoweredBySettings({
   projectSlug,
   poweredBy,
   licensedUntil: initial,
@@ -493,14 +540,32 @@ function PoweredByField({
 }: {
   projectSlug: string;
   poweredBy: boolean;
+  /** When the project's licence expires; null without one. */
   licensedUntil: Date | null;
+  /** tuti.so/app/license for this installation and project. */
   buyLicenseUrl: string;
+  /** Where plans are sold; null elsewhere. */
   plan: BadgePlan | null;
 }) {
-  const [shown, setShown] = useState(poweredBy);
-  const descriptionId = useId();
-  const box = useRef<HTMLInputElement>(null);
-  useFieldChanged(box, shown);
+  // What was picked here, until the page says that's what's saved (after each save it says again): a pick made while
+  // another was being saved stays one to save. With none, the switch shows what's saved, changed elsewhere or not.
+  const [choice, setShown] = useState<boolean | null>(null);
+  const [saved, setSaved] = useState(poweredBy);
+  if (saved !== poweredBy) {
+    setSaved(poweredBy);
+    if (choice === poweredBy) {
+      setShown(null);
+    }
+  }
+  const shown = choice ?? saved;
+  const change = shown === saved ? "" : shown ? "on" : "off";
+  const id = useId();
+  // The form's field: it says when the change is made, taken back or saved, for "Save changes".
+  const field = useRef<HTMLInputElement>(null);
+  useFieldChanged(field, change);
+  // The preview shows it as it's switched (the form's own draft only has what it sends).
+  const { setDraft, saving } = usePreview();
+  useEffect(() => setDraft({ poweredBy: shown }), [setDraft, shown]);
   const [licensedUntil, setLicensedUntil] = useState(initial);
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -524,40 +589,55 @@ function PoweredByField({
       return;
     }
     setLicensedUntil(outcome.licensedUntil);
-    setShown(false);
+    setShown(!saving && !saved ? null : false);
     setOpen(false);
     toast.success(`${licensedLine(outcome.licensedUntil)} Save your changes to hide the badge.`);
   };
 
+  // Live: switching it back on with the add-on says it's still billed, and where it's removed.
+  const status = plan?.addOn ? (
+    <span aria-live="polite">
+      {shown ? <>The add-on is still on this project&apos;s plan: remove it in <Link href={plan.billingUrl} className="underline underline-offset-4 hover:text-foreground">Billing</Link>.</> : "Hidden with the add-on on this project's plan."}
+    </span>
+  ) : licensedUntil ? (
+    licensedLine(licensedUntil)
+  ) : undefined;
+  // What hiding it takes, without either: behind the ⓘ, and the switch's description for screen readers.
+  const needs = status ? null : plan ? "Hiding it is an add-on to a paid plan." : "Hiding it needs a licence for this project.";
+
   return (
-    <Field>
-      <SwitchRow
-        ref={box}
-        name="poweredBy"
-        label={'Show "Powered by tuti" in the footer'}
-        checked={shown}
-        aria-describedby={descriptionId}
-        onChange={(event) => {
-          if (!event.target.checked && !licensedUntil && !plan?.addOn) {
-            setMessage(null);
-            setOpen(true);
-            return;
-          }
-          setShown(event.target.checked);
-        }}
-      />
-      {/* Live: switching it back on with the add-on says it's still billed, and where it's removed. */}
-      <FieldDescription id={descriptionId} aria-live="polite">
-        {plan?.addOn
-          ? shown
-            ? <>The add-on is still on this project&apos;s plan: remove it in <Link href={plan.billingUrl}>Billing</Link>.</>
-            : "Hidden with the add-on on this project's plan."
-          : licensedUntil
-            ? licensedLine(licensedUntil)
-            : plan
-              ? "Hiding it is an add-on to a paid plan."
-              : "Hiding it needs a licence for this project."}
-      </FieldDescription>
+    <div id="powered-by" className="scroll-mt-4">
+      {/* `data-saved`: what the page last said is saved, whatever is picked (a journey waits on it). */}
+      <input ref={field} type="hidden" name="poweredBy" value={change} data-saved={saved ? "on" : "off"} />
+      <SettingRow
+        label={'"Powered by tuti"'}
+        htmlFor={id}
+        description={status}
+        info={`The badge at the foot of your portal.${needs ? ` ${needs}` : ""}`}
+        inline
+      >
+        <Switch
+          id={id}
+          checked={shown}
+          aria-describedby={status ? `${id}-description` : `${id}-needs`}
+          onChange={(event) => {
+            if (!event.target.checked && !licensedUntil && !plan?.addOn) {
+              setMessage(null);
+              setOpen(true);
+              return;
+            }
+            // Switched back to what's saved, the pick is forgotten: a change made elsewhere then shows, and a later
+            // save doesn't undo it. Not while a save runs: "what's saved" is about to change, and a pick made then
+            // has to stay one to save.
+            setShown(!saving && event.target.checked === saved ? null : event.target.checked);
+          }}
+        />
+      </SettingRow>
+      {needs && (
+        <span id={`${id}-needs`} className="sr-only">
+          {needs}
+        </span>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -608,6 +688,6 @@ function PoweredByField({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Field>
+    </div>
   );
 }

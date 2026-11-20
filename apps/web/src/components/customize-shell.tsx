@@ -33,7 +33,8 @@ export type SeoDraft = { title: string; description: string; image: string | nul
 export type Draft = Partial<PortalLook> & { widget?: WidgetDraft; seo?: SeoDraft };
 
 /** A form of the section's that "Save changes" in the panel's header submits (see useCustomizeForm); a section may have several. */
-type SaveForm = { dirty: boolean; pending: boolean };
+/** `pending`: saving, or busy (an upload): "Save changes" waits. `saving`: its save is running. */
+type SaveForm = { dirty: boolean; pending: boolean; saving: boolean };
 
 /** What a Customize section's settings can ask of the preview beside them. */
 type Preview = {
@@ -45,9 +46,11 @@ type Preview = {
   setDraft: (draft: Draft) => void;
   /** A form's state, by its id; null once it's gone. */
   register: (id: string, form: SaveForm | null) => void;
+  /** While "Save changes" is saving one of the page's forms. */
+  saving: boolean;
 };
 
-const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, draft: {}, setDraft: () => {}, register: () => {} });
+const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, draft: {}, setDraft: () => {}, register: () => {}, saving: false });
 
 /** The preview beside a Customize section's settings (a no-op anywhere else). */
 export const usePreview = () => useContext(PreviewContext);
@@ -128,7 +131,7 @@ export function useCustomizeForm({
       form.removeEventListener("change", edited);
     };
   }, [read]);
-  useEffect(() => register(id, { dirty, pending: pending || busy }), [register, id, dirty, pending, busy]);
+  useEffect(() => register(id, { dirty, pending: pending || busy, saving: pending }), [register, id, dirty, pending, busy]);
   useEffect(() => () => register(id, null), [register, id]);
 
   const { onSubmit, ...submit } = keepingFields(action);
@@ -263,7 +266,7 @@ export function usePreviewPage(title: string) {
     };
   }, [dirty]);
 
-  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register }}>{children}</PreviewContext>;
+  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register, saving: Object.values(forms).some((form) => form.saving) }}>{children}</PreviewContext>;
   const leaveDialog = (
     <AlertDialog open={leaving !== null} onOpenChange={(open) => !open && setLeaving(null)}>
       <AlertDialogContent>

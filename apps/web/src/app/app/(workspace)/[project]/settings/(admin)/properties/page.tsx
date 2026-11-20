@@ -21,25 +21,17 @@ export default async function PropertiesSettingsPage(props: PageProps<"/app/[pro
   // Those set before too, and Who's asking's, even past the first 200 names.
   const listed = [...new Set([...properties, ...Object.keys(formats), ...(project.askingProperty ? [project.askingProperty] : [])])].sort();
   return (
-    <SettingsPane
-      title="User properties"
-      description={
-        <>
-          How your users&apos; properties show on Users, beside a conversation and in Who&apos;s asking: a name of your own (MRR for <code>mrr</code>) and a
-          format.
-        </>
-      }
-    >
+    <SettingsPane title="User properties" description="Names and formats for the properties your app sends">
       <SettingsCard>
-        <SettingBlock>
-          {listed.length > 0 ? (
-            <PropertyFormatsList projectSlug={project.slug} properties={listed} numbers={numbers} formats={formats} />
-          ) : (
+        {listed.length > 0 ? (
+          <PropertyFormatsList projectSlug={project.slug} properties={listed} numbers={numbers} formats={formats} />
+        ) : (
+          <SettingBlock>
             <p className="text-sm text-muted-foreground">
               None yet. Your app adds them when it signs people in with single sign-on, or sends them with the API (users.sync).
             </p>
-          )}
-        </SettingBlock>
+          </SettingBlock>
+        )}
       </SettingsCard>
     </SettingsPane>
   );
