@@ -4,7 +4,6 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
 import { apiFor, createProject, signUp } from "./helpers";
-import { verifyEmail } from "./mail";
 
 for (const pane of [
   { name: "docs tree", label: "Resize docs tree", selector: ".docs-tree-pane", path: "docs/collections/getting-started", min: 240, max: 440, default: 274 },
@@ -16,7 +15,6 @@ for (const pane of [
     const slug = `e2e-${randomUUID().slice(0, 8)}`;
     const team = await signUp(browser, APP_URL, "Tess Team");
     await createProject(team, "Acme Calendar", slug);
-    await verifyEmail(team);
     const api = await apiFor(team, slug);
     await api("/collections", { name: "Getting started", icon: "rocket", description: `https://example.com/${"calendar-guide-".repeat(12)}` });
     await api("/articles", { title: "Set up calendars and invite everyone on your team", collection: "getting-started" });

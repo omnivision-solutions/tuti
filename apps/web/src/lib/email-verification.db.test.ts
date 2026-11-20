@@ -9,6 +9,8 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { auth, VERIFICATION_SECONDS } from "./auth";
+import { getSession } from "@/server/session";
+
 import { randomSecret } from "./portal-handoff";
 
 const APP_URL = process.env.APP_URL!;
@@ -84,6 +86,40 @@ test("signing up sends a verification email; its link verifies the address and s
   expect(await isVerified(email)).toBe(true);
 });
 
+test("a password account isn't signed in until its address is verified: signing in before sends the link again", async () => {
+  const email = `e2e-${randomUUID()}@example.com`;
+  const password = "correct horse battery staple";
+  const signedUp = await postOnApp("sign-up/email", { email, name: "Ada", password, callbackURL: "/app" });
+  expect(signedUp.ok).toBe(true);
+  expect(signedUp.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  const first = (await verificationLink(email)).message;
+
+  const early = await postOnApp("sign-in/email", { email, password });
+  expect(early.status).toBe(403);
+  expect(await early.json()).toMatchObject({ code: "EMAIL_NOT_VERIFIED" });
+  expect(early.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  const { message, link } = await verificationLink(email);
+  expect(message).not.toBe(first);
+
+  await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
+  const later = await postOnApp("sign-in/email", { email, password });
+  expect(later.ok).toBe(true);
+  expect(later.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(true);
+});
+
+test("an app session from before its address was verified is no session, unless the server sends no email", async () => {
+  const ada = await signUpUser("Ada", undefined, { verified: false });
+  request.host = new URL(APP_URL).host;
+  actAs(ada);
+  expect(await getSession()).toBeNull();
+  vi.stubEnv("SMTP_HOST", "");
+  try {
+    expect((await getSession())?.user.id).toBe(ada.id);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 test("a tampered link doesn't verify anything", async () => {
   const email = await signUp("/app");
   const { link } = await verificationLink(email);
@@ -103,11 +139,12 @@ test("with the mail server down, signing up still works but asking to resend say
 
   const origin = process.env.APP_URL!;
   const email = `e2e-${randomUUID()}@example.com`;
-  const resend = (cookie: string) =>
+  // Signed out: signing up signs no one in until the address is verified.
+  const resend = () =>
     auth.handler(
       new Request(`${origin}/api/auth/send-verification-email`, {
         method: "POST",
-        headers: { "content-type": "application/json", cookie, origin },
+        headers: { "content-type": "application/json", origin },
         body: JSON.stringify({ email, callbackURL: "/app" }),
       }),
     );
@@ -115,19 +152,12 @@ test("with the mail server down, signing up still works but asking to resend say
   const workingPort = process.env.SMTP_PORT;
   process.env.SMTP_PORT = closedPort;
   try {
-    const { headers } = await auth.api.signUpEmail({
-      body: { email, name: "Ada", password: "correct horse battery staple" },
-      returnHeaders: true,
-    });
-    const cookie = headers
-      .getSetCookie()
-      .map((c) => c.split(";")[0])
-      .join("; ");
+    await auth.api.signUpEmail({ body: { email, name: "Ada", password: "correct horse battery staple" } });
     expect(await prisma.user.count({ where: { email } })).toBe(1);
-    expect((await resend(cookie)).ok).toBe(false);
+    expect((await resend()).ok).toBe(false);
 
     process.env.SMTP_PORT = workingPort;
-    expect((await resend(cookie)).ok).toBe(true);
+    expect((await resend()).ok).toBe(true);
     expect((await mailbox.latestTo(email)).subject).toBe("Verify your email for Tuti");
   } finally {
     process.env.SMTP_PORT = workingPort;

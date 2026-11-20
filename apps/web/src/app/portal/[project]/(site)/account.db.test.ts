@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 
 import { appUrl } from "@/lib/hosts";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, onPortal, signUp } from "@/test/helpers";
 
 import AccountPage from "./account/page";
 
@@ -22,9 +22,12 @@ test("the Account's email switches for people its emails about posts may reach; 
   const other = await createProject(owner);
   const account = async () =>
     renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never)).replace(/&#x27;/g, "'");
-  const person = async (name: string, emailVerified: boolean) => {
-    const user = await signUp(name);
-    await prisma.user.update({ where: { id: user.id }, data: { emailVerified } });
+  // Not verified: signed in on the portal (onPortal), as signing in on the app needs a verified address.
+  const person = async (name: string, verified: boolean) => {
+    const user = await signUp(name, undefined, { verified });
+    if (!verified) {
+      await onPortal(user, project);
+    }
     return user;
   };
   const switches = 'role="switch"';

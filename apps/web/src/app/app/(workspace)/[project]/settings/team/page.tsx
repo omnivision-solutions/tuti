@@ -13,7 +13,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { formatDay } from "@/lib/format";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
-import { inviteLinkNote } from "@/lib/verify-email";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
 
@@ -54,7 +53,6 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   const assignable = ROLES.filter((r) => canAssignRole(myRole, r));
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } });
   const limit = teamLimit(plan);
-  const linkNote = inviteLinkNote(session.user);
 
   return (
     <SettingsPane title="Team & roles">
@@ -67,13 +65,9 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
               projectSlug={project.slug}
               roles={assignable}
               note={
-                (linkNote || limit !== null) && (
+                limit !== null && (
                   <>
-                    {linkNote}
-                    {limit !== null && (
-                      <>
-                        {linkNote && " "}
-                        Projects on the {planDisplay(plan).name} plan have up to {limit} team members, invites included ({members.length + invitations.length} now)
+                    Projects on the {planDisplay(plan).name} plan have up to {limit} team members, invites included ({members.length + invitations.length} now)
                         {roomierPlan(plan, teamLimit) ? (
                           <>
                             ;{" "}
@@ -83,9 +77,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
                             for more.
                           </>
                         ) : (
-                          "."
-                        )}
-                      </>
+                      "."
                     )}
                   </>
                 )

@@ -81,6 +81,8 @@ export function AuthForm({
   const [pending, setPending] = useState(false);
   // The sent card's: "Send another link" went out, and the address "Use a different email" brings back to the form.
   const [resent, setResent] = useState(false);
+  // The sent card's email is the password account's verification link (signing up, or signing in before verifying), not a sign-in link.
+  const [verifying, setVerifying] = useState(false);
   const [email, setEmail] = useState(defaultEmail);
   // A portal's sign-up: the name the link's account gets, sent again with "Send another link".
   const [name, setName] = useState<string>();
@@ -128,9 +130,18 @@ export function AuthForm({
   }
 
   if (sentTo) {
-    // Again to the same address, under the same limits (server/email-link-limits.ts).
+    // Again to the same address, under the same limits (server/email-link-limits.ts; Better Auth's for verification).
     const resend = async () => {
       if (pending) {
+        return;
+      }
+      if (verifying) {
+        setPending(true);
+        setLinkError(undefined);
+        const { error } = await authClient.sendVerificationEmail({ email: sentTo, callbackURL: at(next ?? redirectTo) });
+        setPending(false);
+        setLinkError(error ? (error.message ?? "We couldn't send the email. Try again.") : undefined);
+        setResent(!error);
         return;
       }
       const data = new FormData();
@@ -151,8 +162,16 @@ export function AuthForm({
             Check your email
           </CardTitle>
           <CardDescription className="text-[0.9375rem] break-words">
-            We sent a sign-in link to <strong className="font-semibold text-foreground">{sentTo}</strong>. It works once, for the next{" "}
-            {SIGN_IN_LINK_MINUTES} minutes.
+            {verifying ? (
+              <>
+                We sent a link to <strong className="font-semibold text-foreground">{sentTo}</strong>. Open it to verify your email and sign in.
+              </>
+            ) : (
+              <>
+                We sent a sign-in link to <strong className="font-semibold text-foreground">{sentTo}</strong>. It works once, for the next{" "}
+                {SIGN_IN_LINK_MINUTES} minutes.
+              </>
+            )}
           </CardDescription>
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">Not there? Check your spam folder.</p>
         </CardHeader>
@@ -175,6 +194,7 @@ export function AuthForm({
               setEmail(sentTo);
               setChangingEmail(true);
               setSentTo(undefined);
+              setVerifying(false);
               setResent(false);
               setLinkError(undefined);
             }}
@@ -207,11 +227,19 @@ export function AuthForm({
     setPending(true);
     setError(undefined);
     setLinkError(undefined);
-    const { error } = isSignUp
+    const { data, error } = isSignUp
       ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: at(next ?? redirectTo) })
       : await authClient.signIn.email({ email, password });
     setPending(false);
 
+    // Not signed in until the address is verified (lib/auth.ts): signing up, or signing in before, sends its link.
+    if ((isSignUp && data && !data.token) || error?.code === "EMAIL_NOT_VERIFIED") {
+      setEmail(email);
+      setName(isSignUp ? String(form.get("name")) : undefined);
+      setVerifying(true);
+      setSentTo(email);
+      return;
+    }
     if (error) {
       setError(error.message ?? "Something went wrong");
       return;

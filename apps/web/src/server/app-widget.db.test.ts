@@ -4,7 +4,7 @@ import { decodeJwt, jwtVerify } from "jose";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { generateSsoSecret } from "@/lib/sso";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp, withoutEmail } from "@/test/helpers";
 
 import { appWidgetToken } from "./app-widget";
 
@@ -15,22 +15,22 @@ afterEach(() => {
 test("the team app's widget gets a token for the account, signed with its project's SSO secret, once SSO is on there", async () => {
   const project = await createProject(await signUp());
   vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { widgetProject: project.slug } }));
-  const ada = await signUp("Ada");
+  const ada = await signUp("Ada", undefined, { verified: false });
   actAs(ada);
 
   // SSO off: no token, so the widget is signed out.
-  expect(await appWidgetToken()).toEqual({});
+  expect(await withoutEmail(() => appWidgetToken())).toEqual({});
 
   const secret = generateSsoSecret();
   await prisma.project.update({ where: { id: project.id }, data: { ssoSecret: secret } });
-  const { token } = await appWidgetToken();
+  const { token } = await withoutEmail(() => appWidgetToken());
   const { payload } = await jwtVerify(token!, new TextEncoder().encode(secret));
   expect(payload).toMatchObject({ sub: ada.id, name: "Ada" });
-  // Not verified yet: no address for the project's emails.
+  // Not verified (on a server without email, where it signs in so): no address for the project's emails.
   expect(payload.email).toBeUndefined();
   expect(payload.exp! - payload.iat!).toBe(300);
   // Each token is used once, so each call makes a new one.
-  expect(decodeJwt((await appWidgetToken()).token!).jti).not.toBe(payload.jti);
+  expect(decodeJwt((await withoutEmail(() => appWidgetToken())).token!).jti).not.toBe(payload.jti);
 });
 
 test("no project named: no token", async () => {

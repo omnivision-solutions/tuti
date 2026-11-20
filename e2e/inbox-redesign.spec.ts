@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
-import { verifyEmail } from "./mail";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
@@ -21,7 +20,6 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme Calendar", slug);
-  await verifyEmail(owner);
   const api = await apiFor(owner, slug);
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
@@ -212,7 +210,6 @@ test("long names and subjects fit both laptop widths with wrapping details label
   const subject = "Can I export all calendars across the entire company, including archived calendars and the complete history, so we can review every team together at our weekly planning meeting?";
   const owner = await signUp(browser, APP_URL, teammate);
   await createProject(owner, "Acme Calendar", slug);
-  await verifyEmail(owner);
   const api = await apiFor(owner, slug);
   await api("/conversations", { user: { id: "long-name", name: person, email: "e2e-long-name@example.com" }, subject, body: "Please keep the full report." });
   await api("/conversations", { user: { id: "long-name", name: person, email: "e2e-long-name@example.com" }, subject: `${subject} The previous question.`, body: "Thanks, the previous export worked." });
@@ -254,7 +251,6 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme Calendar", slug);
-  await verifyEmail(owner);
   const api = await apiFor(owner, slug);
   await api("/conversations", {
     user: { id: "demo-sam", name: "Sam Smith", email: "e2e-sam@example.com" },

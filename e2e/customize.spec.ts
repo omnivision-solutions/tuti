@@ -5,7 +5,7 @@ import { expect, type Locator, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, png, signUp } from "./helpers";
-import { latestEmailTo, linkIn, verifyEmail } from "./mail";
+import { latestEmailTo, linkIn } from "./mail";
 
 test("the team sets what readers can do with an article and the docs' home, seeing each change before saving it", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
@@ -536,7 +536,6 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
   await owner.goto(linkIn(await latestEmailTo(owner.email), `${APP_URL}/api/auth/verify-email`));
   await owner.goto(`/app/${slug}/settings/branding`);
   const inviter = await signUp(browser, APP_URL, "Ivan Inviter");
-  await verifyEmail(inviter);
   for (const name of ["Globex", "Initech", "Umbrella", "Hooli"]) {
     const other = `e2e-${randomUUID().slice(0, 8)}`;
     await createProject(inviter, name, other);

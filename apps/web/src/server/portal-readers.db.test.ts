@@ -144,7 +144,7 @@ test("a reader without an account signs in with an emailed link and reads the po
 });
 
 test("an account with a reader's address that isn't verified doesn't get in until it is; other projects' readers never do", async () => {
-  const someone = await signUp("Not verified");
+  const someone = await signUp("Not verified", undefined, { verified: false });
   await call(addPortalReaders, as(), { emails: [someone.email], notify: false });
   expect(await canReadPortal({ id: project.id }, someone.id)).toBe(false);
   await prisma.user.update({ where: { id: someone.id }, data: { emailVerified: true } });
@@ -157,7 +157,7 @@ test("an account with a reader's address that isn't verified doesn't get in unti
 
 test("a domain lets in everyone with a verified address there; nobody's emailed for it, and free email providers are refused", async () => {
   expect(await call(addPortalReaders, as(), { emails: ["@Example.com"] })).toEqual({ added: ["@example.com"], emailed: 0 });
-  const [colleague, unverified, elsewhere] = [await signUp("Colleague"), await signUp("Not verified"), await signUp("Elsewhere", `e2e-${randomUUID()}@example.org`)];
+  const [colleague, unverified, elsewhere] = [await signUp("Colleague"), await signUp("Not verified", undefined, { verified: false }), await signUp("Elsewhere", `e2e-${randomUUID()}@example.org`)];
   await prisma.user.updateMany({ where: { id: { in: [colleague.id, elsewhere.id] } }, data: { emailVerified: true } });
   expect(await canReadPortal({ id: project.id }, colleague.id)).toBe(true);
   expect(await canReadPortal({ id: project.id }, unverified.id)).toBe(false);

@@ -27,7 +27,7 @@ type NoPassword = { via: string; reset: boolean };
 type Photo = { projectSlug?: string; image: string | null; imageId: string | null; uploadsOff?: string };
 
 /**
- * The app's Account → Profile: photo, name, address (`email`, and whether it's verified) and password as rows of one
+ * The app's Account → Profile: photo, name, address (`email`) and password as rows of one
  * card. The photo and the name are saved by the page's "Save changes"; the password is changed in a dialog.
  */
 export function AccountForms({ name, email, photo, noPassword }: { name: string; email: ReactNode; photo?: Photo; noPassword?: NoPassword }) {

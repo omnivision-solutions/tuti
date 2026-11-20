@@ -12,7 +12,7 @@ import { generateInvitationToken, hashInvitationToken } from "@tuti/jobs";
 import { updateConversation } from "@/server/operations/conversations";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
-import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -414,6 +414,7 @@ test("a Featurebase admin is the team member with their verified email, else a p
   fake.fixtures.admins[0]!.email = owner.email.toUpperCase();
   const job = await pageJob();
   // Not verified yet: anyone could have signed up with it.
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
   expect(await inPage((tx) => adminMember(tx, job, "65f0000000000000000000a1"))).toMatchObject({ member: false });
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await prisma.importedRecord.deleteMany({ where: { projectId: project.id, kind: "admin" } });
@@ -555,9 +556,9 @@ test("someone with the admin's address whose address isn't verified takes over n
   const { placeholder, theirs } = await placeholderWithHistory();
   const token = generateInvitationToken();
   await prisma.invitation.create({ data: { projectId: project.id, tokenHash: hashInvitationToken(token), createdById: owner.id, expiresAt: new Date(Date.now() + 60 * 60_000) } });
-  const joiner = await signUp("Fern Former", formerEmail);
+  const joiner = await signUp("Fern Former", formerEmail, { verified: false });
   actAs(joiner);
-  expect(await redirectTarget(acceptInvitation(token))).toBe(`/app/${project.slug}`);
+  expect(await redirectTarget(withoutEmail(() => acceptInvitation(token)))).toBe(`/app/${project.slug}`);
   expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: joiner.id } })).toBe(1);
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: placeholder });
   expect(await prisma.user.findUnique({ where: { id: placeholder } })).not.toBeNull();
@@ -571,7 +572,7 @@ test("someone with the admin's address whose address isn't verified takes over n
 
 test("an address verified any other way (a sign-in link, Google or GitHub: Better Auth's update) hands over too", async () => {
   const { placeholder, theirs } = await placeholderWithHistory();
-  const joiner = await signUp("Fern Former", formerEmail);
+  const joiner = await signUp("Fern Former", formerEmail, { verified: false });
   await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
   // Changing something else on an unverified account hands nothing over.
   const { internalAdapter } = await auth.$context;
@@ -584,7 +585,7 @@ test("an address verified any other way (a sign-in link, Google or GitHub: Bette
 
 test("an address verified while an import page makes its placeholder hands over once the page commits", async () => {
   const job = await pageJob();
-  const joiner = await signUp("Fern Former", formerEmail);
+  const joiner = await signUp("Fern Former", formerEmail, { verified: false });
   await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
   let release!: () => void;
   let wrote!: (placeholder: string) => void;
@@ -638,7 +639,7 @@ test("updating a verified team member with no placeholder and no import running 
 
 test("a team member who resets their password by the emailed link has verified their address: the placeholder hands over", async () => {
   const { placeholder, theirs } = await placeholderWithHistory();
-  const joiner = await signUp("Fern Former", formerEmail);
+  const joiner = await signUp("Fern Former", formerEmail, { verified: false });
   await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
   expect(await prisma.user.findUniqueOrThrow({ where: { id: joiner.id } })).toMatchObject({ emailVerified: false });
   actAs(null);

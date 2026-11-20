@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { headers } from "next/headers";
 import { cache } from "react";
 
@@ -9,9 +10,14 @@ import { sessionWorksOn } from "./custom-domains";
 /**
  * The session a request's cookie carries, if it works on the request's host (a portal's on that portal only).
  * Better Auth's hook (lib/auth.ts) already leaves others out; checked again here, where everything reads it.
+ * On a server that sends email, an app session counts only once its address is verified: signing in needs that
+ * (lib/auth.ts), and one from before it did is signed out here.
  */
 export async function sessionFrom(requestHeaders: Headers) {
   const session = await auth.api.getSession({ headers: requestHeaders });
+  if (session?.session.boundTo === "app" && !session.user.emailVerified && emailConfigured()) {
+    return null;
+  }
   return session && (await sessionWorksOn(session.session.boundTo, requestHeaders.get("host"))) ? session : null;
 }
 

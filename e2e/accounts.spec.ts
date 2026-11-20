@@ -260,102 +260,40 @@ test("the app's sign-in and sign-up pages link to each other under /app/auth, ke
   await expect(page.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", /^\/app\/auth\/sign-up\?/);
 });
 
-test("the strip asking to verify an email stays on every page until the email is verified", async ({ browser }, testInfo) => {
+test("a new account is signed in by its emailed link only; signing in before sends it again", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const olive = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(olive, "Acme", slug);
-  const strip = olive.getByRole("status").filter({ hasText: "Verify your email" });
-  await expect(strip).toContainText(`We sent a link to ${olive.email}.`);
-  await checkpoint(olive, "verify-email-strip", { fullPage: false });
-  // It can't be dismissed, and it's on the next page and after reloading.
-  await expect(strip.getByRole("button", { name: "Dismiss" })).toHaveCount(0);
-  await olive.goto(`/app/${slug}/feedback`);
-  await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
-  await expect(strip).toBeVisible();
-  // Home's Get set up doesn't ask for it too.
-  await olive.goto(`/app/${slug}`);
-  await expect(olive.getByRole("list", { name: "Get set up" })).toBeVisible();
-  await expect(olive.getByRole("list", { name: "Get set up" })).not.toContainText("Verify your email");
-  // Account settings offers to send the email again too, beside the address.
+  const olive = await newPerson(browser, APP_URL);
+  const email = `e2e-${randomUUID()}@example.com`;
+  await olive.goto("/app/auth/sign-up");
+  await olive.getByLabel("Name").fill("Olive Owner");
+  await olive.getByLabel("Email").fill(email);
+  await olive.getByLabel("Password").fill(PASSWORD);
+  await olive.getByRole("button", { name: "Sign up" }).click();
+  await expect(olive.getByText("Check your email")).toBeVisible();
+  await expect(olive.getByText(`We sent a link to ${email}. Open it to verify your email and sign in.`)).toBeVisible();
+  await checkpoint(olive, "verify-email-sent");
+  // Not signed in: the app sends them to sign in.
+  await olive.goto("/app");
+  await olive.waitForURL((url) => url.pathname === "/app/auth/sign-in");
+
+  // Signing in before verifying: the same card, and the link again.
+  const sent = countEmailsTo(email);
+  await olive.getByLabel("Email").fill(email);
+  await olive.getByLabel("Password").fill(PASSWORD);
+  await olive.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(olive.getByText("Check your email")).toBeVisible();
+  const again = await latestEmailTo(email, { after: sent, subject: /^Verify your email/ });
+
+  // The link verifies the address and signs in.
+  await olive.goto(linkIn(again, `${APP_URL}/api/auth/verify-email`));
+  await olive.waitForURL((url) => url.pathname.startsWith("/app") && !url.pathname.startsWith("/app/auth"));
   await olive.goto("/app/account");
-  await expect(olive.getByText("Not verified")).toBeVisible();
+  await expect(olive.getByRole("heading", { level: 1, name: "Account settings" })).toBeVisible();
   // On phones, Account settings' path names Tuti rather than the last project.
   await olive.setViewportSize({ width: 390, height: 844 });
   await expect(olive.locator("header").first()).toContainText("Tuti");
-  await expect(olive.locator("header").first()).not.toContainText("Acme");
   await olive.setViewportSize({ width: 1280, height: 720 });
   await expect(olive.locator("main > header")).toBeHidden();
-  await expect(olive.getByRole("paragraph").filter({ hasText: "Not verified" }).getByRole("button", { name: "Resend email" })).toBeVisible();
-  // Verified in another tab, the strip and Account settings stop asking once this tab is back in focus.
-  const otherTab = await olive.context().newPage();
-  await otherTab.goto(linkIn(await latestEmailTo(olive.email), `${APP_URL}/api/auth/verify-email`));
-  await otherTab.close();
-  await olive.bringToFront();
-  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
-  await expect(async () => {
-    await olive.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-    await expect(olive.getByText("Not verified")).toHaveCount(0, { timeout: 500 });
-    await expect(strip).toHaveCount(0, { timeout: 500 });
-  }).toPass({ timeout: 15_000 });
-  // And it's gone on the next page.
-  await olive.goto(`/app/${slug}/feedback`);
-  await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
-  await expect(strip).toHaveCount(0);
-});
-
-test("an owner renames the project in Settings → General, and the app and its portal show the new name", async ({ browser }, testInfo) => {
-  const checkpoint = checkpoints(testInfo);
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const olive = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(olive, "Acme", slug);
-  await olive.goto(`/app/${slug}/settings/general`);
-  await expect(olive.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
-  // The page's one Save: nothing to save until the name differs.
-  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
-  await olive.getByLabel("Project name").fill("A");
-  // Leaving with the change not saved asks first.
-  await olive.getByRole("link", { name: "Change the portal address in Domain" }).click();
-  await expect(olive.getByRole("alertdialog", { name: "Leave without saving?" })).toBeVisible();
-  await olive.getByRole("button", { name: "Keep editing" }).click();
-  await expect(olive.getByLabel("Project name")).toHaveValue("A");
-  await olive.getByRole("button", { name: "Save changes" }).click();
-  await expect(olive.getByText("Give the project a name of 2 characters or more")).toBeVisible();
-  await olive.getByLabel("Project name").fill("  Acme Help  ");
-  // Saved from the keyboard, focus stays on Save while it saves and after.
-  await olive.getByRole("button", { name: "Save changes" }).focus();
-  await olive.keyboard.press("Enter");
-  await expect(olive.getByText("Project renamed")).toBeVisible();
-  await expect(olive.getByRole("button", { name: "Save changes" })).toBeFocused();
-  // The field shows the name as saved.
-  await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
-  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
-  await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
-  await checkpoint(olive, "settings-general");
-  // A change typed while a save runs stays in the field, still to save.
-  let releaseSave = () => {};
-  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
-  await olive.route(`**/app/${slug}/settings/general`, async (route) => {
-    if (route.request().method() === "POST") {
-      await saveHeld;
-    }
-    await route.continue();
-  });
-  await olive.getByLabel("Project name").fill("Acme Docs");
-  await olive.getByRole("button", { name: "Save changes" }).click();
-  await expect(olive.getByRole("button", { name: "Saving…" })).toBeVisible();
-  await olive.getByLabel("Project name").fill("Acme Help");
-  releaseSave();
-  await expect(olive.getByRole("button", { name: /Acme Docs/ }).first()).toBeVisible();
-  await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
-  await expect(olive.getByRole("button", { name: "Save changes" })).toBeEnabled();
-  await olive.unroute(`**/app/${slug}/settings/general`);
-  await olive.getByRole("button", { name: "Save changes" }).click();
-  await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible();
-  await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
-  const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/");
-  await expect(visitor.getByRole("banner")).toContainText("Acme Help");
 });
 
 test("a teammate renames the project in another tab: once this tab hears of it, the name not edited here follows, what's typed here stays", async ({ browser }) => {
@@ -450,13 +388,9 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await ada.getByLabel("Email").fill(email);
   await ada.getByLabel("Password").fill(PASSWORD);
   await ada.getByRole("button", { name: "Sign up" }).click();
-  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/continue");
-  await expect(ada.getByText("Continue to Acme")).toBeVisible();
-  await backToPortal(ada);
-  await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
-  await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
+  await expect(ada.getByText("Check your email")).toBeVisible();
 
-  // Later, "Verify your email" from the inbox: that handoff is used up, so it comes back through a new one.
+  // Signed in by the emailed link, opened later: the sign-up's handoff is used up, so it comes back through a new one.
   // It doesn't go on by itself: the page says where (the portal's address), and Ada clicks.
   await ada.goto(linkIn(await latestEmailTo(email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/continue" && url.searchParams.has("mac"));

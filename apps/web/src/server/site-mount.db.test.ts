@@ -118,13 +118,14 @@ test("SSO there comes back under the path, errors too", async () => {
 });
 
 test("session cookies are Tuti's own (tuti.…), beside a site's", async () => {
-  // Signing up is the app's (a password isn't typed on the site), with the same cookies.
+  // Signing in with a password is the app's (it isn't typed on the site), with the same cookies.
   const app = appUrl().host;
+  const { email } = await signUp("Ada");
   const response = await authRoute(
-    new Request(`http://${app}/api/auth/sign-up/email`, {
+    new Request(`http://${app}/api/auth/sign-in/email`, {
       method: "POST",
       headers: { host: app, "content-type": "application/json" },
-      body: JSON.stringify({ email: `e2e-${crypto.randomUUID()}@example.com`, password: "correct horse battery staple", name: "Ada" }),
+      body: JSON.stringify({ email, password: "correct horse battery staple" }),
     }),
   );
   expect(response.headers.getSetCookie().join("\n")).toMatch(/(^|\n)tuti\.session_token=/);

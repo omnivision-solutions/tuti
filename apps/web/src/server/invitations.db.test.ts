@@ -5,7 +5,7 @@ import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@tuti/jobs";
-import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 import { pendingInvitationsFor } from "./invitation-lookup";
@@ -115,42 +115,11 @@ describe("inviting by email", () => {
     expect(results.filter((result) => result.error === `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`)).toHaveLength(3);
   });
 
-  test("an unverified sender gets the link to copy, but nothing is emailed until they verify", async () => {
+  test("a sender whose address isn't verified isn't signed in, so invites nothing", async () => {
     await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
     const email = newEmail();
-    const result = await createInvitation(project.slug, email, "MEMBER");
-    expect(result).toEqual({ url: expect.stringMatching(/\/invite\/[\w-]+$/), emailSent: false, unverified: true });
+    expect(await createInvitation(project.slug, email, "MEMBER")).toEqual({ error: "Only project owners and admins can invite people" });
     expect(emailsTo(email)).toBe(0);
-
-    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
-    expect(await createInvitation(project.slug, email, "MEMBER")).toMatchObject({ emailSent: true });
-    expect(emailsTo(email)).toBe(1);
-  });
-
-  test("links an unverified sender copies don't count toward the day's invites", async () => {
-    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
-    for (let i = 0; i < DAILY_INVITE_LIMIT; i++) {
-      expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: false, unverified: true });
-    }
-    // Still room for the owner once verified, and for a verified admin there.
-    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
-    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
-    const admin = await addMember(project.id, "ADMIN");
-    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
-    actAs(admin);
-    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
-  });
-
-  test("an unverified sender still gets a link once the day's emailed invites are used up", async () => {
-    const admin = await addMember(project.id, "ADMIN");
-    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
-    actAs(admin);
-    for (let i = 0; i < DAILY_INVITE_LIMIT; i++) {
-      expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
-    }
-    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
-    actAs(owner);
-    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ url: expect.stringMatching(/\/invite\/[\w-]+$/), emailSent: false, unverified: true });
   });
 
   test("admins can't invite owners", async () => {
@@ -275,7 +244,7 @@ describe("accepting", () => {
     const email = newEmail();
     const { url } = await createInvitation(project.slug, email, "MEMBER");
     const someoneElse = await signUp("Mallory");
-    const invitee = await signUp("Ivy", email);
+    const invitee = await signUp("Ivy", email, { verified: false });
 
     actAs(someoneElse);
     expect(await acceptInvitation(tokenOf(url!))).toEqual({
@@ -284,7 +253,7 @@ describe("accepting", () => {
     expect(await isMember(someoneElse.id)).toBe(false);
 
     actAs(invitee);
-    expect(await redirectTarget(acceptInvitation(tokenOf(url!)))).toBe(`/app/${project.slug}`);
+    expect(await redirectTarget(withoutEmail(() => acceptInvitation(tokenOf(url!))))).toBe(`/app/${project.slug}`);
     expect(await isMember(invitee.id)).toBe(true);
     // The link is shown to whoever invited them too, so having it isn't proof of the inbox.
     expect((await prisma.user.findUniqueOrThrow({ where: { id: invitee.id } })).emailVerified).toBe(false);
@@ -298,9 +267,9 @@ describe("accepting", () => {
     const theirs = await createProject(inviter);
     actAs(inviter);
     const { url } = await createInvitation(theirs.slug, email, "MEMBER");
-    const squatter = await signUp("Sam Again", email);
+    const squatter = await signUp("Sam Again", email, { verified: false });
     actAs(squatter);
-    expect(await redirectTarget(acceptInvitation(tokenOf(url!)))).toBe(`/app/${theirs.slug}`);
+    expect(await redirectTarget(withoutEmail(() => acceptInvitation(tokenOf(url!))))).toBe(`/app/${theirs.slug}`);
 
     const after = await prisma.user.findUniqueOrThrow({ where: { id: squatter.id } });
     expect(after.emailVerified).toBe(false);
@@ -317,9 +286,9 @@ describe("accepting", () => {
         expiresAt: new Date(Date.now() + 60_000),
       },
     });
-    const anyone = await signUp("Anyone");
+    const anyone = await signUp("Anyone", undefined, { verified: false });
     actAs(anyone);
-    expect(await redirectTarget(acceptInvitation(token))).toBe(`/app/${project.slug}`);
+    expect(await redirectTarget(withoutEmail(() => acceptInvitation(token)))).toBe(`/app/${project.slug}`);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: anyone.id } })).emailVerified).toBe(false);
   });
 });
@@ -332,9 +301,8 @@ describe("pending invitations on the dashboard", () => {
   test("are listed only for the verified address they were sent to", async () => {
     const email = newEmail();
     await createInvitation(project.slug, email, "ADMIN");
-    const invitee = await signUp("Ivy", email);
+    const invitee = await signUp("Ivy", email, { verified: false });
     const someoneElse = await signUp("Mallory");
-    await verify(someoneElse);
 
     expect(await pendingFor(invitee)).toEqual([]); // not verified yet
     expect(await pendingFor(someoneElse)).toEqual([]);
@@ -347,13 +315,12 @@ describe("pending invitations on the dashboard", () => {
   test("accepting joins the team; unverified or other accounts can't", async () => {
     const email = newEmail();
     await createInvitation(project.slug, email, "MEMBER");
-    const invitee = await signUp("Ivy", email);
+    const invitee = await signUp("Ivy", email, { verified: false });
     const [invitation] = await prisma.invitation.findMany({ where: { email } });
     const someoneElse = await signUp("Mallory");
-    await verify(someoneElse);
 
     actAs(invitee);
-    expect(await acceptInvitationById(invitation!.id)).toEqual({ error: "Invite not found" }); // unverified
+    expect(await withoutEmail(() => acceptInvitationById(invitation!.id))).toEqual({ error: "Invite not found" }); // unverified
     actAs(someoneElse);
     expect(await acceptInvitationById(invitation!.id)).toEqual({ error: "Invite not found" });
     expect(await declineInvitation(invitation!.id)).toEqual({ error: "Invite not found" });

@@ -10,7 +10,6 @@ import { seedArticles } from "./articles";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
-import { verifyEmail } from "./mail";
 
 // On Tuti's cloud, which sells plans.
 test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powered by tuti\" with the add-on, and cancels the plan in Stripe's portal", async ({ browser }, testInfo) => {
@@ -256,7 +255,6 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
-  await verifyEmail(owner);
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/team`);
   const invite = async (email: string) => {

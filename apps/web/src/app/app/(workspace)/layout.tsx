@@ -8,13 +8,11 @@ import { AppWidget } from "@/components/app-widget";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar, AppTabBar } from "@/components/app-sidebar";
 import { PendingInvitations } from "@/components/pending-invitations";
-import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
 import { appWidgetProject } from "@/lib/app-portal";
 import { DOCS_TREE_FOLDED_SCRIPT } from "@/lib/docs-tree-fold";
 import { PANE_WIDTHS_SCRIPT } from "@/lib/pane-width";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
-import { asksToVerifyEmail } from "@/lib/verify-email";
 import { pendingInvitationsFor } from "@/server/invitation-lookup";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -55,7 +53,6 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       tabBar={<AppTabBar projects={projects} fallbackSlug={fallbackSlug} />}
       banners={
         <>
-          {asksToVerifyEmail(session.user) && <VerifyEmailBanner email={session.user.email} />}
           <PendingInvitations invitations={invitations} />
         </>
       }

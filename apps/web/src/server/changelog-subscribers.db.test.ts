@@ -20,7 +20,7 @@ import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } 
 import { createPost } from "@/server/operations/create";
 import { emailPreferences, updateEmailPreferences } from "@/server/operations/email-preferences";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -1191,9 +1191,10 @@ describe("the Account's opt-out", () => {
   test("someone who hasn't proven an address can't stop its changelog emails: signed up as a subscriber's address and never confirmed, Stop emails is refused and the entry still arrives", async () => {
     const victim = newAddress();
     await confirmed(victim);
-    // Signed up with the subscriber's address, never confirmed.
-    const impostor = await signUp("Impostor", victim);
+    // Signed up with the subscriber's address, never confirmed (signed in on the portal: the app needs a verified address).
+    const impostor = await signUp("Impostor", victim, { verified: false });
     actAs(impostor);
+    await onPortal(impostor, project);
     expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ error: "Confirm your email address to stop these emails" });
     expect(await prisma.emailOptOut.count({ where: { userId: impostor.id } })).toBe(0);
     expect(await changelogReach(project.id, { email: victim, confirmed: true })).toBe("gets");
@@ -1244,7 +1245,9 @@ describe("the Account's changelog switch", () => {
   test("an address not yet confirmed: the switch is disabled, and turning it on or off is refused (someone signed up as a subscriber's address can't stop theirs)", async () => {
     const victim = newAddress();
     await confirmed(victim);
-    actAs(await signUp("Impostor", victim));
+    const impostor = await signUp("Impostor", victim, { verified: false });
+    actAs(impostor);
+    await onPortal(impostor, project);
     // Their address's subscription isn't shown them: it would tell anyone who signs up as an address whether it's subscribed.
     expect(await changelogSwitch()).toEqual({ on: false, disabled: true });
     for (const on of [false, true]) {
@@ -1253,7 +1256,9 @@ describe("the Account's changelog switch", () => {
     await publishEntry("Dark mode");
     expect(entryEmailsTo(victim)).toHaveLength(1);
 
-    actAs(await signUp("Cy"));
+    const cy = await signUp("Cy", undefined, { verified: false });
+    actAs(cy);
+    await onPortal(cy, project);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Confirm your email address first" });
     expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(1);
   });

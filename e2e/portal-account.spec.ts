@@ -5,6 +5,7 @@ import { expect, type Route, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, postFeedback, signUp } from "./helpers";
+import { query } from "./db";
 import { latestEmailTo, linkIn } from "./mail";
 
 test("a portal's Account: email settings the emails follow, and the reader's posts and votes", async ({ browser }, testInfo) => {
@@ -359,8 +360,10 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));
   await expect(ada.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
 
-  // Cy hasn't confirmed his address yet: the switches, and above them what's still needed, with Resend email.
+  // Cy's address isn't confirmed (as for a reader the project's single sign-on brought in; a password account is
+  // confirmed before it signs in): the switches, and above them what's still needed, with Resend email.
   const cy = await signUp(browser, portalUrl(slug), "Cy");
+  await query(`UPDATE "user" SET "emailVerified" = false WHERE email = $1`, [cy.email]);
   await cy.goto("/account");
   await expect(cy.getByText("Confirm your email address to get these.")).toBeVisible();
   await expect(cy.getByRole("switch", { name: "Posts I wrote" })).toBeChecked();

@@ -10,7 +10,6 @@ import { AccountForms } from "@/components/account-forms";
 import { AutopilotEmailsChoice } from "@/components/autopilot-settings";
 import { PaneLayout } from "@/components/pane";
 import { SettingsCard, SettingsPane } from "@/components/settings-card";
-import { NotVerified } from "@/components/verify-email-banner";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { SOCIAL_PROVIDER_NAMES, type SocialProvider } from "@/lib/social-sign-in";
 import { listMyProjects } from "@/server/membership";
@@ -43,13 +42,7 @@ export default async function AccountPage() {
       <SettingsPane title="Account settings">
             <AccountForms
               name={session.user.name}
-              email={
-                <>
-                  {session.user.email}
-                  {/* Always here while unverified, so the email can be sent again after the strip is dismissed. */}
-                  {!session.user.emailVerified && <NotVerified email={session.user.email} />}
-                </>
-              }
+              email={session.user.email}
               noPassword={noPassword}
               photo={
                 projectSlug || user.image

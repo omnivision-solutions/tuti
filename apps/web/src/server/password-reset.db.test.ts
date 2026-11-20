@@ -279,10 +279,11 @@ test("an unknown address gets the same answer, and nothing is sent", async () =>
 });
 
 test("setting it signs the account out everywhere, marks the email verified and sends a notice", async () => {
-  // Signed in twice (say on the app and on a portal: each host gets its own session); the address was never verified.
+  // Signed in twice (say on the app and on a portal: each host gets its own session); the address isn't verified (as on a
+  // server without email, where signing in doesn't need it).
   await signsInWith(user.email, OLD_PASSWORD);
   expect(await prisma.session.count({ where: { userId: user.id } })).toBe(2);
-  expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({ emailVerified: false });
+  await prisma.user.update({ where: { id: user.id }, data: { emailVerified: false } });
 
   await ask(user.email);
   expect(await setPassword(await linkTo(user.email))).toEqual({ location: "/app/auth/sign-in?reset=done" });

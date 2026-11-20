@@ -5,14 +5,12 @@ import { expect, test, type Page } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { afterIntersections, apiFor, createProject, signUp } from "./helpers";
-import { verifyEmail } from "./mail";
 
 test("pages use their own toolbar above tablet width and the sidebar rail works with a keyboard", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await verifyEmail(owner);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   const rail = owner.locator('[data-slot="sidebar-rail"]');
   await sidebar.locator('[data-slot="sidebar-trigger"]').click();
@@ -171,7 +169,6 @@ test("app anchors clear each visible toolbar once, and Reporting adds no invisib
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await verifyEmail(owner);
   const api = await apiFor(owner, slug);
   await api("/articles", { title: "Old instructions", body: "An earlier guide." });
   await api("/articles/old-instructions", undefined, "DELETE");
@@ -225,7 +222,6 @@ test("billing's usage anchor keeps only its gap below the pane's header, and its
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
-  await verifyEmail(owner);
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/settings/billing`);
   await expectPaneAnchorGap(owner, "#usage", 32);

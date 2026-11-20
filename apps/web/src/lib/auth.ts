@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
-import { passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
+import { emailConfigured, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -207,6 +207,9 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    // A password account works once its address is verified (sign-up signs no one in; the emailed link does), so no one
+    // signs up with an address that isn't theirs. Not on a server without email, where no link could arrive.
+    requireEmailVerification: emailConfigured(),
     sendResetPassword: sendPasswordReset,
     resetPasswordTokenExpiresIn: PASSWORD_RESET_MINUTES * 60,
     revokeSessionsOnPasswordReset: true,
@@ -250,10 +253,11 @@ export const auth = betterAuth({
   },
   // Reset tokens are stored hashed: a copy of the database mustn't be able to reset passwords.
   verification: { storeIdentifier: { default: "plain", overrides: { "reset-password:": "hashed" } } },
-  // Verify ownership of the email address (invites are sent to addresses).
-  // Signing in doesn't need it; the link signs people in if they aren't yet.
+  // Verify ownership of the email address; signing in with a password needs it (requireEmailVerification above), and
+  // trying to before sends the link again. The link signs people in.
   emailVerification: {
     sendOnSignUp: true,
+    sendOnSignIn: true,
     autoSignInAfterVerification: true,
     expiresIn: VERIFICATION_SECONDS,
     sendVerificationEmail: async ({ user, url }, request) => {

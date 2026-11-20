@@ -13,7 +13,6 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { appUrl } from "@/lib/hosts";
 import { canAssignRole } from "@/lib/roles";
-import { inviteNote } from "@/lib/verify-email";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { boardsNotes, latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
@@ -114,7 +113,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
                   <>
                     <CardHeader>
                       <CardTitle>Invite your team</CardTitle>
-                      <CardDescription>{inviteNote(session.user)}</CardDescription>
+                      <CardDescription>We&apos;ll email them an invite. Only that email address can accept it.</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <InviteForm projectSlug={slug} roles={(["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => canAssignRole(membership.role, r))} />

@@ -11,7 +11,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
 import { upsertProjectUser } from "@/server/project-users";
-import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, onPortal, signUp, type TestUser } from "@/test/helpers";
 
 import { docsContents, docsTree, everyCollection, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
@@ -345,7 +345,9 @@ describe("groups from conditions", () => {
   });
 
   test("signed in another way, the project's users with their address, once it's verified", async () => {
-    const reader = await signUp("By email", `e2e-${randomUUID()}@example.com`);
+    // Signed in on the portal (signing in on the app needs a verified address).
+    const reader = await signUp("By email", `e2e-${randomUUID()}@example.com`, { verified: false });
+    await onPortal(reader, project);
     await signIn({ email: reader.email.toUpperCase(), properties: { plan: "enterprise" } });
     // Anyone can sign up with any address: not until it's verified.
     expect(await reads(reader)).toEqual(no);

@@ -4,7 +4,6 @@ import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { connectGithub } from "./github";
 import { nextModelReply } from "./model";
-import { verifyEmail } from "./mail";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
@@ -13,7 +12,6 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
-  await verifyEmail(team);
   await createProject(team, "Acme Calendar", slug);
   const api = await apiFor(team, slug);
   // Use a fictional public address so shared captures contain no local hostnames.

@@ -141,6 +141,7 @@ test("owners and admins with verified addresses are emailed once when credits ru
   vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 50 }));
   const [admin, member, unverified] = await Promise.all([addMember(project.id, "ADMIN"), addMember(project.id, "MEMBER"), addMember(project.id, "ADMIN")]);
   await prisma.user.updateMany({ where: { id: { in: [owner.id, admin.id, member.id] } }, data: { emailVerified: true } });
+  await prisma.user.update({ where: { id: unverified.id }, data: { emailVerified: false } });
   const told = [owner.email, admin.email].sort();
   await grantCredits(project.id, "MANUAL", 100, { days: null });
 
@@ -226,6 +227,7 @@ test("credits.low 0: a balance of exactly 0 is out", async () => {
 
 test("with nobody to email (no verified owner or admin yet), nothing is claimed: once someone is, the next charge emails them", async () => {
   vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 50 }));
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
   await grantCredits(project.id, "MANUAL", 40, { days: null });
   await answered(0.01);
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiCreditsLowEmailedAt: true } })).toEqual({ aiCreditsLowEmailedAt: null });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type Doc, toPlainText } from "@tuti/content";
 import { type Prisma, type TeamRole, prisma } from "@tuti/db";
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
 import { docOf, landEdit, lockProject } from "@tuti/jobs";
 
 import { auth } from "@/lib/auth";
@@ -14,19 +14,52 @@ import { request } from "./next-headers";
 
 export type TestUser = { id: string; email: string; cookie: string };
 
-/** Signs up a new user through Better Auth (with a random e2e-…@example.com address unless given one). */
-export async function signUp(name = "Test user", email = `e2e-${randomUUID()}@example.com`): Promise<TestUser> {
-  const { headers, response } = await auth.api.signUpEmail({
-    body: { email, name, password: "correct horse battery staple" },
-    // On the app, as a browser would say: a session from no host or an unknown one works nowhere.
-    headers: new Headers({ host: appUrl().host }),
-    returnHeaders: true,
-  });
+/**
+ * Signs up a new user through Better Auth (with a random e2e-…@example.com address unless given one) and signs them in,
+ * their address verified as its emailed link would (signing in needs it; email-verification.db.test.ts opens the link).
+ * `verified: false` leaves it unverified afterwards, as on a server without email.
+ */
+export async function signUp(name = "Test user", email = `e2e-${randomUUID()}@example.com`, { verified = true } = {}): Promise<TestUser> {
+  const password = "correct horse battery staple";
+  // On the app, as a browser would say: a session from no host or an unknown one works nowhere.
+  const onApp = new Headers({ host: appUrl().host });
+  const { user } = await auth.api.signUpEmail({ body: { email, name, password }, headers: onApp });
+  await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+  const { headers } = await auth.api.signInEmail({ body: { email, password }, headers: onApp, returnHeaders: true });
+  if (!verified) {
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: false } });
+  }
   const cookie = headers
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
-  return { id: response.user.id, email, cookie };
+  return { id: user.id, email, cookie };
+}
+
+/**
+ * `user`'s sessions as if started on the project's portal (an emailed sign-in link there), and requests on its host for
+ * the rest of the test. Signing in on the app needs a verified address, so an unverified reader's session is one of these.
+ */
+export async function onPortal(user: TestUser, project: { id: string; slug: string }) {
+  await prisma.session.updateMany({ where: { userId: user.id }, data: { boundTo: project.id } });
+  request.host = `${project.slug}.localhost:3100`;
+  onTestFinished(() => {
+    request.host = "";
+  });
+}
+
+/**
+ * `run` on a server that sends no email (no SMTP_HOST), where an account is signed in without a verified address: on one
+ * that sends email, the app has no session for it (server/session.ts).
+ */
+export async function withoutEmail<T>(run: () => Promise<T>): Promise<T> {
+  const smtp = process.env.SMTP_HOST;
+  vi.stubEnv("SMTP_HOST", "");
+  try {
+    return await run();
+  } finally {
+    vi.stubEnv("SMTP_HOST", smtp);
+  }
 }
 
 /** Server actions called after this run as `user`; `null` means signed out. */
