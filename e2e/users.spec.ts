@@ -199,8 +199,10 @@ test("the team syncs its users over the API and finds them on the Users page, by
   const groupPicker = owner.getByRole("combobox", { name: "Group" });
   await groupPicker.focus();
   await owner.keyboard.press("Enter");
-  await expect(owner.getByRole("option", { name: "Enterprise" })).toBeVisible();
+  // Each key once the list shows the last one landed (its focus on the option), as a person sees it.
+  await expect(owner.getByRole("option", { name: "All users" })).toBeFocused();
   await owner.keyboard.press("ArrowDown");
+  await expect(owner.getByRole("option", { name: "Enterprise" })).toBeFocused();
   await owner.keyboard.press("Enter");
   await expect(owner).toHaveURL(/\?group=enterprise$/);
   await expect(rows).toHaveCount(2);
