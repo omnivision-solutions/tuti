@@ -346,3 +346,17 @@ test("a trial where plans can't be bought says so beside when it ends, with no U
   expect(page).toMatch(/>Ends on 22 November 2026\. <span id="plans-unavailable" tabindex="-1"[^>]*>Plans can't be bought here right now\.<\/span>/);
   expect(page).not.toContain("data-plans-control");
 });
+
+test("with no credits left and some owed, the balance says what the project owes", async () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  // Its free credits given and spent, and a request that ran past the last of them.
+  await billing();
+  await prisma.creditGrant.updateMany({ where: { projectId }, data: { remaining: 0 } });
+  let page = await billing();
+  expect(page).toMatch(meter("Balance", "No credits left."));
+  expect(page).not.toContain("this project owes");
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 3.5 } });
+  page = await billing();
+  expect(page).toMatch(meter("Balance", "No credits left."));
+  expect(page).toContain("AI is paused: this project owes 3.5 credits.");
+});
