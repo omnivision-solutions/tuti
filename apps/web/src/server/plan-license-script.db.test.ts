@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 import { prisma } from "@tuti/db";
 import { creditBalance, grantPlanLicenseCredits } from "@tuti/jobs";
-import { billingFile } from "@tuti/testkit";
+import { billingFile, creditsOn } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -18,7 +18,7 @@ let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   owner = await signUp("Owner");
   project = await createProject(owner);
 });

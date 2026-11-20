@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { grantCredits, handlers, verifyAllsSettled } from "@tuti/jobs";
-import { type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createApiKey } from "@/server/api-keys";
@@ -157,7 +157,7 @@ test("its cost before it runs: with credits off, how many articles; with them on
   await published("Billing");
   expect(await verifyAllEstimate(project.id)).toEqual({ articles: 2, credits: null });
 
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   await grantCredits(project.id, "MANUAL", 100, { days: null });
   // No run yet: the typical article's ($0.05, at 100 credits a dollar).
   expect(await verifyAllEstimate(project.id)).toEqual({ articles: 2, credits: { each: 5, total: 10, measured: false, balance: 100 } });
@@ -200,7 +200,7 @@ test("one article failing doesn't stop the rest", async () => {
 });
 
 test("with AI credits on, running out partway stops it, saying how far it got", async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   await published("Seats");
   await published("Billing");
   await published("Roles");
@@ -342,7 +342,7 @@ test("an article whose run by hand stopped (its worker went away) is settled and
 });
 
 test("the most read articles first: with credits for one, the one readers open most is the one checked", async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   await published("Seats");
   const billing = await published("Billing");
   // Created later, read more in the last 30 days.

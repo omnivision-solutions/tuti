@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance, grantLicenseCredits, grantPlanLicenseCredits } from "@tuti/jobs";
-import { billingFile, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
+import { billingFile, creditsOn, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -28,7 +28,7 @@ beforeEach(async () => {
       withAppsumoPlans(config);
       config.trial = { plan: "pro", days: 7 };
     }),
-    AI_CREDITS: "on",
+    TUTI_CONFIG: creditsOn(),
     APP_URL: "https://app.tuti.example",
   })) {
     vi.stubEnv(name, value);

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { badgePerMonth } from "@tuti/shared";
+import { badgePerMonth, billingConfig } from "@tuti/shared";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -55,7 +55,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
   // What it costs as sold here, or the add-on's price where Checkout sells nothing (the page says to email); none without one.
   const perMonth = badgePerMonth(monthly ? "month" : yearly ? "year" : undefined);
   const billing = perMonth === null ? null : licenseBilling(perMonth, { month: Boolean(monthly), year: Boolean(yearly) });
-  const portal = process.env.STRIPE_PORTAL_LOGIN_URL?.trim();
+  const portal = billingConfig()?.stripePortalLoginUrl;
   const body = `Hi,\n\nI'd like a licence to remove "Powered by tuti".\n\nInstallation ID: ${installation}\nProject ID: ${project}\n`;
   const mailto = `mailto:${LICENSE_EMAIL}?${new URLSearchParams({ subject: "Tuti licence", body }).toString().replaceAll("+", "%20")}`;
   const email = <a href={mailto} className="font-medium text-primary underline-offset-4 hover:underline">{LICENSE_EMAIL}</a>;

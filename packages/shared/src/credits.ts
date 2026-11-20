@@ -1,45 +1,32 @@
+import { config } from "./config";
+
 /**
- * AI credits (docs/plan.md, AI usage per project): on Tuti's cloud, projects pay for AI with prepaid
- * credits. Off unless AI_CREDITS=on, so a self-hosted server's AI is as unlimited as its own keys.
+ * AI credits (docs/plan.md, AI usage per project): on Tuti's cloud, projects pay for AI with prepaid credits. Off unless
+ * the config file's credits.enabled, so a self-hosted server's AI is as unlimited as its own keys.
  */
 export function creditsEnabled(): boolean {
-  return process.env.AI_CREDITS === "on";
+  return config().credits.enabled;
 }
 
 /** Everything that spends AI credits, as one phrase for Billing, Usage, the out-of-credits banner and the credits emails. */
 export const CREDIT_FEATURES = "AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot and Verify";
 
-/** A positive number from the environment, or the default (unset, or not a positive number). */
-const positive = (name: string, fallback: number) => {
-  const value = Number(process.env[name]);
-  return process.env[name] && Number.isFinite(value) && value > 0 ? value : fallback;
-};
+/** Credits a dollar paid buys (credits.perTopupDollar). */
+export const creditsPerTopupDollar = () => config().credits.perTopupDollar;
 
-/** Credits a dollar paid buys (AI_CREDITS_PER_TOPUP_DOLLAR, default 100). */
-export const creditsPerTopupDollar = () => positive("AI_CREDITS_PER_TOPUP_DOLLAR", 100);
+/** Credits a dollar of model cost spends (credits.perUsageDollar). */
+export const creditsPerUsageDollar = () => config().credits.perUsageDollar;
 
-/** Credits a dollar of model cost spends (AI_CREDITS_PER_USAGE_DOLLAR, default 100: with the top-up default, no margin). */
-export const creditsPerUsageDollar = () => positive("AI_CREDITS_PER_USAGE_DOLLAR", 100);
-
-/** Whole days a top-up's credits last (AI_CREDITS_TOPUP_EXPIRY_DAYS, default 365); 0 is for good. Anything else is the default. */
+/** Whole days a top-up's credits last (credits.topupExpiryDays); null: for good (0). */
 export function topupExpiryDays(): number | null {
-  const raw = process.env.AI_CREDITS_TOPUP_EXPIRY_DAYS?.trim();
-  const value = Number(raw);
-  if (raw && Number.isInteger(value) && value >= 0) {
-    return value === 0 ? null : value;
-  }
-  return 365;
+  return config().credits.topupExpiryDays || null;
 }
 
-/** Below this balance owners and admins are emailed that credits are running low (AI_CREDITS_LOW, default 100); 0 emails only once they're out. */
-export function lowCreditsAt(): number {
-  const raw = process.env.AI_CREDITS_LOW?.trim();
-  const value = Number(raw);
-  return raw && Number.isFinite(value) && value >= 0 ? value : 100;
-}
+/** Below this balance owners and admins are emailed that credits are running low (credits.low); 0 emails only once they're out. */
+export const lowCreditsAt = () => config().credits.low;
 
-/** Credits every project is given once (AI_CREDITS_FREE, default none), lasting like a top-up. */
-export const freeCredits = () => positive("AI_CREDITS_FREE", 0);
+/** Credits every project is given once (credits.free), lasting like a top-up. */
+export const freeCredits = () => config().credits.free;
 
 /** Top-ups through Stripe Checkout: with AI credits on, STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET (the webhook's signing secret). */
 export function topupsEnabled(): boolean {

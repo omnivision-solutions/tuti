@@ -449,7 +449,7 @@ What an operator tunes moves out of env vars into one JSON file (`TUTI_CONFIG`),
 - [x] `ai`: `AI_MODEL` → `ai.model`, `AI_MODEL_<FEATURE>` → `ai.features.<feature>`, `AI_MODEL_MAX_PRICE` → `ai.maxPrice`, and the AI levels' rows (`AI_LEVELS_CONFIG`'s file) → `ai.levels`
 - [x] `autopilot`: the `CODE_CHANGES_*` settings (and `DECISION_MODEL`, their old alias)
 - [x] `ownPortal`, `customDomains`, `analytics`: `APP_PORTAL_*`, `APP_WIDGET_PROJECT`, `CUSTOM_DOMAIN_TARGET`, `CLOUDFLARE_ZONE_ID`, `POSTHOG_*` (`APP_LINKS` stays an env var: the marketing build works it out from `APP_URL`)
-- [ ] AI credits (`AI_CREDITS*`) and `STRIPE_PORTAL_LOGIN_URL` into the billing file, which already says what the server sells
+- [x] AI credits (`AI_CREDITS*`) and `STRIPE_PORTAL_LOGIN_URL` into the billing file, which already says what the server sells. Done (2026-11-20): `STRIPE_PORTAL_LOGIN_URL` is the billing file's `stripePortalLoginUrl` (licences are sold only where plans are); AI credits are the config file's `credits` section instead (`credits.enabled`, `perTopupDollar`, `perUsageDollar`, `topupExpiryDays`, `free`, `low`), since credits work without plans: top-ups need only Stripe's keys, and the journeys' self-hosted server runs credits with no billing file. Each old variable, still set, stops start-up naming its key
 
 ## AI usage per project (asked 2026-10-24)
 

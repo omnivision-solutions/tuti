@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { articleChunkText } from "@tuti/shared";
-import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
@@ -25,7 +25,7 @@ beforeEach(() => {
   for (const [name, value] of Object.entries({ ...model.env })) {
     vi.stubEnv(name, value);
   }
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
 });
 afterEach(() => {
   model.requests.length = 0;
@@ -93,7 +93,7 @@ test("an article unpublished while the AI wrote isn't in a draft: no draft then"
 });
 
 test("out of AI credits: no draft, and summaries are refused saying so", async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   const { team } = await setup();
   await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
   await call(createConversation, team, { email: "e2e-sam@example.com", body: QUESTION });

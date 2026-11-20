@@ -102,6 +102,10 @@ export const billingSchema = z
       .strict()
       .optional()
       .describe("Plan licenses (lifetime deals sold elsewhere) and the plans they give, by source. Their plans are usually hidden, with no prices, and sit apart from the plans sold: last in the list, and not held to have everything the plan before them has."),
+    stripePortalLoginUrl: z
+      .url({ protocol: /^https$/ })
+      .optional()
+      .describe("Stripe's customer portal login link, where licence buyers cancel, change their card or get invoices. Absent: the licence page says to email."),
     historyKeptDays: days.default(365).describe("Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history."),
   })
   .strict()
@@ -178,6 +182,10 @@ const loaded = new Map<string, BillingConfig>();
  * valid throws, naming what's wrong.
  */
 export function billingConfig(): BillingConfig | null {
+  // Moved into the file: still set, it would be ignored, so the server stops until it's moved.
+  if (process.env.STRIPE_PORTAL_LOGIN_URL?.trim()) {
+    throw new Error("STRIPE_PORTAL_LOGIN_URL is set, but Stripe's customer portal login link is now the file's stripePortalLoginUrl (BILLING_CONFIG): move it there, or remove it");
+  }
   const path = process.env.BILLING_CONFIG?.trim();
   if (!path) {
     // The settings the file replaced, still here: a server meant to sell plans whose file was forgotten. Billing off would

@@ -33,7 +33,10 @@ export const APP_WIDGET_SLUG = "e2e-app-widget";
 /** Support email in journeys: projects' addresses are on this domain, and journeys sign received mail with this secret. */
 export const SUPPORT_EMAIL_DOMAIN = "tuti.email.example";
 export const INBOUND_SECRET = "e2e-inbound-secret";
+/** Stripe's customer portal login link in the cloud's billing file, where licence buyers cancel. */
+export const STRIPE_PORTAL_LOGIN_URL = "https://billing.stripe.example/p/login/e2e";
 
+/** The servers' config file (TUTI_CONFIG): what journeys need off its defaults. */
 /** The journeys' config file (TUTI_CONFIG): what it leaves out is its default. */
 const e2eConfig = {
   // A cap on the models projects pick: the model fake's Opus ($25 per million output tokens), Best's largest, is the most it allows.
@@ -43,6 +46,8 @@ const e2eConfig = {
   // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine. Certificates
   // from the Cloudflare fake (global-setup.ts), in its zone.
   customDomains: { target: "customers.example.com", cloudflareZoneId: FAKE_CLOUDFLARE_ZONE },
+  // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
+  credits: { enabled: true, free: 1000 },
 };
 
 export const serverEnv = {
@@ -65,16 +70,11 @@ export const serverEnv = {
   // start-up). No analytics in it: journeys never send page views to PostHog.
   TUTI_CONFIG: configFile(e2eConfig),
   ...Object.fromEntries(Object.keys(CONFIG_REPLACED).map((name) => [name, ""])),
-  // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
-  AI_CREDITS: "on",
-  AI_CREDITS_FREE: "1000",
-  AI_CREDITS_PER_TOPUP_DOLLAR: "",
-  AI_CREDITS_PER_USAGE_DOLLAR: "",
-  AI_CREDITS_TOPUP_EXPIRY_DAYS: "",
   // A self-hosted server: no plans (the cloud's server sells them, below), so every feature is on.
   BILLING_CONFIG: "",
   // What the billing file replaced, whatever a local .env still holds (left set without the file, it stops the server).
   PLANS: "",
+  STRIPE_PORTAL_LOGIN_URL: "",
   ...Object.fromEntries(["PRO", "BUSINESS", "BADGE"].flatMap((plan) => [`STRIPE_PRICE_${plan}_MONTHLY`, `STRIPE_PRICE_${plan}_YEARLY`]).map((name) => [name, ""])),
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
@@ -101,8 +101,11 @@ export const cloudEnv = {
   PORT: String(CLOUD_PORT),
   APP_URL: CLOUD_URL,
   PORTAL_URL_TEMPLATE: `http://{project}.localhost:${CLOUD_PORT}`,
-  // With AppSumo's tiers (hidden plans, for its licenses).
-  BILLING_CONFIG: billingFile(withAppsumoPlans),
+  // With AppSumo's tiers (hidden plans, for its licenses), and Stripe's customer portal for licence buyers.
+  BILLING_CONFIG: billingFile((config) => {
+    withAppsumoPlans(config);
+    config.stripePortalLoginUrl = STRIPE_PORTAL_LOGIN_URL;
+  }),
   // Tuti's own widget in its team app: the project app-widget.spec.ts makes.
   TUTI_CONFIG: configFile({ ...e2eConfig, ownPortal: { ...e2eConfig.ownPortal, widgetProject: APP_WIDGET_SLUG } }),
 };

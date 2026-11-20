@@ -518,8 +518,8 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const input = () => cases[operation.name as OperationName](fixture);
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
-  // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
-  vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
+  // AI credits on for buying them only: elsewhere a project with none would be refused its AI. Custom domains on, as above.
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" }, credits: { enabled: operation.name === "credits.topUp" } }));
   vi.stubEnv("BILLING_CONFIG", operation.name === "plan.subscribe" ? billingFile() : "");
   // Email, and Amazon SES for teams' own domains, for the support settings; for a key's escalation, which only email answers.
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", operation.name.startsWith("support.") || operation.name === "docs.escalate" ? "tuti.email" : "");

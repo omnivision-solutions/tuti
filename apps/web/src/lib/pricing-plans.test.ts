@@ -1,4 +1,4 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile, creditsOn } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { planFacts, pricingPage, pricingPlans, pricingTerms } from "./pricing-plans";
@@ -12,9 +12,7 @@ const line = (plan: string, start: string) => lines(plan).find(({ text }) => tex
 
 test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("AI_CREDITS", "on");
-  vi.stubEnv("AI_CREDITS_FREE", "100");
-  vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 100, perUsageDollar: 500 }));
   // Without Stripe, no top-ups: the cards list only what credits buy.
   vi.stubEnv("STRIPE_SECRET_KEY", "");
   expect(line("Free", "100 AI credits")?.more?.points).toEqual([
@@ -28,23 +26,23 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 120 changes/);
 
   // Too few credits for one checked change (40 credits each here): no "about 0 changes" line, and "1 change" singular.
-  vi.stubEnv("AI_CREDITS_FREE", "30");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 30, perUsageDollar: 500 }));
   expect(line("Free", "30 AI credits")?.more?.points).toEqual(["About 15 AI answers for your customers"]);
-  vi.stubEnv("AI_CREDITS_FREE", "50");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 50, perUsageDollar: 500 }));
   expect(line("Free", "50 AI credits")?.more?.points[1]).toBe("Or about 1 change you ship, checked by Autopilot against your help center and feedback");
   // One answer's worth: "answer" singular; less: the line alone, with no empty card.
-  vi.stubEnv("AI_CREDITS_FREE", "2");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 2, perUsageDollar: 500 }));
   expect(line("Free", "2 AI credits")?.more?.points).toEqual(["About 1 AI answer for your customers"]);
-  vi.stubEnv("AI_CREDITS_FREE", "1");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 1, perUsageDollar: 500 }));
   expect(line("Free", "1 AI credits")).toEqual({ text: "1 AI credits to start" });
-  vi.stubEnv("AI_CREDITS_FREE", "100");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 100, perUsageDollar: 500 }));
 
   // With Stripe, credits can be topped up, and the card says so.
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
   expect(line("Pro", "1,000 AI credits a month")?.more?.points.at(-1)).toBe("Need more? Top up any time.");
 
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
   expect(line("Pro", "1,000 AI credits")).toBeUndefined();
 });
 
@@ -164,7 +162,7 @@ test("the cards are the file's plans, each listing what the file gives it", () =
 });
 
 test("a plan without prices is free where it's the default, and otherwise by quote, asking to get in touch", () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
   const [free, , business] = pricingPlans();
   expect([free!.price, free!.byQuote, free!.cta.label]).toEqual([null, undefined, "Start free"]);
@@ -185,9 +183,7 @@ test("a hidden plan (a default nobody picks) is left off, and the first plan sho
 });
 
 test("the pricing page's comparison gets each plan's numbers and features from the billing file", () => {
-  vi.stubEnv("AI_CREDITS", "on");
-  vi.stubEnv("AI_CREDITS_FREE", "");
-  vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ perUsageDollar: 500 }));
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
   const [free, pro, business] = planFacts();
@@ -220,10 +216,10 @@ test("the pricing page's comparison gets each plan's numbers and features from t
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7 }; }));
 
   // Free's starter credits bring its AI answers, and Autopilot with them; it buys no monthly credits.
-  vi.stubEnv("AI_CREDITS_FREE", "100");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 100, perUsageDollar: 500 }));
   expect(planFacts()[0]).toMatchObject({ credits: null, startCredits: 100, aiAnswers: true, features: { codeChanges: true } });
 
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { free: 100, perUsageDollar: 500 } }));
   vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => { delete config.badge; pro.extras = ["Onboarding call"]; }));
   expect(planFacts().map(({ credits, aiAnswers, extras }) => [credits, aiAnswers, extras])).toEqual([
     [null, true, []],

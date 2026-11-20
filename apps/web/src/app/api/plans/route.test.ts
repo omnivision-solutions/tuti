@@ -1,4 +1,4 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, creditsOn } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { GET } from "./route";
@@ -10,8 +10,7 @@ test("the plans are served where they're sold, for the marketing site, and not f
   expect(GET().status).toBe(404);
 
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("AI_CREDITS", "on");
-  vi.stubEnv("AI_CREDITS_FREE", "0");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   const body = await GET().json();
   expect(body.plans.map((plan: { name: string }) => plan.name)).toEqual(["Free", "Pro", "Business"]);
   expect(body.enterprise.features.length).toBeGreaterThan(0);
@@ -22,6 +21,6 @@ test("the plans are served where they're sold, for the marketing site, and not f
   expect(body.plans[1].facts.credits).toBe(1000);
   expect([body.badgePerMonth, body.badgeYearPerMonth, body.trialDays]).toEqual([49, 49, null]);
 
-  vi.stubEnv("AI_CREDITS_FREE", "100");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 100 }));
   expect((await GET().json()).aiInEveryPlan).toBe(true);
 });

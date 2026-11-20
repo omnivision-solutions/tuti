@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { FAKE_STRIPE_WEBHOOK_SECRET, startStripeFake, stripeSignature, type StripeFake } from "@tuti/testkit";
+import { creditsOn, FAKE_STRIPE_WEBHOOK_SECRET, startStripeFake, stripeSignature, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...stripe.env, AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, TUTI_CONFIG: creditsOn(), APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");
@@ -36,7 +36,7 @@ const topUps = () =>
   prisma.creditGrant.findMany({ where: { projectId: project.id, source: "TOPUP" }, select: { credits: true, remaining: true, expiresAt: true, paidCents: true, stripeSessionId: true } });
 
 test("a top-up opens Stripe Checkout for the amount, at the top-up rate of the time", async () => {
-  vi.stubEnv("AI_CREDITS_PER_TOPUP_DOLLAR", "50");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ perTopupDollar: 50 }));
   const result = await call(topUpCredits, as(), { dollars: 10 });
   const session = stripe.sessions.at(-1)!;
   expect(result).toEqual({ url: session.url, dollars: 10, credits: 500 });
@@ -62,7 +62,7 @@ test("only whole dollars from $5 to $1,000; off without Stripe or credits", asyn
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
   await expect(call(topUpCredits, as(), { dollars: 10 })).rejects.toMatchObject({ status: 503, code: "topups_unavailable" });
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
   await expect(call(topUpCredits, as(), { dollars: 10 })).rejects.toMatchObject({ status: 503 });
   expect(stripe.sessions.filter((session) => session.client_reference_id === project.id)).toEqual([]);
 });
@@ -106,17 +106,8 @@ test("buying turned off meanwhile (no Stripe key, or credits off): a payment alr
   await call(topUpCredits, as(), { dollars: 10 });
   const { id } = stripe.sessions.at(-1)!;
   vi.stubEnv("STRIPE_SECRET_KEY", "");
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
   expect((await deliver(stripe.event(id))).status).toBe(200);
-  expect(await topUps()).toHaveLength(1);
-});
-
-test("an expiry that isn't whole days is the default: the paid session's credits still come", async () => {
-  vi.stubEnv("AI_CREDITS_TOPUP_EXPIRY_DAYS", "0.5");
-  await call(topUpCredits, as(), { dollars: 10 });
-  const session = stripe.sessions.at(-1)!;
-  expect(session.metadata.days).toBe("365");
-  expect((await deliver(stripe.event(session.id))).status).toBe(200);
   expect(await topUps()).toHaveLength(1);
 });
 

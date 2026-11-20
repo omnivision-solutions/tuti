@@ -1,17 +1,24 @@
+import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { topupExpiryDays } from "./credits";
+import { checkConfig } from "./config";
+import { creditsEnabled, topupExpiryDays } from "./credits";
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-test("a top-up lasts whole days: 365 by default, 0 for good, and anything else is the default", () => {
-  const days = (value: string) => {
-    vi.stubEnv("AI_CREDITS_TOPUP_EXPIRY_DAYS", value);
-    return topupExpiryDays();
-  };
-  expect([days(""), days("30"), days(" 30 "), days("0")]).toEqual([365, 30, 30, null]);
-  // Blank (it isn't 0), a fraction, negative, or not a number.
-  expect([days("   "), days("0.5"), days("-1"), days("a year")]).toEqual([365, 365, 365, 365]);
+test("credits are off, and a top-up lasts 365 days, unless the config file says otherwise; 0 days is for good", () => {
+  expect([creditsEnabled(), topupExpiryDays()]).toEqual([false, 365]);
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true, topupExpiryDays: 0 } }));
+  expect([creditsEnabled(), topupExpiryDays()]).toEqual([true, null]);
+  // Not whole days: the file is refused, naming the key.
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { topupExpiryDays: 0.5 } }));
+  expect(() => topupExpiryDays()).toThrow(/credits\.topupExpiryDays/);
+});
+
+test("an AI_CREDITS variable still set stops start-up, naming its key", () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("AI_CREDITS_LOW", "50");
+  expect(() => checkConfig()).toThrow("AI_CREDITS → credits.enabled, AI_CREDITS_LOW → credits.low");
 });
