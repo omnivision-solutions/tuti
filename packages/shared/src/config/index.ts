@@ -11,9 +11,9 @@ import { customDomains, CUSTOM_DOMAINS_REPLACED } from "./custom-domains";
 import { ownPortal, OWN_PORTAL_REPLACED } from "./own-portal";
 
 /**
- * The deployment's config file: a JSON file at TUTI_CONFIG (a path), mounted into the web app and the worker alike. It
- * holds what an operator tunes, by feature; secrets and where things are (URLs, hosts, keys) stay in env vars, and no
- * value is read from both. Every key is optional: what the file leaves out is its default, defined here, beside its
+ * The deployment's config file: a JSON file at TUTI_CONFIG (a path), mounted into the web app, the worker and the
+ * marketing site alike. It holds what an operator tunes, by feature; secrets, and the addresses of the services Tuti
+ * uses (database, mail, storage, AI provider), stay in env vars, and no value is read from both. Every key is optional: what the file leaves out is its default, defined here, beside its
  * feature. Without a file, every value is its default.
  *
  * One file per feature in this folder, each a section of the schema below, read as config().<section>. A new value is a
