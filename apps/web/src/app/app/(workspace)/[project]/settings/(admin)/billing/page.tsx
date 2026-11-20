@@ -242,7 +242,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               {/* The balance (what's owed taken off, never below none: what's owed is said under it), of what the credits listed under it started as. */}
               {monthly.length === 0 && <Meter label="Balance" left={extra.length > 0 ? Math.max(balance, 0) : null} of={extra.length > 0 ? sum(extra, "credits") : null} used="No credits left." />}
               {/* More owed than is left (a request that ran past the last credit): what the next credits pay first. */}
-              {monthly.length === 0 && balance <= -0.01 && <p className="text-sm text-muted-foreground">AI is paused: this project owes {credits(-balance)} credits.</p>}
+              {/* As soon as AI is paused (aiPaused: nothing over once what's owed is taken), what it owes, as the license's line says. */}
+              {monthly.length === 0 && balance <= 0 && owed >= 0.01 && <p className="text-sm text-muted-foreground">AI is paused: this project owes {credits(owed)} credits.</p>}
               {extra.length > 0 && (
                 <table className="w-full text-sm text-muted-foreground" aria-label="AI credits left">
                   <thead className="sr-only">

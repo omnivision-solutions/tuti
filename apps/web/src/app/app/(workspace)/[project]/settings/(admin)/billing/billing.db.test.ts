@@ -360,3 +360,20 @@ test("with no credits left and some owed, the balance says what the project owes
   expect(page).toMatch(meter("Balance", "No credits left."));
   expect(page).toContain("AI is paused: this project owes 3.5 credits.");
 });
+
+test("owing more than the credits there, the balance shows none left, never below, and says what's owed; owing just what's there, too", async () => {
+  vi.stubEnv("AI_CREDITS", "on");
+  await billing();
+  await prisma.creditGrant.updateMany({ where: { projectId }, data: { remaining: 0 } });
+  // Owes 5, then 2 credits come: the next request takes them, and AI stays paused.
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 5 } });
+  await prisma.creditGrant.create({ data: { projectId, source: "TOPUP", credits: 2, remaining: 2, note: "Top-up", expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000) } });
+  let page = await billing();
+  expect(page).toMatch(meter("Balance", "0 of 2 left"));
+  expect(page).toContain("AI is paused: this project owes 5 credits.");
+  // Owes exactly what's there: none over, AI paused, and said why.
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 2 } });
+  page = await billing();
+  expect(page).toMatch(meter("Balance", "0 of 2 left"));
+  expect(page).toContain("AI is paused: this project owes 2 credits.");
+});
