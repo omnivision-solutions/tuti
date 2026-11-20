@@ -2513,7 +2513,7 @@ test("on a server selling plans, a conversation closed before the plan's history
   await checkpoint(owner, "conversation-past-plan-history");
 });
 
-// On Tuti's cloud, whose team app shows its own chat launcher at the bottom right (APP_WIDGET_PROJECT).
+// On Tuti's cloud, whose team app shows its own chat launcher at the bottom right (ownPortal.widgetProject).
 test("Tuti's chat launcher isn't in the Inbox, so the reply box's buttons are all clickable; on a phone a page's pinned Save stays clear of it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

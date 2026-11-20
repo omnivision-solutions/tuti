@@ -1,17 +1,19 @@
 import { domainToASCII } from "node:url";
 
+import { config } from "@tuti/shared";
+
 import { appUrl, portalTemplate } from "./hosts";
 
 /**
  * Portals on their own domains (help.acme.com): which hostnames a project may use, and the DNS
- * records that verify one. Custom domains are on when CUSTOM_DOMAIN_TARGET says where customers
+ * records that verify one. Custom domains are on when customDomains.target (the config file) says where customers
  * point them (a hostname, e.g. customers.tuti.so): whatever sends those requests to Tuti with
  * their own Host (a proxy with TLS for them) is set up outside it.
  */
 
 /** Where customers point their domain (a CNAME), or null when custom domains are off. */
 export function customDomainTarget(): string | null {
-  return process.env.CUSTOM_DOMAIN_TARGET?.trim().toLowerCase() || null;
+  return config().customDomains.target.trim().toLowerCase() || null;
 }
 
 /** The TXT record that verifies `hostname` for a project with `token`. */

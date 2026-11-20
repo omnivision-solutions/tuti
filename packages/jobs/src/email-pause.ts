@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured, emailPausedEmail, emailPausedTeamEmail, sendEmail } from "@tuti/email";
-import { log } from "@tuti/shared";
+import { config, log } from "@tuti/shared";
 import { signValue, verifyValue } from "@tuti/shared/signed";
 
 import { pausing } from "./email-limits";
@@ -42,7 +42,7 @@ export async function tellPaused(projectId: string) {
   if (!state?.emailPausedAt || state.emailPauseToldAt) {
     return;
   }
-  const operator = process.env.APP_PORTAL_OWNER!.trim();
+  const operator = config().ownPortal.owner.trim();
   const app = new URL(process.env.APP_URL).origin;
   const told = await prisma.$transaction(
     async (tx) => {

@@ -1,3 +1,4 @@
+import { configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { decodeJwt, jwtVerify } from "jose";
 import { afterEach, expect, test, vi } from "vitest";
@@ -13,7 +14,7 @@ afterEach(() => {
 
 test("the team app's widget gets a token for the account, signed with its project's SSO secret, once SSO is on there", async () => {
   const project = await createProject(await signUp());
-  vi.stubEnv("APP_WIDGET_PROJECT", project.slug);
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { widgetProject: project.slug } }));
   const ada = await signUp("Ada");
   actAs(ada);
 

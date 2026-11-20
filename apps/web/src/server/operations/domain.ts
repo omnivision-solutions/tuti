@@ -14,12 +14,12 @@ import { requirePlan } from "./plan";
 
 /**
  * A portal on its own domain (help.acme.com), Phase 10: the team adds it, points it at Tuti (a
- * CNAME to CUSTOM_DOMAIN_TARGET) and proves it's theirs with a TXT record; once verified, the
+ * CNAME to customDomains.target) and proves it's theirs with a TXT record; once verified, the
  * portal answers there too (server/custom-domains.ts). With Cloudflare for SaaS set up
  * (server/cloudflare.ts), a verified domain also gets a custom hostname there, for its certificate.
  */
 
-const OFF = "Custom domains aren't set up on this server (see CUSTOM_DOMAIN_TARGET in .env.example)";
+const OFF = "Custom domains aren't set up on this server (see customDomains.target in the config file)";
 
 type Domain = { hostname: string; verificationToken: string; verifiedAt: Date | null; cloudflareId: string | null; certificate: CertificateStatus | null };
 

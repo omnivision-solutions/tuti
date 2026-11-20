@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { emailConfigured, emailLimitEmail, sendEmail } from "@tuti/email";
-import { effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, type PlanKey, plansEnabled, trialEmailAllowance, trialTerms, upgradeFor } from "@tuti/shared";
+import { config, effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, type PlanKey, plansEnabled, trialEmailAllowance, trialTerms, upgradeFor } from "@tuti/shared";
 
 import { grantCredits } from "./credits";
 import { grantLicenseCredits } from "./plan-licenses";
@@ -382,7 +382,7 @@ const MIN_COMPLAINTS = 3;
 const MAX_COMPLAINTS = 5;
 
 /** Whether pausing applies: on a server selling plans, with an operator to resume a paused project. */
-export const pausing = () => plansEnabled() && !!process.env.APP_PORTAL_OWNER?.trim();
+export const pausing = () => plansEnabled() && !!config().ownPortal.owner.trim();
 
 /**
  * On a server selling plans, pauses a project's email to its users when its bounces or complaints

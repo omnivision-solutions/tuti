@@ -696,6 +696,62 @@
         }
       },
       "additionalProperties": false
+    },
+    "ownPortal": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "project": {
+          "default": "",
+          "type": "string",
+          "description": "The project whose portal is under a path of the app's domain, the path being its slug (\"help\": /help/docs). Its slug may be a reserved one, like help (not one of the app's own paths, like api); empty: none"
+        },
+        "owner": {
+          "default": "",
+          "type": "string",
+          "description": "The only address (verified) that can create `ownPortal.project`'s project; it also gets told when a project's email is paused. Empty: nobody"
+        },
+        "widgetProject": {
+          "default": "",
+          "type": "string",
+          "description": "A project whose widget shows in the team app (never on portals); with SSO on there, it signs people in with their account. Empty: none"
+        }
+      },
+      "additionalProperties": false
+    },
+    "customDomains": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "target": {
+          "default": "",
+          "type": "string",
+          "description": "The hostname customers point their domain at with a CNAME (\"customers.example.com\"); your proxy sends any host there to the app and gets it a TLS certificate. Empty: custom domains are off"
+        },
+        "cloudflareZoneId": {
+          "default": "",
+          "type": "string",
+          "description": "Cloudflare for SaaS gets the domains' certificates instead: its zone (Custom Hostnames on, fallback origin `customDomains.target`), with CLOUDFLARE_API_TOKEN. Empty: not used"
+        }
+      },
+      "additionalProperties": false
+    },
+    "analytics": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "posthogKey": {
+          "default": "",
+          "type": "string",
+          "description": "PostHog's project key (a public one). Empty: nothing is sent"
+        },
+        "posthogHost": {
+          "default": "https://eu.i.posthog.com",
+          "type": "string",
+          "description": "PostHog's address"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

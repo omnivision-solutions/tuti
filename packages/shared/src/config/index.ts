@@ -6,6 +6,9 @@ import { log } from "../log";
 import { ai, AI_REPLACED } from "./ai";
 import { autopilot, AUTOPILOT_REPLACED } from "./autopilot";
 import { media, MEDIA_REPLACED } from "./media";
+import { analytics, ANALYTICS_REPLACED } from "./analytics";
+import { customDomains, CUSTOM_DOMAINS_REPLACED } from "./custom-domains";
+import { ownPortal, OWN_PORTAL_REPLACED } from "./own-portal";
 
 /**
  * The deployment's config file: a JSON file at TUTI_CONFIG (a path), mounted into the web app and the worker alike. It
@@ -26,12 +29,22 @@ export const configSchema = z.object({
   media,
   ai,
   autopilot,
+  ownPortal,
+  customDomains,
+  analytics,
 });
 
 export type Config = z.output<typeof configSchema>;
 
 /** Env vars a section replaced, with their keys: one still set is a server not yet moved over. */
-export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED, ...AI_REPLACED, ...AUTOPILOT_REPLACED };
+export const CONFIG_REPLACED: Record<string, string> = {
+  ...MEDIA_REPLACED,
+  ...AI_REPLACED,
+  ...AUTOPILOT_REPLACED,
+  ...OWN_PORTAL_REPLACED,
+  ...CUSTOM_DOMAINS_REPLACED,
+  ...ANALYTICS_REPLACED,
+};
 
 let loaded: { path: string; config: Config } | null = null;
 

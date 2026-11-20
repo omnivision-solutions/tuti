@@ -13,7 +13,7 @@ import { TutiWidget } from "./widget";
 
 import "./globals.css";
 
-// Rendered per request, so analytics follows the server's POSTHOG_KEY (@tuti/ui/analytics), not the build's.
+// Rendered per request, so analytics follows the config file's analytics section (@tuti/ui/analytics), not the build's.
 export const dynamic = "force-dynamic";
 
 // Every page sets its own (pageMetadata); these are the defaults (a 404) and the title's template.

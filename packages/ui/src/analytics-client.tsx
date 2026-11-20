@@ -261,7 +261,7 @@ export function beforeSend(
 }
 
 /**
- * Tuti's cloud only: page views to PostHog, when the server sets POSTHOG_KEY (a self-hosted server leaves it unset, and
+ * Tuti's cloud only: page views to PostHog, when the server sets analytics.posthogKey (a self-hosted server leaves it unset, and
  * sends nothing). PostHog's script is fetched only then. Never on portals: their visitors are customers' visitors.
  */
 export function PostHogAnalytics({ token, host, under }: { token: string; host: string; under?: string }) {

@@ -1,3 +1,5 @@
+import { config } from "@tuti/shared";
+
 /**
  * Project slugs become portal subdomains, so they must be valid DNS labels.
  * Single dashes only: "--" is reserved (dev portals use <slug>--dev).
@@ -22,14 +24,14 @@ export function isReservedSlug(slug: string): boolean {
 }
 
 /**
- * A slug in use: not reserved, or the one Tuti's own portal has (APP_PORTAL_PROJECT, e.g. "help";
- * see lib/app-portal.ts), which stays reserved for creating projects (only APP_PORTAL_OWNER may).
+ * A slug in use: not reserved, or the one Tuti's own portal has (ownPortal.project in the config file, e.g. "help";
+ * see lib/app-portal.ts), which stays reserved for creating projects (only ownPortal.owner may).
  */
 export function isUsableSlug(slug: string): boolean {
   return !isReservedSlug(slug) || slug === appPortalSlug();
 }
 
-/** APP_PORTAL_PROJECT as a slug (trimmed, lowercase), or null. */
+/** ownPortal.project as a slug (trimmed, lowercase), or null. */
 export function appPortalSlug(): string | null {
-  return process.env.APP_PORTAL_PROJECT?.trim().toLowerCase() || null;
+  return config().ownPortal.project.trim().toLowerCase() || null;
 }

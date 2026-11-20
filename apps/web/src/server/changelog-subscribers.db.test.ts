@@ -1,4 +1,4 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -1141,7 +1141,7 @@ describe("the project's email limits", () => {
   });
 
   test("resumed, the entries the pause held aren't sent: a pause holds its email for good", async () => {
-    vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
+    vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { owner: "e2e-operator@example.com" } }));
     vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
     onTestFinished(() => {
       vi.useRealTimers();

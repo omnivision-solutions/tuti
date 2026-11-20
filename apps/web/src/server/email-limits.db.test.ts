@@ -1,4 +1,4 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { claimProjectEmail, handlers, resumeToken } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("APP_PORTAL_OWNER", OPERATOR);
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { owner: OPERATOR } }));
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -277,7 +277,7 @@ test("a project paused mid-run stops there; without an operator to resume it, no
   expect(await claimProjectEmail(project.id)).toBe(false);
 
   const other = await setup();
-  vi.stubEnv("APP_PORTAL_OWNER", "");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { owner: "" } }));
   await prisma.projectEmailDay.updateMany({ where: { projectId: other.project.id }, data: { sent: 100, bounced: 1 } });
   await sesEvent(other.project.id, "Bounce");
   expect(await pausedAt(other.project.id)).toBeNull();

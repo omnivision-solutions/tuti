@@ -1,3 +1,4 @@
+import { configFile } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -143,7 +144,7 @@ test("Tuti's own portal under its path on the app's domain (tuti.example/help/â€
   const rewrite = async (path: string) => (await response(path)).headers.get("x-middleware-rewrite");
   // Off unless a project is named.
   expect(await rewrite("/help/docs")).toBeNull();
-  vi.stubEnv("APP_PORTAL_PROJECT", "help");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "help" } }));
   expect(await rewrite("/help/docs/getting-started")).toBe("http://tuti.example/portal/help/docs/getting-started");
   expect(await rewrite("/help/docs/getting-started.md")).toBe("http://tuti.example/portal/help/docs/getting-started/md");
   expect(await rewrite("/help")).toBe("http://tuti.example/portal/help");

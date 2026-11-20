@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { type TeamRole, prisma } from "@tuti/db";
 import { importsSettled, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
-import { billingFile, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
+import { billingFile, configFile, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
@@ -153,7 +153,7 @@ async function startedNumber(slug: string, token: Awaited<ReturnType<typeof inbo
 }
 
 const matrix: Matrix = {
-  // A token for the account itself (none while APP_WIDGET_PROJECT has SSO off; see app-widget.db.test.ts).
+  // A token for the account itself (none while ownPortal.widgetProject has SSO off; see app-widget.db.test.ts).
   "app-widget": {
     appWidgetToken: { allowed: "signed in", refusesSsoUsers: true, call: () => appWidget.appWidgetToken() },
   },
@@ -797,7 +797,7 @@ beforeAll(async () => {
     vi.stubEnv(name, value);
   }
   dns = await startDnsFake();
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   site = await startSiteFake();
   // Licence checks ask the local site, never tuti.so: it has no licence server (its own 404), so "unreachable".

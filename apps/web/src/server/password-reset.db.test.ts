@@ -1,3 +1,4 @@
+import { configFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -119,7 +120,7 @@ async function linkTo(email: string) {
  * team's site (which forwards the path to the portal's Tuti host).
  */
 async function teamRunPortals() {
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   const onDomain = await createProject(await signUp("Domain owner"));
   const domain = `help.${randomUUID().slice(0, 8)}.example.com`;
   await prisma.customDomain.create({ data: { projectId: onDomain.id, hostname: domain, verificationToken: "t", verifiedAt: new Date() } });

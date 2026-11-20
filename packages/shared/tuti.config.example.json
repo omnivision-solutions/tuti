@@ -29,5 +29,7 @@
         "code_changes": "anthropic/claude-sonnet-5.5"
       }
     }
-  }
+  },
+  "ownPortal": { "project": "help", "owner": "operator@example.com" },
+  "customDomains": { "target": "customers.example.com" }
 }

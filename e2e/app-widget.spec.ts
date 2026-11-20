@@ -4,7 +4,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_WIDGET_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
-// On Tuti's cloud, whose team app shows its own project's widget (APP_WIDGET_PROJECT).
+// On Tuti's cloud, whose team app shows its own project's widget (ownPortal.widgetProject).
 test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on the signed-out pages", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");

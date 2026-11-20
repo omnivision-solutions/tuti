@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { liveDomain, projectWith } from "@tuti/jobs";
 
+import { customDomainTarget } from "@/lib/custom-domains";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
@@ -87,7 +88,7 @@ export function OPTIONS() {
  * address links use, which a mount on the team's site takes first, and another process may still hold).
  */
 async function isOwnDomain(slug: string, origin: string): Promise<boolean> {
-  if (!process.env.CUSTOM_DOMAIN_TARGET?.trim()) {
+  if (!customDomainTarget()) {
     return false;
   }
   const domain = await prisma.customDomain.findFirst({

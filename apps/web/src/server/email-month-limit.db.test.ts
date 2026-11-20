@@ -1,4 +1,4 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { cappedProjects, claimProjectEmail, emailsThisMonth, grantLicenseCredits, handlers, releaseProjectEmail, resumeToken } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -269,7 +269,7 @@ test("a full project's email due now (its job never ran) is moved to next month 
   ];
 
   // Paused: left as it is, for the resume.
-  vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { owner: "e2e-operator@example.com" } }));
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
   await handlers.resubmitReplyEmails({}, log);
   await handlers.resubmitShippedEmails({}, log);

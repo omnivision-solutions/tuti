@@ -83,7 +83,7 @@ See [docs/secrets.md](secrets.md) (maintainers use Infisical via `pnpm env:pull`
 ### Production routing (Tuti's cloud)
 
 tuti.so is two apps on one domain, split by path on the server's proxy (Traefik): `/app`, `/api`, `/_tuti`
-and `/help` (Tuti's own help center, `APP_PORTAL_PROJECT`) go to the app (`apps/web`), whose domains are
+and `/help` (Tuti's own help center, the config file's `ownPortal.project`) go to the app (`apps/web`), whose domains are
 those paths with the prefix kept (not stripped), and everything else to the marketing site
 (`apps/marketing`), whose domain is all of `tuti.so` (the longer rule wins). Portals (`*.tuti.so`) and
 customers' domains go to the app. The site's links into the app are plain paths on the same domain; its
@@ -91,8 +91,8 @@ pricing comes from the app's `/api/plans`, so plans and limits stay the app's se
 variable, `APP_URL`: the app's public address (`https://tuti.so`; the app answers only on its own host). Its image:
 `docker build -f apps/marketing/Dockerfile -t tuti-marketing .` (port 3000). In development each runs on
 its own port, and the site's links go to the app's dev server. Both send page views to PostHog, cookieless,
-when `POSTHOG_KEY` is set (and `POSTHOG_HOST`, PostHog's EU cloud by default); a self-hosted server leaves it
-unset and sends nothing. The site carries Tuti's own widget when `WIDGET_PROJECT` names its project (`help` on tuti.so);
+when the config file has `analytics.posthogKey` (the same file as the app's, at `TUTI_CONFIG`, mounted into the site too);
+a self-hosted server leaves it out and sends nothing. The site carries Tuti's own widget when `WIDGET_PROJECT` names its project (`help` on tuti.so);
 unset, it loads none.
 
 ## Self-hosting
@@ -226,6 +226,13 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `autopilot.limits.fileBytes` | `1000000` | One file in the repository, in bytes at most; bigger ones are left out (a whole number from 10000 to 100000000) |
 | `autopilot.limits.downloadMs` | `120000` | How long downloading the repository may take, in milliseconds (a whole number from 5000 to 900000) |
 | `autopilot.verify.after` | `0.7` | How sure the decision model must be that edits piling up on an article call for Verify, before Autopilot starts one (a number from 0 to 1) |
+| `ownPortal.project` | `""` | The project whose portal is under a path of the app's domain, the path being its slug ("help": /help/docs). Its slug may be a reserved one, like help (not one of the app's own paths, like api); empty: none |
+| `ownPortal.owner` | `""` | The only address (verified) that can create `ownPortal.project`'s project; it also gets told when a project's email is paused. Empty: nobody |
+| `ownPortal.widgetProject` | `""` | A project whose widget shows in the team app (never on portals); with SSO on there, it signs people in with their account. Empty: none |
+| `customDomains.target` | `""` | The hostname customers point their domain at with a CNAME ("customers.example.com"); your proxy sends any host there to the app and gets it a TLS certificate. Empty: custom domains are off |
+| `customDomains.cloudflareZoneId` | `""` | Cloudflare for SaaS gets the domains' certificates instead: its zone (Custom Hostnames on, fallback origin `customDomains.target`), with CLOUDFLARE_API_TOKEN. Empty: not used |
+| `analytics.posthogKey` | `""` | PostHog's project key (a public one). Empty: nothing is sent |
+| `analytics.posthogHost` | `"https://eu.i.posthog.com"` | PostHog's address |
 
 ### Autopilot's settings
 
