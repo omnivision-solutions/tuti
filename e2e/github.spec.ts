@@ -51,10 +51,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app", "acme-e2e/ios"]);
   await expect(owner.getByRole("heading", { name: "Repositories 2" })).toBeVisible();
   await owner.getByRole("button", { name: "Actions for acme-e2e/ios" }).click();
-  // The removal's own answer, which brings the page what's saved.
-  const removal = owner.waitForResponse((response) => response.request().method() === "POST" && Boolean(response.request().headers()["next-action"]));
   await owner.getByRole("menuitem", { name: "Remove" }).click();
-  await (await removal).finished();
   await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
   await expect(owner.getByRole("heading", { name: "Repositories 1" })).toBeVisible();
