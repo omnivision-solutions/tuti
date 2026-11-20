@@ -49,7 +49,8 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
             <PlusIcon aria-hidden />
             Add readers
           </DialogTrigger>
-          <DialogContent>
+          {/* A long list pasted on a phone scrolls in the dialog: its buttons stay on the screen. */}
+          <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto">
             {/* Inside the content, which is there only while it's open: each opening starts empty, with no error left. */}
             <AddReadersForm projectSlug={projectSlug} onBusy={(adding) => { busy.current = adding; }} onAdded={() => setAdding(false)} />
           </DialogContent>
