@@ -8,7 +8,7 @@ import { apiFor, createProject, newPerson, png, signUp } from "./helpers";
 import { latestEmailTo, linkIn, verifyEmail } from "./mail";
 
 test("the team sets what readers can do with an article and the docs' home, seeing each change before saving it", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -58,13 +58,42 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(preview.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Copy page" })).toBeVisible();
   await expect(preview.getByText(/^Updated /)).toBeVisible();
+  // One card of switches, no headings or hints: the preview shows what each does, and when a date shows is behind its ⓘ.
+  const actions = owner.locator("[data-slot=portal-settings]");
+  const menu = owner.getByRole("switch", { name: "Page actions menu", exact: true });
+  const inMenu = owner.getByRole("group", { name: "In the page actions menu" });
+  await expect(actions.getByRole("heading")).toHaveCount(0);
+  await expect(actions.getByText(/Lets readers copy/)).toHaveCount(0);
+  await expect(actions.getByRole("switch")).toHaveCount(5);
+  await expect(inMenu.getByRole("switch")).toHaveCount(3);
+  await expect(owner.getByText(/None shows until you do/)).toHaveCount(0);
+  await actions.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("Under each article's heading: when you last published changes to it. None shows until you do.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await checkpoint(owner, "customize-content-actions");
+  // On a phone nothing runs off the side: each switch stays beside its name, and the menu's own are indented under it.
+  const box = async (locator: Locator) => (await locator.boundingBox())!;
+  const viewport = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await actions.evaluate((column) => column.scrollWidth - column.clientWidth)).toBeLessThanOrEqual(0);
+  const [actionsCard, menuLabel, menuSwitch, copyLabel, copySwitch] = await Promise.all(
+    [actions.locator("form section > div"), actions.getByText("Page actions menu", { exact: true }), menu, actions.getByText("Copy as Markdown", { exact: true }), owner.getByRole("switch", { name: "Copy as Markdown" })].map(box),
+  );
+  expect(copyLabel.x).toBeGreaterThan(menuLabel.x);
+  for (const [label, toggle] of [[menuLabel, menuSwitch], [copyLabel, copySwitch]]) {
+    expect(toggle.x).toBeGreaterThan(label.x + label.width);
+    expect(toggle.y).toBeLessThan(label.y + label.height);
+    expect(toggle.x + toggle.width).toBeLessThanOrEqual(actionsCard.x + actionsCard.width);
+  }
+  await checkpoint(owner, "customize-content-actions-phone");
+  await owner.setViewportSize(viewport);
   // Each switch shows in the preview at once.
   await owner.getByRole("switch", { name: "Copy as Markdown" }).uncheck();
   await expect(preview.getByRole("button", { name: "Copy page" })).toHaveCount(0);
   await expect(preview.getByRole("button", { name: "Page actions" })).toBeVisible();
-  await owner.getByRole("switch", { name: "Show the last updated date" }).uncheck();
+  await owner.getByRole("switch", { name: "Last updated date", exact: true }).uncheck();
   await expect(preview.getByText(/^Updated /)).toHaveCount(0);
-  await checkpoint(owner, "customize-content-actions");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Content actions saved")).toBeVisible();
 
@@ -76,7 +105,7 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("button", { name: "Copy page" })).toHaveCount(0);
   await expect(visitor.getByText(/^Updated /)).toHaveCount(0);
   // With the menu off, there's none.
-  await owner.getByRole("switch", { name: "Show the page actions menu" }).uncheck();
+  await menu.uncheck();
   await expect(preview.getByRole("button", { name: "Page actions" })).toHaveCount(0);
   await owner.getByRole("button", { name: "Save changes" }).click();
   // Saved once nothing's left to save (the last save's toast may still be up).
@@ -119,11 +148,9 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("Acme help");
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   // On a phone nothing runs off the side: a field fills the card under its label, and the switch stays beside its own.
-  const viewport = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   expect(await settings.evaluate((column) => column.scrollWidth - column.clientWidth)).toBeLessThanOrEqual(0);
-  const box = async (locator: Locator) => (await locator.boundingBox())!;
   const [card, titleLabel, title, popularLabel, toggle] = await Promise.all(
     [settings.locator("form section > div"), settings.getByText("Title", { exact: true }), owner.getByLabel("Title", { exact: true }), settings.getByText("Popular articles", { exact: true }), popular].map(box),
   );
