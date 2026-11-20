@@ -227,7 +227,15 @@ export function GithubRepositories({
                     <MoreHorizontalIcon />
                   </DropdownMenuTrigger>
                   {/* Removed, its row and this menu's button go: focus moves to "Add repository" instead of being lost. */}
-                  <DropdownMenuContent align="end" className="w-auto min-w-32" finalFocus={() => (removed.current === repo.id ? document.getElementById("add-repository") : true)}>
+                  <DropdownMenuContent align="end" className="w-auto min-w-32" finalFocus={() => {
+                      // Once: put back (a removal that failed, or added again), its menu hands focus to its own button.
+                      if (removed.current !== repo.id) {
+                        return true;
+                      }
+                      removed.current = null;
+                      return document.getElementById("add-repository");
+                    }}
+                  >
                     <DropdownMenuItem
                       variant="destructive"
                       onClick={() => {
