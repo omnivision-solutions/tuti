@@ -184,7 +184,7 @@ test("a tampered link doesn't verify anything", async () => {
   expect(await isVerified(email)).toBe(false);
 });
 
-test("with the mail server down, signing up still works but asking to resend says it failed", async () => {
+test("with the mail server down, signing up still works but asking to resend, or signing in before verifying, says it failed", async () => {
   const { createServer } = await import("node:net");
   const closed = createServer();
   await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
@@ -209,8 +209,15 @@ test("with the mail server down, signing up still works but asking to resend say
     await auth.api.signUpEmail({ body: { email, name: "Ada", password: "correct horse battery staple" } });
     expect(await prisma.user.count({ where: { email } })).toBe(1);
     expect((await resend()).ok).toBe(false);
+    // Not "Check your email" (EMAIL_NOT_VERIFIED): the email didn't go.
+    const early = await postOnApp("sign-in/email", { email, password: "correct horse battery staple" });
+    expect(early.ok).toBe(false);
+    const answer = await early.json();
+    expect(answer).toMatchObject({ message: "We couldn't send the email. Try again in a minute." });
+    expect(answer.code).not.toBe("EMAIL_NOT_VERIFIED");
 
     process.env.SMTP_PORT = workingPort;
+    expect(await (await postOnApp("sign-in/email", { email, password: "correct horse battery staple" })).json()).toMatchObject({ code: "EMAIL_NOT_VERIFIED" });
     expect((await resend()).ok).toBe(true);
     expect((await mailbox.latestTo(email)).subject).toBe("Verify your email for Tuti");
   } finally {

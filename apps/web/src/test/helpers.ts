@@ -14,18 +14,22 @@ import { request } from "./next-headers";
 
 export type TestUser = { id: string; email: string; cookie: string };
 
+/** The test password's hash, made once per file: hashing is slow on purpose, and many tests make a dozen people. */
+let passwordHash: Promise<string> | undefined;
+
 /**
- * Signs up a new user through Better Auth (with a random e2e-…@example.com address unless given one) and signs them in,
- * their address verified as its emailed link would (signing in needs it; email-verification.db.test.ts opens the link).
+ * A new user (with a random e2e-…@example.com address unless given one), its address verified as its emailed link would,
+ * signed in with its password through Better Auth (email-verification.db.test.ts signs up through it and opens the link).
  * `verified: false` leaves it unverified afterwards, as on a server without email.
  */
 export async function signUp(name = "Test user", email = `e2e-${randomUUID()}@example.com`, { verified = true } = {}): Promise<TestUser> {
   const password = "correct horse battery staple";
+  const context = await auth.$context;
+  passwordHash ??= context.password.hash(password);
+  const user = await context.internalAdapter.createUser({ email, name, emailVerified: true }, { method: "email-password" });
+  await context.internalAdapter.linkAccount({ userId: user.id, providerId: "credential", accountId: user.id, password: await passwordHash });
   // On the app, as a browser would say: a session from no host or an unknown one works nowhere.
-  const onApp = new Headers({ host: appUrl().host });
-  const { user } = await auth.api.signUpEmail({ body: { email, name, password }, headers: onApp });
-  await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
-  const { headers } = await auth.api.signInEmail({ body: { email, password }, headers: onApp, returnHeaders: true });
+  const { headers } = await auth.api.signInEmail({ body: { email, password }, headers: new Headers({ host: appUrl().host }), returnHeaders: true });
   if (!verified) {
     await prisma.user.update({ where: { id: user.id }, data: { emailVerified: false } });
   }

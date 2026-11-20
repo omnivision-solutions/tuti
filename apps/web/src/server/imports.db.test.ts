@@ -563,7 +563,8 @@ test("someone with the admin's address whose address isn't verified takes over n
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: placeholder });
   expect(await prisma.user.findUnique({ where: { id: placeholder } })).not.toBeNull();
 
-  // The link in the email sent on signing up.
+  // The emailed link (as signing up or signing in sends it).
+  await auth.api.sendVerificationEmail({ body: { email: formerEmail } });
   const link = /https?:\/\/\S+\/api\/auth\/verify-email\?[^\s)"<]+/.exec((await mailbox.latestTo(formerEmail)).text)![0].replaceAll("&amp;", "&");
   expect((await auth.handler(new Request(link))).status).toBe(302);
   expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });

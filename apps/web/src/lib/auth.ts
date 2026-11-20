@@ -125,6 +125,9 @@ async function withoutHandoffState(link: string, userId: string, signingUp: bool
   return url.toString();
 }
 
+/** Addresses whose verification email a sign-in just failed to send (sendVerificationEmail), for hooks.after to say so. */
+const unsentOnSignIn = new Set<string>();
+
 /** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
 const handOverPlaceholdersLogged = (userId: string) =>
   handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
@@ -254,6 +257,10 @@ export const auth = betterAuth({
     // itself: Better Auth's client would reload the page for it, and a tab's state is kept across signing in.
     after: createAuthMiddleware(async (ctx) => {
       const returned = ctx.context.returned;
+      const email = typeof ctx.body?.email === "string" ? ctx.body.email.toLowerCase() : "";
+      if (ctx.path === "/sign-in/email" && unsentOnSignIn.delete(email)) {
+        throw new APIError("SERVICE_UNAVAILABLE", { message: "We couldn't send the email. Try again in a minute." });
+      }
       if (ctx.path === "/sign-in/email" && returned && typeof returned === "object" && "redirect" in returned && returned.redirect) {
         return ctx.json({ ...returned, redirect: false });
       }
@@ -290,10 +297,15 @@ export const auth = betterAuth({
         await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
-        // A failed email mustn't fail a sign-up (it can be sent again), but asking
-        // to send it again should say it failed.
-        if (request && new URL(request.url).pathname.endsWith("/send-verification-email")) {
+        // A failed email mustn't fail a sign-up (it can be sent again), but asking to send it again should say it failed,
+        // as should signing in before verifying (which sends it, and fails anyway): not "Check your email". Better Auth
+        // swallows a sign-in's error, so hooks.after answers for it.
+        const path = request ? new URL(request.url).pathname : "";
+        if (path.endsWith("/send-verification-email")) {
           throw error;
+        }
+        if (path.endsWith("/sign-in/email")) {
+          unsentOnSignIn.add(user.email.toLowerCase());
         }
       }
     },
