@@ -14,7 +14,7 @@ import { detectDuplicates, embedPosts } from "./duplicates";
  * whatever happened in the one before: a failure (the embeddings provider down, say) is kept in `errors`, by phase, for
  * the script to report and fail on, and stops nothing after it.
  */
-export async function backfillEmbeddings(log: JobLogger) {
+export async function backfillEmbeddings(log: JobLogger, { batchSize = 100 }: { batchSize?: number } = {}) {
   let posts = null;
   let articles = null;
   const errors: { phase: "posts" | "articles" | "references"; message: string }[] = [];
@@ -29,38 +29,43 @@ export async function backfillEmbeddings(log: JobLogger) {
       });
       // Posts embedded before were checked for duplicates when they were (each check is a charged model request), so a
       // rerun asks nothing again: only the others are, a batch at a time, oldest first, each embedded and then checked
-      // against every older post. A batch that fails is unembedded again, so the next run takes it up where this one
-      // stopped: none is left embedded but unchecked.
+      // against every older post. Where a batch fails, the rest of it is unembedded again and the run stops there, so the
+      // next run takes it up: none is left embedded but unchecked.
       const before = new Set((await prisma.postEmbedding.findMany({ select: { postId: true } })).map((e) => e.postId));
       const fresh = rows.filter((row) => !before.has(row.id));
       // Changed text is embedded again (not checked again: a post is checked once, when it's first embedded).
       let embedded = await embedPosts(rows.filter((row) => before.has(row.id)));
       let suggestions = 0;
-      for (let i = 0; i < fresh.length; i += 100) {
-        const batch = fresh.slice(i, i + 100);
+      let failed: unknown = null;
+      const done: typeof fresh = [];
+      for (let i = 0; i < fresh.length && !failed; i += batchSize) {
+        const batch = fresh.slice(i, i + batchSize);
+        let checked = 0;
         try {
           embedded += await embedPosts(batch);
           for (const post of batch) {
             suggestions += await detectDuplicates(post.id);
+            done.push(post);
+            checked++;
           }
         } catch (error) {
-          await prisma.postEmbedding.deleteMany({ where: { postId: { in: batch.map((post) => post.id) } } });
-          throw error;
+          await prisma.postEmbedding.deleteMany({ where: { postId: { in: batch.slice(checked).map((post) => post.id) } } });
+          failed = error;
         }
       }
       // A post embedded before but newer than one embedded now never saw it (a post is compared with older ones): it's
-      // checked against those alone. A failure here unembeds nothing (that post was checked); the rest carry on and the
-      // run reports it.
-      // ponytail: a run that stopped at a failed batch leaves its earlier batches embedded, so the next run doesn't check
-      // older posts against them again; a per-post "checked" mark would, if backfills ever fail in practice.
-      let failed: unknown = null;
+      // checked against those alone. Where that fails, they're unembedded again (as they were before this run), so the
+      // next run checks them, and this, again; the rest carry on.
       for (const post of rows.filter((row) => before.has(row.id))) {
-        const older = fresh.filter((row) => row.projectId === post.projectId && row.createdAt < post.createdAt).map((row) => row.id);
-        if (older.length > 0) {
-          suggestions += await detectDuplicates(post.id, older).catch((error: unknown) => {
-            failed ??= error;
-            return 0;
-          });
+        const older = done.filter((row) => row.projectId === post.projectId && row.createdAt < post.createdAt).map((row) => row.id);
+        if (older.length === 0) {
+          continue;
+        }
+        try {
+          suggestions += await detectDuplicates(post.id, older);
+        } catch (error) {
+          await prisma.postEmbedding.deleteMany({ where: { postId: { in: older } } });
+          failed ??= error;
         }
       }
       if (failed) {

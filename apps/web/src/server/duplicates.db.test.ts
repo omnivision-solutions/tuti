@@ -377,7 +377,7 @@ describe("with a decision model (OpenRouter)", () => {
     expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
   });
 
-  test("a backfill batch whose check fails is unembedded again, so the next run checks it", async () => {
+  test("where a backfill check fails, that post is unembedded again, so the next run checks it", async () => {
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
     openai.setVector("Dark mode", along(1));
     openai.setVector("Night theme please", along(0.8));
@@ -388,15 +388,41 @@ describe("with a decision model (OpenRouter)", () => {
     await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
     const log = { info: () => {}, warn: () => {} };
 
-    vi.spyOn(prisma.duplicateSuggestion, "createMany").mockRejectedValueOnce(new Error("database blip"));
+    failSuggestionsFor(night.id);
     model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
     const failed = await backfillEmbeddings(log);
     expect(failed.errors).toContainEqual({ phase: "posts", message: "database blip" });
-    expect(await prisma.postEmbedding.count({ where: { postId: { in: [dark.id, night.id] } } })).toBe(0);
+    // The failed one (and any after it in its batch) is unembedded; "Dark mode", checked before it, stays.
+    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(0);
+    expect(await prisma.postEmbedding.count({ where: { postId: dark.id } })).toBe(1);
 
     model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
     expect((await backfillEmbeddings(log)).errors).toEqual([]);
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+  });
+
+  test("after a batch fails, posts embedded before are still checked against the batches that finished", async () => {
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    openai.setVector("Darker please", along(0.9));
+    const dark = await post("Dark mode");
+    const night = await post("Night theme please");
+    const darker = await post("Darker please");
+    // "Dark mode" (oldest) and "Darker please" (newest) were never embedded; "Night theme please" was, and checked.
+    await prisma.postEmbedding.deleteMany({ where: { postId: { in: [dark.id, darker.id] } } });
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+
+    // One post a batch: "Dark mode" is embedded and checked, then the check of "Darker please" fails.
+    model.decide({ "*": DUPLICATE }, '"new":"Darker please"');
+    failSuggestionsFor(darker.id);
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    const run = await backfillEmbeddings({ info: () => {}, warn: () => {} }, { batchSize: 1 });
+
+    expect(run.errors).toContainEqual({ phase: "posts", message: "database blip" });
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+    // The failed one is left for the next run.
+    expect(await prisma.postEmbedding.count({ where: { postId: darker.id } })).toBe(0);
   });
 
   test("while typing, a balance that can't be read shows the posts as found", async () => {
@@ -459,6 +485,20 @@ describe("with a decision model (OpenRouter)", () => {
     const found = await findSimilarPosts(project.slug, "Translate articles please");
     expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
   });
+
+  /** The next suggestions written for `postId` fail (the backfill covers every project: other posts' still go through). */
+  const failSuggestionsFor = (postId: string) => {
+    const write = prisma.duplicateSuggestion.createMany.bind(prisma.duplicateSuggestion);
+    let failed = false;
+    vi.spyOn(prisma.duplicateSuggestion, "createMany").mockImplementation(((args: Parameters<typeof write>[0]) => {
+      const data = args ? (Array.isArray(args.data) ? args.data : [args.data]) : [];
+      if (!failed && data.some((row) => row.postId === postId)) {
+        failed = true;
+        return Promise.reject(new Error("database blip"));
+      }
+      return write(args);
+    }) as unknown as typeof write);
+  };
 
   /** Older posts with these similarities to [1, 0, …] and to nothing else of each other's but through it. */
   const olderPosts = async (similarities: number[]) => {
