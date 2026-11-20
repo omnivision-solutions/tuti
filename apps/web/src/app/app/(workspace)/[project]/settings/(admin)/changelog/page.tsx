@@ -34,8 +34,8 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
     <SettingsPane title="Changelog" description="How AI drafts your changelog entries">
       <SettingsCard>
         <AiModelSetting {...model} />
-        {/* No new form when what's saved changes: that would drop what's typed and not saved. A pick since unpublished
-            stops counting in the form itself. */}
+        {/* No new form when what's saved changes: that would drop what's typed and not saved. The form follows what's
+            saved where nothing's edited, and a pick since unpublished stops counting in the form itself. */}
         <ChangelogStyleForm
           projectSlug={slug}
           tone={changelogTone}

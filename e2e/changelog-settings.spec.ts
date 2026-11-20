@@ -314,3 +314,114 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
 });
+
+test("what a teammate saves in another tab is what Save changes compares with, once this tab hears of it: fields not edited here follow it, what's typed here stays", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const [index, title] of ["Faster month view", "Agenda view"].entries()) {
+    await api("/changelog", { title, body: "What changed." });
+    await api(`/changelog/${index + 1}/publish`, { announce: false });
+  }
+  const instructions = (page: typeof team) => page.getByLabel("Instructions");
+  const chips = (page: typeof team) => page.getByRole("list", { name: "Style examples" }).getByRole("listitem");
+  const save = (page: typeof team) => page.getByRole("button", { name: "Save changes" });
+  const pickExample = async (page: typeof team, title: string) => {
+    await page.getByRole("button", { name: "Pick a style example" }).click();
+    await page.getByRole("dialog", { name: "Pick a style example" }).getByRole("button", { name: title }).click();
+  };
+  // The AI model saved here brings the page's data again: once its line names the level's model, the rest is in too.
+  const hearAgain = async (level: string, model: string) => {
+    await expect(team.getByText("AI model saved")).toHaveCount(0, { timeout: 15_000 });
+    await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: level }).click();
+    await expect(team.getByText(`Drafts ${model}`, { exact: true })).toBeVisible();
+    await expect(team.getByText("AI model saved")).toBeVisible();
+  };
+  // A teammate's tab, open from before: its instructions are empty, and it's long ready by the time they type.
+  const other = await team.context().newPage();
+  await other.goto(`/app/${slug}/settings/changelog`);
+  await expect(other.getByRole("button", { name: "Pick a style example" })).toBeVisible();
+
+  // Instructions stored with Windows line breaks (as the API may save them) are no change to save: the field holds \n.
+  await query(`UPDATE project SET "changelogTone" = $1 WHERE slug = $2`, ["Short.\r\nPlain.", slug]);
+  await team.goto(`/app/${slug}/settings/changelog`);
+  await expect(instructions(team)).toHaveValue("Short.\nPlain.");
+  await expect(save(team)).toBeDisabled();
+  // Edited and typed back, it's still what's saved, and follows a teammate's save like a field never touched. (Typed
+  // again till Save reacts: what's typed into a filled field before the page's scripts start is lost as they do.)
+  await expect(async () => {
+    await instructions(team).fill("Short.");
+    await expect(save(team)).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
+  await instructions(team).fill("Short.\nPlain.");
+  await expect(save(team)).toBeDisabled();
+
+  // Saved in another tab while this one has nothing edited: this one shows it, with nothing to save.
+  await instructions(other).fill("From the other tab.");
+  await pickExample(other, "Agenda view");
+  await save(other).click();
+  await expect(other.getByText("Changelog saved")).toBeVisible();
+  await hearAgain("Best", "Claude Opus 5.5");
+  await expect(instructions(team)).toHaveValue("From the other tab.");
+  await expect(chips(team)).toHaveText(["Agenda view"]);
+  await expect(save(team)).toBeDisabled();
+
+  // Typed here, then an example picked there: the instructions typed stay, the examples follow, and Save sends both.
+  await instructions(team).fill("Typed here.");
+  await expect(save(team)).toBeEnabled();
+  await pickExample(other, "Faster month view");
+  await expect(other.getByText("Changelog saved")).toHaveCount(0, { timeout: 15_000 });
+  await save(other).click();
+  await expect(other.getByText("Changelog saved")).toBeVisible();
+  await hearAgain("Balanced", "Claude Haiku 5.5");
+  await expect(instructions(team)).toHaveValue("Typed here.");
+  await expect(chips(team)).toHaveText(["Agenda view", "Faster month view"]);
+  await expect(save(team)).toBeEnabled();
+  // Typed back to what's saved, there's nothing to save.
+  await instructions(team).fill("From the other tab.");
+  await expect(save(team)).toBeDisabled();
+  await instructions(team).fill("Typed here.");
+  await save(team).click();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
+  await expect(save(team)).toBeDisabled();
+  // Saved here, this tab's own save is what's saved: what was saved before, typed back, is a change that stays.
+  await instructions(team).fill("From the other tab.");
+  await expect(save(team)).toBeEnabled();
+  await hearAgain("Best", "Claude Opus 5.5");
+  await expect(instructions(team)).toHaveValue("From the other tab.");
+  await expect(save(team)).toBeEnabled();
+  await instructions(team).fill("Typed here.");
+  await expect(save(team)).toBeDisabled();
+  await other.reload();
+  await expect(instructions(other)).toHaveValue("Typed here.");
+  await expect(chips(other)).toHaveText(["Agenda view", "Faster month view"]);
+
+  // After a save here (which marks the field as edited), what a teammate saves next still comes in. (Typed again till
+  // Save reacts: the other tab was just reloaded.)
+  await expect(async () => {
+    await instructions(other).fill("Saved there last.");
+    await expect(save(other)).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
+  await save(other).click();
+  await expect(other.getByText("Changelog saved")).toBeVisible();
+  await hearAgain("Balanced", "Claude Haiku 5.5");
+  await expect(instructions(team)).toHaveValue("Saved there last.");
+  await expect(save(team)).toBeDisabled();
+
+  // Examples changed here and not saved stay when a teammate saves others.
+  await team.getByRole("button", { name: "Remove Faster month view" }).click();
+  await expect(save(team)).toBeEnabled();
+  await other.reload();
+  // Removed once the reloaded page reacts: a click before its scripts start does nothing.
+  await expect(async () => {
+    if (await other.getByRole("button", { name: "Remove Agenda view" }).isVisible()) await other.getByRole("button", { name: "Remove Agenda view" }).click();
+    await expect(save(other)).toBeEnabled({ timeout: 1_000 });
+  }).toPass();
+  await save(other).click();
+  await expect(other.getByText("Changelog saved")).toBeVisible();
+  await hearAgain("Best", "Claude Opus 5.5");
+  await expect(chips(team)).toHaveText(["Agenda view"]);
+  await expect(save(team)).toBeEnabled();
+});
