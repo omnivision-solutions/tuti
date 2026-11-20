@@ -5,7 +5,7 @@ import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { issueCertificate, publishTxt } from "./dns";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, backToPortal, createProject, fillSignUp, newPerson, signUp } from "./helpers";
+import { apiFor, backToPortal, createProject, fillSignUp, holdActions, newPerson, signUp } from "./helpers";
 
 test("the team puts the portal on its own domain: adds it, verifies it with a TXT record, and people sign up and post there", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -18,12 +18,43 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await createProject(owner, "Acme", slug);
 
   await owner.goto(`/app/${slug}/settings/domain`);
-  // Settings → Domain: three ways to go live; they pick a domain of their own.
-  await expect(owner.getByRole("heading", { level: 2, name: "How do you want to go live?" })).toBeVisible();
-  await expect(owner.getByRole("radio", { name: /Tuti address/ })).toHaveAttribute("aria-checked", "true");
-  await owner.getByRole("radio", { name: /Custom domain/ }).click();
+  // Settings → Domain: three ways to go live, side by side, the Tuti address picked: its address is one row, to open or copy.
+  await expect(owner.getByRole("heading", { level: 2, name: "Portal address" })).toBeVisible();
+  const tutiOption = owner.getByRole("radio", { name: /Tuti address/ });
+  const domainOption = owner.getByRole("radio", { name: /Custom domain/ });
+  await expect(tutiOption).toHaveAttribute("aria-checked", "true");
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  expect((await domainOption.boundingBox())!.y).toBe((await tutiOption.boundingBox())!.y);
+  const address = owner.locator('[data-slot="setting-row"]', { hasText: "Your Tuti address" });
+  await expect(address).toContainText("Always works, also beside a domain.");
+  await expect(address.getByRole("link", { name: portalUrl(slug) })).toHaveAttribute("href", portalUrl(slug));
+  await checkpoint(owner, "settings-domain");
+  // On a phone the options go one under another and the address under its label; nothing runs off the side.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const tutiBox = (await tutiOption.boundingBox())!;
+  expect((await domainOption.boundingBox())!.y).toBeGreaterThanOrEqual(tutiBox.y + tutiBox.height);
+  const addressLabel = (await address.getByText("Always works, also beside a domain.").boundingBox())!;
+  expect((await address.getByRole("link").boundingBox())!.y).toBeGreaterThanOrEqual(addressLabel.y + addressLabel.height);
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-domain-phone");
+  await owner.setViewportSize(desktop);
+  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await address.getByRole("button", { name: "Copy your portal's address" }).click();
+  await expect(owner.getByText("Copied")).toBeVisible();
+  expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(portalUrl(slug));
+  // Its toast goes by itself: gone before the next screenshots, and before the next "Copied".
+  await expect(owner.getByText("Copied")).toBeHidden({ timeout: 15_000 });
+
+  // They pick a domain of their own. While it's connected the button is off, and keeps focus.
+  await domainOption.click();
   await owner.getByRole("textbox", { name: "Custom domain" }).fill(domain);
+  let release = await holdActions(owner);
   await owner.getByRole("button", { name: "Connect domain" }).click();
+  await expect(owner.getByRole("button", { name: "Connecting…" })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByRole("button", { name: "Connecting…" })).toBeFocused();
+  await release();
   // In steps: the domain's done, its DNS records are next.
   const domainStep = owner.getByRole("region", { name: "Domain", exact: true });
   await expect(domainStep.getByText("Waiting for DNS")).toBeVisible();
@@ -35,26 +66,33 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(txt).toContainText("Pending");
   await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("customers.example.com");
   await expect(txt.getByRole("button", { name: "Copy TXT content" })).toBeVisible();
+  // On a phone each record is a block, its parts labelled; nothing runs off the side.
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await checkpoint(owner, "settings-custom-domain-pending-wide");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "settings-custom-domain-pending-phone");
+  await owner.setViewportSize(desktop);
   // While it's connected, switching waits for it to be removed (the others are aria-disabled, and say why when clicked).
   await owner.getByRole("radio", { name: /Sub-folder/ }).click({ force: true });
   await expect(owner.getByText(`Remove ${domain} before switching.`)).toBeVisible();
   await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-checked", "true");
   await checkpoint(owner, "settings-custom-domain-pending");
-  // On a phone each record is a block, its parts labelled.
-  const desktop = owner.viewportSize()!;
-  await owner.setViewportSize({ width: 390, height: 844 });
-  await checkpoint(owner, "settings-custom-domain-pending-phone");
-  await owner.setViewportSize(desktop);
 
   // Before the record is there, it says what's missing; nobody can reach the portal there yet.
   const visitor = await newPerson(browser, domainUrl);
   expect((await visitor.request.get("/")).status()).toBe(404);
+  // While it checks, the button is off and keeps focus.
+  release = await holdActions(owner);
   await owner.getByRole("button", { name: "Check DNS" }).click();
+  await expect(owner.getByRole("button", { name: "Checking…" })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByRole("button", { name: "Checking…" })).toBeFocused();
+  await release();
   await expect(owner.getByText(`We couldn't find the TXT record _tuti.${domain}`, { exact: false })).toBeVisible();
 
   await publishTxt(`_tuti.${domain}`, await txt.locator("code").nth(1).innerText());
   // Copying a part puts it on the clipboard.
-  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await txt.getByRole("button", { name: "Copy TXT name" }).click();
   await expect(owner.getByText("Copied")).toBeVisible();
   expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`_tuti.${domain}`);
@@ -214,6 +252,8 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${domain} removed`)).toBeVisible();
   await expect(owner.getByRole("textbox", { name: "Custom domain" })).toBeVisible();
+  // Its Remove button went with it: focus is on the option still picked.
+  await expect(domainOption).toBeFocused();
   await expect(owner.getByRole("radio", { name: /Sub-folder/ })).toHaveAttribute("aria-disabled", "false");
   await expect(async () => expect((await visitor.request.get("/")).status()).toBe(404)).toPass({ timeout: 20_000 });
   // And the Tuti address is the portal's again.

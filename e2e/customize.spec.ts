@@ -240,7 +240,14 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await owner.goto(`/app/${slug}/customize/redirects`);
   await owner.waitForURL(`**/app/${slug}/settings/domain`);
   await expect(owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Domain" })).toHaveAttribute("aria-current", "page");
-  await expect(owner.getByText("No redirects yet")).toBeVisible();
+  await expect(owner.getByText("No redirects yet. Send your old help center's addresses to the new ones, so links and search results keep working.")).toBeVisible();
+  // One line: old address, new address, Add. Each field says what it takes when pointed at.
+  const oldAddress = owner.getByLabel("Old address");
+  const newAddress = owner.getByLabel("New address");
+  await expect(oldAddress).toHaveAttribute("title", "A path on your portal, or a whole address of your old site: its path is taken.");
+  await expect(newAddress).toHaveAttribute("title", "A path of your portal, or a full https:// address.");
+  expect((await newAddress.boundingBox())!.y).toBe((await oldAddress.boundingBox())!.y);
+  await expect(owner.getByRole("button", { name: "Add redirect" })).toHaveText("Add");
   // Pasted from the old site: its path is what's matched.
   await owner.getByLabel("Old address").fill("https://help.acme.example/hc/en-us/articles/123-Billing");
   await owner.getByLabel("New address").fill("/roadmap");
@@ -249,12 +256,23 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   const list = owner.getByRole("list", { name: "Redirects" });
   await expect(list).toContainText("/hc/en-us/articles/123-billing");
   await expect(owner.getByLabel("Old address")).toHaveValue("");
+  // How many of how many, beside the card's title.
+  await expect(owner.getByRole("heading", { level: 2, name: "Redirects 1 of" })).toBeVisible();
   // The portal's own addresses stay its own.
   await owner.getByLabel("Old address").fill("/sign-in");
   await owner.getByLabel("New address").fill("/docs");
   await owner.getByRole("button", { name: "Add redirect" }).click();
   await expect(owner.getByText("/sign-in is one of the portal's own addresses")).toBeVisible();
   await checkpoint(owner, "customize-redirects");
+  // On a phone the fields go one under another; nothing runs off the side.
+  const redirectsDesktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const oldBox = (await oldAddress.boundingBox())!;
+  expect((await newAddress.boundingBox())!.y).toBeGreaterThanOrEqual(oldBox.y + oldBox.height);
+  expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "customize-redirects-phone");
+  await owner.setViewportSize(redirectsDesktop);
 
   // Someone following an old link lands on the new page.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -266,15 +284,17 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(visitor.getByRole("heading", { name: "Roadmap" })).toBeVisible();
 
   // Deleted, the old address is nothing again.
-  // Deleting asks first: Cancel keeps it.
-  await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
+  // Deleting, under the row's ⋯ menu, asks first: Cancel keeps it.
+  await owner.getByRole("button", { name: "Actions for the redirect from /hc/en-us/articles/123-billing" }).click();
+  await owner.getByRole("menuitem", { name: "Delete" }).click();
   const confirm = owner.getByRole("alertdialog", { name: "Delete this redirect?" });
   await expect(confirm).toContainText("Visitors to /hc/en-us/articles/123-billing will no longer be sent to /roadmap.");
   await checkpoint(owner, "customize-redirect-delete", { fullPage: false });
   await confirm.getByRole("button", { name: "Cancel" }).click();
   await expect(confirm).toBeHidden();
   await expect(list).toContainText("/hc/en-us/articles/123-billing");
-  await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
+  await owner.getByRole("button", { name: "Actions for the redirect from /hc/en-us/articles/123-billing" }).click();
+  await owner.getByRole("menuitem", { name: "Delete" }).click();
   // While the delete runs the question stays: nothing closes it as if it were cancelled.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
@@ -294,6 +314,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByText("Redirect deleted")).toBeVisible();
   await expect(list).toBeHidden();
+  // Its row, and the menu that had focus, is gone: focus is on the form's first field.
+  await expect(oldAddress).toBeFocused();
   await expect(async () => {
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });

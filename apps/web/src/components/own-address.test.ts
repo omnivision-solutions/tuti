@@ -31,11 +31,12 @@ const options = (html: string) =>
     ([, checked, disabled, title]) => `${title}${checked === "true" ? " (picked)" : ""}${disabled === "true" ? " (locked)" : ""}`,
   );
 
-test("neither: three ways to go live, the Tuti address picked, with its address to copy", () => {
+test("neither: three ways to go live, the Tuti address picked, with its address a row to open or copy", () => {
   const html = card({ domain: null, site: null });
   expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain", "Sub-folder"]);
-  expect(html).toContain("https://acme.tuti.so");
-  expect(html).toContain("Copy");
+  expect(html).toContain("Your Tuti address");
+  expect(html).toContain('href="https://acme.tuti.so"');
+  expect(html).toContain("Copy your portal&#x27;s address");
 });
 
 test("one connected: it's picked, the others locked until it's removed", () => {
@@ -43,6 +44,8 @@ test("one connected: it's picked, the others locked until it's removed", () => {
   expect(options(withDomain)).toEqual(["Tuti address (locked)", "Custom domain (picked)", "Sub-folder (locked)"]);
   expect(withDomain).toContain("To switch, remove help.example.com first.");
   expect(withDomain).toContain("Remove domain");
+  // Its Tuti address's row is for a portal with nothing else.
+  expect(withDomain).not.toContain("Your Tuti address");
 
   const withSite = card({ domain: null, site });
   expect(options(withSite)).toEqual(["Tuti address (locked)", "Custom domain (locked)", "Sub-folder (picked)"]);
