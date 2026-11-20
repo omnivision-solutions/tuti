@@ -241,11 +241,16 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await owner.waitForURL(`**/app/${slug}/settings/domain`);
   await expect(owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Domain" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("No redirects yet. Send your old help center's addresses to the new ones, so links and search results keep working.")).toBeVisible();
-  // One line: old address, new address, Add. Each field says what it takes when pointed at.
+  // One line: old address, new address, Add. What each takes is behind the card's ⓘ.
   const oldAddress = owner.getByLabel("Old address");
   const newAddress = owner.getByLabel("New address");
-  await expect(oldAddress).toHaveAttribute("title", "A path on your portal, or a whole address of your old site: its path is taken.");
-  await expect(newAddress).toHaveAttribute("title", "A path of your portal, or a full https:// address.");
+  await owner.getByRole("button", { name: "More about redirects" }).click();
+  await expect(
+    owner.getByText("The old address is a path on your portal, or a whole address of your old site: its path is taken. The new one is a path of your portal, or a full https:// address."),
+  ).toBeVisible();
+  await owner.keyboard.press("Escape");
+  // On one line the placeholders and the arrow name the fields; their labels are for screen readers there.
+  await expect(owner.getByText("Old address", { exact: true })).toHaveCSS("position", "absolute");
   expect((await newAddress.boundingBox())!.y).toBe((await oldAddress.boundingBox())!.y);
   await expect(owner.getByRole("button", { name: "Add redirect" })).toHaveText("Add");
   // Pasted from the old site: its path is what's matched.
@@ -267,7 +272,11 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   // On a phone the fields go one under another; nothing runs off the side.
   const redirectsDesktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
+  // Each under its label, shown here: typed in, a field still says which it is.
+  const oldLabel = (await owner.getByText("Old address", { exact: true }).boundingBox())!;
   const oldBox = (await oldAddress.boundingBox())!;
+  expect(oldBox.y).toBeGreaterThanOrEqual(oldLabel.y + oldLabel.height);
+  await expect(owner.getByText("New address", { exact: true })).toHaveCSS("position", "static");
   expect((await newAddress.boundingBox())!.y).toBeGreaterThanOrEqual(oldBox.y + oldBox.height);
   expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);

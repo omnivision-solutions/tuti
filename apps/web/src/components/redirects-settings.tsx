@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightIcon, MoreHorizontalIcon } from "lucide-react";
+import { ArrowRightIcon, InfoIcon, MoreHorizontalIcon } from "lucide-react";
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
 import { removeRedirect, saveRedirect } from "@/server/portal-settings";
@@ -55,14 +56,25 @@ export function RedirectsSettings({ projectSlug, redirects, max }: { projectSlug
           Redirects{" "}
           <span className="font-normal text-muted-foreground">
             {redirects.length} of {max}
-          </span>
+          </span>{" "}
+          {/* What each field takes, as a row's ⓘ: on hover or a press. */}
+          <Popover>
+            <PopoverTrigger openOnHover aria-label="More about redirects" className="inline-flex rounded-full align-middle text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+              <InfoIcon aria-hidden className="size-3.5" />
+            </PopoverTrigger>
+            <PopoverContent className="max-w-72 p-3 text-sm font-normal">
+              The old address is a path on your portal, or a whole address of your old site: its path is taken. The new one is a path of your portal, or a full
+              https:// address.
+            </PopoverContent>
+          </Popover>
         </>
       }
     >
       <SettingBlock className="gap-2">
         {/* One line: old → new → Add. One under another where the card is a phone's width. */}
         <form ref={form} {...keepingFields(action)} className="flex flex-col gap-2 @min-[34rem]/settings:flex-row @min-[34rem]/settings:items-center">
-          <label htmlFor={OLD_ADDRESS} className="sr-only">
+          {/* Their labels show where the fields are one under another (no arrow between them there); on one line the placeholders and the arrow say it. */}
+          <label htmlFor={OLD_ADDRESS} className="text-sm font-medium @min-[34rem]/settings:sr-only">
             Old address
           </label>
           <Input
@@ -71,14 +83,13 @@ export function RedirectsSettings({ projectSlug, redirects, max }: { projectSlug
             required
             maxLength={2000}
             placeholder="Old address: /hc/en-us/articles/123-billing"
-            title="A path on your portal, or a whole address of your old site: its path is taken."
             autoComplete="off"
             aria-invalid={state.error ? true : undefined}
             aria-describedby={state.error ? "redirect-error" : undefined}
             className="min-w-0 @min-[34rem]/settings:flex-1"
           />
           <ArrowRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground @max-[34rem]/settings:hidden" />
-          <label htmlFor="redirect-to" className="sr-only">
+          <label htmlFor="redirect-to" className="text-sm font-medium @min-[34rem]/settings:sr-only">
             New address
           </label>
           <Input
@@ -87,7 +98,6 @@ export function RedirectsSettings({ projectSlug, redirects, max }: { projectSlug
             required
             maxLength={2000}
             placeholder="New address: /docs/billing"
-            title="A path of your portal, or a full https:// address."
             autoComplete="off"
             aria-invalid={state.error ? true : undefined}
             aria-describedby={state.error ? "redirect-error" : undefined}

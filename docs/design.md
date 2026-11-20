@@ -826,7 +826,7 @@ widths, in light and dark (in development only).
     something differs. A switch that acts alone saves at once.
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
     `Select`. No radios with a sentence each, no native `<select>`.
-  - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
+  - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
     repeat the page's, and so no count: its "New" button is in the pane's header (`SettingsPane`'s `actions`).
