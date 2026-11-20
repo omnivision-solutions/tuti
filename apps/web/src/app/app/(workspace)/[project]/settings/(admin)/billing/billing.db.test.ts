@@ -376,4 +376,11 @@ test("owing more than the credits there, the balance shows none left, never belo
   page = await billing();
   expect(page).toMatch(meter("Balance", "0 of 2 left"));
   expect(page).toContain("AI is paused: this project owes 2 credits.");
+  // Owes less than there is: AI goes on, and what's owed is said, taken at the next use.
+  await prisma.creditGrant.create({ data: { projectId, source: "TOPUP", credits: 8, remaining: 8, note: "Top-up", expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000) } });
+  await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 3 } });
+  page = await billing();
+  expect(page).toMatch(meter("Balance", "7 of 10 left"));
+  expect(page).toContain("3 credits owed, taken at the next AI use.");
+  expect(page).not.toContain("AI is paused");
 });
