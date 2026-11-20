@@ -1,4 +1,5 @@
 import { CODE_CHANGES_SETTINGS, codeChangesSettings, serverCodeChangesSettings } from "./code-changes-settings";
+import { config } from "./config";
 import { embed, EMBEDDING_MODEL, embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { aiSetup, askProvider, chatEndpoint, decisionsAvailable, embeddingsEndpoint, isOpenRouter, ProviderDidNotAnswer, requestFailed, throughOpenRouter, webAddress } from "./provider";
@@ -110,13 +111,12 @@ export function roleDefaultModel(role: AiRole): string {
 }
 
 /**
- * A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else
- * Tuti's default (for code changes, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
+ * A feature's model for every project: the config file's ai.features.<feature> (e.g. ai.features.answers, a model id),
+ * else ai.model, else Tuti's default (for code changes, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
  */
 export function defaultModel(feature: AiFeature): string {
-  return (
-    process.env[`AI_MODEL_${feature.toUpperCase()}`] || process.env.AI_MODEL || (feature === "code_changes" ? codeChangesSettings().write.model : DEFAULT_AI_MODEL)
-  );
+  const { model, features } = config().ai;
+  return features[feature === "code_changes" ? "codeChanges" : feature] ?? model ?? (feature === "code_changes" ? codeChangesSettings().write.model : DEFAULT_AI_MODEL);
 }
 
 /** What a piece of a feature's work asks the AI with: the model, and the meter recording each request for its project. */
@@ -211,7 +211,7 @@ export async function listModels(): Promise<AiModelListing[]> {
 /**
  * At start-up (web and worker): says what the setup keeps from before, then asks the endpoint for its
  * models and logs one error if that fails, saying whether the key or the address looks wrong, or if it
- * doesn't list a chat model the server uses (AI_MODEL, a feature's, or Tuti's default). Never throws:
+ * doesn't list a chat model the server uses (ai.model, a feature's, or Tuti's default). Never throws:
  * AI is optional.
  */
 /** An address as logs may show it: its origin only (a user, password, path or query could hold a credential). */
@@ -303,7 +303,7 @@ export async function checkAiProvider(): Promise<void> {
   const missing = [...new Set(used.map(defaultModel))].filter((id) => !listed.has(id));
   if (missing.length > 0) {
     log.error(
-      `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+      `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set ai.model (or a feature's ai.features.<feature>) in the config file to a model it serves. AI features using it will fail until then.`,
     );
   }
   // The docs agent's own models, on every merged pull request where Autopilot runs.
@@ -319,11 +319,8 @@ export async function checkAiProvider(): Promise<void> {
   }
 }
 
-/** The operator's cap on the models projects may pick (AI_MODEL_MAX_PRICE, dollars per million output tokens), or null for none. */
-export function modelMaxPrice(): number | null {
-  const value = Number(process.env.AI_MODEL_MAX_PRICE);
-  return process.env.AI_MODEL_MAX_PRICE && Number.isFinite(value) && value > 0 ? value : null;
-}
+/** The operator's cap on the models projects may pick (the config file's ai.maxPrice, dollars per million output tokens), or null for none. */
+export const modelMaxPrice = (): number | null => config().ai.maxPrice;
 
 /** Whether a project may pick `model` under modelMaxPrice: any model without a cap; with one, only a model with a price at or under it. */
 export function withinModelCap(model: AiModelListing): boolean {

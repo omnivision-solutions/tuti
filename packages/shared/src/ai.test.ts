@@ -1,4 +1,4 @@
-import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { configFile, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { resetCodeChangesSettings } from "./code-changes-settings";
@@ -109,7 +109,7 @@ test("roles: each is a feature's kind of work, with that feature's default unles
   expect(AI_ROLE_NAMES.filter(roleNeedsTools)).toEqual(["code_changes_decide", "code_changes_check", "code_changes"]);
   expect(AI_ROLE_NAMES.filter(roleCanBeOff)).toEqual(["code_changes_check"]);
   expect([AI_ROLES.support_draft.feature, AI_ROLES.support_summary.feature]).toEqual(["support", "support"]);
-  vi.stubEnv("AI_MODEL_SUPPORT", "acme/inbox");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { features: { support: "acme/inbox" } } }));
   vi.stubEnv("CODE_CHANGES_DECIDE_MODEL", "acme/decider");
   vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "acme/checker");
   vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
@@ -117,22 +117,20 @@ test("roles: each is a feature's kind of work, with that feature's default unles
   expect(AI_ROLE_NAMES.map(roleDefaultModel)).toEqual([DEFAULT_AI_MODEL, DEFAULT_AI_MODEL, "acme/inbox", "acme/inbox", DEFAULT_AI_MODEL, "acme/decider", "acme/checker", "acme/writer"]);
 });
 
-test("each feature's default model: its own setting, else AI_MODEL, else Tuti's (for code changes, Autopilot's write model)", () => {
+test("each feature's default model: its own setting, else ai.model, else Tuti's (for code changes, Autopilot's write model)", () => {
   expect(defaultModel("answers")).toBe(DEFAULT_AI_MODEL);
   expect(defaultModel("code_changes")).toBe("anthropic/claude-sonnet-5.5");
   vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
   resetCodeChangesSettings();
   expect(defaultModel("code_changes")).toBe("acme/writer");
-  vi.stubEnv("AI_MODEL", "acme/everything");
-  vi.stubEnv("AI_MODEL_CODE_CHANGES", "acme/careful");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { model: "acme/everything", features: { codeChanges: "acme/careful" } } }));
   expect([defaultModel("answers"), defaultModel("escalations"), defaultModel("changelog"), defaultModel("code_changes")]).toEqual([
     "acme/everything",
     "acme/everything",
     "acme/everything",
     "acme/careful",
   ]);
-  // Empty is unset.
-  vi.stubEnv("AI_MODEL_CODE_CHANGES", "");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { model: "acme/everything" } }));
   expect(defaultModel("code_changes")).toBe("acme/everything");
 });
 
@@ -146,16 +144,16 @@ test("lists the endpoint's models, with their prices per token and whether they 
   expect(models.find((listed) => listed.id === "acme/no-price")).toMatchObject({ input: null, output: null, tools: true });
 });
 
-test("the cap on the models projects pick: none unless AI_MODEL_MAX_PRICE is a positive price; under one, only models priced at or under it", () => {
+test("the cap on the models projects pick: none unless ai.maxPrice is set; under one, only models priced at or under it", () => {
   const priced = (output: number | null) => ({ id: "acme/model", name: "Acme: Model", input: 0, output, tools: true });
   expect(modelMaxPrice()).toBeNull();
   expect(withinModelCap(priced(null))).toBe(true);
-  for (const value of ["", "0", "-1", "lots"]) {
-    vi.stubEnv("AI_MODEL_MAX_PRICE", value);
-    expect(modelMaxPrice()).toBeNull();
+  for (const value of [0, -1, "lots"]) {
+    vi.stubEnv("TUTI_CONFIG", configFile({ ai: { maxPrice: value } }));
+    expect(() => modelMaxPrice()).toThrow(/ai\.maxPrice/);
   }
 
-  vi.stubEnv("AI_MODEL_MAX_PRICE", "0.4");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { maxPrice: 0.4 } }));
   expect(modelMaxPrice()).toBe(0.4);
   // OpenRouter's "0.0000004" per token is exactly the cap, though not exactly 0.4 / 1e6 in floating point.
   expect(withinModelCap(priced(Number("0.0000004")))).toBe(true);

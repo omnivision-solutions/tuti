@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
 import { CONFIG_REPLACED } from "../packages/shared/src/config";
 import { billingFile, withAppsumoPlans } from "../packages/testkit/src/billing";
+import { configFile } from "../packages/testkit/src/config-file";
 
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
 const PORT = Number(process.env.E2E_PORT || 3200);
@@ -33,6 +34,12 @@ export const APP_WIDGET_SLUG = "e2e-app-widget";
 export const SUPPORT_EMAIL_DOMAIN = "tuti.email.example";
 export const INBOUND_SECRET = "e2e-inbound-secret";
 
+/** The journeys' config file (TUTI_CONFIG): what it leaves out is its default. */
+const e2eConfig = {
+  // A cap on the models projects pick: the model fake's Opus ($25 per million output tokens), Best's largest, is the most it allows.
+  ai: { maxPrice: 25 },
+};
+
 export const serverEnv = {
   PORT: String(PORT),
   APP_URL,
@@ -46,28 +53,19 @@ export const serverEnv = {
   // Try it through Tuti may send to a fake API on this machine (honoured only while APP_URL is on localhost).
   TRY_IT_ALLOW_LOCALHOST: "true",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
-  // (The global setup points OPENAI_* at the model fake; AI_MODEL stays the default.)
+  // (The global setup points OPENAI_* at the model fake; ai.model stays the default.)
   OPENAI_API_KEY: "",
   OPENAI_BASE_URL: "",
-  AI_MODEL: "",
-  AI_LEVELS_CONFIG: "",
-  AI_MODEL_ANSWERS: "",
-  AI_MODEL_ESCALATIONS: "",
-  AI_MODEL_SUPPORT: "",
-  AI_MODEL_CHANGELOG: "",
-  AI_MODEL_CODE_CHANGES: "",
   // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
   ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
   DECISION_MODEL: "",
   // Every config file value at its default, whatever a local .env points at (or still sets: a variable the file
   // replaced stops start-up).
-  TUTI_CONFIG: "",
+  TUTI_CONFIG: configFile(e2eConfig),
   ...Object.fromEntries(Object.keys(CONFIG_REPLACED).map((name) => [name, ""])),
   // No analytics: journeys never send page views to PostHog, whatever a local .env holds.
   POSTHOG_KEY: "",
   POSTHOG_HOST: "",
-  // A cap on the models projects pick: the model fake's Opus ($25 per million output tokens), Best's largest, is the most it allows.
-  AI_MODEL_MAX_PRICE: "25",
   // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
   AI_CREDITS: "on",
   AI_CREDITS_FREE: "1000",

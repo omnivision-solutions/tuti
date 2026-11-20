@@ -1,4 +1,4 @@
-import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
+import { configFile, FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, codeChangesOff, decisionsMissing, shownAddress } from "./ai";
@@ -15,7 +15,7 @@ afterAll(() => model.close());
 // Every test starts with no AI settings at all, whatever the machine has (vitest.setup.ts deletes them too; this file
 // is about exactly these, so it says so itself).
 beforeEach(() => {
-  for (const name of Object.keys(process.env).filter((name) => /^(OPENAI_|OPENROUTER_|AI_MODEL)/.test(name))) {
+  for (const name of Object.keys(process.env).filter((name) => /^(OPENAI_|OPENROUTER_|TUTI_CONFIG$)/.test(name))) {
     vi.stubEnv(name, "");
   }
 });
@@ -136,7 +136,7 @@ test("start-up: the old names and the embeddings-only key each get a warning; a 
 test("start-up: a provider that serves the chat model but not the embedding model says so, once", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(log, "warn").mockImplementation(() => {});
-  env({ OPENAI_API_KEY: "together-key", OPENAI_BASE_URL: "https://api.together.example/v1", AI_MODEL: "acme/chat" });
+  env({ OPENAI_API_KEY: "together-key", OPENAI_BASE_URL: "https://api.together.example/v1", TUTI_CONFIG: configFile({ ai: { model: "acme/chat" } }) });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
     String(url).endsWith("/embeddings") ? new Response('{"error":{"message":"unknown model"}}', { status: 404 }) : new Response('{"data":[{"id":"acme/chat"}]}'),
   );
@@ -222,18 +222,18 @@ test("start-up: an endpoint without the docs agent's models says which setting t
   resetCodeChangesSettings();
 });
 
-test("start-up: an endpoint without the chat model the server uses (AI_MODEL, a feature's, or the default) says what to set", async () => {
+test("start-up: an endpoint without the chat model the server uses (ai.model, a feature's, or the default) says what to set", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
-  env({ ...model.env, AI_MODEL: "acme/imaginary", AI_MODEL_ANSWERS: "acme/tiny" });
+  env({ ...model.env, TUTI_CONFIG: configFile({ ai: { model: "acme/imaginary", features: { answers: "acme/tiny" } } }) });
   await checkAiProvider();
   expect(error).toHaveBeenCalledOnce();
   expect(error.mock.calls[0]![0]).toBe(
-    `The AI provider at ${model.url} doesn't list the chat model acme/imaginary: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+    `The AI provider at ${model.url} doesn't list the chat model acme/imaginary: set ai.model (or a feature's ai.features.<feature>) in the config file to a model it serves. AI features using it will fail until then.`,
   );
 
   // An embeddings-only server has no chat model to look for.
   error.mockClear();
-  env({ ...model.env, AI_MODEL: "acme/imaginary", OPENAI_BASE_URL: "", OPENAI_API_KEY: "sk-proj-embeddings" });
+  env({ ...model.env, TUTI_CONFIG: configFile({ ai: { model: "acme/imaginary" } }), OPENAI_BASE_URL: "", OPENAI_API_KEY: "sk-proj-embeddings" });
   vi.spyOn(log, "warn").mockImplementation(() => {});
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
   await checkAiProvider();

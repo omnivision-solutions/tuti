@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 
 import { log } from "../log";
+import { ai, AI_REPLACED } from "./ai";
 import { media, MEDIA_REPLACED } from "./media";
 
 /**
@@ -14,16 +15,21 @@ import { media, MEDIA_REPLACED } from "./media";
  * One file per feature in this folder, each a section of the schema below, read as config().<section>. A new value is a
  * new key in its section, with its default and description: the JSON Schema (`pnpm test -u` rewrites
  * tuti.config.schema.json) and docs/self-hosting.md's table follow from it.
+ *
+ * A section this release doesn't know is ignored, with a warning: an upgrade adds a new section's keys to the file first,
+ * while the previous release still runs, then removes the env vars the section replaced. Keys inside a known section are
+ * checked strictly, so a typo there stops start-up.
  */
-export const configSchema = z.strictObject({
+export const configSchema = z.object({
   $schema: z.string().optional(),
   media,
+  ai,
 });
 
 export type Config = z.output<typeof configSchema>;
 
 /** Env vars a section replaced, with their keys: one still set is a server not yet moved over. */
-export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED };
+export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED, ...AI_REPLACED };
 
 let loaded: { path: string; config: Config } | null = null;
 
@@ -51,6 +57,10 @@ function read(path: string): Config {
     json = JSON.parse(text);
   } catch (error) {
     throw new Error(`TUTI_CONFIG (${path}) isn't JSON: ${(error as Error).message}`);
+  }
+  const unknown = json && typeof json === "object" ? Object.keys(json).filter((key) => !Object.hasOwn(configSchema.shape, key)) : [];
+  if (unknown.length > 0) {
+    log.warn(`TUTI_CONFIG (${path}) has sections this release doesn't know, ignored: ${unknown.join(", ")} (a newer release's, or a typo)`);
   }
   const parsed = configSchema.safeParse(json);
   if (!parsed.success) {
