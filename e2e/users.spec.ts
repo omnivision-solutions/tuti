@@ -399,10 +399,12 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.unroute(`**/app/${slug}/settings/properties`);
   await expect(company.getByRole("combobox", { name: "Format of company" })).not.toHaveAttribute("aria-readonly", "true");
   await company.getByRole("combobox", { name: "Format of company" }).click();
+  // Its save's answer, whatever toasts are still showing.
+  const dateSaved = owner.waitForResponse((response) => response.request().method() === "POST" && response.url().includes(`/app/${slug}/settings/properties`));
   await owner.getByRole("option", { name: "Date" }).click();
   // Focus stays on the dropdown while its pick saves.
   await expect(company.getByRole("combobox", { name: "Format of company" })).toBeFocused();
-  await expect(owner.getByText("Saved how company shows")).toHaveCount(2);
+  await (await dateSaved).finished();
   await owner.reload();
   await expect(company).toContainText("Employer");
   await expect(company.getByRole("combobox", { name: "Format of company" })).toContainText("Date");
