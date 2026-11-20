@@ -396,6 +396,24 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await expect(collectionAccess).toContainText("Inherit");
   await expect(collectionAccess).toHaveAccessibleDescription(/Readers in Enterprise customers/);
   await checkpoint(owner, "team-docs-collection-who-can-read", { fullPage: false });
+  // For the group itself: its box shows under "Specific groups", and a tick stays while another choice is picked.
+  const groupBox = owner.getByRole("region", { name: "Access" }).getByRole("checkbox", { name: "Enterprise customers" });
+  await expect(groupBox).toHaveCount(0);
+  await collectionAccess.click();
+  await owner.getByRole("option", { name: "Specific groups" }).click();
+  await expect(groupBox).not.toBeChecked();
+  await groupBox.check();
+  await collectionAccess.click();
+  await owner.getByRole("option", { name: "Signed-in readers" }).click();
+  await expect(groupBox).toHaveCount(0);
+  await collectionAccess.click();
+  await owner.getByRole("option", { name: "Specific groups" }).click();
+  await expect(groupBox).toBeChecked();
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Collection saved")).toBeVisible();
+  await owner.reload();
+  await expect(collectionAccess).toContainText("Specific groups");
+  await expect(groupBox).toBeChecked();
 
   // The tab, its collection and article are gone for everyone but the group (and the team).
   for (const person of [visitor, reader]) {
