@@ -125,8 +125,11 @@ async function withoutHandoffState(link: string, userId: string, signingUp: bool
   return url.toString();
 }
 
-/** Addresses whose verification email a sign-in just failed to send (sendVerificationEmail), for hooks.after to say so. */
-const unsentOnSignIn = new Set<string>();
+/**
+ * Sign-ins whose verification email just failed to send (sendVerificationEmail), by address, for hooks.after to say so:
+ * one each, so sign-ins at once for an address each answer for their own. Better Auth awaits the send before the hook.
+ */
+const unsentOnSignIn = new Map<string, number>();
 
 /** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
 const handOverPlaceholdersLogged = (userId: string) =>
@@ -258,7 +261,13 @@ export const auth = betterAuth({
     after: createAuthMiddleware(async (ctx) => {
       const returned = ctx.context.returned;
       const email = typeof ctx.body?.email === "string" ? ctx.body.email.toLowerCase() : "";
-      if (ctx.path === "/sign-in/email" && unsentOnSignIn.delete(email)) {
+      const unsent = ctx.path === "/sign-in/email" ? (unsentOnSignIn.get(email) ?? 0) : 0;
+      if (unsent > 0) {
+        if (unsent === 1) {
+          unsentOnSignIn.delete(email);
+        } else {
+          unsentOnSignIn.set(email, unsent - 1);
+        }
         throw new APIError("SERVICE_UNAVAILABLE", { message: "We couldn't send the email. Try again in a minute." });
       }
       if (ctx.path === "/sign-in/email" && returned && typeof returned === "object" && "redirect" in returned && returned.redirect) {
@@ -305,7 +314,8 @@ export const auth = betterAuth({
           throw error;
         }
         if (path.endsWith("/sign-in/email")) {
-          unsentOnSignIn.add(user.email.toLowerCase());
+          const address = user.email.toLowerCase();
+          unsentOnSignIn.set(address, (unsentOnSignIn.get(address) ?? 0) + 1);
         }
       }
     },
