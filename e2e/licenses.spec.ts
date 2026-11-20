@@ -44,7 +44,7 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   await createProject(buyer, "Acme", slug, cloudPortalUrl);
   await buyer.goto(`/app/${slug}/settings/billing`);
-  await expect(buyer.getByRole("heading", { name: "AppSumo Tier 2", exact: true })).toBeVisible();
+  await expect(buyer.getByText("AppSumo Tier 2", { exact: true })).toBeVisible();
   await expect(buyer.getByText(/left in your trial/)).toBeHidden();
   // In their menu now that they hold one.
   await buyer.getByRole("button", { name: /Bea Buyer/ }).click();
@@ -93,7 +93,7 @@ test("a buyer redeems their AppSumo license, signing up on the way, assigns it t
   await stale.close();
   // The project is back on its own plan.
   await buyer.goto(`/app/${slug}/settings/billing`);
-  await expect(buyer.getByText("Free plan", { exact: true })).toBeVisible();
+  await expect(buyer.locator('[data-slot="setting-row"]').filter({ hasText: "Your plan" })).toContainText("Free");
 });
 
 test("someone without licenses is told how to redeem one", async ({ browser }, testInfo) => {
@@ -143,15 +143,25 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
 
   // Billing: the license's plan, nothing to manage in Stripe; the add-on is bought on its own.
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByRole("heading", { name: "AppSumo Tier 1", exact: true })).toBeVisible();
+  await expect(owner.getByText("AppSumo Tier 1", { exact: true })).toBeVisible();
   await expect(owner.getByText("Lifetime", { exact: true })).toBeVisible();
+  // Nothing to buy on a license's plan: no Upgrade.
+  await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeHidden();
   await expect(owner.getByText("$49 a month, billed monthly on its own.")).toBeVisible();
   // This month: what's left of the license's month's emails, and when the month resets.
   await expect(owner.getByText(/^Resets \d{1,2} [A-Z][a-z]+( \d{4})?$/)).toBeVisible();
-  await expect(owner.getByText("4,000 of 4,000 left")).toBeVisible();
+  await expect(owner.getByRole("group", { name: "Emails" }).getByText("4,000 of 4,000 left")).toBeVisible();
   await expect(owner.getByRole("progressbar", { name: "Emails left" })).toHaveAttribute("aria-valuenow", "4000");
   await checkpoint(owner, "team-settings-billing-license");
+  // On a phone: nothing runs off the side, and the license's "⋯" stays beside the plan's name.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const lifetime = (await owner.getByText("Lifetime", { exact: true }).boundingBox())!;
+  expect((await owner.getByRole("button", { name: "License options" }).boundingBox())!.y).toBeLessThan(lifetime.y + lifetime.height);
+  await checkpoint(owner, "team-settings-billing-license-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Hide the badge" }).click();
   const confirm = owner.getByRole("alertdialog", { name: 'Hide "Powered by tuti"?' });
   await expect(confirm).toContainText("$49 a month, billed monthly on its own until you show the badge again or the license is unassigned.");
@@ -160,7 +170,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?badge=1`);
   await expect(owner.getByText("Hidden on this project, billed on its own. It ends with the license.")).toBeVisible();
-  await expect(owner.getByRole("heading", { name: "AppSumo Tier 1", exact: true })).toBeVisible();
+  await expect(owner.getByText("AppSumo Tier 1", { exact: true })).toBeVisible();
   // Its card and invoices are in Stripe's portal.
   await expect(owner.getByRole("button", { name: "Manage plan" })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license-badge");
@@ -227,7 +237,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await checkpoint(owner, "team-settings-billing-unassign-license", { fullPage: false });
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
-  await expect(owner.getByRole("heading", { name: "AppSumo Tier 1", exact: true })).toBeVisible();
+  await expect(owner.getByText("AppSumo Tier 1", { exact: true })).toBeVisible();
   await owner.getByRole("button", { name: "License options" }).click();
   await owner.getByRole("menuitem", { name: "Unassign license" }).click();
   // While it runs (its request held here), the dialog's button is off: a second press can't send it again.
@@ -246,8 +256,9 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(dialog.getByRole("button", { name: "Unassigning…" })).toBeFocused();
   release();
   await owner.unroute(billingPage);
-  await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+  await expect(owner.locator('[data-slot="setting-row"]').filter({ hasText: "Your plan" })).toContainText("Free");
+  // Upgrade takes the menu's place, and the keyboard's place moves to it.
+  await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toBeFocused();
   // The add-on ended with it.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toBeVisible();
   // Its holder assigns it again.
@@ -264,9 +275,9 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   // Deactivated, it gives no plan: unassigning it doesn't ask.
   await owner.getByRole("button", { name: "Unassign license" }).click();
   await expect(owner.getByText("License unassigned")).toBeVisible();
-  await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
-  // The plans take its place, and the keyboard's place moves to the first.
-  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeFocused();
+  await expect(owner.getByText("This project's AppSumo license was deactivated.")).toHaveCount(0);
+  // Upgrade takes its place, and the keyboard's place moves to it.
+  await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toBeFocused();
 
   // Deactivated by an upgrade's old key (its new key not here yet), the add-on is kept: unassigning then asks first, about it alone.
   const next = randomUUID();
@@ -304,7 +315,7 @@ test("a license Tuti issues to a project gives its plan, named as Tuti's", async
   const key = /tuti-[0-9a-f-]+/.exec(stdout)![0];
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByRole("heading", { name: "AppSumo Tier 2", exact: true })).toBeVisible();
+  await expect(owner.getByText("AppSumo Tier 2", { exact: true })).toBeVisible();
   await expect(owner.getByText("Tuti license", { exact: true })).toBeVisible();
   await owner.goto("/app/licenses");
   await expect(owner.getByText("Plan licenses on your account, such as AppSumo lifetime deals.", { exact: false })).toBeVisible();
@@ -335,7 +346,7 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await useUpLicenseEmails(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("0 of 4,000 left", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("group", { name: "Emails" }).getByText("0 of 4,000 left", { exact: true })).toBeVisible();
   // Billing and the inbox write the day alike, short as en-GB has it ("5 Sept").
   const until = /^Resets (\d{1,2} [A-Z][a-z]+)( \d{4})?$/;
   await expect(owner.getByText(until)).toBeVisible();

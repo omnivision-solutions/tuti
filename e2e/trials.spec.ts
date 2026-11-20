@@ -60,13 +60,26 @@ test("a new account's first project starts a free trial: every page says what's 
 
   await banner.getByRole("link", { name: "Choose a plan" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing`);
-  await expect(owner.getByRole("heading", { name: "Pro trial", exact: true })).toBeVisible();
-  await expect(owner.getByText(/^Ends on \d{1,2} [A-Z][a-z]+ \d{4}\. Choose a plan to keep going\.$/)).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
-  await expect(owner.getByText("After your trial", { exact: true })).toBeVisible();
+  // The plan's row: the trial's plan, when it ends, and Upgrade, which opens the plans to buy.
+  const planRow = owner.locator('[data-slot="setting-row"]').filter({ has: owner.getByRole("button", { name: "Upgrade", exact: true }) });
+  await expect(planRow.getByText("Pro", { exact: true })).toBeVisible();
+  await expect(planRow.getByText("Trial", { exact: true })).toBeVisible();
+  await expect(planRow.getByText(/^Ends on \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
+  await checkpoint(owner, "team-settings-billing-trial");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "team-settings-billing-trial-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  const plans = owner.getByRole("dialog", { name: "Choose a plan" });
+  await planRow.getByRole("button", { name: "Upgrade", exact: true }).click();
+  await expect(plans.getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  await expect(plans.getByText("After your trial", { exact: true })).toBeVisible();
+  await checkpoint(owner, "team-settings-billing-trial-plans", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await expect(plans).toBeHidden();
   // Its trial's AI credits, until it ends.
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Pro trial/ })).toContainText("500");
-  await checkpoint(owner, "team-settings-billing-trial");
 
   // Ended: the default plan, and Billing's plans to buy.
   await endTrial(slug);
@@ -74,8 +87,12 @@ test("a new account's first project starts a free trial: every page says what's 
   const ended = owner.getByRole("alert").filter({ hasText: "Your trial has ended" });
   await expect(ended).toHaveText("Your trial has ended. Choose a plan");
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("Your trial has ended", { exact: true }).last()).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  await expect(planRow.getByText("Free", { exact: true })).toBeVisible();
+  await expect(planRow.getByText("Trial ended", { exact: true })).toBeVisible();
+  await planRow.getByRole("button", { name: "Upgrade", exact: true }).click();
+  await expect(plans.getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(plans).toBeHidden();
   await checkpoint(owner, "team-settings-billing-trial-ended");
 
   // One trial an account: its next project starts on the default plan.

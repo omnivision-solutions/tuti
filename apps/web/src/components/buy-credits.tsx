@@ -2,14 +2,16 @@
 
 import { useState, useTransition } from "react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { SettingRow } from "@/components/settings-card";
+import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { buyCredits } from "@/server/credits";
 
 const AMOUNTS = [10, 25, 50, 100];
 
-/** "Buy credits" (Settings → Billing): an amount in dollars, then Stripe's payment page. */
+/** "Buy AI credits", a row of Settings → Billing: an amount in dollars, then Stripe's payment page. */
 export function BuyCredits({
   projectSlug,
   perDollar,
@@ -40,59 +42,53 @@ export function BuyCredits({
   const valid = Number.isInteger(dollars) && dollars >= min && dollars <= max;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* An amount: one of the presets, or Other for any other. Native radios: arrow keys move between them. */}
-      <div role="radiogroup" aria-label="Amount" className="flex flex-wrap gap-2">
-        {[...AMOUNTS, "other" as const].map((amount) => (
-          <label
-            key={amount}
-            className={buttonVariants({
-              variant: "outline",
-              className: "cursor-pointer has-checked:border-primary has-checked:bg-soft has-checked:text-soft-foreground dark:has-checked:border-primary dark:has-checked:bg-soft has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
-            })}
-          >
-            <input
-              type="radio"
-              name="amount"
-              className="sr-only"
-              checked={amount === "other" ? other : !other && dollars === amount}
-              onChange={() => {
-                setOther(amount === "other");
-                if (amount !== "other") {
-                  setDollars(amount);
-                }
-              }}
-            />
-            {amount === "other" ? "Other amount" : `$${amount}`}
-          </label>
-        ))}
-      </div>
-      <Field data-invalid={error ? true : undefined}>
-        {other && <FieldLabel htmlFor="topup-dollars">Amount in US dollars</FieldLabel>}
-        {other && (
-          <Input
-            id="topup-dollars"
-            type="number"
-            inputMode="numeric"
-            min={min}
-            max={max}
-            step={1}
-            value={Number.isNaN(dollars) ? "" : dollars}
-            onChange={(event) => setDollars(event.target.valueAsNumber)}
-            className="w-40"
-          />
-        )}
-        <FieldDescription>
+    <SettingRow
+      label="Buy AI credits"
+      description={
+        <>
           {valid ? `${(dollars * perDollar).toLocaleString("en")} AI credits` : `From $${min} to $${max.toLocaleString("en")}`}
-          {days === null ? ", for good." : `, lasting ${days.toLocaleString("en")} days.`} You pay on Stripe.
-        </FieldDescription>
+          {days === null ? ", for good." : `, lasting ${days.toLocaleString("en")} days.`}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-2 @min-[34rem]/settings:items-end">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* An amount: one of the presets, or Other for any other. */}
+          <Segmented
+            name="amount"
+            aria-label="Amount"
+            options={[...AMOUNTS.map((amount) => ({ value: String(amount), label: `$${amount}` })), { value: "other", label: "Other" }]}
+            value={other ? "other" : String(dollars)}
+            onValueChange={(amount) => {
+              setOther(amount === "other");
+              if (amount !== "other") {
+                setDollars(Number(amount));
+              }
+            }}
+          />
+          {other && (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              $
+              <Input
+                aria-label="Amount in US dollars"
+                aria-invalid={!valid || undefined}
+                type="number"
+                inputMode="numeric"
+                min={min}
+                max={max}
+                step={1}
+                value={Number.isNaN(dollars) ? "" : dollars}
+                onChange={(event) => setDollars(event.target.valueAsNumber)}
+                className="w-24 text-foreground"
+              />
+            </span>
+          )}
+          <Button type="button" variant="outline" disabled={pending || !valid} focusableWhenDisabled onClick={buy}>
+            {pending ? "Opening Stripe…" : "Buy"}
+          </Button>
+        </div>
         {error && <FieldError>{error}</FieldError>}
-      </Field>
-      <div>
-        <Button type="button" variant="outline" disabled={pending || !valid} onClick={buy}>
-          {pending ? "Opening Stripe…" : "Buy credits"}
-        </Button>
       </div>
-    </div>
+    </SettingRow>
   );
 }

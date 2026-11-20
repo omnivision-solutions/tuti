@@ -1,10 +1,14 @@
 import { prisma } from "@tuti/db";
 import { claimProjectEmail, grantLicenseCredits } from "@tuti/jobs";
 import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPlans } from "@tuti/testkit";
+import { defaultPlanKey } from "@tuti/shared";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
+import { PlanPicker } from "@/components/plan-picker";
 import { formatShortDate } from "@/lib/format";
+import { plansWithFacts, pricingPage } from "@/lib/pricing-plans";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import BillingSettingsPage from "./page";
@@ -33,15 +37,27 @@ const billing = async () =>
     (await BillingSettingsPage({ params: Promise.resolve({ project: slug }), searchParams: Promise.resolve({}) } as PageProps<"/app/[project]/settings/billing">)) as React.ReactElement,
   ).replaceAll("&#x27;", "'").replaceAll("&quot;", '"');
 
-test("on the default plan, its own card says so; the plans for sale have Upgrade, one sold by quote neither a price nor Upgrade", async () => {
+/** The plans "Upgrade" opens (its dialog is closed in the page's markup), from the billing file as the page gives them. */
+const picker = () =>
+  renderToStaticMarkup(createElement(PlanPicker, { projectSlug: slug, plans: plansWithFacts(), pricingPage: pricingPage(), current: defaultPlanKey()! }))
+    .replaceAll("&#x27;", "'")
+    .replaceAll("&quot;", '"');
+
+test("on the default plan, one row says the plan and what it gives, with Upgrade; the plans it opens have their own Upgrade, one sold by quote neither a price nor Upgrade", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  let page = await billing();
+  const row = await billing();
+  expect(row).toMatch(/>Free<\/span><span[^>]*>Your plan<\/span>/);
+  expect(row).toContain(">1,000 emails a month · 2 feedback boards</p>");
+  expect(row).toMatch(/<button[^>]*data-plans-control[^>]*>Upgrade<\/button>/);
+  // The plans themselves wait behind it.
+  expect(row).not.toContain("Upgrade to Pro");
+  let page = picker();
   expect(page.match(/>Your plan</g)).toHaveLength(1);
   expect(page).toContain("Upgrade to Pro");
   expect(page).toContain("Upgrade to Business");
 
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
-  page = await billing();
+  page = picker();
   // By quote: a way to ask, as on the pricing page.
   expect(page).toContain("By quote");
   expect(page).toMatch(/href="mailto:[^"]*"[^>]*>Contact us</);
@@ -51,7 +67,7 @@ test("on the default plan, its own card says so; the plans for sale have Upgrade
 
 test("a plan sold only yearly is shown and bought yearly, though Monthly is picked", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices = { year: pro.prices!.year }; }));
-  const page = await billing();
+  const page = picker();
   expect(page).toContain("$384 billed yearly");
   expect(page).toContain("Upgrade to Pro");
 });
@@ -59,12 +75,12 @@ test("a plan sold only yearly is shown and bought yearly, though Monthly is pick
 test("every feature: Tuti's pricing page in a new tab on Tuti's cloud; elsewhere each plan's lines, opened here", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("APP_URL", "https://tuti.so");
-  let page = await billing();
+  let page = picker();
   expect(page).toMatch(/<a href="https:\/\/tuti.so\/pricing" target="_blank" rel="noopener"[^>]*>Compare all features.*\(opens in a new tab\)<\/span><\/a>/);
   expect(page).not.toContain("<details");
 
   vi.stubEnv("APP_URL", "https://feedback.example.com");
-  page = await billing();
+  page = picker();
   expect(page).not.toContain("tuti.so/pricing");
   expect(page).toMatch(/<details[^>]*><summary[^>]*>Compare all features/);
   // What the cards leave out, such as each plan's team members.
@@ -82,7 +98,8 @@ test("a project on a plan sold by quote sees its plan, with no price", async () 
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
   await prisma.project.update({ where: { id: projectId }, data: { plan: "business", planStatus: "active" } });
   const page = await billing();
-  expect(page).toContain("Business plan");
+  expect(page).toMatch(/>Business<\/span><span[^>]*>Your plan<\/span>/);
+  expect(page).toContain("Manage plan");
   expect(page).not.toContain("Not billed");
 });
 
@@ -103,11 +120,11 @@ test("an add-on that's on keeps its card where it's no longer sold for the plan'
   expect(page).not.toContain("Hide the badge");
 });
 
-test("a project on a plan the file no longer lists sees the plans to buy, as on the default plan", async () => {
+test("a project on a plan the file no longer lists has Upgrade, as on the default plan", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   await prisma.project.update({ where: { id: projectId }, data: { plan: "retired" } });
   const page = await billing();
-  expect(page).toContain("Upgrade to Pro");
+  expect(page).toContain("data-plans-control");
   expect(page).not.toContain("Manage plan");
 });
 
@@ -117,7 +134,7 @@ test("a project still paying for a plan the file no longer lists is offered the 
     config.badge!.year!.perMonth = 39;
   }));
   await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active", stripeSubscriptionId: `sub_${projectId}` } });
-  expect(await billing()).toContain("hide it for $39 a month");
+  expect(await billing()).toContain("$39 a month, added to this project's plan.");
 });
 
 /** "This month"'s meter `label`, as the page says it. */
@@ -163,13 +180,13 @@ test("on a license, This month has what's left of its month's emails and AI cred
   let page = await billing();
   expect(page).toContain(`>Resets ${until}</span>`);
   // The plan, one row: its name, what kind of license, and Unassign behind "⋯".
-  expect(page).toMatch(/>Pro<\/h2><span[^>]*>Tuti license</);
+  expect(page).toMatch(/>Pro<\/span><span[^>]*>Tuti license</);
   expect(page).toContain('aria-label="License options"');
   expect(page).not.toContain("doesn't renew or bill");
   expect(page).toMatch(meter("Emails", "10,000 of 10,000 left"));
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
   // The rest, without the month's: the trial's alone.
-  expect(page).toContain(">Extra AI credits</h2>");
+  expect(page).toContain(">Extra AI credits</h3>");
   const table = page.slice(page.indexOf("<table"), page.indexOf("</table>"));
   expect(table.match(/<tr/g)).toHaveLength(2);
   expect(table).toContain(">500</td>");
@@ -186,7 +203,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 700 } });
   page = await billing();
   expect(page).toMatch(meter("AI credits", `0 of ${monthly} left`));
-  expect(page).toContain(">Extra AI credits</h2>");
+  expect(page).toContain(">Extra AI credits</h3>");
   // More owed than is left (the trial's 500): AI is paused, and the page says so.
   expect(page).toContain("AI is paused: this project owes 700 credits.");
   // Less owed than is left: it comes out of what's shown at the next AI use.
@@ -202,7 +219,8 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL" }, data: { expiresAt: past } });
   await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough: past } });
   page = await billing();
-  expect(page).not.toMatch(/>AI credits<\/span>/);
+  expect(page).toMatch(meter("AI credits", "500 of 500 left"));
+  expect(page).not.toContain(`of ${monthly} left`);
   expect(page).not.toContain("credits owed");
   expect(page).not.toContain(">Resets ");
   await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 0, expiresAt: creditsThrough } });
@@ -213,7 +231,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.creditGrant.deleteMany({ where: { projectId, planLicenseId: null } });
   await prisma.project.update({ where: { id: projectId }, data: { freeCreditsGrantedAt: new Date() } });
   page = await billing();
-  expect(page).not.toContain("AI credits</h2>");
+  expect(page).not.toContain("Extra AI credits");
   expect(page).not.toContain("<table");
 });
 
@@ -248,6 +266,8 @@ test("a license on a plan with no email limit still has its month: the AI credit
   vi.stubEnv("BILLING_CONFIG", "");
   const without = await billing();
   expect(without).not.toContain("This month");
+  expect(without).toContain(">AI credits</h2>");
+  expect(without).toMatch(meter("Balance", `${monthly} of ${monthly} left`));
   expect(without).not.toContain("Extra AI credits");
   expect(without).toContain(`>${monthly}</td>`);
 });
@@ -290,5 +310,25 @@ test("where plans can't be bought, a deactivated license's alert says to unassig
 
   // Unassigned, the plans' line takes the button's place, focusable (UnassignLicense moves the keyboard to it).
   await prisma.planLicense.update({ where: { id: license.id }, data: { projectId: null } });
-  expect(await billing()).toMatch(/<p id="plans-unavailable" tabindex="-1"[^>]*>\s*Plans can't be bought here right now\./);
+  expect(await billing()).toMatch(/<span id="plans-unavailable" tabindex="-1"[^>]*>\s*Plans can't be bought here right now\./);
+});
+
+test("the plan's row on a free trial says when it ends, and after it that it ended, each with Upgrade; a paid plan's has its price and Manage plan", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  let page = await billing();
+  expect(page).toMatch(/>Pro<\/span><span[^>]*>Trial<\/span>/);
+  expect(page).toMatch(/>Ends on \d{1,2} [A-Z][a-z]+ \d{4}<\/p>/);
+  expect(page).toContain("data-plans-control");
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
+  page = await billing();
+  expect(page).toMatch(/>Free<\/span><span[^>]*>Trial ended<\/span>/);
+  expect(page).toContain(">1,000 emails a month · 2 feedback boards</p>");
+  expect(page).toContain("data-plans-control");
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "month", planStatus: "active", stripeSubscriptionId: `sub_${projectId}` } });
+  page = await billing();
+  expect(page).toMatch(/>Pro<\/span><span[^>]*>Your plan<\/span>/);
+  expect(page).toContain(">$39 a month</p>");
+  expect(page).toContain("Manage plan");
+  expect(page).not.toContain("data-plans-control");
 });

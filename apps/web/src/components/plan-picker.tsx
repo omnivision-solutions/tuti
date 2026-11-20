@@ -18,6 +18,7 @@ import { BilledToggle, PlanLineItem } from "@tuti/ui/plan-line";
 import { CheckIcon, ChevronDownIcon, EllipsisIcon, ExternalLinkIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { FieldError } from "@/components/ui/field";
 import { billedAs, yearlyNote } from "@/lib/plans";
 import type { PlanFacts, PricingPlan } from "@/lib/pricing-plans";
@@ -46,18 +47,59 @@ const yesNo = (facts: PlanFacts): [string, boolean][] => [
   ...facts.extras.map((extra): [string, boolean] => [extra, true]),
 ];
 
+type PickerProps = { projectSlug: string; plans: Plan[]; current: string; trial?: boolean; pricingPage: string | null };
+
 /**
- * Settings → Billing on the default plan: the billing file's plans side by side (this project's among them), as the
+ * Settings → Billing on the default plan: "Upgrade", which opens the plans to buy (PlanPicker) in a dialog. So does the
+ * page's "#plans" address ("Choose a plan" beside the add-on, a link from elsewhere); closed, the address loses it, so
+ * the same link opens the plans again.
+ */
+export function UpgradePlans(props: PickerProps) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const fromHash = () => {
+      if (window.location.hash === "#plans") {
+        setOpen(true);
+      }
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, []);
+  const change = (next: boolean) => {
+    setOpen(next);
+    if (!next && window.location.hash === "#plans") {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={change}>
+      <DialogTrigger render={<Button type="button" data-plans-control />}>Upgrade</DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Choose a plan</DialogTitle>
+          <DialogDescription>Plans are per project: readers are always unlimited.</DialogDescription>
+        </DialogHeader>
+        <div className="@container/settings">
+          <PlanPicker {...props} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The plans to buy from the default plan: the billing file's plans side by side (this project's among them), as the
  * pricing page's cards show them (its price, three numbers, what it adds to the plan before), monthly or yearly, and
  * (`pricingPage`, on Tuti's cloud) a link to that page for every feature. Upgrade goes to Stripe's payment page; the featured plan's is the page's one
  * primary button. During a free trial (`trial`), the default plan is the one after it.
  */
-export function PlanPicker({ projectSlug, plans, current, trial = false, pricingPage }: { projectSlug: string; plans: Plan[]; current: string; trial?: boolean; pricingPage: string | null }) {
+export function PlanPicker({ projectSlug, plans, current, trial = false, pricingPage }: PickerProps) {
   const [interval, setBilled] = useState<Interval>("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   const credits = plans.some(({ facts }) => facts.credits !== null || facts.startCredits !== null);
   return (
-    <div id="plans" className="flex scroll-mt-8 flex-col gap-4">
+    <div id="plans" className="flex flex-col gap-4">
       <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote(plans.flatMap(({ price }) => (price ? [price] : []))) ?? undefined} />
       <ul className="grid gap-4 @2xl/settings:grid-cols-3">
         {plans.map((plan, index) => {
@@ -229,12 +271,12 @@ export function UnassignLicense({ projectSlug, licenseId, active, badge = false,
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
   const done = useRef(false);
-  // Done, the plans take this button's place: the keyboard's place moves to the first of them, or to the line saying
-  // plans can't be bought here.
+  // Done, Upgrade takes this button's place: the keyboard's place moves to it, or to the line saying plans can't be
+  // bought here.
   useEffect(
     () => () => {
       if (done.current) {
-        requestAnimationFrame(() => (document.querySelector<HTMLElement>('#plans [data-slot="button"]') ?? document.getElementById("plans-unavailable"))?.focus());
+        requestAnimationFrame(() => (document.querySelector<HTMLElement>("[data-plans-control]") ?? document.getElementById("plans-unavailable"))?.focus());
       }
     },
     [],

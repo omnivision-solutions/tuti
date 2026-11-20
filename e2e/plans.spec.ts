@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import pg from "pg";
 
+import type { Locator } from "@playwright/test";
+
 import { expect, test } from "./fixtures";
 
 import { seedArticles } from "./articles";
@@ -18,41 +20,79 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await createProject(owner, "Acme", slug, cloudPortalUrl);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
-  // Its email to its users this month, against its plan's limit.
-  await expect(owner.getByText("1,000 of 1,000 left")).toBeVisible();
+  // The plan is one row: its name, what it gives, and Upgrade, the page's one primary button. The plans wait behind it.
+  const planRow = owner.locator('[data-slot="setting-row"]').filter({ hasText: "Your plan" });
+  await expect(planRow).toContainText("Free");
+  await expect(planRow).toContainText("1,000 emails a month · 2 feedback boards");
+  await expect(owner.getByRole("button", { name: "Upgrade to Pro" })).toHaveCount(0);
+  const primaries = (within: Locator) =>
+    within.locator("button, a").evaluateAll((buttons) => buttons.filter((button) => /(^| )bg-primary( |$)/.test(button.className)).map((button) => button.textContent));
+  expect(await primaries(owner.getByRole("main"))).toEqual(["Upgrade"]);
+  // Its email to its users this month, against its plan's limit, and its AI credits, each with its own meter.
+  await expect(owner.getByRole("group", { name: "Emails" }).getByText("1,000 of 1,000 left")).toBeVisible();
+  await expect(owner.getByRole("group", { name: "AI credits" }).getByText("1,000 of 1,000 left")).toBeVisible();
+  // The badge's card has a way to the plans on the free plan too, billed as picked there.
+  await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
+  await checkpoint(owner, "team-settings-billing-free-plan");
+  // On a phone: nothing runs off the side, and Buy AI credits' amounts go under its label.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const buyLabel = (await owner.getByText("Buy AI credits", { exact: true }).boundingBox())!;
+  expect((await owner.getByRole("radiogroup", { name: "Amount" }).boundingBox())!.y).toBeGreaterThanOrEqual(buyLabel.y + buyLabel.height);
+  // Upgrade stays beside the plan's name there.
+  const freeName = (await planRow.getByText("Your plan", { exact: true }).boundingBox())!;
+  expect((await owner.getByRole("button", { name: "Upgrade", exact: true }).boundingBox())!.y).toBeLessThan(freeName.y + freeName.height);
+  await checkpoint(owner, "team-settings-billing-free-plan-phone");
+  // "Choose a plan" opens the plans, no taller than the screen (they scroll inside); closed, the same link opens them again.
+  const plans = owner.getByRole("dialog", { name: "Choose a plan" });
+  await owner.getByRole("link", { name: "Choose a plan" }).click();
+  await expect(plans).toBeVisible();
+  await expect(owner).toHaveURL(/#plans$/);
+  const box = (await plans.boundingBox())!;
+  expect(box.height).toBeLessThanOrEqual(844);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(await plans.evaluate((dialog) => dialog.scrollHeight > dialog.clientHeight && dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
+  await checkpoint(owner, "team-settings-billing-plans-phone", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await expect(plans).toBeHidden();
+  await expect(owner).not.toHaveURL(/#plans$/);
+  await owner.getByRole("link", { name: "Choose a plan" }).click();
+  await expect(plans).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(plans).toBeHidden();
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  // Upgrade opens them too, from the keyboard.
+  await owner.getByRole("button", { name: "Upgrade", exact: true }).focus();
+  await owner.keyboard.press("Enter");
+  await expect(plans).toContainText("Plans are per project: readers are always unlimited.");
   // Picked with the keyboard too (native radios): Yearly, then back.
   await owner.getByRole("radio", { name: "Monthly" }).focus();
   await owner.keyboard.press("ArrowRight");
   await expect(owner.getByRole("radio", { name: "Yearly" })).toBeChecked();
-  const pro = owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Pro", exact: true }) });
+  const pro = plans.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Pro", exact: true }) });
   await expect(pro).toContainText("$32a month$384 billed yearly");
   // What yearly saves, as on the pricing page.
   await expect(owner.getByText("Save up to 20%")).toBeVisible();
-  await owner.getByText("Monthly", { exact: true }).click();
+  await plans.getByText("Monthly", { exact: true }).click();
   await expect(pro).toContainText("$39a monthBilled monthly");
   // Free beside Pro and Business, as the pricing page's cards show them: the numbers, then what each adds to the one
-  // before. Pro's button is the page's one primary.
+  // before. Pro's button is the dialog's one primary.
   await expect(pro.getByText("Most popular")).toBeVisible();
-  await expect(owner.getByText("Your plan", { exact: true })).toBeVisible();
+  await expect(plans.getByText("Your plan", { exact: true })).toBeVisible();
   await expect(pro.getByRole("definition")).toHaveText(["1,000", "5", "10k"]);
   await expect(pro.getByText("Everything in Free, plus")).toBeVisible();
   await expect(pro.getByRole("listitem")).toContainText(["Your own domain"]);
-  const business = owner.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Business", exact: true }) });
+  const business = plans.getByRole("listitem").filter({ has: owner.getByRole("heading", { name: "Business", exact: true }) });
   await expect(business.getByRole("listitem")).toContainText(["Subpath on your domain", "Private help center", "Fine-tune Autopilot", "Priority support"]);
   // Every feature is on Tuti's pricing page, linked only on Tuti's own cloud (tuti.so); this server opens each plan's lines here.
   await expect(owner.getByRole("link", { name: /Compare all features/ })).toHaveCount(0);
-  const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
-    buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
-  );
-  expect(primary).toEqual(["Upgrade to Pro"]);
-  // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
-  await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
-  await checkpoint(owner, "team-settings-billing-free-plan");
+  expect(await primaries(plans)).toEqual(["Upgrade to Pro"]);
+  await checkpoint(owner, "team-settings-billing-plans", { fullPage: false });
   await owner.getByText("Compare all features").click();
   await expect(owner.getByText("3 team members")).toBeVisible();
   await owner.getByText("3 team members").scrollIntoViewIfNeeded();
-  await checkpoint(owner, "team-settings-billing-plans-compared");
+  await checkpoint(owner, "team-settings-billing-plans-compared", { fullPage: false });
   // From the keyboard: while Stripe's page is being opened (its request held here), Upgrade is off but keeps the focus.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
@@ -72,11 +112,19 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // Stripe's page (the fake), then back to Billing on Pro, with its credits for the month.
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);
-  await expect(owner.getByRole("heading", { name: "Pro plan", exact: true })).toBeVisible();
+  await expect(planRow).toContainText("Pro");
   await expect(owner.getByText(/^\$39 a month · Renews on \d{1,2} [A-Z][a-z]+ \d{4}$/)).toBeVisible();
-  await expect(owner.getByText("10,000 of 10,000 left")).toBeVisible();
+  // A paid plan is managed in Stripe: no Upgrade.
+  await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
+  await expect(owner.getByRole("group", { name: "Emails" }).getByText("10,000 of 10,000 left")).toBeVisible();
+  await expect(owner.getByText("$49 a month, added to this project's plan.", { exact: true })).toBeVisible();
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Pro plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "team-settings-billing-pro-plan-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // The "Powered by tuti" add-on: added to the plan, the badge is gone from the portal.
   await owner.getByRole("button", { name: "Hide the badge" }).click();
@@ -127,7 +175,11 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(dialog.getByRole("link", { name: "Get a licence" })).toHaveCount(0);
   await dialog.getByRole("link", { name: "See Billing" }).click();
   await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
-  await expect(owner.getByText("Paid plans can hide the badge at the foot of the portal for $49 a month.")).toBeVisible();
+  await expect(owner.getByText("$49 a month, on a paid plan.", { exact: true })).toBeVisible();
+  // The plans are a click away.
+  await owner.getByRole("button", { name: "Upgrade", exact: true }).click();
+  await expect(owner.getByRole("dialog", { name: "Choose a plan" }).getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  await owner.keyboard.press("Escape");
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
@@ -285,6 +337,7 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("link", { name: "See plans" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing`);
+  await owner.getByRole("button", { name: "Upgrade", exact: true }).click();
   await owner.getByRole("button", { name: "Upgrade to Pro" }).click();
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);

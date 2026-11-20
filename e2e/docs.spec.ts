@@ -1814,9 +1814,12 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const spent = team.getByRole("table", { name: /^AI use in / });
   await expect(spent.getByRole("columnheader", { name: "Credits" })).toBeVisible();
   await expect(spent.getByRole("row", { name: /AI answers/ })).toBeVisible();
+  // The month's card: named for it, with what it came to at the title's right.
+  await expect(team.getByRole("heading", { name: /^AI usage · [A-Z][a-z]+ \d{4}$/ })).toBeVisible();
+  await expect(team.locator("#usage").getByText(/^[\d,.]+ credits$|^under 0\.01 credits$/)).toBeVisible();
   await checkpoint(team, "team-settings-usage");
   // …taken from the free credits every project starts with, on the same page.
-  await expect(team.getByText(/^[\d,.]+ AI credits$/)).toBeVisible();
+  await expect(team.getByRole("group", { name: "Balance" }).getByText(/^[\d,.]+ of 1,000 left$/)).toBeVisible();
   await expect(team.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Free credits/ })).toBeVisible();
   await checkpoint(team, "team-settings-billing");
 

@@ -221,19 +221,23 @@ test("a long docs collection and its settings scroll inside their page surface",
   }
 });
 
-test("billing's plan and usage anchors keep only their gap below the pane's header", async ({ browser }) => {
+test("billing's usage anchor keeps only its gap below the pane's header, and its plans anchor opens the plans, on a phone too", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await verifyEmail(owner);
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expectPaneAnchorGap(owner, "#plans", 32);
   await expectPaneAnchorGap(owner, "#usage", 32);
-  // On a phone the window scrolls, under the top bar: the plans land clear of it.
+  // A link to the plans from elsewhere lands with them open.
+  await owner.goto(`/app/${slug}/settings/billing#plans`);
+  await expect(owner.getByRole("dialog", { name: "Choose a plan" }).getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  // On a phone too, within the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
   await owner.getByRole("link", { name: "Choose a plan" }).click();
-  await expect.poll(async () => (await owner.locator("#plans").boundingBox())!.y).toBeGreaterThanOrEqual(48);
+  const plans = (await owner.getByRole("dialog", { name: "Choose a plan" }).boundingBox())!;
+  expect(plans.y).toBeGreaterThanOrEqual(0);
+  expect(plans.y + plans.height).toBeLessThanOrEqual(844);
 });

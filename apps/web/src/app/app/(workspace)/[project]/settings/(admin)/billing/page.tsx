@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
 import { creditBalance, emailsThisMonth } from "@tuti/jobs";
-import { badgeOffered, badgePrice, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, effectivePlan, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled, trialState } from "@tuti/shared";
+import { badgeOffered, badgePrice, boardLimit, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, effectivePlan, onDefaultPlan, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled, trialState } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
-import { BadgeAddOn, ManagePlan, PlanPicker, UnassignLicense } from "@/components/plan-picker";
+import { BadgeAddOn, ManagePlan, UnassignLicense, UpgradePlans } from "@/components/plan-picker";
 import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -28,11 +28,11 @@ const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "
 
 const sum = (grants: { credits: number; remaining: number }[], field: "credits" | "remaining") => grants.reduce((total, grant) => total + grant[field], 0);
 
-/** One of This month's allowances: what's `left` `of` it, as a bar that empties; without a limit (`of` null), `used`. */
+/** One of the card's allowances: what's `left` `of` it, as a bar that empties; without a limit (`of` null), `used`. */
 function Meter({ label, left, of, used }: { label: string; left: number | null; of: number | null; used?: string }) {
   return (
-    <div className="flex flex-col gap-2 text-sm">
-      <div className="flex justify-between gap-3">
+    <div role="group" aria-label={label} className="flex flex-col gap-2 text-sm">
+      <div className="flex flex-wrap justify-between gap-x-3">
         <span className="font-medium">{label}</span>
         {of === null || left === null ? (
           <span className="text-muted-foreground tabular-nums">{used}</span>
@@ -43,14 +43,15 @@ function Meter({ label, left, of, used }: { label: string; left: number | null; 
           </span>
         )}
       </div>
-      {of !== null && left !== null && <Progress aria-label={`${label} left`} value={Math.min(left, of)} max={of} />}
+      {of !== null && left !== null && <Progress aria-label={`${label} left`} value={Math.max(0, Math.min(left, of))} max={of} />}
     </div>
   );
 }
 
 /**
- * Settings → Billing: the project's plan (where plans are sold), its AI credits (where AI is paid with
- * them: the balance, and what's left by when it expires), and what its AI use cost each month.
+ * Settings → Billing: the project's plan, one row (where plans are sold; on the default plan "Upgrade" opens the plans
+ * to buy), this month's emails and its AI credits (where AI is paid with them: the balance, what's left by when it
+ * expires, and buying more), the add-on, and what its AI use cost each month.
  */
 export default async function BillingSettingsPage(props: PageProps<"/app/[project]/settings/billing">) {
   const { project: slug } = await props.params;
@@ -119,6 +120,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   // What the project owes (a refund's credits already spent, a request that ran past the last): the balance has it
   // taken off, the meter and the list don't, so with a meter it's said.
   const owed = sum(monthly, "remaining") + sum(extra, "remaining") - balance;
+  // The credits that aren't a license's month's: all of them without one, else the rest where there are any.
+  const showCredits = creditsEnabled() && (monthly.length === 0 || extra.length > 0);
+  // The default plan's room for feedback boards, said beside its emails.
+  const boards = boardLimit(effectivePlan(plan.plan, plan.trialEndsAt));
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -133,72 +138,79 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           <AlertDescription>Thanks for your payment. &quot;Powered by tuti&quot; is hidden as soon as Stripe confirms it, usually within a few seconds.</AlertDescription>
         </Alert>
       )}
-      {plansEnabled() && licensed && license && (
-        // A license's plan is one row: nothing to pay or renew, and unassigning it is rare, so behind "⋯".
-        <SettingsCard>
-          <div className="flex items-center gap-2.5 px-4 py-3 @min-[34rem]/settings:px-5">
-            <h2 className="text-base font-semibold">{shown.name}</h2>
-            <Badge variant="soft">{license.source === "appsumo" ? "Lifetime" : `${license.from} license`}</Badge>
-            <div className="ml-auto">
-              <UnassignLicense menu projectSlug={slug} licenseId={license.id} active badge={plan.badgeAddOn} />
-            </div>
-          </div>
-        </SettingsCard>
-      )}
-      {plansEnabled() && !licensed && (
-        <SettingsCard
-          title={trial ? (trial.ended ? "Your trial has ended" : `${shown.name} trial`) : `${shown.name} plan`}
-          description={
-            trial
-              ? trial.ended
-                ? "Choose a plan to keep going. Plans are per project: readers are always unlimited."
-                : `Ends on ${formatDate(trial.endsAt)}. Choose a plan to keep going.`
-              : !onPaidPlan
-                ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
-                : [
-                    // None for a plan the file sells no way (by quote): it's billed as agreed.
-                    shown.price[plan.planInterval === "year" ? "year" : "month"] !== null && planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
-                    plan.planEndsAt ? `Ends on ${formatDate(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${formatDate(plan.planPeriodEnd)}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-          }
-        >
-          <SettingBlock>
-            {plan.planStatus === "past_due" && (
+      {plansEnabled() && (
+        <SettingsCard title="Plan">
+          {plan.planStatus === "past_due" && !licensed && (
+            <SettingBlock>
               <Alert variant="destructive">
                 <AlertDescription>The last payment didn&apos;t go through. Stripe tries again; update the card in Manage plan.</AlertDescription>
               </Alert>
-            )}
-            {license?.revokedAt && (
+            </SettingBlock>
+          )}
+          {license?.revokedAt && (
+            <SettingBlock>
               <Alert variant="destructive">
                 <AlertDescription>This project&apos;s {license.from} license was deactivated. {planSalesEnabled() ? "Unassign it to choose a plan." : "Unassign it to take it off this project."}</AlertDescription>
               </Alert>
-            )}
+            </SettingBlock>
+          )}
+          <SettingRow
+            inline
+            label={
+              <span className="flex flex-wrap items-center gap-2">
+                <span>{shown.name}</span>
+                {licensed && license ? (
+                  <Badge variant="soft">{license.source === "appsumo" ? "Lifetime" : `${license.from} license`}</Badge>
+                ) : (
+                  <Badge variant="secondary">{trial ? (trial.ended ? "Trial ended" : "Trial") : "Your plan"}</Badge>
+                )}
+              </span>
+            }
+            description={
+              // A license's plan has nothing to pay or renew.
+              licensed ? undefined : trial?.ended === false ? (
+                `Ends on ${formatDate(trial.endsAt)}`
+              ) : !onPaidPlan ? (
+                !license && !planSalesEnabled() ? (
+                  <span id="plans-unavailable" tabIndex={-1} className="outline-none">
+                    Plans can&apos;t be bought here right now.
+                  </span>
+                ) : (
+                  // What the plan gives, where it has limits.
+                  [emails && emails.limit !== null && `${emails.limit.toLocaleString("en")} emails a month`, boards !== null && `${boards} feedback ${boards === 1 ? "board" : "boards"}`].filter(Boolean).join(" · ")
+                )
+              ) : (
+                [
+                  // None for a plan the file sells no way (by quote): it's billed as agreed.
+                  shown.price[plan.planInterval === "year" ? "year" : "month"] !== null && planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
+                  plan.planEndsAt ? `Ends on ${formatDate(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${formatDate(plan.planPeriodEnd)}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              )
+            }
+          >
             {license ? (
-              <UnassignLicense projectSlug={slug} licenseId={license.id} active={!license.revokedAt} badge={plan.badgeAddOn} />
+              // Unassigning a license that gives its plan is rare, so behind "⋯".
+              <UnassignLicense menu={licensed} projectSlug={slug} licenseId={license.id} active={licensed} badge={plan.badgeAddOn} />
             ) : onPaidPlan ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} plans={plansWithFacts()} pricingPage={pricingPage()} current={defaultPlanKey()!} trial={trial?.ended === false} />
-            ) : (
-              <p id="plans-unavailable" tabIndex={-1} className="text-sm text-muted-foreground outline-none">
-                Plans can&apos;t be bought here right now.
-              </p>
-            )}
-          </SettingBlock>
+              <UpgradePlans projectSlug={slug} plans={plansWithFacts()} pricingPage={pricingPage()} current={defaultPlanKey()!} trial={trial?.ended === false} />
+            ) : null}
+          </SettingRow>
         </SettingsCard>
       )}
-      {emails && (
-        // What the plan gives each month, apart from the plan itself (a lifetime license's has no end; its month has).
-        <SettingsCard>
-          <SettingBlock>
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-base font-semibold">This month</h2>
-              {/* The day the license's month ends, where something here follows it (emails counted against a limit, its credits). */}
-              {until && (emails.limit !== null || monthly.length > 0) && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
-            </div>
-            <div className="grid gap-4 @min-[34rem]/settings:grid-cols-2 @min-[34rem]/settings:gap-x-8">
+      {(emails || showCredits || topupsEnabled()) && (
+        // What the plan gives each month (a lifetime license's has no end; its month has), and the AI credits beside
+        // where more are bought. Without plans there's no month: the credits alone.
+        <SettingsCard
+          title={emails ? "This month" : "AI credits"}
+          // The day the license's month ends, where something here follows it (emails counted against a limit, its credits).
+          action={emails && until && (emails.limit !== null || monthly.length > 0) && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
+        >
+          {emails && (
+            <SettingBlock>
               {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}
               {/* Without a limit they're a calendar month's (UTC): said where the card's reset day is the license's. */}
               <Meter
@@ -207,55 +219,54 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 of={emails.limit}
                 used={`${emails.emails.toLocaleString("en")} sent${until ? ` since ${formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))}` : ""}`}
               />
-              {monthly.length > 0 && <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />}
-            </div>
-            {/* The next AI request takes what's owed from the credits there (chargeCredits); with none over, AI is paused (aiPaused). */}
-            {monthly.length > 0 && owed >= 0.01 && (
-              <p className="text-sm text-muted-foreground">
-                {balance <= 0 ? `AI is paused: this project owes ${credits(owed)} credits.` : `${credits(owed)} credits owed, taken at the next AI use.`}
-              </p>
-            )}
-          </SettingBlock>
-        </SettingsCard>
-      )}
-      {creditsEnabled() && (monthly.length === 0 || extra.length > 0) && (
-        <SettingsCard>
-          <SettingBlock>
-            <h2 className="text-base font-semibold">{monthly.length > 0 ? "Extra AI credits" : `${credits(balance)} AI credits`}</h2>
-            {extra.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No credits left.</p>
-            ) : (
-              <table className="w-full text-sm" aria-label="AI credits left">
-                <thead className="sr-only">
-                  <tr>
-                    <th>Credits</th>
-                    <th>Left</th>
-                    <th>Expires</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {extra.map((grant) => (
-                    <tr key={grant.id}>
-                      <td className="w-1/3 py-2">{titles.get(grant.id) ?? SOURCES[grant.source]}</td>
-                      <td className="w-20 py-2 text-right tabular-nums">{credits(grant.remaining)}</td>
-                      <td className="py-2 text-right text-muted-foreground">{grant.expiresAt ? `until ${formatShortDate(grant.expiresAt)}` : "Never"}</td>
+            </SettingBlock>
+          )}
+          {monthly.length > 0 && (
+            <SettingBlock>
+              <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />
+              {/* The next AI request takes what's owed from the credits there (chargeCredits); with none over, AI is paused (aiPaused). */}
+              {owed >= 0.01 && (
+                <p className="text-sm text-muted-foreground">
+                  {balance <= 0 ? `AI is paused: this project owes ${credits(owed)} credits.` : `${credits(owed)} credits owed, taken at the next AI use.`}
+                </p>
+              )}
+            </SettingBlock>
+          )}
+          {showCredits && (
+            <SettingBlock className="gap-2">
+              {monthly.length > 0 ? (
+                <h3 className="text-sm font-medium">Extra AI credits</h3>
+              ) : (
+                // The balance (what's owed taken off), of what the credits listed under it started as.
+                <Meter label={emails ? "AI credits" : "Balance"} left={extra.length > 0 ? balance : null} of={extra.length > 0 ? sum(extra, "credits") : null} used="No credits left." />
+              )}
+              {extra.length > 0 && (
+                <table className="w-full text-sm text-muted-foreground" aria-label="AI credits left">
+                  <thead className="sr-only">
+                    <tr>
+                      <th>Credits</th>
+                      <th>Left</th>
+                      <th>Expires</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </SettingBlock>
-        </SettingsCard>
-      )}
-      {topupsEnabled() && (
-        <SettingsCard title="Buy credits" description="Credits are added once the payment goes through.">
-          <SettingBlock>
-            <BuyCredits projectSlug={slug} perDollar={creditsPerTopupDollar()} days={topupExpiryDays()} min={TOPUP_DOLLARS.min} max={TOPUP_DOLLARS.max} />
-          </SettingBlock>
+                  </thead>
+                  <tbody>
+                    {extra.map((grant) => (
+                      <tr key={grant.id}>
+                        <td className="w-1/3 py-1">{titles.get(grant.id) ?? SOURCES[grant.source]}</td>
+                        <td className="w-20 py-1 text-right tabular-nums">{credits(grant.remaining)}</td>
+                        <td className="py-1 text-right">{grant.expiresAt ? `until ${formatShortDate(grant.expiresAt)}` : "Never"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </SettingBlock>
+          )}
+          {topupsEnabled() && <BuyCredits projectSlug={slug} perDollar={creditsPerTopupDollar()} days={topupExpiryDays()} min={TOPUP_DOLLARS.min} max={TOPUP_DOLLARS.max} />}
         </SettingsCard>
       )}
       {plansEnabled() && (!license || licensed) && (badge !== null || plan.badgeAddOn) && (
-        <SettingsCard>
+        <SettingsCard title="Add-ons">
           <SettingRow
             label='Hide "Powered by tuti"'
             description={
@@ -267,13 +278,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 ? // What it's billed at may be an older price than the file's: no amount.
                   "Hidden on this project's plan. It ends with the plan."
                 : !onPaidPlan
-                  ? `Paid plans can hide the badge at the foot of the portal for $${badge} a month.`
-                  : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
+                  ? `$${badge} a month, on a paid plan.`
+                  : `$${badge} a month, added to this project's plan.`
             }
           >
             {(plan.badgeAddOn || (planSalesEnabled() && badge !== null)) &&
               (!onPaidPlan && !licensed ? (
-                // To the plans above, monthly or yearly as picked there.
+                // Opens the plans (UpgradePlans), monthly or yearly as picked there.
                 <a href="#plans" className={buttonVariants({ variant: "outline" })}>
                   Choose a plan
                 </a>
