@@ -1,7 +1,7 @@
 "use client";
 
 import { ImageIcon, PlusIcon, UploadIcon, XIcon } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useImageUpload } from "@/components/branding-settings";
@@ -13,8 +13,10 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
+import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { LauncherIcon } from "@/components/widget-preview";
 import { linksFrom } from "@/lib/forms";
+import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { WIDGET_ICON_CHOICES, type WidgetIcon } from "@/lib/widget-icons";
@@ -52,8 +54,9 @@ const PARTS: Record<WidgetPart, { label: string; info?: string }> = {
  * Settings → Widget (saved with the pane's "Save changes"): the launcher on customers' sites, a round
  * button: its name, colour, corner and icon; and the panel's Home: its greeting and heading, the parts it
  * shows and quick links (see widget.update). A setting is a row (docs/design.md → Settings rows); what the
- * preview beside them can't show is behind a row's ⓘ. `iconLocked` (the plan notice) locks the icon where
- * the plan doesn't include picking one; it isn't sent then, so it stays as set.
+ * preview beside them can't show is behind a row's ⓘ. Where the plan doesn't include picking an icon
+ * (`upgrade`), its options look as usual, the row says which plan does, and choosing one opens the upgrade
+ * prompt; the one set is kept (going back to the chat bubble works, as on the server).
  */
 export function WidgetSettings({
   projectSlug,
@@ -66,7 +69,7 @@ export function WidgetSettings({
   links,
   icon: initialIcon,
   iconImage,
-  iconLocked,
+  upgrade,
   title,
   greeting,
   hidden,
@@ -86,7 +89,8 @@ export function WidgetSettings({
   links: { label: string; url: string }[];
   icon: WidgetIcon;
   iconImage: { id: string; url: string } | null;
-  iconLocked: ReactNode;
+  /** Where the plan doesn't include picking an icon: the upgrade prompt its options open. */
+  upgrade: UpgradePrompt | null;
   title: string;
   greeting: string;
   hidden: WidgetPart[];
@@ -95,7 +99,8 @@ export function WidgetSettings({
   aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
-  const iconChoices = useRef<HTMLFieldSetElement>(null);
+  const [upgrading, setUpgrading] = useState(false);
+  const iconChoices = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
@@ -134,23 +139,41 @@ export function WidgetSettings({
         <SettingRow label={<span id="widget-position">Position</span>} inline>
           <Segmented name="position" aria-labelledby="widget-position" defaultValue={position} options={POSITIONS} />
         </SettingRow>
-        {/* Off as a whole where the plan doesn't include picking an icon: its choices, and the upload. */}
-        <fieldset ref={iconChoices} disabled={Boolean(iconLocked)} className="min-w-0">
-          <div>
-            <SettingRow label={<span id="widget-icon">Icon</span>} inline>
-              <Segmented
-                name="icon"
-                aria-labelledby="widget-icon"
-                value={icon}
-                onValueChange={setIcon}
-                options={ICONS}
-                className="has-disabled:opacity-50 has-disabled:*:cursor-not-allowed @max-[20rem]/settings:*:px-2"
-              />
-            </SettingRow>
-            {iconLocked && <div className="px-4 pb-3.5 @min-[34rem]/settings:px-5">{iconLocked}</div>}
-          </div>
-          {/* Kept while another icon is picked, so going back to it before saving keeps the upload. */}
-          <div className={cn("border-t", icon !== "image" && "hidden")}>
+        <div ref={iconChoices}>
+          <SettingRow
+            label={<span id="widget-icon">Icon</span>}
+            description={
+              upgrade && (
+                <span id="widget-icon-plan">
+                  {upgrade.title}
+                  {initialIcon !== "chat" && " Until it's back, the launcher shows the chat bubble; the icon you picked is kept."}
+                </span>
+              )
+            }
+            // With the plan's line, under it on phones: beside it, the line would be a word or two wide.
+            inline={!upgrade}
+          >
+            <Segmented
+              name="icon"
+              aria-labelledby="widget-icon"
+              aria-describedby={upgrade ? "widget-icon-plan" : undefined}
+              value={icon}
+              onValueChange={(value) => {
+                // Not in the plan: the prompt, and the icon stays (the chat bubble and the one set can be chosen).
+                if (upgrade && value !== "chat" && value !== initialIcon) {
+                  setUpgrading(true);
+                } else {
+                  setIcon(value);
+                }
+              }}
+              options={ICONS}
+              className="@max-[20rem]/settings:*:px-2"
+            />
+          </SettingRow>
+          {upgrade && <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />}
+          {/* Kept while another icon is picked, so going back to it before saving keeps the upload. Hidden without the
+              plan, which a new image needs: the one there is kept. */}
+          <div className={cn("border-t", (icon !== "image" || upgrade) && "hidden")}>
             <IconImageRow
               projectSlug={projectSlug}
               image={iconImage}
@@ -163,7 +186,7 @@ export function WidgetSettings({
               }}
             />
           </div>
-        </fieldset>
+        </div>
         <SettingRow label="Show on your portal" htmlFor="widget-on-portal" info="The launcher on every page of your portal too, opening the same panel as on your site." inline>
           <Switch id="widget-on-portal" name="onPortal" defaultChecked={onPortal} />
         </SettingRow>
