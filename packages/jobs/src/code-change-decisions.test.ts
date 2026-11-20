@@ -1,4 +1,4 @@
-import { resetCodeChangesSettings } from "@tuti/shared";
+import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { confidence, DECISION_DIFF_CHARS, gateResult, namedPosts, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
@@ -13,24 +13,16 @@ test("a post: resolves or moves forward (the likelier) when either passes, else 
 });
 
 test("a post: only a kind past its own cutoff wins, when the cutoffs differ", () => {
-  vi.stubEnv("CODE_CHANGES_DECISIONS_RESOLVES_MAYBE", "0.7");
-  vi.stubEnv("CODE_CHANGES_DECISIONS_MOVES_FORWARD_MAYBE", "0.3");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { resolves: { maybe: 0.7 }, movesForward: { maybe: 0.3 } } } }));
   expect(postProposal(effect({ resolves: 0.6, moves_forward: 0.4, related: 0, unrelated: 0 }))).toEqual({ kind: "MOVES_FORWARD", probability: 0.4 });
   expect(postProposal(effect({ resolves: 0.75, moves_forward: 0.2, related: 0, unrelated: 0.05 }))).toEqual({ kind: "RESOLVES", probability: 0.75 });
 });
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
 });
 
 test("likely, maybe and the propose cutoffs follow their settings", () => {
-  vi.stubEnv("CODE_CHANGES_DECISIONS_LINKS_LIKELY", "0.8");
-  vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_MAYBE", "0.9");
-  vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_LIKELY", "0.95");
-  vi.stubEnv("CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE", "0.1");
-  vi.stubEnv("CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY", "0.8");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { links: { likely: 0.8 } }, propose: { edit: { maybe: 0.9, likely: 0.95 }, newArticle: { maybe: 0.1, likely: 0.8 } } } }));
   expect(confidence("LINKS", 0.8)).toBe("likely");
   expect(thresholds()).toMatchObject({ ARTICLE_EDIT: { maybe: 0.9, likely: 0.95 }, NEW_ARTICLE: { maybe: 0.1, likely: 0.8 } });
   expect(confidence("ARTICLE_EDIT", 0.9)).toBe("maybe");
@@ -39,8 +31,7 @@ test("likely, maybe and the propose cutoffs follow their settings", () => {
 test("a post's link follows its cutoff", () => {
   const touching = effect({ resolves: 0.1, moves_forward: 0.1, related: 0.3, unrelated: 0.5 });
   expect(postProposal(touching)).toBeNull();
-  vi.stubEnv("CODE_CHANGES_DECISIONS_LINKS_MAYBE", "0.5");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { links: { maybe: 0.5 } } } }));
   expect(postProposal(touching)).toEqual({ kind: "LINKS", probability: expect.closeTo(0.5) });
 });
 
@@ -93,8 +84,7 @@ test("a big file crossing the cut far past the last header: its start is shown, 
 });
 
 test("a diff read at the decision model's size or less (context.diffChars) is left as read, headers and all", () => {
-  vi.stubEnv("CODE_CHANGES_CONTEXT_DIFF_CHARS", "1000");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { context: { diffChars: 1000 } } }));
   // As readPullRequest leaves it at that cap: each part's text cut to fit, its header on top, so a little over 1,000.
   const part = (name: string, size: number) => `--- src/${name}.ts (modified, +1 -0)\n+${"x".repeat(size)}`;
   const files = ["a", "b"].map((name) => ({ path: `src/${name}.ts`, status: "modified", additions: 1, deletions: 0 }));

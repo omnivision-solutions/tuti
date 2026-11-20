@@ -272,6 +272,430 @@
         }
       },
       "additionalProperties": false
+    },
+    "autopilot": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "decisions": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "nace-ai/drex-max",
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^\\S+$",
+              "description": "The decision model, a Decisions API model through OpenRouter (not a chat model): it answers the gate, what a pull request does to posts and articles, and whether edits call for Verify. The default did best on code changes' evaluation set (a model id)"
+            },
+            "gate": {
+              "default": 0.5,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "The probability that users see the change, below which there's nothing to do (a number from 0 to 1)"
+            },
+            "resolves": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "maybe": {
+                  "default": 0.4,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Resolving a post: proposed, as \"maybe\", from this probability (a number from 0 to 1)"
+                },
+                "likely": {
+                  "default": 0.75,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Resolving a post: proposed as likely from this probability (a number from 0 to 1)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "movesForward": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "maybe": {
+                  "default": 0.4,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Moving a post forward: proposed, as \"maybe\", from this probability (a number from 0 to 1)"
+                },
+                "likely": {
+                  "default": 0.75,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Moving a post forward: proposed as likely from this probability (a number from 0 to 1)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "links": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "maybe": {
+                  "default": 0.65,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Linking a post: below this the pull request isn't linked to it at all (links are only applied by themselves, see `autopilot.decisions.autoLink`) (a number from 0 to 1)"
+                },
+                "likely": {
+                  "default": 0.85,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Linking a post: an applied link is labelled likely from this probability (a number from 0 to 1)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "autoLink": {
+              "default": 0.95,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "A link Autopilot applies by itself from this probability (with \"Link posts by itself\" on); at least `autopilot.decisions.links.maybe` (a number from 0 to 1)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "propose": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "edit": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "maybe": {
+                  "default": 0.5,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Editing an article: proposed, as \"maybe\", from this probability (a number from 0 to 1)"
+                },
+                "likely": {
+                  "default": 0.75,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Editing an article: proposed as likely from this probability (a number from 0 to 1)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "newArticle": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "maybe": {
+                  "default": 0.3,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "A new article: proposed, as \"maybe\", from this probability (a number from 0 to 1)"
+                },
+                "likely": {
+                  "default": 0.8,
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "A new article: proposed as likely from this probability (a number from 0 to 1)"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "context": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "diffChars": {
+              "default": 60000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000,
+              "description": "The pull request's diff the docs agent and the writers read, in characters (the decision model at most 20,000 of it); files past it are only listed (a whole number from 1000 to 500000)"
+            },
+            "fileChars": {
+              "default": 6000,
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 500000,
+              "description": "One file's share of the diff at most, in characters (a whole number from 500 to 500000)"
+            },
+            "bodyChars": {
+              "default": 4000,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "The pull request's description it reads, in characters (a whole number from 0 to 100000)"
+            },
+            "outlineArticles": {
+              "default": 1000,
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 20000,
+              "description": "The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search (a whole number from 50 to 20000)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "decide": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "anthropic/claude-haiku-5.5",
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^\\S+$",
+              "description": "The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer (a model id)"
+            },
+            "rounds": {
+              "default": 12,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Its rounds of tool calls at most, before it must answer (a whole number from 1 to 50)"
+            },
+            "maxTokens": {
+              "default": 6000,
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 64000,
+              "description": "The most it writes in one reply, in tokens (the double-check's too) (a whole number from 500 to 64000)"
+            },
+            "temperature": {
+              "default": 0,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "Its temperature (the double-check's too): 0 for the steadiest answers (a number from 0 to 2)"
+            },
+            "reasoning": {
+              "default": "off",
+              "type": "string",
+              "enum": [
+                "off",
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "How much it thinks before each reply, as OpenRouter's reasoning effort (the double-check's too); off asks for none (one of off, low, medium, high)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "redecide": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "anthropic/claude-sonnet-5.5",
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^\\S+$",
+              "description": "The double-check's model: when the docs agent proposes a new article (see `autopilot.redecide.whenNewArticle`), it decides the pull request again from scratch, with the same tools, and its answer is used; it's also Checks' model on the Balanced level, which reviews every article edit. `off` skips both, and every article edit then asks first, except on a level whose `ai.levels` row or Custom setting gives Checks its own model (a model id, or off)"
+            },
+            "rounds": {
+              "default": 12,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Its rounds of tool calls at most, before it must answer (a whole number from 1 to 50)"
+            },
+            "whenNewArticle": {
+              "default": 0.2,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "The double-check runs when the docs agent proposes a new article this sure or more (a number from 0 to 1)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "write": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "anthropic/claude-sonnet-5.5",
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^\\S+$",
+              "description": "The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `ai.features.codeChanges`, then `ai.model`, then this (a model id)"
+            },
+            "rounds": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Its rounds of tool calls at most, for each edit or new article (a whole number from 1 to 50)"
+            },
+            "maxTokens": {
+              "default": 6000,
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 64000,
+              "description": "The most it writes in one reply, in tokens (a whole number from 500 to 64000)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tools": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "listChars": {
+              "default": 30000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000,
+              "description": "List files: the answer's characters at most (a whole number from 1000 to 500000)"
+            },
+            "fileChars": {
+              "default": 60000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000,
+              "description": "Read a file: its characters at most (a whole number from 1000 to 500000)"
+            },
+            "searchLines": {
+              "default": 60,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Search the code: the lines at most (a whole number from 1 to 1000)"
+            },
+            "searchChars": {
+              "default": 20000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000,
+              "description": "Search the code: the answer's characters at most (a whole number from 1000 to 500000)"
+            },
+            "searchMs": {
+              "default": 5000,
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 60000,
+              "description": "Search the code: how long one search may take, in milliseconds (the model writes the pattern) (a whole number from 100 to 60000)"
+            },
+            "articleChars": {
+              "default": 20000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000,
+              "description": "Read an article: its characters at most (a whole number from 1000 to 500000)"
+            },
+            "articles": {
+              "default": 8,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Search articles: how many it finds when the model doesn't say (a whole number from 1 to 50)"
+            },
+            "maxArticles": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Search articles: how many it finds at most (a whole number from 1 to 50)"
+            },
+            "embedMs": {
+              "default": 30000,
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 300000,
+              "description": "Search articles: how long one embeddings request may take, in milliseconds (a whole number from 1000 to 300000)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "timeoutMinutes": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "description": "How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again (a whole number from 1 to 60)"
+            },
+            "callTimeoutSeconds": {
+              "default": 120,
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 900,
+              "description": "How long one request to the docs agent's models may take, in seconds (a whole number from 10 to 900)"
+            },
+            "concurrentAnalyses": {
+              "default": 4,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "How many pull requests the worker analyses at once, on the whole server (retries included); the rest wait their turn. Each holds a worker slot for up to the analysis's time limit, and its repository in memory (a whole number from 1 to 20)"
+            },
+            "archiveBytes": {
+              "default": 50000000,
+              "type": "integer",
+              "minimum": 1000000,
+              "maximum": 1000000000,
+              "description": "The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so) (a whole number from 1000000 to 1000000000)"
+            },
+            "readBytes": {
+              "default": 1000000000,
+              "type": "integer",
+              "minimum": 1000000,
+              "maximum": 10000000000,
+              "description": "The repository's archive unpacked, everything in it, in bytes at most (a whole number from 1000000 to 10000000000)"
+            },
+            "fileBytes": {
+              "default": 1000000,
+              "type": "integer",
+              "minimum": 10000,
+              "maximum": 100000000,
+              "description": "One file in the repository, in bytes at most; bigger ones are left out (a whole number from 10000 to 100000000)"
+            },
+            "downloadMs": {
+              "default": 120000,
+              "type": "integer",
+              "minimum": 5000,
+              "maximum": 900000,
+              "description": "How long downloading the repository may take, in milliseconds (a whole number from 5000 to 900000)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "verify": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "after": {
+              "default": 0.7,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "How sure the decision model must be that edits piling up on an article call for Verify, before Autopilot starts one (a number from 0 to 1)"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

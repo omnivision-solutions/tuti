@@ -19,7 +19,7 @@ import type { Repository } from "./repository";
  */
 
 /**
- * Each tool's caps: the settings' `tools` (CODE_CHANGES_TOOLS_*). `searchMs`: the model writes the pattern, and a regular
+ * Each tool's caps: the settings' `tools` (autopilot.tools). `searchMs`: the model writes the pattern, and a regular
  * expression can backtrack for ages; `embedMs`: how long one embeddings request may take before search says it failed.
  */
 export type ToolLimits = CodeChangesSettings["tools"];

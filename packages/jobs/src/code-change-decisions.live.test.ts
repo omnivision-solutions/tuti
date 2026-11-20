@@ -6,7 +6,7 @@ import { CASES, post } from "./code-change-eval";
 
 /**
  * The evaluation set against the real decision model (`pnpm test:live`, with OPENAI_API_KEY, an OpenRouter key;
- * CODE_CHANGES_DECISIONS_MODEL for another than the default): each kind of decision it makes (the gate and the posts;
+ * a config file at TUTI_CONFIG with autopilot.decisions.model for another than the default): each kind of decision it makes (the gate and the posts;
  * the help center's are the docs agent's, code-change-docs-agent.live.test.ts), with today's thresholds, must match what
  * a team member would expect. Without the keys it's skipped: "not run", never "passed". Prints the model's answers
  * for each decision (proposed or not), to tune the thresholds or compare decision models.

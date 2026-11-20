@@ -1,5 +1,5 @@
 import { type Doc, toMarkdown } from "@tuti/content";
-import { resetCodeChangesSettings } from "@tuti/shared";
+import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { articleNotes, EDIT_SYSTEM, REWRITE_RULE } from "./code-change-docs";
@@ -316,8 +316,7 @@ test("an edit that moves or copies text the article had is neither a rename nor 
 
 test("the check stores an edit's scope from the pull request's diff only when that diff is all of the change: a cut one makes no rename", async () => {
   // Checks off: nothing is reviewed or asked, and the scope is stored all the same.
-  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
   const paragraph = (label: string): Doc => ({
     type: "doc",
     content: [{ type: "paragraph", content: [{ type: "text", text: "Open " }, { type: "text", text: label, marks: [{ type: "bold" }] }, { type: "text", text: " to send invites." }] }],
@@ -330,5 +329,4 @@ test("the check stores an edit's scope from the pull request's diff only when th
   expect(await scope(false)).not.toBe("rename");
   // A read from before the flag (unset) isn't known to be all of it.
   expect(await scope(undefined)).not.toBe("rename");
-  resetCodeChangesSettings();
 });

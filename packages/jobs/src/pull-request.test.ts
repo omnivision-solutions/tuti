@@ -1,5 +1,4 @@
-import { resetCodeChangesSettings } from "@tuti/shared";
-import { type GithubFake, startGithubFake } from "@tuti/testkit";
+import { type GithubFake, startGithubFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { installationApi } from "./github-api";
@@ -12,7 +11,6 @@ beforeAll(async () => {
 afterAll(() => github.close());
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
 });
 beforeEach(() => {
   for (const [name, value] of Object.entries(github.env)) {
@@ -180,9 +178,7 @@ test("a big pull request: the diff stops at the cap, and the files after it are 
 });
 
 test("the server's settings cap the diff, each file and the description", async () => {
-  vi.stubEnv("CODE_CHANGES_CONTEXT_DIFF_CHARS", "3000");
-  vi.stubEnv("CODE_CHANGES_CONTEXT_FILE_CHARS", "1000");
-  vi.stubEnv("CODE_CHANGES_CONTEXT_BODY_CHARS", "10");
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { context: { diffChars: 3000, fileChars: 1000, bodyChars: 10 } } }));
   github.pullRequest("acme/app", {
     number: 9,
     title: "Capped",

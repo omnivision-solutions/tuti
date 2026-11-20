@@ -4,7 +4,7 @@ import { planIncludes, type PlanKey } from "./plans";
 /**
  * Advanced tuning (docs/plan.md, Autopilot's docs agent, D6): the few of Autopilot's settings a project's owners may change
  * for its own analyses (Business), each inside the server's range. A project's value wins, else the server's
- * CODE_CHANGES_* variable, else the default in code. Server limits (the price cap, time limits, the repository's size,
+ * config file's autopilot section, else the default in code. Server limits (the price cap, time limits, the repository's size,
  * the tools' caps, how many analyses at once) are never per project.
  */
 export const TUNING = {

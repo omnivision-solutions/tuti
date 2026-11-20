@@ -1,15 +1,16 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { codeChangesSettings, readCodeChangesSettings, withCodeChangesSettings } from "./code-changes-settings";
+import { codeChangesSettings, withCodeChangesSettings } from "./code-changes-settings";
+import { autopilot } from "./config/autopilot";
 import { clampTuning, tunedSettings, tuningRange } from "./code-changes-tuning";
 
 afterEach(() => vi.unstubAllEnvs());
 
-const server = (env: Record<string, string> = {}) => readCodeChangesSettings(env).values;
+const server = (values: unknown = {}) => autopilot.parse(values);
 
-test("a project's value wins, else the server's variable, else the default in code", () => {
-  const settings = server({ CODE_CHANGES_DECIDE_ROUNDS: "20" });
+test("a project's value wins, else the server's config file, else the default in code", () => {
+  const settings = server({ decide: { rounds: 20 } });
   // Nothing saved: the server's (20), and the code's default where the server set nothing (diffChars).
   const none = tunedSettings({}, "business", settings);
   expect(none.settings.decide.rounds).toBe(20);
@@ -28,7 +29,7 @@ test("a project's value wins, else the server's variable, else the default in co
 });
 
 test("values outside the server's range are clamped when used; ones that aren't values are ignored", () => {
-  const settings = server({ CODE_CHANGES_PROPOSE_EDIT_LIKELY: "0.6" });
+  const settings = server({ propose: { edit: { likely: 0.6 } } });
   // A "from" threshold goes up to the server's likely only.
   expect(tuningRange("propose.edit.maybe", settings)).toEqual({ kind: "probability", min: 0, max: 0.6 });
   expect(tuningRange("decide.rounds", settings)).toEqual({ kind: "integer", min: 1, max: 50 });

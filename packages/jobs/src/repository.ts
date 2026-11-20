@@ -14,7 +14,7 @@ import { leftOut } from "./pull-request";
 export type Repository = { files: Map<string, string>; skipped: Map<string, string> };
 
 /**
- * The limits on reading a repository, the settings' (CODE_CHANGES_LIMITS_*); over `archiveBytes` or `readBytes`, the agent works from the diff.
+ * The limits on reading a repository, the settings' (autopilot.limits); over `archiveBytes` or `readBytes`, the agent works from the diff.
  * - `archiveBytes`: the text kept. It bounds an analysis's memory: the text is held here and copied once to the search
  *   worker (docs-agent-tools.ts). What's left out (binaries, big files, lockfiles) isn't held, so it doesn't count.
  * - `readBytes`: everything unpacked, left out or not, against an archive that unpacks to far more than it downloads.

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
-import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL, resetCodeChangesSettings } from "@tuti/shared";
+import { AI_ROLE_NAMES, articleChunkText, DEFAULT_AI_MODEL } from "@tuti/shared";
 import { billingFile, configFile, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { Children, isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -42,7 +42,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs();
   // A test that set Autopilot's variables: the next one reads the server's own again.
-  resetCodeChangesSettings();
   model.done();
 });
 
@@ -374,9 +373,7 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
 });
 
 test("the Checks switch on a server whose own checks are off: none where they wouldn't run anyway; where the level in use has a model for them it's there, on, and switches them off and on", async () => {
-  serverAi({ levels: { best: { code_changes_check: "anthropic/claude-sonnet-5.5" } } });
-  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { levels: { best: { code_changes_check: "anthropic/claude-sonnet-5.5" } } }, autopilot: { redecide: { model: "off" } } }));
   const setting = async () => aiModelSetting(await prisma.project.findUniqueOrThrow({ where: { id: project.id } }), "code_changes", { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" });
   actAs(owner);
 

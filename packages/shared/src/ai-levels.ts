@@ -1,4 +1,5 @@
 import { AI_ROLE_NAMES, AI_ROLES, type AiRole, roleCanBeOff, roleDefaultModel } from "./ai";
+import { CODE_CHANGES_SETTINGS, serverCodeChangesSettings } from "./code-changes-settings";
 import { config } from "./config";
 import { planIncludes, type PlanKey, planNeeded } from "./plans";
 
@@ -44,10 +45,10 @@ const BUILT_IN: Rows = {
   },
 };
 
-/** Whether the server set its own models (the config file's ai.model or a feature's, or Autopilot's): its provider may not have the built-in rows' models. */
+/** Whether the server set its own models (the config file's ai.model or a feature's, or one of Autopilot's): its provider may not have the built-in rows' models. */
 const ownModels = () => {
   const { model, features } = config().ai;
-  return Boolean(model || Object.values(features).some(Boolean) || ["CODE_CHANGES_DECIDE_MODEL", "CODE_CHANGES_REDECIDE_MODEL", "CODE_CHANGES_WRITE_MODEL"].some((name) => process.env[name]?.trim()));
+  return Boolean(model || Object.values(features).some(Boolean) || (["decide", "redecide", "write"] as const).some((step) => serverCodeChangesSettings()[step].model !== CODE_CHANGES_SETTINGS[step].model.default));
 };
 
 /** This server's Affordable and Best rows: the config file's (ai.levels), else none where it set its own models, else the built-in ones. */

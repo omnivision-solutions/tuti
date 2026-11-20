@@ -33,7 +33,7 @@ export type CodeChangesTuning = {
     {
       /** What analyses use now: the project's value where its plan has tuning, else the server's. */
       value: TuningValue;
-      /** The server's: its CODE_CHANGES_* variable, else the default in code. */
+      /** The server's: its config file's autopilot section, else the default in code. */
       default: TuningValue;
       /** The project's value, inside the server's range now (null: none). */
       saved: TuningValue | null;
@@ -93,7 +93,7 @@ const tuningEntryOut = (key: TuningKey) =>
   z
     .object({
       value: valueOut.describe("What analyses use now: the project's value where its plan has tuning, else the server's").meta({ examples: [EXAMPLES[key].value] }),
-      default: valueOut.describe("The server's default: its CODE_CHANGES_* variable, else the one in code").meta({ examples: [EXAMPLES[key].value] }),
+      default: valueOut.describe("The server's default: its config file's autopilot section, else the one in code").meta({ examples: [EXAMPLES[key].value] }),
       saved: valueOut.nullable().describe("The project's own value, inside the server's range now; null for none").meta({ examples: [null] }),
       clamped: z.boolean().describe("The project's value was outside the server's range, so it's used (and shown) at its end").meta({ examples: [false] }),
       range: rangeOut.describe("What it may be: a probability or a whole number from `min` to `max`, or one of `options`").meta({ examples: [EXAMPLES[key].range] }),

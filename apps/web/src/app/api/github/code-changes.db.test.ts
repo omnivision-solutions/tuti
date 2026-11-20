@@ -1,8 +1,8 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
-import { log, resetCodeChangesSettings, roleDefaultModel } from "@tuti/shared";
-import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver } from "@tuti/testkit";
+import { log, roleDefaultModel } from "@tuti/shared";
+import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
@@ -43,7 +43,6 @@ beforeEach(async () => {
   for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
-  resetCodeChangesSettings();
   model.decisions.splice(0);
   model.requests.splice(0);
   // Autopilot's check (E5) passes every edit a test doesn't script its review for, as a review that confirms it would.
@@ -64,7 +63,6 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
   vi.restoreAllMocks();
   // Every decision and reply scripted was asked for, and nothing else was.
   model.done();
@@ -1012,8 +1010,7 @@ describe("deciding", () => {
       model.decide(unrelated, `"title":"${title}"`);
     }
     // An edit and a new article, in no collection (the double-check off: docs-agent.db.test.ts has it).
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
     docsAgent({ edits: [agentEdit(0.9)], newArticles: [{ title: "Use the dark theme", probability: 0.9, collection: null, after: null, reason: "Nothing covers themes." }] });
     // The edit loses the link: not proposed.
     model.reply(JSON.stringify({ reason: "Out of date", sections: { "1": "Pick a theme in Settings, now dark too." } }), undefined, '"problem"');
@@ -1162,8 +1159,7 @@ describe("deciding", () => {
   test("the server's settings move the gate and the bar for linking by itself", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: true } });
     // A lower bar (as low as keeping a link goes): the settings page's link (70% sure) now goes by itself.
-    vi.stubEnv("CODE_CHANGES_DECISIONS_AUTO_LINK", "0.65");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { autoLink: 0.65 } } }));
     github.pullRequest(repo, pullRequest(24));
     model.decide(USERS);
     model.reply(SUMMARY);
@@ -1180,8 +1176,7 @@ describe("deciding", () => {
     ).toEqual([{ status: "APPLIED", postId: posts.settings!.id }]);
 
     // A higher gate: users seeing it at 90% isn't enough, so there's nothing to do.
-    vi.stubEnv("CODE_CHANGES_DECISIONS_GATE", "0.95");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { gate: 0.95 } } }));
     github.pullRequest(repo, pullRequest(25));
     model.decide(USERS);
     noDocs();
