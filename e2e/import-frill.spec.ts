@@ -5,7 +5,7 @@ import { FAKE_FRILL_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { signUp } from "./helpers";
+import { createProject, signUp } from "./helpers";
 
 test("in the first run the team comes from Frill: a bad key is refused, a good one brings its users, ideas (onto a Public board, as picked) and announcements across, bugs kept private", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -79,4 +79,32 @@ test("in the first run the team comes from Frill: a bad key is refused, a good o
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByText("Planning it for June.")).toBeVisible();
   await expect(owner.getByRole("region", { name: "Comments" }).getByRole("listitem").getByText("Internal note", { exact: true })).toBeVisible();
+});
+
+test("in Settings → Import, Frill's ideas go onto the board picked: Private to begin with, Public once picked", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/import`);
+  await owner.getByRole("radio", { name: "Frill", exact: true }).check();
+  // Asked only while Feedback is picked.
+  const where = owner.getByRole("radiogroup", { name: "Ideas from Frill" });
+  await expect(where).toHaveCount(0);
+  await owner.getByRole("checkbox", { name: "Feedback", exact: true }).check();
+  await expect(where.getByRole("radio", { name: "On a Private board" })).toBeChecked();
+  // Why it's asked, and what each answer does, behind the ⓘ.
+  const row = owner.locator('[data-slot="setting-row"]').filter({ has: where });
+  await row.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText(/Frill doesn't tell Tuti which ideas only some people could see, so a Public board could show private ones\. On a Private board: each idea is seen only by its author and your team\./)).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await where.getByText("On a Public board").click();
+  await expect(where.getByRole("radio", { name: "On a Public board" })).toBeChecked();
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FRILL_KEY);
+  await owner.getByRole("button", { name: "Start import" }).click();
+  await expect(owner.getByRole("status").filter({ hasText: "Frill" })).toContainText("Imported from Frill.", { timeout: 30_000 });
+
+  // Public, as picked: a visitor sees the idea.
+  const visitor = await browser.newPage({ baseURL: portalUrl(slug) });
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.getByText("CSV export")).toBeVisible();
 });
