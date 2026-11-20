@@ -67,6 +67,9 @@ function ProfileForm({
   // The photo's row as the page was opened: it stays through a save (what the form holds is then what was saved, so
   // nothing typed meanwhile is lost), also once its photo is removed for someone who can't upload another.
   const [row] = useState(photo);
+  // The photo this form last saved (as it opened, then each one it saved): a change is against it, not against what a
+  // refresh brings, so a photo saved elsewhere isn't put back to this tab's by a name-only save.
+  const saved = useRef(row && { image: row.image, imageId: row.imageId });
   const { form } = useCustomizeForm({
     busy: uploading > 0,
     save: async (_, data) => {
@@ -77,8 +80,12 @@ function ProfileForm({
       }
       // A new photo, or none: only when it changed (one that came from sign-in has no upload id, and stays unless removed).
       const chosen = String(data.get("photo") ?? "");
-      const changed = photo && (photo.image ? chosen !== (photo.imageId ?? "") || !data.get("photoUrl") : chosen !== "");
+      const last = saved.current;
+      const changed = last && (last.image ? chosen !== (last.imageId ?? "") || !data.get("photoUrl") : chosen !== "");
       const picked = changed ? await setAvatar(chosen || null).catch(() => ({ error: "Couldn't reach Tuti. Try again." })) : {};
+      if (changed && !picked.error) {
+        saved.current = { image: String(data.get("photoUrl") ?? "") || null, imageId: chosen || null };
+      }
       router.refresh();
       if (picked.error) {
         toast.error(`Name saved; the photo wasn't: ${picked.error}`);
