@@ -278,6 +278,20 @@ describe("with a decision model (OpenRouter)", () => {
     expect(model.decisions).toHaveLength(1);
   });
 
+  test("after posting, with AI credits on, the check is recorded and charged as duplicate detection", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await post("Dark mode");
+    await post("Night theme please");
+    const [usage, ...more] = await prisma.aiUsage.findMany({ where: { projectId: project.id } });
+    expect(more).toEqual([]);
+    expect(usage).toMatchObject({ feature: "duplicates", kind: "decision" });
+    expect(Number(usage!.credits)).toBeGreaterThan(0);
+  });
+
   test("after posting, out of AI credits, posts are suggested by similarity alone, without asking", async () => {
     vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
     openai.setVector("Dark mode", along(1));
@@ -302,15 +316,17 @@ describe("with a decision model (OpenRouter)", () => {
 
   test("while typing, a project's checks stop at 300 an hour: the rest show the posts as found, till the next hour", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T10:10:00Z") });
-    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    // With credits on, each check reads the balance first: the wait searches at once could slip past the count in.
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
+    await grantCredits(project.id, "TOPUP", 1000, { days: 365 });
     openai.setVector("Translate articles please", along(1));
     openai.setVector("Live translations for Inbox", along(0.9));
     await post("Live translations for Inbox");
     model.otherwiseDecide({ "*": DIFFERENT }, "Translate articles please");
 
-    for (let i = 0; i < 300; i++) {
-      expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
-    }
+    // All at once: none may read a count another hasn't saved yet.
+    const answered = await Promise.all(Array.from({ length: 300 }, () => findSimilarPosts(project.slug, "Translate articles please")));
+    expect(answered.every((posts) => posts.length === 0)).toBe(true);
     const found = await findSimilarPosts(project.slug, "Translate articles please");
     expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
     expect(model.decisions).toHaveLength(300);

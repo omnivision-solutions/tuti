@@ -74,12 +74,17 @@ async function duplicatesOnly(projectId: string, title: string, found: Candidate
   if (count >= CHECKS_PER_PROJECT_PER_HOUR) {
     return found;
   }
-  // Charged in AI credits like any AI feature: out of them, the posts are shown as found.
+  // The slot is taken before anything is awaited, so searches at once can't all read the same count.
+  checks.set(projectId, { hour, count: count + 1 });
+  // Charged in AI credits like any AI feature: out of them, the posts are shown as found (and the slot given back).
   const meter = await duplicatesMeter(projectId);
   if (!meter) {
+    const now = checks.get(projectId);
+    if (now?.hour === hour) {
+      checks.set(projectId, { hour, count: now.count - 1 });
+    }
     return found;
   }
-  checks.set(projectId, { hour, count: count + 1 });
   try {
     const verdicts = await judgeDuplicates(model, title, found.map(duplicateText), 1_000, meter);
     return found
