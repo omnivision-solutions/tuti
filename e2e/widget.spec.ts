@@ -403,7 +403,7 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   ssoSecrets.set(slug, secret);
 
@@ -551,7 +551,7 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   // An announcement: new to whoever may read the portal, and nobody else hears of it.
   const api = await apiFor(owner, slug);
@@ -607,7 +607,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
   await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget seen test");
@@ -1171,7 +1171,7 @@ test("someone signed in on the portal opens its widget: Home greets them by thei
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
 
   // On the portal's own site, its session comes along to the panel; the page signs nobody in.
@@ -1390,7 +1390,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   // SSO, so the customer's site signs its visitor in to the widget's Feedback tab.
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
   await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget answers test");
@@ -2116,7 +2116,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
 
   // No Messages until the team turns the inbox on.
@@ -2771,7 +2771,7 @@ test("the widget's Home: help first with suggested articles, a message to the te
 
   // Someone the page signs in posts an idea; the team plans it.
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
   const sam = await (await browser.newContext()).newPage();
   await sam.goto(sitePage("customer.localhost", slug));
@@ -2864,7 +2864,7 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();

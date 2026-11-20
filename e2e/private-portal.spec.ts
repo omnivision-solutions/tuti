@@ -24,7 +24,7 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
 
   // SSO on, then Portal access → Private.
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   await owner.goto(`/app/${slug}/settings/access`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
