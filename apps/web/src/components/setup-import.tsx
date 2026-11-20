@@ -279,7 +279,7 @@ export function SetupImport({
                   <label
                     key={value}
                     title={description}
-                    className="relative flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft has-checked:ring-1 has-checked:ring-primary has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+                    className="relative flex min-w-0 cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft has-checked:ring-1 has-checked:ring-primary has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
                   >
                     <input
                       type="radio"
@@ -289,7 +289,7 @@ export function SetupImport({
                       // aria-disabled, not disabled, so a radio with focus keeps it (a disabled one drops it to the page).
                       aria-disabled={pending || undefined}
                       onChange={() => pick(value)}
-                      className="absolute inset-0 size-full cursor-pointer appearance-none rounded-lg opacity-0"
+                      className="absolute inset-0 size-full cursor-pointer appearance-none rounded-xl opacity-0"
                     />
                     <ImportSourceLogo source={value} className="size-7 rounded-md" />
                     <span className="min-w-0 break-words">{name[0]!.toUpperCase() + name.slice(1)}</span>
