@@ -45,8 +45,6 @@ const PNG = Buffer.from(
 export { PNG as FAKE_PNG };
 
 const DAY_MS = 86_400_000;
-/** An ISO date `days` ago, `minutes` on. */
-const ago = (days: number, minutes = 0) => new Date(Date.now() - days * DAY_MS + minutes * 60_000).toISOString();
 const part = (id: string, partType: string, createdAt: string, rest: Row = {}) => ({ object: "conversation_part", id, partType, createdAt, updatedAt: createdAt, ...rest });
 const contact = (id: string, name: string, email: string | null) => ({ id, type: "customer", name, email, profilePicture: null });
 const admin = (id: string, name: string) => ({ id, type: "admin", name, profilePicture: null });
@@ -58,6 +56,10 @@ const admin = (id: string, name: string) => ({ id, type: "admin", name, profileP
  * two years ago.
  */
 const conversationFixtures = (): Row[] => {
+  // One reading of the clock: dates a minute apart are exactly that, however long making them takes.
+  const now = Date.now();
+  /** An ISO date `days` ago, `minutes` on. */
+  const ago = (days: number, minutes = 0) => new Date(now - days * DAY_MS + minutes * 60_000).toISOString();
   const mira = contact("65f000000000000000000001", "Mira Fenwick", "e2e-mira@example.com");
   const tobias = contact("65f000000000000000000002", "Tobias Quill", "e2e-tobias@example.com");
   const juno = { ...contact("65f000000000000000000003", "Juno Park", null), type: "lead" };
