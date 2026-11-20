@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers, resumeToken } from "@tuti/jobs";
 import { log as logger } from "@tuti/shared";
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -265,7 +265,7 @@ test("what the monthly limit held, whose first run on the 1st fails, is still re
 test("while the project's email is paused nothing goes and its comments stay due; a resume drops them, as every post email the pause held, and what's written after goes", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "support.example.com");
-  vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { owner: "e2e-operator@example.com" } }));
   const { author, post } = await authorsPost();
   const reader = await verified("Reader");
   // Past its first week, so no daily cap.

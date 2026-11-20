@@ -1,13 +1,13 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { defaultPlanKey, type PlanFeature, planIncludes, plansWith, trialTerms } from "@tuti/shared";
+import { config, defaultPlanKey, type PlanFeature, planIncludes, plansWith, trialTerms } from "@tuti/shared";
 
 import { portalOrigin } from "./events";
 
 /**
  * A project's portal's public address: the app's own (APP_URL) for Tuti's own portal
- * (APP_PORTAL_PROJECT), its place on the team's site (https://acme.com/portal) once verified, its custom domain once that's live (verified, and its certificate active,
+ * (ownPortal.project), its place on the team's site (https://acme.com/portal) once verified, its custom domain once that's live (verified, and its certificate active,
  * or none where the server's own proxy gets certificates), else its Tuti address (PORTAL_URL_TEMPLATE). Every link Tuti makes to a portal uses this one, so people and
- * search engines see one address. Custom domains are only on where CUSTOM_DOMAIN_TARGET is set, and
+ * search engines see one address. Custom domains are only on where customDomains.target is set, and
  * each of the team's own addresses only on a plan that includes it.
  */
 /**
@@ -36,8 +36,8 @@ export const liveDomain = { verifiedAt: { not: null }, OR: [{ certificate: null 
 
 export async function portalAddress(projectSlug: string): Promise<PortalAddress> {
   const origin = portalOrigin(projectSlug) as PortalAddress;
-  // Tuti's own portal, under its path on the app's domain (APP_PORTAL_PROJECT; see apps/web/src/lib/app-portal.ts).
-  if (projectSlug === process.env.APP_PORTAL_PROJECT?.trim().toLowerCase() && process.env.APP_URL) {
+  // Tuti's own portal, under its path on the app's domain (ownPortal.project; see apps/web/src/lib/app-portal.ts).
+  if (projectSlug === config().ownPortal.project.trim().toLowerCase() && process.env.APP_URL) {
     return `${new URL(process.env.APP_URL).origin}/${projectSlug}` as PortalAddress;
   }
   // Under a path of the team's own site, once verified (SiteMount): https://acme.com/portal.
@@ -48,7 +48,7 @@ export async function portalAddress(projectSlug: string): Promise<PortalAddress>
   if (mount) {
     return `${mount.origin}${mount.path}` as PortalAddress;
   }
-  if (!process.env.CUSTOM_DOMAIN_TARGET?.trim()) {
+  if (!config().customDomains.target.trim()) {
     return origin;
   }
   const domain = await prisma.customDomain.findFirst({

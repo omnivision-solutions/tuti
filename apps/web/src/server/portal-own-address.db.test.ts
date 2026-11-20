@@ -1,3 +1,4 @@
+import { configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -16,7 +17,7 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   owner = await signUp("Owner");
   project = await createProject(owner);
 });

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type DnsFake, startDnsFake } from "@tuti/testkit";
+import { configFile, type DnsFake, startDnsFake } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -28,7 +28,7 @@ beforeAll(async () => {
 afterAll(() => dns.close());
 
 beforeEach(async () => {
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   owner = await signUp("Owner");
   project = await createProject(owner);
@@ -203,12 +203,12 @@ test("only hostnames that can be a domain of the team's own", async () => {
 
 test("off unless the server says where domains point; one added before keeps showing so it can be removed", async () => {
   await addAndPublish(hostname());
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "" } }));
   // Not set up here, like any feature a server doesn't have: 503, not bad input.
   await expect(call(setDomain, as(), { hostname: hostname() })).rejects.toMatchObject({
     status: 503,
     code: "domains_unavailable",
-    message: "Custom domains aren't set up on this server (see CUSTOM_DOMAIN_TARGET in .env.example)",
+    message: "Custom domains aren't set up on this server (see customDomains.target in the config file)",
   });
   expect((await call(getDomain, as(), {})).domain).toMatchObject({ records: [{ type: "TXT" }] });
   await call(removeDomain, as(), {});

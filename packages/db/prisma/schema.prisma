@@ -816,7 +816,7 @@ model CustomDomain {
   verifiedAt        DateTime?
   /// Its custom hostname at Cloudflare for SaaS (made once it's verified, when the server uses
   /// Cloudflare for customers' certificates), and that certificate's status: PENDING until
-  /// Cloudflare has it (the CNAME must point at CUSTOM_DOMAIN_TARGET), then ACTIVE, or FAILED.
+  /// Cloudflare has it (the CNAME must point at customDomains.target), then ACTIVE, or FAILED.
   cloudflareId      String?            @unique
   certificate       CertificateStatus?
   addedById         String?

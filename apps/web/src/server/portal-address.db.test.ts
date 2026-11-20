@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type CloudflareFake, type DnsFake, startCloudflareFake, startDnsFake } from "@tuti/testkit";
+import { type CloudflareFake, configFile, type DnsFake, FAKE_CLOUDFLARE_ZONE, startCloudflareFake, startDnsFake } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -39,7 +39,7 @@ beforeAll(async () => {
 afterAll(() => Promise.all([dns.close(), cloudflare.close()]));
 
 beforeEach(async () => {
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   // Cloudflare only where a test sets it up.
   vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
@@ -74,6 +74,7 @@ test("the Tuti address until the domain is verified, the domain from then until 
 });
 
 test("with Cloudflare, only once its certificate is active: links never go where HTTPS doesn't work yet", async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net", cloudflareZoneId: FAKE_CLOUDFLARE_ZONE } }));
   for (const [name, value] of Object.entries(cloudflare.env)) {
     vi.stubEnv(name, value);
   }
@@ -103,7 +104,7 @@ test("the Tuti address sends pages on to the domain, with their path and query; 
 
 test("with custom domains off on the server, everything stays at the Tuti address", async () => {
   await verified();
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "" } }));
   expect(await portalAddress(project.slug)).toBe(tutiAddress());
   expect((await visit("/docs")).status).not.toBe(308);
 });

@@ -1,4 +1,4 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -22,7 +22,7 @@ let hostname: string;
 
 beforeEach(async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   owner = await signUp("Owner");
   project = await createProject(owner);
   hostname = `help-${project.slug}.example.com`;

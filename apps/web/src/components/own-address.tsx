@@ -37,7 +37,7 @@ export function OwnAddressSettings({
   projectSlug: string;
   domain: Domain;
   site: Site;
-  /** Whether this server can put portals on custom domains (CUSTOM_DOMAIN_TARGET). */
+  /** Whether this server can put portals on custom domains (customDomains.target). */
   domainsOn: boolean;
   /** What the project's plan doesn't include, each saying which plan does (null: included). */
   notIncluded: { domain: string | null; site: string | null };

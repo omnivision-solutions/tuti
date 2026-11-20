@@ -1,3 +1,4 @@
+import { configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { NextRequest } from "next/server";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -12,7 +13,7 @@ import { call } from "./operations/run";
 import { createProject } from "./projects";
 
 /**
- * Tuti's own portal under its path on the app's domain (APP_PORTAL_PROJECT, tuti.so/help/…): links
+ * Tuti's own portal under its path on the app's domain (ownPortal.project, tuti.so/help/…): links
  * go there, its Tuti address sends pages there, and a private one asks people to sign in there.
  */
 
@@ -22,7 +23,7 @@ let project: Awaited<ReturnType<typeof newProject>>;
 beforeEach(async () => {
   owner = await signUp("Owner");
   project = await newProject(owner);
-  vi.stubEnv("APP_PORTAL_PROJECT", project.slug);
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: project.slug } }));
   // Addresses are kept a few seconds; each test starts afresh.
   forgetCustomDomain("");
 });
@@ -65,8 +66,8 @@ test("private, it sends people to its sign-in under the path, which is the app's
   expect(allowed.headers.get("x-middleware-rewrite")).toBe(`http://${app}/portal/${project.slug}/roadmap`);
 });
 
-test("its slug may be a reserved one (help), and only its owner (APP_PORTAL_OWNER, verified) can create that project", async () => {
-  vi.stubEnv("APP_PORTAL_PROJECT", "help");
+test("its slug may be a reserved one (help), and only its owner (ownPortal.owner, verified) can create that project", async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "help" } }));
   const { isReservedSlug, isUsableSlug } = await import("@/lib/project-slugs");
   // Still reserved for creating projects; used for routing.
   expect(isReservedSlug("help")).toBe(true);
@@ -84,7 +85,7 @@ test("its slug may be a reserved one (help), and only its owner (APP_PORTAL_OWNE
   actAs(someone);
   expect(await createProject(null as never, form())).toEqual({ error: "That URL is reserved" });
   const maintainer = await signUp("Maintainer");
-  vi.stubEnv("APP_PORTAL_OWNER", maintainer.email.toUpperCase());
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "help", owner: maintainer.email.toUpperCase() } }));
   actAs(maintainer);
   // Only once the address is verified.
   expect(await createProject(null as never, form())).toEqual({ error: "That URL is reserved" });
@@ -94,14 +95,14 @@ test("its slug may be a reserved one (help), and only its owner (APP_PORTAL_OWNE
 });
 
 test("a slug that's one of the app's own paths is ignored (api would take /api/docs)", async () => {
-  vi.stubEnv("APP_PORTAL_PROJECT", "api");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "api" } }));
   const { appPortalMount } = await import("@/lib/app-portal");
   expect(appPortalMount()).toBeNull();
   expect((await visit(app, "/api/docs")).headers.get("x-middleware-rewrite")).toBeNull();
 });
 
 test("an ordinary slug named as Tuti's own portal is only its owner's to create, too", async () => {
-  vi.stubEnv("APP_PORTAL_PROJECT", "tuti-portal");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "tuti-portal" } }));
   const data = new FormData();
   data.set("name", "Tuti");
   data.set("slug", "tuti-portal");
@@ -110,16 +111,16 @@ test("an ordinary slug named as Tuti's own portal is only its owner's to create,
 });
 
 test("the setting is a slug whatever its case, and an app path can't be created even by its owner", async () => {
-  vi.stubEnv("APP_PORTAL_PROJECT", " Help ");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: " Help " } }));
   const { isUsableSlug } = await import("@/lib/project-slugs");
   const { appPortalMount } = await import("@/lib/app-portal");
   expect(isUsableSlug("help")).toBe(true);
   expect(appPortalMount()).toMatchObject({ slug: "help", path: "/help" });
 
-  vi.stubEnv("APP_PORTAL_PROJECT", "api");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "api" } }));
   const maintainer = await signUp("Maintainer");
   await prisma.user.update({ where: { id: maintainer.id }, data: { emailVerified: true } });
-  vi.stubEnv("APP_PORTAL_OWNER", maintainer.email);
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: "api", owner: maintainer.email } }));
   actAs(maintainer);
   const data = new FormData();
   data.set("name", "API");

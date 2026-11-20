@@ -17,7 +17,7 @@ export function EmailPausedEmail({ projectName, reason, portalUrl, url }: Paused
       preview={`${projectName}'s email to its users is paused.`}
       footer={
         <>
-          You get this as this server&apos;s operator (APP_PORTAL_OWNER). The link works for as long as this pause lasts.
+          You get this as this server&apos;s operator (ownPortal.owner in its config file). The link works for as long as this pause lasts.
         </>
       }
     >

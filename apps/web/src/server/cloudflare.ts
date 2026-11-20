@@ -1,14 +1,15 @@
 import type { CertificateStatus } from "@tuti/db";
+import { config } from "@tuti/shared";
 
 /**
  * Cloudflare for SaaS: a custom hostname per verified custom domain, so Cloudflare gets it a
- * certificate and sends its requests to CUSTOM_DOMAIN_TARGET (the zone's fallback origin). On
- * when CLOUDFLARE_API_TOKEN (SSL and Certificates: Edit on the zone) and CLOUDFLARE_ZONE_ID are
+ * certificate and sends its requests to customDomains.target (the zone's fallback origin). On
+ * when CLOUDFLARE_API_TOKEN (SSL and Certificates: Edit on the zone) and customDomains.cloudflareZoneId (the config file) are
  * set; without them, the server's own proxy gets certificates for custom domains.
  */
 
 export function cloudflareConfigured(): boolean {
-  return Boolean(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ZONE_ID);
+  return Boolean(process.env.CLOUDFLARE_API_TOKEN && config().customDomains.cloudflareZoneId.trim());
 }
 
 type Hostname = { id: string; hostname: string; status: string; ssl?: { status?: string } };
@@ -27,7 +28,7 @@ export class CloudflareError extends Error {
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const base = process.env.CLOUDFLARE_API_URL || "https://api.cloudflare.com/client/v4";
-  const response = await fetch(`${base}/zones/${process.env.CLOUDFLARE_ZONE_ID}${path}`, {
+  const response = await fetch(`${base}/zones/${config().customDomains.cloudflareZoneId.trim()}${path}`, {
     method,
     headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),

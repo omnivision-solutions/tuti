@@ -43,8 +43,8 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  // Reserved slugs aren't for projects, and Tuti's own portal's (APP_PORTAL_PROJECT, reserved or not) is
-  // only for its owner (APP_PORTAL_OWNER, a verified address): nobody else can take it first.
+  // Reserved slugs aren't for projects, and Tuti's own portal's (ownPortal.project, reserved or not) is
+  // only for its owner (ownPortal.owner, a verified address): nobody else can take it first.
   // Only where it can be served (not one of the app's own paths, see appPortalMount).
   const ownPortal = appPortalMount()?.slug === parsed.data.slug;
   if ((isReservedSlug(parsed.data.slug) || ownPortal) && !(ownPortal && isAppPortalOwner(session.user))) {

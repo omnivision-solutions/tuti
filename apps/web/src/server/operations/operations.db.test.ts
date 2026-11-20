@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { billingFile, type DnsFake, type ModelFake, type SiteFake, startDnsFake, startModelFake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, configFile, type DnsFake, type ModelFake, type SiteFake, startDnsFake, startModelFake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
@@ -216,7 +216,7 @@ beforeAll(async () => {
     vi.stubEnv(name, value);
   }
   dns = await startDnsFake();
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" } }));
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   // Portals under a path of a site: on, and the site is local.
   site = await startSiteFake();

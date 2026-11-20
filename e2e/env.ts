@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { CONFIG_REPLACED } from "../packages/shared/src/config";
 import { billingFile, withAppsumoPlans } from "../packages/testkit/src/billing";
+import { FAKE_CLOUDFLARE_ZONE } from "../packages/testkit/src/cloudflare-fake";
 import { configFile } from "../packages/testkit/src/config-file";
 
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
@@ -23,11 +24,11 @@ const TRIAL_PORT = PORT + 2;
 export const TRIAL_URL = `http://localhost:${TRIAL_PORT}`;
 export const trialPortalUrl = (slug: string) => `http://${slug}.localhost:${TRIAL_PORT}`;
 
-/** The project whose portal is on the app's own domain (APP_PORTAL_PROJECT). */
+/** The project whose portal is on the app's own domain (ownPortal.project). */
 export const APP_PORTAL_SLUG = "e2e-app-portal";
-/** The only account that can create it (APP_PORTAL_OWNER), once its address is verified. */
+/** The only account that can create it (ownPortal.owner), once its address is verified. */
 export const APP_PORTAL_OWNER = "e2e-app-portal-owner@example.com";
-/** The project whose widget the cloud's team app shows (APP_WIDGET_PROJECT). */
+/** The project whose widget the cloud's team app shows (ownPortal.widgetProject). */
 export const APP_WIDGET_SLUG = "e2e-app-widget";
 /** Support email in journeys: projects' addresses are on this domain, and journeys sign received mail with this secret. */
 export const SUPPORT_EMAIL_DOMAIN = "tuti.email.example";
@@ -37,6 +38,11 @@ export const INBOUND_SECRET = "e2e-inbound-secret";
 const e2eConfig = {
   // A cap on the models projects pick: the model fake's Opus ($25 per million output tokens), Best's largest, is the most it allows.
   ai: { maxPrice: 25 },
+  // Tuti's own portal on the app's domain: the project app-portal.spec.ts makes; only this address (verified) can create it.
+  ownPortal: { project: APP_PORTAL_SLUG, owner: APP_PORTAL_OWNER },
+  // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine. Certificates
+  // from the Cloudflare fake (global-setup.ts), in its zone.
+  customDomains: { target: "customers.example.com", cloudflareZoneId: FAKE_CLOUDFLARE_ZONE },
 };
 
 export const serverEnv = {
@@ -55,13 +61,10 @@ export const serverEnv = {
   // (The global setup points OPENAI_* at the model fake; ai.model stays the default.)
   OPENAI_API_KEY: "",
   OPENAI_BASE_URL: "",
-  // Every config file value at its default, whatever a local .env points at (or still sets: a variable the file
-  // replaced stops start-up).
+  // The journeys' config file, whatever a local .env points at (or still sets: a variable the file replaced stops
+  // start-up). No analytics in it: journeys never send page views to PostHog.
   TUTI_CONFIG: configFile(e2eConfig),
   ...Object.fromEntries(Object.keys(CONFIG_REPLACED).map((name) => [name, ""])),
-  // No analytics: journeys never send page views to PostHog, whatever a local .env holds.
-  POSTHOG_KEY: "",
-  POSTHOG_HOST: "",
   // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
   AI_CREDITS: "on",
   AI_CREDITS_FREE: "1000",
@@ -86,12 +89,6 @@ export const serverEnv = {
   // Support email on: journeys post received mail to /api/inbound/email, signed like a receiver would.
   SUPPORT_EMAIL_DOMAIN: SUPPORT_EMAIL_DOMAIN,
   INBOUND_SECRET: INBOUND_SECRET,
-  // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine.
-  CUSTOM_DOMAIN_TARGET: "customers.example.com",
-  // Tuti's own portal on the app's domain: the project app-portal.spec.ts makes.
-  APP_PORTAL_PROJECT: APP_PORTAL_SLUG,
-  // Only this address (verified) can create that project.
-  APP_PORTAL_OWNER: APP_PORTAL_OWNER,
   // A licence server too, like tuti.so, with a private key made for the run (its keys don't verify
   // anywhere: installations trust only Tuti's public keys), so the licence page has a journey.
   LICENSE_PRIVATE_KEY: generateKeyPairSync("ed25519").privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
@@ -107,7 +104,7 @@ export const cloudEnv = {
   // With AppSumo's tiers (hidden plans, for its licenses).
   BILLING_CONFIG: billingFile(withAppsumoPlans),
   // Tuti's own widget in its team app: the project app-widget.spec.ts makes.
-  APP_WIDGET_PROJECT: APP_WIDGET_SLUG,
+  TUTI_CONFIG: configFile({ ...e2eConfig, ownPortal: { ...e2eConfig.ownPortal, widgetProject: APP_WIDGET_SLUG } }),
 };
 
 /** The cloud's server with a free trial: 7 days of Pro, with 500 AI credits. */

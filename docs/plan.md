@@ -448,7 +448,7 @@ What an operator tunes moves out of env vars into one JSON file (`TUTI_CONFIG`),
 - [ ] `duplicates`: the decision models that say which similar posts are duplicates
 - [x] `ai`: `AI_MODEL` → `ai.model`, `AI_MODEL_<FEATURE>` → `ai.features.<feature>`, `AI_MODEL_MAX_PRICE` → `ai.maxPrice`, and the AI levels' rows (`AI_LEVELS_CONFIG`'s file) → `ai.levels`
 - [x] `autopilot`: the `CODE_CHANGES_*` settings (and `DECISION_MODEL`, their old alias)
-- [ ] `ownPortal`, `customDomains`, `analytics`: `APP_PORTAL_*`, `APP_WIDGET_PROJECT`, `APP_LINKS`, `CUSTOM_DOMAIN_TARGET`, `CLOUDFLARE_ZONE_ID`, `POSTHOG_*`
+- [x] `ownPortal`, `customDomains`, `analytics`: `APP_PORTAL_*`, `APP_WIDGET_PROJECT`, `CUSTOM_DOMAIN_TARGET`, `CLOUDFLARE_ZONE_ID`, `POSTHOG_*` (`APP_LINKS` stays an env var: the marketing build works it out from `APP_URL`)
 - [ ] AI credits (`AI_CREDITS*`) and `STRIPE_PORTAL_LOGIN_URL` into the billing file, which already says what the server sells
 
 ## AI usage per project (asked 2026-10-24)

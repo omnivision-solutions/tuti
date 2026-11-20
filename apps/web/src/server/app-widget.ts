@@ -8,7 +8,7 @@ import { appWidgetProject } from "@/lib/app-portal";
 import { getAccountSession } from "./session";
 
 /**
- * A sign-in token for Tuti's own widget in the team app (APP_WIDGET_PROJECT; components/app-widget.tsx),
+ * A sign-in token for Tuti's own widget in the team app (ownPortal.widgetProject; components/app-widget.tsx),
  * made as any app signs its users in to its widget (docs/sso.md): signed with that project's SSO
  * secret, the account's id as `sub`. None while that project has SSO off: the widget is signed out.
  */

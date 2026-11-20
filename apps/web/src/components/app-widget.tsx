@@ -19,7 +19,7 @@ let shown = false;
 const getToken = () => (shown ? appWidgetToken().then((result) => result.token ?? null) : Promise.resolve(null));
 
 /**
- * Tuti's own widget in the team app, for APP_WIDGET_PROJECT (`slug`), installed as any app installs
+ * Tuti's own widget in the team app, for ownPortal.widgetProject (`slug`), installed as any app installs
  * it (docs/widget.md): the script tag, then `Tuti.identify` with a token for the signed-in account.
  * Leaving the team app (signing out goes to the home page without a reload, where the launcher
  * stays) signs its panels out, as does a script that loads only after that; coming back asks again.

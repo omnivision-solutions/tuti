@@ -40,6 +40,9 @@ test("a section this release doesn't know is ignored with a warning, so the prev
 test("a variable the file replaced, still set, stops start-up and names its key", () => {
   vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "5");
   expect(() => checkConfig()).toThrow("MEDIA_PROJECT_QUOTA_MB → media.projectQuotaMb");
+  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "");
+  vi.stubEnv("POSTHOG_KEY", "phc_test");
+  expect(() => checkConfig()).toThrow("POSTHOG_KEY → analytics.posthogKey");
 });
 
 test("the AI variables the file replaced stop start-up too, the levels file's included", () => {

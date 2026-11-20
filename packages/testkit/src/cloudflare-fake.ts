@@ -8,7 +8,7 @@ export const FAKE_CLOUDFLARE_ZONE = "test-zone";
 type Hostname = { id: string; hostname: string; status: string; ssl: { status: string } };
 
 export type CloudflareFake = {
-  /** CLOUDFLARE_API_URL, CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID for an app that uses this fake. */
+  /** CLOUDFLARE_API_URL and CLOUDFLARE_API_TOKEN for an app that uses this fake; its zone, FAKE_CLOUDFLARE_ZONE, goes in the config file (customDomains.cloudflareZoneId). */
   env: Record<string, string>;
   /** The zone's custom hostnames. */
   hostnames(): Hostname[];
@@ -100,7 +100,7 @@ export async function startCloudflareFake(): Promise<CloudflareFake> {
   const url = `http://127.0.0.1:${port}`;
 
   return {
-    env: { CLOUDFLARE_API_URL: url, CLOUDFLARE_API_TOKEN: FAKE_CLOUDFLARE_TOKEN, CLOUDFLARE_ZONE_ID: FAKE_CLOUDFLARE_ZONE },
+    env: { CLOUDFLARE_API_URL: url, CLOUDFLARE_API_TOKEN: FAKE_CLOUDFLARE_TOKEN },
     hostnames: () => [...hostnames.values()],
     certificate,
     during: (fn) => {

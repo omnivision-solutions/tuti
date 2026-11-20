@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type CloudflareFake, type DnsFake, startCloudflareFake, startDnsFake } from "@tuti/testkit";
+import { type CloudflareFake, configFile, type DnsFake, FAKE_CLOUDFLARE_ZONE, startCloudflareFake, startDnsFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
@@ -26,7 +26,7 @@ beforeAll(async () => {
 afterAll(() => Promise.all([dns.close(), cloudflare.close()]));
 
 beforeEach(async () => {
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net", cloudflareZoneId: FAKE_CLOUDFLARE_ZONE } }));
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   for (const [name, value] of Object.entries(cloudflare.env)) {
     vi.stubEnv(name, value);
