@@ -184,6 +184,16 @@ test("the team lets someone outside it read the private portal by email: they're
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   await checkpoint(owner, "settings-portal-add-readers-phone", { fullPage: false });
+  // A long list on a short phone: the dialog scrolls inside the screen, and its buttons can be reached.
+  await owner.setViewportSize({ width: 390, height: 667 });
+  await add.getByLabel("Email addresses").fill(Array.from({ length: 30 }, (_, n) => `e2e-reader-${n}@example.com`).join("\n"));
+  const tall = (await add.boundingBox())!;
+  expect(tall.y).toBeGreaterThanOrEqual(0);
+  expect(tall.y + tall.height).toBeLessThanOrEqual(667);
+  expect(await add.evaluate((dialog) => dialog.scrollHeight > dialog.clientHeight)).toBe(true);
+  await add.getByRole("button", { name: "Add readers" }).scrollIntoViewIfNeeded();
+  await expect(add.getByRole("button", { name: "Add readers" })).toBeInViewport();
+  await expect(add.getByRole("button", { name: "Cancel" })).toBeInViewport();
   await add.getByRole("button", { name: "Cancel" }).click();
   await expect(add).toBeHidden();
   await owner.setViewportSize({ width: 1280, height: 720 });
