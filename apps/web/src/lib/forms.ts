@@ -28,3 +28,16 @@ export const keepingFields =(action: (formData: FormData) => void) => ({
     startTransition(() => action(formData));
   },
 });
+
+/**
+ * Whether a key press in a form's field is the Enter that saves the form (see useCustomizeForm): Enter in a typed
+ * input. Not where Enter already did something (a chip added), nor in a text area (a new line), nor on an input that
+ * Enter works (a colour swatch opens its picker), nor the Enter that confirms an input method's text (Safari sends
+ * that one after the composition ends, as key code 229).
+ */
+export function enterSaves(event: { key: string; defaultPrevented: boolean; isComposing: boolean; keyCode: number }, field: { tagName?: string; type?: string } | null) {
+  if (event.key !== "Enter" || event.defaultPrevented || event.isComposing || event.keyCode === 229) {
+    return false;
+  }
+  return field?.tagName === "INPUT" && !["checkbox", "radio", "file", "color", "range", "button", "image", "submit", "reset"].includes(field.type ?? "");
+}
