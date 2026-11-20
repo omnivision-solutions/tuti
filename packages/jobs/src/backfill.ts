@@ -47,7 +47,12 @@ export async function backfillEmbeddings(log: JobLogger) {
       // this, again.
       const doneIn = new Map<string, typeof done>();
       for (const row of done) {
-        doneIn.set(row.projectId, [...(doneIn.get(row.projectId) ?? []), row]);
+        const list = doneIn.get(row.projectId);
+        if (list) {
+          list.push(row);
+        } else {
+          doneIn.set(row.projectId, [row]);
+        }
       }
       for (const post of rows.filter((row) => row.duplicatesCheckedAt)) {
         const older = (doneIn.get(post.projectId) ?? []).filter((row) => row.createdAt < post.createdAt).map((row) => row.id);
