@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { enqueue, grantCredits } from "@tuti/jobs";
-import { resetCodeChangesSettings, roleDefaultModel } from "@tuti/shared";
-import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
+import { roleDefaultModel } from "@tuti/shared";
+import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { publishCodeChangesNow } from "@/server/code-changes";
@@ -67,7 +67,6 @@ beforeEach(async () => {
   for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
-  resetCodeChangesSettings();
   model.decisions.splice(0);
   model.requests.splice(0);
   // Autopilot's check (E5) passes every edit a test doesn't script its review for, as a review that confirms it would.
@@ -93,7 +92,6 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
   vi.restoreAllMocks();
   model.done();
 });
@@ -389,8 +387,7 @@ describe("the double-check", () => {
     expect(agentRequests(32)).toHaveLength(1);
     expect((await actions(32)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
 
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
     pullRequest(33);
     model.decide(USERS);
     model.reply(answer([], [{ ...NEW, probability: 0.25 }]), undefined, '"merge-33"');
@@ -402,8 +399,7 @@ describe("the double-check", () => {
 });
 
 test("a big help center: the outline lists the published articles first, up to its cap, and says the rest are found by search", async () => {
-  vi.stubEnv("CODE_CHANGES_CONTEXT_OUTLINE_ARTICLES", "50");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { context: { outlineArticles: 50 } } }));
   await prisma.article.createMany({
     data: Array.from({ length: 50 }, (_, i) => ({ projectId: project.id, slug: `guide-${i}`, title: `Guide ${i}`, body: "Text.", publishedAt: new Date() })),
   });
@@ -423,8 +419,7 @@ describe("new articles", () => {
   const draft = (title: string) => JSON.stringify({ title, reason: `${title} is new.`, notes: `## ${title}\n\n1. Open **Settings**.` });
 
   test("one per pull request, the surest, as an analysis keeps it", async () => {
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
     pullRequest(41);
     model.decide(USERS);
     model.reply(
@@ -448,8 +443,7 @@ describe("new articles", () => {
   });
 
   test("where it goes, as the agent said: its update's place, as the review shows it", async () => {
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
     const placed = async (number: number, place: { collection: unknown; after: unknown }) => {
       pullRequest(number);
       model.decide(USERS);
@@ -484,8 +478,7 @@ describe("new articles", () => {
   });
 
   test("another pull request's waiting new article is in the outline; analysed again, a pull request's own isn't, so it proposes it afresh", async () => {
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
     const proposing = (number: number) => {
       pullRequest(number);
       model.decide(USERS);
@@ -676,8 +669,7 @@ describe("edits to drafts", () => {
   });
 
   test("one to another pull request's new article waiting for the team is dropped (its text is fixed once proposed); the agent can still read it", async () => {
-    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
     pullRequest(57);
     model.decide(USERS);
     model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-57"');
@@ -987,8 +979,7 @@ describe("replies it can't use", () => {
     model.decide(USERS);
     model.toolCalls([{ name: "list_files", arguments: "{}" }], '"merge-37"');
     // Its rounds are up (one, here): asked without the tools, it says nothing…
-    vi.stubEnv("CODE_CHANGES_DECIDE_ROUNDS", "1");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decide: { rounds: 1 } } }));
     model.reply("", undefined, '"merge-37"');
     // …so it's asked again, with them, and answers.
     model.reply(answer(), undefined, '"merge-37"');
@@ -1179,8 +1170,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
 
   test("a value past a range the server narrowed since is used at its end", async () => {
     // The server's likely for edits is 0.6 now: a "from" past it would make every kept fix likely.
-    vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_LIKELY", "0.6");
-    resetCodeChangesSettings();
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { propose: { edit: { likely: 0.6 } } } }));
     await prisma.project.update({ where: { id: project.id }, data: { codeChangesTuning: { "propose.edit.maybe": 0.9 } } });
     pullRequest(63);
     model.decide(USERS);

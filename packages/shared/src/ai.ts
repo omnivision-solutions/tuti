@@ -97,8 +97,8 @@ export const roleNeedsTools = (role: AiRole) => "tools" in AI_ROLES[role];
 export const roleCanBeOff = (role: AiRole) => "off" in AI_ROLES[role];
 
 /**
- * A role's model for every project: Autopilot's Decides and Checks are the server's CODE_CHANGES_DECIDE_MODEL and
- * CODE_CHANGES_REDECIDE_MODEL; any other is its feature's (defaultModel).
+ * A role's model for every project: Autopilot's Decides and Checks are the server's autopilot.decide.model and
+ * autopilot.redecide.model (the config file); any other is its feature's (defaultModel).
  */
 export function roleDefaultModel(role: AiRole): string {
   if (role === "code_changes_decide") {
@@ -112,7 +112,7 @@ export function roleDefaultModel(role: AiRole): string {
 
 /**
  * A feature's model for every project: the config file's ai.features.<feature> (e.g. ai.features.answers, a model id),
- * else ai.model, else Tuti's default (for code changes, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
+ * else ai.model, else Tuti's default (for code changes, Autopilot's write model: autopilot.write.model).
  */
 export function defaultModel(feature: AiFeature): string {
   const { model, features } = config().ai;
@@ -310,11 +310,11 @@ export async function checkAiProvider(): Promise<void> {
   if (codeChangesEnabled()) {
     const { decide, redecide } = codeChangesSettings();
     const agent = [
-      ["CODE_CHANGES_DECIDE_MODEL", decide.model],
-      ["CODE_CHANGES_REDECIDE_MODEL", redecide.model],
+      ["autopilot.decide.model", decide.model],
+      ["autopilot.redecide.model", redecide.model],
     ].filter(([, id]) => id !== "off" && !listed.has(id));
     for (const [name, id] of agent) {
-      log.error(`The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${id}: set ${name} to a model it serves. Autopilot's analyses will fail until then.`);
+      log.error(`The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${id}: set ${name} in the config file to a model it serves. Autopilot's analyses will fail until then.`);
     }
   }
 }
@@ -330,7 +330,7 @@ export function withinModelCap(model: AiModelListing): boolean {
 }
 
 /**
- * The decision model, apart from the writing model: CODE_CHANGES_DECISIONS_MODEL (or DECISION_MODEL), by
+ * The decision model, apart from the writing model: autopilot.decisions.model in the config file, by
  * default the one that did best on code changes' evaluation set (`pnpm test:live`; 2026-10-23, among
  * OpenRouter's decision models).
  */

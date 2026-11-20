@@ -1,6 +1,5 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
-import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { PATCH } from "@/app/api/v1/[...path]/route";
@@ -25,7 +24,6 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
 });
 
 const as = (user: TestUser) => ({ actor: { kind: "user" as const, userId: user.id }, projectId: project.id });
@@ -39,8 +37,7 @@ const form = (fields: Record<string, string>) => {
 const stored = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { codeChangesTuning: true } })).codeChangesTuning;
 
 test("each value starts as the server's; an owner changes some, says who and when, and null goes back to the server's", async () => {
-  vi.stubEnv("CODE_CHANGES_DECIDE_ROUNDS", "20");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decide: { rounds: 20 } } }));
   const before = await call(getCodeChangesTuning, as(owner), {});
   expect(before).toMatchObject({ available: true, updatedBy: null, updatedAt: null });
   expect(before.values["decide.rounds"]).toEqual({ value: 20, default: 20, saved: null, clamped: false, range: { kind: "integer", min: 1, max: 50 } });
@@ -131,8 +128,7 @@ test("on Business only: Free and Pro are told so (402); after a downgrade the va
 
 test("a saved value outside a range the server narrowed since is shown clamped", async () => {
   await call(updateCodeChangesTuning, as(owner), { "propose.edit.maybe": 0.7 });
-  vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_LIKELY", "0.6");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { propose: { edit: { likely: 0.6 } } } }));
   expect((await call(getCodeChangesTuning, as(owner), {})).values["propose.edit.maybe"]).toEqual({
     value: 0.6,
     default: 0.5,

@@ -1,11 +1,10 @@
-import { resetCodeChangesSettings } from "@tuti/shared";
+import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { taskOptions } from "./tasks";
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
 });
 
 test("a code change's task: the analysis's time limit and a few minutes, a few at once on the whole server, and a day to wait its turn", () => {
@@ -21,9 +20,7 @@ test("a code change's task: the analysis's time limit and a few minutes, a few a
       { expression: "'code-change'", maxRuns: 4 },
     ],
   });
-  vi.stubEnv("CODE_CHANGES_LIMITS_TIMEOUT_MINUTES", "20");
-  vi.stubEnv("CODE_CHANGES_LIMITS_CONCURRENT_ANALYSES", "2");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { limits: { timeoutMinutes: 20, concurrentAnalyses: 2 } } }));
   expect(taskOptions("codeChange")).toMatchObject({ executionTimeout: "25m", concurrency: [{ maxRuns: 1 }, { maxRuns: 2 }] });
 });
 

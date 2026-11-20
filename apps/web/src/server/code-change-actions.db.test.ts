@@ -1,10 +1,10 @@
-import { billingFile } from "@tuti/testkit";
+import { billingFile, configFile } from "@tuti/testkit";
 import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { addToRunningDraft, docOf, hasTeammateEdit, postVersion, undoChangelogLine } from "@tuti/jobs";
-import { log, resetCodeChangesSettings } from "@tuti/shared";
+import { log } from "@tuti/shared";
 
 import { applyCodeChange, approveCodeChanges } from "@/server/code-changes";
 import {
@@ -1313,14 +1313,11 @@ describe("the changelog line", () => {
 test("what the review ticks as it opens follows the server's likely cutoffs", () => {
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    resetCodeChangesSettings();
   });
-  // From the defaults (the test setup clears the machine's CODE_CHANGES_ variables), read afresh.
-  resetCodeChangesSettings();
+  // From the defaults (the test setup clears the machine's TUTI_CONFIG).
   const update = { kind: "RESOLVES" as const, probability: 0.8, payload: null };
   expect(likelyToApply(update)).toBe(true);
-  vi.stubEnv("CODE_CHANGES_DECISIONS_RESOLVES_LIKELY", "0.9");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { resolves: { likely: 0.9 } } } }));
   expect(likelyToApply(update)).toBe(false);
   expect(likelyToApply({ ...update, probability: 0.9 })).toBe(true);
   // An article edit the check didn't pass is never likely, however sure; one it passed, or one it never saw, is as before.

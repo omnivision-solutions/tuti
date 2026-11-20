@@ -181,62 +181,58 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `ai.features.codeChanges` | `null` | Autopilot's articles' model, instead of `ai.model` (without either, Autopilot's write model) |
 | `ai.maxPrice` | `null` | The most a model projects pick may cost, in dollars per million output tokens (a model without a price can't be picked under a cap); no cap without |
 | `ai.levels` | `null` | The Affordable and Best levels' models, by role: a level left out isn't offered, a role left out runs on Balanced's (the server's) model. Without, Tuti's own rows, unless a model above is set (then only Balanced and Custom) |
+| `autopilot.decisions.model` | `"nace-ai/drex-max"` | The decision model, a Decisions API model through OpenRouter (not a chat model): it answers the gate, what a pull request does to posts and articles, and whether edits call for Verify. The default did best on code changes' evaluation set (a model id) |
+| `autopilot.decisions.gate` | `0.5` | The probability that users see the change, below which there's nothing to do (a number from 0 to 1) |
+| `autopilot.decisions.resolves.maybe` | `0.4` | Resolving a post: proposed, as "maybe", from this probability (a number from 0 to 1) |
+| `autopilot.decisions.resolves.likely` | `0.75` | Resolving a post: proposed as likely from this probability (a number from 0 to 1) |
+| `autopilot.decisions.movesForward.maybe` | `0.4` | Moving a post forward: proposed, as "maybe", from this probability (a number from 0 to 1) |
+| `autopilot.decisions.movesForward.likely` | `0.75` | Moving a post forward: proposed as likely from this probability (a number from 0 to 1) |
+| `autopilot.decisions.links.maybe` | `0.65` | Linking a post: below this the pull request isn't linked to it at all (links are only applied by themselves, see `autopilot.decisions.autoLink`) (a number from 0 to 1) |
+| `autopilot.decisions.links.likely` | `0.85` | Linking a post: an applied link is labelled likely from this probability (a number from 0 to 1) |
+| `autopilot.decisions.autoLink` | `0.95` | A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `autopilot.decisions.links.maybe` (a number from 0 to 1) |
+| `autopilot.propose.edit.maybe` | `0.5` | Editing an article: proposed, as "maybe", from this probability (a number from 0 to 1) |
+| `autopilot.propose.edit.likely` | `0.75` | Editing an article: proposed as likely from this probability (a number from 0 to 1) |
+| `autopilot.propose.newArticle.maybe` | `0.3` | A new article: proposed, as "maybe", from this probability (a number from 0 to 1) |
+| `autopilot.propose.newArticle.likely` | `0.8` | A new article: proposed as likely from this probability (a number from 0 to 1) |
+| `autopilot.context.diffChars` | `60000` | The pull request's diff the docs agent and the writers read, in characters (the decision model at most 20,000 of it); files past it are only listed (a whole number from 1000 to 500000) |
+| `autopilot.context.fileChars` | `6000` | One file's share of the diff at most, in characters (a whole number from 500 to 500000) |
+| `autopilot.context.bodyChars` | `4000` | The pull request's description it reads, in characters (a whole number from 0 to 100000) |
+| `autopilot.context.outlineArticles` | `1000` | The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search (a whole number from 50 to 20000) |
+| `autopilot.decide.model` | `"anthropic/claude-haiku-5.5"` | The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer (a model id) |
+| `autopilot.decide.rounds` | `12` | Its rounds of tool calls at most, before it must answer (a whole number from 1 to 50) |
+| `autopilot.decide.maxTokens` | `6000` | The most it writes in one reply, in tokens (the double-check's too) (a whole number from 500 to 64000) |
+| `autopilot.decide.temperature` | `0` | Its temperature (the double-check's too): 0 for the steadiest answers (a number from 0 to 2) |
+| `autopilot.decide.reasoning` | `"off"` | How much it thinks before each reply, as OpenRouter's reasoning effort (the double-check's too); off asks for none (one of off, low, medium, high) |
+| `autopilot.redecide.model` | `"anthropic/claude-sonnet-5.5"` | The double-check's model: when the docs agent proposes a new article (see `autopilot.redecide.whenNewArticle`), it decides the pull request again from scratch, with the same tools, and its answer is used; it's also Checks' model on the Balanced level, which reviews every article edit. `off` skips both, and every article edit then asks first, except on a level whose `ai.levels` row or Custom setting gives Checks its own model (a model id, or off) |
+| `autopilot.redecide.rounds` | `12` | Its rounds of tool calls at most, before it must answer (a whole number from 1 to 50) |
+| `autopilot.redecide.whenNewArticle` | `0.2` | The double-check runs when the docs agent proposes a new article this sure or more (a number from 0 to 1) |
+| `autopilot.write.model` | `"anthropic/claude-sonnet-5.5"` | The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `ai.features.codeChanges`, then `ai.model`, then this (a model id) |
+| `autopilot.write.rounds` | `10` | Its rounds of tool calls at most, for each edit or new article (a whole number from 1 to 50) |
+| `autopilot.write.maxTokens` | `6000` | The most it writes in one reply, in tokens (a whole number from 500 to 64000) |
+| `autopilot.tools.listChars` | `30000` | List files: the answer's characters at most (a whole number from 1000 to 500000) |
+| `autopilot.tools.fileChars` | `60000` | Read a file: its characters at most (a whole number from 1000 to 500000) |
+| `autopilot.tools.searchLines` | `60` | Search the code: the lines at most (a whole number from 1 to 1000) |
+| `autopilot.tools.searchChars` | `20000` | Search the code: the answer's characters at most (a whole number from 1000 to 500000) |
+| `autopilot.tools.searchMs` | `5000` | Search the code: how long one search may take, in milliseconds (the model writes the pattern) (a whole number from 100 to 60000) |
+| `autopilot.tools.articleChars` | `20000` | Read an article: its characters at most (a whole number from 1000 to 500000) |
+| `autopilot.tools.articles` | `8` | Search articles: how many it finds when the model doesn't say (a whole number from 1 to 50) |
+| `autopilot.tools.maxArticles` | `20` | Search articles: how many it finds at most (a whole number from 1 to 50) |
+| `autopilot.tools.embedMs` | `30000` | Search articles: how long one embeddings request may take, in milliseconds (a whole number from 1000 to 300000) |
+| `autopilot.limits.timeoutMinutes` | `10` | How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again (a whole number from 1 to 60) |
+| `autopilot.limits.callTimeoutSeconds` | `120` | How long one request to the docs agent's models may take, in seconds (a whole number from 10 to 900) |
+| `autopilot.limits.concurrentAnalyses` | `4` | How many pull requests the worker analyses at once, on the whole server (retries included); the rest wait their turn. Each holds a worker slot for up to the analysis's time limit, and its repository in memory (a whole number from 1 to 20) |
+| `autopilot.limits.archiveBytes` | `50000000` | The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so) (a whole number from 1000000 to 1000000000) |
+| `autopilot.limits.readBytes` | `1000000000` | The repository's archive unpacked, everything in it, in bytes at most (a whole number from 1000000 to 10000000000) |
+| `autopilot.limits.fileBytes` | `1000000` | One file in the repository, in bytes at most; bigger ones are left out (a whole number from 10000 to 100000000) |
+| `autopilot.limits.downloadMs` | `120000` | How long downloading the repository may take, in milliseconds (a whole number from 5000 to 900000) |
+| `autopilot.verify.after` | `0.7` | How sure the decision model must be that edits piling up on an article call for Verify, before Autopilot starts one (a number from 0 to 1) |
 
 ### Autopilot's settings
 
-Optional, on the web app and the worker alike: how Autopilot decides what a merged pull request
+The config file's `autopilot` keys (above): how Autopilot decides what a merged pull request
 changes, and its docs agent's models, tools and time limits. Each has a default, so none needs
-setting; change one to try another model, or the values that suit it, without a new release. Both apps check them when they start: a value
-outside its range stops them, naming the variable, and a `CODE_CHANGES_` variable that names no
-setting is logged as a likely typo. The values in use are logged at start, the changed ones marked.
-
-| Variable | Default | Range | |
-|---|---|---|---|
-| `CODE_CHANGES_DECISIONS_MODEL` | `nace-ai/drex-max` | a model id | The decision model, a Decisions API model through OpenRouter (not a chat model): it answers the gate, what a pull request does to posts and articles, and whether edits call for Verify. The default did best on code changes' evaluation set. `DECISION_MODEL` still works; this wins if both are set |
-| `CODE_CHANGES_DECISIONS_GATE` | `0.5` | a number from 0 to 1 | The probability that users see the change, below which there's nothing to do |
-| `CODE_CHANGES_DECISIONS_RESOLVES_MAYBE` | `0.4` | a number from 0 to 1 | Resolving a post: proposed, as "maybe", from this probability |
-| `CODE_CHANGES_DECISIONS_RESOLVES_LIKELY` | `0.75` | a number from 0 to 1 | Resolving a post: proposed as likely from this probability |
-| `CODE_CHANGES_DECISIONS_MOVES_FORWARD_MAYBE` | `0.4` | a number from 0 to 1 | Moving a post forward: proposed, as "maybe", from this probability |
-| `CODE_CHANGES_DECISIONS_MOVES_FORWARD_LIKELY` | `0.75` | a number from 0 to 1 | Moving a post forward: proposed as likely from this probability |
-| `CODE_CHANGES_DECISIONS_LINKS_MAYBE` | `0.65` | a number from 0 to 1 | Linking a post: below this the pull request isn't linked to it at all (links are only applied by themselves, see `CODE_CHANGES_DECISIONS_AUTO_LINK`) |
-| `CODE_CHANGES_DECISIONS_LINKS_LIKELY` | `0.85` | a number from 0 to 1 | Linking a post: an applied link is labelled likely from this probability |
-| `CODE_CHANGES_DECISIONS_AUTO_LINK` | `0.95` | a number from 0 to 1 | A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE` |
-| `CODE_CHANGES_PROPOSE_EDIT_MAYBE` | `0.5` | a number from 0 to 1 | Editing an article: proposed, as "maybe", from this probability |
-| `CODE_CHANGES_PROPOSE_EDIT_LIKELY` | `0.75` | a number from 0 to 1 | Editing an article: proposed as likely from this probability |
-| `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.3` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
-| `CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY` | `0.8` | a number from 0 to 1 | A new article: proposed as likely from this probability |
-| `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `60000` | a whole number from 1000 to 500000 | The pull request's diff the docs agent and the writers read, in characters (the decision model at most 20,000 of it); files past it are only listed |
-| `CODE_CHANGES_CONTEXT_FILE_CHARS` | `6000` | a whole number from 500 to 500000 | One file's share of the diff at most, in characters |
-| `CODE_CHANGES_CONTEXT_BODY_CHARS` | `4000` | a whole number from 0 to 100000 | The pull request's description it reads, in characters |
-| `CODE_CHANGES_CONTEXT_OUTLINE_ARTICLES` | `1000` | a whole number from 50 to 20000 | The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search |
-| `CODE_CHANGES_DECIDE_MODEL` | `anthropic/claude-haiku-5.5` | a model id | The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer |
-| `CODE_CHANGES_DECIDE_ROUNDS` | `12` | a whole number from 1 to 50 | Its rounds of tool calls at most, before it must answer |
-| `CODE_CHANGES_DECIDE_MAX_TOKENS` | `6000` | a whole number from 500 to 64000 | The most it writes in one reply, in tokens (the double-check's too) |
-| `CODE_CHANGES_DECIDE_TEMPERATURE` | `0` | a number from 0 to 2 | Its temperature (the double-check's too): 0 for the steadiest answers |
-| `CODE_CHANGES_DECIDE_REASONING` | `off` | one of off, low, medium, high | How much it thinks before each reply, as OpenRouter's reasoning effort (the double-check's too); off asks for none |
-| `CODE_CHANGES_REDECIDE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id, or off | The double-check's model: when the docs agent proposes a new article (see `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE`), it decides the pull request again from scratch, with the same tools, and its answer is used; it's also Checks' model on the Balanced level, which reviews every article edit. `off` skips both, and every article edit then asks first, except on a level whose `AI_LEVELS_CONFIG` row or Custom setting gives Checks its own model |
-| `CODE_CHANGES_REDECIDE_ROUNDS` | `12` | a whole number from 1 to 50 | Its rounds of tool calls at most, before it must answer |
-| `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE` | `0.2` | a number from 0 to 1 | The double-check runs when the docs agent proposes a new article this sure or more |
-| `CODE_CHANGES_WRITE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id | The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this |
-| `CODE_CHANGES_WRITE_ROUNDS` | `10` | a whole number from 1 to 50 | Its rounds of tool calls at most, for each edit or new article |
-| `CODE_CHANGES_WRITE_MAX_TOKENS` | `6000` | a whole number from 500 to 64000 | The most it writes in one reply, in tokens |
-| `CODE_CHANGES_TOOLS_LIST_CHARS` | `30000` | a whole number from 1000 to 500000 | List files: the answer's characters at most |
-| `CODE_CHANGES_TOOLS_FILE_CHARS` | `60000` | a whole number from 1000 to 500000 | Read a file: its characters at most |
-| `CODE_CHANGES_TOOLS_SEARCH_LINES` | `60` | a whole number from 1 to 1000 | Search the code: the lines at most |
-| `CODE_CHANGES_TOOLS_SEARCH_CHARS` | `20000` | a whole number from 1000 to 500000 | Search the code: the answer's characters at most |
-| `CODE_CHANGES_TOOLS_SEARCH_MS` | `5000` | a whole number from 100 to 60000 | Search the code: how long one search may take, in milliseconds (the model writes the pattern) |
-| `CODE_CHANGES_TOOLS_ARTICLE_CHARS` | `20000` | a whole number from 1000 to 500000 | Read an article: its characters at most |
-| `CODE_CHANGES_TOOLS_ARTICLES` | `8` | a whole number from 1 to 50 | Search articles: how many it finds when the model doesn't say |
-| `CODE_CHANGES_TOOLS_MAX_ARTICLES` | `20` | a whole number from 1 to 50 | Search articles: how many it finds at most |
-| `CODE_CHANGES_TOOLS_EMBED_MS` | `30000` | a whole number from 1000 to 300000 | Search articles: how long one embeddings request may take, in milliseconds |
-| `CODE_CHANGES_LIMITS_TIMEOUT_MINUTES` | `10` | a whole number from 1 to 60 | How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again |
-| `CODE_CHANGES_LIMITS_CALL_TIMEOUT_SECONDS` | `120` | a whole number from 10 to 900 | How long one request to the docs agent's models may take, in seconds |
-| `CODE_CHANGES_LIMITS_CONCURRENT_ANALYSES` | `4` | a whole number from 1 to 20 | How many pull requests the worker analyses at once, on the whole server (retries included); the rest wait their turn. Each holds a worker slot for up to the analysis's time limit, and its repository in memory |
-| `CODE_CHANGES_LIMITS_ARCHIVE_BYTES` | `50000000` | a whole number from 1000000 to 1000000000 | The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so) |
-| `CODE_CHANGES_LIMITS_READ_BYTES` | `1000000000` | a whole number from 1000000 to 10000000000 | The repository's archive unpacked, everything in it, in bytes at most |
-| `CODE_CHANGES_LIMITS_FILE_BYTES` | `1000000` | a whole number from 10000 to 100000000 | One file in the repository, in bytes at most; bigger ones are left out |
-| `CODE_CHANGES_LIMITS_DOWNLOAD_MS` | `120000` | a whole number from 5000 to 900000 | How long downloading the repository may take, in milliseconds |
-| `CODE_CHANGES_VERIFY_AFTER` | `0.7` | a number from 0 to 1 | How sure the decision model must be that edits piling up on an article call for Verify, before Autopilot starts one |
+setting; change one to try another model, or the values that suit it, without a new release. Each
+key's description ends with its range; a value outside it stops start-up, naming the key.
 
 ## Scripts
 

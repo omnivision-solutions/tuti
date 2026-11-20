@@ -1,7 +1,6 @@
 import { configFile, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { resetCodeChangesSettings } from "./code-changes-settings";
 import { embed } from "./embeddings";
 import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, providerDidNotAnswer, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
@@ -13,7 +12,6 @@ beforeAll(async () => {
 afterAll(() => model.close());
 afterEach(() => {
   vi.unstubAllEnvs();
-  resetCodeChangesSettings();
   model.done();
 });
 
@@ -109,19 +107,14 @@ test("roles: each is a feature's kind of work, with that feature's default unles
   expect(AI_ROLE_NAMES.filter(roleNeedsTools)).toEqual(["code_changes_decide", "code_changes_check", "code_changes"]);
   expect(AI_ROLE_NAMES.filter(roleCanBeOff)).toEqual(["code_changes_check"]);
   expect([AI_ROLES.support_draft.feature, AI_ROLES.support_summary.feature]).toEqual(["support", "support"]);
-  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { features: { support: "acme/inbox" } } }));
-  vi.stubEnv("CODE_CHANGES_DECIDE_MODEL", "acme/decider");
-  vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "acme/checker");
-  vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { features: { support: "acme/inbox" } }, autopilot: { decide: { model: "acme/decider" }, redecide: { model: "acme/checker" }, write: { model: "acme/writer" } } }));
   expect(AI_ROLE_NAMES.map(roleDefaultModel)).toEqual([DEFAULT_AI_MODEL, DEFAULT_AI_MODEL, "acme/inbox", "acme/inbox", DEFAULT_AI_MODEL, "acme/decider", "acme/checker", "acme/writer"]);
 });
 
 test("each feature's default model: its own setting, else ai.model, else Tuti's (for code changes, Autopilot's write model)", () => {
   expect(defaultModel("answers")).toBe(DEFAULT_AI_MODEL);
   expect(defaultModel("code_changes")).toBe("anthropic/claude-sonnet-5.5");
-  vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
-  resetCodeChangesSettings();
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { write: { model: "acme/writer" } } }));
   expect(defaultModel("code_changes")).toBe("acme/writer");
   vi.stubEnv("TUTI_CONFIG", configFile({ ai: { model: "acme/everything", features: { codeChanges: "acme/careful" } } }));
   expect([defaultModel("answers"), defaultModel("escalations"), defaultModel("changelog"), defaultModel("code_changes")]).toEqual([
@@ -181,7 +174,7 @@ test("the model fake keeps a reply with a match for the request that contains it
 
 test("decisions go to the decision model, with the data policy, and come back as probabilities", async () => {
   useFake();
-  vi.stubEnv("DECISION_MODEL", "test/decider");
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { model: "test/decider" } } }));
   model.decide({ shipped: 0.8, area: { ui: 0.7, api: 0.3 } });
   const answers = await decide(
     { pull_request: "Dark mode" },

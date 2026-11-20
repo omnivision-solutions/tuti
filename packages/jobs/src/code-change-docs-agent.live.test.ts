@@ -7,8 +7,8 @@ import { decideDocs, type HelpCenterFixture, outlineMarkdown } from "./docs-agen
 import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
 
 /**
- * The docs agent on the evaluation set (`pnpm test:live`, with OPENAI_API_KEY; CODE_CHANGES_DECIDE_MODEL and
- * CODE_CHANGES_REDECIDE_MODEL for others than the defaults), for real: each case's pull request on its fixture
+ * The docs agent on the evaluation set (`pnpm test:live`, with OPENAI_API_KEY; a config file at TUTI_CONFIG with
+ * autopilot.decide.model and autopilot.redecide.model for others than the defaults), for real: each case's pull request on its fixture
  * repository, with the tools, and the set's articles as the help center. Each kind of verdict must match what a team
  * member would expect, with the propose cutoffs in use. Without the key it's skipped: "not run", never "passed". Prints
  * the agent's answers, to tune the cutoffs or compare models.

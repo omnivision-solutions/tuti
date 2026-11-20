@@ -1,6 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
 
-import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
 import { CONFIG_REPLACED } from "../packages/shared/src/config";
 import { billingFile, withAppsumoPlans } from "../packages/testkit/src/billing";
 import { configFile } from "../packages/testkit/src/config-file";
@@ -56,9 +55,6 @@ export const serverEnv = {
   // (The global setup points OPENAI_* at the model fake; ai.model stays the default.)
   OPENAI_API_KEY: "",
   OPENAI_BASE_URL: "",
-  // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
-  ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
-  DECISION_MODEL: "",
   // Every config file value at its default, whatever a local .env points at (or still sets: a variable the file
   // replaced stops start-up).
   TUTI_CONFIG: configFile(e2eConfig),

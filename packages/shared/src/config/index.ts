@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { log } from "../log";
 import { ai, AI_REPLACED } from "./ai";
+import { autopilot, AUTOPILOT_REPLACED } from "./autopilot";
 import { media, MEDIA_REPLACED } from "./media";
 
 /**
@@ -24,12 +25,13 @@ export const configSchema = z.object({
   $schema: z.string().optional(),
   media,
   ai,
+  autopilot,
 });
 
 export type Config = z.output<typeof configSchema>;
 
 /** Env vars a section replaced, with their keys: one still set is a server not yet moved over. */
-export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED, ...AI_REPLACED };
+export const CONFIG_REPLACED: Record<string, string> = { ...MEDIA_REPLACED, ...AI_REPLACED, ...AUTOPILOT_REPLACED };
 
 let loaded: { path: string; config: Config } | null = null;
 

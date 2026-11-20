@@ -11,7 +11,7 @@ const levels = (rows: unknown) => configFile({ ai: { levels: rows } });
 
 beforeEach(() => {
   // Every variable that sets a server's own models (ownModels), so the built-in rows hold whatever the machine has set.
-  for (const name of ["BILLING_CONFIG", "TUTI_CONFIG", "CODE_CHANGES_DECIDE_MODEL", "CODE_CHANGES_REDECIDE_MODEL", "CODE_CHANGES_WRITE_MODEL"]) {
+  for (const name of ["BILLING_CONFIG", "TUTI_CONFIG"]) {
     vi.stubEnv(name, "");
   }
 });
@@ -83,8 +83,7 @@ test("a server that set its own models and has no ai.levels offers Balanced and 
   expect(roleModel({ plan: null, aiLevels: { answers: "best" }, aiModels: {} }, "answers")).toBe("acme/served");
   vi.stubEnv("TUTI_CONFIG", configFile({ ai: { features: { changelog: "acme/notes" } } }));
   expect(offeredLevels()).toEqual(["balanced", "custom"]);
-  vi.stubEnv("TUTI_CONFIG", "");
-  vi.stubEnv("CODE_CHANGES_WRITE_MODEL", "acme/writer");
+  vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { write: { model: "acme/writer" } } }));
   expect(offeredLevels()).toEqual(["balanced", "custom"]);
 });
 

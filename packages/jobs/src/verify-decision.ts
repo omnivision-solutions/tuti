@@ -118,7 +118,7 @@ export async function verifyAfterEdit(projectId: string, articleId: string, use:
   const answer = (await decide(state, VERIFY_QUESTION, { meter: use.meter })).verify!;
   const yes = answer.type === "noul" ? answer.noul : 0;
   log.info("Verify after edits: decided", { projectId, articleId, yes, waiting: edits.length, rewriting: rewritten.length });
-  // How sure the decision model must be (CODE_CHANGES_VERIFY_AFTER). ponytail: one bar for every project, until each is calibrated on its own.
+  // How sure the decision model must be (autopilot.verify.after). ponytail: one bar for every project, until each is calibrated on its own.
   if (yes < codeChangesSettings().verify.after) {
     return false;
   }
