@@ -26,7 +26,7 @@ export function ResendVerificationButton({ email, callbackURL = "/app" }: { emai
   }
 
   return (
-    <Button size="xs" variant="ghost" onClick={resend} disabled={state !== "idle"}>
+    <Button size="xs" variant="ghost" onClick={resend} disabled={state !== "idle"} focusableWhenDisabled>
       {state === "sent" ? "Sent" : state === "sending" ? "Sending…" : "Resend email"}
     </Button>
   );

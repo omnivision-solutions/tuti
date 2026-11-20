@@ -219,7 +219,12 @@ export const auth = betterAuth({
     onExistingUserSignUp: async ({ user }) => {
       try {
         if (!user.emailVerified) {
-          await auth.api.sendVerificationEmail({ body: { email: user.email, callbackURL: "/app" } });
+          // Under the emailed links' limits (per address and visitor), as the reset below: anyone can sign up with an address.
+          const [{ countEmailedLink }, { headers }] = await Promise.all([import("@/server/email-link-limits"), import("next/headers")]);
+          const limited = await countEmailedLink(null, user.email, await headers());
+          if ("id" in limited && limited.id) {
+            await auth.api.sendVerificationEmail({ body: { email: user.email, callbackURL: "/app" } });
+          }
           return;
         }
         const form = new FormData();

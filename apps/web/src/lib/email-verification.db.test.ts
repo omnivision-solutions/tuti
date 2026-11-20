@@ -12,6 +12,7 @@ import { auth, VERIFICATION_SECONDS } from "./auth";
 import { getSession } from "@/server/session";
 
 import { randomSecret } from "./portal-handoff";
+import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "./sign-in-link";
 
 const APP_URL = process.env.APP_URL!;
 
@@ -123,6 +124,12 @@ test("signing up with an address that has an account answers as for a new one, a
   expect(again.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
   const { message } = await verificationLink(email);
   expect(message).not.toBe(first);
+  // Under the emailed links' hourly limit per address: anyone can sign up with it.
+  for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR + 2; i++) {
+    expect((await postOnApp("sign-up/email", { email, name: "Someone", password: "another password entirely" })).ok).toBe(true);
+  }
+  // The sign-up's own email, then the limit's worth.
+  await expect.poll(() => mailbox.emails.filter((e) => e.to.includes(email)).length).toBe(1 + SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
 
   // Verified: a password reset, and the account as it was.
   const owner = await signUpUser("Olive");
