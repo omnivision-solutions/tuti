@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
-import { backfillEmbeddings, grantCredits } from "@tuti/jobs";
+import { backfillEmbeddings, detectDuplicates, grantCredits } from "@tuti/jobs";
 import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_DUPLICATES_MODEL, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { configFile, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -481,6 +481,20 @@ describe("with a decision model (OpenRouter)", () => {
     model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
     expect((await backfillEmbeddings({ info: () => {}, warn: () => {} })).errors).toEqual([]);
     expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
+  });
+
+  test("a post deleted while it's checked is left alone: nothing to mark, no error", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    await post("Dark mode");
+    const night = await post("Night theme please");
+    vi.unstubAllEnvs();
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+    model.decide({ duplicate_0: DIFFERENT }, '"new":"Night theme please"', () => prisma.post.delete({ where: { id: night.id } }));
+
+    await expect(detectDuplicates(night.id)).resolves.toBe(0);
   });
 
   test("while typing, a balance that can't be read shows the posts as found", async () => {
