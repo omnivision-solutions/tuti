@@ -47,11 +47,12 @@ export function OwnAddressSettings({
   const connected: Choice | null = domain ? "domain" : site ? "site" : null;
   const [picked, setPicked] = useState<Choice>(connected ?? "tuti");
   const choice = connected ?? picked;
-  // Removed (its Remove button, which had focus, goes with it): focus goes to the option still picked.
+  // Removed (its Remove button, which had focus, goes with it): focus goes to the option still picked. Only where it
+  // was lost: one a teammate removed leaves focus where it is.
   const group = useRef<HTMLDivElement>(null);
   const was = useRef(connected);
   useEffect(() => {
-    if (was.current && !connected) {
+    if (was.current && !connected && document.activeElement === document.body) {
       group.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
     }
     was.current = connected;

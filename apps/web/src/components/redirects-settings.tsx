@@ -41,10 +41,11 @@ export function RedirectsSettings({ projectSlug, redirects, max }: { projectSlug
     }
     return result;
   }, {});
-  // One deleted: its row, and the ⋯ menu that had focus, is gone. Focus goes to the form's first field.
+  // One deleted: its row, and the ⋯ menu that had focus, is gone. Focus goes to the form's first field. Only where it
+  // was lost: one a teammate deleted leaves focus where it is.
   const count = useRef(redirects.length);
   useEffect(() => {
-    if (redirects.length < count.current) {
+    if (redirects.length < count.current && document.activeElement === document.body) {
       document.getElementById(OLD_ADDRESS)?.focus();
     }
     count.current = redirects.length;
