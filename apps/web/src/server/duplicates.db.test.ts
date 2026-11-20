@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { grantCredits } from "@tuti/jobs";
+import { backfillEmbeddings, grantCredits } from "@tuti/jobs";
 import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_DUPLICATES_MODEL, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { configFile, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -300,6 +300,43 @@ describe("with a decision model (OpenRouter)", () => {
     const duplicate = await post("Night theme please");
     expect(model.decisions).toHaveLength(0);
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: duplicate.id, originalId: original.id })]);
+  });
+
+  test("the embeddings backfill checks only posts it embeds for the first time: a rerun asks (and charges) nothing again", async () => {
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await post("Dark mode");
+    const night = await post("Night theme please");
+    expect(model.decisions).toHaveLength(1);
+    // A post from before embeddings were set up: never embedded, never checked.
+    await prisma.postEmbedding.delete({ where: { postId: night.id } });
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+    const log = { info: () => {}, warn: () => {} };
+
+    // The backfill covers every project: other tests' posts never embedded are checked too (and told they're different).
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    const nightAsked = () => model.decisions.filter((d) => JSON.stringify(d.state).includes("Night theme please")).length;
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await backfillEmbeddings(log);
+    expect(nightAsked()).toBe(2);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id })]);
+
+    const asked = model.decisions.length;
+    await backfillEmbeddings(log);
+    expect(model.decisions).toHaveLength(asked);
+  });
+
+  test("while typing signed out, nothing is asked (it'd be charged to the project): the posts are shown as found", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    actAs(null);
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(0);
   });
 
   test("while typing, a failure shows the posts as found", async () => {

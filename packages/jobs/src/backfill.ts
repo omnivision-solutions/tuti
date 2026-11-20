@@ -7,7 +7,8 @@ import type { JobLogger } from "./index";
 import { detectDuplicates, embedPosts } from "./duplicates";
 
 /**
- * The embeddings backfill (the worker's backfill:embeddings): embeds existing posts and suggests duplicates among them,
+ * The embeddings backfill (the worker's backfill:embeddings): embeds existing posts and suggests duplicates for those
+ * embedded for the first time,
  * and embeds published docs articles for search, when embeddings are set up; then indexes every API reference's
  * operations for the docs' search and AI answers, set up or not (their word search needs it either way). Each phase runs
  * whatever happened in the one before: a failure (the embeddings provider down, say) is kept in `errors`, by phase, for
@@ -26,10 +27,13 @@ export async function backfillEmbeddings(log: JobLogger) {
         orderBy: { createdAt: "asc" },
         select: { id: true, projectId: true, title: true, body: true },
       });
+      // Posts embedded before were checked for duplicates when they were (each check is a charged model request): only
+      // the others are checked, so a rerun asks nothing again.
+      const before = new Set((await prisma.postEmbedding.findMany({ select: { postId: true } })).map((e) => e.postId));
       // Embed everything first, then compare, so every post sees all older ones.
       const embedded = await embedPosts(rows);
       let suggestions = 0;
-      for (const post of rows) {
+      for (const post of rows.filter((row) => !before.has(row.id))) {
         suggestions += await detectDuplicates(post.id);
       }
       posts = { posts: rows.length, embedded, suggestions };

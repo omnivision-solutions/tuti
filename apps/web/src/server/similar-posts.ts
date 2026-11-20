@@ -26,7 +26,8 @@ const MIN_EMBED_LENGTH = 10;
  * near-identical wording; with OPENAI_API_KEY set, embeddings also catch the
  * same idea in other words. Posts found both ways rank first. Then the decision model (the config file's `duplicates.typing.model`) keeps
  * those it calls duplicates, likeliest first; without one, past the project's hourly checks, or when it fails or takes
- * over a second, or the project is out of AI credits, they're shown as found. With whether whoever's asking voted for
+ * over a second, the project is out of AI credits, or whoever's typing isn't signed in (it's charged to the project), they're
+ * shown as found. With whether whoever's asking voted for
  * each: the widget's person, by its token (`widgetToken`), or the portal's signed-in user.
  */
 export async function findSimilarPosts(projectSlug: string, title: string, widgetToken?: string | null): Promise<SimilarPost[]> {
@@ -51,9 +52,10 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
     ...byMeaning.filter((p) => !both.has(p.id)),
     ...byWords.filter((p) => !both.has(p.id)),
   ];
-  // Every candidate is judged (up to twice LIMIT, one request), so a duplicate found only by its words isn't cut first.
-  const shown = (await duplicatesOnly(project.id, query.data, ranked)).slice(0, LIMIT);
   const userId = widgetToken ? widgetUser(project.id, String(widgetToken)) : (await sessionIn(project.id))?.user.id;
+  // Every candidate is judged (up to twice LIMIT, one request), so a duplicate found only by its words isn't cut first.
+  // Only for someone signed in, who can post: the check is charged to the project, and anyone can type on a portal.
+  const shown = (userId ? await duplicatesOnly(project.id, query.data, ranked) : ranked).slice(0, LIMIT);
   const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
   return shown.map(({ body: _, ...post }) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));
 }
