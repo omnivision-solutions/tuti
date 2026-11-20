@@ -417,6 +417,18 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.getByRole("option", { name: "Date" }).click();
   await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
   await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Money");
+  // A name that doesn't get through either: its dialog stays open with what was typed, and the row keeps its name.
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toHaveCount(0, { timeout: 15_000 });
+  await mrr.getByRole("button", { name: "Actions for mrr" }).click();
+  await owner.getByRole("menuitem", { name: "Rename" }).click();
+  await dialog.getByRole("textbox", { name: "Name shown" }).fill("Monthly revenue");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Name shown" })).toHaveValue("Monthly revenue");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(mrr).toContainText("MRR");
   await owner.unroute(`**/app/${slug}/settings/properties`);
   // Beside its name on a wide card, a row's key and format are level with it; on a phone they go under it, and nothing runs past the edge.
   const label = mrr.getByText("MRR", { exact: true });
