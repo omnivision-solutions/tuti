@@ -382,8 +382,10 @@ the list picks none to approve at once.
   side by side (stacked on phones). The queue shows three saved versions, expands to the rest, and confirms
   Publish or Publish all before taking them live. Verify all and the live help center link sit below. Collections
   and tabs remain reachable in the tree. A collection's page is a flat ordered table with article state, views,
-  helpful votes and updated date; Content and Settings sit under its header. Collection settings use flat Details
-  and Access sections with labelled fields, a single Save beside the title and deletion at the end. Tab pages
+  helpful votes and updated date; Content and Settings sit under its header. Collection settings are Settings' cards of
+  rows (Settings rows): Details, then Access ("Who can read" and "People without access" as dropdowns, with a line on
+  the choice picked or what it inherits and the rest behind the ⓘ; the groups to tick under "Specific groups"), a single Save beside the title and Delete in a card
+  of its own at the end. Tab pages
   keep Content, Access and Settings. Recently deleted articles can still be restored from the overview.
 
 - **Sidebar** (`AppSidebar`): its groups one under the other with a line between them (no gap
@@ -825,7 +827,8 @@ widths, in light and dark (in development only).
   - One Save: "Save changes" in the pane's header, there once the page has a form (`useCustomizeForm`), enabled once
     something differs. A switch that acts alone saves at once.
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
-    `Select`. No radios with a sentence each, no native `<select>`.
+    `Select`. No radios with a sentence each, no native `<select>`. A choice that saves as it's picked and changes
+    who can see something (Access's Public or Private) stays a `Select`: in a `Segmented`, an arrow key would pick it.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would

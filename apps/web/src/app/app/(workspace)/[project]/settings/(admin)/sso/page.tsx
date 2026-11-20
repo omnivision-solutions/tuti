@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { SsoSettings } from "@/components/sso-settings";
-import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { SettingsCard, SettingsPane } from "@/components/settings-card";
 import { portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
@@ -16,13 +16,9 @@ export default async function SsoSettingsPage(props: PageProps<"/app/[project]/s
     notFound();
   }
   return (
-    <SettingsPane title="Single sign-on" description={<>Let users of your app post and vote without creating a separate account. Your server signs a token (a JWT) for the logged-in user and sends them to your portal.</>}>
+    <SettingsPane title="Single sign-on">
       <SettingsCard>
-        <SettingBlock>
-          <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`}
-            signInUrl={project.ssoSignInUrl}
-          />
-        </SettingBlock>
+        <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`} signInUrl={project.ssoSignInUrl} />
       </SettingsCard>
     </SettingsPane>
   );

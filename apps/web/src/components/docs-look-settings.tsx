@@ -33,7 +33,20 @@ export function SwitchRow({
 
 const on = (data: FormData, name: string) => data.get(name) === "on";
 
-/** Customize → Content actions: the "Copy page" menu on articles, what's in it, and the "Updated" date (see branding.update's contentActions). */
+/** A switch in Content actions' card: its name on the left, the switch on the right, on phones too. */
+function ActionRow({ name, label, info, on }: { name: string; label: string; info?: string; on: boolean }) {
+  const id = `content-actions-${name}`;
+  return (
+    <SettingRow label={label} htmlFor={id} info={info} inline>
+      <Switch id={id} name={name} defaultChecked={on} />
+    </SettingRow>
+  );
+}
+
+/**
+ * Settings → Portal → Content actions: the "Copy page" menu on articles, what's in it (indented under it), and the
+ * "Updated" date (see branding.update's contentActions), one switch a row in one card. The preview shows what each does.
+ */
 export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: string; actions: ContentActions }) {
   const { state, form } = useBrandingForm(projectSlug, "Content actions saved", (data) => ({
     contentActions: {
@@ -45,28 +58,17 @@ export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: 
     },
   }));
   return (
-    <form {...form} className="flex flex-col gap-6">
+    <form {...form} className="flex flex-col gap-3">
       <input type="hidden" name="part" value="contentActions" />
-      <section aria-labelledby="content-actions-menu" className="flex flex-col gap-4 rounded-xl border p-4">
-        <h2 id="content-actions-menu" className="font-semibold">
-          Page actions
-        </h2>
-        <SwitchRow
-          name="menu"
-          label="Show the page actions menu"
-          description="Lets readers copy an article or take it to an AI tool."
-          defaultChecked={actions.menu}
-        />
-        <SwitchRow name="copyMarkdown" label="Copy as Markdown" defaultChecked={actions.copyMarkdown} />
-        <SwitchRow name="chatGpt" label="Open in ChatGPT" defaultChecked={actions.chatGpt} />
-        <SwitchRow name="claude" label="Open in Claude" defaultChecked={actions.claude} />
-      </section>
-      <section aria-labelledby="content-actions-date" className="flex flex-col gap-4 rounded-xl border p-4">
-        <h2 id="content-actions-date" className="font-semibold">
-          Last updated date
-        </h2>
-        <SwitchRow name="updatedDate" label="Show the last updated date" description="Under each article's heading: when you last published changes to it. None shows until you do." defaultChecked={actions.updatedDate} />
-      </section>
+      <SettingsCard>
+        <ActionRow name="menu" label="Page actions menu" on={actions.menu} />
+        <div role="group" aria-label="In the page actions menu" className="flex flex-col divide-y pl-6 *:py-2.5">
+          <ActionRow name="copyMarkdown" label="Copy as Markdown" on={actions.copyMarkdown} />
+          <ActionRow name="chatGpt" label="Open in ChatGPT" on={actions.chatGpt} />
+          <ActionRow name="claude" label="Open in Claude" on={actions.claude} />
+        </div>
+        <ActionRow name="updatedDate" label="Last updated date" info="Under each article's heading: when you last published changes to it. None shows until you do." on={actions.updatedDate} />
+      </SettingsCard>
       {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );

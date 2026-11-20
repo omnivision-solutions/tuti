@@ -165,7 +165,7 @@ export function CopyRows({ rows, label }: { rows: { label: string; value: string
 }
 
 /** A value shown whole, selectable (where copying is blocked: plain HTTP), with its Copy button. */
-function CopyValue({ value, label }: { value: string; label: string }) {
+export function CopyValue({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex items-start gap-1">
       {/* Broken after its dots where it doesn't fit, else anywhere. */}

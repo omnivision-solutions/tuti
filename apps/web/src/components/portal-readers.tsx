@@ -1,9 +1,11 @@
 "use client";
 
-import { useActionState, useRef, useTransition } from "react";
+import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ItemList, ItemRow } from "@/components/item-list";
+import { SettingsCard } from "@/components/settings-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,9 +15,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { timeAgo } from "@/lib/format";
@@ -28,14 +31,56 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * Settings → Access, on a private portal: the people who may read it by email, besides the
- * team and SSO users. Adding them emails each a link to the portal (when email is set up).
+ * team and SSO users, as the page's second card. Adding them (in a dialog) emails each a link
+ * to the portal (when email is set up).
  */
 export function PortalReaders({ projectSlug, readers }: { projectSlug: string; readers: Reader[] }) {
-  const form = useRef<HTMLFormElement>(null);
+  const [adding, setAdding] = useState(false);
+  // While the dialog is adding it stays open (Escape, a click outside, ×), so a refusal isn't lost with it. A ref: state
+  // set inside the form's action would only show once the action is over.
+  const busy = useRef(false);
+  return (
+    <SettingsCard
+      title="Readers"
+      count={readers.length}
+      action={
+        <Dialog open={adding} onOpenChange={(next) => (next || !busy.current) && setAdding(next)}>
+          <DialogTrigger render={<Button variant="outline" size="sm" />}>
+            <PlusIcon aria-hidden />
+            Add readers
+          </DialogTrigger>
+          {/* A long list pasted on a phone scrolls in the dialog: its buttons stay on the screen. */}
+          <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto">
+            {/* Inside the content, which is there only while it's open: each opening starts empty, with no error left. */}
+            <AddReadersForm projectSlug={projectSlug} onBusy={(adding) => { busy.current = adding; }} onAdded={() => setAdding(false)} />
+          </DialogContent>
+        </Dialog>
+      }
+    >
+      {readers.length > 0 ? (
+        <ItemList aria-label="Readers">
+          {readers.map((reader) => (
+            <ItemRow
+              key={reader.email}
+              className="px-4 py-3 first:pt-3 last:pb-3 @min-[34rem]/settings:px-5"
+              title={<span className="break-all">{reader.email}</span>}
+              meta={`${reader.email.startsWith("@") ? `Everyone with a verified ${reader.email} address · ` : ""}Added ${timeAgo(new Date(reader.addedAt))}${reader.addedBy ? ` by ${reader.addedBy}` : ""}`}
+              actions={<ReaderActions projectSlug={projectSlug} email={reader.email} />}
+            />
+          ))}
+        </ItemList>
+      ) : (
+        <p className="px-4 py-3.5 text-sm text-muted-foreground @min-[34rem]/settings:px-5">No readers yet.</p>
+      )}
+    </SettingsCard>
+  );
+}
+
+function AddReadersForm({ projectSlug, onBusy, onAdded }: { projectSlug: string; onBusy: (adding: boolean) => void; onAdded: () => void }) {
   const [state, action, pending] = useActionState(async (prev: { error?: string }, formData: FormData) => {
-    const result = await addPortalReaders(projectSlug, prev, formData);
+    onBusy(true);
+    const result = await addPortalReaders(projectSlug, prev, formData).finally(() => onBusy(false));
     if (!result.error) {
-      form.current?.reset();
       const added = result.added ?? [];
       const people = added.filter((entry) => !entry.startsWith("@")).length;
       const emailed = result.emailed ?? 0;
@@ -49,87 +94,87 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
               ? `${what}; we emailed ${emailed} of them`
               : what,
       );
+      onAdded();
     }
     return result;
   }, {});
 
   return (
-    <section aria-labelledby="portal-readers" className="flex flex-col gap-4 border-t pt-4">
-      <div className="flex flex-col gap-1">
-        <h3 id="portal-readers" className="font-medium">
-          Readers
-        </h3>
-        <p className="text-sm text-muted-foreground">
+    <form {...keepingFields(action)} className="flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>Add readers</DialogTitle>
+        <DialogDescription>
           People outside your team who may read the portal, or a whole domain like @acme.com for everyone there. They sign in
           with their address: an emailed sign-in link works even without an account.
-        </p>
-      </div>
-      <form ref={form} {...keepingFields(action)} className="flex flex-col gap-2">
-        <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="portal-reader-emails">Email addresses or domains</FieldLabel>
-          <Textarea
-            id="portal-reader-emails"
-            name="emails"
-            rows={2}
-            required
-            placeholder="ada@example.com, @acme.com"
-            aria-invalid={state.error ? true : undefined}
-          />
-          <FieldDescription>Up to 20 at once, separated by commas or lines.</FieldDescription>
-          {state.error && <FieldError>{state.error}</FieldError>}
-        </Field>
-        <div>
-          <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled>
-            Add readers
-          </Button>
-        </div>
-      </form>
-      {readers.length > 0 && (
-        <ItemList>
-          {readers.map((reader) => (
-            <ItemRow
-              key={reader.email}
-              title={<span className="break-all">{reader.email}</span>}
-              meta={`${reader.email.startsWith("@") ? `Everyone with a verified ${reader.email} address · ` : ""}Added ${timeAgo(new Date(reader.addedAt))}${reader.addedBy ? ` by ${reader.addedBy}` : ""}`}
-              actions={<RemoveReaderButton projectSlug={projectSlug} email={reader.email} />}
-            />
-          ))}
-        </ItemList>
-      )}
-    </section>
+        </DialogDescription>
+      </DialogHeader>
+      <Field data-invalid={state.error ? true : undefined}>
+        <FieldLabel htmlFor="portal-reader-emails">Email addresses or domains</FieldLabel>
+        <Textarea
+          id="portal-reader-emails"
+          name="emails"
+          rows={3}
+          required
+          placeholder="ada@example.com, @acme.com"
+          aria-invalid={state.error ? true : undefined}
+        />
+        <FieldDescription>Up to 20 at once, separated by commas or lines.</FieldDescription>
+        {state.error && <FieldError>{state.error}</FieldError>}
+      </Field>
+      <DialogFooter>
+        <DialogClose render={<Button type="button" variant="outline" disabled={pending} />}>Cancel</DialogClose>
+        <Button type="submit" disabled={pending} focusableWhenDisabled>
+          Add readers
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 
-function RemoveReaderButton({ projectSlug, email }: { projectSlug: string; email: string }) {
+/** A reader's ⋯ menu: Remove, which asks first. */
+function ReaderActions({ projectSlug, email }: { projectSlug: string; email: string }) {
   const [pending, startTransition] = useTransition();
+  const [removing, setRemoving] = useState(false);
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Remove ${email}`} />}>Remove</AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-all">Remove {email}?</AlertDialogTitle>
-          <AlertDialogDescription>They can&apos;t read the portal until you add them again. Their account stays.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await removePortalReader(projectSlug, email);
-                if (result.error) {
-                  toast.error(result.error);
-                } else {
-                  toast.success(`${email} removed`);
-                }
-              })
-            }
-          >
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} focusableWhenDisabled aria-label={`Actions for ${email}`} />}>
+          <MoreHorizontalIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-40">
+          <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}>
             Remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog open={removing} onOpenChange={(next) => (next || !pending) && setRemoving(next)}>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="break-all">Remove {email}?</AlertDialogTitle>
+            <AlertDialogDescription>They can&apos;t read the portal until you add them again. Their account stays.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pending}
+              focusableWhenDisabled
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await removePortalReader(projectSlug, email);
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`${email} removed`);
+                  }
+                })
+              }
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
