@@ -86,9 +86,10 @@ export type ModelFake = {
   /**
    * The next decision request gets these answers (in order, like replies); `match` keeps them for the
    * first request whose state (as JSON) contains it. Also `POST /_fake/decisions {answers, match?}`.
-   * A question the answers leave out is an error, like a step nobody scripted.
+   * A question the answers leave out is an error, like a step nobody scripted. `during` runs while the request waits
+   * for them, e.g. a slow answer (the answer is still sent after it, if the request is still there).
    */
-  decide(answers: FakeDecision, match?: string): void;
+  decide(answers: FakeDecision, match?: string, during?: () => Promise<unknown>): void;
   /** Every decision request whose state contains `match` that no scripted answers take gets these, until `done()`; never counted as unused. */
   otherwiseDecide(answers: FakeDecision, match: string): void;
   /** Throws if a step wasn't used or a request came with no step left. */
@@ -119,7 +120,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     return hold;
   };
   const requests: ModelRequest[] = [];
-  const decisionSteps: { answers: FakeDecision; match?: string }[] = [];
+  const decisionSteps: { answers: FakeDecision; match?: string; during?: () => Promise<unknown> }[] = [];
   const decisions: DecisionRequest[] = [];
   const standingDecisions: { answers: FakeDecision; match: string }[] = [];
   const unexpected: string[] = [];
@@ -212,6 +213,9 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
         if (!step) {
           unexpected.push(`a decision request with no answers scripted: ${state.slice(0, 200)}`);
           return send(500, { error: { message: "the model fake has no decision scripted" } });
+        }
+        if ("during" in step) {
+          await step.during?.();
         }
         const answers: Record<string, unknown> = {};
         for (const [name, question] of Object.entries(request.questions)) {
@@ -323,8 +327,8 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
       steps.push({ status });
     },
     decisions,
-    decide(answers, match) {
-      decisionSteps.push({ answers, match });
+    decide(answers, match, during) {
+      decisionSteps.push({ answers, match, during });
     },
     otherwiseDecide(answers, match) {
       standingDecisions.push({ answers, match });

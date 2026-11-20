@@ -25,6 +25,7 @@ afterAll(() => openai.close());
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 beforeEach(async () => {
@@ -252,7 +253,8 @@ describe("with a decision model (OpenRouter)", () => {
     expect(() => model.done()).toThrow("no answers scripted");
   });
 
-  test("while typing, a project's checks stop at 300 an hour: the rest show the posts as found", async () => {
+  test("while typing, a project's checks stop at 300 an hour: the rest show the posts as found, till the next hour", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T10:10:00Z") });
     vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
     openai.setVector("Translate articles please", along(1));
     openai.setVector("Live translations for Inbox", along(0.9));
@@ -265,5 +267,59 @@ describe("with a decision model (OpenRouter)", () => {
     const found = await findSimilarPosts(project.slug, "Translate articles please");
     expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
     expect(model.decisions).toHaveLength(300);
+
+    vi.setSystemTime(new Date("2026-11-20T11:00:00Z"));
+    expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
+    expect(model.decisions).toHaveLength(301);
+  });
+
+  test("while typing, an answer that takes over a second shows the posts as found", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    // Had it answered in time, it would have hidden the post.
+    model.decide({ "*": DIFFERENT }, undefined, () => new Promise((resolve) => setTimeout(resolve, 1_500)));
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+  });
+
+  /** Older posts with these similarities to [1, 0, …] and to nothing else of each other's but through it. */
+  const olderPosts = async (similarities: number[]) => {
+    for (const [k, s] of similarities.entries()) {
+      const vector = Array.from({ length: similarities.length + 1 }, (_, d) => (d === 0 ? s : d === k + 1 ? Math.sqrt(1 - s ** 2) : 0));
+      openai.setVector(`Older ${k}`, vector);
+    }
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    const posts = [];
+    for (const k of similarities.keys()) {
+      posts.push(await post(`Older ${k}`));
+    }
+    vi.unstubAllEnvs();
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+    openai.setVector("The new one", [1, ...similarities.map(() => 0)]);
+    return posts;
+  };
+
+  test("after posting, the 8 most similar posts at 0.35 or above are asked about, in one request", async () => {
+    await olderPosts([0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
+    model.decide({ "*": DIFFERENT }, "The new one");
+    const created = await post("The new one");
+    const asked = model.decisions.filter((d) => JSON.stringify(d.state).includes("The new one"));
+    expect(asked).toHaveLength(1);
+    expect(Object.keys(asked[0]!.questions)).toHaveLength(8);
+    expect(await suggestions()).not.toContainEqual(expect.objectContaining({ postId: created.id }));
+  });
+
+  test("after posting, a failed answer suggests the 3 most similar at 0.45 or above, as before", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [a, b, c] = await olderPosts([0.9, 0.8, 0.7, 0.6, 0.4]);
+    const created = await post("The new one");
+    const mine = (await suggestions()).filter((s) => s.postId === created.id).map((s) => s.originalId);
+    expect(mine.sort()).toEqual([a!.id, b!.id, c!.id].sort());
+    expect(() => model.done()).toThrow("no answers scripted");
   });
 });

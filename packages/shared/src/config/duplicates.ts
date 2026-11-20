@@ -12,7 +12,7 @@ const model = (description: string) =>
  */
 export const duplicates = z
   .strictObject({
-    posted: model("After a post is created: the decision model saying which of the 8 most similar posts it duplicates (they become \"Possible duplicates\"); `off` for similarity alone"),
-    typing: model("While a title is typed, on the portal and in the widget: the decision model saying which similar posts to suggest voting on instead; `off` for similarity alone"),
+    posted: model("After a post is created: the decision model saying which of the 8 most similar posts it duplicates (they become \"Possible duplicates\"); OpenRouter only (elsewhere, and with `off`, similarity alone)"),
+    typing: model("While a title is typed, on the portal and in the widget: the decision model saying which similar posts to suggest voting on instead; OpenRouter only (elsewhere, and with `off`, similarity alone)"),
   })
   .prefault({});
