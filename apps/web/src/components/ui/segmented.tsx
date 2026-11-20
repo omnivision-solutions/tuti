@@ -14,6 +14,7 @@ export function Segmented<T extends string>({
   defaultValue,
   value,
   onValueChange,
+  disabled,
   className,
   ...props
 }: {
@@ -22,13 +23,14 @@ export function Segmented<T extends string>({
   defaultValue?: T;
   value?: T;
   onValueChange?: (value: T) => void;
+  disabled?: boolean;
   className?: string;
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-describedby"?: string;
 }) {
   return (
-    <div role="radiogroup" {...props} className={cn("flex w-fit max-w-full gap-1 rounded-lg bg-muted p-1", className)}>
+    <div role="radiogroup" {...props} className={cn("flex w-fit max-w-full gap-1 rounded-lg bg-muted p-1 has-disabled:pointer-events-none has-disabled:opacity-50", className)}>
       {options.map(({ value: option, label, icon }) => (
         <label
           key={option}
@@ -38,6 +40,7 @@ export function Segmented<T extends string>({
             type="radio"
             name={name}
             value={option}
+            disabled={disabled}
             {...(value === undefined ? { defaultChecked: defaultValue === option } : { checked: value === option })}
             onChange={() => onValueChange?.(option)}
             className="sr-only"

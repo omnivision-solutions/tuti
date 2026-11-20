@@ -9,15 +9,15 @@ import { planIncludes, type PlanKey } from "./plans";
  */
 export const TUNING = {
   "propose.edit.maybe": {
-    label: "Fix an article from",
+    label: "To fix an article",
     tradeoff: "Lower: fewer articles left out of date, more fixes to dismiss. Higher: fewer to review, more missed.",
   },
   "propose.newArticle.maybe": {
-    label: "Write a new article from",
+    label: "To write a new article",
     tradeoff: "Lower: fewer missing articles, more duplicates. Higher: fewer duplicates, more gaps left.",
   },
   "redecide.whenNewArticle": {
-    label: "Double-check a new article from",
+    label: "To double-check a new article",
     tradeoff: "Lower: more new articles double-checked, which costs more. Higher: cheaper, more duplicates get through.",
   },
   "decide.rounds": {

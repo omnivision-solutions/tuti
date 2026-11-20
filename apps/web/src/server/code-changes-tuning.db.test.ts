@@ -70,7 +70,7 @@ test("values outside the server's range, or not one of its options, are refused 
     await expect(call(updateCodeChangesTuning, as(owner), { ...input, "write.rounds": 4 })).rejects.toMatchObject({ status: 400, code: "invalid_input" });
   }
   await expect(call(updateCodeChangesTuning, as(owner), { "propose.edit.maybe": 0.8 })).rejects.toThrow(
-    "Fix an article from (propose.edit.maybe) must be a probability from 0% to 75%",
+    "To fix an article (propose.edit.maybe) must be a probability from 0% to 75%",
   );
   expect(await stored()).toEqual({});
 });

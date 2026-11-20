@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 
 import { CodeChangesTuningSettings } from "@/components/code-changes-tuning";
 import { PlanNotice } from "@/components/plan-notice";
-import { SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
@@ -24,22 +23,21 @@ export default async function CodeChangesTuningPage(props: PageProps<"/app/[proj
   const tuning = await codeChangesTuning(membership.project.id);
   const kept = Object.values(tuning.values).some((value) => value.saved !== null);
   return (
-    // Back to Autopilot's settings; where the server has AI but can't run Autopilot (that page isn't there), to the first of the AI pages.
-    <SettingsPane title="Advanced tuning" back={codeChangesEnabled() ? { href: `/app/${slug}/settings/autopilot`, label: "Autopilot" } : { href: `/app/${slug}/settings/ai-answers`, label: "AI answers" }}>
-      <CodeChangesTuningSettings
-        projectSlug={slug}
-        tuning={tuning}
-        rows={TUNING_KEYS.map((key) => ({ key, label: TUNING[key].label, tradeoff: TUNING[key].tradeoff }))}
-        owner={membership.role === "OWNER"}
-        lastChanged={tuning.updatedAt && `${tuning.updatedBy ? `by ${tuning.updatedBy} ` : ""}${timeAgo(new Date(tuning.updatedAt))}`}
-        notice={
-          !tuning.available && (
-            <PlanNotice feature="aiTuning" projectSlug={slug} admin>
-              {kept && "This project's values are kept but not used; on a plan with Advanced tuning, they're used again."}
-            </PlanNotice>
-          )
-        }
-      />
-    </SettingsPane>
+    <CodeChangesTuningSettings
+      projectSlug={slug}
+      tuning={tuning}
+      labels={Object.fromEntries(TUNING_KEYS.map((key) => [key, TUNING[key].label])) as Record<(typeof TUNING_KEYS)[number], string>}
+      // Back to Autopilot's settings; where the server has AI but can't run Autopilot (that page isn't there), to the first of the AI pages.
+      back={codeChangesEnabled() ? { href: `/app/${slug}/settings/autopilot`, label: "Autopilot" } : { href: `/app/${slug}/settings/ai-answers`, label: "AI answers" }}
+      owner={membership.role === "OWNER"}
+      lastChanged={tuning.updatedAt && `${tuning.updatedBy ? `by ${tuning.updatedBy} ` : ""}${timeAgo(new Date(tuning.updatedAt))}`}
+      notice={
+        !tuning.available && (
+          <PlanNotice feature="aiTuning" projectSlug={slug} admin>
+            {kept && "This project's values are kept but not used; on a plan with Advanced tuning, they're used again."}
+          </PlanNotice>
+        )
+      }
+    />
   );
 }

@@ -1,15 +1,16 @@
 "use client";
 
-import { type ReactNode, useActionState, useRef, useState } from "react";
+import { cn } from "cn";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
+import { SettingsCard, SettingsPane, SettingRow } from "@/components/settings-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { keepingFields } from "@/lib/forms";
+import { Segmented } from "@/components/ui/segmented";
 import { saveCodeChangesTuning } from "@/server/code-changes-tuning";
-import type { FormState } from "@/server/form-state";
 import type { CodeChangesTuning } from "@/server/operations/code-changes-tuning";
 
 type Key = keyof CodeChangesTuning["values"];
@@ -39,183 +40,287 @@ const field = (value: Value["value"], range: Value["range"]) => (typeof value ==
 const overridden = (value: Value) => value.saved !== null && (value.saved !== value.default || value.clamped);
 
 /**
- * Settings → Autopilot → Advanced tuning: Autopilot's values for this project. Owners change them on a plan with it;
- * admins, and everyone on a plan without it, see them read-only (`notice` says why, with the way to Business). Each
- * value keeps the server's range, says its tradeoff and "Changed from" the server's. The page saves one way, its Save:
- * Reset and Reset all only put the server's value back in their fields for it. After a save the form starts again from
- * what's stored, so its fields never show text older than the save.
+ * Each value's row (named by `labels`, `TUNING`'s, as everywhere else): one line on its tradeoff, and for a number what its field says
+ * after it (`unit`; a probability's "%" and a count's range otherwise) with the field's width and the room kept for
+ * that. `info`: what takes longer to say.
  */
-export function CodeChangesTuningSettings({
-  projectSlug,
-  tuning,
-  rows,
-  owner,
-  lastChanged,
-  notice,
-}: {
+const ROWS: Record<Key, { line: string; unit?: string; field?: string; info?: string }> = {
+  "propose.edit.maybe": { line: "Lower catches more; higher means fewer to review." },
+  "propose.newArticle.maybe": { line: "Lower fills more gaps; higher avoids duplicates." },
+  "redecide.whenNewArticle": { line: "Lower checks more and costs more." },
+  "decide.rounds": { line: "More finds more, costs more." },
+  "write.rounds": { line: "More is closer to the product, costs more." },
+  "decide.reasoning": { line: "Better on hard changes, slower." },
+  "context.diffChars": {
+    line: "Characters of the diff read at once.",
+    unit: "chars",
+    field: "w-36 pr-14",
+    info: "Autopilot looks up the rest for the docs, but what the changelog and posts hear about is decided from this much only (20,000 characters at most).",
+  },
+};
+const KEYS = Object.keys(ROWS) as Key[];
+
+type Props = {
   projectSlug: string;
   tuning: CodeChangesTuning;
-  rows: { key: Key; label: string; tradeoff: string }[];
+  /** Each value's name (`TUNING`'s label). */
+  labels: Record<Key, string>;
   owner: boolean;
+};
+
+/**
+ * Settings → Autopilot → Advanced tuning: Autopilot's values for this project, as two cards of rows. Owners change
+ * them on a plan with it; admins, and everyone on a plan without it, see them read-only (`notice` says why, with the
+ * way to Business). Each value keeps the server's range and says "Changed from" the server's. The page saves one way,
+ * "Save changes" in its header: Reset and "Reset to defaults" only put the server's value back in their fields for it.
+ * After a save that changed something the form starts again from what's stored, so its fields never show text older
+ * than the save.
+ */
+export function CodeChangesTuningSettings({
+  back,
+  lastChanged,
+  notice,
+  ...props
+}: Props & {
+  /** The page it's a part of. */
+  back: { href: string; label: string };
   /** Who changed the values last, and when ("by Olive 2 hours ago"), or null. */
   lastChanged: string | null;
   /** Where the plan doesn't include it: what it needs (PlanNotice). */
   notice: ReactNode;
 }) {
+  const { tuning, labels, owner } = props;
   const editable = owner && tuning.available;
-  const heading = useRef<HTMLHeadingElement>(null);
-  const form = useRef<HTMLFormElement>(null);
+  // What's stored: the form, and what was reset in it, start again as it changes.
+  const stored = JSON.stringify([tuning.updatedAt, KEYS.map((key) => tuning.values[key].saved)]);
   // The values reset since the last save: Save sends "" for those, so they follow the server again.
-  const [resets, setResets] = useState<Key[]>([]);
-  const [state, action, pending] = useActionState<FormState & { saves?: number }, FormData>(async (prev, formData) => {
-    // Only what differs from what's saved is sent, so a page opened earlier doesn't undo another owner's values: a field
-    // typed back to the server's value clears the project's; a reset one clears it even where it only shows as the
-    // server's (0.395 shows as 40%); an untouched one that merely shows as the server's isn't sent.
-    const changes = new FormData();
-    for (const { key } of rows) {
-      const { saved, default: fallback, range } = tuning.values[key];
-      const sent = formData.get(key);
-      if (typeof sent !== "string") {
-        continue;
-      }
-      if (!same(sent, field(saved ?? fallback, range))) {
-        changes.set(key, saved !== null && same(sent, field(fallback, range)) ? "" : sent.trim());
-      } else if (saved !== null && resets.includes(key) && same(sent, field(fallback, range))) {
-        changes.set(key, "");
-      }
-    }
-    const result = await saveCodeChangesTuning(projectSlug, prev, changes);
-    if (result.error) {
-      return { ...result, saves: prev.saves };
-    }
-    setResets([]);
-    toast.success("Advanced tuning saved");
-    // The form starts again (its key) with what's stored now; focus, on a field or button that goes with it, moves to the heading.
-    heading.current?.focus({ preventScroll: true });
-    return { saves: (prev.saves ?? 0) + 1 };
-  }, {});
+  const [reset, setReset] = useState<{ stored: string; keys: Key[] }>({ stored, keys: [] });
+  const resets = reset.stored === stored ? reset.keys : [];
+  const setResets = (keys: Key[]) => setReset({ stored, keys });
+  const cards = useRef<HTMLDivElement>(null);
+  // While it saves, nothing is reset: the form starts again once saved, and a reset made meanwhile would be lost.
+  const [saving, setSaving] = useState(false);
   /** Puts the server's value back in each field, for Save. */
-  const reset = (keys: Key[]) => {
+  const putBack = (keys: Key[], row = false) => {
+    const fields = cards.current?.querySelector("form")?.elements;
     for (const key of keys) {
-      const input = form.current?.elements.namedItem(key);
+      const input = fields?.namedItem(key);
       const value = tuning.values[key];
-      if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) {
+      if (input instanceof HTMLInputElement || input instanceof RadioNodeList) {
         input.value = field(value.default, value.range);
       }
     }
-    setResets((before) => [...new Set([...before, ...keys])]);
-    // The Reset goes once used: focus stays on the field it reset, or (Reset all) the heading.
-    const target = keys.length === 1 ? form.current?.elements.namedItem(keys[0]!) : heading.current;
-    (target instanceof HTMLElement ? target : heading.current)?.focus();
+    setResets([...new Set([...resets, ...keys.filter((key) => tuning.values[key].saved !== null)])]);
+    setTyped(offDefault().length > 0);
+    // A row's Reset goes once used: focus goes to the field it reset ("Reset to defaults" stays, and keeps it).
+    if (row) {
+      const input = fields?.namedItem(keys[0]!);
+      const target = input instanceof RadioNodeList ? [...input].find((option) => (option as HTMLInputElement).checked) : input;
+      (target as HTMLElement | null | undefined)?.focus();
+    }
   };
-  const changed = rows.filter(({ key }) => overridden(tuning.values[key]) && !resets.includes(key));
-  const resettable = rows.filter(({ key }) => tuning.values[key].saved !== null && !resets.includes(key));
+  const resettable = KEYS.filter((key) => tuning.values[key].saved !== null && !resets.includes(key));
+  // The fields that show something other than the default now, typed and not saved included.
+  const offDefault = () => {
+    const fields = cards.current?.querySelector("form")?.elements;
+    return KEYS.filter((key) => {
+      const input = fields?.namedItem(key);
+      const value = tuning.values[key];
+      return (input instanceof HTMLInputElement || input instanceof RadioNodeList) && input.value !== field(value.default, value.range);
+    });
+  };
+  const [typed, setTyped] = useState(false);
+  // Saved (the form starts again from what's saved): nothing typed is left.
+  const [typedFor, setTypedFor] = useState(stored);
+  if (typedFor !== stored) {
+    setTypedFor(stored);
+    setTyped(false);
+  }
+  /** "Reset to defaults": every field back to its default, saved or only typed; the saved ones are reset when saved. */
+  const resetAll = () => {
+    const typedOnly = offDefault().filter((key) => !resettable.includes(key));
+    putBack([...resettable, ...typedOnly]);
+    // A field only typed in has nothing to reset when saved: the form hears of its new value itself.
+    if (typedOnly.length > 0) {
+      cards.current?.querySelector("form")?.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    setTyped(false);
+  };
 
   return (
-    <Card>
-      <CardHeader>
-        <h2 ref={heading} tabIndex={-1} className="font-heading text-base leading-snug font-medium outline-none">
-          Advanced tuning
-        </h2>
-        <CardDescription>
-          How sure Autopilot must be before it proposes a change, how much it looks up and thinks, for this project only. Each starts as this
-          server&apos;s.
-          {tuning.available && !owner && " Only owners change these."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 text-sm">
-        {notice}
-        <form
-          key={state.saves ?? 0}
-          ref={form}
-          {...keepingFields(action)}
-          // A field edited after its Reset is the owner's again: no longer a reset.
-          onInput={(event) => {
-            const name = (event.target as HTMLInputElement | HTMLSelectElement).name;
-            setResets((before) => (before.includes(name as Key) ? before.filter((key) => key !== name) : before));
-          }}
-          className="flex flex-col gap-4"
-        >
-          <fieldset disabled={!editable || pending} className="flex flex-col gap-4">
-            {rows.map(({ key, label, tradeoff }) => {
-              const value = tuning.values[key];
-              const { range } = value;
-              const own = value.saved ?? value.default;
-              const id = `tuning-${key}`;
-              const isChanged = changed.some((row) => row.key === key);
-              const described = isChanged ? `${id}-help ${id}-changed` : `${id}-help`;
-              return (
-                <div key={key} className="flex flex-col gap-1">
-                  <label htmlFor={id} className="font-medium">
-                    {label}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {range.kind === "options" ? (
-                      <select
-                        id={id}
-                        name={key}
-                        defaultValue={String(own)}
-                        aria-describedby={described}
-                        className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                      >
-                        {range.options.map((option) => (
-                          <option key={option} value={option}>
-                            {shown(option, range)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <Input
-                        id={id}
-                        name={key}
-                        type="number"
-                        required
-                        className="w-32"
-                        min={range.kind === "probability" ? percent(range.min, Math.ceil) : range.min}
-                        max={range.kind === "probability" ? percent(range.max, Math.floor) : range.max}
-                        step={1}
-                        defaultValue={field(own, range)}
-                        aria-describedby={described}
-                      />
-                    )}
-                    {range.kind === "probability" && <span className="text-muted-foreground">%</span>}
-                    {isChanged && editable && (
-                      <Button type="button" variant="ghost" size="sm" onClick={() => reset([key])} aria-label={`Reset ${label}`}>
-                        Reset
-                      </Button>
-                    )}
-                  </div>
-                  <p id={`${id}-help`} className="text-xs text-muted-foreground">
-                    {tradeoff}
-                    {range.kind === "integer" && ` From ${shown(range.min, range)} to ${shown(range.max, range)}.`}
-                    {range.kind === "probability" && ` From ${percent(range.min, Math.ceil)}% to ${percent(range.max, Math.floor)}%.`}
-                  </p>
-                  {isChanged && (
-                    <p id={`${id}-changed`} className="text-xs font-medium">
-                      Changed from {shown(value.default, range)}
-                      {value.clamped && `: saved past this server's range, so it's used as ${shown(value.saved!, range)}`}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </fieldset>
-          {state.error && <FieldError>{state.error}</FieldError>}
-          {editable && (
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={pending} focusableWhenDisabled>
-                Save
-              </Button>
-              {resettable.length > 0 && (
-                <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={() => reset(resettable.map(({ key }) => key))}>
-                  Reset all
-                </Button>
-              )}
-            </div>
-          )}
-          {lastChanged && <p className="text-xs text-muted-foreground">Last changed {lastChanged}</p>}
-        </form>
-      </CardContent>
-    </Card>
+    <SettingsPane
+      title="Advanced tuning"
+      description={tuning.available && !owner ? "Only owners change these." : undefined}
+      back={back}
+      actions={
+        editable && (
+          // There with nothing to reset too, so it keeps focus once used.
+          // "Reset" on phones, where the header has no room for the rest beside the way back.
+          <Button type="button" variant="ghost" aria-label="Reset to defaults" disabled={(resettable.length === 0 && !typed) || saving} focusableWhenDisabled onClick={resetAll}>
+            <span className="@max-[48rem]/app:hidden">Reset to defaults</span>
+            <span className="@min-[48rem]/app:hidden">Reset</span>
+          </Button>
+        )
+      }
+    >
+      {notice}
+      <div ref={cards} className="flex flex-col gap-7" onInput={() => setTyped(offDefault().length > 0)} onChange={() => setTyped(offDefault().length > 0)}>
+        {editable ? (
+          <TuningForm key={stored} {...props} resets={resets} setResets={setResets} onReset={(key) => putBack([key], true)} onPending={setSaving} />
+        ) : (
+          <TuningCards tuning={tuning} labels={labels} resets={resets} />
+        )}
+      </div>
+      {lastChanged && <p className="-mt-3 text-xs text-muted-foreground">Last changed {lastChanged}</p>}
+    </SettingsPane>
+  );
+}
+
+/** The cards as a form of the page's, saved by "Save changes" in its header. */
+function TuningForm({
+  projectSlug,
+  tuning,
+  labels,
+  resets,
+  setResets,
+  onReset,
+  onPending,
+}: Props & { resets: Key[]; setResets: (keys: Key[]) => void; onReset: (key: Key) => void; /** Told while it saves. */ onPending: (pending: boolean) => void }) {
+  const { state, pending, form } = useCustomizeForm({
+    save: async (prev, formData) => {
+      // Only what differs from what's saved is sent, so a page opened earlier doesn't undo another owner's values: a field
+      // typed back to the server's value clears the project's; a reset one clears it even where it only shows as the
+      // server's (0.395 shows as 40%); an untouched one that merely shows as the server's isn't sent.
+      const changes = new FormData();
+      for (const key of KEYS) {
+        const { saved, default: fallback, range } = tuning.values[key];
+        const sent = formData.get(key);
+        if (typeof sent !== "string") {
+          continue;
+        }
+        if (!same(sent, field(saved ?? fallback, range))) {
+          changes.set(key, saved !== null && same(sent, field(fallback, range)) ? "" : sent.trim());
+        } else if (saved !== null && resets.includes(key) && same(sent, field(fallback, range))) {
+          changes.set(key, "");
+        }
+      }
+      const result = await saveCodeChangesTuning(projectSlug, prev, changes);
+      if (!result.error) {
+        toast.success("Advanced tuning saved");
+      }
+      return result;
+    },
+  });
+  // What was reset is a field of the form: a reset that leaves a field's text as it was (0.495 shows as the server's
+  // 50%) is still a change to save, and "Save changes" hears of each reset, which no one typed.
+  useEffect(() => onPending(pending), [onPending, pending]);
+  const reset = useRef<HTMLInputElement>(null);
+  useFieldChanged(reset, resets.join());
+  return (
+    // Locked while saving: the form is new once saved, so an edit made meanwhile would be lost. `inert`, not disabled
+    // fields: those would drop out of what the form holds, which "Save changes" compares with what's saved.
+    <form
+      {...form}
+      inert={pending}
+      // A field edited after its Reset is the owner's again: no longer a reset.
+      onInput={(event) => {
+        const name = (event.target as HTMLInputElement).name as Key;
+        if (resets.includes(name)) {
+          setResets(resets.filter((key) => key !== name));
+        }
+      }}
+      className="flex flex-col gap-7"
+    >
+      <input ref={reset} type="hidden" name="resets" value={resets.join()} />
+      <TuningCards tuning={tuning} labels={labels} resets={resets} onReset={onReset} />
+      {state.error && <FieldError className="-mt-3">{state.error}</FieldError>}
+    </form>
+  );
+}
+
+/** The values' rows in their two cards. `onReset`: they can be changed, so a changed one has its Reset; without it the fields are disabled (not the ⓘ beside a label). */
+function TuningCards({ tuning, labels, resets, onReset }: Pick<Props, "tuning" | "labels"> & { resets: Key[]; onReset?: (key: Key) => void }) {
+  const row = (key: Key) => {
+    const value = tuning.values[key];
+    const { range } = value;
+    const { line, info } = ROWS[key];
+    const label = labels[key];
+    const own = value.saved ?? value.default;
+    const id = `tuning-${key}`;
+    const changed = overridden(value) && !resets.includes(key);
+    const bounds = range.kind === "probability" ? ([percent(range.min, Math.ceil), percent(range.max, Math.floor)] as const) : range.kind === "integer" ? ([range.min, range.max] as const) : null;
+    const between = bounds && `from ${bounds.map((bound) => bound.toLocaleString("en-US")).join(" to ")}`;
+    const unit = ROWS[key].unit ?? (range.kind === "probability" ? "%" : bounds?.join("–"));
+    return (
+      <SettingRow
+        key={key}
+        label={range.kind === "options" ? <span id={`${id}-label`}>{label}</span> : label}
+        htmlFor={range.kind === "options" ? undefined : id}
+        // The range goes with what's behind the ⓘ, where the field has no room for it.
+        info={info && `${info} ${between![0]!.toUpperCase()}${between!.slice(1)}.`}
+        // A number beside its label on phones too; Thinking's options go under it there.
+        inline={range.kind !== "options"}
+        description={
+          <span id={`${id}-help`}>
+            {line}
+            {changed && (
+              <span className="block font-medium text-foreground">
+                Changed from {shown(value.default, range)}
+                {value.clamped && `: saved past this server's range, so it's used as ${shown(value.saved!, range)}`}
+              </span>
+            )}
+          </span>
+        }
+      >
+        {changed && onReset && (
+          // Its own width on phones too, where a row's control takes the card's (Thinking's options).
+          <Button type="button" variant="ghost" size="xs" className="@max-[34rem]/settings:w-auto!" onClick={() => onReset(key)} aria-label={`Reset ${label}`}>
+            Reset
+          </Button>
+        )}
+        {range.kind === "options" ? (
+          <Segmented
+            name={key}
+            options={range.options.map((option) => ({ value: option, label: shown(option, range) }))}
+            defaultValue={String(own)}
+            aria-labelledby={`${id}-label`}
+            aria-describedby={`${id}-help`}
+            disabled={!onReset}
+            className="min-w-0"
+          />
+        ) : (
+          <span className="relative block">
+            <Input
+              id={id}
+              name={key}
+              type="number"
+              inputMode="numeric"
+              required
+              disabled={!onReset}
+              min={bounds![0]}
+              max={bounds![1]}
+              step={1}
+              defaultValue={field(own, range)}
+              // A percentage is read out with its card's title: how sure Autopilot must be.
+              aria-describedby={`${range.kind === "probability" ? "tuning-sure " : ""}${id}-help ${id}-unit`}
+              // No arrows in the field: they'd take the room its number needs (the arrow keys still step it).
+              className={cn("[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none", ROWS[key].field ?? (range.kind === "probability" ? "w-24 pr-8" : "w-28 pr-14"))}
+            />
+            <span id={`${id}-unit`} className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-muted-foreground">
+              {unit}
+              {/* The range, where the field doesn't show it. */}
+              {unit !== bounds!.join("–") && <span className="sr-only">, {between}</span>}
+            </span>
+          </span>
+        )}
+      </SettingRow>
+    );
+  };
+  const sure = KEYS.filter((key) => tuning.values[key].range.kind === "probability");
+  return (
+    <>
+      <SettingsCard title={<span id="tuning-sure">How sure it must be</span>}>{sure.map(row)}</SettingsCard>
+      <SettingsCard title="How much it reads">{KEYS.filter((key) => !sure.includes(key)).map(row)}</SettingsCard>
+    </>
   );
 }
