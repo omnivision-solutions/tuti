@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import { COMMAND_MENU_NAVIGATE } from "@/lib/command-menu-event";
-import { keepingFields } from "@/lib/forms";
+import { enterSaves, keepingFields } from "@/lib/forms";
 import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal, type WidgetLook } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
@@ -141,14 +141,10 @@ export function useCustomizeForm({
       id,
       ref,
       // Enter in a field saves, as "Save changes" would: a form with several fields and no button of its own doesn't
-      // by itself. Not where Enter already did something (a chip added), nor in a text area, where it's a new line, nor
-      // the Enter that confirms an input method's text (Safari sends that one after the composition, as key code 229).
+      // by itself (which Enter: `enterSaves`).
       onKeyDown: (event: React.KeyboardEvent<HTMLFormElement>) => {
-        const field = event.target;
-        if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || !(field instanceof HTMLInputElement) || !dirty || pending || busy) {
-          return;
-        }
-        if (["checkbox", "radio", "file", "color", "range", "button", "image", "submit", "reset"].includes(field.type)) {
+        const field = event.target instanceof HTMLElement ? { tagName: event.target.tagName, type: event.target.getAttribute("type") ?? (event.target as HTMLInputElement).type } : null;
+        if (!dirty || pending || busy || !enterSaves({ key: event.key, defaultPrevented: event.defaultPrevented, isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode }, field)) {
           return;
         }
         event.preventDefault();
