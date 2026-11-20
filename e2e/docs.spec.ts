@@ -1075,13 +1075,17 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   await team.getByRole("navigation", { name: "Collection" }).getByRole("link", { name: "Settings" }).click();
   await team.waitForURL(`**/app/${slug}/docs/collections/billing/settings`);
   const access = team.getByRole("region", { name: "Access" });
-  await expect(access.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  await access.getByRole("radio", { name: "Signed-in readers" }).check();
+  await expect(access.getByRole("combobox", { name: "Who can read" })).toContainText("Inherit from Handbook");
+  await access.getByRole("combobox", { name: "Who can read" }).click();
+  await team.getByRole("option", { name: "Signed-in readers" }).click();
   // What the rest see of it, as in the dialogs: hidden by default, or shown with a lock.
-  await access.locator("summary").filter({ hasText: "People without access" }).click();
-  const withoutAccess = access.getByRole("group", { name: "People without access" });
-  await expect(withoutAccess.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  await withoutAccess.getByRole("radio", { name: "Show with a lock" }).check();
+  const withoutAccess = access.getByRole("combobox", { name: "People without access" });
+  await expect(withoutAccess).toContainText("Inherit from Handbook");
+  await expect(access.getByText("Hidden (the default)")).toBeVisible();
+  await withoutAccess.click();
+  await team.getByRole("option", { name: "Show with a lock" }).click();
+  // What it inherits is said only while it inherits.
+  await expect(access.getByText("Hidden (the default)")).toBeHidden();
   await expect(access.getByRole("link", { name: "View as a reader" })).toHaveAttribute("href", `${portalUrl(slug)}/docs/billing?preview=signed-out`);
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Collection saved")).toBeVisible();
@@ -1634,14 +1638,16 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const instructions = team.getByLabel("Instructions");
   await expect(instructions).toHaveValue("Friendly and plain");
   await instructions.fill("Friendly and plain\n\nCall the product Acme.");
-  await team.getByRole("radio", { name: "Short" }).check();
-  // Topics are chips: Enter or Add adds one, trimmed, and each has a button that removes it.
+  const length = team.getByRole("radiogroup", { name: "Answer length" });
+  await length.getByText("Short", { exact: true }).click();
+  await expect(length.getByRole("radio", { name: "Short" })).toBeChecked();
+  // Topics are chips in their field: Enter or a comma adds one, trimmed, and each has a button that removes it.
   const topic = team.getByLabel("Off-limits topics");
   const topics = team.getByRole("listitem").filter({ has: team.getByRole("button", { name: /^Remove / }) });
   await topic.fill("refund");
   await topic.press("Enter");
   await topic.fill("  legal advice  ");
-  await team.getByRole("button", { name: "Add", exact: true }).click();
+  await topic.press(",");
   await topic.fill("pricing");
   await topic.press("Enter");
   await expect(topics).toHaveText(["refund", "legal advice", "pricing"]);
@@ -1660,13 +1666,15 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
-  await expect(instructions).toBeDisabled();
+  await team.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.locator("form", { has: instructions })).toHaveAttribute("inert");
+  await expect(team.getByRole("button", { name: "Saving…" })).toBeDisabled();
   releaseSave();
   await expect(team.getByText("AI answers saved")).toBeVisible();
   await team.unroute(saving);
   // The form shows what was saved, and the tone is stored once: in the instructions.
   await expect(topics).toHaveText(["refund", "legal advice"]);
+  await expect(team.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await team.reload();
   await expect(topics).toHaveText(["refund", "legal advice"]);
   await expect(instructions).toHaveValue("Friendly and plain\n\nCall the product Acme.");
@@ -1959,7 +1967,10 @@ test("with Messages on, a visitor the AI couldn't help asks a person on the port
   // "Ask a person" starts a conversation in the inbox, so it's on with Messages in the widget (Settings → Inbox and email).
   await team.goto(`/app/${slug}/settings/ask-a-person`);
   await team.waitForURL(`**/app/${slug}/settings/support`);
-  await expect(team.getByText("“Ask a person” after an AI answer starts a conversation here too")).toBeVisible();
+  // Said behind the row's ⓘ.
+  await team.getByRole("button", { name: "More about this setting" }).first().click();
+  await expect(team.getByText("“Ask a person” after an AI answer starts a conversation here too", { exact: false })).toBeVisible();
+  await team.keyboard.press("Escape");
   await team.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(team.getByText("Messages on")).toBeVisible();
   await checkpoint(team, "team-support-messages-on");
@@ -2144,13 +2155,29 @@ test("a collection's settings are one page: its name, description, icon and plac
   const details = team.getByRole("region", { name: "Details" });
   const access = team.getByRole("region", { name: "Access" });
   await expect(details.getByLabel("Name")).toHaveValue("Billing");
-  await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
+  // Who can read it is one dropdown, with a line on what the choice picked means; no radios.
+  const whoCanRead = access.getByRole("combobox", { name: "Who can read" });
+  await expect(whoCanRead).toContainText("Inherit from your docs");
+  await expect(whoCanRead).toHaveAccessibleDescription("Anyone can read it");
+  await expect(team.getByRole("radio")).toHaveCount(0);
   // One Save for both, in the page's heading.
   const save = team.getByRole("button", { name: "Save" });
   await expect(save).toHaveCount(1);
   await expect(save).toBeInViewport();
+  // Rows: a field beside its label, and Delete in a card of its own after them.
+  const beside = async () => {
+    const label = (await details.getByText("Name", { exact: true }).boundingBox())!;
+    const field = (await details.getByLabel("Name").boundingBox())!;
+    return field.y < label.y + label.height;
+  };
+  expect(await beside()).toBe(true);
+  await expect(team.getByText("Its articles stay, without a collection.")).toBeVisible();
+  await expect(team.getByRole("button", { name: "Delete collection" })).toHaveText("Delete");
   await checkpoint(team, "team-docs-collection-settings");
+  // On a phone the field goes under its label, and nothing runs off the side.
   await team.setViewportSize({ width: 390, height: 844 });
+  expect(await beside()).toBe(false);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && [...document.querySelectorAll("[data-slot=pane-body]")].every((pane) => pane.scrollWidth <= pane.clientWidth))).toBe(true);
   await checkpoint(team, "team-docs-collection-settings-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
 
@@ -2164,11 +2191,12 @@ test("a collection's settings are one page: its name, description, icon and plac
   await picker.getByRole("button", { name: "receipt", exact: true }).click();
   await expect(picker).toBeHidden();
   // Anyone can read what it inherits now; in Getting started, only signed-in readers: Access says so before saving.
-  const withoutAccess = access.getByRole("group", { name: "People without access" });
+  const withoutAccess = access.getByRole("combobox", { name: "People without access" });
   await expect(withoutAccess).toHaveCount(0);
   await details.getByRole("combobox", { name: "Parent collection" }).click();
   await team.getByRole("option", { name: "Getting started" }).click();
-  await access.locator("summary").filter({ hasText: "People without access" }).click();
+  await expect(whoCanRead).toContainText("Inherit from Getting started");
+  await expect(whoCanRead).toHaveAccessibleDescription("Signed-in readers");
   await expect(withoutAccess).toBeVisible();
   // Meanwhile someone else makes it for signed-in readers: the rename, its access untouched here, keeps that.
   await api("/collections/billing", { access: "signed_in" }, "PATCH");
@@ -2176,7 +2204,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(team.getByText("Collection saved")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs/collections/invoices/settings`);
   await team.reload();
-  await expect(access.getByRole("radio", { name: "Signed-in readers" })).toBeChecked();
+  await expect(whoCanRead).toContainText("Signed-in readers");
   await expect(details.getByLabel("Name")).toHaveValue("Invoices");
   await expect(details.getByLabel("Description")).toHaveValue("Paying and downloading invoices.");
   await expect(details.getByRole("button", { name: "receipt Change icon" })).toBeVisible();
@@ -2191,7 +2219,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   await saved;
   await team.reload();
   await expect(details.getByLabel("Description")).toHaveValue("Downloading invoices.");
-  await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
+  await expect(whoCanRead).toContainText("Inherit from Getting started");
 
   // Moved elsewhere after a save, a description-only save keeps it where it was moved.
   await details.getByLabel("Description").fill("Invoices, paid and to pay.");
@@ -2265,11 +2293,19 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(details.getByLabel("Description")).toHaveValue("Typed while saving.");
 
   // Who can read it, changed here, saves; the name stays.
-  await access.getByRole("radio", { name: "Signed-in readers" }).check();
+  // Specific groups shows the groups to tick under it (none here yet), another choice takes them away.
+  await whoCanRead.click();
+  await team.getByRole("option", { name: "Specific groups" }).click();
+  await expect(access.getByRole("link", { name: "Create one" })).toHaveAttribute("href", `/app/${slug}/settings/groups`);
+  await expect(team.getByText("1 unsaved change")).toBeVisible();
+  await whoCanRead.click();
+  await team.getByRole("option", { name: "Signed-in readers" }).click();
+  await expect(access.getByRole("link", { name: "Create one" })).toBeHidden();
+  await expect(whoCanRead).toHaveAccessibleDescription("Readers must sign in to read it");
   await save.click();
   await expect(team.getByText("Collection saved").first()).toBeVisible();
   await team.reload();
-  await expect(access.getByRole("radio", { name: "Signed-in readers" })).toBeChecked();
+  await expect(whoCanRead).toContainText("Signed-in readers");
   await expect(details.getByLabel("Name")).toHaveValue("Invoices");
 
   // Back to its page, at the top level now.

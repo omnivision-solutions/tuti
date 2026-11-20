@@ -1,8 +1,12 @@
 "use client";
 
-import { TriangleAlertIcon } from "lucide-react";
+import { CodeIcon, TriangleAlertIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+
+import { CopyButton } from "@/components/copy-button";
+import { useCustomizeForm } from "@/components/customize-shell";
+import { SettingBlock, SettingRow } from "@/components/settings-card";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -14,14 +18,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { disableSso, rotateSsoSecret, setSsoSignInUrl } from "@/server/sso-settings";
 
+/**
+ * Settings → Single sign-on's rows: the switch (turning it off asks first), the secret (shown once, when it's made),
+ * the app's own sign-in page (saved by the page's "Save changes"), the address to send people to, and the example.
+ */
 export function SsoSettings({
   projectSlug,
   enabled,
@@ -36,7 +43,9 @@ export function SsoSettings({
   const [pending, startTransition] = useTransition();
   const [secret, setSecret] = useState<string>();
   const [error, setError] = useState<string>();
-  const [urlError, setUrlError] = useState<string>();
+  const [rotating, setRotating] = useState(false);
+  const [disabling, setDisabling] = useState(false);
+  const [example, setExample] = useState(false);
 
   const rotate = () => {
     startTransition(async () => {
@@ -60,108 +69,7 @@ export function SsoSettings({
     });
   };
 
-  const saveSignInUrl = (form: FormData) => {
-    startTransition(async () => {
-      const result = await setSsoSignInUrl(projectSlug, form);
-      setUrlError(result.error);
-      if (!result.error) {
-        toast.success("Sign-in page saved");
-      }
-    });
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 text-sm">
-        Status <Badge variant={enabled ? "default" : "secondary"}>{enabled ? "Enabled" : "Disabled"}</Badge>
-      </div>
-
-      {secret && (
-        <Alert>
-          <TriangleAlertIcon />
-          <AlertTitle>Copy your SSO secret now. It won&apos;t be shown again.</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2">
-            <code className="w-full rounded-md bg-muted px-2 py-1 font-mono text-xs break-all text-foreground">{secret}</code>
-            Store it on your server only (e.g. as TUTI_SSO_SECRET). Never send it to the browser.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      <div className="flex gap-2">
-        {enabled ? (
-          <>
-            <Confirm
-              trigger={<Button variant="outline" disabled={pending} focusableWhenDisabled />}
-              label="Rotate secret"
-              title="Rotate the SSO secret?"
-              description="Tokens signed with the old secret stop working immediately. Update your server with the new secret right away."
-              onConfirm={rotate}
-            />
-            <Confirm
-              trigger={<Button variant="outline" disabled={pending} />}
-              label="Disable"
-              title="Disable single sign-on?"
-              description="Your app's sign-in links stop working immediately. People can still sign in on the portal with email."
-              confirmLabel="Disable SSO"
-              destructive
-              onConfirm={disable}
-            />
-          </>
-        ) : (
-          <Button onClick={rotate} disabled={pending}>
-            Enable SSO
-          </Button>
-        )}
-      </div>
-
-      {enabled && (
-        <form
-          // Not `action`: React empties a form after its action, and the address should stay there.
-          onSubmit={(event) => {
-            event.preventDefault();
-            saveSignInUrl(new FormData(event.currentTarget));
-          }}
-          className="flex flex-col gap-2"
-        >
-          <Field data-invalid={urlError ? true : undefined}>
-            <FieldLabel htmlFor="sso-sign-in-url">Your app&apos;s sign-in page</FieldLabel>
-            <div className="flex gap-2">
-              <Input
-                id="sso-sign-in-url"
-                name="signInUrl"
-                type="url"
-                placeholder="https://app.example.com/tuti"
-                defaultValue={signInUrl ?? ""}
-                aria-invalid={urlError ? true : undefined}
-              />
-              <Button type="submit" disabled={pending} focusableWhenDisabled>
-                Save
-              </Button>
-            </div>
-            <FieldDescription>
-              Signing in on the portal comes here, to your app&apos;s accounts instead of Tuti&apos;s, with{" "}
-              <code>redirect</code>, the page to come back to. Sign them in, then send them to <code>{ssoUrl}</code> with that{" "}
-              <code>redirect</code>. A private portal with readers you add by email keeps its sign-in page, with your app&apos;s button first. Your team signs in at <code>/sign-in?with=email</code>.
-            </FieldDescription>
-            {urlError && <FieldError>{urlError}</FieldError>}
-          </Field>
-        </form>
-      )}
-
-      <div className="flex flex-col gap-2 text-sm">
-        <p className="font-medium">How to sign users in from your app</p>
-        <p className="text-muted-foreground">
-          On your server, sign a short-lived token for the logged-in user and redirect them to{" "}
-          <code>{ssoUrl}</code>. Example with Node and <code>jose</code>:
-        </p>
-        <pre className="overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs">
-          {`import { SignJWT } from "jose";
+  const sample = `import { SignJWT } from "jose";
 
 const token = await new SignJWT({
   email: user.email,      // optional
@@ -175,36 +83,170 @@ const token = await new SignJWT({
   .setExpirationTime("5m")     // 10 minutes max
   .sign(new TextEncoder().encode(process.env.TUTI_SSO_SECRET));
 
-redirect(\`${ssoUrl}?token=\${token}&redirect=/\`);`}
-        </pre>
-      </div>
-    </div>
+redirect(\`${ssoUrl}?token=\${token}&redirect=/\`);`;
+
+  return (
+    <>
+      <SettingRow label="Single sign-on" description="Your app signs its users in to the portal." htmlFor="sso-enabled" inline>
+        {/* Not `disabled` while it saves: that would drop the keyboard's focus. Turning it off asks first. */}
+        <Switch
+          id="sso-enabled"
+          checked={enabled}
+          aria-disabled={pending || undefined}
+          aria-describedby="sso-enabled-description"
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          onChange={() => {
+            if (pending) {
+              return;
+            }
+            if (enabled) {
+              setDisabling(true);
+            } else {
+              rotate();
+            }
+          }}
+        />
+        <Confirm
+          open={disabling}
+          onOpenChange={setDisabling}
+          title="Disable single sign-on?"
+          description="Your app's sign-in links stop working immediately. People can still sign in on the portal with email."
+          confirmLabel="Disable SSO"
+          destructive
+          onConfirm={disable}
+        />
+      </SettingRow>
+
+      {(secret || error) && (
+        <SettingBlock>
+          {secret && (
+            <Alert>
+              <TriangleAlertIcon />
+              <AlertTitle>Copy your SSO secret now. It won&apos;t be shown again.</AlertTitle>
+              <AlertDescription className="flex flex-col gap-2">
+                <code className="w-full rounded-md bg-muted px-2 py-1 font-mono text-xs break-all text-foreground">{secret}</code>
+                Store it on your server only (e.g. as TUTI_SSO_SECRET). Never send it to the browser.
+              </AlertDescription>
+            </Alert>
+          )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </SettingBlock>
+      )}
+
+      {enabled && (
+        <>
+          <SettingRow label="Secret" description="Shown once, when it's made." inline>
+            <Button variant="outline" disabled={pending} focusableWhenDisabled onClick={() => setRotating(true)}>
+              Rotate secret
+            </Button>
+            <Confirm
+              open={rotating}
+              onOpenChange={setRotating}
+              title="Rotate the SSO secret?"
+              description="Tokens signed with the old secret stop working immediately. Update your server with the new secret right away."
+              confirmLabel="Rotate secret"
+              onConfirm={rotate}
+            />
+          </SettingRow>
+          <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />
+        </>
+      )}
+
+      <SettingRow label="Sign-in address">
+        <div className="flex min-w-0 items-center gap-1 @min-[34rem]/settings:max-w-96">
+          <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{ssoUrl}</code>
+          <CopyButton value={ssoUrl} label="sign-in address" />
+        </div>
+      </SettingRow>
+
+      <SettingRow label="Setup guide" description="Sign a short-lived token on your server, then redirect.">
+        <Button variant="outline" aria-expanded={example} aria-controls="sso-example" onClick={() => setExample(!example)}>
+          <CodeIcon />
+          {example ? "Hide example" : "Show example"}
+        </Button>
+      </SettingRow>
+      {example && (
+        <SettingBlock className="gap-2 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-muted-foreground">
+              With Node and <code>jose</code>:
+            </p>
+            <CopyButton value={sample} label="example" />
+          </div>
+          <pre id="sso-example" className="overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs">
+            {sample}
+          </pre>
+        </SettingBlock>
+      )}
+    </>
   );
 }
 
-/** A button that asks before doing something that breaks the customer's sign-in links. */
+/** The app's own sign-in page (empty removes it), saved by the page's "Save changes". */
+function SignInPageRow({ projectSlug, ssoUrl, signInUrl }: { projectSlug: string; ssoUrl: string; signInUrl: string | null }) {
+  const { state, form } = useCustomizeForm({
+    save: async (_prev, formData) => {
+      const result = await setSsoSignInUrl(projectSlug, formData);
+      if (!result.error) {
+        toast.success("Sign-in page saved");
+      }
+      return result;
+    },
+  });
+  return (
+    <SettingRow
+      label="Your app's sign-in page"
+      description="Signing in on the portal goes here."
+      info={
+        <>
+          Signing in on the portal comes here, to your app&apos;s accounts instead of Tuti&apos;s, with <code>redirect</code>, the page to come back to. Sign them in, then send them to{" "}
+          <code className="break-all">{ssoUrl}</code> with that <code>redirect</code>. A private portal with readers you add by email keeps its sign-in page, with your app&apos;s button first. Your team signs in
+          at <code>/sign-in?with=email</code>.
+        </>
+      }
+      htmlFor="sso-sign-in-url"
+    >
+      <form {...form} className="flex flex-col gap-2">
+        <Input
+          id="sso-sign-in-url"
+          name="signInUrl"
+          type="url"
+          placeholder="https://app.example.com/tuti"
+          defaultValue={signInUrl ?? ""}
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby={state.error ? "sso-sign-in-url-error sso-sign-in-url-description" : "sso-sign-in-url-description"}
+          className="@min-[34rem]/settings:w-72"
+        />
+        {state.error && <FieldError id="sso-sign-in-url-error">{state.error}</FieldError>}
+      </form>
+    </SettingRow>
+  );
+}
+
+/** Asks before doing something that breaks the customer's sign-in links. */
 function Confirm({
-  trigger,
-  label,
+  open,
+  onOpenChange,
   title,
   description,
-  confirmLabel = label,
+  confirmLabel,
   destructive,
   onConfirm,
 }: {
-  trigger: React.ReactElement;
-  label: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
-  confirmLabel?: string;
+  confirmLabel: string;
   destructive?: boolean;
   onConfirm: () => void;
 }) {
-  // AlertDialogAction is a plain button: close the dialog ourselves (the settings stay on screen).
-  const [open, setOpen] = useState(false);
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger render={trigger}>{label}</AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -212,10 +254,11 @@ function Confirm({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
+          {/* AlertDialogAction is a plain button: close the dialog ourselves (the settings stay on screen). */}
           <AlertDialogAction
             variant={destructive ? "destructive" : "default"}
             onClick={() => {
-              setOpen(false);
+              onOpenChange(false);
               onConfirm();
             }}
           >

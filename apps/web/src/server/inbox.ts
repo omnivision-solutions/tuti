@@ -217,7 +217,7 @@ export async function getSupportAddress(projectSlug: string): Promise<FormState>
 
 const SUPPORT_DENIED = "Only project owners and admins can change support settings";
 
-/** Settings → Inbox and email → Your own address (support.setEmailDomain): replies from the team's own address. */
+/** Settings → Inbox and email → Send from your own address (support.setEmailDomain): replies from the team's own address. */
 export async function saveEmailDomain(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   return asAdmin(projectSlug, SUPPORT_DENIED, (context) => call(setEmailDomain, context, { address: String(formData.get("address") ?? "").trim() }));
 }

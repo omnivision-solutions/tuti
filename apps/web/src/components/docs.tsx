@@ -30,10 +30,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
@@ -829,63 +829,22 @@ type CollectionSettings = {
   knownIcon: boolean;
 };
 
-/** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
-function CollectionFields({
-  id,
-  collection,
-  error,
-  onIconChange,
-  separateIcon = false,
-}: {
-  id: string;
-  collection?: CollectionSettings;
-  error?: string;
-  onIconChange?: () => void;
-  separateIcon?: boolean;
-}) {
-  const [descriptionLength, setDescriptionLength] = useState(collection?.description.length ?? 0);
+/** A new collection's name (with `error`, a refused save's), icon and description, as form fields. */
+function CollectionFields({ id, error }: { id: string; error?: string }) {
   return (
     <>
       {/* Its icon beside its name, as the tree shows them. */}
       <Field data-invalid={error ? true : undefined}>
-        <FieldLabel htmlFor={`collection-name-${id}`}>{separateIcon ? "Name" : "Name and icon"}</FieldLabel>
+        <FieldLabel htmlFor={`collection-name-${id}`}>Name and icon</FieldLabel>
         <div className="flex items-center gap-2">
-          {!separateIcon && (
-            <IconField compact named={separateIcon} defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
-          )}
-          <Input
-            id={`collection-name-${id}`}
-            name="name"
-            defaultValue={collection?.name}
-            placeholder="Getting started"
-            required
-            aria-invalid={error ? true : undefined}
-          />
+          <IconField compact defaultValue={null} />
+          <Input id={`collection-name-${id}`} name="name" placeholder="Getting started" required aria-invalid={error ? true : undefined} />
         </div>
         {error && <FieldError>{error}</FieldError>}
       </Field>
-      {separateIcon && (
-        <Field>
-          <FieldLabel>Icon</FieldLabel>
-          <div>
-            <IconField compact named={separateIcon} defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
-          </div>
-        </Field>
-      )}
-      <Field className={separateIcon ? "docs-description-field [&_textarea]:min-h-19.5 [&_textarea]:pb-5.5 max-sm:[&_textarea]:min-h-22.5" : undefined}>
+      <Field>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
-        <div className="relative">
-          <Textarea
-            id={`collection-description-${id}`}
-            name="description"
-            rows={2}
-            maxLength={300}
-            onChange={(event) => setDescriptionLength(event.target.value.length)}
-            defaultValue={collection?.description}
-            placeholder="Optional, shown in your docs"
-          />
-          {separateIcon && <small className="docs-description-count absolute bottom-1.5 right-2.25 text-muted-foreground text-xs">{descriptionLength} / 300</small>}
-        </div>
+        <Textarea id={`collection-description-${id}`} name="description" rows={2} maxLength={300} placeholder="Optional, shown in your docs" />
       </Field>
     </>
   );
@@ -897,28 +856,36 @@ function ParentField({
   parents,
   value,
   onValueChange,
+  row = false,
 }: {
   id: string;
   parents: CollectionOption[];
   value: string | null;
   onValueChange: (value: string | null) => void;
+  /** A settings card's row (SettingRow), in place of a dialog's field. */
+  row?: boolean;
 }) {
   const items = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
-  return (
+  const select = (
+    <Select name="parent" items={items} value={value} onValueChange={(next) => onValueChange(next as string | null)}>
+      <SelectTrigger className={row ? "w-full @min-[34rem]/settings:w-72" : "w-full"} aria-labelledby={`${id}-parent-label`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((item) => (
+          <SelectItem key={item.value ?? ""} value={item.value}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+  return row ? (
+    <SettingRow label={<span id={`${id}-parent-label`}>Parent collection</span>}>{select}</SettingRow>
+  ) : (
     <Field>
       <FieldLabel id={`${id}-parent-label`}>Parent collection</FieldLabel>
-      <Select name="parent" items={items} value={value} onValueChange={(next) => onValueChange(next as string | null)}>
-        <SelectTrigger className="w-full" aria-labelledby={`${id}-parent-label`}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {items.map((item) => (
-            <SelectItem key={item.value ?? ""} value={item.value}>
-              {item.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {select}
     </Field>
   );
 }
@@ -936,7 +903,7 @@ function SaveButton({ pending }: { pending: boolean }) {
 
 /**
  * A collection's settings page: its name, icon, description and the collection it's in (`parents`: where it can
- * go), then who can read it (as AccessForm's; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
+ * go), then who can read it (AccessForm's choices, as dropdowns; "Inherit" says what the parent picked lets read, or its tab `tab`), all saved by one Save.
  */
 export function CollectionSettingsForm({
   projectSlug,
@@ -962,7 +929,11 @@ export function CollectionSettingsForm({
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
   const actionsHost = useEditorSlot("collection-actions");
+  const nameId = `collection-name-${collection.slug}`;
+  const descriptionId = `collection-description-${collection.slug}`;
+  const [descriptionLength, setDescriptionLength] = useState(collection.description.length);
   const [parent, setParent] = useState(collection.parent);
+  const [reading, setReading] = useState(level);
   // "Inherit" says from where: the parent picked, else its tab, else the docs.
   const inheritsFrom = (parent ? parents.find((c) => c.slug === parent)?.name : null) ?? tabName ?? "your docs";
   const above = parent ?? tab ?? "";
@@ -1001,66 +972,66 @@ export function CollectionSettingsForm({
       id="collection-settings"
       {...keepingFields(action)}
       onChange={(event) => {
-        // A field the person typed in or picked (by its name; the icon and the parent say so themselves).
+        // A field the person typed in or picked (by its name; the icon, the parent and who can read say so themselves).
         const name = (event.target as Element).getAttribute("name");
         if (name) {
           mark(name);
         }
       }}
-      className={cn(
-        "docs-collection-settings [&_fieldset_label]:bg-transparent! [&_fieldset_label]:border-0 [&_fieldset_label]:ring-0 max-w-[840px] flex flex-col gap-0 [&_>_[data-slot='card']]:grid",
-        "[&_>_[data-slot='card']]:[grid-template-columns:130px_minmax(0,_1fr)] [&_>_[data-slot='card']]:gap-5",
-        "[&_>_[data-slot='card']:first-child]:pt-0 [&_>_[data-slot='card']]:p-[26px_0_22px] [&_>_[data-slot='card']]:bg-transparent [&_>_[data-slot='card']]:border-0",
-        "[&_>_[data-slot='card']]:rounded-none [&_>_[data-slot='card']]:shadow-none [&_>_[data-slot='card']]:ring-0 [&_>_[data-slot='card']]:border-b",
-        "[&_>_[data-slot='card']]:border-border [&_>_[data-slot='card']]:overflow-visible [&_[data-slot='card-header']]:p-0",
-        "[&_[data-slot='card-content']]:p-0 [&_[data-slot='card-title']]:[font:600_15px_var(--font-sans)] [&_[data-slot='card-title']]:pt-1.75",
-        "[&_[data-slot='field-group']]:gap-4 [&_[data-slot='field']]:grid [&_[data-slot='field']]:[grid-template-columns:145px_minmax(0,_1fr)]",
-        "[&_[data-slot='field']]:[align-items:start] [&_[data-slot='field']]:gap-4 [&_[data-slot='field']_>_label]:pt-1.75",
-        "[&_[data-slot='field']_>_label]:text-[14px] [&_fieldset_>_label]:border-0 [&_fieldset_>_label]:p-[4px_0] [&_fieldset_>_label]:rounded-none",
-        "[&_fieldset_>_label]:bg-transparent [&_input]:text-[14px] [&_textarea]:text-[14px] [&_fieldset]:gap-3",
-        "[&_>_.docs-collection-form-actions]:hidden max-sm:[&_>_[data-slot='card']]:grid-cols-1 max-sm:[&_>_[data-slot='card']]:gap-5",
-        "max-sm:[&_>_[data-slot='card']]:pt-2 max-sm:[&_>_[data-slot='card']]:mt-0 max-sm:[&_[data-slot='field']]:grid-cols-1",
-        "max-sm:[&_[data-slot='field']]:gap-2 [&_[data-slot='field-description']]:[grid-column:2]",
-        "max-sm:[&_[data-slot='field-description']]:[grid-column:1] sm:[&_[data-slot='card-content']_fieldset]:relative",
-        "sm:[&_[data-slot='card-content']_fieldset]:pl-40.25 sm:[&_[data-slot='card-content']_fieldset_>_legend]:absolute",
-        "sm:[&_[data-slot='card-content']_fieldset_>_legend]:left-[0] sm:[&_[data-slot='card-content']_fieldset_>_legend]:top-1",
-        "sm:[&_[data-slot='card-content']_fieldset_>_legend]:w-36.25 sm:[&_[data-slot='card-content']_fieldset_fieldset]:pl-0",
-
-        "[&_[data-slot='field']:has(.docs-description-count)_>_div]:min-w-0",
-      )}
+      className="flex flex-col gap-7"
     >
-      <Card role="region" aria-labelledby="collection-details-title">
-        <CardHeader>
-          <CardTitle id="collection-details-title">Details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <CollectionFields
-              separateIcon
-              id={collection.slug}
-              collection={collection}
-              error={state.error}
-              onIconChange={() => mark("icon")}
+      <div role="region" aria-labelledby="collection-details-title">
+        <SettingsCard title={<span id="collection-details-title">Details</span>}>
+          <SettingRow label="Name" htmlFor={nameId}>
+            <div className="flex w-full flex-col gap-1.5 @min-[34rem]/settings:w-72">
+              <Input
+                id={nameId}
+                name="name"
+                defaultValue={collection.name}
+                placeholder="Getting started"
+                required
+                aria-invalid={state.error ? true : undefined}
+                aria-describedby={state.error ? `${nameId}-error` : undefined}
+              />
+              {state.error && <FieldError id={`${nameId}-error`}>{state.error}</FieldError>}
+            </div>
+          </SettingRow>
+          <SettingRow inline label="Icon">
+            <IconField compact named defaultValue={collection.icon} known={collection.knownIcon} onChange={() => mark("icon")} />
+          </SettingRow>
+          <SettingBlock className="gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <label htmlFor={descriptionId} className="font-medium">
+                Description
+              </label>
+              <small className="text-xs text-muted-foreground tabular-nums">{descriptionLength} / 300</small>
+            </div>
+            <Textarea
+              id={descriptionId}
+              name="description"
+              rows={2}
+              maxLength={300}
+              onChange={(event) => setDescriptionLength(event.target.value.length)}
+              defaultValue={collection.description}
+              placeholder="Optional, shown in your docs"
             />
-            <ParentField
-              id={`collection-${collection.slug}`}
-              parents={parents}
-              value={parent}
-              onValueChange={(next) => {
-                mark("parent");
-                setParent(next);
-              }}
-            />
-          </FieldGroup>
-        </CardContent>
-      </Card>
-      <Card role="region" aria-labelledby="collection-access-title">
-        <CardHeader>
-          <CardTitle id="collection-access-title">Access</CardTitle>
-        </CardHeader>
-        <CardContent>
+          </SettingBlock>
+          <ParentField
+            row
+            id={`collection-${collection.slug}`}
+            parents={parents}
+            value={parent}
+            onValueChange={(next) => {
+              mark("parent");
+              setParent(next);
+            }}
+          />
+        </SettingsCard>
+      </div>
+      <div role="region" aria-labelledby="collection-access-title">
+        <SettingsCard title={<span id="collection-access-title">Access</span>}>
           <WhoCanRead
-            compact
+            rows
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}
@@ -1069,13 +1040,18 @@ export function CollectionSettingsForm({
               description: access.inherits[above] ?? access.inherits[""]!,
               shows: access.shows[above] ?? "hide",
             }}
-            defaultAccess={level.access}
-            defaultGroups={level.groups}
-            defaultNoAccess={level.noAccess}
+            control={{
+              value: reading,
+              // A dropdown's pick has no change event of its own to say which field it was.
+              onChange: (next) => {
+                (["access", "groups", "noAccess"] as const).filter((key) => next[key] !== reading[key]).forEach(mark);
+                setReading(next);
+              },
+            }}
             preview={previewUrl(access, path)}
           />
-        </CardContent>
-      </Card>
+        </SettingsCard>
+      </div>
       {actionsHost &&
         createPortal(
           <>
@@ -1252,7 +1228,7 @@ export function DeleteCollectionButton({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       {standalone ? (
-        <AlertDialogTrigger render={<Button variant="destructive" size="sm" disabled={pending} />}><Trash2Icon />Delete collection</AlertDialogTrigger>
+        <AlertDialogTrigger render={<Button variant="destructive" size="sm" aria-label="Delete collection" disabled={pending} />}><Trash2Icon />Delete</AlertDialogTrigger>
       ) : (
         <DropdownMenuItem variant="destructive" disabled={pending} onClick={() => setOpen(true)}>
           <Trash2Icon />
