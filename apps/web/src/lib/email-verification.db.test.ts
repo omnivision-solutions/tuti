@@ -108,10 +108,31 @@ test("a password account isn't signed in until its address is verified: signing 
   expect(later.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(true);
 });
 
-test("the link signing in before verifying sends goes to the app", async () => {
+test("signing in before verifying sends a link to where it was going: a portal through a new handoff; none, the app", async () => {
+  const project = await createProject(await signUpUser("Owner"));
   const email = await signUp("/app");
-  expect((await postOnApp("sign-in/email", { email, password: "correct horse battery staple" })).status).toBe(403);
+  const password = "correct horse battery staple";
+  // No way given: the app (Better Auth's "/" is Tuti's cloud's marketing site).
+  expect((await postOnApp("sign-in/email", { email, password })).status).toBe(403);
   expect((await verificationLink(email)).link.searchParams.get("callbackURL")).toBe("/app");
+  // An invite's page, say: the link comes back to it.
+  expect((await postOnApp("sign-in/email", { email, password, callbackURL: "/app/auth/invite/abc" })).status).toBe(403);
+  expect((await verificationLink(email)).link.searchParams.get("callbackURL")).toBe("/app/auth/invite/abc");
+  // A portal's: its handoff's state is used up by then, so the way back is signed for this account, as signing up's is.
+  const state = randomSecret();
+  const continuing = `/app/auth/continue?${new URLSearchParams({ portal: project.slug, state, redirect: "/feedback" })}`;
+  expect((await postOnApp("sign-in/email", { email, password, callbackURL: continuing })).status).toBe(403);
+  const { link } = await verificationLink(email);
+  const back = new URL(link.searchParams.get("callbackURL")!, link);
+  expect(back.pathname).toBe("/app/auth/continue");
+  expect(Object.fromEntries(back.searchParams)).toEqual({ portal: project.slug, redirect: "/feedback", issued: expect.stringMatching(/^\d+$/), mac: expect.any(String) });
+  expect(link.toString()).not.toContain(state);
+
+  // Signed in, the answer doesn't ask the browser to go there (the form does, without reloading the page).
+  await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
+  const signedIn = await postOnApp("sign-in/email", { email, password, callbackURL: "/app" });
+  expect(signedIn.ok).toBe(true);
+  expect(await signedIn.json()).toMatchObject({ redirect: false });
 });
 
 test("signing up with an address that has an account answers as for a new one, and emails its owner a password reset", async () => {

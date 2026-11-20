@@ -471,10 +471,16 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await ada.getByLabel("Password").fill(PASSWORD);
   await ada.getByRole("button", { name: "Sign up" }).click();
   await expect(ada.getByText("Check your email")).toBeVisible();
+  // Sent again (signing in once more), the link still comes back to Acme.
+  await latestEmailTo(email, { subject: /verify/i });
+  const sent = countEmailsTo(email);
+  await ada.getByRole("button", { name: "Send another link" }).click();
+  await expect(ada.getByText("Another link is on its way.")).toBeVisible();
+  const again = await latestEmailTo(email, { after: sent, subject: /verify/i });
 
   // Signed in by the emailed link, opened later: the sign-up's handoff is used up, so it comes back through a new one.
   // It doesn't go on by itself: the page says where (the portal's address), and Ada clicks.
-  await ada.goto(linkIn(await latestEmailTo(email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
+  await ada.goto(linkIn(again, `${APP_URL}/api/auth/verify-email`));
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/continue" && url.searchParams.has("mac"));
   await expect(ada.getByText(`Use your Tuti account on Acme's portal, at ${new URL(portalUrl(slug)).host}.`)).toBeVisible();
   await ada.getByRole("link", { name: "Continue as Ada" }).click();

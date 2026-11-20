@@ -107,9 +107,10 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
  * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
  * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
  * the app's /continue); in its place go when it was made and the app's MAC for this account (isOwnWayBack), with which
- * /continue starts a new handoff. Only for the sign-up's own email (`signingUp`): sending it again takes any address and
- * callbackURL from anyone, so there it would sign a way back for someone else's account. Elsewhere it goes to the app, as
- * does a link with none (Better Auth's "/", on Tuti's cloud its marketing site): signing in before verifying sends one.
+ * /continue starts a new handoff. Only for the email a sign-up, or a sign-in before verifying, sends its own account
+ * (`signingUp`): sending it again takes any address and callbackURL from anyone, so there it would sign a way back for
+ * someone else's account. Elsewhere it goes to the app, as does a link with none (Better Auth's "/", on Tuti's cloud its
+ * marketing site).
  */
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
@@ -249,6 +250,14 @@ export const auth = betterAuth({
       // auth.api calls too (a session's IP address): the visitor's IP address as the auth route gives it.
       return headers && { context: { headers: withClientIp(headers) } };
     }),
+    // A password sign-in's callbackURL is where the link it sends before verifying goes. Signed in, the form goes there
+    // itself: Better Auth's client would reload the page for it, and a tab's state is kept across signing in.
+    after: createAuthMiddleware(async (ctx) => {
+      const returned = ctx.context.returned;
+      if (ctx.path === "/sign-in/email" && returned && typeof returned === "object" && "redirect" in returned && returned.redirect) {
+        return ctx.json({ ...returned, redirect: false });
+      }
+    }),
   },
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
@@ -276,7 +285,8 @@ export const auth = betterAuth({
     expiresIn: VERIFICATION_SECONDS,
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
-        const signingUp = !!request && new URL(request.url).pathname.endsWith("/sign-up/email");
+        // Signing up, or signing in before verifying (its password checked): the account's own email.
+        const signingUp = !!request && /\/(sign-up|sign-in)\/email$/.test(new URL(request.url).pathname);
         await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
