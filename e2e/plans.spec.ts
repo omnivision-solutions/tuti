@@ -361,6 +361,20 @@ test("on Tuti's cloud, the widget launcher's icon on the free plan opens the upg
   await expect(needsPro).toBeHidden();
   await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
   await expect(icons.getByRole("radio", { name: "Megaphone" })).not.toBeChecked();
+  // From the keyboard, an arrow key only moves between the icons (no prompt at each); Space chooses one.
+  await icons.getByRole("radio", { name: "Chat" }).focus();
+  await owner.keyboard.press("ArrowRight");
+  await expect(icons.getByRole("radio", { name: "Help" })).toBeFocused();
+  await owner.keyboard.press("ArrowLeft");
+  await owner.keyboard.press("ArrowLeft");
+  await expect(icons.getByRole("radio", { name: "Your own" })).toBeFocused();
+  await expect(needsPro).toHaveCount(0);
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await owner.keyboard.press("Space");
+  await expect(needsPro).toBeVisible();
+  await needsPro.getByRole("button", { name: "Not now" }).click();
+  await expect(needsPro).toBeHidden();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
   await checkpoint(owner, "widget-settings-icon-locked");
 
   // On a phone nothing runs off the side, and the icons go under the plan's line (beside it, a word or two a line).

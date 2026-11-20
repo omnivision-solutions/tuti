@@ -145,7 +145,20 @@ export function WidgetSettings({
         <SettingRow label={<span id="widget-position">Position</span>} inline>
           <Segmented name="position" aria-labelledby="widget-position" defaultValue={position} options={POSITIONS} />
         </SettingRow>
-        <div ref={iconChoices}>
+        <div
+          ref={iconChoices}
+          // Without the plan, an arrow key only moves between the icons (it would choose, and so prompt at, each one it
+          // passes); Space chooses.
+          onKeyDown={(event) => {
+            const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+            const radios = [...event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+            const at = radios.indexOf(event.target as HTMLInputElement);
+            if (upgrade && step && at >= 0) {
+              event.preventDefault();
+              radios[(at + step + radios.length) % radios.length].focus();
+            }
+          }}
+        >
           <SettingRow
             label={<span id="widget-icon">Icon</span>}
             description={
