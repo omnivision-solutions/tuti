@@ -5,7 +5,6 @@ import { notFound } from "next/navigation";
 
 import { BrandingSettings, PoweredBySettings } from "@/components/branding-settings";
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalPreview } from "@/server/customize";
 import { projectLicense } from "@/server/license";
 import { getAdminProject } from "@/server/membership";
@@ -40,23 +39,15 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/sett
         logoText={brand.logoText}
         logoLink={brand.logoLink}
         fonts={brand.fonts}
-      />
-      {/* "Save changes" saves it with the rest. */}
-      <Card id="powered-by" className="scroll-mt-4">
-        <CardHeader>
-          <CardTitle>Powered by tuti</CardTitle>
-          <CardDescription>The badge at the foot of your portal.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <PoweredBySettings
-            projectSlug={slug}
-            poweredBy={brand.poweredBy}
-            licensedUntil={license.licensedUntil}
-            buyLicenseUrl={license.buyUrl}
-            plan={plansEnabled() ? { addOn: badgeAddOn, billingUrl: `/app/${slug}/settings/billing`, perMonth: badgeOffered({ planStatus, planInterval }) } : null}
-          />
-        </CardContent>
-      </Card>
+      >
+        <PoweredBySettings
+          projectSlug={slug}
+          poweredBy={brand.poweredBy}
+          licensedUntil={license.licensedUntil}
+          buyLicenseUrl={license.buyUrl}
+          plan={plansEnabled() ? { addOn: badgeAddOn, billingUrl: `/app/${slug}/settings/billing`, perMonth: badgeOffered({ planStatus, planInterval }) } : null}
+        />
+      </BrandingSettings>
     </PortalSettingsPane>
   );
 }
