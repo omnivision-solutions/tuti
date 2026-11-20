@@ -112,7 +112,7 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await expect(fix).toHaveValue("50");
   await expect(fix).toHaveAttribute("max", "75");
   // Each value says its tradeoff in one line; its unit is in the field, read out with its range.
-  await expect(fix).toHaveAccessibleDescription("Lower catches more; higher means fewer to review. % , from 0 to 75");
+  await expect(fix).toHaveAccessibleDescription("How sure it must be Lower catches more; higher means fewer to review. % , from 0 to 75");
   await expect(deciding).toHaveAccessibleDescription("More finds more, costs more. 1–50");
   await expect(owner.getByRole("spinbutton", { name: "Change shown up front" })).toHaveAccessibleDescription("Characters of the diff read at once. chars , from 1,000 to 500,000");
   await expect(thinking).toHaveAccessibleDescription("Better on hard changes, slower.");
@@ -294,7 +294,7 @@ test("an analysis that ran with the project's tuning says so on its activity pag
   const activity = `/app/${slug}/autopilot/activity/${(await changeOf())!.id}`;
 
   await owner.goto(activity);
-  await expect(owner.getByText("Ran with this project's tuning: Fix an article from")).toBeVisible();
+  await expect(owner.getByText("Ran with this project's tuning: To fix an article")).toBeVisible();
   await expect(owner.getByRole("link", { name: "Ran with this project's tuning" })).toHaveAttribute("href", `/app/${slug}/settings/autopilot/tuning`);
 
   // A member reads which values, with no link (Settings is for owners and admins).
@@ -304,7 +304,7 @@ test("an analysis that ran with the project's tuning says so on its activity pag
     [slug, member.email],
   );
   await member.goto(activity);
-  await expect(member.getByText("Ran with this project's tuning: Fix an article from")).toBeVisible();
+  await expect(member.getByText("Ran with this project's tuning: To fix an article")).toBeVisible();
   await expect(member.getByRole("link", { name: "Ran with this project's tuning" })).toHaveCount(0);
 
   // An admin sees the values and that they aren't theirs to change: no Save, no resets.

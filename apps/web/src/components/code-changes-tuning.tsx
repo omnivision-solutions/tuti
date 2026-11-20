@@ -40,19 +40,18 @@ const field = (value: Value["value"], range: Value["range"]) => (typeof value ==
 const overridden = (value: Value) => value.saved !== null && (value.saved !== value.default || value.clamped);
 
 /**
- * Each value's row: its label under its card's title, one line on its tradeoff, and for a number what its field says
+ * Each value's row (named by `labels`, `TUNING`'s, as everywhere else): one line on its tradeoff, and for a number what its field says
  * after it (`unit`; a probability's "%" and a count's range otherwise) with the field's width and the room kept for
  * that. `info`: what takes longer to say.
  */
-const ROWS: Record<Key, { label: string; line: string; unit?: string; field?: string; info?: string }> = {
-  "propose.edit.maybe": { label: "To fix an article", line: "Lower catches more; higher means fewer to review." },
-  "propose.newArticle.maybe": { label: "To write a new article", line: "Lower fills more gaps; higher avoids duplicates." },
-  "redecide.whenNewArticle": { label: "To double-check a new article", line: "Lower checks more and costs more." },
-  "decide.rounds": { label: "Lookups before deciding", line: "More finds more, costs more." },
-  "write.rounds": { label: "Lookups before writing", line: "More is closer to the product, costs more." },
-  "decide.reasoning": { label: "Thinking", line: "Better on hard changes, slower." },
+const ROWS: Record<Key, { line: string; unit?: string; field?: string; info?: string }> = {
+  "propose.edit.maybe": { line: "Lower catches more; higher means fewer to review." },
+  "propose.newArticle.maybe": { line: "Lower fills more gaps; higher avoids duplicates." },
+  "redecide.whenNewArticle": { line: "Lower checks more and costs more." },
+  "decide.rounds": { line: "More finds more, costs more." },
+  "write.rounds": { line: "More is closer to the product, costs more." },
+  "decide.reasoning": { line: "Better on hard changes, slower." },
   "context.diffChars": {
-    label: "Change shown up front",
     line: "Characters of the diff read at once.",
     unit: "chars",
     field: "w-36 pr-14",
@@ -64,6 +63,8 @@ const KEYS = Object.keys(ROWS) as Key[];
 type Props = {
   projectSlug: string;
   tuning: CodeChangesTuning;
+  /** Each value's name (`TUNING`'s label). */
+  labels: Record<Key, string>;
   owner: boolean;
 };
 
@@ -88,7 +89,7 @@ export function CodeChangesTuningSettings({
   /** Where the plan doesn't include it: what it needs (PlanNotice). */
   notice: ReactNode;
 }) {
-  const { tuning, owner } = props;
+  const { tuning, labels, owner } = props;
   const editable = owner && tuning.available;
   // What's stored: the form, and what was reset in it, start again as it changes.
   const stored = JSON.stringify([tuning.updatedAt, KEYS.map((key) => tuning.values[key].saved)]);
@@ -140,7 +141,7 @@ export function CodeChangesTuningSettings({
         {editable ? (
           <TuningForm key={stored} {...props} resets={resets} setResets={setResets} onReset={(key) => putBack([key], true)} onPending={setSaving} />
         ) : (
-          <TuningCards tuning={tuning} resets={resets} />
+          <TuningCards tuning={tuning} labels={labels} resets={resets} />
         )}
       </div>
       {lastChanged && <p className="-mt-3 text-xs text-muted-foreground">Last changed {lastChanged}</p>}
@@ -152,6 +153,7 @@ export function CodeChangesTuningSettings({
 function TuningForm({
   projectSlug,
   tuning,
+  labels,
   resets,
   setResets,
   onReset,
@@ -203,18 +205,19 @@ function TuningForm({
       className="flex flex-col gap-7"
     >
       <input ref={reset} type="hidden" name="resets" value={resets.join()} />
-      <TuningCards tuning={tuning} resets={resets} onReset={onReset} />
+      <TuningCards tuning={tuning} labels={labels} resets={resets} onReset={onReset} />
       {state.error && <FieldError className="-mt-3">{state.error}</FieldError>}
     </form>
   );
 }
 
 /** The values' rows in their two cards. `onReset`: they can be changed, so a changed one has its Reset; without it the fields are disabled (not the ⓘ beside a label). */
-function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; resets: Key[]; onReset?: (key: Key) => void }) {
+function TuningCards({ tuning, labels, resets, onReset }: Pick<Props, "tuning" | "labels"> & { resets: Key[]; onReset?: (key: Key) => void }) {
   const row = (key: Key) => {
     const value = tuning.values[key];
     const { range } = value;
-    const { label, line, info } = ROWS[key];
+    const { line, info } = ROWS[key];
+    const label = labels[key];
     const own = value.saved ?? value.default;
     const id = `tuning-${key}`;
     const changed = overridden(value) && !resets.includes(key);
@@ -271,7 +274,8 @@ function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; r
               max={bounds![1]}
               step={1}
               defaultValue={field(own, range)}
-              aria-describedby={`${id}-help ${id}-unit`}
+              // A percentage is read out with its card's title: how sure Autopilot must be.
+              aria-describedby={`${range.kind === "probability" ? "tuning-sure " : ""}${id}-help ${id}-unit`}
               // No arrows in the field: they'd take the room its number needs (the arrow keys still step it).
               className={cn("[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none", ROWS[key].field ?? (range.kind === "probability" ? "w-24 pr-8" : "w-28 pr-14"))}
             />
@@ -288,7 +292,7 @@ function TuningCards({ tuning, resets, onReset }: { tuning: CodeChangesTuning; r
   const sure = KEYS.filter((key) => tuning.values[key].range.kind === "probability");
   return (
     <>
-      <SettingsCard title="How sure it must be">{sure.map(row)}</SettingsCard>
+      <SettingsCard title={<span id="tuning-sure">How sure it must be</span>}>{sure.map(row)}</SettingsCard>
       <SettingsCard title="How much it reads">{KEYS.filter((key) => !sure.includes(key)).map(row)}</SettingsCard>
     </>
   );
