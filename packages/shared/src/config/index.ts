@@ -58,7 +58,7 @@ function read(path: string): Config {
   } catch (error) {
     throw new Error(`TUTI_CONFIG (${path}) isn't JSON: ${(error as Error).message}`);
   }
-  const unknown = json && typeof json === "object" ? Object.keys(json).filter((key) => !(key in configSchema.shape)) : [];
+  const unknown = json && typeof json === "object" ? Object.keys(json).filter((key) => !Object.hasOwn(configSchema.shape, key)) : [];
   if (unknown.length > 0) {
     log.warn(`TUTI_CONFIG (${path}) has sections this release doesn't know, ignored: ${unknown.join(", ")} (a newer release's, or a typo)`);
   }

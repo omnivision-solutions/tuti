@@ -162,7 +162,8 @@ its key. A whole section Tuti doesn't know is ignored, with a warning in the log
 
 **Upgrading when a release moves env vars into the file:** add their keys to the file first (the running release
 ignores the new section), then upgrade with those variables removed: the new release refuses to start while one is
-still set.
+still set. The release that moved the AI variables (`ai`) is the exception: the one before it stops on a section it
+doesn't know, so for that upgrade change the file and the variables in the same step as the upgrade.
 
 | Key | Default | |
 |---|---|---|
