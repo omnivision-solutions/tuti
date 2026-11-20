@@ -116,6 +116,13 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await expect(deciding).toHaveAccessibleDescription("More finds more, costs more. 1–50");
   await expect(owner.getByRole("spinbutton", { name: "Change shown up front" })).toHaveAccessibleDescription("Characters of the diff read at once. chars , from 1,000 to 500,000");
   await expect(thinking).toHaveAccessibleDescription("Better on hard changes, slower.");
+  // A value typed and not saved is one "Reset to defaults" puts back too, leaving nothing to save.
+  await deciding.fill("7");
+  await expect(save).toBeEnabled();
+  await expect(resetAll).toBeEnabled();
+  await resetAll.click();
+  await expect(deciding).toHaveValue("12");
+  await expect(save).toBeDisabled();
   await fix.fill("30");
   await save.click();
   await expect(owner.getByText("Advanced tuning saved")).toBeVisible();

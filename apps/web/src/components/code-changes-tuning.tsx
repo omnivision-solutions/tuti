@@ -110,7 +110,7 @@ export function CodeChangesTuningSettings({
         input.value = field(value.default, value.range);
       }
     }
-    setResets([...new Set([...resets, ...keys])]);
+    setResets([...new Set([...resets, ...keys.filter((key) => tuning.values[key].saved !== null)])]);
     // A row's Reset goes once used: focus goes to the field it reset ("Reset to defaults" stays, and keeps it).
     if (row) {
       const input = fields?.namedItem(keys[0]!);
@@ -119,6 +119,26 @@ export function CodeChangesTuningSettings({
     }
   };
   const resettable = KEYS.filter((key) => tuning.values[key].saved !== null && !resets.includes(key));
+  // The fields that show something other than the default now, typed and not saved included.
+  const offDefault = () => {
+    const fields = cards.current?.querySelector("form")?.elements;
+    return KEYS.filter((key) => {
+      const input = fields?.namedItem(key);
+      const value = tuning.values[key];
+      return (input instanceof HTMLInputElement || input instanceof RadioNodeList) && input.value !== field(value.default, value.range);
+    });
+  };
+  const [typed, setTyped] = useState(false);
+  /** "Reset to defaults": every field back to its default, saved or only typed; the saved ones are reset when saved. */
+  const resetAll = () => {
+    const typedOnly = offDefault().filter((key) => !resettable.includes(key));
+    putBack([...resettable, ...typedOnly]);
+    // A field only typed in has nothing to reset when saved: the form hears of its new value itself.
+    if (typedOnly.length > 0) {
+      cards.current?.querySelector("form")?.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    setTyped(false);
+  };
 
   return (
     <SettingsPane
@@ -129,7 +149,7 @@ export function CodeChangesTuningSettings({
         editable && (
           // There with nothing to reset too, so it keeps focus once used.
           // "Reset" on phones, where the header has no room for the rest beside the way back.
-          <Button type="button" variant="ghost" aria-label="Reset to defaults" disabled={resettable.length === 0 || saving} focusableWhenDisabled onClick={() => putBack(resettable)}>
+          <Button type="button" variant="ghost" aria-label="Reset to defaults" disabled={(resettable.length === 0 && !typed) || saving} focusableWhenDisabled onClick={resetAll}>
             <span className="@max-[48rem]/app:hidden">Reset to defaults</span>
             <span className="@min-[48rem]/app:hidden">Reset</span>
           </Button>
@@ -137,7 +157,7 @@ export function CodeChangesTuningSettings({
       }
     >
       {notice}
-      <div ref={cards} className="flex flex-col gap-7">
+      <div ref={cards} className="flex flex-col gap-7" onInput={() => setTyped(offDefault().length > 0)} onChange={() => setTyped(offDefault().length > 0)}>
         {editable ? (
           <TuningForm key={stored} {...props} resets={resets} setResets={setResets} onReset={(key) => putBack([key], true)} onPending={setSaving} />
         ) : (
