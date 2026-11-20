@@ -444,7 +444,7 @@ describe("with a decision model (OpenRouter)", () => {
     expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(1);
 
     model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
-    await backfillEmbeddings(log);
+    expect((await backfillEmbeddings(log)).errors).toEqual([]);
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
   });
 
