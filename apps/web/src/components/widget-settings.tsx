@@ -1,17 +1,18 @@
 "use client";
 
-import { ImageIcon, PlusIcon, XIcon } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { ImageIcon, PlusIcon, UploadIcon, XIcon } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { ImageField } from "@/components/branding-settings";
+import { useImageUpload } from "@/components/branding-settings";
 import { ColorField } from "@/components/color-field";
 import { useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
-import { SwitchRow } from "@/components/docs-look-settings";
+import { SettingRow, SettingsCard } from "@/components/settings-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
 import { LauncherIcon } from "@/components/widget-preview";
 import { linksFrom } from "@/lib/forms";
 import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
@@ -23,19 +24,36 @@ const MAX_LINKS = 5;
 
 const ICON_NAMES: Record<WidgetIcon, string> = { chat: "Chat", help: "Help", megaphone: "Megaphone", lightbulb: "Light bulb", image: "Your own" };
 
-/** Each part of the panel the team can turn off: its switch's name, and what it is. */
-const PARTS: Record<WidgetPart, { label: string; description: string }> = {
-  docs: { label: "Help center", description: "Search and suggested articles on Home, and its tab, once you've published articles." },
-  messages: { label: "Messages", description: "\u201cSend us a message\u201d on Home, and its tab, once the support inbox is on." },
-  feedback: { label: "Feedback", description: "\u201cShare an idea\u201d and news of people's ideas on Home, and its tab." },
-  whatsNew: { label: "What's new", description: "Your latest update on Home." },
+/** The icon's options: the icon itself (the column is narrow), named for screen readers. */
+const ICONS = WIDGET_ICON_CHOICES.map((value) => ({
+  value,
+  label: <span className="sr-only">{ICON_NAMES[value]}</span>,
+  icon: value === "image" ? <ImageIcon aria-hidden /> : <LauncherIcon name={value} />,
+}));
+
+/** The launcher's corner, as the sides of the screen are. */
+const POSITIONS = [
+  { value: "bottom-left", label: "Left" },
+  { value: "bottom-right", label: "Right" },
+] as const;
+
+/** A text field on a row's right: narrower in the settings column at its narrowest, so its label keeps one line. */
+const ROW_INPUT = "w-28 @min-[20rem]/settings:w-40";
+
+/** Each part of the panel the team can turn off: its switch's name, and behind its ⓘ what it needs before it shows. */
+const PARTS: Record<WidgetPart, { label: string; info?: string }> = {
+  docs: { label: "Help center", info: "Search and suggested articles on Home, and its tab, once you've published articles." },
+  messages: { label: "Messages", info: "“Send us a message” on Home, and its tab, once the support inbox is on." },
+  feedback: { label: "Feedback" },
+  whatsNew: { label: "What's new" },
 };
 
 /**
- * Customize → Widget (saved with the panel's "Save changes"): the launcher on customers' sites, a round
+ * Settings → Widget (saved with the pane's "Save changes"): the launcher on customers' sites, a round
  * button: its name, colour, corner and icon; and the panel's Home: its greeting and heading, the parts it
- * shows and quick links (see widget.update). `iconLocked` (the plan notice) locks the icon where the plan
- * doesn't include picking one; it isn't sent then, so it stays as set.
+ * shows and quick links (see widget.update). A setting is a row (docs/design.md → Settings rows); what the
+ * preview beside them can't show is behind a row's ⓘ. `iconLocked` (the plan notice) locks the icon where
+ * the plan doesn't include picking one; it isn't sent then, so it stays as set.
  */
 export function WidgetSettings({
   projectSlug,
@@ -77,7 +95,7 @@ export function WidgetSettings({
   aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
-  const iconChoices = useRef<HTMLDivElement>(null);
+  const iconChoices = useRef<HTMLFieldSetElement>(null);
   const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
@@ -104,136 +122,232 @@ export function WidgetSettings({
   });
 
   return (
-    <form {...form} className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Launcher</CardTitle>
-          <CardDescription>The round button&apos;s name, colour, corner and icon.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="widget-label">Button name</FieldLabel>
-              <Input id="widget-label" name="label" defaultValue={label} required maxLength={30} autoComplete="off" />
-              <FieldDescription>The button shows an icon: screen readers read its name, and it&apos;s the tooltip.</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
-              <ColorField
-                id="widget-color"
-                name="color"
-                label="Colour"
-                color={color}
-                defaultColor={defaultColor}
-                defaultLabel={defaultColorLabel}
-                follows={colorFollows}
+    <form {...form} className="flex flex-col gap-4">
+      <SettingsCard title="Button">
+        <SettingRow label="Name" htmlFor="widget-label" info="The button shows an icon: screen readers read its name, and it's the tooltip." inline>
+          <Input id="widget-label" name="label" defaultValue={label} required maxLength={30} autoComplete="off" className={ROW_INPUT} />
+        </SettingRow>
+        {/* Under its label: the button back to the default and a wrong hex's error need the column's width. */}
+        <SettingRow label="Colour" htmlFor="widget-color">
+          <ColorField id="widget-color" name="color" label="Colour" color={color} defaultColor={defaultColor} defaultLabel={defaultColorLabel} follows={colorFollows} />
+        </SettingRow>
+        <SettingRow label={<span id="widget-position">Position</span>} inline>
+          <Segmented name="position" aria-labelledby="widget-position" defaultValue={position} options={POSITIONS} />
+        </SettingRow>
+        {/* Off as a whole where the plan doesn't include picking an icon: its choices, and the upload. */}
+        <fieldset ref={iconChoices} disabled={Boolean(iconLocked)} className="min-w-0">
+          <div>
+            <SettingRow label={<span id="widget-icon">Icon</span>} inline>
+              <Segmented
+                name="icon"
+                aria-labelledby="widget-icon"
+                value={icon}
+                onValueChange={setIcon}
+                options={ICONS}
+                className="has-disabled:opacity-50 has-disabled:*:cursor-not-allowed @max-[20rem]/settings:*:px-2"
               />
-            </Field>
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium">Position</legend>
-              <div className="flex flex-wrap gap-4">
-                {(
-                  [
-                    ["bottom-right", "Bottom right"],
-                    ["bottom-left", "Bottom left"],
-                  ] as const
-                ).map(([value, name]) => (
-                  <label key={value} className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="position" value={value} defaultChecked={position === value} className="size-4 accent-primary" />
-                    {name}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset disabled={Boolean(iconLocked)} className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium">Icon</legend>
-              {iconLocked}
-              <div ref={iconChoices} className="flex flex-wrap gap-2">
-                {WIDGET_ICON_CHOICES.map((value) => (
-                  <label
-                    key={value}
-                    className="flex w-20 cursor-pointer flex-col items-center gap-1 rounded-lg border p-2 text-xs has-checked:border-primary has-checked:bg-accent has-focus-visible:ring-2 has-focus-visible:ring-ring has-disabled:cursor-not-allowed has-disabled:opacity-50"
-                  >
-                    <input type="radio" name="icon" value={value} checked={icon === value} onChange={() => setIcon(value)} className="sr-only" />
-                    {value === "image" ? <ImageIcon aria-hidden className="size-6" /> : <LauncherIcon name={value} className="size-6" />}
-                    {ICON_NAMES[value]}
-                  </label>
-                ))}
-              </div>
-              {/* Kept while another icon is picked, so going back to it before saving keeps the upload. */}
-              <div className={cn(icon !== "image" && "hidden")}>
-                <ImageField
-                  projectSlug={projectSlug}
-                  name="iconImage"
-                  label="Your icon"
-                  description="A square image with a transparent background works best. It shows at 28 pixels."
-                  image={iconImage}
-                  look="light"
-                  onBusy={(delta) => setUploading((count) => count + delta)}
-                  // Without its image, the launcher shows the chat bubble: so does the picker (and what's saved).
-                  // Its field hides with it, so focus goes to that choice (not the Upload button hidden along with it).
-                  onRemove={() => {
-                    setIcon("chat");
-                    iconChoices.current?.querySelector<HTMLInputElement>('input[value="chat"]')?.focus();
-                  }}
-                />
-              </div>
-            </fieldset>
-            <SwitchRow
-              name="onPortal"
-              label="Show on your portal"
-              description="The launcher on every page of your portal too, opening the same panel as on your site."
-              defaultChecked={onPortal}
+            </SettingRow>
+            {iconLocked && <div className="px-4 pb-3.5 @min-[34rem]/settings:px-5">{iconLocked}</div>}
+          </div>
+          {/* Kept while another icon is picked, so going back to it before saving keeps the upload. */}
+          <div className={cn("border-t", icon !== "image" && "hidden")}>
+            <IconImageRow
+              projectSlug={projectSlug}
+              image={iconImage}
+              onBusy={(delta) => setUploading((count) => count + delta)}
+              // Without its image, the launcher shows the chat bubble: so does the picker (and what's saved).
+              // Its row hides with it, so focus goes to that choice (not the Upload button hidden along with it).
+              onRemove={() => {
+                setIcon("chat");
+                iconChoices.current?.querySelector<HTMLInputElement>('input[value="chat"]')?.focus();
+              }}
             />
-          </FieldGroup>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Home</CardTitle>
-          <CardDescription>What the panel opens at: its greeting and heading, what it shows, and your quick links.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="widget-greeting">Greeting</FieldLabel>
-              <Input id="widget-greeting" name="greeting" defaultValue={greeting} maxLength={MAX_WIDGET_HOME_TEXT} placeholder="Hi there 👋" autoComplete="off" />
-              <FieldDescription>Leave it empty for &ldquo;Hi there 👋&rdquo;, with the person&apos;s first name once your site signs them in.</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="widget-title">Heading</FieldLabel>
-              <Input id="widget-title" name="title" defaultValue={title} maxLength={MAX_WIDGET_HOME_TEXT} placeholder="How can we help?" autoComplete="off" />
-            </Field>
-            <fieldset className="flex flex-col gap-4">
-              <legend className="mb-4 text-sm font-medium">Show in the widget</legend>
-              {WIDGET_PARTS.map((part) => (
-                <SwitchRow key={part} name={`show-${part}`} label={PARTS[part].label} description={PARTS[part].description} defaultChecked={!hidden.includes(part)} />
-              ))}
-            </fieldset>
-            {aiFirst !== null && (
-              <>
-                {/* Sent with the switch, so saving without it (the server has no AI answers) leaves the setting as it is. */}
-                <input type="hidden" name="aiFirstShown" value="1" />
-                <SwitchRow
-                  name="aiFirst"
-                  label="Answer with AI first"
-                  description="Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team."
-                  defaultChecked={aiFirst}
-                />
-              </>
-            )}
-            <LinkRows
-              name="link"
-              item="Link"
-              legend="Quick links"
-              description={`Up to ${MAX_LINKS} links on the widget's Home, such as your status page or docs.`}
-              links={links}
-            />
-            {state.error && <FieldError>{state.error}</FieldError>}
-          </FieldGroup>
-        </CardContent>
-      </Card>
+          </div>
+        </fieldset>
+        <SettingRow label="Show on your portal" htmlFor="widget-on-portal" info="The launcher on every page of your portal too, opening the same panel as on your site." inline>
+          <Switch id="widget-on-portal" name="onPortal" defaultChecked={onPortal} />
+        </SettingRow>
+      </SettingsCard>
+      <SettingsCard title="Panel">
+        <SettingRow label="Greeting" htmlFor="widget-greeting" info="Leave it empty for “Hi there 👋”, with the person's first name once your site signs them in." inline>
+          <Input id="widget-greeting" name="greeting" defaultValue={greeting} maxLength={MAX_WIDGET_HOME_TEXT} placeholder="Hi there 👋" autoComplete="off" className={ROW_INPUT} />
+        </SettingRow>
+        <SettingRow label="Heading" htmlFor="widget-title" inline>
+          <Input id="widget-title" name="title" defaultValue={title} maxLength={MAX_WIDGET_HOME_TEXT} placeholder="How can we help?" autoComplete="off" className={ROW_INPUT} />
+        </SettingRow>
+        {WIDGET_PARTS.map((part) => (
+          <SettingRow key={part} label={PARTS[part].label} htmlFor={`widget-show-${part}`} info={PARTS[part].info} inline>
+            <Switch id={`widget-show-${part}`} name={`show-${part}`} defaultChecked={!hidden.includes(part)} />
+          </SettingRow>
+        ))}
+        {aiFirst !== null && (
+          <SettingRow
+            label="Answer with AI first"
+            htmlFor="widget-ai-first"
+            info="Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team."
+            inline
+          >
+            {/* Sent with the switch, so saving without it (the server has no AI answers) leaves the setting as it is. */}
+            <input type="hidden" name="aiFirstShown" value="1" />
+            <Switch id="widget-ai-first" name="aiFirst" defaultChecked={aiFirst} />
+          </SettingRow>
+        )}
+        <QuickLinks links={links} />
+      </SettingsCard>
+      {state.error && <FieldError>{state.error}</FieldError>}
     </form>
+  );
+}
+
+/**
+ * The team's own launcher icon as a row, as Branding's images are: its thumbnail, "Upload" (the row takes a dropped
+ * image too), and once there is one a button that removes it. What went wrong with a file shows under the row.
+ */
+function IconImageRow({
+  projectSlug,
+  image: initial,
+  onBusy,
+  onRemove,
+}: {
+  projectSlug: string;
+  image: { id: string; url: string } | null;
+  onBusy: (delta: number) => void;
+  onRemove: () => void;
+}) {
+  const id = useId();
+  const { image, setImage, uploading, error, dragging, drop, inputs, pick } = useImageUpload({ projectSlug, name: "iconImage", id, image: initial, onBusy });
+  return (
+    <div {...drop} className={cn("transition-colors", dragging && "bg-soft")}>
+      <SettingRow label="Your icon" htmlFor={id} info="A square image with a transparent background works best. It shows at 28 pixels." inline>
+        {image ? (
+          <span className="flex size-9 items-center justify-center rounded-lg border bg-background p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
+            <img src={image.url} alt="Your icon preview" className="max-h-full max-w-full object-contain" />
+          </span>
+        ) : (
+          <span className="flex size-9 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-muted-foreground">
+            <ImageIcon aria-hidden className="size-4" />
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Upload your icon"
+          // Off while one uploads, yet focusable (aria-disabled): focus stays here through the upload, "Uploading…" read below.
+          disabled={uploading}
+          focusableWhenDisabled
+          onClick={pick}
+        >
+          <UploadIcon />
+          {/* The icon alone where the row has no room for the word (less of it beside "Remove"). */}
+          <span className={image ? "@max-[22rem]/settings:sr-only" : "@max-[20rem]/settings:sr-only"}>Upload</span>
+        </Button>
+        {image && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Remove your icon"
+            title="Remove"
+            // Off while one uploads (its image would come back after), focusable all the same.
+            disabled={uploading}
+            focusableWhenDisabled
+            onClick={() => {
+              setImage(null);
+              onRemove();
+            }}
+          >
+            <XIcon />
+          </Button>
+        )}
+        {inputs}
+      </SettingRow>
+      {uploading && (
+        <p role="status" className="px-4 pb-3.5 text-sm text-muted-foreground">
+          Uploading…
+        </p>
+      )}
+      {error && <FieldError className="px-4 pb-3.5">{error}</FieldError>}
+    </div>
+  );
+}
+
+/**
+ * The widget's quick links as a row: how many of the 5 there are and "Add", then a label and an https URL each, sent
+ * as LinkRows sends them. A new link takes focus; removing one sends it to "Add" (the row it was on is gone).
+ */
+function QuickLinks({ links }: { links: { label: string; url: string }[] }) {
+  const [rows, setRows] = useState(() => links.map((link, i) => ({ ...link, key: i })));
+  const group = useRef<HTMLDivElement>(null);
+  const add = useRef<HTMLButtonElement>(null);
+  // The link just added, to focus once it's on the page.
+  const added = useRef<number | null>(null);
+  useFieldChanged(group, rows);
+  useEffect(() => {
+    if (added.current !== null) {
+      group.current?.querySelector<HTMLInputElement>(`[data-link="${added.current}"] input`)?.focus();
+      added.current = null;
+    }
+  }, [rows]);
+  return (
+    <div ref={group} role="group" aria-labelledby="widget-links">
+      <SettingRow
+        label={
+          <>
+            <span id="widget-links">Quick links</span>{" "}
+            <span className="font-normal text-muted-foreground">
+              {rows.length}/{MAX_LINKS}
+            </span>
+          </>
+        }
+        info="On the widget's Home, such as your status page or docs."
+        inline
+      >
+        <Button
+          ref={add}
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Add link"
+          // Off at 5, yet focusable: the fifth link's "Remove" sends focus back here.
+          disabled={rows.length >= MAX_LINKS}
+          focusableWhenDisabled
+          onClick={() => {
+            added.current = Math.max(-1, ...rows.map((r) => r.key)) + 1;
+            setRows([...rows, { label: "", url: "", key: added.current }]);
+          }}
+        >
+          <PlusIcon />
+          Add
+        </Button>
+      </SettingRow>
+      {rows.length > 0 && (
+        <div className="flex flex-col gap-2 px-4 pb-3.5 @min-[34rem]/settings:px-5">
+          {rows.map((row, i) => (
+            <div key={row.key} data-link={row.key} className="flex items-start gap-2">
+              {/* One over the other in the narrow column, where side by side the address would have no room. */}
+              <div className="flex min-w-0 flex-1 flex-col gap-2 @min-[26rem]/settings:flex-row">
+                <Input name="linkLabel" aria-label={`Link ${i + 1} label`} placeholder="Label" defaultValue={row.label} maxLength={40} autoComplete="off" className="@min-[26rem]/settings:w-40" />
+                <Input name="linkUrl" type="url" aria-label={`Link ${i + 1} URL`} placeholder="https://" defaultValue={row.url} autoComplete="off" className="min-w-0 flex-1" />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove link ${i + 1}`}
+                onClick={() => {
+                  add.current?.focus();
+                  setRows(rows.filter((r) => r.key !== row.key));
+                }}
+              >
+                <XIcon />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -537,6 +537,13 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
   await owner.goto(`/app/${slug}/settings/widget`);
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Home" })).toBeVisible();
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // A quick link's label and address are one over the other there, each within the screen.
+  await owner.getByRole("button", { name: "Add link" }).click();
+  const linkLabel = (await owner.getByLabel("Link 1 label").boundingBox())!;
+  const linkUrl = (await owner.getByLabel("Link 1 URL").boundingBox())!;
+  expect(linkUrl.y).toBeGreaterThanOrEqual(linkLabel.y + linkLabel.height);
+  expect(linkUrl.x + linkUrl.width).toBeLessThanOrEqual(390);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "customize-widget-phone");
   await owner.getByRole("figure", { name: "Widget preview" }).scrollIntoViewIfNeeded();
   await checkpoint(owner, "customize-widget-phone-preview", { fullPage: false });
