@@ -324,7 +324,7 @@ export function NavigationSettings({
 }
 
 /**
- * One place's links as a row: how many of the 5 it has beside its label, "Add" on the right (off at 5), and under them
+ * One place's links as a row: how many of the 5 it has beside its label, "Add" on the right (at 5 it says so instead), and under them
  * a line per link, its label and https URL sent as `<name>Label` and `<name>Url` (read with `linksFrom`). `item` names
  * a link for screen readers ("Header link 1 label").
  */
@@ -335,7 +335,6 @@ function LinksRow({ name, label, item, legend, links }: { name: string; label: s
   const fieldset = useRef<HTMLFieldSetElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   useFieldChanged(fieldset, rows);
-  const full = rows.length >= MAX_LINKS;
   return (
     <fieldset ref={fieldset} aria-label={legend} className="min-w-0">
       <SettingRow
@@ -351,11 +350,13 @@ function LinksRow({ name, label, item, legend, links }: { name: string; label: s
           variant="outline"
           size="sm"
           aria-label={`Add ${item.toLowerCase()}`}
-          // Off at the limit, yet focusable (aria-disabled): removing a link puts the focus here.
-          disabled={full}
-          focusableWhenDisabled
           ref={addButton}
           onClick={() => {
+            // At the limit it says so when tried (it stays in the row: removing a link puts the focus here).
+            if (rows.length >= MAX_LINKS) {
+              toast.info(`Up to ${MAX_LINKS} ${legend.toLowerCase()}`);
+              return;
+            }
             const key = Math.max(-1, ...rows.map((row) => row.key)) + 1;
             setRows([...rows, { label: "", url: "", key }]);
             setAdded(key);

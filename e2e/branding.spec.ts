@@ -145,18 +145,17 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await addHeader.click();
   await expect(header).toContainText("Header 1/5");
   await expect(links.getByLabel("Header link 1 label")).toBeFocused();
-  // At 5 "Add" is off; taking one away moves the focus to it (the link's own button is gone), on again.
+  // At 5 "Add" says so instead; taking a link away moves the focus to it (the link's own button is gone).
   for (let count = 2; count <= 5; count++) {
     await addHeader.click();
     await expect(links.getByLabel(`Header link ${count} label`)).toBeFocused();
   }
   await expect(header).toContainText("Header 5/5");
-  await expect(addHeader).toBeDisabled();
-  await addHeader.click({ force: true });
+  await addHeader.click();
+  await expect(owner.getByText("Up to 5 header links")).toBeVisible();
   await expect(links.getByLabel(/^Header link \d label$/)).toHaveCount(5);
   await links.getByRole("button", { name: "Remove header link 5" }).click();
   await expect(addHeader).toBeFocused();
-  await expect(addHeader).toBeEnabled();
   for (const count of [4, 3, 2]) {
     await links.getByRole("button", { name: `Remove header link ${count}` }).click();
     await expect(addHeader).toBeFocused();
