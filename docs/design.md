@@ -382,8 +382,10 @@ the list picks none to approve at once.
   side by side (stacked on phones). The queue shows three saved versions, expands to the rest, and confirms
   Publish or Publish all before taking them live. Verify all and the live help center link sit below. Collections
   and tabs remain reachable in the tree. A collection's page is a flat ordered table with article state, views,
-  helpful votes and updated date; Content and Settings sit under its header. Collection settings use flat Details
-  and Access sections with labelled fields, a single Save beside the title and deletion at the end. Tab pages
+  helpful votes and updated date; Content and Settings sit under its header. Collection settings are Settings' cards of
+  rows (Settings rows): Details, then Access ("Who can read" and "People without access" as dropdowns, with a line on
+  the choice picked or what it inherits and the rest behind the ⓘ; the groups to tick under "Specific groups"), a single Save beside the title and Delete in a card
+  of its own at the end. Tab pages
   keep Content, Access and Settings. Recently deleted articles can still be restored from the overview.
 
 - **Sidebar** (`AppSidebar`): its groups one under the other with a line between them (no gap
@@ -684,6 +686,8 @@ Use these instead of hand-rolling layout:
   - A list is read first: a row shows values, changed on click (a badge that
     opens a menu, like `PostStatusMenu`), in a preview pane or in bulk; no
     form controls (selects, checkboxes for settings) in rows, on phones too.
+    Settings → Team & roles is the exception: a role is a dropdown on its row, for whoever may change it (a badge
+    for everyone else), saved as it's picked.
   - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
     width: `?post=<number>` in the address (shareable, Back works), the list
     left as it was, the open row highlighted out to its list's edges
@@ -823,12 +827,16 @@ widths, in light and dark (in development only).
   - One Save: "Save changes" in the pane's header, there once the page has a form (`useCustomizeForm`), enabled once
     something differs. A switch that acts alone saves at once.
   - A choice of two to five short options is a `Segmented` (`components/ui/segmented.tsx`); more, or long ones, a
-    `Select`. No radios with a sentence each, no native `<select>`. A list's rows that each hold the choice beside other
-    things (User properties' format, beside the key and a currency) use a `Select` whatever the count, so they fit a phone.
+    `Select`. No radios with a sentence each, no native `<select>`. A choice that saves as it's picked and changes
+    who can see something (Access's Public or Private) stays a `Select`: in a `Segmented`, an arrow key would pick it.
+    A list's rows that each hold the choice beside other things (User properties' format, beside the key and a
+    currency) use a `Select` whatever the count, so they fit a phone.
   - A list (people, groups, keys, webhooks, redirects) has its count beside the card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
     repeat the page's, and so no count: its "New" button is in the pane's header (`SettingsPane`'s `actions`).
+    What can't be done says why when it's tried, not in a line that's always there (Team & roles' "Leave project"
+    for the only owner).
   - An upload is its thumbnail and an Upload button on the row; what files it takes is said when one is refused.
   - A number carries its unit in the field ("25 people").
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its

@@ -22,16 +22,31 @@ test("an owner sets AI answers' AI model: on Free, Best opens the upgrade prompt
   await expect(level("Balanced")).toBeChecked();
   await expect(owner.getByText("Answers Claude Haiku 5.5 · Summaries Claude Haiku 5.5", { exact: true })).toBeVisible();
   // Then the page's own settings, a label each.
-  await expect(owner.getByRole("group", { name: "Answer length" })).toBeVisible();
+  const length = owner.getByRole("radiogroup", { name: "Answer length" });
+  await expect(length.locator("label")).toHaveText(["Short", "Medium", "Detailed"]);
+  await expect(length.getByRole("radio", { name: "Medium" })).toBeChecked();
   await expect(owner.getByLabel("Instructions")).toBeVisible();
   await expect(owner.getByLabel("Off-limits topics")).toBeVisible();
+  // One Save, in the page's header: enabled once something differs from what's saved.
+  const save = owner.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeDisabled();
   // On a phone the page fits its width, chips included.
-  await owner.getByLabel("Off-limits topics").fill("refund");
-  await owner.getByLabel("Off-limits topics").press("Enter");
-  await owner.setViewportSize({ width: 360, height: 740 });
+  for (const topic of ["refunds", "legal advice", "a competitor's pricing and roadmap"]) {
+    await owner.getByLabel("Off-limits topics").fill(topic);
+    await owner.getByLabel("Off-limits topics").press("Enter");
+  }
+  await expect(save).toBeEnabled();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await checkpoint(owner, "team-settings-ai-answers-desktop");
+  await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await checkpoint(owner, "team-settings-ai-answers-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
+  // Removing them again leaves nothing to save.
+  for (const topic of ["refunds", "legal advice", "a competitor's pricing and roadmap"]) {
+    await owner.getByRole("button", { name: `Remove ${topic}` }).click();
+  }
+  await expect(save).toBeDisabled();
 
   // A level the plan lacks opens the upgrade prompt, and the level stays as it was.
   await expect(level("Best")).toHaveAccessibleDescription("Choosing an AI level needs the Pro plan.");

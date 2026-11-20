@@ -325,7 +325,7 @@ test("Get set up's support step waits for the inbox's first email once it's on, 
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
-  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
   await owner.goto(`/app/${slug}`);
   const card = owner.getByRole("list", { name: "Get set up" }).getByRole("listitem").filter({ hasText: "Set up your support inbox" });
   await expect(card).toContainText("(to do)");

@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "./fixtures";
+import { expect, type Locator, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, png, signUp } from "./helpers";
 import { latestEmailTo, linkIn, verifyEmail } from "./mail";
 
 test("the team sets what readers can do with an article and the docs' home, seeing each change before saving it", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -58,13 +58,42 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(preview.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Copy page" })).toBeVisible();
   await expect(preview.getByText(/^Updated /)).toBeVisible();
+  // One card of switches, no headings or hints: the preview shows what each does, and when a date shows is behind its ⓘ.
+  const actions = owner.locator("[data-slot=portal-settings]");
+  const menu = owner.getByRole("switch", { name: "Page actions menu", exact: true });
+  const inMenu = owner.getByRole("group", { name: "In the page actions menu" });
+  await expect(actions.getByRole("heading")).toHaveCount(0);
+  await expect(actions.getByText(/Lets readers copy/)).toHaveCount(0);
+  await expect(actions.getByRole("switch")).toHaveCount(5);
+  await expect(inMenu.getByRole("switch")).toHaveCount(3);
+  await expect(owner.getByText(/None shows until you do/)).toHaveCount(0);
+  await actions.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("Under each article's heading: when you last published changes to it. None shows until you do.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await checkpoint(owner, "customize-content-actions");
+  // On a phone nothing runs off the side: each switch stays beside its name, and the menu's own are indented under it.
+  const box = async (locator: Locator) => (await locator.boundingBox())!;
+  const viewport = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await actions.evaluate((column) => column.scrollWidth - column.clientWidth)).toBeLessThanOrEqual(0);
+  const [actionsCard, menuLabel, menuSwitch, copyLabel, copySwitch] = await Promise.all(
+    [actions.locator("form section > div"), actions.getByText("Page actions menu", { exact: true }), menu, actions.getByText("Copy as Markdown", { exact: true }), owner.getByRole("switch", { name: "Copy as Markdown" })].map(box),
+  );
+  expect(copyLabel.x).toBeGreaterThan(menuLabel.x);
+  for (const [label, toggle] of [[menuLabel, menuSwitch], [copyLabel, copySwitch]]) {
+    expect(toggle.x).toBeGreaterThan(label.x + label.width);
+    expect(toggle.y).toBeLessThan(label.y + label.height);
+    expect(toggle.x + toggle.width).toBeLessThanOrEqual(actionsCard.x + actionsCard.width);
+  }
+  await checkpoint(owner, "customize-content-actions-phone");
+  await owner.setViewportSize(viewport);
   // Each switch shows in the preview at once.
   await owner.getByRole("switch", { name: "Copy as Markdown" }).uncheck();
   await expect(preview.getByRole("button", { name: "Copy page" })).toHaveCount(0);
   await expect(preview.getByRole("button", { name: "Page actions" })).toBeVisible();
-  await owner.getByRole("switch", { name: "Show the last updated date" }).uncheck();
+  await owner.getByRole("switch", { name: "Last updated date", exact: true }).uncheck();
   await expect(preview.getByText(/^Updated /)).toHaveCount(0);
-  await checkpoint(owner, "customize-content-actions");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Content actions saved")).toBeVisible();
 
@@ -76,7 +105,7 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("button", { name: "Copy page" })).toHaveCount(0);
   await expect(visitor.getByText(/^Updated /)).toHaveCount(0);
   // With the menu off, there's none.
-  await owner.getByRole("switch", { name: "Show the page actions menu" }).uncheck();
+  await menu.uncheck();
   await expect(preview.getByRole("button", { name: "Page actions" })).toHaveCount(0);
   await owner.getByRole("button", { name: "Save changes" }).click();
   // Saved once nothing's left to save (the last save's toast may still be up).
@@ -95,9 +124,19 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await rail.getByRole("link", { name: "Docs home" }).click();
   await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
   await expect(preview.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
-  await owner.getByRole("switch", { name: "Show popular articles" }).check();
+  // One card of rows, no title or hints: the placeholders say what an empty field shows, and what Popular articles are is behind its ⓘ.
+  const settings = owner.locator("[data-slot=portal-settings]");
+  const popular = owner.getByRole("switch", { name: "Popular articles", exact: true });
+  await expect(settings.getByText("Header", { exact: true })).toHaveCount(0);
+  await expect(settings.getByText(/Empty for/)).toHaveCount(0);
+  await expect(owner.getByLabel("Title", { exact: true })).toHaveAttribute("placeholder", "How can we help?");
+  await expect(owner.getByText(/most-read articles/)).toHaveCount(0);
+  await settings.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await popular.check();
   await expect(preview.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveCount(3);
-  await owner.getByRole("switch", { name: "Show popular articles" }).uncheck();
+  await popular.uncheck();
   await owner.getByLabel("Title", { exact: true }).fill("  Acme help  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");
   await expect(preview.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
@@ -108,27 +147,91 @@ test("the team sets what readers can do with an article and the docs' home, seei
   // Saved as trimmed, and the form shows what's saved: nothing left to save.
   await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("Acme help");
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  // On a phone nothing runs off the side: a field fills the card under its label, and the switch stays beside its own.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await settings.evaluate((column) => column.scrollWidth - column.clientWidth)).toBeLessThanOrEqual(0);
+  const [card, titleLabel, title, popularLabel, toggle] = await Promise.all(
+    [settings.locator("form section > div"), settings.getByText("Title", { exact: true }), owner.getByLabel("Title", { exact: true }), settings.getByText("Popular articles", { exact: true }), popular].map(box),
+  );
+  expect(title.y).toBeGreaterThanOrEqual(titleLabel.y + titleLabel.height);
+  expect(title.width).toBeGreaterThan(card.width - 48);
+  expect(toggle.x).toBeGreaterThan(popularLabel.x + popularLabel.width);
+  expect(toggle.y).toBeLessThan(popularLabel.y + popularLabel.height);
+  expect(toggle.x + toggle.width).toBeLessThanOrEqual(card.x + card.width);
+  await checkpoint(owner, "customize-docs-home-phone");
+  await owner.setViewportSize(viewport);
   await visitor.goto("/docs");
   await expect(visitor.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
 });
 
 test("the team sets the portal's search listing, seeing it as a search result and a shared link", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/settings/seo`);
   const result = owner.getByRole("figure", { name: "Search result preview" });
+  const shared = owner.getByRole("figure", { name: "Shared link preview" });
+  const settings = owner.locator('[data-slot="portal-settings"]');
   await expect(result).toContainText("Acme");
+  // One card of rows under the page's title: no headings of its own, and no line on what files the image takes.
+  await expect(settings.locator('[data-slot="setting-row"]')).toHaveCount(2);
+  await expect(settings.getByRole("heading")).toHaveCount(0);
+  await expect(settings.getByText(/PNG|drop an image|works best/)).toHaveCount(0);
+  // Without a page title the project's name is the title, so it's the field's placeholder.
+  await expect(owner.getByLabel("Page title")).toHaveAttribute("placeholder", "Acme");
+  await expect(owner.getByText("0/160")).toBeVisible();
   await owner.getByLabel("Page title").fill("Acme Help Center");
   await owner.getByLabel("Meta description").fill("Answers about Acme, from the team that makes it.");
   await expect(result).toContainText("Acme Help Center");
-  await expect(owner.getByRole("figure", { name: "Shared link preview" })).toContainText("Answers about Acme, from the team that makes it.");
+  await expect(shared).toContainText("Answers about Acme, from the team that makes it.");
   await expect(owner.getByText("48/160")).toBeVisible();
+  // The share image is a row: its size under the label, then its thumbnail and "Upload", named for the image.
+  const image = owner.getByLabel("Share image", { exact: true });
+  await expect(owner.getByRole("button", { name: "Upload share image" })).toHaveAccessibleDescription("1200×630");
+  await expect(shared).toContainText("No share image");
+  await image.setInputFiles({ name: "share.png", mimeType: "image/png", buffer: png(1200, 630) });
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  await expect(shared.locator("img")).toBeVisible();
+  // It can be taken away again (focus goes to "Upload", not out of the row), and put back.
+  await owner.getByRole("button", { name: "Remove share image" }).click();
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Upload share image" })).toBeFocused();
+  await expect(shared).toContainText("No share image");
+  await image.setInputFiles({ name: "share.png", mimeType: "image/png", buffer: png(1200, 630) });
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  await expect(shared.locator("img")).toBeVisible();
   await checkpoint(owner, "customize-seo");
+
+  // On a phone nothing runs off the side, and the image's buttons stay on its label's line.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await settings.evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
+  const label = (await settings.getByText("Share image", { exact: true }).boundingBox())!;
+  for (const name of ["Upload share image", "Remove share image"]) {
+    const button = (await owner.getByRole("button", { name }).boundingBox())!;
+    expect(button.x, name).toBeGreaterThan(label.x + label.width);
+    expect(button.y, name).toBeLessThan(label.y + label.height);
+    expect(button.x + button.width, name).toBeLessThanOrEqual(390);
+  }
+  // The title's field is under its label, at the card's width.
+  const title = (await owner.getByLabel("Page title").boundingBox())!;
+  expect(title.y).toBeGreaterThanOrEqual((await settings.getByText("Page title", { exact: true }).boundingBox())!.y + 16);
+  expect(title.width).toBeGreaterThan(300);
+  await checkpoint(owner, "customize-seo-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("SEO saved")).toBeVisible();
+  // Saved with the rest: still there when the page is opened again.
+  await owner.reload();
+  await expect(settings.getByRole("img", { name: "Share image preview" })).toBeVisible();
+  await expect(owner.getByLabel("Page title")).toHaveValue("Acme Help Center");
 
   // Its title follows each page's; pages without a description of their own (signing in) have the portal's.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -290,8 +393,19 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   await owner.getByLabel("Custom CSS").fill(".portal-header { background: rgb(1, 2, 3); }");
   await expect(preview.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
   // Its HTML runs only on an address of the team's own, which this portal doesn't have yet.
-  await expect(owner.getByText("Your portal isn't on one yet", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Runs only on your own domain.")).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Add a domain" })).toHaveAttribute("href", `/app/${slug}/settings/domain`);
+  // Each field keeps its name, and the HTML's says where it goes and where it runs.
+  await expect(owner.getByRole("textbox", { name: "Custom HTML" })).toHaveAccessibleDescription("end of every page Runs only on your own domain. Add a domain");
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(owner, "customize-custom-code");
+  // On a phone nothing runs past the edge: the fields take the card's width.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.getByLabel("Custom CSS")).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.locator('[data-slot="portal-settings"]').evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(owner, "customize-custom-code-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
 
@@ -396,6 +510,7 @@ test("on a laptop a Portal settings page fits the window, and each side scrolls 
     const other = `e2e-${randomUUID().slice(0, 8)}`;
     await createProject(inviter, name, other);
     await inviter.goto(`/app/${other}/team`);
+    await inviter.getByRole("button", { name: "Invite people" }).click();
     await inviter.getByRole("textbox", { name: "Email of the person to invite" }).fill(owner.email);
     await inviter.getByRole("button", { name: "Send invite" }).click();
     await expect(inviter.getByText(`Invite sent to ${owner.email}`)).toBeVisible();

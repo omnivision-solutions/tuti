@@ -2,7 +2,7 @@
 
 import type { TeamRole } from "@tuti/db";
 import { MoreHorizontalIcon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -14,40 +14,81 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_LABELS } from "@/lib/roles";
 import { changeTeamRole, leaveProject, removeMember } from "@/server/team";
 
-/** A member's ••• menu: Change role (the roles you may give) and Remove, which asks first. */
+/** A member's role on their row, for whoever may change it: the roles they may give, saved as one is picked. */
+export function MemberRoleSelect({ projectSlug, memberId, name, role, assignable }: { projectSlug: string; memberId: string; name: string; role: TeamRole; assignable: TeamRole[] }) {
+  const [pending, startTransition] = useTransition();
+  // The role picked shows while it saves, and goes back to the saved one if that fails.
+  const [shown, setShown] = useOptimistic(role);
+  return (
+    <Select
+      items={ROLE_LABELS}
+      value={shown}
+      // Not disabled while it saves: focus comes back to it once its list closes. A pick made meanwhile is ignored.
+      onValueChange={(value) => {
+        if (value === shown || pending) {
+          return;
+        }
+        startTransition(async () => {
+          setShown(value as TeamRole);
+          const result = await changeTeamRole(projectSlug, memberId, String(value));
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            const n = result.cancelledInvites ?? 0;
+            const cancelled =
+              n === 1
+                ? ". The invite they sent for a role they can't give any more was cancelled."
+                : n > 1
+                  ? `. The ${n} invites they sent for roles they can't give any more were cancelled.`
+                  : "";
+            toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}${cancelled}`);
+          }
+        });
+      }}
+    >
+      <SelectTrigger className="w-30" aria-label={`Role of ${name}`} aria-busy={pending}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {assignable.map((r) => (
+          <SelectItem key={r} value={r}>
+            {ROLE_LABELS[r]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * A member's ⋯ menu. Someone else's: Remove, which asks first. Your own (`leave`): Leave project, which asks first too,
+ * or says why you can't while you're the only owner (a project always keeps one).
+ */
 export function MemberActions({
   projectSlug,
   memberId,
   name,
-  role,
-  assignable,
+  leave,
 }: {
   projectSlug: string;
   memberId: string;
   name: string;
-  role: TeamRole;
-  assignable: TeamRole[];
+  leave?: { projectName: string; onlyOwner: boolean };
 }) {
   const [pending, startTransition] = useTransition();
-  const [removing, setRemoving] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   return (
     <>
@@ -56,101 +97,53 @@ export function MemberActions({
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-40">
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Change role</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                value={role}
-                onValueChange={(value) =>
+          <DropdownMenuItem variant="destructive" onClick={() => setAsking(true)}>
+            {leave ? "Leave project" : "Remove"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog open={asking} onOpenChange={setAsking}>
+        {leave?.onlyOwner ? (
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>You&apos;re the only owner</AlertDialogTitle>
+              <AlertDialogDescription>To leave, make someone else an owner first.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>OK</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        ) : (
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{leave ? `Leave ${leave.projectName}?` : `Remove ${name}?`}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {leave
+                  ? "The API keys you created for it stop working, the invites you sent are cancelled, and you'll need a new invite to come back."
+                  : "They lose access to this project right away, the API keys they created stop working, and the invites they sent are cancelled. You can invite them again later."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() =>
                   startTransition(async () => {
-                    const result = await changeTeamRole(projectSlug, memberId, String(value));
-                    if (result.error) {
+                    const result = leave ? await leaveProject(projectSlug) : await removeMember(projectSlug, memberId);
+                    if (result?.error) {
                       toast.error(result.error);
-                    } else {
-                      const n = result.cancelledInvites ?? 0;
-                      const cancelled =
-                        n === 1
-                          ? ". The invite they sent for a role they can't give any more was cancelled."
-                          : n > 1
-                            ? `. The ${n} invites they sent for roles they can't give any more were cancelled.`
-                            : "";
-                      toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}${cancelled}`);
+                    } else if (!leave) {
+                      toast.success(`${name} removed`);
                     }
                   })
                 }
               >
-                {assignable.map((r) => (
-                  <DropdownMenuRadioItem key={r} value={r} closeOnClick>
-                    {ROLE_LABELS[r]}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}>
-            Remove
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <AlertDialog open={removing} onOpenChange={setRemoving}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
-            <AlertDialogDescription>They lose access to this project right away, the API keys they created stop working, and the invites they sent are cancelled. You can invite them again later.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() =>
-                startTransition(async () => {
-                  const result = await removeMember(projectSlug, memberId);
-                  if (result.error) {
-                    toast.error(result.error);
-                  } else {
-                    toast.success(`${name} removed`);
-                  }
-                })
-              }
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+                {leave ? "Leave" : "Remove"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        )}
       </AlertDialog>
     </>
-  );
-}
-
-export function LeaveProjectButton({ projectSlug, projectName }: { projectSlug: string; projectName: string }) {
-  const [pending, startTransition] = useTransition();
-
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Leave project</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Leave {projectName}?</AlertDialogTitle>
-          <AlertDialogDescription>The API keys you created for it stop working, the invites you sent are cancelled, and you&apos;ll need a new invite to come back.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={() =>
-              startTransition(async () => {
-                const result = await leaveProject(projectSlug);
-                if (result?.error) {
-                  toast.error(result.error);
-                }
-              })
-            }
-          >
-            Leave
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

@@ -22,12 +22,29 @@ test("a team enables SSO; their app signs people into the portal, once per token
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  // Enabling SSO shows the secret once, with the integration snippet.
+  // The example is behind its button, with Copy; the address to send people to has one too.
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const example = owner.locator("pre").filter({ hasText: "setProtectedHeader" });
+  await expect(example).toHaveCount(0);
+  await owner.getByRole("button", { name: "Show example" }).click();
+  await expect(example).toContainText(`${portalUrl(slug)}/sso?token=`);
+  await owner.getByRole("button", { name: "Copy example" }).click();
+  await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toContain('.setProtectedHeader({ alg: "HS256" })');
+  await owner.getByRole("button", { name: "Hide example" }).click();
+  await expect(example).toHaveCount(0);
+  await owner.getByRole("button", { name: "Copy sign-in address" }).click();
+  await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}/sso`);
+
+  // Enabling SSO (its switch) shows the secret once.
+  const enabled = owner.getByRole("switch", { name: "Single sign-on" });
+  await expect(enabled).not.toBeChecked();
+  await expect(owner.getByRole("button", { name: "Rotate secret" })).toHaveCount(0);
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" });
   const secret = await secretAlert.locator("code").innerText();
   expect(secret).toMatch(/^tsso_/);
+  await expect(enabled).toBeChecked();
   await expect(owner.getByText(`${portalUrl(slug)}/sso`).first()).toBeVisible();
   await checkpoint(owner, "team-sso-enabled");
 
@@ -59,10 +76,14 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await replay.goto(`/sso?token=${ssoToken(secret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=invalid_token$/);
 
-  // Once SSO is disabled (after confirming), even a token signed with the current secret is refused.
-  await owner.getByRole("button", { name: "Disable" }).click();
+  // Turning the switch off asks first: cancelled, SSO stays on. Once disabled (after confirming), even a token signed
+  // with the current secret is refused.
+  await enabled.click();
+  await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Cancel" }).click();
+  await expect(enabled).toBeChecked();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
-  await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
+  await expect(owner.getByRole("switch", { name: "Single sign-on" })).not.toBeChecked();
   await replay.goto(`/sso?token=${ssoToken(newSecret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=sso_not_enabled$/);
 });
@@ -75,19 +96,28 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   const name = "Acme Customer Feedback, Roadmap and Product Updates Center";
   await createProject(owner, name, slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
 
-  // Where the team's app signs its users in: https only.
+  // Where the team's app signs its users in: https only, saved by the page's one Save.
   const signInPage = owner.getByLabel("Your app's sign-in page");
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await signInPage.fill("http://app.acme.example/tuti");
-  await owner.getByRole("button", { name: "Save" }).click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Enter an https:// address")).toBeVisible();
   await signInPage.fill("https://app.acme.example/tuti");
-  await owner.getByRole("button", { name: "Save" }).click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Sign-in page saved")).toBeVisible();
   await owner.reload();
   await expect(signInPage).toHaveValue("https://app.acme.example/tuti");
+  // On a phone nothing runs off the side, and the address's field is under its label.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  const labelBox = (await owner.getByText("Your app's sign-in page", { exact: true }).boundingBox())!;
+  expect((await signInPage.boundingBox())!.y).toBeGreaterThanOrEqual(labelBox.y + labelBox.height);
+  await checkpoint(owner, "team-sso-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await checkpoint(owner, "team-sso-sign-in-page");
 
   // The team's app, signed in already: it signs a token and sends them back with the redirect it was given.
@@ -151,19 +181,20 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   await expect(async () => expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F")).toPass();
   // A private portal with readers the team added by email keeps its sign-in page, for them (with the button first).
   await owner.goto(`/app/${slug}/settings/access`);
-  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
   expect(await sentTo("/sign-in")).toBe("https://app.acme.example/tuti?redirect=%2F");
-  const readers = owner.getByRole("region", { name: "Readers" });
+  await owner.getByRole("button", { name: "Add readers" }).click();
+  const readers = owner.getByRole("dialog", { name: "Add readers" });
   await readers.getByLabel("Email addresses").fill(`e2e-${randomUUID()}@example.com`);
   await readers.getByRole("button", { name: "Add readers" }).click();
   await expect(owner.getByText(/1 reader added/)).toBeVisible();
   expect(await sentTo("/sign-in")).toBeUndefined();
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Disable" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
-  await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
+  await expect(owner.getByRole("switch", { name: "Single sign-on" })).not.toBeChecked();
   await visitor.goto("/sign-in");
   await expect(visitor.getByLabel("Email")).toBeVisible();
   await expect(visitor.getByRole("link", { name: `Continue with ${name}` })).toHaveCount(0);
@@ -175,7 +206,7 @@ test("a private portal whose plan no longer has private portals keeps its sign-i
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   await owner.getByLabel("Your app's sign-in page").fill("https://app.acme.example/tuti");
   await owner.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Sign-in page saved")).toBeVisible();
@@ -200,7 +231,7 @@ test("a collection for one reader group: people the app signs in with that group
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
   await api("/collections", { name: "Basics" });
@@ -313,7 +344,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
   await api("/groups", { name: "Enterprise customers", conditions: [{ property: "groups", op: "is", value: "enterprise" }] });
@@ -392,10 +423,28 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await tree.getByRole("link", { name: "SAML", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs/collections/saml`);
   await owner.getByRole("navigation", { name: "Collection" }).getByRole("link", { name: "Settings" }).click();
-  const collectionAccess = owner.getByRole("region", { name: "Access" }).getByRole("group", { name: "Who can read" });
-  await expect(collectionAccess.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  await expect(collectionAccess).toContainText("Readers in Enterprise customers");
+  const collectionAccess = owner.getByRole("region", { name: "Access" }).getByRole("combobox", { name: "Who can read" });
+  await expect(collectionAccess).toContainText("Inherit");
+  await expect(collectionAccess).toHaveAccessibleDescription(/Readers in Enterprise customers/);
   await checkpoint(owner, "team-docs-collection-who-can-read", { fullPage: false });
+  // For the group itself: its box shows under "Specific groups", and a tick stays while another choice is picked.
+  const groupBox = owner.getByRole("region", { name: "Access" }).getByRole("checkbox", { name: "Enterprise customers" });
+  await expect(groupBox).toHaveCount(0);
+  await collectionAccess.click();
+  await owner.getByRole("option", { name: "Specific groups" }).click();
+  await expect(groupBox).not.toBeChecked();
+  await groupBox.check();
+  await collectionAccess.click();
+  await owner.getByRole("option", { name: "Signed-in readers" }).click();
+  await expect(groupBox).toHaveCount(0);
+  await collectionAccess.click();
+  await owner.getByRole("option", { name: "Specific groups" }).click();
+  await expect(groupBox).toBeChecked();
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Collection saved")).toBeVisible();
+  await owner.reload();
+  await expect(collectionAccess).toContainText("Specific groups");
+  await expect(groupBox).toBeChecked();
 
   // The tab, its collection and article are gone for everyone but the group (and the team).
   for (const person of [visitor, reader]) {
@@ -507,7 +556,7 @@ test("a group from conditions: readers whose properties match read its collectio
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
-  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
 
