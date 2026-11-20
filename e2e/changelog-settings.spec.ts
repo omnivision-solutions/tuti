@@ -247,6 +247,21 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
   await expect(row.getByText("2/3")).toBeVisible();
   await expect(pick).toBeEnabled();
+  // Another picked in its place, the one that dropped out is gone for good: published again, it doesn't come back as
+  // a fourth.
+  await pick.click();
+  await dialog.getByRole("button", { name: "Search by attendee" }).click();
+  await expect(row.getByText("3/3")).toBeVisible();
+  await api("/changelog/2/publish", { announce: false });
+  await team.getByRole("radiogroup", { name: "AI model" }).getByRole("radio", { name: "Balanced" }).click();
+  await team.getByRole("button", { name: "Remove Search by attendee" }).click();
+  // Once the page hears it's published again, it's one to pick, not a chip.
+  await pick.click();
+  await expect(dialog.getByRole("button", { name: "Agenda view" })).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await expect(row.getByText("2/3")).toBeVisible();
   // What was typed is still there.
   await expect(team.getByLabel("Instructions")).toHaveValue("Short and plain.");
   // A saved example unpublished goes the same way, and what's typed and not saved stays.
