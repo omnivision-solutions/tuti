@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { widgetUser } from "@/lib/widget-session";
 
+import { canActIn } from "./membership";
 import { currentPostViewer, readableProject } from "./portal-access";
 import { type PostViewer, postViewer, visiblePostsSql } from "./post-visibility";
 import { sessionIn } from "./session";
@@ -54,8 +55,9 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
   ];
   const userId = widgetToken ? widgetUser(project.id, String(widgetToken)) : (await sessionIn(project.id))?.user.id;
   // Every candidate is judged (up to twice LIMIT, one request), so a duplicate found only by its words isn't cut first.
-  // Only for someone signed in, who can post: the check is charged to the project, and anyone can type on a portal.
-  const shown = (userId ? await duplicatesOnly(project.id, query.data, ranked) : ranked).slice(0, LIMIT);
+  // Only for someone who can post here: the check is charged to the project, and anyone can type on a portal.
+  const judged = userId && (await canActIn(userId, project.id)) ? await duplicatesOnly(project.id, query.data, ranked) : ranked;
+  const shown = judged.slice(0, LIMIT);
   const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
   return shown.map(({ body: _, ...post }) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));
 }

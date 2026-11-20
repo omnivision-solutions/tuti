@@ -45,8 +45,12 @@ export async function backfillEmbeddings(log: JobLogger) {
       // A post checked before but newer than one checked now never saw it (a post is compared with older ones): it's
       // checked against those alone. Where that fails, they're marked unchecked again, so the next run checks them, and
       // this, again.
+      const doneIn = new Map<string, typeof done>();
+      for (const row of done) {
+        doneIn.set(row.projectId, [...(doneIn.get(row.projectId) ?? []), row]);
+      }
       for (const post of rows.filter((row) => row.duplicatesCheckedAt)) {
-        const older = done.filter((row) => row.projectId === post.projectId && row.createdAt < post.createdAt).map((row) => row.id);
+        const older = (doneIn.get(post.projectId) ?? []).filter((row) => row.createdAt < post.createdAt).map((row) => row.id);
         if (older.length === 0) {
           continue;
         }

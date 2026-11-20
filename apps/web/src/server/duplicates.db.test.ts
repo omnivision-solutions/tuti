@@ -344,6 +344,21 @@ describe("with a decision model (OpenRouter)", () => {
     expect(model.decisions).toHaveLength(asked);
   });
 
+  test("while typing, someone who can read the portal but not post here (another project's SSO user) gets the posts as found", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    const elsewhere = await signUp();
+    const other = await createProject(elsewhere);
+    await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-1", userId: elsewhere.id, email: elsewhere.email } });
+    actAs(elsewhere);
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(0);
+  });
+
   test("while typing signed out, nothing is asked (it'd be charged to the project): the posts are shown as found", async () => {
     vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
     openai.setVector("Translate articles please", along(1));
@@ -508,6 +523,7 @@ describe("with a decision model (OpenRouter)", () => {
     const found = await findSimilarPosts(project.slug, "Translate articles please");
     expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
     expect(model.decisions).toHaveLength(0);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("Reading AI credits for a duplicates check failed"), expect.anything());
   });
 
   test("while typing, a failure shows the posts as found", async () => {
