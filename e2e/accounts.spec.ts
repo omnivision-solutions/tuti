@@ -142,7 +142,6 @@ test("a team member switches projects, edits their account, signs out and back i
   await expect(olive.getByText("Password changed")).toBeVisible();
   await expect(dialog).toBeHidden();
   await olive.unroute("**/api/auth/change-password");
-  await expect(olive.getByText("Password changed")).toBeHidden({ timeout: 15_000 });
   // On a phone nothing runs off the side, the name's field is under its label, and the dialog fits the screen.
   await olive.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => olive.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);

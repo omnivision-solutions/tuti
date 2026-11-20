@@ -1408,7 +1408,7 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   await owner.getByLabel("Name").fill("Olive O. Owner");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(asTheyHappen).toBeChecked();
-  // While a pick is being saved another waits: the options stay focusable, and what was picked stays.
+  // While a pick is being saved the options stay focusable, and another pick is saved after it: the last one stays.
   let arrived!: () => void;
   let release!: () => void;
   const reached = new Promise<void>((resolve) => (arrived = resolve));
@@ -1428,11 +1428,13 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   const digest = owner.getByRole("radio", { name: "Daily digest" });
   await option(owner, "Daily digest").click();
   await expect(digest).toBeFocused();
-  await expect(off).toBeChecked();
+  await expect(digest).toBeChecked();
   release();
   await expect(saving).not.toHaveAttribute("aria-busy", "true");
-  await expect(off).toBeChecked();
   await owner.unroute("**/app/account");
+  await owner.reload();
+  await expect(digest).toBeChecked();
+  await expect(owner.getByText(/^Daily at 8 am \(/)).toBeVisible();
   // What each choice means is behind the row's ⓘ.
   await owner.getByRole("button", { name: "More about this setting" }).click();
   await expect(owner.getByText("If you own a project, you still hear what goes out by itself.")).toBeVisible();
@@ -1450,7 +1452,7 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   await owner.context().clearCookies();
   await option(owner, "As they happen").click();
   await expect(owner.getByText("Sign in first")).toBeVisible();
-  await expect(off).toBeChecked();
+  await expect(digest).toBeChecked();
 });
 
 test("the email's Approve, clicked signed out: sign in, and it's done; the post is in progress and the article's new version on the portal", async ({ browser }, testInfo) => {

@@ -373,7 +373,7 @@ const EMAILS = [
 
 /**
  * Account → Notifications' "Autopilot emails" row: as each change is analysed, a daily digest, or off. Saved as it's
- * picked; while that's on its way another pick waits (the options stay focusable).
+ * picked; one picked while another is on its way is saved after it (the options stay focusable).
  */
 export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_HAPPEN" | "DIGEST" | "OFF"; timeZone: string | null }) {
   const [pending, startTransition] = useTransition();
@@ -396,24 +396,37 @@ export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_H
     setGivenZone(timeZone);
     setZone(timeZone);
   }
+  // A pick made while another is being saved goes out once that one is answered: the last pick is what's saved.
+  const saving = useRef(false);
+  const queued = useRef<typeof choice | null>(null);
   const pick = (value: typeof choice) => {
-    if (pending) {
+    setPicked(value);
+    if (saving.current) {
+      queued.current = value;
       return;
     }
-    setPicked(value);
+    saving.current = true;
     startTransition(async () => {
-      // The digest comes in the morning where they are: the time zone their browser reports.
-      const result = await setAutopilotEmails(value, browserZone());
-      if (result.error) {
-        setPicked(saved);
-        toast.error(result.error);
-      } else {
-        setSaved(value);
-        if (value === "DIGEST") {
+      let last = saved;
+      for (let next: typeof choice | null = value; next; next = queued.current) {
+        queued.current = null;
+        // The digest comes in the morning where they are: the time zone their browser reports.
+        const result = await setAutopilotEmails(next, browserZone()).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+        if (result.error) {
+          queued.current = null;
+          saving.current = false;
+          setPicked(last);
+          toast.error(result.error);
+          return;
+        }
+        last = next;
+        setSaved(next);
+        if (next === "DIGEST") {
           setZone(browserZone());
         }
-        toast.success("Saved");
       }
+      saving.current = false;
+      toast.success("Saved");
     });
   };
   const digest = picked === "DIGEST" && zone;
