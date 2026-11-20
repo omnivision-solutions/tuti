@@ -198,7 +198,15 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   const options = owner.getByRole("radiogroup", { name: "Where your portal goes live" });
   await expect(options.getByRole("radio", { name: /Custom domain/ })).toContainText("A custom domain needs the Pro plan.");
   await expect(options.getByRole("radio", { name: /Sub-folder/ })).toContainText("A portal under a path of your site needs the Business plan.");
-  await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
+  // Like any other option, described by the plan it needs; picking it opens the upgrade prompt and leaves the Tuti address picked.
+  await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "false");
+  await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAccessibleDescription("A custom domain needs the Pro plan.");
+  await options.getByRole("radio", { name: /Custom domain/ }).click();
+  const needsPro = owner.getByRole("dialog", { name: "A custom domain needs the Pro plan." });
+  await expect(needsPro.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await needsPro.getByRole("button", { name: "Not now" }).click();
+  await expect(needsPro).toBeHidden();
+  await expect(options.getByRole("radio", { name: /Tuti address/ })).toHaveAttribute("aria-checked", "true");
   await checkpoint(owner, "customize-address-free-plan");
 
   // Its own address for emails needs a plan too: "Set up" looks like any other, says what it needs and opens the upgrade prompt, not its steps.

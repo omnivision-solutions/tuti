@@ -66,9 +66,13 @@ test("custom domains off on this server: that option says so and can't be picked
   expect(html).toContain("Not set up on this server");
 });
 
-test("what the project's plan doesn't include is locked, saying which plan has it", () => {
+test("what the project's plan doesn't include looks like any other option, and says in full which plan has it", () => {
   const html = card({ domain: null, site: null, notIncluded: { domain: "A custom domain needs the Pro plan.", site: "A portal under a path of your site needs the Business plan." } });
-  expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain (locked)", "Sub-folder (locked)"]);
-  expect(html).toContain("A custom domain needs the Pro plan.");
+  // Not locked or faded: picking one opens the upgrade prompt (the plans journey).
+  expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain", "Sub-folder"]);
+  expect(html).not.toContain("opacity-60");
+  // The plan it needs is its description, whole; an example address is cut where it doesn't fit.
+  expect(html).toMatch(/aria-describedby="([^"]+)"[^>]*>.*?<span id="\1" class="text-sm text-muted-foreground">A custom domain needs the Pro plan\.</);
+  expect(html).toContain('<span class="text-sm text-muted-foreground truncate">acme.tuti.so</span>');
   expect(html).toContain("A portal under a path of your site needs the Business plan.");
 });

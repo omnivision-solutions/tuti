@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon, FolderIcon, GlobeIcon, LinkIcon, type LucideIcon } from "lucide-react";
-import { type ComponentProps, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { copyText } from "@/components/copy-button";
@@ -9,6 +9,8 @@ import { CustomDomainSettings } from "@/components/custom-domain";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import { SiteMountSettings } from "@/components/site-mount";
 import { Button } from "@/components/ui/button";
+import { UpgradeDialog } from "@/components/upgrade-dialog";
+import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { cn } from "@/lib/utils";
 
 type Domain = ComponentProps<typeof CustomDomainSettings>["domain"];
@@ -27,6 +29,7 @@ export function OwnAddressSettings({
   site,
   domainsOn,
   notIncluded,
+  upgrade,
   portalAddress,
   protocol,
   oneClick,
@@ -38,6 +41,8 @@ export function OwnAddressSettings({
   domainsOn: boolean;
   /** What the project's plan doesn't include, each saying which plan does (null: included). */
   notIncluded: { domain: string | null; site: string | null };
+  /** The upgrade prompt for each of those: picking one opens it. */
+  upgrade?: { domain?: UpgradePrompt | null; site?: UpgradePrompt | null };
   /** The portal's Tuti address, as a host (acme.tuti.so). */
   portalAddress: string;
   /** Where the domain's DNS provider can add its records itself, while they're needed. */
@@ -61,17 +66,24 @@ export function OwnAddressSettings({
   const domainSettings = <CustomDomainSettings projectSlug={projectSlug} domain={domain} portalAddress={portalAddress} protocol={protocol} oneClick={oneClick} />;
   const siteSettings = <SiteMountSettings projectSlug={projectSlug} site={site} portalAddress={portalAddress} tutiAddress={tuti} />;
 
-  const options: { value: Choice; title: string; example: string; icon: LucideIcon; off?: string }[] = [
+  // `off`: this server can't (faded, not to pick). `needs`: the plan doesn't include it: it looks like any other, says
+  // which plan does, and picking it opens the upgrade prompt.
+  const options: { value: Choice; title: string; example: string; icon: LucideIcon; off?: string; needs?: string; prompt?: UpgradePrompt | null }[] = [
     { value: "tuti", title: "Tuti address", example: portalAddress, icon: LinkIcon },
     {
       value: "domain",
       title: "Custom domain",
       example: "help.yourcompany.com",
       icon: GlobeIcon,
-      off: !domainsOn ? "Not set up on this server" : (notIncluded.domain ?? undefined),
+      off: domainsOn ? undefined : "Not set up on this server",
+      needs: domainsOn ? (notIncluded.domain ?? undefined) : undefined,
+      prompt: upgrade?.domain,
     },
-    { value: "site", title: "Sub-folder", example: "yourcompany.com/help", icon: FolderIcon, off: notIncluded.site ?? undefined },
+    { value: "site", title: "Sub-folder", example: "yourcompany.com/help", icon: FolderIcon, needs: notIncluded.site ?? undefined, prompt: upgrade?.site },
   ];
+  const needsId = useId();
+  const [prompt, setPrompt] = useState<UpgradePrompt | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
   const current = domain?.hostname ?? site?.url.replace(/^https?:\/\//, "");
 
   return (
@@ -79,7 +91,7 @@ export function OwnAddressSettings({
       <SettingBlock className="gap-3">
         {/* Side by side; one under another where the card is a phone's width. */}
         <div ref={group} role="radiogroup" aria-label="Where your portal goes live" className="grid gap-2 @min-[34rem]/settings:grid-cols-3">
-          {options.map(({ value, title, example, icon: Icon, off }) => {
+          {options.map(({ value, title, example, icon: Icon, off, needs, prompt: upgradeTo }) => {
             const selected = choice === value;
             // Locked while another is connected: they remove it first.
             const locked = connected !== null && !selected;
@@ -90,8 +102,14 @@ export function OwnAddressSettings({
                 role="radio"
                 aria-checked={selected}
                 aria-disabled={locked || Boolean(off)}
+                aria-describedby={needs ? `${needsId}-${value}` : undefined}
                 onClick={() => {
                   if (off) {
+                    return;
+                  }
+                  if (needs && !selected) {
+                    setPrompt(upgradeTo ?? { title: needs, billingHref: null, note: null });
+                    setUpgrading(true);
                     return;
                   }
                   if (locked) {
@@ -110,7 +128,9 @@ export function OwnAddressSettings({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm font-medium">{title}</span>
                   {/* What it needs (a plan, the server's setup) is said whole; an example address is cut where it doesn't fit. */}
-                  <span className={cn("text-sm text-muted-foreground", !off && "truncate")}>{off ?? example}</span>
+                  <span id={needs ? `${needsId}-${value}` : undefined} className={cn("text-sm text-muted-foreground", !(off || needs) && "truncate")}>
+                    {off ?? needs ?? example}
+                  </span>
                 </span>
                 {selected && <CheckIcon aria-hidden className="size-4 shrink-0 text-primary" />}
               </button>
@@ -118,6 +138,7 @@ export function OwnAddressSettings({
           })}
         </div>
         {connected && <p className="text-sm text-muted-foreground">To switch, remove {current} first.</p>}
+        {prompt && <UpgradeDialog prompt={prompt} open={upgrading} onOpenChange={setUpgrading} />}
       </SettingBlock>
 
       {/* Both, from before a portal could only have one: show both, so either can be removed. */}
