@@ -6,11 +6,11 @@ import { notFound } from "next/navigation";
 import { CopyButton } from "@/components/copy-button";
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
-import { PlanNotice } from "@/components/plan-notice";
 import { SettingBlock, SettingsCard } from "@/components/settings-card";
 import { WidgetPreview } from "@/components/widget-preview";
 import { WidgetSettings } from "@/components/widget-settings";
 import { appUrl, portalUrl } from "@/lib/hosts";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getAdminProject } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, widgetSettings } from "@/server/operations/widget";
@@ -32,13 +32,6 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
   // Without a colour of its own, the launcher is the portal's accent (Settings → Branding), else the brand green.
   const defaultColor = defaultLauncherColor(brandColor);
   const color = widget.color ?? defaultColor;
-  // Set before the plan dropped: kept, but the launcher shows the chat bubble.
-  const kept = widget.icon !== "chat";
-  const iconLocked = !planIncludes(plan, "launcherIcon") && (
-    <PlanNotice feature="launcherIcon" projectSlug={slug} admin>
-      {kept && "Until it's back, the launcher shows the chat bubble; the icon you picked is kept."}
-    </PlanNotice>
-  );
   const script = `<script src="${appUrl().origin}/api/widget.js" data-project="${slug}" async></script>`;
   return (
     <PortalSettingsPane
@@ -72,7 +65,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
           links={widget.links}
           icon={widget.icon}
           iconImage={widget.iconImage}
-          iconLocked={iconLocked}
+          upgrade={planIncludes(plan, "launcherIcon") ? null : upgradePrompt("launcherIcon", slug, true)}
           title={widget.title}
           greeting={widget.greeting}
           hidden={widget.hidden}

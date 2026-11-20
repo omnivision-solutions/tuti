@@ -333,20 +333,116 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   );
 });
 
-test("on Tuti's cloud, the widget launcher's icon is locked on the free plan, its colour isn't", async ({ browser }, testInfo) => {
+test("on Tuti's cloud, the widget launcher's icon on the free plan opens the upgrade prompt, its colour saves", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await owner.setViewportSize({ width: 1440, height: 900 });
 
   await owner.goto(`/app/${slug}/settings/widget`);
-  await expect(owner.getByText("Choosing the launcher's icon needs the Pro plan.")).toBeVisible();
-  await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeDisabled();
-  await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();
+  // Like any other choice, not faded, described by the plan it needs.
+  const icons = owner.getByRole("radiogroup", { name: "Icon" });
+  await expect(icons).toHaveAccessibleDescription("Choosing the launcher's icon needs the Pro plan.");
+  await expect(icons).toHaveCSS("opacity", "1");
+  await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeEnabled();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  // Choosing one opens the upgrade prompt, and the chat bubble stays. Chosen again until it opens: before the page
+  // hydrates, a click only checks the radio (Chat first puts it back).
+  const needsPro = owner.getByRole("dialog", { name: "Choosing the launcher's icon needs the Pro plan." });
+  await expect(async () => {
+    await icons.locator("label").filter({ hasText: "Chat" }).click();
+    await icons.locator("label").filter({ hasText: "Megaphone" }).click();
+    await expect(needsPro).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+  await expect(needsPro.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await checkpoint(owner, "widget-settings-icon-upgrade");
+  await needsPro.getByRole("button", { name: "Not now" }).click();
+  await expect(needsPro).toBeHidden();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await expect(icons.getByRole("radio", { name: "Megaphone" })).not.toBeChecked();
+  // From the keyboard, an arrow key only moves between the icons (no prompt at each); Space chooses one.
+  await icons.getByRole("radio", { name: "Chat" }).focus();
+  await owner.keyboard.press("ArrowRight");
+  await expect(icons.getByRole("radio", { name: "Help" })).toBeFocused();
+  await owner.keyboard.press("ArrowLeft");
+  await owner.keyboard.press("ArrowLeft");
+  await expect(icons.getByRole("radio", { name: "Your own" })).toBeFocused();
+  await expect(needsPro).toHaveCount(0);
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await owner.keyboard.press("Space");
+  await expect(needsPro).toBeVisible();
+  await needsPro.getByRole("button", { name: "Not now" }).click();
+  await expect(needsPro).toBeHidden();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await checkpoint(owner, "widget-settings-icon-locked");
+
+  // On a phone nothing runs off the side, and the icons go under the plan's line (beside it, a word or two a line).
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const settings = owner.locator('[data-slot="portal-settings"]');
+  await expect(icons).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await settings.evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
+  const line = (await owner.locator("#widget-icon-plan").boundingBox())!;
+  expect((await icons.boundingBox())!.y).toBeGreaterThanOrEqual(line.y + line.height);
+  await checkpoint(owner, "widget-settings-icon-locked-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+
   await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
-  await checkpoint(owner, "widget-settings-icon-locked");
+
+  // An icon set while the plan had it (as before a downgrade) is kept and says so; going back to the chat bubble, and
+  // to it again, needs no plan.
+  const database = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await database.connect();
+  try {
+    await database.query(`UPDATE project SET "widgetIcon" = 'megaphone' WHERE slug = $1`, [slug]);
+  } finally {
+    await database.end();
+  }
+  await owner.reload();
+  await expect(icons).toHaveAccessibleDescription(
+    "Choosing the launcher's icon needs the Pro plan. Until it's back, the launcher shows the chat bubble; the icon you picked is kept.",
+  );
+  await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeChecked();
+  // Another icon still opens the prompt (chosen again until the page has hydrated), and the kept one stays.
+  await expect(async () => {
+    await icons.locator("label").filter({ hasText: "Megaphone" }).click();
+    await icons.locator("label").filter({ hasText: "Help" }).click();
+    await expect(needsPro).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+  await needsPro.getByRole("button", { name: "Not now" }).click();
+  await expect(needsPro).toBeHidden();
+  await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeChecked();
+  await icons.locator("label").filter({ hasText: "Chat" }).click();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await icons.locator("label").filter({ hasText: "Megaphone" }).click();
+  await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeChecked();
+  await expect(needsPro).toHaveCount(0);
+  // Back to the kept icon is no change: nothing to save, and the preview shows the chat bubble again.
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  // Left as it was, it isn't sent: a teammate's switch to the chat bubble meanwhile stays, and the colour saves.
+  const teammate = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await teammate.connect();
+  try {
+    await teammate.query(`UPDATE project SET "widgetIcon" = 'chat' WHERE slug = $1`, [slug]);
+  } finally {
+    await teammate.end();
+  }
+  await owner.getByLabel("Colour", { exact: true }).fill("#4c1d95");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  // The page, refreshed by the save, shows the icon as stored, so the next save works too.
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await expect(icons).toHaveAccessibleDescription("Choosing the launcher's icon needs the Pro plan.");
+  await expect(owner.getByText("Widget saved")).toBeHidden();
+  await owner.getByLabel("Colour", { exact: true }).fill("#3b0764");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await owner.reload();
+  await expect(icons.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await expect(owner.getByLabel("Colour", { exact: true })).toHaveValue("#3b0764");
 });
 
 test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointing to Billing; on Pro, ranges up to a month, the longer ones locked", async ({ browser }, testInfo) => {
