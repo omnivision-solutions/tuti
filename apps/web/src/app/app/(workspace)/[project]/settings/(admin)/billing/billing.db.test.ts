@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { claimProjectEmail, grantLicenseCredits } from "@tuti/jobs";
-import { billingFile, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPlans } from "@tuti/testkit";
+import { billingFile, creditsOn, FAKE_STRIPE_KEY, FAKE_STRIPE_WEBHOOK_SECRET, withAppsumoPlans } from "@tuti/testkit";
 import { defaultPlanKey } from "@tuti/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -164,7 +164,7 @@ test("This month counts down the month's email to the project's users from its p
 
 test("on a license, This month has what's left of its month's emails and AI credits and when they reset; the credits under it are the others", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   // A trial's, from before the license: not the month's.
   await prisma.creditGrant.create({ data: { projectId, source: "PLAN", credits: 500, remaining: 500, note: "Starter trial", expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000) } });
   const holder = (await prisma.teamMember.findFirstOrThrow({ where: { projectId }, select: { userId: true } })).userId;
@@ -237,7 +237,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
 
 test("a license on a plan with no email limit still has its month: the AI credits' meter and the reset day, beside the emails sent", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   // Mid-month, so the month counted and the one the page names are the same.
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
   onTestFinished(() => void vi.useRealTimers());
@@ -257,11 +257,11 @@ test("a license on a plan with no email limit still has its month: the AI credit
   expect(creditsThrough).toEqual(new Date("2026-12-19T12:00:00Z"));
   expect(page).toContain(">Resets 19 Dec</span>");
   // With AI credits off too, nothing on the card follows the license's month: no reset day.
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
   const emailsOnly = await billing();
   expect(emailsOnly).toMatch(meter("Emails", "0 sent since 1 Nov"));
   expect(emailsOnly).not.toContain(">Resets ");
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   // Where plans are off, there's no This month: the license's credits are in the list, with the rest.
   vi.stubEnv("BILLING_CONFIG", "");
   const without = await billing();
@@ -273,7 +273,7 @@ test("a license on a plan with no email limit still has its month: the AI credit
 });
 
 test("the credits list says until when each lasts, day first and short, with the year when it isn't this one", async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
   onTestFinished(() => void vi.useRealTimers());
   await prisma.creditGrant.createMany({

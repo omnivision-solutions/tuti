@@ -8,3 +8,6 @@ export function configFile(values: unknown): string {
   writeFileSync(path, JSON.stringify(values));
   return path;
 }
+
+/** A config file with AI credits on, and any other credits values: e.g. `vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 50 }))`. */
+export const creditsOn = (credits: Record<string, unknown> = {}) => configFile({ credits: { enabled: true, ...credits } });

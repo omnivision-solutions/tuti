@@ -373,6 +373,11 @@
       },
       "additionalProperties": false
     },
+    "stripePortalLoginUrl": {
+      "description": "Stripe's customer portal login link, where licence buyers cancel, change their card or get invoices. Absent: the licence page says to email.",
+      "type": "string",
+      "format": "uri"
+    },
     "historyKeptDays": {
       "default": 365,
       "description": "Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history.",

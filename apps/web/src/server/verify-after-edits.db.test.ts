@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { aiFor, handlers, newestRevision, verifyAfterEdit, VERIFY_WAITS } from "@tuti/jobs";
-import { type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createArticle, publishArticle } from "@/server/operations/docs";
@@ -366,7 +366,7 @@ test.each([
 
 test.each([
   { meanwhile: "the analysis switch turned off", change: () => prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } }) },
-  { meanwhile: "the credits running out", change: async () => vi.stubEnv("AI_CREDITS", "on") },
+  { meanwhile: "the credits running out", change: async () => vi.stubEnv("TUTI_CONFIG", creditsOn()) },
   // Credits turned on with free ones the project hasn't been given yet: checked without giving them, which (a transaction
   // of its own on the project's row) would wait on the lock the check holds, and time out.
   { meanwhile: "the repository disconnected", change: () => prisma.githubRepository.deleteMany({ where: { connection: { projectId: project.id } } }) },
@@ -387,8 +387,7 @@ test.each([
   {
     meanwhile: "credits turned on, free ones not given yet,",
     change: async () => {
-      vi.stubEnv("AI_CREDITS", "on");
-      vi.stubEnv("AI_CREDITS_FREE", "50");
+      vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 50 }));
     },
   },
 ])("$meanwhile while the model decided: no run", async ({ change }) => {
@@ -445,9 +444,9 @@ test("not asked while Verify couldn't run: the analysis switch off, out of AI cr
   await prisma.githubRepository.createMany({ data: repositories });
 
   // Out of credits: nothing asked, nothing started, nothing failing.
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   expect(await decideNow()).toBe(false);
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
 
   const running = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, startedById: owner.id, startedAt: new Date() } });
   expect(await decideNow()).toBe(false);

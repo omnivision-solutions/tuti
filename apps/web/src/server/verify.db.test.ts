@@ -2,7 +2,7 @@ import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { grantCredits, handlers, VERIFY_WAITS } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
@@ -212,7 +212,7 @@ test("no Verify while the project doesn't analyse merged pull requests, nor with
 
 test("out of AI credits, Verify is refused with the credits message, before anything is read", async () => {
   const article = await published();
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 402, message: "This project is out of AI credits. See Settings → Billing." });
   expect(await prisma.articleVerification.count({ where: { projectId: project.id } })).toBe(0);
   // With credits, it runs and they're spent.
@@ -450,7 +450,7 @@ test("a waiting Verify fix is on Home's list of what needs the team, opening its
 test("starting Verify while one runs returns it, even out of credits", async () => {
   const article = await published();
   const running = await prisma.articleVerification.create({ data: { projectId: project.id, articleId: article.id, startedAt: new Date() } });
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ id: running.id, state: "running" });
 });
 

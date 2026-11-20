@@ -5,6 +5,7 @@ import { z } from "zod";
 import { log } from "../log";
 import { ai, AI_REPLACED } from "./ai";
 import { autopilot, AUTOPILOT_REPLACED } from "./autopilot";
+import { credits, CREDITS_REPLACED } from "./credits";
 import { media, MEDIA_REPLACED } from "./media";
 import { analytics, ANALYTICS_REPLACED } from "./analytics";
 import { customDomains, CUSTOM_DOMAINS_REPLACED } from "./custom-domains";
@@ -32,6 +33,7 @@ export const configSchema = z.object({
   ownPortal,
   customDomains,
   analytics,
+  credits,
 });
 
 export type Config = z.output<typeof configSchema>;
@@ -44,6 +46,7 @@ export const CONFIG_REPLACED: Record<string, string> = {
   ...OWN_PORTAL_REPLACED,
   ...CUSTOM_DOMAINS_REPLACED,
   ...ANALYTICS_REPLACED,
+  ...CREDITS_REPLACED,
 };
 
 let loaded: { path: string; config: Config } | null = null;

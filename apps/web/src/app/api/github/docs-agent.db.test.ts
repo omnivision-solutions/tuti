@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { enqueue, grantCredits } from "@tuti/jobs";
 import { roleDefaultModel } from "@tuti/shared";
-import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
+import { billingFile, creditsOn, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { publishCodeChangesNow } from "@/server/code-changes";
@@ -1416,7 +1416,7 @@ describe("the check before an edit is proposed (E5)", () => {
   });
 
   test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
-    vi.stubEnv("AI_CREDITS", "on");
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     pullRequest(88);
     model.decide(USERS);

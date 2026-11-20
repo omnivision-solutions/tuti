@@ -107,7 +107,7 @@ export async function takeBackCredits(grantId: string, share: number): Promise<n
   });
 }
 
-/** AI_CREDITS_FREE, once per project: claimed with the grant, so two first looks can't both give it. */
+/** credits.free (the config file), once per project: claimed with the grant, so two first looks can't both give it. */
 async function giveFreeCredits(projectId: string) {
   const credits = freeCredits();
   if (credits === 0) {
@@ -161,7 +161,7 @@ export async function aiPausedIn(tx: Prisma.TransactionClient, projectId: string
 }
 
 /**
- * Emails the project's owners and admins (verified addresses) once its balance is under AI_CREDITS_LOW,
+ * Emails the project's owners and admins (verified addresses) once its balance is under credits.low (the config file),
  * and again once it's out, once each until the next grant (an AI one, which clears both: a trigger on credit_grant).
  * Checked and claimed under the project's lock, which that trigger also takes: a grant either came first
  * and counts, or comes after and clears the claim, and two charges at once send one email. An email that

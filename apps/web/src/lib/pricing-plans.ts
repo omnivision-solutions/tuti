@@ -10,7 +10,7 @@ export type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
 // What an AI answer and a shipped change checked by Autopilot cost in model use, in dollars: a cautious estimate, from
 // Tuti's own projects (2026-11, with Haiku deciding and Sonnet writing help-center edits). An answer is allowed for
-// generously, as it has little use yet. Credits are worth what AI_CREDITS_PER_USAGE_DOLLAR says, so the estimates follow it.
+// generously, as it has little use yet. Credits are worth what credits.perUsageDollar (the config file) says, so the estimates follow it.
 const ANSWER_COST = 0.004;
 const CHANGE_COST = 0.08;
 
@@ -170,7 +170,7 @@ export function pricingPlans(): PricingPlan[] {
 export type PlanFacts = {
   /** AI credits each paid month gives; null where AI isn't paid with credits or the plan gets none a month (free, by quote). */
   credits: number | null;
-  /** The credits a free default plan starts with (AI_CREDITS_FREE), once; null elsewhere or where there are none. */
+  /** The credits a free default plan starts with (the config file's credits.free), once; null elsewhere or where there are none. */
   startCredits: number | null;
   /** About how many AI answers, and changes checked by Autopilot (where the plan has it), those credits pay for. */
   creditsBuy: { answers: number; changes: number | null } | null;

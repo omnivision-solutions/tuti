@@ -72,5 +72,6 @@
     "month": { "perMonth": 49, "stripe": ["price_badge_monthly"] },
     "year": { "perMonth": 49, "stripe": ["price_badge_yearly"] }
   },
+  "stripePortalLoginUrl": "https://billing.stripe.com/p/login/your-link",
   "historyKeptDays": 365
 }

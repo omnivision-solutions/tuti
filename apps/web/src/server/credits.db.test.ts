@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { aiFor, creditBalance, emailIfCreditsLow, grantCredits, OutOfCredits } from "@tuti/jobs";
 import { type AiUsage, log } from "@tuti/shared";
+import { configFile, creditsOn } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { getCredits } from "@/server/operations/credits";
@@ -15,7 +16,7 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   owner = await signUp("Owner");
   project = await createProject(owner);
 });
@@ -35,9 +36,8 @@ const left = async () =>
     (grant) => `${grant.note} ${grant.remaining.toNumber()}`,
   );
 
-test("off unless AI_CREDITS=on: requests are recorded without credits, and usage is in dollars", async () => {
-  vi.stubEnv("AI_CREDITS", "");
-  vi.stubEnv("AI_CREDITS_FREE", "100");
+test("off unless credits.enabled: requests are recorded without credits, and usage is in dollars", async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { free: 100 } }));
   await answered(0.01);
   expect(await prisma.aiUsage.findMany({ where: { projectId: project.id }, select: { credits: true } })).toEqual([{ credits: null }]);
   expect(await call(getCredits, as(), {})).toEqual({ enabled: false, balance: 0, grants: [] });
@@ -52,11 +52,11 @@ test("each request is charged its cost at the usage rate; the team's usage is in
   await answered(0.01);
   // The default: 100 credits per dollar.
   expect(await balance()).toBeCloseTo(9, 6);
-  vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "200");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ perUsageDollar: 200 }));
   await answered(0.01);
   expect(await balance()).toBeCloseTo(7, 6);
   // Charged at the rate of the time: changing it later doesn't rewrite what was charged.
-  vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "50");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ perUsageDollar: 50 }));
   const charged = await prisma.aiUsage.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { credits: true } });
   expect(charged.map((row) => row.credits?.toNumber())).toEqual([1, 2]);
   const [month] = (await call(getUsage, as(), { months: 1 })).months;
@@ -138,7 +138,7 @@ test("credits of another kind (email) aren't AI credits: not in the balance, not
 });
 
 test("owners and admins with verified addresses are emailed once when credits run low, once when they're out, and again after a grant", async () => {
-  vi.stubEnv("AI_CREDITS_LOW", "50");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 50 }));
   const [admin, member, unverified] = await Promise.all([addMember(project.id, "ADMIN"), addMember(project.id, "MEMBER"), addMember(project.id, "ADMIN")]);
   await prisma.user.updateMany({ where: { id: { in: [owner.id, admin.id, member.id] } }, data: { emailVerified: true } });
   const told = [owner.email, admin.email].sort();
@@ -180,7 +180,7 @@ test("credits that expire stop the AI with an email, though nothing was charged"
 });
 
 test("a grant made while the email is claimed counts: no email about the old balance, and the new credits running low still email", async () => {
-  vi.stubEnv("AI_CREDITS_LOW", "50");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 50 }));
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await grantCredits(project.id, "MANUAL", 10, { days: null });
   // A grant, not yet committed (its trigger holds the project's row), while the email is being claimed.
@@ -215,8 +215,8 @@ test("a grant made while the email is claimed counts: no email about the old bal
   expect(emailed("is running low on AI credits")).toEqual([owner.email]);
 });
 
-test("AI_CREDITS_LOW=0: a balance of exactly 0 is out", async () => {
-  vi.stubEnv("AI_CREDITS_LOW", "0");
+test("credits.low 0: a balance of exactly 0 is out", async () => {
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 0 }));
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await grantCredits(project.id, "MANUAL", 10, { days: null });
   await answered(0.1);
@@ -225,7 +225,7 @@ test("AI_CREDITS_LOW=0: a balance of exactly 0 is out", async () => {
 });
 
 test("with nobody to email (no verified owner or admin yet), nothing is claimed: once someone is, the next charge emails them", async () => {
-  vi.stubEnv("AI_CREDITS_LOW", "50");
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 50 }));
   await grantCredits(project.id, "MANUAL", 40, { days: null });
   await answered(0.01);
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiCreditsLowEmailedAt: true } })).toEqual({ aiCreditsLowEmailedAt: null });
@@ -234,8 +234,8 @@ test("with nobody to email (no verified owner or admin yet), nothing is claimed:
   expect(emailed("is running low on AI credits")).toEqual([owner.email]);
 });
 
-test("AI_CREDITS_LOW=0 emails only once credits are out", async () => {
-  vi.stubEnv("AI_CREDITS_LOW", "0");
+test("credits.low 0 emails only once credits are out", async () => {
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ low: 0 }));
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await grantCredits(project.id, "MANUAL", 10, { days: null });
   await answered(0.09);
@@ -244,9 +244,8 @@ test("AI_CREDITS_LOW=0 emails only once credits are out", async () => {
   expect(emailed("is out of AI credits")).toEqual([owner.email]);
 });
 
-test("every project gets AI_CREDITS_FREE once, lasting like a top-up, however many look at once", async () => {
-  vi.stubEnv("AI_CREDITS_FREE", "50");
-  vi.stubEnv("AI_CREDITS_TOPUP_EXPIRY_DAYS", "30");
+test("every project gets credits.free once, lasting like a top-up, however many look at once", async () => {
+  vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 50, topupExpiryDays: 30 }));
   const results = await Promise.all([creditBalance(project.id), creditBalance(project.id), call(getCredits, as(), {})]);
   expect(results.map((result) => result.balance)).toEqual([50, 50, 50]);
   const grants = await prisma.creditGrant.findMany({ where: { projectId: project.id } });

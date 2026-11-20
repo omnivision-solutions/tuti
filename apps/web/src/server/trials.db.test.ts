@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { creditBalance, projectWith } from "@tuti/jobs";
-import { billingFile, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
+import { billingFile, creditsOn, type FakeStripeEvent, startStripeFake, type StripeFake, withAppsumoPlans } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -28,7 +28,7 @@ beforeEach(async () => {
     withAppsumoPlans(config);
     config.trial = { plan: "pro", days: 7, credits: 500, emails: 1000 };
   });
-  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billing, AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billing, TUTI_CONFIG: creditsOn(), APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");

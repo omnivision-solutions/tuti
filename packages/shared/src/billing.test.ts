@@ -63,6 +63,12 @@ test("the settings the file replaced, left without one, stop the server rather t
   expect(billingConfig()).toBeNull();
 });
 
+test("STRIPE_PORTAL_LOGIN_URL, still set, stops the server, naming the file's key", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  vi.stubEnv("STRIPE_PORTAL_LOGIN_URL", "https://billing.stripe.example/p/login/test");
+  expect(() => billingConfig()).toThrow("STRIPE_PORTAL_LOGIN_URL is set, but Stripe's customer portal login link is now the file's stripePortalLoginUrl");
+});
+
 test("each plan has everything the one before it has, as its card says", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => {
     business.features = business.features.filter((feature) => feature !== "emailDomain");

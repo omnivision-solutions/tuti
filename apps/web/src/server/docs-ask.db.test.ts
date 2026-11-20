@@ -216,7 +216,7 @@ paths:
   });
 
   test("a support reply drafted from it links its page", async () => {
-    vi.stubEnv("AI_CREDITS", "");
+    vi.stubEnv("TUTI_CONFIG", "");
     await addOperation(0.8);
     await call(createConversation, as(), { email: "e2e-sam@example.com", body: QUESTION });
     model.reply(reply("Send a POST to /posts.", ["s1"]));

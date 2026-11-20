@@ -2,7 +2,7 @@ import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log, roleDefaultModel } from "@tuti/shared";
-import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver, configFile } from "@tuti/testkit";
+import { billingFile, creditsOn, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
@@ -1272,7 +1272,7 @@ describe("deciding", () => {
 
 describe("out of AI credits", () => {
   beforeEach(() => {
-    vi.stubEnv("AI_CREDITS", "on");
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
   });
   const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
   const inRunningDraft = () => prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } });
@@ -1746,7 +1746,7 @@ describe("retries when the AI provider didn't answer", () => {
   });
 
   test("\"Resume all\" is a person asking: the analysis it resumes has its retries again", async () => {
-    vi.stubEnv("AI_CREDITS", "on");
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
     github.pullRequest(repo, pullRequest(76));
     // Out of credits: paused, after its retries were used (say).
     await merge(76);
@@ -1778,7 +1778,7 @@ describe("retries when the AI provider didn't answer", () => {
   });
 
   test("more retries waiting for credits than a sweep queues don't hold up another project's", async () => {
-    vi.stubEnv("AI_CREDITS", "on");
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     github.pullRequest(repo, pullRequest(73));
     model.decide(INTERNAL);
@@ -1814,7 +1814,7 @@ describe("retries when the AI provider didn't answer", () => {
   });
 
   test("out of AI credits, a retry waits until there are some; then it runs, and what it asks is charged like any analysis", async () => {
-    vi.stubEnv("AI_CREDITS", "on");
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     github.pullRequest(repo, pullRequest(71));
     model.decide(INTERNAL);

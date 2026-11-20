@@ -753,6 +753,49 @@
         }
       },
       "additionalProperties": false
+    },
+    "credits": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean",
+          "description": "AI credits on: projects pay for AI with prepaid credits (Tuti's cloud)"
+        },
+        "perTopupDollar": {
+          "default": 100,
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Credits a dollar paid buys"
+        },
+        "perUsageDollar": {
+          "default": 100,
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Credits a dollar of model cost spends (with perTopupDollar's default, no margin)"
+        },
+        "topupExpiryDays": {
+          "default": 365,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Whole days a top-up's credits last; 0: for good"
+        },
+        "free": {
+          "default": 0,
+          "type": "number",
+          "minimum": 0,
+          "description": "Credits every project is given once, lasting like a top-up"
+        },
+        "low": {
+          "default": 100,
+          "type": "number",
+          "minimum": 0,
+          "description": "Under this balance owners and admins are emailed (and once it's out); 0: only once it's out"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

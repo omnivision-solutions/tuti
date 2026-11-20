@@ -1,4 +1,4 @@
-// The operator only (Tuti's cloud, AI_CREDITS=on): gives a project AI credits by hand, e.g. for a
+// The operator only (Tuti's cloud, AI credits on: the config file's credits.enabled): gives a project AI credits by hand, e.g. for a
 // support case, until there's a checkout. Run against the server's database (DATABASE_URL):
 //
 //   DATABASE_URL=… node scripts/credits.mjs grant <project slug> <credits> [days] [note]

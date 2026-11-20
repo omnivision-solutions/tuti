@@ -175,7 +175,7 @@ const matrix: Matrix = {
     setBoardOff: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.setBoardOff(slug, f.emptyBoardId, true) },
   },
   credits: {
-    buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ AI_CREDITS: "on" }, () => credits.buyCredits(slug, 10)) },
+    buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ TUTI_CONFIG: configFile({ customDomains: { target: "customers.example.net" }, credits: { enabled: true } }) }, () => credits.buyCredits(slug, 10)) },
     // Plans on just for that call; Manage plan opens Stripe's portal for the fixture's customer.
     subscribe: { allowed: "ADMIN", call: (slug) => withEnv({ BILLING_CONFIG: billingFile() }, () => credits.subscribe(slug, "pro", "month")) },
     manageSubscription: { allowed: "ADMIN", call: (slug) => credits.manageSubscription(slug) },

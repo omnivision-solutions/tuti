@@ -1,7 +1,7 @@
 
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, creditsOn, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -21,7 +21,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), TUTI_CONFIG: creditsOn(), APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");

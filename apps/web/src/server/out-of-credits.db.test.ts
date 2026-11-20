@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { aiFor, grantCredits, OutOfCredits } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
-import { type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type ModelFake, type OpenAIFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -25,7 +25,7 @@ beforeAll(async () => {
 });
 afterAll(() => Promise.all([openai.close(), model.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...model.env, AI_CREDITS: "on" })) {
+  for (const [name, value] of Object.entries({ ...model.env, TUTI_CONFIG: creditsOn() })) {
     vi.stubEnv(name, value);
   }
   model.requests.length = 0;
@@ -47,7 +47,7 @@ test("the AI is paused at 0 credits or below, only with credits on", async () =>
   await expect(aiFor(project.id, "answers")).rejects.toBeInstanceOf(OutOfCredits);
   await grantCredits(project.id, "MANUAL", 1, { days: null });
   await expect(aiFor(project.id, "answers")).resolves.toMatchObject({ model: expect.any(String) as string });
-  vi.stubEnv("AI_CREDITS", "");
+  vi.stubEnv("TUTI_CONFIG", "");
   await prisma.creditGrant.deleteMany({ where: { projectId: project.id } });
   await expect(aiFor(project.id, "answers")).resolves.toMatchObject({ model: expect.any(String) as string });
 });
