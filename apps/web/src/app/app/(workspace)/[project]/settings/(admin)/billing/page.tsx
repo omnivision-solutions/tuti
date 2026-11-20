@@ -50,8 +50,8 @@ function Meter({ label, left, of, used }: { label: string; left: number | null; 
 
 /**
  * Settings → Billing: the project's plan, one row (where plans are sold; on the default plan "Upgrade" opens the plans
- * to buy), this month's emails and its AI credits (where AI is paid with them: the balance, what's left by when it
- * expires, and buying more), the add-on, and what its AI use cost each month.
+ * to buy), this month's emails (and a license's month's AI credits), its AI credits (where AI is paid with them: the
+ * balance, what's left by when it expires, and buying more), the add-on, and what its AI use cost each month.
  */
 export default async function BillingSettingsPage(props: PageProps<"/app/[project]/settings/billing">) {
   const { project: slug } = await props.params;
@@ -203,26 +203,23 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingRow>
         </SettingsCard>
       )}
-      {(emails || showCredits || topupsEnabled()) && (
-        // What the plan gives each month (a lifetime license's has no end; its month has), and the AI credits beside
-        // where more are bought. Without plans there's no month: the credits alone.
+      {emails && (
+        // What the plan gives each month, apart from the plan itself (a lifetime license's has no end; its month has).
         <SettingsCard
-          title={emails ? "This month" : "AI credits"}
+          title="This month"
           // The day the license's month ends, where something here follows it (emails counted against a limit, its credits).
-          action={emails && until && (emails.limit !== null || monthly.length > 0) && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
+          action={until && (emails.limit !== null || monthly.length > 0) && <span className="text-sm text-muted-foreground">Resets {formatShortDate(until)}</span>}
         >
-          {emails && (
-            <SettingBlock>
-              {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}
-              {/* Without a limit they're a calendar month's (UTC): said where the card's reset day is the license's. */}
-              <Meter
-                label="Emails"
-                left={emails.left}
-                of={emails.limit}
-                used={`${emails.emails.toLocaleString("en")} sent${until ? ` since ${formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))}` : ""}`}
-              />
-            </SettingBlock>
-          )}
+          <SettingBlock>
+            {/* A license's emails are its month's, wherever it was: what's left of them, not what this project sent. */}
+            {/* Without a limit they're a calendar month's (UTC): said where the card's reset day is the license's. */}
+            <Meter
+              label="Emails"
+              left={emails.left}
+              of={emails.limit}
+              used={`${emails.emails.toLocaleString("en")} sent${until ? ` since ${formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))}` : ""}`}
+            />
+          </SettingBlock>
           {monthly.length > 0 && (
             <SettingBlock>
               <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />
@@ -234,14 +231,16 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               )}
             </SettingBlock>
           )}
+        </SettingsCard>
+      )}
+      {(showCredits || topupsEnabled()) && (
+        // The credits that last past the month (a trial's, the free ones, top-ups), beside where more are bought. With
+        // only a license's month's, buying more is all there is: no title.
+        <SettingsCard title={monthly.length === 0 ? "AI credits" : extra.length > 0 ? "Extra AI credits" : undefined}>
           {showCredits && (
             <SettingBlock className="gap-2">
-              {monthly.length > 0 ? (
-                <h3 className="text-sm font-medium">Extra AI credits</h3>
-              ) : (
-                // The balance (what's owed taken off), of what the credits listed under it started as.
-                <Meter label={emails ? "AI credits" : "Balance"} left={extra.length > 0 ? balance : null} of={extra.length > 0 ? sum(extra, "credits") : null} used="No credits left." />
-              )}
+              {/* The balance (what's owed taken off), of what the credits listed under it started as. */}
+              {monthly.length === 0 && <Meter label="Balance" left={extra.length > 0 ? balance : null} of={extra.length > 0 ? sum(extra, "credits") : null} used="No credits left." />}
               {extra.length > 0 && (
                 <table className="w-full text-sm text-muted-foreground" aria-label="AI credits left">
                   <thead className="sr-only">

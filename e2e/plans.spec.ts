@@ -28,9 +28,11 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   const primaries = (within: Locator) =>
     within.locator("button, a").evaluateAll((buttons) => buttons.filter((button) => /(^| )bg-primary( |$)/.test(button.className)).map((button) => button.textContent));
   expect(await primaries(owner.getByRole("main"))).toEqual(["Upgrade"]);
-  // Its email to its users this month, against its plan's limit, and its AI credits, each with its own meter.
+  // Its email to its users this month, against its plan's limit; its AI credits (the free ones, which last longer) in
+  // their own card, with buying more.
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("1,000 of 1,000 left")).toBeVisible();
-  await expect(owner.getByRole("group", { name: "AI credits" }).getByText("1,000 of 1,000 left")).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "AI credits", exact: true })).toBeVisible();
+  await expect(owner.getByRole("group", { name: "Balance" }).getByText("1,000 of 1,000 left")).toBeVisible();
   // The badge's card has a way to the plans on the free plan too, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");

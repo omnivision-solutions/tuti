@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -49,33 +49,42 @@ const yesNo = (facts: PlanFacts): [string, boolean][] => [
 
 type PickerProps = { projectSlug: string; plans: Plan[]; current: string; trial?: boolean; pricingPage: string | null };
 
+/** Whether the page's address ends in "#plans", followed as it changes; `linked` notes that a link on this page put it there. */
+function usePlansHash(linked: { current: boolean }) {
+  return useSyncExternalStore(
+    (changed) => {
+      const follow = () => {
+        linked.current = window.location.hash === "#plans";
+        changed();
+      };
+      window.addEventListener("hashchange", follow);
+      return () => window.removeEventListener("hashchange", follow);
+    },
+    () => window.location.hash === "#plans",
+    () => false,
+  );
+}
+
 /**
  * Settings → Billing on the default plan: "Upgrade", which opens the plans to buy (PlanPicker) in a dialog. So does the
- * page's "#plans" address ("Choose a plan" beside the add-on, a link from elsewhere), and Back from it closes them.
+ * page's "#plans" address ("Choose a plan" beside the add-on, or an address ending in it), and Back from it closes them.
  * Closed, the address loses it, so the same link opens the plans again: by going back where a link on this page added
  * it (no second entry for Back to stop at), else in place (Back would leave the page).
  */
 export function UpgradePlans(props: PickerProps) {
-  const [open, setOpen] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const linked = useRef(false);
-  useEffect(() => {
-    if (window.location.hash === "#plans") {
-      setOpen(true);
-    }
-    const followHash = () => {
-      linked.current = window.location.hash === "#plans";
-      setOpen(linked.current);
-    };
-    window.addEventListener("hashchange", followHash);
-    return () => window.removeEventListener("hashchange", followHash);
-  }, []);
+  const hashed = usePlansHash(linked);
+  const open = pressed || hashed;
   const change = (next: boolean) => {
-    setOpen(next);
-    if (!next && window.location.hash === "#plans") {
+    setPressed(next);
+    if (!next && hashed) {
       if (linked.current) {
         window.history.back();
       } else {
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        // Replacing the address tells no one: the hash is read again.
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
       }
     }
   };

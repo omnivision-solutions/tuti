@@ -186,7 +186,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
   expect(page).toMatch(meter("Emails", "10,000 of 10,000 left"));
   expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
   // The rest, without the month's: the trial's alone.
-  expect(page).toContain(">Extra AI credits</h3>");
+  expect(page).toContain(">Extra AI credits</h2>");
   const table = page.slice(page.indexOf("<table"), page.indexOf("</table>"));
   expect(table.match(/<tr/g)).toHaveLength(2);
   expect(table).toContain(">500</td>");
@@ -203,7 +203,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 700 } });
   page = await billing();
   expect(page).toMatch(meter("AI credits", `0 of ${monthly} left`));
-  expect(page).toContain(">Extra AI credits</h3>");
+  expect(page).toContain(">Extra AI credits</h2>");
   // More owed than is left (the trial's 500): AI is paused, and the page says so.
   expect(page).toContain("AI is paused: this project owes 700 credits.");
   // Less owed than is left: it comes out of what's shown at the next AI use.
@@ -219,7 +219,7 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.creditGrant.updateMany({ where: { planLicenseId: license.id, kind: "EMAIL" }, data: { expiresAt: past } });
   await prisma.planLicense.update({ where: { id: license.id }, data: { creditsThrough: past } });
   page = await billing();
-  expect(page).toMatch(meter("AI credits", "500 of 500 left"));
+  expect(page).toMatch(meter("Balance", "500 of 500 left"));
   expect(page).not.toContain(`of ${monthly} left`);
   expect(page).not.toContain("credits owed");
   expect(page).not.toContain(">Resets ");
@@ -315,12 +315,14 @@ test("where plans can't be bought, a deactivated license's alert says to unassig
 
 test("the plan's row on a free trial says when it ends, and after it that it ended, each with Upgrade; a paid plan's has its price and Manage plan", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
-  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
+  onTestFinished(() => void vi.useRealTimers());
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date("2026-11-22T12:00:00Z") } });
   let page = await billing();
   expect(page).toMatch(/>Pro<\/span><span[^>]*>Trial<\/span>/);
-  expect(page).toMatch(/>Ends on \d{1,2} [A-Z][a-z]+ \d{4}<\/p>/);
+  expect(page).toContain(">Ends on 22 November 2026</p>");
   expect(page).toContain("data-plans-control");
-  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date("2026-11-19T11:59:00Z") } });
   page = await billing();
   expect(page).toMatch(/>Free<\/span><span[^>]*>Trial ended<\/span>/);
   expect(page).toContain(">1,000 emails a month · 2 feedback boards</p>");
@@ -337,8 +339,10 @@ test("a trial where plans can't be bought says so beside when it ends, with no U
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
   vi.stubEnv("STRIPE_SECRET_KEY", "");
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
-  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-19T12:00:00Z") });
+  onTestFinished(() => void vi.useRealTimers());
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date("2026-11-22T12:00:00Z") } });
   const page = await billing();
-  expect(page).toMatch(/>Ends on \d{1,2} [A-Z][a-z]+ \d{4}\. <span id="plans-unavailable" tabindex="-1"[^>]*>Plans can't be bought here right now\.<\/span>/);
+  expect(page).toMatch(/>Ends on 22 November 2026\. <span id="plans-unavailable" tabindex="-1"[^>]*>Plans can't be bought here right now\.<\/span>/);
   expect(page).not.toContain("data-plans-control");
 });
