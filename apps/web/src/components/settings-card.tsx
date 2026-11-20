@@ -48,7 +48,8 @@ export function SettingsCard({
  * One setting: its label and at most one short line on what it does on the left, its control on the right. What takes
  * longer to say goes in `info`, behind an ⓘ beside the label (on hover or a press). In a card under 34rem wide
  * (phones) the control goes under them at the card's width, so the line isn't squeezed a word a row; `inline` keeps a
- * short control (a switch, a button) on the right there too. `htmlFor`: the control's id, labelled by the label; the
+ * short control (a switch, a button) on the right there too. Beside its control the label keeps 12rem, and a wide
+ * control (a long address) narrows and wraps instead. `htmlFor`: the control's id, labelled by the label; the
  * description is `<htmlFor>-description`, for the control's `aria-describedby`.
  */
 export function SettingRow({
@@ -69,7 +70,7 @@ export function SettingRow({
   const Label = htmlFor ? "label" : "div";
   return (
     <div data-slot="setting-row" className={cn("flex gap-x-5 gap-y-2.5 px-4 py-3.5 @min-[34rem]/settings:flex-row @min-[34rem]/settings:items-center @min-[34rem]/settings:px-5", inline ? "items-center" : "flex-col")}>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col @min-[34rem]/settings:min-w-48">
         <div className="flex items-center gap-1.5">
           <Label htmlFor={htmlFor} className="font-medium">
             {label}
@@ -89,7 +90,7 @@ export function SettingRow({
           </p>
         )}
       </div>
-      <div className={cn("flex shrink-0 items-center gap-2", !inline && "@max-[34rem]/settings:*:w-full @max-[34rem]/settings:*:max-w-none")}>{children}</div>
+      <div className={cn("flex items-center gap-2", !inline && "@max-[34rem]/settings:*:w-full @max-[34rem]/settings:*:max-w-none")}>{children}</div>
     </div>
   );
 }
