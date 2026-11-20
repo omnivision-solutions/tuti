@@ -74,6 +74,7 @@ export const serverEnv = {
   BILLING_CONFIG: "",
   // What the billing file replaced, whatever a local .env still holds (left set without the file, it stops the server).
   PLANS: "",
+  STRIPE_PORTAL_LOGIN_URL: "",
   ...Object.fromEntries(["PRO", "BUSINESS", "BADGE"].flatMap((plan) => [`STRIPE_PRICE_${plan}_MONTHLY`, `STRIPE_PRICE_${plan}_YEARLY`]).map((name) => [name, ""])),
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
