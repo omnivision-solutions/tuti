@@ -348,7 +348,7 @@ test("a trial where plans can't be bought says so beside when it ends, with no U
 });
 
 test("with no credits left and some owed, the balance says what the project owes", async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   // Its free credits given and spent, and a request that ran past the last of them.
   await billing();
   await prisma.creditGrant.updateMany({ where: { projectId }, data: { remaining: 0 } });
@@ -362,7 +362,7 @@ test("with no credits left and some owed, the balance says what the project owes
 });
 
 test("owing more than the credits there, the balance shows none left, never below, and says what's owed; owing just what's there, too", async () => {
-  vi.stubEnv("AI_CREDITS", "on");
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
   await billing();
   await prisma.creditGrant.updateMany({ where: { projectId }, data: { remaining: 0 } });
   // Owes 5, then 2 credits come: the next request takes them, and AI stays paused.
