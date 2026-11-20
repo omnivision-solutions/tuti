@@ -99,6 +99,12 @@ export function WidgetSettings({
   aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
+  // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it.
+  const [loaded, setLoaded] = useState(initialIcon);
+  if (loaded !== initialIcon) {
+    setLoaded(initialIcon);
+    setIcon(initialIcon);
+  }
   const [upgrading, setUpgrading] = useState(false);
   const iconChoices = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(0);
