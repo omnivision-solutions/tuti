@@ -1393,26 +1393,66 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   const off = owner.getByRole("radio", { name: /^Off/ });
   const asTheyHappen = owner.getByRole("radio", { name: /^As they happen/ });
   await expect(asTheyHappen).toBeChecked();
-  await off.check();
+  // An option is picked by its label (the radio itself is out of sight).
+  const option = (page: typeof owner, name: string) => page.getByRole("radiogroup", { name: "Autopilot emails" }).locator("label").filter({ hasText: name });
+  await option(owner, "Off").click();
+  await expect(off).toBeChecked();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   await checkpoint(owner, "account-autopilot-email");
   // Changed back in another tab: this one shows it once the page refreshes (saving the name, here).
   const other = await owner.context().newPage();
   await other.goto("/app/account");
-  await other.getByRole("radio", { name: /^As they happen/ }).check();
+  await option(other, "As they happen").click();
   await expect(other.getByText("Saved", { exact: true }).first()).toBeVisible();
   await other.close();
   await owner.getByLabel("Name").fill("Olive O. Owner");
-  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).first().click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(asTheyHappen).toBeChecked();
-  await off.check();
-  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
+  // While a pick is being saved the options stay focusable, and another pick is saved after it: the last one stays.
+  let arrived!: () => void;
+  let release!: () => void;
+  const reached = new Promise<void>((resolve) => (arrived = resolve));
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/app/account", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.continue();
+    }
+    arrived();
+    await held;
+    await route.continue();
+  });
+  await option(owner, "Off").click();
+  await reached;
+  const saving = owner.getByRole("radiogroup", { name: "Autopilot emails" }).locator("..");
+  await expect(saving).toHaveAttribute("aria-busy", "true");
+  const digest = owner.getByRole("radio", { name: "Daily digest" });
+  await option(owner, "Daily digest").click();
+  await expect(digest).toBeFocused();
+  await expect(digest).toBeChecked();
+  release();
+  await expect(saving).not.toHaveAttribute("aria-busy", "true");
+  await owner.unroute("**/app/account");
+  await owner.reload();
+  await expect(digest).toBeChecked();
+  await expect(owner.getByText(/^Daily at 8 am \(/)).toBeVisible();
+  // What each choice means is behind the row's ⓘ.
+  await owner.getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("If you own a project, you still hear what goes out by itself.")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  // On a phone nothing runs off the side, and the choice is under its label.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  const label = (await owner.getByText("Autopilot emails", { exact: true }).boundingBox())!;
+  expect((await owner.getByRole("radiogroup", { name: "Autopilot emails" }).boundingBox())!.y).toBeGreaterThanOrEqual(label.y + label.height);
+  await checkpoint(owner, "account-autopilot-email-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // Signed out meanwhile (another tab, say): not saved, so it shows what is. Clicked, not check(): it goes back
   // as soon as the save fails, and check() would call that a click that didn't take.
   await owner.context().clearCookies();
-  await asTheyHappen.click();
+  await option(owner, "As they happen").click();
   await expect(owner.getByText("Sign in first")).toBeVisible();
-  await expect(off).toBeChecked();
+  await expect(digest).toBeChecked();
 });
 
 test("the email's Approve, clicked signed out: sign in, and it's done; the post is in progress and the article's new version on the portal", async ({ browser }, testInfo) => {

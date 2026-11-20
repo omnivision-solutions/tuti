@@ -100,7 +100,7 @@ test("someone with a verified account continues with GitHub and is signed in to 
   // Her account, as it was: its name, and still its password.
   await olive.goto("/app/account");
   await expect(olive.getByLabel("Name")).toHaveValue("Olive Owner");
-  await expect(olive.getByLabel("Current password")).toBeVisible();
+  await expect(olive.getByRole("button", { name: "Change password" })).toBeVisible();
 });
 
 test("Continue with Google doesn't sign in to an account whose address isn't verified", async ({ browser }, testInfo) => {

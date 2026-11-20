@@ -8,8 +8,8 @@ import { redirect } from "next/navigation";
 
 import { AccountForms } from "@/components/account-forms";
 import { AutopilotEmailsChoice } from "@/components/autopilot-settings";
-import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
-import { SettingsCard } from "@/components/settings-card";
+import { PaneLayout } from "@/components/pane";
+import { SettingsCard, SettingsPane } from "@/components/settings-card";
 import { NotVerified } from "@/components/verify-email-banner";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { SOCIAL_PROVIDER_NAMES, type SocialProvider } from "@/lib/social-sign-in";
@@ -40,10 +40,7 @@ export default async function AccountPage() {
 
   return (
     <PaneLayout>
-      <Pane aria-label="Account settings">
-        <PaneHeader title="Account settings" />
-        <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
-          <div className="mx-auto flex max-w-3xl flex-col gap-7">
+      <SettingsPane title="Account settings">
             <AccountForms
               name={session.user.name}
               email={
@@ -71,15 +68,11 @@ export default async function AccountPage() {
               }
             />
             {codeChangesEnabled() && (
-              <SettingsCard title="Autopilot's email" description="For the projects that tell you about their merged pull requests.">
-                <div className="px-4 py-3.5 @min-[34rem]/settings:px-5">
-                  <AutopilotEmailsChoice choice={user.autopilotEmails} timeZone={user.autopilotTimeZone} />
-                </div>
+              <SettingsCard title="Notifications">
+                <AutopilotEmailsChoice choice={user.autopilotEmails} timeZone={user.autopilotTimeZone} />
               </SettingsCard>
             )}
-          </div>
-        </PaneBody>
-      </Pane>
+      </SettingsPane>
     </PaneLayout>
   );
 }
