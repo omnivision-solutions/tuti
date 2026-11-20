@@ -1,12 +1,19 @@
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import {
   contentHash,
+  DUPLICATE_CANDIDATE_MIN_SIMILARITY,
   DUPLICATE_MIN_SIMILARITY,
+  duplicatesModel,
+  duplicateText,
   embed,
   EMBEDDING_MODEL,
+  judgeDuplicates,
+  log,
   postEmbeddingText,
   toVectorLiteral,
 } from "@tuti/shared";
+
+import { duplicatesMeter } from "./ai-usage";
 
 type PostText = { id: string; projectId: string; title: string; body: string };
 
@@ -47,13 +54,28 @@ export async function embedPosts(posts: PostText[]): Promise<number> {
 }
 
 /**
- * Suggests older posts in the same project that this post may duplicate.
- * Existing suggestions (including dismissed ones) are left as they are.
+ * Suggests older posts in the same project that this post may duplicate: the 8 most similar by embedding, those the
+ * decision model (the config file's `duplicates.posted.model`) calls duplicates. Without one, out of AI credits, or when it fails, the 3 most similar at
+ * DUPLICATE_MIN_SIMILARITY or above. Existing suggestions (including dismissed ones) are left as they are. With `among`,
+ * only those posts are candidates (the backfill, checking a post again against posts it has just checked). Once done,
+ * the post is marked checked (`duplicatesCheckedAt`); a post without an embedding yet isn't checked, or marked.
  * Returns how many new suggestions were added.
  */
-export async function detectDuplicates(postId: string): Promise<number> {
-  const matches = await prisma.$queryRaw<{ originalId: string; projectId: string; similarity: number }[]>`
-    SELECT o."postId" AS "originalId", o."projectId", 1 - (o.embedding <=> e.embedding) AS similarity
+export async function detectDuplicates(postId: string, among?: string[]): Promise<number> {
+  const [project, embedding] = await Promise.all([
+    prisma.post.findUnique({ where: { id: postId }, select: { projectId: true } }),
+    prisma.postEmbedding.findUnique({ where: { postId }, select: { postId: true } }),
+  ]);
+  if (!project || !embedding) {
+    return 0;
+  }
+  // The model only while the project has AI credits (with credits on): out of them, similarity alone.
+  const configured = duplicatesModel("posted");
+  const meter = configured ? await duplicatesMeter(project.projectId) : null;
+  const model = meter ? configured : null;
+  const matches = await prisma.$queryRaw<{ originalId: string; projectId: string; similarity: number; title: string; body: string; postTitle: string; postBody: string }[]>`
+    SELECT o."postId" AS "originalId", o."projectId", 1 - (o.embedding <=> e.embedding) AS similarity,
+      op.title, op.body, p.title AS "postTitle", p.body AS "postBody"
     FROM post_embedding e
     JOIN post p ON p.id = e."postId"
     JOIN post_embedding o ON o."projectId" = e."projectId" AND o."postId" <> e."postId"
@@ -62,16 +84,28 @@ export async function detectDuplicates(postId: string): Promise<number> {
       AND p."duplicateOfId" IS NULL
       AND op."duplicateOfId" IS NULL
       AND op."createdAt" < p."createdAt"
+      ${among ? Prisma.sql`AND o."postId" = ANY(${among})` : Prisma.empty}
     ORDER BY o.embedding <=> e.embedding
-    LIMIT 3`;
+    LIMIT ${model ? 8 : 3}`;
 
-  const likely = matches.filter((m) => m.similarity >= DUPLICATE_MIN_SIMILARITY);
-  if (likely.length === 0) {
-    return 0;
+  let likely = matches.filter((m) => m.similarity >= (model ? DUPLICATE_CANDIDATE_MIN_SIMILARITY : DUPLICATE_MIN_SIMILARITY));
+  if (model && likely.length > 0) {
+    try {
+      const verdicts = await judgeDuplicates(model, duplicateText({ title: likely[0]!.postTitle, body: likely[0]!.postBody }), likely.map(duplicateText), 30_000, meter!);
+      likely = likely.filter((_, k) => verdicts[k]!.verdict === "duplicate");
+    } catch (error) {
+      log.warn("Judging possible duplicates failed; suggesting by similarity alone", { postId, error });
+      likely = likely.slice(0, 3).filter((m) => m.similarity >= DUPLICATE_MIN_SIMILARITY);
+    }
   }
-  const { count } = await prisma.duplicateSuggestion.createMany({
-    data: likely.map((m) => ({ projectId: m.projectId, postId, originalId: m.originalId, similarity: m.similarity })),
-    skipDuplicates: true,
-  });
+  const { count } =
+    likely.length === 0
+      ? { count: 0 }
+      : await prisma.duplicateSuggestion.createMany({
+          data: likely.map((m) => ({ projectId: m.projectId, postId, originalId: m.originalId, similarity: m.similarity })),
+          skipDuplicates: true,
+        });
+  // updateMany: a post deleted meanwhile has nothing to mark.
+  await prisma.post.updateMany({ where: { id: postId }, data: { duplicatesCheckedAt: new Date() } });
   return count;
 }

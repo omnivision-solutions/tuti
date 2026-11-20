@@ -656,9 +656,9 @@ export async function avatarsPage(job: ImportJob, cursor: string | null): Promis
 }
 
 /**
- * The imported posts embedded for duplicates, as the post-created job would (without its other work), 100 at a time.
- * Duplicate detection is a nicety: an embedding provider failing ends this step, logged, never the import that brought
- * everything (the posts are embedded once they're edited, or by the backfill, scripts/backfill-embeddings.ts).
+ * The imported posts embedded for duplicates, 100 at a time; they're checked for duplicates by the embeddings backfill
+ * (scripts/backfill-embeddings.ts), which takes up every post not checked yet. Duplicate detection is a nicety: an
+ * embedding provider failing ends this step, logged, never the import that brought everything (the backfill embeds them).
  */
 async function embeddingsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   if (!embeddingsEnabled()) {

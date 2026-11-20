@@ -21,6 +21,7 @@ export async function postCreated(input: JobInput<"postCreated">, log: JobLogger
   }
 
   const embedded = await embedPosts([post]);
+  // Not marked checked when this fails, so a retry, or the embeddings backfill, takes it up.
   const suggestions = post.duplicateOfId ? 0 : await detectDuplicates(post.id);
   log.info(`post ${post.id}: embedded ${embedded}, ${suggestions} possible duplicate(s)`);
   return { skipped: false, embedded, suggestions };

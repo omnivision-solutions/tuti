@@ -240,6 +240,8 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `credits.topupExpiryDays` | `365` | Whole days a top-up's credits last; 0: for good |
 | `credits.free` | `0` | Credits every project is given once, lasting like a top-up |
 | `credits.low` | `100` | Under this balance owners and admins are emailed (and once it's out); 0: only once it's out |
+| `duplicates.posted.model` | `"typesafe/jev-1.14"` | After a post is created: the decision model saying which of the 8 most similar posts it duplicates (they become "Possible duplicates"); OpenRouter only (elsewhere, and with `off`, similarity alone) |
+| `duplicates.typing.model` | `"typesafe/jev-1.14"` | While a title is typed, on the portal and in the widget: the decision model saying which similar posts to suggest voting on instead; OpenRouter only (elsewhere, and with `off`, similarity alone) |
 
 ### Autopilot's settings
 

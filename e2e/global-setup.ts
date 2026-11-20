@@ -61,6 +61,8 @@ export default async function globalSetup() {
     }),
     '"article_after"',
   );
+  // Duplicates: the decision model calls every candidate the embeddings find a duplicate, so the embeddings' fixtures decide.
+  model.otherwiseDecide({ "*": { duplicate: 0.9, related: 0.05, different: 0.05 } }, '"existing_0"');
   const s3 = await startS3Fake();
   const github = await startGithubFake();
   // Journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).

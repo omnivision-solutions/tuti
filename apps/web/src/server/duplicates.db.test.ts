@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
-import { DUPLICATE_MIN_SIMILARITY, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
-import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit";
+import { backfillEmbeddings, detectDuplicates, grantCredits } from "@tuti/jobs";
+import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_DUPLICATES_MODEL, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
+import { configFile, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -25,6 +28,7 @@ afterAll(() => openai.close());
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 beforeEach(async () => {
@@ -117,6 +121,21 @@ describe("after a post is created", () => {
   });
 });
 
+test("the migration marks posts embedded so far as checked, but an import's (it never checked them)", async () => {
+  openai.setVector("Dark mode", along(1));
+  openai.setVector("Imported idea", [0, 1]);
+  const native = await post("Dark mode");
+  const imported = await post("Imported idea");
+  await prisma.importedRecord.create({ data: { projectId: project.id, source: "FEATUREBASE", kind: "post", externalId: "fb-1", localId: imported.id } });
+  await prisma.post.updateMany({ where: { id: { in: [native.id, imported.id] } }, data: { duplicatesCheckedAt: null } });
+
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261120220000_post_duplicates_checked_at/migration.sql", import.meta.url), "utf8");
+  await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "post"')));
+  const checked = await prisma.post.findMany({ where: { id: { in: [native.id, imported.id] } }, select: { id: true, duplicatesCheckedAt: true } });
+  expect(checked.find((p) => p.id === native.id)?.duplicatesCheckedAt).not.toBeNull();
+  expect(checked.find((p) => p.id === imported.id)?.duplicatesCheckedAt).toBeNull();
+});
+
 describe("suggestions while typing a title", () => {
   test("title matches work without OpenAI", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
@@ -158,5 +177,465 @@ describe("suggestions while typing a title", () => {
     const found = await findSimilarPosts(project.slug, "dark mode");
     expect(openai.inputs.length).toBe(sent);
     expect(found.map((p) => p.title)).toEqual(["Dark mode soon"]);
+  });
+});
+
+describe("with a decision model (OpenRouter)", () => {
+  let model: ModelFake;
+  beforeAll(async () => {
+    model = await startModelFake({ embeddings: openai });
+  });
+  afterAll(() => model.close());
+  beforeEach(() => {
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+  });
+  beforeEach(() => model.decisions.splice(0));
+  afterEach(() => model.done());
+
+  const DUPLICATE = { duplicate: 0.9, related: 0.08, different: 0.02 };
+  const RELATED = { duplicate: 0.2, related: 0.7, different: 0.1 };
+  const DIFFERENT = { duplicate: 0.01, related: 0.2, different: 0.79 };
+
+  test("after posting, only the candidates it calls duplicates are suggested, from a wider net than similarity alone", async () => {
+    // Most similar to "Articles in other languages": Inbox (0.536), then Translations (0.37: under DUPLICATE_MIN_SIMILARITY).
+    openai.setVector("Translations for articles", [1, 0, 0, 0]);
+    openai.setVector("Live translations for Inbox", [0.8, 0.6, 0, 0]);
+    openai.setVector("Articles in other languages", [0.37, 0.4, Math.sqrt(1 - 0.37 ** 2 - 0.4 ** 2), 0]);
+    openai.setVector("Auto translation of articles", [DUPLICATE_CANDIDATE_MIN_SIMILARITY - 0.01, 0, 0, Math.sqrt(1 - (DUPLICATE_CANDIDATE_MIN_SIMILARITY - 0.01) ** 2)]);
+    model.decide({ duplicate_0: RELATED }, "Live translations for Inbox");
+    model.decide({ duplicate_0: DIFFERENT, duplicate_1: DUPLICATE }, "Articles in other languages");
+    const original = await post("Translations for articles");
+    await post("Live translations for Inbox");
+    const languages = await post("Articles in other languages");
+    // Its candidates are all under the cut-off, so it isn't asked about.
+    await post("Auto translation of articles");
+
+    expect(model.decisions).toHaveLength(2);
+    expect(model.decisions[1]).toMatchObject({
+      model: DEFAULT_DUPLICATES_MODEL,
+      state: { new: "Articles in other languages", existing_0: "Live translations for Inbox", existing_1: "Translations for articles" },
+    });
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: languages.id, originalId: original.id, status: "PENDING" })]);
+  });
+
+  test("when it fails, posts are suggested by similarity alone", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
+    const original = await post("Dark mode");
+    const duplicate = await post("Night theme please");
+    expect(model.decisions).toHaveLength(1);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: duplicate.id, originalId: original.id })]);
+    // Nothing was scripted, so the fake turned it down.
+    expect(() => model.done()).toThrow("no answers scripted");
+  });
+
+  test("duplicates.posted.model off asks nothing and uses similarity alone", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Dark mode", [1, 0, 0]);
+    openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
+    openai.setVector("Darker colours", [DUPLICATE_MIN_SIMILARITY - 0.01, 0, Math.sqrt(1 - (DUPLICATE_MIN_SIMILARITY - 0.01) ** 2)]);
+    await post("Dark mode");
+    const night = await post("Night theme please");
+    await post("Darker colours");
+    expect(model.decisions).toHaveLength(0);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id })]);
+  });
+
+  test("while typing, it keeps the duplicates, likeliest first, with duplicates.typing.model", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" }, typing: { model: "acme/judge" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Translations for articles", along(0.9));
+    openai.setVector("Article translation", along(0.8));
+    openai.setVector("Live translations for Inbox", along(0.7));
+    await post("Translations for articles");
+    await post("Article translation");
+    await post("Live translations for Inbox");
+    model.decide({ duplicate_0: { duplicate: 0.6, related: 0.3, different: 0.1 }, duplicate_1: DUPLICATE, duplicate_2: DIFFERENT });
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Article translation", "Translations for articles"]);
+    expect(model.decisions.at(-1)).toMatchObject({ model: "acme/judge", state: { new: "Translate articles please" } });
+  });
+
+  test("while typing, every candidate is judged before the 5 shown are picked: a duplicate found only by its words isn't cut", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Dark mode please", along(1));
+    for (const k of [1, 2, 3, 4, 5]) {
+      openai.setVector(`Night theme ${k}`, along(0.95 - k / 100));
+      await post(`Night theme ${k}`);
+    }
+    openai.setVector("Dark mode for the dashboard", [0, 0, 1]); // unrelated in meaning: found by its words only
+    await post("Dark mode for the dashboard");
+    model.decide({ "*": DIFFERENT, duplicate_5: DUPLICATE });
+
+    const found = await findSimilarPosts(project.slug, "Dark mode please");
+    expect(found.map((p) => p.title)).toEqual(["Dark mode for the dashboard"]);
+    expect(Object.keys(model.decisions.at(-1)!.questions)).toHaveLength(6);
+  });
+
+  test("with AI credits on, a check is recorded and charged as duplicate detection; out of credits, nothing is asked", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Translations for articles", along(0.9));
+    await post("Translations for articles");
+    model.decide({ duplicate_0: DIFFERENT });
+
+    expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
+    const [usage, ...more] = await prisma.aiUsage.findMany({ where: { projectId: project.id } });
+    expect(more).toEqual([]);
+    expect(usage).toMatchObject({ feature: "duplicates", kind: "decision" });
+    expect(Number(usage!.credits)).toBeGreaterThan(0);
+
+    await prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } });
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Translations for articles"]);
+    expect(model.decisions).toHaveLength(1);
+  });
+
+  test("after posting, with AI credits on, the check is recorded and charged as duplicate detection", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await post("Dark mode");
+    await post("Night theme please");
+    const [usage, ...more] = await prisma.aiUsage.findMany({ where: { projectId: project.id } });
+    expect(more).toEqual([]);
+    expect(usage).toMatchObject({ feature: "duplicates", kind: "decision" });
+    expect(Number(usage!.credits)).toBeGreaterThan(0);
+  });
+
+  test("after posting, out of AI credits, posts are suggested by similarity alone, without asking", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
+    const original = await post("Dark mode");
+    const duplicate = await post("Night theme please");
+    expect(model.decisions).toHaveLength(0);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: duplicate.id, originalId: original.id })]);
+  });
+
+  test("the embeddings backfill checks only posts it embeds for the first time: a rerun asks (and charges) nothing again", async () => {
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await post("Dark mode");
+    const night = await post("Night theme please");
+    expect(model.decisions).toHaveLength(1);
+    // A post from before embeddings were set up: never embedded, never checked.
+    await neverEmbedded(night.id);
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+    const log = { info: () => {}, warn: () => {} };
+
+    // The backfill covers every project: other tests' posts never embedded are checked too (and told they're different).
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    const nightAsked = () => model.decisions.filter((d) => JSON.stringify(d.state).includes("Night theme please")).length;
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await backfillEmbeddings(log);
+    expect(nightAsked()).toBe(2);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id })]);
+
+    const asked = model.decisions.length;
+    await backfillEmbeddings(log);
+    expect(model.decisions).toHaveLength(asked);
+  });
+
+  test("while typing, someone who can read the portal but not post here (another project's SSO user) gets the posts as found", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    const elsewhere = await signUp();
+    const other = await createProject(elsewhere);
+    await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-1", userId: elsewhere.id, email: elsewhere.email } });
+    actAs(elsewhere);
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(0);
+  });
+
+  test("while typing signed out, nothing is asked (it'd be charged to the project): the posts are shown as found", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    actAs(null);
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(0);
+  });
+
+  test("the backfill also checks newer posts against an older one it embeds for the first time", async () => {
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    const dark = await post("Dark mode");
+    const night = await post("Night theme please");
+    // The older post was never embedded, so the newer one was never compared with it.
+    await neverEmbedded(dark.id);
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await backfillEmbeddings({ info: () => {}, warn: () => {} });
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+  });
+
+  test("a post checked before is checked again only against the older posts the backfill has just embedded", async () => {
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Darker colours", along(0.9));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DIFFERENT }, "Darker colours");
+    const dark = await post("Dark mode");
+    await post("Darker colours");
+    model.decide({ duplicate_0: DIFFERENT, duplicate_1: DIFFERENT }, "Night theme please");
+    const night = await post("Night theme please");
+    // "Dark mode" was never embedded: neither newer post was compared with it.
+    await neverEmbedded(dark.id);
+    const asked = model.decisions.length;
+
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await backfillEmbeddings({ info: () => {}, warn: () => {} });
+    const night2 = model.decisions.slice(asked).find((d) => (d.state as { new: string }).new === "Night theme please");
+    // Against "Dark mode" alone: "Darker colours" was judged already.
+    expect(night2?.state).toEqual({ new: "Night theme please", existing_0: "Dark mode" });
+    expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
+  });
+
+  test("where a backfill check fails, that post stays unchecked, so the next run checks it", async () => {
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    const dark = await post("Dark mode");
+    const night = await post("Night theme please");
+    // Neither was ever embedded.
+    await neverEmbedded(dark.id, night.id);
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+    const log = { info: () => {}, warn: () => {} };
+
+    failSuggestionsFor(night.id);
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    const failed = await backfillEmbeddings(log);
+    expect(failed.errors).toContainEqual({ phase: "posts", message: "database blip" });
+    // The failed one stays unchecked; "Dark mode", checked before it, is done.
+    expect(await checked(night.id)).toBe(false);
+    expect(await checked(dark.id)).toBe(true);
+
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    expect((await backfillEmbeddings(log)).errors).toEqual([]);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+  });
+
+  test("after a check fails, posts checked before are still checked against the ones that were checked", async () => {
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    openai.setVector("Darker please", along(0.9));
+    const dark = await post("Dark mode");
+    const night = await post("Night theme please");
+    const darker = await post("Darker please");
+    // "Dark mode" (oldest) and "Darker please" (newest) were never embedded; "Night theme please" was, and checked.
+    await neverEmbedded(dark.id, darker.id);
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+
+    // "Dark mode" is checked, then the check of "Darker please" fails.
+    model.decide({ "*": DUPLICATE }, '"new":"Darker please"');
+    failSuggestionsFor(darker.id);
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    const run = await backfillEmbeddings({ info: () => {}, warn: () => {} });
+
+    expect(run.errors).toContainEqual({ phase: "posts", message: "database blip" });
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+    // The failed one is left for the next run.
+    expect(await checked(darker.id)).toBe(false);
+  });
+
+  test("where re-checking a post checked before fails, the posts it was against are marked unchecked again, so the next run tries again", async () => {
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    const dark = await post("Dark mode");
+    const night = await post("Night theme please");
+    // "Dark mode" was never embedded: "Night theme please" was checked without it.
+    await neverEmbedded(dark.id);
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+    const log = { info: () => {}, warn: () => {} };
+
+    failSuggestionsFor(night.id);
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    const failed = await backfillEmbeddings(log);
+    expect(failed.errors).toContainEqual({ phase: "posts", message: "database blip" });
+    expect(await checked(dark.id)).toBe(false);
+    expect(await checked(night.id)).toBe(true);
+
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    expect((await backfillEmbeddings(log)).errors).toEqual([]);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+  });
+
+  test("a post whose check fails after it's embedded (or that an import embedded) stays unchecked, so the backfill checks it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    const dark = await post("Dark mode");
+    vi.spyOn(prisma.duplicateSuggestion, "createMany").mockRejectedValueOnce(new Error("database blip"));
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    const night = await post("Night theme please");
+    expect(await checked(night.id)).toBe(false);
+    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(1);
+    vi.mocked(prisma.duplicateSuggestion.createMany).mockRestore();
+
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    expect((await backfillEmbeddings({ info: () => {}, warn: () => {} })).errors).toEqual([]);
+    expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
+  });
+
+  test("a post deleted while it's checked is left alone: nothing to mark, no error", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    await post("Dark mode");
+    const night = await post("Night theme please");
+    vi.unstubAllEnvs();
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+    model.decide({ duplicate_0: DIFFERENT }, '"new":"Night theme please"', () => prisma.post.delete({ where: { id: night.id } }));
+
+    await expect(detectDuplicates(night.id)).resolves.toBe(0);
+  });
+
+  test("while typing, a balance that can't be read shows the posts as found", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    vi.spyOn(prisma.creditGrant, "findMany").mockRejectedValueOnce(new Error("database blip"));
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(0);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("Reading AI credits for a duplicates check failed"), expect.anything());
+  });
+
+  test("while typing, a failure shows the posts as found", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Translations for articles", along(0.9));
+    await post("Translations for articles");
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Translations for articles"]);
+    expect(() => model.done()).toThrow("no answers scripted");
+  });
+
+  test("while typing, a project's checks stop at 300 an hour: the rest show the posts as found, till the next hour", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T10:10:00Z") });
+    // With credits on, each check reads the balance first: the wait searches at once could slip past the count in.
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
+    await grantCredits(project.id, "TOPUP", 1000, { days: 365 });
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    model.otherwiseDecide({ "*": DIFFERENT }, "Translate articles please");
+
+    // All at once: none may read a count another hasn't saved yet.
+    const answered = await Promise.all(Array.from({ length: 300 }, () => findSimilarPosts(project.slug, "Translate articles please")));
+    expect(answered.every((posts) => posts.length === 0)).toBe(true);
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(300);
+
+    vi.setSystemTime(new Date("2026-11-20T11:00:00Z"));
+    expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
+    expect(model.decisions).toHaveLength(301);
+    // 301 searches, each a few database queries and requests to the fakes.
+  }, 60_000);
+
+  test("while typing, an answer that takes over a second shows the posts as found", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    // Had it answered in time, it would have hidden the post.
+    model.decide({ "*": DIFFERENT }, undefined, () => new Promise((resolve) => setTimeout(resolve, 1_500)));
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+  });
+
+  /** Posts from before embeddings were set up: never embedded, never checked. */
+  const neverEmbedded = (...ids: string[]) =>
+    Promise.all([prisma.postEmbedding.deleteMany({ where: { postId: { in: ids } } }), prisma.post.updateMany({ where: { id: { in: ids } }, data: { duplicatesCheckedAt: null } })]);
+  const checked = async (id: string) => Boolean((await prisma.post.findUniqueOrThrow({ where: { id }, select: { duplicatesCheckedAt: true } })).duplicatesCheckedAt);
+
+  /** The next suggestions written for `postId` fail (the backfill covers every project: other posts' still go through). */
+  const failSuggestionsFor = (postId: string) => {
+    const write = prisma.duplicateSuggestion.createMany.bind(prisma.duplicateSuggestion);
+    let failed = false;
+    vi.spyOn(prisma.duplicateSuggestion, "createMany").mockImplementation(((args: Parameters<typeof write>[0]) => {
+      const data = args ? (Array.isArray(args.data) ? args.data : [args.data]) : [];
+      if (!failed && data.some((row) => row.postId === postId)) {
+        failed = true;
+        return Promise.reject(new Error("database blip"));
+      }
+      return write(args);
+    }) as unknown as typeof write);
+  };
+
+  /** Older posts with these similarities to [1, 0, …] and to nothing else of each other's but through it. */
+  const olderPosts = async (similarities: number[]) => {
+    for (const [k, s] of similarities.entries()) {
+      const vector = Array.from({ length: similarities.length + 1 }, (_, d) => (d === 0 ? s : d === k + 1 ? Math.sqrt(1 - s ** 2) : 0));
+      openai.setVector(`Older ${k}`, vector);
+    }
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    const posts = [];
+    for (const k of similarities.keys()) {
+      posts.push(await post(`Older ${k}`));
+    }
+    vi.unstubAllEnvs();
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+    openai.setVector("The new one", [1, ...similarities.map(() => 0)]);
+    return posts;
+  };
+
+  test("after posting, the 8 most similar posts at 0.35 or above are asked about, in one request", async () => {
+    await olderPosts([0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
+    model.decide({ "*": DIFFERENT }, "The new one");
+    const created = await post("The new one");
+    const asked = model.decisions.filter((d) => JSON.stringify(d.state).includes("The new one"));
+    expect(asked).toHaveLength(1);
+    expect(Object.keys(asked[0]!.questions)).toHaveLength(8);
+    expect(await suggestions()).not.toContainEqual(expect.objectContaining({ postId: created.id }));
+  });
+
+  test("after posting, a failed answer suggests the 3 most similar at 0.45 or above, as before", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [a, b, c] = await olderPosts([0.9, 0.8, 0.7, 0.6, 0.4]);
+    const created = await post("The new one");
+    const mine = (await suggestions()).filter((s) => s.postId === created.id).map((s) => s.originalId);
+    expect(mine.sort()).toEqual([a!.id, b!.id, c!.id].sort());
+    expect(() => model.done()).toThrow("no answers scripted");
+  });
+
+  test("after posting, a failed answer leaves out what's under 0.45, even among the 3 most similar", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [a, b] = await olderPosts([0.9, 0.8, 0.4, 0.38]);
+    const created = await post("The new one");
+    const mine = (await suggestions()).filter((s) => s.postId === created.id).map((s) => s.originalId);
+    expect(mine.sort()).toEqual([a!.id, b!.id].sort());
+    expect(() => model.done()).toThrow("no answers scripted");
   });
 });

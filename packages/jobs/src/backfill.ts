@@ -7,7 +7,8 @@ import type { JobLogger } from "./index";
 import { detectDuplicates, embedPosts } from "./duplicates";
 
 /**
- * The embeddings backfill (the worker's backfill:embeddings): embeds existing posts and suggests duplicates among them,
+ * The embeddings backfill (the worker's backfill:embeddings): embeds existing posts and suggests duplicates for those
+ * not checked yet,
  * and embeds published docs articles for search, when embeddings are set up; then indexes every API reference's
  * operations for the docs' search and AI answers, set up or not (their word search needs it either way). Each phase runs
  * whatever happened in the one before: a failure (the embeddings provider down, say) is kept in `errors`, by phase, for
@@ -24,13 +25,49 @@ export async function backfillEmbeddings(log: JobLogger) {
         // Never sample content (Home's "Add sample content"): it's never embedded or suggested as a duplicate.
         where: { duplicateOfId: null, sample: false },
         orderBy: { createdAt: "asc" },
-        select: { id: true, projectId: true, title: true, body: true },
+        select: { id: true, projectId: true, title: true, body: true, createdAt: true, duplicatesCheckedAt: true },
       });
-      // Embed everything first, then compare, so every post sees all older ones.
+      // Embed everything first, then check, oldest first, each post not checked yet (each check is a charged model
+      // request, so a rerun asks nothing again) against every older post. One whose check fails stays unchecked, for the
+      // next run; the rest carry on.
       const embedded = await embedPosts(rows);
       let suggestions = 0;
-      for (const post of rows) {
-        suggestions += await detectDuplicates(post.id);
+      let failed: unknown = null;
+      const done: typeof rows = [];
+      for (const post of rows.filter((row) => !row.duplicatesCheckedAt)) {
+        try {
+          suggestions += await detectDuplicates(post.id);
+          done.push(post);
+        } catch (error) {
+          failed ??= error;
+        }
+      }
+      // A post checked before but newer than one checked now never saw it (a post is compared with older ones): it's
+      // checked against those alone. Where that fails, they're marked unchecked again, so the next run checks them, and
+      // this, again.
+      const doneIn = new Map<string, typeof done>();
+      for (const row of done) {
+        const list = doneIn.get(row.projectId);
+        if (list) {
+          list.push(row);
+        } else {
+          doneIn.set(row.projectId, [row]);
+        }
+      }
+      for (const post of rows.filter((row) => row.duplicatesCheckedAt)) {
+        const older = (doneIn.get(post.projectId) ?? []).filter((row) => row.createdAt < post.createdAt).map((row) => row.id);
+        if (older.length === 0) {
+          continue;
+        }
+        try {
+          suggestions += await detectDuplicates(post.id, older);
+        } catch (error) {
+          await prisma.post.updateMany({ where: { id: { in: older } }, data: { duplicatesCheckedAt: null } });
+          failed ??= error;
+        }
+      }
+      if (failed) {
+        throw failed;
       }
       posts = { posts: rows.length, embedded, suggestions };
     } catch (error) {

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { AI_FEATURES, type AiFeature, creditsEnabled } from "@tuti/shared";
+import { creditsEnabled, USAGE_FEATURES, type UsageFeature } from "@tuti/shared";
 import { z } from "zod";
 
 import { defineOperation } from "./define";
@@ -8,12 +8,12 @@ import { defineOperation } from "./define";
 
 /** `credits`: what was charged, with AI credits on. */
 type Totals = { requests: number; inputTokens: number; outputTokens: number; cost: number; credits: number; unpriced: number };
-export type UsageMonth = Totals & { month: string; features: (Totals & { feature: AiFeature })[] };
+export type UsageMonth = Totals & { month: string; features: (Totals & { feature: UsageFeature })[] };
 
 /** The last `months` calendar months (UTC), newest first: totals and each feature's, most expensive first. Months with no use are left out. */
 export async function aiUsageByMonth(projectId: string, months: number): Promise<UsageMonth[]> {
   const rows = await prisma.$queryRaw<
-    { month: string; feature: AiFeature; requests: bigint; inputTokens: bigint; outputTokens: bigint; cost: number | null; credits: number | null; unpriced: bigint }[]
+    { month: string; feature: UsageFeature; requests: bigint; inputTokens: bigint; outputTokens: bigint; cost: number | null; credits: number | null; unpriced: bigint }[]
   >`
     -- createdAt is a UTC timestamp without a zone: truncated as it is, whatever the session's zone.
     SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month, feature,
@@ -82,7 +82,7 @@ export const getUsage = defineOperation({
               features: z
                 .array(
                   usageTotals
-                    .extend({ feature: z.enum(AI_FEATURES).describe("What the AI was used for").meta({ examples: ["answers"] }) })
+                    .extend({ feature: z.enum(USAGE_FEATURES).describe("What the AI was used for").meta({ examples: ["answers"] }) })
                     .meta({ id: "AiFeatureUsage", description: "A feature's AI use in a month" }),
                 )
                 .describe("Each feature's use that month, most expensive first"),

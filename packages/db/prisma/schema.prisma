@@ -1004,6 +1004,9 @@ model Post {
   commentCount       Int        @default(0)
   /// Set when this post is merged into another one; votes move to the original.
   duplicateOfId      String?
+  /// When it was checked for posts it duplicates (once it had its embedding); null: not yet, so the embeddings backfill
+  /// checks it.
+  duplicatesCheckedAt DateTime?
   /// Set when the post moves to a status its people hear about (Planned, In progress, Completed), cleared once everyone
   /// is emailed about the one it has; the shipped-emails-resubmit cron re-runs late ones.
   shippedEmailsDueAt DateTime?
@@ -2889,7 +2892,7 @@ model ImportedRecord {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, changelog, code_changes.
+  /// What it was for: answers, escalations, support, changelog, code_changes, duplicates.
   feature      String
   /// chat or decision (embeddings aren't recorded).
   kind         String
