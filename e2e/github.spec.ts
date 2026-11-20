@@ -51,13 +51,28 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app", "acme-e2e/ios"]);
   await expect(owner.getByRole("heading", { name: "Repositories 2" })).toBeVisible();
   await owner.getByRole("button", { name: "Actions for acme-e2e/ios" }).click();
+  // The removal's own answer brings the page what's saved: focus is checked once it's in.
+  let removalAnswered = false;
+  const onAnswer = (response: { request: () => { headers: () => Record<string, string> } }) => {
+    if (response.request().headers()["next-action"]) {
+      removalAnswered = true;
+    }
+  };
+  owner.on("response", onAnswer);
   await owner.getByRole("menuitem", { name: "Remove" }).click();
+  await expect.poll(() => removalAnswered).toBe(true);
+  owner.off("response", onAnswer);
   await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
   await expect(owner.getByRole("heading", { name: "Repositories 1" })).toBeVisible();
   // Its row is gone, and its menu's button with it: focus is on "Add repository", not lost, and still there once the
   // page has what's saved.
   await expect(owner.getByRole("button", { name: "Add repository" })).toBeFocused();
+  // And stays there: Enter opens its dialog, which it wouldn't with focus back on the page.
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("dialog", { name: "Add repository" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "Add repository" })).toBeHidden();
   // Which repositories the app can see is the account's to choose, on GitHub.
   await expect(owner.getByRole("link", { name: "Manage access on GitHub" })).toHaveAttribute(
     "href",
