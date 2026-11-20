@@ -392,9 +392,9 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await tree.getByRole("link", { name: "SAML", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs/collections/saml`);
   await owner.getByRole("navigation", { name: "Collection" }).getByRole("link", { name: "Settings" }).click();
-  const collectionAccess = owner.getByRole("region", { name: "Access" }).getByRole("group", { name: "Who can read" });
-  await expect(collectionAccess.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  await expect(collectionAccess).toContainText("Readers in Enterprise customers");
+  const collectionAccess = owner.getByRole("region", { name: "Access" }).getByRole("combobox", { name: "Who can read" });
+  await expect(collectionAccess).toContainText("Inherit");
+  await expect(collectionAccess).toHaveAccessibleDescription(/Readers in Enterprise customers/);
   await checkpoint(owner, "team-docs-collection-who-can-read", { fullPage: false });
 
   // The tab, its collection and article are gone for everyone but the group (and the team).
