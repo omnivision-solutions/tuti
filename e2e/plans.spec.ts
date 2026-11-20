@@ -420,6 +420,8 @@ test("on Tuti's cloud, the widget launcher's icon on the free plan opens the upg
   await icons.locator("label").filter({ hasText: "Megaphone" }).click();
   await expect(icons.getByRole("radio", { name: "Megaphone" })).toBeChecked();
   await expect(needsPro).toHaveCount(0);
+  // Back to the kept icon is no change: nothing to save, and the preview shows the chat bubble again.
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   // Left as it was, it isn't sent: a teammate's switch to the chat bubble meanwhile stays, and the colour saves.
   const teammate = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await teammate.connect();
