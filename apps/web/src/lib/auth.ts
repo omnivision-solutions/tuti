@@ -215,18 +215,10 @@ export const auth = betterAuth({
     resetPasswordTokenExpiresIn: PASSWORD_RESET_MINUTES * 60,
     revokeSessionsOnPasswordReset: true,
     // Signing up with an address that has an account answers as for a new one (requireEmailVerification), so its owner
-    // gets something to use: the verification link again, or, verified already, a password reset (with its limits).
+    // gets something to use: a password reset (under its limits), verified or not. Never the verification link: the
+    // account's password may be someone else's, who signed up with this address first, and verifying would let them in.
     onExistingUserSignUp: async ({ user }) => {
       try {
-        if (!user.emailVerified) {
-          // Under the emailed links' limits (per address and visitor), as the reset below: anyone can sign up with an address.
-          const [{ countEmailedLink }, { headers }] = await Promise.all([import("@/server/email-link-limits"), import("next/headers")]);
-          const limited = await countEmailedLink(null, user.email, await headers());
-          if ("id" in limited && limited.id) {
-            await auth.api.sendVerificationEmail({ body: { email: user.email, callbackURL: "/app" } });
-          }
-          return;
-        }
         const form = new FormData();
         form.set("email", user.email);
         // Imported here: server/password-reset.ts imports this file.

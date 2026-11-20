@@ -423,8 +423,6 @@ test("a teammate renames the project in another tab: once this tab hears of it, 
   await expect(save(olive)).toBeDisabled();
 });
 
-});
-
 test("someone signs up from a portal, signs out and signs back in there; their password is typed on the app", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

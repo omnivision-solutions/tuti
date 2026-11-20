@@ -138,10 +138,16 @@ export function AuthForm({
       if (verifying) {
         setPending(true);
         setLinkError(undefined);
-        const { error } = await authClient.sendVerificationEmail({ email: sentTo, callbackURL: at(next ?? redirectTo) });
-        setPending(false);
-        setLinkError(error ? (error.message ?? "We couldn't send the email. Try again.") : undefined);
-        setResent(!error);
+        try {
+          const { error } = await authClient.sendVerificationEmail({ email: sentTo, callbackURL: at(next ?? redirectTo) });
+          setLinkError(error ? (error.message ?? "We couldn't send the email. Try again.") : undefined);
+          setResent(!error);
+        } catch {
+          // Offline, or the server didn't answer.
+          setLinkError("We couldn't send the email. Try again.");
+        } finally {
+          setPending(false);
+        }
         return;
       }
       const data = new FormData();

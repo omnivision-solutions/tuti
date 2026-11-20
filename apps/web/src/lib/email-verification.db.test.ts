@@ -114,28 +114,29 @@ test("the link signing in before verifying sends goes to the app", async () => {
   expect((await verificationLink(email)).link.searchParams.get("callbackURL")).toBe("/app");
 });
 
-test("signing up with an address that has an account answers as for a new one, and emails its owner something to use", async () => {
-  const password = "correct horse battery staple";
-  // Not verified yet: the link again.
+test("signing up with an address that has an account answers as for a new one, and emails its owner a password reset", async () => {
+  request.host = new URL(APP_URL).host;
+  const subjects = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).map((e) => e.subject);
+  // Someone signed up first with an address that isn't theirs, and never verified it.
   const email = await signUp("/app");
-  const first = (await verificationLink(email)).message;
-  const again = await postOnApp("sign-up/email", { email, name: "Someone", password: "another password entirely", callbackURL: "/app" });
+  await verificationLink(email);
+  // Its owner signs up: the same answer as a new account, and a password reset, never the verification link, which
+  // would let the first password in. Resetting sets theirs (and verifies the address).
+  const again = await postOnApp("sign-up/email", { email, name: "Owner", password: "the owner's own password", callbackURL: "/app" });
   expect(again.ok).toBe(true);
   expect(again.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
-  const { message } = await verificationLink(email);
-  expect(message).not.toBe(first);
+  await expect.poll(() => subjects(email)).toEqual(["Verify your email for Tuti", "Reset your password"]);
   // Under the emailed links' hourly limit per address: anyone can sign up with it.
   for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR + 2; i++) {
-    expect((await postOnApp("sign-up/email", { email, name: "Someone", password: "another password entirely" })).ok).toBe(true);
+    expect((await postOnApp("sign-up/email", { email, name: "Owner", password: "the owner's own password" })).ok).toBe(true);
   }
-  // The sign-up's own email, then the limit's worth.
-  await expect.poll(() => mailbox.emails.filter((e) => e.to.includes(email)).length).toBe(1 + SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
+  await expect.poll(() => subjects(email).length).toBe(1 + SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
+  expect(await isVerified(email)).toBe(false);
 
-  // Verified: a password reset, and the account as it was.
+  // Verified: a password reset too, and the account as it was.
   const owner = await signUpUser("Olive");
-  request.host = new URL(APP_URL).host;
-  expect((await postOnApp("sign-up/email", { email: owner.email, name: "Someone", password, callbackURL: "/app" })).ok).toBe(true);
-  await expect.poll(() => mailbox.emails.filter((e) => e.to.includes(owner.email)).at(-1)?.subject).toBe("Reset your password");
+  expect((await postOnApp("sign-up/email", { email: owner.email, name: "Someone", password: "another password entirely", callbackURL: "/app" })).ok).toBe(true);
+  await expect.poll(() => subjects(owner.email).at(-1)).toBe("Reset your password");
   expect(await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { name: true } })).toEqual({ name: "Olive" });
 });
 
