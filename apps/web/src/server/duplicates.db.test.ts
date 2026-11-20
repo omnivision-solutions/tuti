@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { grantCredits } from "@tuti/jobs";
 import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_DUPLICATES_MODEL, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { configFile, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -255,6 +256,36 @@ describe("with a decision model (OpenRouter)", () => {
     const found = await findSimilarPosts(project.slug, "Dark mode please");
     expect(found.map((p) => p.title)).toEqual(["Dark mode for the dashboard"]);
     expect(Object.keys(model.decisions.at(-1)!.questions)).toHaveLength(6);
+  });
+
+  test("with AI credits on, a check is recorded and charged as duplicate detection; out of credits, nothing is asked", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Translations for articles", along(0.9));
+    await post("Translations for articles");
+    model.decide({ duplicate_0: DIFFERENT });
+
+    expect(await findSimilarPosts(project.slug, "Translate articles please")).toEqual([]);
+    const [usage, ...more] = await prisma.aiUsage.findMany({ where: { projectId: project.id } });
+    expect(more).toEqual([]);
+    expect(usage).toMatchObject({ feature: "duplicates", kind: "decision" });
+    expect(Number(usage!.credits)).toBeGreaterThan(0);
+
+    await prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } });
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Translations for articles"]);
+    expect(model.decisions).toHaveLength(1);
+  });
+
+  test("after posting, out of AI credits, posts are suggested by similarity alone, without asking", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
+    const original = await post("Dark mode");
+    const duplicate = await post("Night theme please");
+    expect(model.decisions).toHaveLength(0);
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: duplicate.id, originalId: original.id })]);
   });
 
   test("while typing, a failure shows the posts as found", async () => {

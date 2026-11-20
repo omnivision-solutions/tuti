@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { duplicatesMeter } from "@tuti/jobs";
 import { duplicatesModel, duplicateText, embed, embeddingsEnabled, judgeDuplicates, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
@@ -25,7 +26,7 @@ const MIN_EMBED_LENGTH = 10;
  * near-identical wording; with OPENAI_API_KEY set, embeddings also catch the
  * same idea in other words. Posts found both ways rank first. Then the decision model (the config file's `duplicates.typing.model`) keeps
  * those it calls duplicates, likeliest first; without one, past the project's hourly checks, or when it fails or takes
- * over a second, they're shown as found. With whether whoever's asking voted for
+ * over a second, or the project is out of AI credits, they're shown as found. With whether whoever's asking voted for
  * each: the widget's person, by its token (`widgetToken`), or the portal's signed-in user.
  */
 export async function findSimilarPosts(projectSlug: string, title: string, widgetToken?: string | null): Promise<SimilarPost[]> {
@@ -73,9 +74,14 @@ async function duplicatesOnly(projectId: string, title: string, found: Candidate
   if (count >= CHECKS_PER_PROJECT_PER_HOUR) {
     return found;
   }
+  // Charged in AI credits like any AI feature: out of them, the posts are shown as found.
+  const meter = await duplicatesMeter(projectId);
+  if (!meter) {
+    return found;
+  }
   checks.set(projectId, { hour, count: count + 1 });
   try {
-    const verdicts = await judgeDuplicates(model, title, found.map(duplicateText), 1_000);
+    const verdicts = await judgeDuplicates(model, title, found.map(duplicateText), 1_000, meter);
     return found
       .map((post, k) => ({ post, verdict: verdicts[k]! }))
       .filter(({ verdict }) => verdict.verdict === "duplicate")

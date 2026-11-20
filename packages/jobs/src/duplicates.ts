@@ -13,6 +13,8 @@ import {
   toVectorLiteral,
 } from "@tuti/shared";
 
+import { duplicatesMeter } from "./ai-usage";
+
 type PostText = { id: string; projectId: string; title: string; body: string };
 
 /**
@@ -53,12 +55,16 @@ export async function embedPosts(posts: PostText[]): Promise<number> {
 
 /**
  * Suggests older posts in the same project that this post may duplicate: the 8 most similar by embedding, those the
- * decision model (the config file's `duplicates.posted.model`) calls duplicates. Without one, or when it fails, the 3 most similar at
+ * decision model (the config file's `duplicates.posted.model`) calls duplicates. Without one, out of AI credits, or when it fails, the 3 most similar at
  * DUPLICATE_MIN_SIMILARITY or above. Existing suggestions (including dismissed ones) are left as they are.
  * Returns how many new suggestions were added.
  */
 export async function detectDuplicates(postId: string): Promise<number> {
-  const model = duplicatesModel("posted");
+  // The model only while the project has AI credits (with credits on): out of them, similarity alone.
+  const project = await prisma.post.findUnique({ where: { id: postId }, select: { projectId: true } });
+  const configured = duplicatesModel("posted");
+  const meter = configured && project ? await duplicatesMeter(project.projectId) : null;
+  const model = meter ? configured : null;
   const matches = await prisma.$queryRaw<{ originalId: string; projectId: string; similarity: number; title: string; body: string; postTitle: string; postBody: string }[]>`
     SELECT o."postId" AS "originalId", o."projectId", 1 - (o.embedding <=> e.embedding) AS similarity,
       op.title, op.body, p.title AS "postTitle", p.body AS "postBody"
@@ -76,7 +82,7 @@ export async function detectDuplicates(postId: string): Promise<number> {
   let likely = matches.filter((m) => m.similarity >= (model ? DUPLICATE_CANDIDATE_MIN_SIMILARITY : DUPLICATE_MIN_SIMILARITY));
   if (model && likely.length > 0) {
     try {
-      const verdicts = await judgeDuplicates(model, duplicateText({ title: likely[0]!.postTitle, body: likely[0]!.postBody }), likely.map(duplicateText), 30_000);
+      const verdicts = await judgeDuplicates(model, duplicateText({ title: likely[0]!.postTitle, body: likely[0]!.postBody }), likely.map(duplicateText), 30_000, meter!);
       likely = likely.filter((_, k) => verdicts[k]!.verdict === "duplicate");
     } catch (error) {
       log.warn("Judging possible duplicates failed; suggesting by similarity alone", { postId, error });

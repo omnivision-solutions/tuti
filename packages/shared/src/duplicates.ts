@@ -1,5 +1,6 @@
 import { decide, type DecisionQuestion } from "./ai";
 import { config } from "./config";
+import type { Meter } from "./usage";
 import { decisionsAvailable } from "./provider";
 
 export { DEFAULT_DUPLICATES_MODEL } from "./config/duplicates";
@@ -27,10 +28,10 @@ const CRITERIA = {
 
 /**
  * The decision model's verdict on each candidate (in order) for `post`: each a post's title, and its body when there is
- * one. One request, a question per candidate. Not recorded or charged: like embeddings, a request costs less than the
- * row recording it (docs/plan.md). Throws on any failure, so the caller can fall back to embeddings alone.
+ * one. One request, a question per candidate, recorded and charged by `meter` (duplicatesMeter in @tuti/jobs). Throws on
+ * any failure, so the caller can fall back to embeddings alone.
  */
-export async function judgeDuplicates(model: string, post: string, candidates: string[], timeoutMs: number): Promise<DuplicateVerdict[]> {
+export async function judgeDuplicates(model: string, post: string, candidates: string[], timeoutMs: number, meter: Meter): Promise<DuplicateVerdict[]> {
   const state = { new: post, ...Object.fromEntries(candidates.map((text, k) => [`existing_${k}`, text])) };
   const questions = Object.fromEntries(
     candidates.map((_, k): [string, DecisionQuestion] => [
@@ -38,7 +39,7 @@ export async function judgeDuplicates(model: string, post: string, candidates: s
       { type: "choice", instructions: `A feedback board. Someone is posting \`new\`. Is it a duplicate of \`existing_${k}\`?`, criteria: CRITERIA },
     ]),
   );
-  const answers = await decide(state, questions, { model, timeoutMs, meter: async () => {} });
+  const answers = await decide(state, questions, { model, timeoutMs, meter });
   return candidates.map((_, k) => {
     const answer = answers[`duplicate_${k}`]!;
     if (answer.type !== "choice" || !Object.hasOwn(CRITERIA, answer.choice)) {

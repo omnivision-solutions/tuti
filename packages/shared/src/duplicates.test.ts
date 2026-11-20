@@ -41,12 +41,12 @@ test("only the three verdicts count: any other answer is a failure, so the calle
   vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
   vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
   model.decide({ duplicate_0: { duplicate: 0.7, related: 0.2, different: 0.1 }, duplicate_1: { related: 0.6, duplicate: 0.3, different: 0.1 } });
-  expect(await judgeDuplicates("acme/judge", "Dark mode", ["Night theme", "Darker charts"], 1_000)).toEqual([
+  expect(await judgeDuplicates("acme/judge", "Dark mode", ["Night theme", "Darker charts"], 1_000, async () => {})).toEqual([
     { verdict: "duplicate", duplicate: 0.7 },
     { verdict: "related", duplicate: 0.3 },
   ]);
   // A name every object has isn't one of them.
   model.decide({ duplicate_0: { constructor: 0.9, duplicate: 0.05, related: 0.03, different: 0.02 } });
-  await expect(judgeDuplicates("acme/judge", "Dark mode", ["Night theme"], 1_000)).rejects.toThrow("answered duplicate_0");
+  await expect(judgeDuplicates("acme/judge", "Dark mode", ["Night theme"], 1_000, async () => {})).rejects.toThrow("answered duplicate_0");
   model.done();
 });

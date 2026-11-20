@@ -70,6 +70,10 @@ export function codeChangesOff(): string | null {
 export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
+/** What AI usage is recorded and charged for: the features, and duplicate detection (its model is the server's, from the config file). */
+export const USAGE_FEATURES = [...AI_FEATURES, "duplicates"] as const;
+export type UsageFeature = (typeof USAGE_FEATURES)[number];
+
 /**
  * A role is one kind of work a model does for a feature, and what a project picks a model for (each feature's page under Settings → AI).
  * Code asks for a role, never a model: a feature's steps can be added, removed or reordered without a new setting,

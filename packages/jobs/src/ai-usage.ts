@@ -1,5 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
-import { AI_ROLES, type Ai, type AiFeature, type AiRole, type AiUsage, creditsEnabled, creditsPerUsageDollar, log, type Meter, roleModel } from "@tuti/shared";
+import { AI_ROLES, type Ai, type AiRole, type AiUsage, creditsEnabled, creditsPerUsageDollar, log, type Meter, roleModel, type UsageFeature } from "@tuti/shared";
 
 import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } from "./credits";
 
@@ -19,6 +19,14 @@ export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
 }
 
 /**
+ * The meter for duplicate detection's requests in `projectId`, recorded and charged as `duplicates`; or null with AI
+ * credits on and the balance at 0 or below, when duplicates are found by similarity alone.
+ */
+export async function duplicatesMeter(projectId: string): Promise<Meter | null> {
+  return (await aiPaused(projectId)) ? null : meter(projectId, "duplicates");
+}
+
+/**
  * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project),
  * and with AI credits on charges its cost in credits, at the rate of the time (a request with no
  * cost is charged 0, and stays flagged by its missing cost). A failed write is logged, never thrown:
@@ -26,7 +34,7 @@ export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
  * would only waste it). The log has what the row would have, so a missed charge can be made by hand.
  * A charge that leaves the balance low or out emails the owners and admins (emailIfCreditsLow).
  */
-function meter(projectId: string, feature: AiFeature): Meter {
+function meter(projectId: string, feature: UsageFeature): Meter {
   return async (usage: AiUsage) => {
     const credits = creditsEnabled() ? toCredits(new Prisma.Decimal(usage.cost ?? 0).times(creditsPerUsageDollar())) : null;
     try {

@@ -7,6 +7,7 @@ export const AI_FEATURE_NAMES: Record<string, string> = {
   support: "Support inbox (drafts and summaries)",
   changelog: "Changelog drafts and edits",
   code_changes: "Autopilot",
+  duplicates: "Duplicate detection",
 };
 
 /** Dollars: cents, or four places below a cent, or "under $0.0001" for a sliver. */
