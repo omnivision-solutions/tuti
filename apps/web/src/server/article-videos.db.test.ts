@@ -2,7 +2,7 @@ import { originalKey, videoKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { SIGNED_WINDOW_SECONDS, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { articleMarkdown } from "@/server/docs-queries";
@@ -85,11 +85,11 @@ describe("uploads", () => {
     expect(await createUpload(project.slug, { name: "a.mp4", type: "video/mp4", size: 10 })).toEqual({ error: "Only the team can attach files" });
   });
 
-  test("videos can be up to 200 MB, or what MEDIA_MAX_VIDEO_MB_TEAM says; they share the project's quota", async () => {
+  test("videos can be up to 200 MB, or what the config file says; they share the project's quota", async () => {
     expect(await createUpload(project.slug, { name: "big.webm", type: "", size: 201 * MB })).toEqual({ error: "Videos can be up to 200 MB" });
-    vi.stubEnv("MEDIA_MAX_VIDEO_MB_TEAM", "300");
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamVideo: 300 } } }));
     expect(await createUpload(project.slug, { name: "big.mov", type: "", size: 201 * MB })).toMatchObject({ contentType: "video/quicktime" });
-    vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "202");
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamVideo: 300 }, projectQuotaMb: 202 } }));
     expect(await createUpload(project.slug, { name: "more.mp4", type: "", size: 2 * MB })).toEqual({ error: "This project has no space left for files" });
   });
 });

@@ -58,6 +58,8 @@ export const serverEnv = {
   // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
   ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
   DECISION_MODEL: "",
+  // Every config file value at its default, whatever a local .env points at.
+  TUTI_CONFIG: "",
   // No analytics: journeys never send page views to PostHog, whatever a local .env holds.
   POSTHOG_KEY: "",
   POSTHOG_HOST: "",

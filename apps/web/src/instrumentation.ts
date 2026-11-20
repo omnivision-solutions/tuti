@@ -1,4 +1,4 @@
-import { aiLevelRows, assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, log } from "@tuti/shared";
+import { aiLevelRows, assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, checkConfig, log } from "@tuti/shared";
 import { assertSesSettings } from "@tuti/shared/ses";
 
 // Runs once when the server starts (not during `next build`).
@@ -7,6 +7,7 @@ export async function register() {
   assertSesSettings();
   // Once, where the server's code runs (not again for the edge runtime): a bad value stops start-up, the values are logged.
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    checkConfig();
     checkCodeChangesSettings();
     billingConfig();
     // A levels file that can't be read or isn't valid stops start-up too, rather than failing every AI request later.

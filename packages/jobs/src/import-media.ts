@@ -109,7 +109,7 @@ async function copyThrough(
   if (kind === "file" && !(extension in UPLOAD_FILE_TYPES)) {
     return { leftOut: "type" };
   }
-  const limit = kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : kind === "video" ? "MEDIA_MAX_VIDEO_MB_TEAM" : "MEDIA_MAX_FILE_MB_TEAM";
+  const limit = kind === "image" ? "importImage" : kind === "video" ? "teamVideo" : "teamFile";
   // With `path`, the body is only its first bytes; the whole of it is in the file.
   const body = await download(url, mediaLimit(limit), path ?? undefined, late);
   if (typeof body === "string") {
@@ -141,7 +141,7 @@ async function copyThrough(
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
     const { _sum } = await tx.media.aggregate({ where: { projectId, status: { not: "FAILED" } }, _sum: { size: true } });
-    if ((_sum.size ?? 0) + size > mediaLimit("MEDIA_PROJECT_QUOTA_MB")) {
+    if ((_sum.size ?? 0) + size > mediaLimit("projectQuota")) {
       return null;
     }
     return tx.media.create({

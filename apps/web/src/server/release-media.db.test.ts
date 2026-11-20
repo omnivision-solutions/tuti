@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { attachMedia } from "@/server/content";
@@ -173,7 +173,7 @@ describe("a save racing the release", () => {
 });
 
 test("the quota frees once a released upload is cleaned up", async () => {
-  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "1");
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 1 } }));
   actAs(owner);
   const big = await upload(project.id, 1024 * 1024 - 100);
   const saved = await post("Big screenshot", big.id);

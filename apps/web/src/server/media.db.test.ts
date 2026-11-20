@@ -2,7 +2,7 @@ import { emailImageKey, imageKey, imageWidths, mediaKeys, originalKey } from "@t
 import { prisma } from "@tuti/db";
 import { handlers, lastingMediaUrl } from "@tuti/jobs";
 import { savedPicture } from "@tuti/shared/media-links";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -149,13 +149,13 @@ describe("limits", () => {
     request.host = "";
   });
 
-  test("limits can be changed with env vars", async () => {
-    vi.stubEnv("MEDIA_MAX_IMAGE_MB_USER", "1");
+  test("limits can be changed in the config file", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { userImage: 1 } } }));
     expect(await createUpload(project.slug, { type: "image/png", size: MB + 1 })).toEqual({ error: "Images can be up to 1 MB" });
   });
 
   test("a project's images share a quota", async () => {
-    vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "1");
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 1 } }));
     const member = await addMember(project.id, "MEMBER");
     actAs(member);
     expect(await createUpload(project.slug, { type: "image/png", size: 600 * 1024 })).toMatchObject({ mediaId: expect.any(String) });
