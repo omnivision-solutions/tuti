@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
+import { query } from "./db";
 import { APP_URL, portalUrl } from "./env";
 import { backToPortal, createProject, newPerson, signInWithPassword, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
@@ -361,23 +362,30 @@ test("a teammate renames the project in another tab: once this tab hears of it, 
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const olive = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(olive, "Acme", slug);
+  const [{ id: projectId }] = await query(`SELECT id FROM project WHERE slug = $1`, [slug]);
   const name = (page: typeof olive) => page.getByLabel("Project name");
   const save = (page: typeof olive) => page.getByRole("button", { name: "Save changes" });
-  // Two tabs of this one's that hear of the rename when their live stream opens (it refreshes the page), let open later.
-  const holdLive = async (page: typeof olive) => {
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => (release = resolve));
-    await page.route("**/api/live?*", async (route) => {
-      await held;
-      await route.fallback();
-    });
-    await page.goto(`/app/${slug}/settings/general`);
-    return release;
+  // A change in the support inbox refreshes the project's pages (server/live.ts): told again till the page shows the name
+  // in its sidebar's project switcher (a stream not open yet misses it).
+  const hears = async (page: typeof olive, project: RegExp) => {
+    await expect(async () => {
+      await query(`SELECT pg_notify('tuti_inbox', $1)`, [JSON.stringify({ projectId, conversationId: "none", userId: null, visitorHash: null })]);
+      await expect(page.getByRole("button", { name: project }).first()).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+  };
+  const rename = async (page: typeof olive, to: string) => {
+    await expect(async () => {
+      await name(page).fill(to);
+      await expect(save(page)).toBeEnabled({ timeout: 1_000 });
+    }).toPass();
+    await save(page).click();
+    await expect(page.getByRole("button", { name: new RegExp(to) }).first()).toBeVisible();
+    await expect(save(page)).toBeDisabled();
   };
   const untouched = await olive.context().newPage();
-  const releaseUntouched = await holdLive(untouched);
+  await untouched.goto(`/app/${slug}/settings/general`);
   const typed = await olive.context().newPage();
-  const releaseTyped = await holdLive(typed);
+  await typed.goto(`/app/${slug}/settings/general`);
   // Edited and typed back: still what's saved, it follows a teammate's rename like a field never touched. (Typed again
   // till Save reacts: what's typed before the page's scripts start is lost as they do.)
   await expect(async () => {
@@ -392,28 +400,30 @@ test("a teammate renames the project in another tab: once this tab hears of it, 
   }).toPass();
 
   await olive.goto(`/app/${slug}/settings/general`);
-  await expect(async () => {
-    await name(olive).fill("Acme Help");
-    await expect(save(olive)).toBeEnabled({ timeout: 1_000 });
-  }).toPass();
-  await save(olive).click();
-  await expect(olive.getByText("Project renamed")).toBeVisible();
+  await rename(olive, "Acme Help");
 
-  releaseUntouched();
-  await expect(untouched.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
+  await hears(untouched, /Acme Help/);
   await expect(name(untouched)).toHaveValue("Acme Help");
   await expect(save(untouched)).toBeDisabled();
   // The name it had is now a change to save.
   await name(untouched).fill("Acme");
   await expect(save(untouched)).toBeEnabled();
 
-  releaseTyped();
-  await expect(typed.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible();
+  await hears(typed, /Acme Help/);
   await expect(name(typed)).toHaveValue("Typed here");
   await expect(save(typed)).toBeEnabled();
   // Typed to what's saved now, there's nothing to save.
   await name(typed).fill("Acme Help");
   await expect(save(typed)).toBeDisabled();
+
+  // After its own save, this tab still follows a teammate's renames, back to the name it saved too.
+  await rename(untouched, "Acme Docs");
+  await hears(olive, /Acme Docs/);
+  await expect(name(olive)).toHaveValue("Acme Docs");
+  await rename(untouched, "Acme Help");
+  await hears(olive, /Acme Help/);
+  await expect(name(olive)).toHaveValue("Acme Help");
+  await expect(save(olive)).toBeDisabled();
 });
 
 test("someone signs up from a portal, signs out and signs back in there; their password is typed on the app", async ({ browser }, testInfo) => {
