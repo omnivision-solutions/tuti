@@ -372,6 +372,14 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await save(team).click();
   await expect(team.getByText("Changelog saved")).toBeVisible();
   await expect(save(team)).toBeDisabled();
+  // Saved here, this tab's own save is what's saved: what was saved before, typed back, is a change that stays.
+  await instructions(team).fill("From the other tab.");
+  await expect(save(team)).toBeEnabled();
+  await hearAgain("Best", "Claude Opus 5.5");
+  await expect(instructions(team)).toHaveValue("From the other tab.");
+  await expect(save(team)).toBeEnabled();
+  await instructions(team).fill("Typed here.");
+  await expect(save(team)).toBeDisabled();
   await other.reload();
   await expect(instructions(other)).toHaveValue("Typed here.");
   await expect(chips(other)).toHaveText(["Agenda view", "Faster month view"]);
