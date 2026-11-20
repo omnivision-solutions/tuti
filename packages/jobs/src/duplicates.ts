@@ -105,6 +105,7 @@ export async function detectDuplicates(postId: string, among?: string[]): Promis
           data: likely.map((m) => ({ projectId: m.projectId, postId, originalId: m.originalId, similarity: m.similarity })),
           skipDuplicates: true,
         });
-  await prisma.post.update({ where: { id: postId }, data: { duplicatesCheckedAt: new Date() } });
+  // updateMany: a post deleted meanwhile has nothing to mark.
+  await prisma.post.updateMany({ where: { id: postId }, data: { duplicatesCheckedAt: new Date() } });
   return count;
 }

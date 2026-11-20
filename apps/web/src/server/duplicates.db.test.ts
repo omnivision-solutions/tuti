@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
 import { backfillEmbeddings, grantCredits } from "@tuti/jobs";
 import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_DUPLICATES_MODEL, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
@@ -117,6 +119,21 @@ describe("after a post is created", () => {
     expect(openai.inputs.length).toBe(sent);
     expect(await prisma.postEmbedding.count({ where: { postId: created.id } })).toBe(0);
   });
+});
+
+test("the migration marks posts embedded so far as checked, but an import's (it never checked them)", async () => {
+  openai.setVector("Dark mode", along(1));
+  openai.setVector("Imported idea", [0, 1]);
+  const native = await post("Dark mode");
+  const imported = await post("Imported idea");
+  await prisma.importedRecord.create({ data: { projectId: project.id, source: "FEATUREBASE", kind: "post", externalId: "fb-1", localId: imported.id } });
+  await prisma.post.updateMany({ where: { id: { in: [native.id, imported.id] } }, data: { duplicatesCheckedAt: null } });
+
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261120220000_post_duplicates_checked_at/migration.sql", import.meta.url), "utf8");
+  await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE "post"')));
+  const checked = await prisma.post.findMany({ where: { id: { in: [native.id, imported.id] } }, select: { id: true, duplicatesCheckedAt: true } });
+  expect(checked.find((p) => p.id === native.id)?.duplicatesCheckedAt).not.toBeNull();
+  expect(checked.find((p) => p.id === imported.id)?.duplicatesCheckedAt).toBeNull();
 });
 
 describe("suggestions while typing a title", () => {
