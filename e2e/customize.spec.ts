@@ -293,7 +293,8 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   await expect(owner.getByText("Runs only on your own domain.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "Add a domain" })).toHaveAttribute("href", `/app/${slug}/settings/domain`);
   // Each field keeps its name, and the HTML's says where it goes and where it runs.
-  await expect(owner.getByRole("textbox", { name: "Custom HTML" })).toHaveAccessibleDescription("· end of every page Runs only on your own domain. Add a domain");
+  await expect(owner.getByRole("textbox", { name: "Custom HTML" })).toHaveAccessibleDescription("end of every page Runs only on your own domain. Add a domain");
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await checkpoint(owner, "customize-custom-code");
   // On a phone nothing runs past the edge: the fields take the card's width.
   await owner.setViewportSize({ width: 390, height: 844 });

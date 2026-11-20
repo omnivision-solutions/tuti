@@ -43,8 +43,9 @@ export function CustomCodeSettings({
             <label htmlFor="custom-html" className="font-medium">
               <span className="sr-only">Custom </span>HTML
             </label>{" "}
-            <span id="custom-html-where" className="text-muted-foreground">
-              · end of every page
+            <span className="text-muted-foreground">
+              <span aria-hidden>· </span>
+              <span id="custom-html-where">end of every page</span>
             </span>
           </div>
           <Textarea
