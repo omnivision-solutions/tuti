@@ -78,8 +78,12 @@ async function duplicatesOnly(projectId: string, title: string, found: Candidate
   }
   // The slot is taken before anything is awaited, so searches at once can't all read the same count.
   checks.set(projectId, { hour, count: count + 1 });
-  // Charged in AI credits like any AI feature: out of them, the posts are shown as found (and the slot given back).
-  const meter = await duplicatesMeter(projectId);
+  // Charged in AI credits like any AI feature: out of them, or when the balance can't be read, the posts are shown as
+  // found (and the slot given back).
+  const meter = await duplicatesMeter(projectId).catch((error: unknown) => {
+    log.warn("Reading AI credits for a duplicates check failed; showing similar posts as found", { error });
+    return null;
+  });
   if (!meter) {
     const now = checks.get(projectId);
     if (now?.hour === hour) {

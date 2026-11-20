@@ -339,6 +339,35 @@ describe("with a decision model (OpenRouter)", () => {
     expect(model.decisions).toHaveLength(0);
   });
 
+  test("the backfill also checks newer posts against an older one it embeds for the first time", async () => {
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    const dark = await post("Dark mode");
+    const night = await post("Night theme please");
+    // The older post was never embedded, so the newer one was never compared with it.
+    await prisma.postEmbedding.delete({ where: { postId: dark.id } });
+    await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
+
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
+    await backfillEmbeddings({ info: () => {}, warn: () => {} });
+    expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
+  });
+
+  test("while typing, a balance that can't be read shows the posts as found", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Translate articles please", along(1));
+    openai.setVector("Live translations for Inbox", along(0.9));
+    await post("Live translations for Inbox");
+    vi.spyOn(prisma.creditGrant, "findMany").mockRejectedValueOnce(new Error("database blip"));
+
+    const found = await findSimilarPosts(project.slug, "Translate articles please");
+    expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
+    expect(model.decisions).toHaveLength(0);
+  });
+
   test("while typing, a failure shows the posts as found", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));

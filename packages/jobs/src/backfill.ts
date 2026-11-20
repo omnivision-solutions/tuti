@@ -25,16 +25,33 @@ export async function backfillEmbeddings(log: JobLogger) {
         // Never sample content (Home's "Add sample content"): it's never embedded or suggested as a duplicate.
         where: { duplicateOfId: null, sample: false },
         orderBy: { createdAt: "asc" },
-        select: { id: true, projectId: true, title: true, body: true },
+        select: { id: true, projectId: true, title: true, body: true, createdAt: true },
       });
       // Posts embedded before were checked for duplicates when they were (each check is a charged model request): only
-      // the others are checked, so a rerun asks nothing again.
+      // the others are checked, and in their project every post since the oldest of them (a post is compared with older
+      // ones, so a newer post never saw it). A rerun asks nothing again.
       const before = new Set((await prisma.postEmbedding.findMany({ select: { postId: true } })).map((e) => e.postId));
+      const since = new Map<string, Date>();
+      for (const row of rows.filter((row) => !before.has(row.id))) {
+        if (!since.has(row.projectId)) {
+          since.set(row.projectId, row.createdAt);
+        }
+      }
       // Embed everything first, then compare, so every post sees all older ones.
       const embedded = await embedPosts(rows);
       let suggestions = 0;
-      for (const post of rows.filter((row) => !before.has(row.id))) {
-        suggestions += await detectDuplicates(post.id);
+      let failed: unknown = null;
+      for (const post of rows.filter((row) => row.createdAt >= (since.get(row.projectId) ?? new Date(8.64e15)))) {
+        try {
+          suggestions += await detectDuplicates(post.id);
+        } catch (error) {
+          // Unembedded again, so the next run checks it; the rest carry on.
+          await prisma.postEmbedding.deleteMany({ where: { postId: post.id } });
+          failed ??= error;
+        }
+      }
+      if (failed) {
+        throw failed;
       }
       posts = { posts: rows.length, embedded, suggestions };
     } catch (error) {
