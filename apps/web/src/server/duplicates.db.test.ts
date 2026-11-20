@@ -310,7 +310,7 @@ describe("with a decision model (OpenRouter)", () => {
     const night = await post("Night theme please");
     expect(model.decisions).toHaveLength(1);
     // A post from before embeddings were set up: never embedded, never checked.
-    await prisma.postEmbedding.delete({ where: { postId: night.id } });
+    await neverEmbedded(night.id);
     await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
     const log = { info: () => {}, warn: () => {} };
 
@@ -346,7 +346,7 @@ describe("with a decision model (OpenRouter)", () => {
     const dark = await post("Dark mode");
     const night = await post("Night theme please");
     // The older post was never embedded, so the newer one was never compared with it.
-    await prisma.postEmbedding.delete({ where: { postId: dark.id } });
+    await neverEmbedded(dark.id);
     await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
 
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
@@ -365,7 +365,7 @@ describe("with a decision model (OpenRouter)", () => {
     model.decide({ duplicate_0: DIFFERENT, duplicate_1: DIFFERENT }, "Night theme please");
     const night = await post("Night theme please");
     // "Dark mode" was never embedded: neither newer post was compared with it.
-    await prisma.postEmbedding.delete({ where: { postId: dark.id } });
+    await neverEmbedded(dark.id);
     const asked = model.decisions.length;
 
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
@@ -377,14 +377,14 @@ describe("with a decision model (OpenRouter)", () => {
     expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
   });
 
-  test("where a backfill check fails, that post is unembedded again, so the next run checks it", async () => {
+  test("where a backfill check fails, that post stays unchecked, so the next run checks it", async () => {
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
     openai.setVector("Dark mode", along(1));
     openai.setVector("Night theme please", along(0.8));
     const dark = await post("Dark mode");
     const night = await post("Night theme please");
     // Neither was ever embedded.
-    await prisma.postEmbedding.deleteMany({ where: { postId: { in: [dark.id, night.id] } } });
+    await neverEmbedded(dark.id, night.id);
     await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
     const log = { info: () => {}, warn: () => {} };
 
@@ -392,16 +392,16 @@ describe("with a decision model (OpenRouter)", () => {
     model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
     const failed = await backfillEmbeddings(log);
     expect(failed.errors).toContainEqual({ phase: "posts", message: "database blip" });
-    // The failed one (and any after it in its batch) is unembedded; "Dark mode", checked before it, stays.
-    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(0);
-    expect(await prisma.postEmbedding.count({ where: { postId: dark.id } })).toBe(1);
+    // The failed one stays unchecked; "Dark mode", checked before it, is done.
+    expect(await checked(night.id)).toBe(false);
+    expect(await checked(dark.id)).toBe(true);
 
     model.decide({ duplicate_0: DUPLICATE }, "Night theme please");
     expect((await backfillEmbeddings(log)).errors).toEqual([]);
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
   });
 
-  test("after a batch fails, posts embedded before are still checked against the batches that finished", async () => {
+  test("after a check fails, posts checked before are still checked against the ones that were checked", async () => {
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
     openai.setVector("Dark mode", along(1));
     openai.setVector("Night theme please", along(0.8));
@@ -410,29 +410,29 @@ describe("with a decision model (OpenRouter)", () => {
     const night = await post("Night theme please");
     const darker = await post("Darker please");
     // "Dark mode" (oldest) and "Darker please" (newest) were never embedded; "Night theme please" was, and checked.
-    await prisma.postEmbedding.deleteMany({ where: { postId: { in: [dark.id, darker.id] } } });
+    await neverEmbedded(dark.id, darker.id);
     await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
 
-    // One post a batch: "Dark mode" is embedded and checked, then the check of "Darker please" fails.
+    // "Dark mode" is checked, then the check of "Darker please" fails.
     model.decide({ "*": DUPLICATE }, '"new":"Darker please"');
     failSuggestionsFor(darker.id);
     model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
-    const run = await backfillEmbeddings({ info: () => {}, warn: () => {} }, { batchSize: 1 });
+    const run = await backfillEmbeddings({ info: () => {}, warn: () => {} });
 
     expect(run.errors).toContainEqual({ phase: "posts", message: "database blip" });
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
     // The failed one is left for the next run.
-    expect(await prisma.postEmbedding.count({ where: { postId: darker.id } })).toBe(0);
+    expect(await checked(darker.id)).toBe(false);
   });
 
-  test("where re-checking a post embedded before fails, the posts it was against are unembedded again, so the next run tries again", async () => {
+  test("where re-checking a post checked before fails, the posts it was against are marked unchecked again, so the next run tries again", async () => {
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
     openai.setVector("Dark mode", along(1));
     openai.setVector("Night theme please", along(0.8));
     const dark = await post("Dark mode");
     const night = await post("Night theme please");
     // "Dark mode" was never embedded: "Night theme please" was checked without it.
-    await prisma.postEmbedding.delete({ where: { postId: dark.id } });
+    await neverEmbedded(dark.id);
     await prisma.duplicateSuggestion.deleteMany({ where: { projectId: project.id } });
     const log = { info: () => {}, warn: () => {} };
 
@@ -440,15 +440,15 @@ describe("with a decision model (OpenRouter)", () => {
     model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
     const failed = await backfillEmbeddings(log);
     expect(failed.errors).toContainEqual({ phase: "posts", message: "database blip" });
-    expect(await prisma.postEmbedding.count({ where: { postId: dark.id } })).toBe(0);
-    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(1);
+    expect(await checked(dark.id)).toBe(false);
+    expect(await checked(night.id)).toBe(true);
 
     model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
     expect((await backfillEmbeddings(log)).errors).toEqual([]);
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
   });
 
-  test("a post whose check fails after it's embedded is unembedded again, so the backfill checks it", async () => {
+  test("a post whose check fails after it's embedded (or that an import embedded) stays unchecked, so the backfill checks it", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     openai.setVector("Dark mode", along(1));
     openai.setVector("Night theme please", along(0.8));
@@ -456,7 +456,8 @@ describe("with a decision model (OpenRouter)", () => {
     vi.spyOn(prisma.duplicateSuggestion, "createMany").mockRejectedValueOnce(new Error("database blip"));
     model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
     const night = await post("Night theme please");
-    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(0);
+    expect(await checked(night.id)).toBe(false);
+    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(1);
     vi.mocked(prisma.duplicateSuggestion.createMany).mockRestore();
 
     model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
@@ -525,6 +526,11 @@ describe("with a decision model (OpenRouter)", () => {
     const found = await findSimilarPosts(project.slug, "Translate articles please");
     expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
   });
+
+  /** Posts from before embeddings were set up: never embedded, never checked. */
+  const neverEmbedded = (...ids: string[]) =>
+    Promise.all([prisma.postEmbedding.deleteMany({ where: { postId: { in: ids } } }), prisma.post.updateMany({ where: { id: { in: ids } }, data: { duplicatesCheckedAt: null } })]);
+  const checked = async (id: string) => Boolean((await prisma.post.findUniqueOrThrow({ where: { id }, select: { duplicatesCheckedAt: true } })).duplicatesCheckedAt);
 
   /** The next suggestions written for `postId` fail (the backfill covers every project: other posts' still go through). */
   const failSuggestionsFor = (postId: string) => {

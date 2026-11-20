@@ -21,15 +21,8 @@ export async function postCreated(input: JobInput<"postCreated">, log: JobLogger
   }
 
   const embedded = await embedPosts([post]);
-  let suggestions = 0;
-  try {
-    suggestions = post.duplicateOfId ? 0 : await detectDuplicates(post.id);
-  } catch (error) {
-    // Unembedded again: a post with an embedding counts as checked (the backfill skips it), so a retry, or the next
-    // backfill, takes it up.
-    await prisma.postEmbedding.deleteMany({ where: { postId: post.id } });
-    throw error;
-  }
+  // Not marked checked when this fails, so a retry, or the embeddings backfill, takes it up.
+  const suggestions = post.duplicateOfId ? 0 : await detectDuplicates(post.id);
   log.info(`post ${post.id}: embedded ${embedded}, ${suggestions} possible duplicate(s)`);
   return { skipped: false, embedded, suggestions };
 }
