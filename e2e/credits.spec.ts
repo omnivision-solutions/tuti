@@ -95,6 +95,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   expect(await grantCredits(slug, 50)).toBe(`grant: 50 credits for ${slug}, for good`);
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Given by Tuti/ })).toContainText("Never");
+  await expect(owner.getByRole("group", { name: "Balance" }).getByText("50 of 50 left")).toBeVisible();
   await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, pr);
   // (And the docs agent finds nothing either.)
   await nextDocsAgentAnswer(number, {});
@@ -118,37 +119,71 @@ test("an owner buys AI credits on Stripe; they're added once it's paid", async (
   await spendCredits(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expect(owner.getByText(/^0 AI credits$/)).toBeVisible();
-  // An amount from the presets, or Other for one of its own (not both at once).
+  // A self-hosted server sells no plans: its credits (none left here) and buying more, in one card, then its AI use.
+  await expect(owner.getByRole("heading", { name: "AI credits", exact: true })).toBeVisible();
+  await expect(owner.getByRole("group", { name: "Balance" })).toContainText("No credits left.");
+  await expect(owner.getByText("No AI use yet.")).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Plan", exact: true })).toHaveCount(0);
+  // An amount from the presets, or Other for one of its own (not both at once), beside the button that buys it.
+  const amounts = owner.getByRole("radiogroup", { name: "Amount" });
+  const buy = owner.getByRole("button", { name: "Buy", exact: true });
+  await expect(amounts.getByRole("radio", { name: "$25" })).toBeChecked();
   await expect(owner.getByLabel("Amount in US dollars")).toHaveCount(0);
-  await owner.getByText("Other amount", { exact: true }).click();
+  await amounts.getByText("Other", { exact: true }).click();
   await owner.getByLabel("Amount in US dollars").fill("12");
-  await expect(owner.getByText("1,200 AI credits, lasting 365 days. You pay on Stripe.")).toBeVisible();
-  await owner.getByText("$10", { exact: true }).click();
+  await expect(owner.getByText("1,200 AI credits, lasting 365 days.", { exact: true })).toBeVisible();
+  // Outside what can be bought, the line says the range and Buy is off.
+  await owner.getByLabel("Amount in US dollars").fill("0");
+  await expect(owner.getByText(/^From \$\d+ to \$[\d,]+, lasting 365 days\.$/)).toBeVisible();
+  await expect(buy).toBeDisabled();
+  await amounts.getByText("$10", { exact: true }).click();
   await expect(owner.getByLabel("Amount in US dollars")).toHaveCount(0);
   // The journeys' rate: 100 credits a dollar, for a year.
-  await expect(owner.getByText("1,000 AI credits, lasting 365 days. You pay on Stripe.")).toBeVisible();
+  await expect(owner.getByText("1,000 AI credits, lasting 365 days.", { exact: true })).toBeVisible();
+  // One row: the amounts and Buy on the label's line.
+  const label = (await owner.getByText("Buy AI credits", { exact: true }).boundingBox())!;
+  const control = (await amounts.boundingBox())!;
+  expect(control.y).toBeLessThan(label.y + label.height);
+  expect(control.x).toBeGreaterThan(label.x + label.width);
   await checkpoint(owner, "team-settings-billing-buy");
-  // In dark mode too the picked amount is tinted and outlined, not only its text green.
+  // In dark mode too the picked amount stands out from the others by more than its text.
   await owner.emulateMedia({ colorScheme: "dark" });
   // The theme follows the system's a moment later (next-themes): compared once it's dark.
   await expect(owner.locator("html")).toHaveClass(/\bdark\b/);
-  const look = (amount: string, property: "backgroundColor" | "borderColor") =>
-    owner.locator("label").filter({ hasText: new RegExp(`^\\${amount}$`) }).evaluate((label, name) => getComputedStyle(label)[name], property);
-  for (const property of ["backgroundColor", "borderColor"] as const) {
-    await expect.poll(async () => (await look("$10", property)) !== (await look("$25", property))).toBe(true);
-  }
+  const look = (amount: string) => amounts.locator("label").filter({ hasText: new RegExp(`^\\${amount}$`) }).evaluate((label) => getComputedStyle(label).backgroundColor);
+  await expect.poll(async () => (await look("$10")) !== (await look("$25"))).toBe(true);
   await checkpoint(owner, "team-settings-billing-buy-dark");
   await owner.emulateMedia({ colorScheme: "light" });
   await expect(owner.locator("html")).not.toHaveClass(/\bdark\b/);
-  await owner.getByRole("button", { name: "Buy credits" }).click();
+  // On a phone: nothing runs off the side, and the amounts go under the label.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const phoneLabel = (await owner.getByText("Buy AI credits", { exact: true }).boundingBox())!;
+  expect((await amounts.boundingBox())!.y).toBeGreaterThanOrEqual(phoneLabel.y + phoneLabel.height);
+  await checkpoint(owner, "team-settings-billing-buy-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  // From the keyboard: while Stripe's page is being opened (its request held here), Buy is off but keeps the focus.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/settings/billing", async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.fallback();
+  });
+  await buy.focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("button", { name: "Opening Stripe…" })).toBeDisabled();
+  await expect(owner.getByRole("button", { name: "Opening Stripe…" })).toBeFocused();
+  release();
 
   // Stripe's page (the fake), then back to Billing with the credits.
   await expect(owner.getByRole("heading", { name: `1,000 AI credits for ${slug}` })).toBeVisible();
   await owner.getByRole("button", { name: "Pay $10.00" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?paid=1`);
   await expect(owner.getByText("Thanks for your payment.")).toBeVisible();
-  await expect(owner.getByText(/^1,000 AI credits$/)).toBeVisible();
+  await expect(owner.getByRole("group", { name: "Balance" }).getByText("1,000 of 1,000 left")).toBeVisible();
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Top-up/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-paid");
 });

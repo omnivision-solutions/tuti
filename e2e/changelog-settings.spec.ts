@@ -78,6 +78,7 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   // (Bought from Free, as ai-tuning.spec.ts does: Pro was set in the database, with no subscription to change.)
   await query(`UPDATE project SET "planKey" = NULL WHERE slug = $1`, [slug]);
   await owner.goto(`/app/${slug}/settings/billing`);
+  await owner.getByRole("button", { name: "Upgrade", exact: true }).click();
   await owner.getByRole("button", { name: "Upgrade to Business" }).click();
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);

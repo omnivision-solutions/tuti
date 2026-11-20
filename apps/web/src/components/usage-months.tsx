@@ -1,68 +1,61 @@
-import { CREDIT_FEATURES, creditsEnabled } from "@tuti/shared";
+import { creditsEnabled } from "@tuti/shared";
 
-import { EmptyState } from "@/components/empty-state";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard } from "@/components/settings-card";
 import { AI_FEATURE_NAMES, costOf, count, credits, money } from "@/lib/usage-format";
 import { aiUsageByMonth } from "@/server/operations/usage";
 
 const monthName = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
 
-/** What the project's AI use cost each month, by feature: on Settings → Billing. */
+/** What the project's AI use cost each month (UTC), a row a feature: on Settings → Billing. */
 export async function UsageMonths({ projectId }: { projectId: string }) {
   const months = await aiUsageByMonth(projectId, 12);
   // With AI credits on, the team sees what it was charged, not what the models cost the server.
   const inCredits = creditsEnabled();
 
   return (
-    <section id="usage" aria-labelledby="usage-heading" className="flex scroll-mt-8 flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 id="usage-heading" className="font-heading text-base font-medium">
-          Usage
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Every AI request this project made, and what it cost{inCredits && " in AI credits"}, by month (UTC).
-        </p>
-      </div>
+    <div id="usage" className="flex scroll-mt-8 flex-col gap-7">
       {months.length === 0 ? (
-        <EmptyState title="No AI use yet" description={`${CREDIT_FEATURES} show up here, with what they cost, once they're used.`} />
+        <SettingsCard title="AI usage">
+          <SettingBlock>
+            <p className="text-muted-foreground">No AI use yet.</p>
+          </SettingBlock>
+        </SettingsCard>
       ) : (
         months.map((month) => (
-          <Card key={month.month}>
-            <CardHeader>
-              <CardTitle>
-                {monthName(month.month)}: {inCredits ? `${credits(month.credits)} credits` : money(month.cost)}
-              </CardTitle>
-              <CardDescription>
+          <SettingsCard
+            key={month.month}
+            title={`AI usage · ${monthName(month.month)}`}
+            description={
+              <>
                 {count(month.requests)} AI {month.requests === 1 ? "request" : "requests"}, {count(month.inputTokens + month.outputTokens)} tokens
-                {month.unpriced > 0 &&
-                  `; ${count(month.unpriced)} without a price from the provider${inCredits ? `, charged no credits` : ""}`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <table className="w-full text-sm" aria-label={`AI use in ${monthName(month.month)}`}>
-                <thead className="text-left text-xs text-muted-foreground">
-                  <tr>
-                    <th className="pb-2 font-medium">Feature</th>
-                    <th className="pb-2 text-right font-medium">Requests</th>
-                    <th className="hidden pb-2 text-right font-medium sm:table-cell">Tokens</th>
-                    <th className="pb-2 text-right font-medium">{inCredits ? "Credits" : "Cost"}</th>
+                {month.unpriced > 0 && `; ${count(month.unpriced)} without a price from the provider${inCredits ? `, charged no credits` : ""}`}
+              </>
+            }
+            action={<span className="shrink-0 text-sm font-medium tabular-nums">{inCredits ? `${credits(month.credits)} credits` : money(month.cost)}</span>}
+          >
+            <table className="w-full text-sm" aria-label={`AI use in ${monthName(month.month)}`}>
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr className="*:px-4 *:pt-3 *:pb-1 *:font-medium @min-[34rem]/settings:*:px-5">
+                  <th>Feature</th>
+                  <th className="text-right">Requests</th>
+                  <th className="hidden text-right sm:table-cell">Tokens</th>
+                  <th className="text-right">{inCredits ? "Credits" : "Cost"}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {month.features.map((feature) => (
+                  <tr key={feature.feature} className="*:px-4 *:py-3 @min-[34rem]/settings:*:px-5">
+                    <td className="font-medium">{AI_FEATURE_NAMES[feature.feature] ?? feature.feature}</td>
+                    <td className="text-right tabular-nums">{count(feature.requests)}</td>
+                    <td className="hidden text-right tabular-nums sm:table-cell">{count(feature.inputTokens + feature.outputTokens)}</td>
+                    <td className="text-right tabular-nums">{inCredits ? credits(feature.credits) : costOf(feature)}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {month.features.map((feature) => (
-                    <tr key={feature.feature}>
-                      <td className="py-2">{AI_FEATURE_NAMES[feature.feature] ?? feature.feature}</td>
-                      <td className="py-2 text-right tabular-nums">{count(feature.requests)}</td>
-                      <td className="hidden py-2 text-right tabular-nums sm:table-cell">{count(feature.inputTokens + feature.outputTokens)}</td>
-                      <td className="py-2 text-right tabular-nums">{inCredits ? credits(feature.credits) : costOf(feature)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+                ))}
+              </tbody>
+            </table>
+          </SettingsCard>
         ))
       )}
-    </section>
+    </div>
   );
 }

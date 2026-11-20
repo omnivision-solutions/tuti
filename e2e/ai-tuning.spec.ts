@@ -91,6 +91,7 @@ test("an owner finds Advanced tuning on Settings → Autopilot, where it opens t
   await checkpoint(owner, "team-settings-ai-tuning-locked");
 
   await owner.goto(`/app/${slug}/settings/billing`);
+  await owner.getByRole("button", { name: "Upgrade", exact: true }).click();
   await owner.getByRole("button", { name: "Upgrade to Business" }).click();
   await owner.getByRole("button", { name: "Subscribe" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/billing?subscribed=1`);
