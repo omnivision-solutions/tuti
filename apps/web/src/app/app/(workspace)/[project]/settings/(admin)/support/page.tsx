@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import { pausedNotice } from "@tuti/email";
 import { notFound } from "next/navigation";
 
-import { CopyField } from "@/components/copy-button";
+import { CopyValue } from "@/components/dns-setup";
 import { EmailDomainSettings } from "@/components/inbox/email-domain";
 import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
-import { PlanNotice } from "@/components/plan-notice";
-import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 import { mailProvider } from "@/lib/mail-providers";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { mxHosts } from "@/server/custom-domains";
 import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
@@ -39,54 +39,41 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
     own?.address && !own.receivedAt ? mxHosts(own.address.slice(own.address.lastIndexOf("@") + 1)).then(mailProvider, () => "other" as const) : null;
   return (
     <SettingsPane title="Inbox and email">
-      <SettingsCard title="Support inbox" description="Your users write to your team from the widget, and you answer them from the Inbox.">
-        <SettingBlock>
-          <SupportInboxSwitch projectSlug={project.slug} on={settings.inbox} />
-        </SettingBlock>
+      <SettingsCard title="Inbox">
+        <SupportInboxSwitch projectSlug={project.slug} on={settings.inbox} />
       </SettingsCard>
       {settings.email && (
-        <SettingsCard
-          title="Email"
-          description="Emails to your support address land in the Inbox. In your email provider, forward your own support address (like support@yourcompany.com) to this one; your provider may ask you to confirm it, and that email lands in the Inbox too."
-        >
-          <SettingBlock className="gap-3">
-            {settings.email.address ? (
-              <>
-                <CopyField label="Your support address" value={settings.email.address} name="support address" />
-                <p className="text-sm text-muted-foreground">
-                  {settings.email.lastReceivedAt
-                    ? `Last email received ${timeAgo(settings.email.lastReceivedAt)}.`
-                    : "No email received yet."}
-                </p>
-                {settings.email.paused && (
-                  <div className="rounded-lg border border-destructive/40 p-3">
-                    <p className="text-sm">
-                      {pausedNotice(settings.email.paused.reason)}
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex flex-col items-start gap-2">
-                <p className="text-sm text-muted-foreground">Your project gets an address of its own, which it keeps for good.</p>
-                <GetSupportAddressButton projectSlug={project.slug} />
-              </div>
-            )}
-          </SettingBlock>
-        </SettingsCard>
-      )}
-      {settings.email?.address && settings.email.ownDomain && (
-        <SettingsCard
-          title="Your own address"
-          description="Use your company's address, like support@yourcompany.com, instead of your support address above: replies come from it, and emails to it land in the Inbox."
-        >
-          <SettingBlock>
-            {settings.email.ownDomain.included || settings.email.ownDomain.address ? (
-              <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} oneClick={oneClick} receiver={receiver} />
-            ) : (
-              <PlanNotice feature="emailDomain" projectSlug={project.slug} admin />
-            )}
-          </SettingBlock>
+        <SettingsCard title="Email">
+          {settings.email.address ? (
+            <>
+              <SettingRow
+                label="Support address"
+                description={settings.email.lastReceivedAt ? `Last email received ${timeAgo(settings.email.lastReceivedAt)}.` : "Forward your own address here."}
+                info="Emails to it land in the Inbox. In your email provider, forward your own support address (like support@yourcompany.com) to it; your provider may ask you to confirm it, and that email lands in the Inbox too."
+              >
+                <CopyValue value={settings.email.address} label="support address" />
+              </SettingRow>
+              {settings.email.paused && (
+                <SettingBlock>
+                  <p className="rounded-lg border border-destructive/40 p-3 text-sm">{pausedNotice(settings.email.paused.reason)}</p>
+                </SettingBlock>
+              )}
+              {settings.email.ownDomain && (
+                <EmailDomainSettings
+                  projectSlug={project.slug}
+                  own={settings.email.ownDomain}
+                  supportAddress={settings.email.address}
+                  oneClick={oneClick}
+                  receiver={receiver}
+                  upgrade={settings.email.ownDomain.included ? null : upgradePrompt("emailDomain", project.slug, true)}
+                />
+              )}
+            </>
+          ) : (
+            <SettingRow label="Support address" description="Your project gets one of its own, for good." inline>
+              <GetSupportAddressButton projectSlug={project.slug} />
+            </SettingRow>
+          )}
         </SettingsCard>
       )}
     </SettingsPane>

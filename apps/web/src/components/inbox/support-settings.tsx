@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { SettingRow } from "@/components/settings-card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,18 +17,16 @@ export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; o
   const [pending, startTransition] = useTransition();
   const [checked, setChecked] = useState(on);
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex flex-col gap-0.5">
-        <label htmlFor="support-inbox" className="text-sm font-medium">
-          Messages in the widget
-        </label>
-        <p className="text-sm text-muted-foreground">
-          Your users get a Messages tab in the widget to write to your team and see your replies there. Signed out, they leave their email first. “Ask a person” after an AI answer starts a conversation here too, so it&apos;s off while this is.
-        </p>
-      </div>
+    <SettingRow
+      label="Messages in the widget"
+      description="Users write to your team from the widget."
+      info="Your users get a Messages tab in the widget to write to your team and see your replies there. Signed out, they leave their email first. “Ask a person” after an AI answer starts a conversation here too, so it's off while this is."
+      htmlFor="support-inbox"
+      inline
+    >
       <Switch
         id="support-inbox"
-        className="mt-0.5"
+        aria-describedby="support-inbox-description"
         checked={checked}
         disabled={pending}
         onChange={(event) => {
@@ -44,7 +43,7 @@ export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; o
           });
         }}
       />
-    </div>
+    </SettingRow>
   );
 }
 
@@ -54,7 +53,9 @@ export function GetSupportAddressButton({ projectSlug }: { projectSlug: string }
   return (
     <Button
       variant="outline"
+      size="sm"
       disabled={pending}
+      focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
           const result = await getSupportAddress(projectSlug);

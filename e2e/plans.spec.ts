@@ -265,10 +265,23 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
   await checkpoint(owner, "customize-address-free-plan");
 
+  // Its own address for emails needs a plan too: "Set up" looks like any other, says what it needs and opens the upgrade prompt, not its steps.
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  const setUp = owner.getByRole("button", { name: "Set up", exact: true });
+  await expect(setUp).toHaveAccessibleDescription(/^Emailing from your own domain needs the \w+ plan\.$/);
+  await setUp.click();
+  const ownAddress = owner.getByRole("dialog", { name: /^Emailing from your own domain needs the \w+ plan\.$/ });
+  await expect(ownAddress.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await ownAddress.getByRole("button", { name: "Not now" }).click();
+  await expect(ownAddress).toBeHidden();
+  await expect(setUp).toBeVisible();
+  await expect(owner.getByLabel("Your company's address")).toHaveCount(0);
+
   // A private portal and reader groups are on Business: Private looks like any other option and says what it needs.
   await owner.goto(`/app/${slug}/settings/access`);
   await expect(owner.getByText("A private portal and reader groups need the Business plan.")).toBeHidden();
-  const access = owner.getByRole("combobox", { name: "Portal access" });
+  const access = owner.getByRole("combobox", { name: "Who can see your portal" });
   await access.click();
   const makePrivate = owner.getByRole("option", { name: "Private" });
   await expect(makePrivate).toBeEnabled();
