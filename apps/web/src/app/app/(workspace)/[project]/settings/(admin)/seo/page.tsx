@@ -32,6 +32,7 @@ export default async function SeoPage(props: PageProps<"/app/[project]/settings/
     >
       <SeoSettings
         projectSlug={slug}
+        name={project.name}
         title={brand.seo.title}
         description={brand.seo.description}
         image={brand.seoImage}

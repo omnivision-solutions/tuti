@@ -134,6 +134,8 @@ export function useCustomizeForm({
   const { onSubmit, ...submit } = keepingFields(action);
   return {
     state,
+    /** While it saves. */
+    pending,
     form: {
       ...submit,
       id,

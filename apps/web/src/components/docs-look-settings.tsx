@@ -3,7 +3,8 @@
 import { useId } from "react";
 
 import { useBrandingForm } from "@/components/branding-settings";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { SettingRow, SettingsCard } from "@/components/settings-card";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,7 +33,20 @@ export function SwitchRow({
 
 const on = (data: FormData, name: string) => data.get(name) === "on";
 
-/** Customize → Content actions: the "Copy page" menu on articles, what's in it, and the "Updated" date (see branding.update's contentActions). */
+/** A switch in Content actions' card: its name on the left, the switch on the right, on phones too. */
+function ActionRow({ name, label, info, on }: { name: string; label: string; info?: string; on: boolean }) {
+  const id = `content-actions-${name}`;
+  return (
+    <SettingRow label={label} htmlFor={id} info={info} inline>
+      <Switch id={id} name={name} defaultChecked={on} />
+    </SettingRow>
+  );
+}
+
+/**
+ * Settings → Portal → Content actions: the "Copy page" menu on articles, what's in it (indented under it), and the
+ * "Updated" date (see branding.update's contentActions), one switch a row in one card. The preview shows what each does.
+ */
 export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: string; actions: ContentActions }) {
   const { state, form } = useBrandingForm(projectSlug, "Content actions saved", (data) => ({
     contentActions: {
@@ -44,28 +58,17 @@ export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: 
     },
   }));
   return (
-    <form {...form} className="flex flex-col gap-6">
+    <form {...form} className="flex flex-col gap-3">
       <input type="hidden" name="part" value="contentActions" />
-      <section aria-labelledby="content-actions-menu" className="flex flex-col gap-4 rounded-xl border p-4">
-        <h2 id="content-actions-menu" className="font-semibold">
-          Page actions
-        </h2>
-        <SwitchRow
-          name="menu"
-          label="Show the page actions menu"
-          description="Lets readers copy an article or take it to an AI tool."
-          defaultChecked={actions.menu}
-        />
-        <SwitchRow name="copyMarkdown" label="Copy as Markdown" defaultChecked={actions.copyMarkdown} />
-        <SwitchRow name="chatGpt" label="Open in ChatGPT" defaultChecked={actions.chatGpt} />
-        <SwitchRow name="claude" label="Open in Claude" defaultChecked={actions.claude} />
-      </section>
-      <section aria-labelledby="content-actions-date" className="flex flex-col gap-4 rounded-xl border p-4">
-        <h2 id="content-actions-date" className="font-semibold">
-          Last updated date
-        </h2>
-        <SwitchRow name="updatedDate" label="Show the last updated date" description="Under each article's heading: when you last published changes to it. None shows until you do." defaultChecked={actions.updatedDate} />
-      </section>
+      <SettingsCard>
+        <ActionRow name="menu" label="Page actions menu" on={actions.menu} />
+        <div role="group" aria-label="In the page actions menu" className="flex flex-col divide-y pl-6 *:py-2.5">
+          <ActionRow name="copyMarkdown" label="Copy as Markdown" on={actions.copyMarkdown} />
+          <ActionRow name="chatGpt" label="Open in ChatGPT" on={actions.chatGpt} />
+          <ActionRow name="claude" label="Open in Claude" on={actions.claude} />
+        </div>
+        <ActionRow name="updatedDate" label="Last updated date" info="Under each article's heading: when you last published changes to it. None shows until you do." on={actions.updatedDate} />
+      </SettingsCard>
       {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );
@@ -77,26 +80,20 @@ export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; h
     docsHome: { title: String(data.get("title") ?? ""), subtitle: String(data.get("subtitle") ?? ""), popular: on(data, "popular") },
   }));
   return (
-    <form {...form}>
+    <form {...form} className="flex flex-col gap-3">
       <input type="hidden" name="part" value="docsHome" />
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="docs-title">Title</FieldLabel>
+      <SettingsCard>
+        <SettingRow label="Title" htmlFor="docs-title">
           <Input id="docs-title" name="title" defaultValue={home.title} maxLength={DOCS_TITLE_MAX} placeholder={DOCS_HEADING.title} autoComplete="off" />
-          <FieldDescription>At the top of your docs&apos; home. Empty for &ldquo;{DOCS_HEADING.title}&rdquo;.</FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="docs-subtitle">Subtitle</FieldLabel>
+        </SettingRow>
+        <SettingRow label="Subtitle" htmlFor="docs-subtitle">
           <Textarea id="docs-subtitle" name="subtitle" defaultValue={home.subtitle} maxLength={DOCS_SUBTITLE_MAX} rows={3} placeholder={DOCS_HEADING.subtitle} />
-        </Field>
-        <SwitchRow
-          name="popular"
-          label="Show popular articles"
-          description="Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read."
-          defaultChecked={home.popular}
-        />
-        {state.error && <FieldError>{state.error}</FieldError>}
-      </FieldGroup>
+        </SettingRow>
+        <SettingRow label="Popular articles" htmlFor="docs-popular" info="Each tab's most-read articles of the last 30 days, above its collections, once three or more have been read." inline>
+          <Switch id="docs-popular" name="popular" defaultChecked={home.popular} />
+        </SettingRow>
+      </SettingsCard>
+      {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );
 }
