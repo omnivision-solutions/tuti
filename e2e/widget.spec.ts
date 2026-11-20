@@ -2468,7 +2468,8 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
   // Turning Messages on gave the project its support address, so the team's replies can be emailed too.
-  await expect(owner.getByText(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`)).toBeVisible();
+  // (Shown on its own row, and as where replies come from.)
+  await expect(owner.getByText(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`).first()).toBeVisible();
   await checkpoint(owner, "support-settings-messages-on");
   // Someone the team's app already told Tuti about.
   const kim = `e2e-kim-${slug}@example.com`;

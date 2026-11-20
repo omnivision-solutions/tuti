@@ -1963,7 +1963,10 @@ test("with Messages on, a visitor the AI couldn't help asks a person on the port
   // "Ask a person" starts a conversation in the inbox, so it's on with Messages in the widget (Settings → Inbox and email).
   await team.goto(`/app/${slug}/settings/ask-a-person`);
   await team.waitForURL(`**/app/${slug}/settings/support`);
-  await expect(team.getByText("“Ask a person” after an AI answer starts a conversation here too")).toBeVisible();
+  // Said behind the row's ⓘ.
+  await team.getByRole("button", { name: "More about this setting" }).first().click();
+  await expect(team.getByText("“Ask a person” after an AI answer starts a conversation here too", { exact: false })).toBeVisible();
+  await team.keyboard.press("Escape");
   await team.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(team.getByText("Messages on")).toBeVisible();
   await checkpoint(team, "team-support-messages-on");

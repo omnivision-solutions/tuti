@@ -31,21 +31,34 @@ test("a custom domain's TXT record is pending until it's verified; its CNAME has
   expect(statuses(domain("verified", null))).toEqual(["CNAME", "TXT Verified"]);
 });
 
-const own = (verified: boolean, error: string | null) =>
+const own = (verified: boolean, error: string | null, { included = true, received = true } = {}) =>
   renderToStaticMarkup(
     createElement(EmailDomainSettings, {
       projectSlug: "acme",
       supportAddress: "e2e-inbox@example.com",
       own: {
-        included: true,
+        included,
         address: "e2e-support@example.com",
         records: [1, 2, 3].map((n) => ({ type: "CNAME" as const, name: `t${n}._domainkey.example.com`, value: `t${n}.dkim.amazonses.com` })),
         verified,
         error,
-        receivedAt: new Date(),
+        receivedAt: received ? new Date() : null,
       },
     }),
   );
+
+test("the own address's row says where it stands (sending first, then receiving) and where replies come from", () => {
+  // The row is the first thing rendered: its line, then its status.
+  const row = (html: string) => /Replies come from <span[^>]*>([^<]+)<\/span>\.<\/p><\/div><div[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1);
+  expect(row(own(false, null))).toEqual(["e2e-inbox@example.com", "Waiting for DNS"]);
+  expect(row(own(false, "Amazon SES doesn't have this domain for you any more: remove it and add it again"))).toEqual(["e2e-inbox@example.com", "Not verified"]);
+  expect(row(own(true, null, { received: false }))).toEqual(["e2e-support@example.com", "No email received yet"]);
+  expect(row(own(true, null))).toEqual(["e2e-support@example.com", "Working"]);
+  // Downgraded: verified, but replies come from the support address.
+  expect(row(own(true, null, { included: false }))).toEqual(["e2e-inbox@example.com", "Not on your plan"]);
+  // And before its records were in: the plan is what's missing, not DNS.
+  expect(row(own(false, null, { included: false }))).toEqual(["e2e-inbox@example.com", "Not on your plan"]);
+});
 
 test("the own address's 3 records, checked together: pending, then verified; after a failure (which may not be theirs) they have none", () => {
   expect(statuses(own(false, null))).toEqual(["CNAME Pending", "CNAME Pending", "CNAME Pending"]);
