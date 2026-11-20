@@ -115,7 +115,11 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
   // Customize → Widget says the same as for any portal beside its switch: nothing about a path.
   await owner.goto(`/app/${slug}/settings/widget`);
+  // What it does is behind the row's ⓘ, not a line that's always there.
+  await expect(owner.getByText(/The launcher on every page of your portal too/)).toHaveCount(0);
+  await owner.locator('[data-slot="setting-row"]').filter({ hasText: "Show on your portal" }).getByRole("button", { name: "More about this setting" }).click();
   await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
+  await owner.keyboard.press("Escape");
   await owner.goto(`/app/${slug}/settings/domain`);
 
   // Signing up, posting and signing out there, all under the path (the panel closed: it's over the header's corner).

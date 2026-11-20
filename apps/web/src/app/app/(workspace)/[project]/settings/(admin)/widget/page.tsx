@@ -3,11 +3,11 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { CopyField } from "@/components/copy-button";
+import { CopyButton } from "@/components/copy-button";
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PlanNotice } from "@/components/plan-notice";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard } from "@/components/settings-card";
 import { WidgetPreview } from "@/components/widget-preview";
 import { WidgetSettings } from "@/components/widget-settings";
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -39,6 +39,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
       {kept && "Until it's back, the launcher shows the chat bubble; the icon you picked is kept."}
     </PlanNotice>
   );
+  const script = `<script src="${appUrl().origin}/api/widget.js" data-project="${slug}" async></script>`;
   return (
     <PortalSettingsPane
       page="widget"
@@ -49,35 +50,37 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
       }}
     >
       {!supportInbox && <MessagesOffNotice projectSlug={slug} admin />}
-      <Card>
-        <CardHeader>
-          <CardTitle>Add it to your site</CardTitle>
-          <CardDescription>A button on your site that opens feedback, what&apos;s new and docs in a panel. Add it with one script tag:</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CopyField label="Before </body>" name="the widget's script tag" value={`<script src="${appUrl().origin}/api/widget.js" data-project="${slug}" async></script>`} />
-        </CardContent>
-      </Card>
-      <WidgetSettings
-        projectSlug={slug}
-        label={widget.label}
-        color={color}
-        defaultColor={defaultColor}
-        // The brand green kept as its own while it's the default anyway (picked while the accent was another colour) follows it.
-        colorFollows={!widget.color || (widget.color === DEFAULT_WIDGET_COLOR && defaultColor === DEFAULT_WIDGET_COLOR)}
-        defaultColorLabel={defaultColor !== DEFAULT_WIDGET_COLOR ? "Use the accent colour" : undefined}
-        position={widget.position}
-        links={widget.links}
-        icon={widget.icon}
-        iconImage={widget.iconImage}
-        iconLocked={iconLocked}
-        title={widget.title}
-        greeting={widget.greeting}
-        hidden={widget.hidden}
-        onPortal={widget.onPortal}
-        // Under a path of the team's site, or Tuti's own portal under the app's.
-        aiFirst={answersEnabled() ? widget.aiFirst : null}
-      />
+      <div className="flex flex-col gap-4">
+        <SettingsCard title="Install">
+          <SettingBlock className="gap-2">
+            <code className="block rounded-lg bg-muted px-3 py-2 text-xs break-all">{script}</code>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">Paste before &lt;/body&gt;.</span>
+              <CopyButton value={script} label="the widget's script tag" />
+            </div>
+          </SettingBlock>
+        </SettingsCard>
+        <WidgetSettings
+          projectSlug={slug}
+          label={widget.label}
+          color={color}
+          defaultColor={defaultColor}
+          // The brand green kept as its own while it's the default anyway (picked while the accent was another colour) follows it.
+          colorFollows={!widget.color || (widget.color === DEFAULT_WIDGET_COLOR && defaultColor === DEFAULT_WIDGET_COLOR)}
+          defaultColorLabel={defaultColor !== DEFAULT_WIDGET_COLOR ? "Use the accent colour" : undefined}
+          position={widget.position}
+          links={widget.links}
+          icon={widget.icon}
+          iconImage={widget.iconImage}
+          iconLocked={iconLocked}
+          title={widget.title}
+          greeting={widget.greeting}
+          hidden={widget.hidden}
+          onPortal={widget.onPortal}
+          // Under a path of the team's site, or Tuti's own portal under the app's.
+          aiFirst={answersEnabled() ? widget.aiFirst : null}
+        />
+      </div>
     </PortalSettingsPane>
   );
 }

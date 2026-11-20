@@ -27,7 +27,7 @@ an iframe, so your site's styles can't reach it and it needs no API key.
 The launcher is a round button with an icon. In the Tuti app, your project's
 **Settings → Widget** (owners and admins) sets:
 
-- **Button name** (default "Feedback", up to 30 characters): what screen readers say, and
+- **Name** (default "Feedback", up to 30 characters): what screen readers say, and
   the button's tooltip; the panel it opens has the same name. It isn't shown on the button.
 - **Colour** (default the portal's accent colour, Settings → Branding, or the Tuti green where the accent wouldn't
   stand out on both light and dark pages; the icon on it is black or white, whichever reads better).
@@ -46,12 +46,12 @@ The launcher is a round button with an icon. In the Tuti app, your project's
   the widget, without its launcher, and opens it only when a reader asks the AI or contacts the team
   ("Still stuck?" → Contact us opens its Messages).
 
-And the panel's **Home**:
+And the **Panel**, what its Home shows:
 
 - **Greeting** and **Heading** (up to 60 characters each): the lines at its top. Left empty,
   they're "Hi there 👋" (with the person's first name once your page signs them in) and "How can
   we help?".
-- **Show in the widget**: Help center, Messages, Feedback and What's new, each on by default.
+- **Help center**, **Messages**, **Feedback** and **What's new**: a switch each, on by default.
   Turned off, a part's card leaves Home and its tab leaves the bar (What's new has no tab), and
   it no longer lights the launcher's "new" dot. Your own code can still open it (`Tuti.open`), and
   it still counts in `Tuti.unseen()`, for a dot of your own. With Feedback off, the

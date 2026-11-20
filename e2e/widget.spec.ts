@@ -736,7 +736,11 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await owner.goto(`/app/${slug}/settings/widget`);
   const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
   await expect(onPortal).toBeChecked();
+  // What it does is behind the row's ⓘ, not a line that's always there.
+  await expect(owner.getByText(/The launcher on every page of your portal too/)).toHaveCount(0);
+  await owner.locator('[data-slot="setting-row"]').filter({ hasText: "Show on your portal" }).getByRole("button", { name: "More about this setting" }).click();
   await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
+  await owner.keyboard.press("Escape");
   await onPortal.scrollIntoViewIfNeeded();
   await checkpoint(owner, "customize-widget-on-portal", { fullPage: false });
   await onPortal.click();
@@ -1075,6 +1079,11 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await owner.goto(`/app/${slug}/settings/widget`);
   const aiFirst = owner.getByRole("switch", { name: "Answer with AI first" });
   await expect(aiFirst).toBeChecked();
+  // What it does is behind the row's ⓘ.
+  await expect(owner.getByText(/gets an answer from them right away/)).toHaveCount(0);
+  await owner.locator('[data-slot="setting-row"]').filter({ hasText: "Answer with AI first" }).getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team.")).toBeVisible();
+  await owner.keyboard.press("Escape");
   await aiFirst.scrollIntoViewIfNeeded();
   await checkpoint(owner, "customize-widget-ai-first", { fullPage: false });
   await aiFirst.click();
@@ -1747,12 +1756,20 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(owner.locator('iframe[title="Widget panel preview"]')).not.toBeFocused();
   await owner.unroute(appScripts);
   await checkpoint(owner, "widget-preview-open");
+  // Three cards of rows, no paragraphs: what the preview can't show is behind a row's ⓘ.
+  const column = owner.locator("[data-slot=portal-settings]");
+  await expect(column.getByRole("heading", { level: 2 })).toHaveText(["Install", "Button", "Panel"]);
+  await expect(column.getByText(/screen readers read its name/)).toHaveCount(0);
+  await column.locator('[data-slot="setting-row"]').filter({ hasText: "Name" }).getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("The button shows an icon: screen readers read its name, and it's the tooltip.")).toBeVisible();
+  await owner.keyboard.press("Escape");
   // The script tag for the team's site, to copy.
+  await expect(column.getByText("Paste before </body>.")).toBeVisible();
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await owner.getByRole("button", { name: "Copy the widget's script tag" }).click();
   await expect(owner.getByText("Copied")).toBeVisible();
   expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`);
-  await owner.getByLabel("Button name").fill("Help & ideas");
+  await owner.getByLabel("Name", { exact: true }).fill("Help & ideas");
   // The colour as hex beside its swatch, kept in step: #rgb is read as #rrggbb, and what isn't a colour says so.
   const hex = owner.getByLabel("Colour", { exact: true });
   await hex.fill("#abc");
@@ -1778,12 +1795,42 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.getByLabel("Colour picker").fill("#5b21b6");
   await expect(hex).toHaveValue("#5b21b6");
   await expect(owner.getByText("Type a hex colour, such as #2563eb.")).toHaveCount(0);
-  await owner.getByLabel("Bottom left").check();
-  await owner.getByText("Megaphone", { exact: true }).click();
-  await owner.getByRole("button", { name: "Add link" }).click();
+  // The corner and the icon are each one control of options side by side, the icons named for screen readers.
+  const position = owner.getByRole("radiogroup", { name: "Position" });
+  await expect(position.getByRole("radio", { name: "Right" })).toBeChecked();
+  await position.getByRole("radio", { name: "Left" }).locator("..").click();
+  // The preview's launcher moves to that side.
+  const side = async () => {
+    const figure = (await owner.getByRole("figure", { name: "Widget preview" }).boundingBox())!;
+    const button = (await previewLauncher("Help & ideas").boundingBox())!;
+    return button.x + button.width / 2 < figure.x + figure.width / 2 ? "left" : "right";
+  };
+  await expect.poll(side).toBe("left");
+  const icons = owner.getByRole("radiogroup", { name: "Icon" });
+  await expect(icons.getByRole("radio")).toHaveCount(5);
+  await icons.getByRole("radio", { name: "Megaphone" }).locator("..").click();
+  // Quick links: how many of the five there are beside "Add"; a new one takes focus.
+  const links = owner.getByRole("group", { name: "Quick links" });
+  const addLink = links.getByRole("button", { name: "Add link" });
+  await expect(links.getByText("0/5")).toBeVisible();
+  await addLink.click();
+  await expect(owner.getByLabel("Link 1 label")).toBeFocused();
+  // At five "Add" is off, still focusable; a removed link's focus goes to it.
+  for (let n = 2; n <= 5; n++) {
+    await addLink.click();
+    await expect(owner.getByLabel(`Link ${n} label`)).toBeFocused();
+  }
+  await expect(links.getByText("5/5")).toBeVisible();
+  await expect(addLink).toBeDisabled();
+  for (const n of [5, 4, 3, 2]) {
+    await links.getByRole("button", { name: `Remove link ${n}` }).click();
+    await expect(addLink).toBeFocused();
+  }
+  await expect(links.getByText("1/5")).toBeVisible();
+  await expect(addLink).toBeEnabled();
   await owner.getByLabel("Link 1 label").fill("Status");
   await owner.getByLabel("Link 1 URL").fill("http://status.example.com");
-  await owner.getByRole("button", { name: "Add link" }).click();
+  await addLink.click();
   await owner.getByLabel("Link 2 label").fill("Averyverylongquicklinklabelwithnospaces1");
   await owner.getByLabel("Link 2 URL").fill("https://example.com/long");
   // The launcher in the preview changes as it's set: a round button with the megaphone.
@@ -1838,7 +1885,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
   await expect(previewLauncher("Help & ideas")).toBeFocused();
   await owner.reload();
-  await expect(owner.getByLabel("Button name")).toHaveValue("Help & ideas");
+  await expect(owner.getByLabel("Name", { exact: true })).toHaveValue("Help & ideas");
   await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeChecked();
   await expect(owner.getByLabel("Link 1 URL")).toHaveValue("https://status.example.com");
 
@@ -1917,14 +1964,18 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(visitor.getByRole("button", { name: "Our feedback button" })).toBeFocused();
 
   // The team's own icon: uploaded and saved, then removed, which picks the chat bubble again; later saves still work.
-  await owner.getByText("Your own", { exact: true }).click();
+  await owner.getByRole("radio", { name: "Your own" }).locator("..").click();
+  // The image is best square and see-through: said behind the row's ⓘ.
+  await owner.locator('[data-slot="setting-row"]').filter({ hasText: "Your icon" }).getByRole("button", { name: "More about this setting" }).click();
+  await expect(owner.getByText("A square image with a transparent background works best. It shows at 28 pixels.")).toBeVisible();
+  await owner.keyboard.press("Escape");
   const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   await owner.getByLabel("Your icon", { exact: true }).setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: pixel });
   await expect(owner.getByRole("img", { name: "Your icon preview" })).toBeVisible();
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
-  // From the keyboard: the field hides as it goes, so focus moves to the chat bubble's choice.
-  await owner.getByRole("button", { name: "Remove", exact: true }).focus();
+  // From the keyboard: the row hides as it goes, so focus moves to the chat bubble's choice.
+  await owner.getByRole("button", { name: "Remove your icon" }).focus();
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();
   await expect(owner.getByRole("radio", { name: "Chat" })).toBeFocused();
