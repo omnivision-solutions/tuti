@@ -332,3 +332,13 @@ test("the plan's row on a free trial says when it ends, and after it that it end
   expect(page).toContain("Manage plan");
   expect(page).not.toContain("data-plans-control");
 });
+
+test("a trial where plans can't be bought says so beside when it ends, with no Upgrade", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, emails: 500 }; }));
+  vi.stubEnv("STRIPE_SECRET_KEY", "");
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
+  await prisma.project.update({ where: { id: projectId }, data: { trialEndsAt: new Date(Date.now() + 3 * 24 * 60 * 60_000) } });
+  const page = await billing();
+  expect(page).toMatch(/>Ends on \d{1,2} [A-Z][a-z]+ \d{4}\. <span id="plans-unavailable" tabindex="-1"[^>]*>Plans can't be bought here right now\.<\/span>/);
+  expect(page).not.toContain("data-plans-control");
+});

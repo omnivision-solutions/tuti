@@ -232,6 +232,11 @@ test("billing's usage anchor keeps only its gap below the pane's header, and its
   // A link to the plans from elsewhere lands with them open.
   await owner.goto(`/app/${slug}/settings/billing#plans`);
   await expect(owner.getByRole("dialog", { name: "Choose a plan" }).getByRole("button", { name: "Upgrade to Pro" })).toBeVisible();
+  // Closed, the page stays (the address just loses "#plans").
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "Choose a plan" })).toBeHidden();
+  await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
+  await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toBeVisible();
   // On a phone too, within the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/settings/billing`);

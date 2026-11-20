@@ -168,17 +168,19 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             }
             description={
               // A license's plan has nothing to pay or renew.
-              licensed ? undefined : trial?.ended === false ? (
-                `Ends on ${formatDate(trial.endsAt)}`
-              ) : !onPaidPlan ? (
-                !license && !planSalesEnabled() ? (
+              licensed ? undefined : !license && !onPaidPlan && !planSalesEnabled() ? (
+                // No Upgrade to offer (a trial's too): said, where UnassignLicense moves the keyboard to.
+                <>
+                  {trial?.ended === false && `Ends on ${formatDate(trial.endsAt)}. `}
                   <span id="plans-unavailable" tabIndex={-1} className="outline-none">
                     Plans can&apos;t be bought here right now.
                   </span>
-                ) : (
-                  // What the plan gives, where it has limits.
-                  [emails && emails.limit !== null && `${emails.limit.toLocaleString("en")} emails a month`, boards !== null && `${boards} feedback ${boards === 1 ? "board" : "boards"}`].filter(Boolean).join(" · ")
-                )
+                </>
+              ) : trial?.ended === false ? (
+                `Ends on ${formatDate(trial.endsAt)}`
+              ) : !onPaidPlan ? (
+                // What the plan gives, where it has limits.
+                [emails && emails.limit !== null && `${emails.limit.toLocaleString("en")} emails a month`, boards !== null && `${boards} feedback ${boards === 1 ? "board" : "boards"}`].filter(Boolean).join(" · ")
               ) : (
                 [
                   // None for a plan the file sells no way (by quote): it's billed as agreed.

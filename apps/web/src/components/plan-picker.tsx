@@ -51,25 +51,32 @@ type PickerProps = { projectSlug: string; plans: Plan[]; current: string; trial?
 
 /**
  * Settings → Billing on the default plan: "Upgrade", which opens the plans to buy (PlanPicker) in a dialog. So does the
- * page's "#plans" address ("Choose a plan" beside the add-on, a link from elsewhere); closed, the address loses it, so
- * the same link opens the plans again.
+ * page's "#plans" address ("Choose a plan" beside the add-on, a link from elsewhere), and Back from it closes them.
+ * Closed, the address loses it, so the same link opens the plans again: by going back where a link on this page added
+ * it (no second entry for Back to stop at), else in place (Back would leave the page).
  */
 export function UpgradePlans(props: PickerProps) {
   const [open, setOpen] = useState(false);
+  const linked = useRef(false);
   useEffect(() => {
-    const fromHash = () => {
-      if (window.location.hash === "#plans") {
-        setOpen(true);
-      }
+    if (window.location.hash === "#plans") {
+      setOpen(true);
+    }
+    const followHash = () => {
+      linked.current = window.location.hash === "#plans";
+      setOpen(linked.current);
     };
-    fromHash();
-    window.addEventListener("hashchange", fromHash);
-    return () => window.removeEventListener("hashchange", fromHash);
+    window.addEventListener("hashchange", followHash);
+    return () => window.removeEventListener("hashchange", followHash);
   }, []);
   const change = (next: boolean) => {
     setOpen(next);
     if (!next && window.location.hash === "#plans") {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      if (linked.current) {
+        window.history.back();
+      } else {
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
     }
   };
   return (

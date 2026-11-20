@@ -59,8 +59,11 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner).not.toHaveURL(/#plans$/);
   await owner.getByRole("link", { name: "Choose a plan" }).click();
   await expect(plans).toBeVisible();
-  await owner.keyboard.press("Escape");
+  // Back closes them too, staying on Billing.
+  await owner.goBack();
   await expect(plans).toBeHidden();
+  await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
+  await expect(planRow).toBeVisible();
   await owner.setViewportSize({ width: 1280, height: 720 });
   // Upgrade opens them too, from the keyboard.
   await owner.getByRole("button", { name: "Upgrade", exact: true }).focus();
