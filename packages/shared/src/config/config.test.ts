@@ -31,6 +31,12 @@ test("a variable the file replaced, still set, stops start-up and names its key"
   expect(() => checkConfig()).toThrow("MEDIA_PROJECT_QUOTA_MB → media.projectQuotaMb");
 });
 
+test("the AI variables the file replaced stop start-up too, the levels file's included", () => {
+  vi.stubEnv("AI_MODEL_CODE_CHANGES", "acme/careful");
+  vi.stubEnv("AI_LEVELS_CONFIG", "/run/tuti/ai-levels.json");
+  expect(() => checkConfig()).toThrow("AI_MODEL_CODE_CHANGES → ai.features.codeChanges, AI_LEVELS_CONFIG → ai.levels");
+});
+
 test("tuti.config.schema.json is the schema's (pnpm test -u rewrites it), and the example is valid", async () => {
   await expect(`${JSON.stringify(z.toJSONSchema(configSchema, { io: "input" }), null, 2)}\n`).toMatchFileSnapshot("../../tuti.config.schema.json");
   const example = readFileSync(new URL("../../tuti.config.example.json", import.meta.url), "utf8");
