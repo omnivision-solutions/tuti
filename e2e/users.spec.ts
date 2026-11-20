@@ -348,6 +348,14 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(owner.getByText("Saved how mrr shows")).toBeVisible();
   await expect(mrr.getByRole("combobox", { name: "Format of mrr" })).toContainText("Money");
   await expect(mrr.getByRole("combobox", { name: "Currency of mrr" })).toContainText("USD");
+  // A row's control that can't narrow (its fixed width, money's two selects) keeps the card's width at tablet size with
+  // the settings list open: the label gives way, nothing scrolls sideways.
+  await owner.setViewportSize({ width: 940, height: 768 });
+  await expect(async () => {
+    expect(await owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
+    expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(940);
+  }).toPass({ timeout: 5_000 });
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // Its name is under the row's menu: MRR until the team gives it one; a name typed and cancelled is gone the next time.
   await mrr.getByRole("button", { name: "Actions for mrr" }).click();
   await owner.getByRole("menuitem", { name: "Rename" }).click();
