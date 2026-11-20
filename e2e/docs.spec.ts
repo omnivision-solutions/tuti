@@ -2033,9 +2033,31 @@ test("a docs-first team makes the docs the portal's home page", async ({ browser
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
 
   await team.goto(`/app/${slug}/customize/home-page`);
-  await team.getByRole("combobox", { name: "Home page" }).click();
+  // One row, the page it opens on in its select; it saves as it's picked.
+  const home = team.getByRole("combobox", { name: "Home page" });
+  await expect(home).toContainText("Feedback");
+  await expect(team.locator('[data-slot="setting-row"]', { has: home })).toHaveText(/^Home pageFeedback\W*$/);
+  // While it saves (its answer held here) the select is read-only and keeps the focus.
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
+  await home.click();
   await team.getByRole("option", { name: "Documentation" }).click();
+  await expect(home).toHaveAttribute("data-readonly");
+  await expect(home).toBeEnabled();
+  await expect(home).toBeFocused();
+  releaseSave();
   await expect(team.getByText("Your portal opens with documentation now")).toBeVisible();
+  await team.unroute("**/*");
+  await expect(home).toContainText("Documentation");
+  await expect(home).not.toHaveAttribute("data-readonly");
   await checkpoint(team, "settings-home-page");
   await visitor.goto("/");
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/docs`);
