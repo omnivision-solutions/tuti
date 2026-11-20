@@ -448,6 +448,23 @@ describe("with a decision model (OpenRouter)", () => {
     expect(await suggestions()).toEqual([expect.objectContaining({ postId: night.id, originalId: dark.id })]);
   });
 
+  test("a post whose check fails after it's embedded is unembedded again, so the backfill checks it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    openai.setVector("Dark mode", along(1));
+    openai.setVector("Night theme please", along(0.8));
+    const dark = await post("Dark mode");
+    vi.spyOn(prisma.duplicateSuggestion, "createMany").mockRejectedValueOnce(new Error("database blip"));
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    const night = await post("Night theme please");
+    expect(await prisma.postEmbedding.count({ where: { postId: night.id } })).toBe(0);
+    vi.mocked(prisma.duplicateSuggestion.createMany).mockRestore();
+
+    model.otherwiseDecide({ "*": DIFFERENT }, '"existing_0"');
+    model.decide({ duplicate_0: DUPLICATE }, '"new":"Night theme please"');
+    expect((await backfillEmbeddings({ info: () => {}, warn: () => {} })).errors).toEqual([]);
+    expect(await suggestions()).toContainEqual(expect.objectContaining({ postId: night.id, originalId: dark.id }));
+  });
+
   test("while typing, a balance that can't be read shows the posts as found", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
