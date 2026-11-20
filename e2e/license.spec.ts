@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, STRIPE_PORTAL_LOGIN_URL } from "./env";
+import { CLOUD_URL, STRIPE_PORTAL_LOGIN_URL, TRIAL_URL } from "./env";
 
 test("someone buying a licence sees which installation and project it's for, and buys it with Stripe", async ({ page }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -28,6 +28,11 @@ test("someone buying a licence sees which installation and project it's for, and
   // Cancelled in Stripe's customer portal, from the billing file's link.
   await expect(page.getByRole("status")).toContainText("To cancel it, change the card or get invoices, manage your billing with the email you paid with.");
   await expect(page.getByRole("status").getByRole("link", { name: "manage your billing" })).toHaveAttribute("href", STRIPE_PORTAL_LOGIN_URL);
+  // A billing file without the link (the trial server's, on the same database): the page says to email instead.
+  const trial = await page.context().newPage();
+  await trial.goto(`${TRIAL_URL}/app/license?installation=${installation}&project=${project}`);
+  await expect(trial.getByRole("status")).toContainText("To cancel it, change the card or get invoices, email hello@tuti.so.");
+  await trial.close();
   await expect(page.getByRole("button", { name: "Buy for $49 a month" })).toBeHidden();
   await checkpoint(page, "license-page-licensed");
 
