@@ -50,7 +50,8 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
     ...byMeaning.filter((p) => !both.has(p.id)),
     ...byWords.filter((p) => !both.has(p.id)),
   ];
-  const shown = await duplicatesOnly(project.id, query.data, ranked.slice(0, LIMIT));
+  // Every candidate is judged (up to twice LIMIT, one request), so a duplicate found only by its words isn't cut first.
+  const shown = (await duplicatesOnly(project.id, query.data, ranked)).slice(0, LIMIT);
   const userId = widgetToken ? widgetUser(project.id, String(widgetToken)) : (await sessionIn(project.id))?.user.id;
   const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
   return shown.map(({ body: _, ...post }) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));

@@ -241,6 +241,22 @@ describe("with a decision model (OpenRouter)", () => {
     expect(model.decisions.at(-1)).toMatchObject({ model: "acme/judge", state: { new: "Translate articles please" } });
   });
 
+  test("while typing, every candidate is judged before the 5 shown are picked: a duplicate found only by its words isn't cut", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));
+    openai.setVector("Dark mode please", along(1));
+    for (const k of [1, 2, 3, 4, 5]) {
+      openai.setVector(`Night theme ${k}`, along(0.95 - k / 100));
+      await post(`Night theme ${k}`);
+    }
+    openai.setVector("Dark mode for the dashboard", [0, 0, 1]); // unrelated in meaning: found by its words only
+    await post("Dark mode for the dashboard");
+    model.decide({ "*": DIFFERENT, duplicate_5: DUPLICATE });
+
+    const found = await findSimilarPosts(project.slug, "Dark mode please");
+    expect(found.map((p) => p.title)).toEqual(["Dark mode for the dashboard"]);
+    expect(Object.keys(model.decisions.at(-1)!.questions)).toHaveLength(6);
+  });
+
   test("while typing, a failure shows the posts as found", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("TUTI_CONFIG", configFile({ duplicates: { posted: { model: "off" } } }));

@@ -41,7 +41,7 @@ export async function judgeDuplicates(model: string, post: string, candidates: s
   const answers = await decide(state, questions, { model, timeoutMs, meter: async () => {} });
   return candidates.map((_, k) => {
     const answer = answers[`duplicate_${k}`]!;
-    if (answer.type !== "choice" || !(answer.choice in CRITERIA)) {
+    if (answer.type !== "choice" || !Object.hasOwn(CRITERIA, answer.choice)) {
       throw new Error(`The decision model answered duplicate_${k} with ${JSON.stringify(answer)}`);
     }
     return { verdict: answer.choice as DuplicateVerdict["verdict"], duplicate: answer.probabilities.duplicate ?? 0 };
