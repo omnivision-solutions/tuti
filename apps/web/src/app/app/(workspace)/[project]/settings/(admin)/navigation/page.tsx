@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { NavigationSettings } from "@/components/branding-settings";
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
 import { PortalHomeSelect } from "@/components/portal-home-select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingsCard } from "@/components/settings-card";
 import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
@@ -22,22 +22,18 @@ export default async function NavigationPage(props: PageProps<"/app/[project]/se
   const [brand, { home }] = await Promise.all([branding({ id: project.id }).then((found) => found!), portalAccess(project.id)]);
   return (
     <PortalSettingsPane page="navigation" preview={await portalPreview(slug, "/")}>
-      {/* Saved as it's picked, apart from "Save changes". */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Home page</CardTitle>
-          <CardDescription>What your portal&apos;s address opens.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="flex flex-col gap-4">
+        {/* Saved as it's picked, apart from "Save changes". */}
+        <SettingsCard>
           <PortalHomeSelect projectSlug={slug} home={home} />
-        </CardContent>
-      </Card>
-      <NavigationSettings
-        projectSlug={slug}
-        headerLinks={brand.headerLinks}
-        footerLinks={brand.footerLinks}
-        sidebarLinks={brand.sidebarLinks}
-      />
+        </SettingsCard>
+        <NavigationSettings
+          projectSlug={slug}
+          headerLinks={brand.headerLinks}
+          footerLinks={brand.footerLinks}
+          sidebarLinks={brand.sidebarLinks}
+        />
+      </div>
     </PortalSettingsPane>
   );
 }
