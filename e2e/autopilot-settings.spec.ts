@@ -329,6 +329,13 @@ test("Autopilot's limits read as sentences with their unit in the field and save
   await expect(admins).toBeChecked();
   await expect(told.getByRole("listitem")).toHaveText(["Priya Shah"]);
   await expect(hold).toHaveValue("12");
+  // A save that doesn't get through is said, and the chip comes back; nothing is saved.
+  await owner.route(`**/app/${slug}/settings/autopilot`, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await told.getByRole("button", { name: "Remove Priya Shah" }).click();
+  await expect(owner.getByText("Couldn't save. Try again.")).toBeVisible();
+  await expect(told.getByRole("listitem")).toHaveText(["Priya Shah"]);
+  await owner.unroute(`**/app/${slug}/settings/autopilot`);
+  expect(await recipients()).toEqual(["Priya Shah"]);
   // A save the server refuses (the owner stops being one) is said, and the chip comes back.
   await query(`UPDATE team_member SET role = 'ADMIN' WHERE "projectId" = (SELECT id FROM project WHERE slug = $1) AND role = 'OWNER'`, [slug]);
   await told.getByRole("button", { name: "Remove Priya Shah" }).click();

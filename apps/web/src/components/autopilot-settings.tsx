@@ -186,7 +186,7 @@ const LIMITS = [
   },
 ] as const;
 
-function LimitRows({ settings, disabled, error }: { settings: AutopilotSettingsValues; disabled: boolean; error?: string }) {
+function LimitRows({ settings, disabled, readOnly = false, error }: { settings: AutopilotSettingsValues; disabled: boolean; readOnly?: boolean; error?: string }) {
   return (
     <>
       {LIMITS.map(({ name, id, label, unit, min, max, field, info }) => (
@@ -202,6 +202,7 @@ function LimitRows({ settings, disabled, error }: { settings: AutopilotSettingsV
               max={max}
               required
               disabled={disabled}
+              readOnly={readOnly}
               defaultValue={settings[name]}
               aria-describedby={`${id}-unit`}
               aria-invalid={error ? true : undefined}
@@ -242,10 +243,10 @@ function LimitsForm({ projectSlug, settings }: { projectSlug: string; settings: 
     },
   });
   return (
-    // Locked while saving. `inert`, not disabled fields: those would drop out of what the form holds, which "Save
-    // changes" compares with what's saved.
-    <form {...form} inert={pending} className="flex flex-col divide-y">
-      <LimitRows settings={settings} disabled={false} error={state.error} />
+    // Still while saving. Read-only, not disabled or inert: disabled fields would drop out of what the form holds,
+    // which "Save changes" compares with what's saved, and either would take focus from the field Enter was pressed in.
+    <form {...form} aria-busy={pending} className="flex flex-col divide-y">
+      <LimitRows settings={settings} disabled={false} readOnly={pending} error={state.error} />
     </form>
   );
 }
@@ -311,7 +312,7 @@ export function AutopilotRecipientsForm({
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
             <ul aria-label="Others who get Autopilot's emails" className="contents">
               {told.map((member) => (
-                <li key={member.userId} className={cn("flex max-w-full items-center gap-0.5 rounded-2xl bg-muted py-0.5 pl-2.5 text-sm", owner ? "pr-0.5" : "pr-2.5")}>
+                <li key={member.userId} className={cn("flex max-w-full items-center gap-0.5 rounded-lg bg-muted py-0.5 pl-2.5 text-sm", owner ? "pr-0.5" : "pr-2.5")}>
                   <span className="min-w-0 break-words">{member.name}</span>
                   {owner && (
                     <button
@@ -341,9 +342,10 @@ export function AutopilotRecipientsForm({
                   <PlusIcon />
                   Add
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-max">
+                {/* As wide as its names, up to the screen's width: a long one wraps there. */}
+                <DropdownMenuContent align="end" className="w-auto max-w-[calc(100vw-2rem)] min-w-40">
                   {rest.map((member) => (
-                    <DropdownMenuItem key={member.userId} onClick={() => save({ ...picked, told: [...picked.told, member.userId] })}>
+                    <DropdownMenuItem key={member.userId} className="break-words whitespace-normal" onClick={() => save({ ...picked, told: [...picked.told, member.userId] })}>
                       {member.name}{" "}
                       <span className="text-muted-foreground">{member.role === "ADMIN" ? "Admin" : "Member"}</span>
                     </DropdownMenuItem>
