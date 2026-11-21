@@ -130,16 +130,20 @@ test("someone who signed up with the address first loses their password and sess
   // Signed up with someone else's address and a password, never verified: the owner never opened that email.
   const squatter = await signUp("Squatter", newAddress(), { verified: false });
   const password = "correct horse battery staple";
-  expect(await prisma.session.count({ where: { userId: squatter.id } })).toBe(1);
+  const before = await prisma.session.findMany({ where: { userId: squatter.id }, select: { id: true } });
+  expect(before).toHaveLength(1);
 
   // The address's owner signs in to a portal with an emailed link: the account is theirs now, verified.
   await ask(squatter.email);
   const { user } = await confirm(await linkTo(squatter.email));
   expect(user).toMatchObject({ id: squatter.id, emailVerified: true });
 
-  // The password set before (Better Auth's magic link drops every account and session the address hadn't proven).
+  // The password and session from before are gone, only the link's session is left (Better Auth's magic link drops
+  // every account and session the address hadn't proven).
   expect(await prisma.account.count({ where: { userId: squatter.id } })).toBe(0);
-  expect(await prisma.session.count({ where: { userId: squatter.id } })).toBe(1);
+  const after = await prisma.session.findMany({ where: { userId: squatter.id }, select: { id: true } });
+  expect(after).toHaveLength(1);
+  expect(after[0]!.id).not.toBe(before[0]!.id);
   await expect(
     auth.api.signInEmail({ body: { email: squatter.email, password }, headers: new Headers({ host: new URL(process.env.APP_URL!).host }) }),
   ).rejects.toMatchObject({ body: { code: "INVALID_EMAIL_OR_PASSWORD" } });
