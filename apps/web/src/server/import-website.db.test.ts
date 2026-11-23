@@ -26,6 +26,7 @@ vi.mock("node:dns/promises", async (original) => {
 /** Importing a public help center by its address (docs/plan.md, Import a public help center by URL), against a local static site. */
 
 const budgetMs = contentBudget.ms;
+const pace = { ...crawlPace, ms: 0 };
 let site: HelpCenterFake;
 let s3: S3Fake;
 let owner: TestUser;
@@ -49,7 +50,6 @@ beforeEach(async () => {
   // The site is on this machine.
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   site.requests = [];
-  site.times = [];
   site.failing.clear();
   site.failingOnce.clear();
   site.retryAfter = null;
@@ -122,18 +122,23 @@ test("a help center's pages come across as drafts, in collections from its folde
 });
 
 test("the site is asked at its pace all through: from one page of the import to the next too", async () => {
-  crawlPace.ms = 300;
+  // A clock only the pace's waits move: each request but the first waits the whole pace after the one before it.
+  let clock = Date.now();
+  const waits: number[] = [];
+  const wait = async (ms: number) => {
+    waits.push(ms);
+    clock += ms;
+  };
+  Object.assign(crawlPace, { ms: 300, now: () => clock, wait });
+  crawlPace.sites.clear();
   try {
     expect(await importSite()).toMatchObject({ state: "done" });
   } finally {
-    crawlPace.ms = 0;
+    Object.assign(crawlPace, pace);
+    crawlPace.sites.clear();
   }
-  // The site's pages (their images are copied from wherever they're kept, apart).
-  const times = site.times.filter((_, i) => !site.requests[i]!.startsWith("/images/"));
-  expect(times.length).toBeGreaterThan(10);
-  // A request sent 300ms after the last may arrive sooner after it, on a busy machine; with no pace kept between pages,
-  // the next page's first came as soon as the last was saved.
-  expect(Math.min(...times.slice(1).map((at, i) => at - times[i]!))).toBeGreaterThanOrEqual(150);
+  expect(waits.length).toBeGreaterThan(10);
+  expect(waits.slice(1).filter((ms) => ms !== 300)).toEqual([]);
 });
 
 test("old paths never take a redirect the portal has, nor one past its 200", async () => {

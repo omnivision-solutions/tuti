@@ -9,7 +9,7 @@ import { FAKE_PNG } from "./featurebase-fake";
  * to a cloud's metadata address (which an import must never follow). `sitemap: false`: no sitemap, so an import goes by
  * the start page's links. `failing`: paths answered with an error (their status). `forbidRobots`: robots.txt answered with a 403.
  * `POST /_fake/hold` holds the start page's answers until `POST /_fake/release` (journeys, which run in other processes,
- * look at a check while it runs). `requests`: every path asked for, in order, and `times`: when each came (ms).
+ * look at a check while it runs). `requests`: every path asked for, in order.
  */
 export type HelpCenterFake = {
   url: string;
@@ -24,7 +24,6 @@ export type HelpCenterFake = {
   /** Where the start page redirects to (none: it's served). */
   redirectStartTo: string | null;
   requests: string[];
-  times: number[];
   close: () => Promise<void>;
 };
 
@@ -61,7 +60,7 @@ const UNLISTED: Record<string, string> = {
 export async function startHelpCenterFake(): Promise<HelpCenterFake> {
   const fake = { sitemap: true, failing: new Map<string, number>(),
     failingOnce: new Set<string>(),
-    retryAfter: null, forbidRobots: false, redirectStartTo: null, requests: [] as string[], times: [] as number[] } as HelpCenterFake;
+    retryAfter: null, forbidRobots: false, redirectStartTo: null, requests: [] as string[] } as HelpCenterFake;
   let held: { promise: Promise<void>; release: () => void } | null = null;
   const server = createServer(async (req, res) => {
     const path = new URL(req.url!, "http://fake").pathname;
@@ -77,7 +76,6 @@ export async function startHelpCenterFake(): Promise<HelpCenterFake> {
       return;
     }
     fake.requests.push(path);
-    fake.times.push(Date.now());
     if (path === "/docs" && held) {
       await held.promise;
     }

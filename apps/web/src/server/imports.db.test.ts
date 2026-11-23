@@ -137,11 +137,18 @@ test("one run brings page after page; the next is queued only when its time is u
   expect(runs).toHaveBeenCalledTimes(1);
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: first.id } })).toMatchObject(done);
 
+  // A run queued before the import last moved (it was resumed while that run waited its turn) leaves it to the one queued since.
+  const moved = await running();
+  expect(await handlers.importStep({ importId: moved.id, asOf: moved.updatedAt.getTime() - 1 }, log)).toEqual({ skipped: true });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: moved.id } })).toMatchObject({ state: "RUNNING", counts: {} });
+  await prisma.dataImport.delete({ where: { id: moved.id } });
+
   // Stopping (a deploy): it hands over after the page it's on, and the run it queued brings the rest.
   runs.mockClear();
   const stopped = await running();
   expect(await importStep({ importId: stopped.id }, log, () => true)).toEqual({ step: "contacts" });
-  expect(runs).toHaveBeenCalledTimes(1);
+  // Queued as of the page just saved.
+  expect(runs.mock.calls).toEqual([[{ importId: stopped.id, asOf: expect.any(Number) }, expect.anything()]]);
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stopped.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
 
   // Out of time: a run a page.
