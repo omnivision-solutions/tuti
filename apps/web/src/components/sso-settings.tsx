@@ -39,7 +39,7 @@ export function agentPrompt(portal: string) {
    - jti: a random UUID (each token works once)
    - iat: now; exp: 5 minutes from now (10 minutes at most)
    - optional: name (shown on their posts), avatar (an http(s) image URL)
-   - optional: email, only if our app has verified it: Tuti shows them the support conversations emailed from that address
+   - optional: email, only if our app has verified it: Tuti links that address to this user
 3. Redirect to ${portal}/sso?token=<jwt>&redirect=<r>, where <r> is the "redirect" query parameter Tuti sent to /tuti (URL-encoded; "/" if missing).
 4. Use the JWT library this project already has; otherwise add the standard one for our stack (jose for Node).
 5. Add TUTI_SSO_SECRET to .env.example with an empty value.
