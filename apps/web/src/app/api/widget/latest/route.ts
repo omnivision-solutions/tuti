@@ -29,6 +29,8 @@ export async function GET(request: Request) {
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
+  // Taken before the reads: an announcement published while they run is after this visit, so the next one shows it.
+  const now = new Date().toISOString();
   const [entry, settings, project] = await Promise.all([
     latestAnnouncement({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
@@ -71,7 +73,7 @@ export async function GET(request: Request) {
       ...(announcement && { announcement }),
       // When this answer was made (a browser may reuse it for a minute): the script's record of this visit, so an
       // announcement published since counts as new on the next one, even if this page view was told the one before.
-      now: new Date().toISOString(),
+      now,
       launcher,
       inbox: project?.supportInbox ?? false,
       hidden: settings?.hidden ?? [],
