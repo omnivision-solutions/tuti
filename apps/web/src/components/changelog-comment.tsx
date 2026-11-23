@@ -125,6 +125,9 @@ export function ChangelogComment({
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     variant="destructive"
+                    // Once: a second press while it runs would find it gone.
+                    disabled={deleting}
+                    focusableWhenDisabled
                     onClick={() =>
                       startDelete(async () => {
                         const result = await deleteChangelogComment(projectSlug, number, commentId);
@@ -137,7 +140,7 @@ export function ChangelogComment({
                       })
                     }
                   >
-                    Delete comment
+                    {deleting ? "Deleting…" : "Delete comment"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
