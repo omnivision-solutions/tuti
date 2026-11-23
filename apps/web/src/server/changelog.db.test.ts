@@ -370,9 +370,14 @@ describe("a cover given by URL", () => {
       await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover })).rejects.toMatchObject({ status: 400, code: "invalid_cover", message: expect.stringContaining(message) });
       await expect(call(updateChangelogEntry, as(owner), { number: entry.number, title: "Changed", cover })).rejects.toMatchObject({ status: 400, code: "invalid_cover" });
     }
-    // Off the test's allowance: a private address is refused, as webhooks' are.
+    // Off the test's allowance: a private address is refused, as webhooks' are (https, so it's the address that's refused,
+    // not the scheme; refused before connecting, so nothing is fetched).
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "false");
-    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/shot.png` })).rejects.toMatchObject({ status: 400, code: "invalid_cover" });
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: "https://10.0.0.1/cover.png" })).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_cover",
+      message: expect.stringContaining("Couldn't fetch the cover"),
+    });
     expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(1);
     expect((await call(getChangelogEntry, as(owner), { number: entry.number })).title).toBe("Dark mode");
     expect(await ready()).toBe(0);
