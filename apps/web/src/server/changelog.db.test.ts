@@ -384,6 +384,21 @@ describe("a cover given by URL", () => {
     expect(await ready()).toBe(0);
   });
 
+  test("over the team's image size is a 400; without storage, a 503", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamImage: 1 } } }));
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/big.png` })).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_cover",
+      message: "The cover can be up to 1 MB",
+    });
+    vi.stubEnv("MEDIA_S3_BUCKET", "");
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/shot.png` })).rejects.toMatchObject({
+      status: 503,
+      code: "uploads_unavailable",
+    });
+    expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(0);
+  });
+
   test("past the member's hourly uploads is a 409", async () => {
     await prisma.media.createMany({
       data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),
