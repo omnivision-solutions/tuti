@@ -36,7 +36,8 @@ export type StatusChangeView = { id: string; from: PostStatus; to: PostStatus; b
  * A post's activity: its comments, and with `events`, its status changes between them, in `sort`'s order; each comment's
  * replies under it, indented, oldest first. Comments by the project's team stand out: tinted, with a "Team" badge (on the portal, the accent's soft tint and rule).
  * `mediaUrls`: their images' links (server/media-urls.ts), read by the page. `ability`: Reply and Like under each comment
- * (never a note: only the team sees those).
+ * (never a note: only the team sees those). `editable`: what shows a comment's text, given it (a changelog entry's comments
+ * add Edit and Delete there).
  */
 export function CommentList({
   comments,
@@ -46,8 +47,10 @@ export function CommentList({
   portal = false,
   sort = "oldest",
   ability,
+  editable,
 }: {
   comments: CommentView[];
+  editable?: (comment: CommentView, text: React.ReactNode) => React.ReactNode;
   teamUserIds: Set<string>;
   events?: StatusChangeView[];
   mediaUrls?: MediaUrls | null;
@@ -65,6 +68,9 @@ export function CommentList({
     sort,
   );
 
+  const text = (comment: CommentView) => (
+    <RichText doc={displayDoc(comment)} mediaUrls={mediaUrls} className={cn("rich-text break-words", portal ? "text-[0.96875rem] leading-relaxed" : "text-sm")} />
+  );
   const row = (comment: CommentView) => (
     <div
       className={cn(
@@ -98,7 +104,7 @@ export function CommentList({
             {timeAgo(comment.createdAt)}
           </time>
         </div>
-        <RichText doc={displayDoc(comment)} mediaUrls={mediaUrls} className={cn("rich-text break-words", portal ? "text-[0.96875rem] leading-relaxed" : "text-sm")} />
+        {editable ? editable(comment, text(comment)) : text(comment)}
         {ability && !comment.internal && <CommentActions ability={ability} commentId={comment.id} author={comment.author.name} likes={comment.likes ?? 0} liked={comment.liked ?? false} />}
       </div>
     </div>

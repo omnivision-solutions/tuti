@@ -1,10 +1,21 @@
 import { prisma } from "@tuti/db";
+import { mediaStorage } from "@tuti/shared/storage";
+import { MessageCircleIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
+import { ChangelogComment } from "@/components/changelog-comment";
 import { ChangelogEntryView } from "@/components/changelog-entry";
+import { CommentForm } from "@/components/comment-form";
+import { CommentList } from "@/components/comments";
+import { PortalAvatar } from "@/components/portal-avatar";
+import { SignInLink } from "@/components/sign-in-link";
+import { buttonVariants } from "@/components/ui/button";
+import { commentOnChangelogEntry } from "@/server/changelog";
+import { displayDoc } from "@/server/content";
+import { canActIn } from "@/server/membership";
 import { ChangelogMenu, changelogByEmail } from "@/components/changelog-pages";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
@@ -53,9 +64,22 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
     publishedEntries(slug, { number, take: 1, userId: session?.user.id }),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
-  if (!entry) {
+  if (!entry || !project) {
     notFound();
   }
+  const [comments, team, commenter] = await Promise.all([
+    prisma.changelogComment.findMany({
+      where: { entryId: entry.id },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, body: true, content: true, createdAt: true, asReader: true, author: { select: { id: true, name: true, image: true } } },
+    }),
+    prisma.teamMember.findMany({ where: { projectId: project.id }, select: { userId: true } }),
+    // As reacting checks it: someone signed in through another project's single sign-on can't comment here.
+    session && canActIn(session.user.id, project.id),
+  ]);
+  const commentMedia = await mediaUrls(...comments.map(displayDoc));
+  // Images only once signed in: uploads are someone's. Those already in a comment show in its editor.
+  const uploads = commenter && mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
   // For search engines (every entry is for signed-out readers too); sample content isn't for them, as in generateMetadata.
   const listed = await listedEntry(slug, param);
   const jsonLd =
@@ -81,8 +105,57 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         react={{ projectSlug: slug, signedIn: !!session }}
         base={await portalBase()}
       />
+      <section className="flex flex-col gap-3 border-t pt-8" aria-label="Comments">
+        <h2 className="font-sans text-lg font-semibold">
+          {comments.length} {comments.length === 1 ? "comment" : "comments"}
+        </h2>
+        {/* The box before the thread; signed out, a bar to sign in instead. */}
+        {commenter && session ? (
+          <div className="flex gap-3 border-b pb-5">
+            <PortalAvatar person={{ name: session.user.name, image: session.user.image ?? null }} className="size-8 text-[0.8125rem]" />
+            <div className="min-w-0 flex-1">
+              <CommentForm postId={entry.id} action={commentOnChangelogEntry.bind(null, slug, entry.number)} signedIn uploads={uploads} />
+            </div>
+          </div>
+        ) : (
+          !session && (
+            <div className="flex flex-col gap-4 rounded-xl bg-muted p-5 sm:flex-row sm:items-center sm:py-4">
+              <span aria-hidden className="hidden size-10 shrink-0 place-items-center rounded-lg bg-card text-muted-foreground sm:grid">
+                <MessageCircleIcon className="size-[1.125rem]" />
+              </span>
+              <p className="min-w-0 flex-1 text-[0.9375rem] text-muted-foreground">Sign in to comment.</p>
+              <SignInLink className={buttonVariants({ variant: "outline", size: "lg", className: "font-semibold portal:bg-card portal:hover:bg-card/70" })}>
+                Sign in
+              </SignInLink>
+            </div>
+          )
+        )}
+        <div className="pt-3">
+          <CommentList
+            portal
+            comments={comments}
+            teamUserIds={new Set(team.map((m) => m.userId))}
+            mediaUrls={commentMedia}
+            // Its author edits or deletes their own (the team deletes any from the app, where it's the team).
+            editable={(comment, text) => (
+              <ChangelogComment
+                projectSlug={slug}
+                number={entry.number}
+                commentId={comment.id}
+                author={comment.author.name}
+                doc={displayDoc(comment)}
+                canEdit={!!commenter && comment.author.id === session?.user.id}
+                canDelete={!!commenter && comment.author.id === session?.user.id}
+                uploads={uploads}
+              >
+                {text}
+              </ChangelogComment>
+            )}
+          />
+        </div>
+      </section>
       {/* After reading: the way to hear about the next one. */}
-      {project && <div className="mt-4 border-t pt-8">{await changelogByEmail({ ...project, slug }, session)}</div>}
+      <div className="mt-4 border-t pt-8">{await changelogByEmail({ ...project, slug }, session)}</div>
     </div>
   );
 }
