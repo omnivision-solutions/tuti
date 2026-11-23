@@ -1,6 +1,7 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus } from "@tuti/jobs";
+import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus, uploadImage } from "@tuti/jobs";
+import { mediaLimit } from "@tuti/shared/storage";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
@@ -68,10 +69,13 @@ const fields = {
     .string()
     .trim()
     .min(1)
+    .max(2048)
     .nullable()
     .optional()
-    .describe("Its featured image, also its link-preview image: an image upload's id (uploaded in the app); null for none, or to remove it")
-    .meta({ examples: ["cm3k9q2xv0001abcd1234efgh"] }),
+    .describe(
+      "Its featured image, also its link-preview image: an image upload's id (uploaded in the app), or an image's https:// URL, copied into your project as your upload (a 400 if it can't be fetched or isn't an image), and again each time it's sent: to keep a cover, leave it out or send its `cover.id`; null for none, or to remove it",
+    )
+    .meta({ examples: ["https://cdn.example.com/releases/dark-mode.png", "cm3k9q2xv0001abcd1234efgh"] }),
 };
 
 
@@ -237,12 +241,12 @@ export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entr
 }
 
 /**
- * Markdown's images are copied as its text is read, so what would refuse the save anyway (a cover that isn't this
+ * Markdown's images and a cover's URL are copied before the save, so what would refuse it anyway (a cover that isn't this
  * project's finished image, a sample post on a real entry or the other way round) is checked first, and a refused request
  * copies none. The save checks both again, under its lock.
  */
 async function refusedBeforeCopying(projectId: string, { cover, postIds, sample }: { cover?: string | null; postIds?: string[]; sample: boolean }) {
-  if (cover && (await prisma.media.count({ where: { id: cover, projectId, status: "READY", filename: null } })) === 0) {
+  if (cover && !isCoverUrl(cover) && (await prisma.media.count({ where: { id: cover, projectId, status: "READY", filename: null } })) === 0) {
     throw new OperationError(409, "media_gone", MEDIA_GONE);
   }
   if (postIds?.length && (await prisma.post.count({ where: { id: { in: postIds }, sample: !sample } })) > 0) {
@@ -250,13 +254,52 @@ async function refusedBeforeCopying(projectId: string, { cover, postIds, sample 
   }
 }
 
-/** Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the same limits. */
-async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor) {
-  if (input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "")) {
-    const html = await markdownToContent("changelog", input.markdown, {
+const uploaderOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+
+/** A cover given by URL, not by an upload's id (cuids, which never hold one). */
+const isCoverUrl = (cover: string | null | undefined): cover is string => !!cover?.includes("://");
+
+/**
+ * `cover` as an upload's id: a URL's image is copied in first, as `actor`'s upload under the same limits (fetched like
+ * webhooks: public addresses only), or refused with why. Network I/O: never under the project lock.
+ */
+async function coverId(projectId: string, actor: Actor, cover: string | null | undefined) {
+  if (!isCoverUrl(cover)) {
+    return cover;
+  }
+  const copied = await uploadImage(cover, { projectId, uploaderId: uploaderOf(actor) });
+  if ("mediaId" in copied) {
+    return copied.mediaId;
+  }
+  if (copied.passing) {
+    throw new OperationError(503, "copy_failed", "Couldn't keep the cover just now: try again in a moment");
+  }
+  switch (copied.leftOut) {
+    case "unsupported":
+      throw new OperationError(503, "uploads_unavailable", "Uploads aren't set up on this server");
+    case "quota":
+      throw new OperationError(409, "no_room", "The cover can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour");
+    case "type":
+      throw new OperationError(400, "invalid_cover", "The cover's URL isn't an image");
+    case "size":
+      throw new OperationError(400, "invalid_cover", `The cover can be up to ${Math.round(mediaLimit("teamImage") / (1024 * 1024))} MB`);
+    default:
+      throw new OperationError(400, "invalid_cover", "Couldn't fetch the cover: its URL must be a public https:// address that answers with the image");
+  }
+}
+
+/**
+ * Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the
+ * same limits. `beforeCopying` (a cover's copy) runs once the text is known to be fine, before Markdown's images are copied.
+ */
+async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor, beforeCopying: () => Promise<void>) {
+  const fromMarkdown = input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "");
+  if (fromMarkdown) {
+    const html = await markdownToContent("changelog", input.markdown!, {
       projectId,
-      uploaderId: actor.kind === "user" ? actor.userId : actor.createdById,
+      uploaderId: uploaderOf(actor),
       maxLength: MAX_ENTRY_LENGTH,
+      beforeCopying,
     });
     if ("error" in html) {
       throw new OperationError(400, "invalid_content", html.error);
@@ -266,6 +309,9 @@ async function entryText(input: { body?: string; content?: unknown; markdown?: s
   const text = await readContent("changelog", input, { projectId, maxLength: MAX_ENTRY_LENGTH });
   if (text.error !== undefined) {
     throw new OperationError(400, "invalid_content", text.error);
+  }
+  if (!fromMarkdown) {
+    await beforeCopying();
   }
   return text;
 }
@@ -419,18 +465,21 @@ export const createChangelogEntry = defineOperation({
   path: "/changelog",
   scope: "write",
   access: "team",
-  errors: [409],
+  errors: [409, 503],
   input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]) }),
   output: entryOutput.describe("The entry, a draft"),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
-    // Before the text: Markdown's images are copied as it's read, so a request refused anyway copies none.
+    // Before the text: Markdown's images and the cover's URL are copied as it's read, so a request refused anyway copies none.
     const posts = await postIds(projectId, input.posts);
-    if (input.markdown !== undefined) {
+    if (input.markdown !== undefined || isCoverUrl(input.cover)) {
       await refusedBeforeCopying(projectId, { cover: input.cover, postIds: posts, sample: false });
     }
-    const text = await entryText(input, projectId, actor);
+    let cover = input.cover;
+    const text = await entryText(input, projectId, actor, async () => {
+      cover = await coverId(projectId, actor, input.cover);
+    });
     const entry = await saving(() =>
       prisma.$transaction(async (tx) => {
         // Locks the project row, so concurrent entries get distinct numbers.
@@ -439,7 +488,7 @@ export const createChangelogEntry = defineOperation({
           data: { changelogCount: { increment: 1 } },
           select: { changelogCount: true },
         });
-        await attachCover(tx, projectId, input.cover);
+        await attachCover(tx, projectId, cover);
         const created = await tx.changelogEntry.create({
           data: {
             projectId,
@@ -448,7 +497,7 @@ export const createChangelogEntry = defineOperation({
             body: text.text,
             content: text.doc,
             tags: input.tags.map(toTag),
-            coverId: input.cover ?? null,
+            coverId: cover ?? null,
             createdById: actor.kind === "user" ? actor.userId : actor.createdById,
           },
           select: { id: true },
@@ -470,7 +519,7 @@ export const updateChangelogEntry = defineOperation({
   path: "/changelog/{number}",
   scope: "write",
   access: "team",
-  errors: [409],
+  errors: [409, 503],
   input: z.object({
     number: entryNumber,
     title: fields.title.optional(),
@@ -496,15 +545,22 @@ export const updateChangelogEntry = defineOperation({
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
-    // Checked again under the lock below; here first, so Markdown's images aren't copied for an edit refused anyway.
+    // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
     if (input.expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
       throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
     }
     const posts = input.posts && (await postIds(projectId, input.posts));
-    if (input.markdown !== undefined) {
+    if (input.markdown !== undefined || isCoverUrl(input.cover)) {
       await refusedBeforeCopying(projectId, { cover: input.cover, postIds: posts, sample: entry.sample });
     }
-    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor) : null;
+    let cover = input.cover;
+    const copyCover = async () => {
+      cover = await coverId(projectId, actor, input.cover);
+    };
+    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor, copyCover) : null;
+    if (!text) {
+      await copyCover();
+    }
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         if (posts) {
@@ -528,14 +584,14 @@ export const updateChangelogEntry = defineOperation({
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
           await linkEntryPosts(tx, posts.map((postId) => ({ entryId: entry.id, postId })));
         }
-        await attachCover(tx, projectId, input.cover);
+        await attachCover(tx, projectId, cover);
         const saved = await tx.changelogEntry.update({
           where: { id: entry.id },
           data: {
             ...(input.title !== undefined && { title: input.title }),
             ...(text && { body: text.text, content: text.doc }),
             ...(input.tags && { tags: input.tags.map(toTag) }),
-            ...(input.cover !== undefined && { coverId: input.cover }),
+            ...(cover !== undefined && { coverId: cover }),
           },
           select: entrySelect,
         });
