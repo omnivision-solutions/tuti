@@ -1,7 +1,7 @@
 "use client";
 
 import { TriangleAlertIcon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CopyButton } from "@/components/copy-button";
@@ -69,6 +69,14 @@ export function SsoSettings({
   const [rotating, setRotating] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const [tab, setTab] = useState<"prompt" | "code">("prompt");
+  const secretRef = useRef<HTMLDivElement>(null);
+  // A new key shows once, under the switch: bring it into view with focus on its Copy (Replace key is at the page's end).
+  useEffect(() => {
+    if (secret) {
+      secretRef.current?.scrollIntoView({ block: "center" });
+      secretRef.current?.querySelector("button")?.focus({ preventScroll: true });
+    }
+  }, [secret]);
   const ssoUrl = `${portal}/sso`;
   const prompt = agentPrompt(portal);
 
@@ -161,7 +169,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
             ))}
           </ol>
           {secret && (
-            <Alert>
+            <Alert ref={secretRef}>
               <TriangleAlertIcon />
               <AlertTitle>Copy your secret key now. It&apos;s shown only this once.</AlertTitle>
               <AlertDescription className="flex flex-col gap-2">

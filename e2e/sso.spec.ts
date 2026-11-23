@@ -85,6 +85,9 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await rotateDialog.getByRole("button", { name: "Replace key" }).click();
   await expect(owner.getByText("Secret key replaced")).toBeVisible();
   const newSecret = await secretAlert.locator("code").innerText();
+  // Replace key is at the page's end; the new key comes into view, with focus on its Copy.
+  await expect(secretAlert).toBeInViewport();
+  await expect(secretAlert.getByRole("button", { name: "Copy secret key" })).toBeFocused();
   expect(newSecret).not.toBe(secret);
   await replay.goto(`/sso?token=${ssoToken(secret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=invalid_token$/);
