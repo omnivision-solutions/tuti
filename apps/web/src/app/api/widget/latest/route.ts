@@ -4,7 +4,8 @@ import { liveDomain, projectWith } from "@tuti/jobs";
 import { customDomainTarget } from "@/lib/custom-domains";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
-import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
+import { lastingImage } from "@/server/media-urls";
+import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
 /**
@@ -18,6 +19,8 @@ import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, textColorOn, wi
  * a signed-in visitor has seen on other devices comes from /api/widget/seen. A private
  * portal says nothing about its changelog here (no latest), since anyone may ask, only that
  * it's private (`private`): /api/widget/seen tells someone the page signs in who may read it.
+ * With the popup on (Settings → Widget), the latest announcement itself too (`announcement`: its number, title,
+ * a short excerpt and cover), for the card the script shows by the launcher.
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
@@ -26,8 +29,8 @@ export async function GET(request: Request) {
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
-  const [latest, settings, project] = await Promise.all([
-    latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
+  const [entry, settings, project] = await Promise.all([
+    latestAnnouncement({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
     prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
   ]);
@@ -57,9 +60,18 @@ export async function GET(request: Request) {
   // `hidden`: the parts the team turned off (Customize → Widget), which light no dot on the launcher (its panel doesn't
   // lead to them) but still count for the page (Tuti.unseen), which may open them itself. `private`: a portal that isn't
   // public, whose latest announcement /api/widget/seen tells only someone signed in who may read it.
+  const latest = entry?.publishedAt ?? null;
+  // The popup's card: plain text only (the script puts it in as text), its cover a lasting link to its smallest size.
+  const announcement = entry && settings?.popup
+    ? { number: entry.number, title: entry.title, excerpt: entry.body.replace(/\s+/g, " ").trim().slice(0, 200), image: lastingImage(entry.cover)?.url ?? null }
+    : null;
   return Response.json(
     {
       latest: latest?.toISOString() ?? null,
+      ...(announcement && { announcement }),
+      // When this answer was made (a browser may reuse it for a minute): the script's record of this visit, so an
+      // announcement published since counts as new on the next one, even if this page view was told the one before.
+      now: new Date().toISOString(),
       launcher,
       inbox: project?.supportInbox ?? false,
       hidden: settings?.hidden ?? [],

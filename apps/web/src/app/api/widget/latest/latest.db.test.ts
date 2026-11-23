@@ -1,8 +1,9 @@
-import { billingFile, configFile } from "@tuti/testkit";
+import { billingFile, configFile, startS3Fake } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { portalUrl } from "@/lib/hosts";
+import { lastingImage } from "@/server/media-urls";
 import { createProject, signUp } from "@/test/helpers";
 
 import { GET, OPTIONS } from "./route";
@@ -29,7 +30,7 @@ test("the widget learns when the latest announcement was: recent, announced and 
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["whatsNew"] } });
   expect((await (await ask(project.slug)).json()) as object).toMatchObject({ latest, hidden: ["whatsNew"] });
 
-  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false, hidden: [], colorScheme: "system" });
+  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null, inbox: false, hidden: [], colorScheme: "system", now: expect.any(String) });
   expect((await ask("../bad")).status).toBe(404);
   // Browsers that preflight (extensions, proxies adding headers) get a yes.
   expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
@@ -52,7 +53,7 @@ test("the widget learns how its launcher looks (name, colour with readable text,
   const project = await createProject(await signUp());
   const ask = async () =>
     (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
-  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false, hidden: [], colorScheme: "system" });
+  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false, hidden: [], colorScheme: "system", now: expect.any(String) });
 
   await prisma.project.update({
     where: { id: project.id },
@@ -74,6 +75,7 @@ test("the widget learns how its launcher looks (name, colour with readable text,
     inbox: true,
     hidden: [],
     colorScheme: "dark",
+    now: expect.any(String),
   });
   // Without a colour of its own, the launcher is the portal's accent (Settings → Branding), not Tuti's green.
   await prisma.project.update({ where: { id: project.id }, data: { widgetColor: null, brandColor: "#7c3aed" } });
@@ -150,4 +152,39 @@ test("an opaque origin (a browser extension's) is no site: the settings still co
   expect(response.status).toBe(200);
   expect(response.headers.get("vary")).toBe("Origin");
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt).toBeNull();
+});
+
+test("with the popup on, the widget learns the latest announcement itself: its number, title, a short plain excerpt and cover; off by default, and never for a private portal", async () => {
+  const s3 = await startS3Fake();
+  try {
+    for (const [name, value] of Object.entries(s3.env)) {
+      vi.stubEnv(name, value);
+    }
+    const owner = await signUp();
+    const project = await createProject(owner);
+    const cover = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 1200, height: 600 } });
+    await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Older", body: "Old news", publishedAt: days(3), announced: true } });
+    await prisma.changelogEntry.create({
+      data: { projectId: project.id, number: 2, title: "Dark mode", body: `Dark mode\n\nis here.  ${"x".repeat(300)}`, publishedAt: days(1), announced: true, coverId: cover.id },
+    });
+    const ask = async () => (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as Record<string, unknown>;
+
+    // Off by default: only when, as before, and when this answer was made (the script's record of the visit).
+    const before = Date.now();
+    const off = await ask();
+    expect(off.announcement).toBeUndefined();
+    expect(new Date(off.now as string).getTime()).toBeGreaterThanOrEqual(before - 1000);
+
+    await prisma.project.update({ where: { id: project.id }, data: { widgetPopup: true } });
+    const { announcement } = (await ask()) as { announcement: { number: number; title: string; excerpt: string; image: string | null } };
+    expect(announcement).toEqual({ number: 2, title: "Dark mode", excerpt: `Dark mode is here. ${"x".repeat(181)}`, image: lastingImage(cover)!.url });
+
+    // A private portal: nothing about its changelog, popup or not.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    const answer = await ask();
+    expect(answer).toMatchObject({ latest: null, private: true });
+    expect(answer.announcement).toBeUndefined();
+  } finally {
+    await s3.close();
+  }
 });

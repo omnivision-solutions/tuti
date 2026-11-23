@@ -73,6 +73,12 @@ import {
  * what it shows now (What's new marks what's unread, Home counts it). A private portal's latest announcement
  * comes from there too, for someone signed in who may read the portal; nobody else's dot lights for it.
  *
+ * With the popup on (Settings → Widget), a new announcement also shows as a small card above the launcher (its cover,
+ * title, two lines and Read more), when it's unseen by the dot's rule and was published since this browser last loaded a
+ * page with the widget (kept in localStorage; never on the first visit, so nobody's greeted by old news). Closing it
+ * keeps it away for that entry in this browser (the dot stays till What's new is opened); a reload is a new visit, so
+ * one left open doesn't come back either. Not with the launcher hidden, inline or sidebar, nor while the panel's open.
+ *
  * `own`: Tuti's own portal (lib/app-portal.ts), whose panel is its address on the app's domain (tuti.so/help/widget), where
  * the Tuti account's session is: at its portal host (help.tuti.so) nobody is ever signed in, as that host sends every page there.
  */
@@ -253,8 +259,120 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     var lit = value && lights();
     dot.style.display = lit ? "block" : "none";
     button.setAttribute("aria-label", label + (lit ? ", new updates" : ""));
+    showPopup();
     if (changed) for (var i = 0; i < listeners.length; i++) notify(listeners[i]);
   }
+
+  // The popup: the latest announcement as a card above the launcher (see the top). When this browser last loaded a page
+  // with the widget, before this one: null the first time. This page view is recorded once /api/widget/latest answers,
+  // as when that answer was made (\`now\`; a browser may reuse one for a minute, and it's the server's clock).
+  var visitKey = "tuti:visit:" + slug;
+  var popupKey = "tuti:popup:" + slug;
+  var lastVisit = storage(function (s) { return s.getItem(visitKey); });
+  function recordVisit(at) {
+    storage(function (s) { s.setItem(visitKey, at); });
+  }
+  // Its number, title, excerpt and cover (image), from /api/widget/latest with the popup on.
+  var announcement = null;
+  var popup = null;
+  var popupMore = null;
+  var popupExcerpt = null;
+  function popupWanted() {
+    return !!announcement && !hideLauncher && !sidebar && !opened && known && isUnseen() && hidden.indexOf("whatsNew") < 0 &&
+      !!lastVisit && latest > lastVisit && storage(function (s) { return s.getItem(popupKey); }) !== String(announcement.number);
+  }
+  // Closed or read: never again for this entry in this browser.
+  function dismissPopup() {
+    var number = String(announcement.number);
+    storage(function (s) { s.setItem(popupKey, number); });
+    showPopup();
+  }
+  function paintPopup() {
+    var dark = isDark();
+    css(popup, {
+      background: dark ? "oklch(0.248 0.014 160.1)" : "#fff", color: dark ? "oklch(0.966 0.006 153.8)" : "oklch(0.216 0.006 56)",
+      border: "1px solid " + (dark ? "oklch(0.375 0.02 163.3)" : "oklch(0.885 0.015 84.6)")
+    });
+    popupExcerpt.style.color = dark ? "oklch(0.82 0.015 160.9)" : "oklch(0.45 0.014 58.1)";
+    // The launcher's own colours, which read on each other.
+    css(popupMore, { background: button.style.background, color: button.style.color });
+  }
+  function buildPopup() {
+    popup = document.createElement("div");
+    popup.setAttribute("role", "region");
+    popup.setAttribute("aria-label", "What's new");
+    css(popup, {
+      position: "fixed", bottom: "88px", zIndex: "2147483000", width: "min(300px, calc(100vw - 40px))", boxSizing: "border-box",
+      borderRadius: "14px", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)", textAlign: "left",
+      font: "14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    });
+    var hasCover = typeof announcement.image === "string" && announcement.image;
+    if (hasCover) {
+      var cover = document.createElement("img");
+      cover.src = announcement.image;
+      cover.alt = "";
+      css(cover, { display: "block", width: "100%", height: "auto", aspectRatio: "2 / 1", objectFit: "cover", margin: "0" });
+      cover.onerror = function () { if (cover.parentNode) cover.parentNode.removeChild(cover); };
+      popup.appendChild(cover);
+    }
+    var text = document.createElement("div");
+    css(text, { padding: "12px 16px 16px" });
+    var title = document.createElement("div");
+    title.textContent = announcement.title;
+    css(title, { fontWeight: "600", fontSize: "15px", paddingRight: hasCover ? "0" : "28px", overflowWrap: "anywhere" });
+    popupExcerpt = document.createElement("div");
+    popupExcerpt.textContent = typeof announcement.excerpt === "string" ? announcement.excerpt : "";
+    css(popupExcerpt, { marginTop: "4px", display: "-webkit-box", webkitLineClamp: "2", webkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" });
+    popupMore = document.createElement("button");
+    popupMore.type = "button";
+    popupMore.textContent = "Read more";
+    css(popupMore, { display: "block", marginTop: "12px", padding: "6px 14px", border: "0", borderRadius: "999px", cursor: "pointer", font: "inherit", fontWeight: "600" });
+    popupMore.addEventListener("click", function () {
+      var number = announcement.number;
+      dismissPopup();
+      open({ entry: number }, button);
+    });
+    text.appendChild(title);
+    if (popupExcerpt.textContent) text.appendChild(popupExcerpt);
+    text.appendChild(popupMore);
+    popup.appendChild(text);
+    var x = document.createElement("button");
+    x.type = "button";
+    x.setAttribute("aria-label", "Close");
+    css(x, {
+      position: "absolute", top: "8px", right: "8px", width: "28px", height: "28px", padding: "0", border: "0", borderRadius: "999px",
+      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0, 0, 0, 0.55)", color: "#fff"
+    });
+    var xIcon = cross.cloneNode(true);
+    xIcon.setAttribute("width", "16");
+    xIcon.setAttribute("height", "16");
+    x.appendChild(xIcon);
+    x.addEventListener("click", function () {
+      dismissPopup();
+      button.focus();
+    });
+    popup.appendChild(x);
+    whenBody(function () { if (popup) document.body.appendChild(popup); });
+  }
+  // Shown while it's wanted (checked again whenever what it depends on changes); not wanted, it's taken out of the page.
+  function showPopup() {
+    var wanted = popupWanted();
+    if (wanted && !popup) {
+      buildPopup();
+      if (popup.animate && !(lessMotion && lessMotion.matches)) {
+        popup.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 200, easing: "ease-out" });
+      }
+    }
+    if (!popup) return;
+    if (!wanted) {
+      if (popup.parentNode) popup.parentNode.removeChild(popup);
+      popup = null;
+      return;
+    }
+    css(popup, { right: onLeft ? "auto" : "20px", left: onLeft ? "20px" : "auto" });
+    paintPopup();
+  }
+
 
   var panel = document.createElement("div");
   panel.id = "tuti-widget";
@@ -268,6 +386,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     var dark = isDark();
     if (!ownColor) css(button, { background: dark ? "oklch(0.759 0.168 154.6)" : "oklch(0.529 0.125 155)", color: dark ? "oklch(0.221 0.048 151.7)" : "#fff" });
     css(panel, { background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)" });
+    if (popup) paintPopup();
   }
   paint();
   // On a phone the panel covers the page and its button: until its page says it's up with its own Close
@@ -609,6 +728,9 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
+      recordVisit(data && typeof data.now === "string" ? data.now : new Date().toISOString());
+      var entry = data && data.announcement;
+      announcement = entry && typeof entry.number === "number" && typeof entry.title === "string" ? entry : null;
       inbox = !!(data && data.inbox === true);
       privatePortal = !!(data && data.private === true);
       hidden = data && Array.isArray(data.hidden) ? data.hidden : [];
@@ -682,6 +804,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     var query =
       ask !== null ? (frame ? null : TABS.home)
       : article ? "?tab=docs&article=" + encodeURIComponent(article)
+      : options && typeof options.entry === "number" && options.entry % 1 === 0 ? "?tab=whats-new&entry=" + options.entry
       : tabQuery(options && options.tab);
     // Asked by message, never by reloading (nothing in the panel is lost, an answer still coming), once it's listening:
     // the latest ask waits for that.
@@ -718,6 +841,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
       opened = true;
       panel.style.display = "block";
       if (!frameLoaded && moves()) holdUntilLoaded(); else animate(true);
+      showPopup();
     }
     // Held hidden, it isn't shown yet (release says so): its page mustn't see replies the visitor can't.
     if (!held) tellShown(true);
@@ -765,6 +889,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     // Back in reach before focus goes back to it.
     coverPage();
     button.setAttribute("aria-expanded", "false");
+    showPopup();
     if (!leaveFocus) (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
   }
 
