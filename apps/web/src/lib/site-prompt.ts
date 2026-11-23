@@ -14,7 +14,7 @@ export function sitePrompt({ url, tuti }: { url: string; tuti: string }): string
 1. Forward these to Tuti, keeping the path exactly as it is:
    - ${path} and ${path}/*  ->  ${origin}${path} and ${origin}${path}/*
    - ${ASSET_PATH}/*  ->  ${origin}${ASSET_PATH}/*  (the portal's scripts, styles and fonts)
-   Pass the method, query string, body and cookies through unchanged, with the Host header ${host}. Match ${path} and ${path}/ only, not ${path}* (that would also take a page like ${path}-news). These rules go before our own routes.
+   Pass the method, query string, body and cookies through unchanged, with the Host header ${host}. Match ${path} itself and everything under ${path}/, never ${path}* (that would also take a page like ${path}-news). These rules go before our own routes.
 2. Use what this site already runs on:
    - Next.js: rewrites in next.config under beforeFiles
    - Vercel: "rewrites" in vercel.json
