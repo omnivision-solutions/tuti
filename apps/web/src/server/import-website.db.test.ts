@@ -49,6 +49,7 @@ beforeEach(async () => {
   // The site is on this machine.
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   site.requests = [];
+  site.times = [];
   site.failing.clear();
   site.failingOnce.clear();
   site.retryAfter = null;
@@ -118,6 +119,21 @@ test("a help center's pages come across as drafts, in collections from its folde
   // robots.txt's closed folder, and pages outside the address, aren't read.
   expect(site.requests).not.toContain("/docs/private/secret");
   expect(site.requests).not.toContain("/blog/launch");
+});
+
+test("the site is asked at its pace all through: from one page of the import to the next too", async () => {
+  crawlPace.ms = 300;
+  try {
+    expect(await importSite()).toMatchObject({ state: "done" });
+  } finally {
+    crawlPace.ms = 0;
+  }
+  // The site's pages (their images are copied from wherever they're kept, apart).
+  const times = site.times.filter((_, i) => !site.requests[i]!.startsWith("/images/"));
+  expect(times.length).toBeGreaterThan(10);
+  // A request sent 300ms after the last may arrive sooner after it, on a busy machine; with no pace kept between pages,
+  // the next page's first came as soon as the last was saved.
+  expect(Math.min(...times.slice(1).map((at, i) => at - times[i]!))).toBeGreaterThanOrEqual(150);
 });
 
 test("old paths never take a redirect the portal has, nor one past its 200", async () => {

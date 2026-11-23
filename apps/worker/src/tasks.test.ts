@@ -1,7 +1,12 @@
+import { EventEmitter } from "node:events";
+
 import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { taskOptions } from "./tasks";
+import { stopSignal, taskFn, taskOptions } from "./tasks";
+
+const { importStep } = vi.hoisted(() => ({ importStep: vi.fn(async (_input: unknown, _log: unknown, stop: () => boolean) => ({ stopped: stop() })) }));
+vi.mock("@tuti/jobs", () => ({ importStep, codeChange: vi.fn(), handlers: {} }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -31,12 +36,36 @@ test("other jobs keep Hatchet's time limits, and their own key's one run at a ti
   expect(other).toMatchObject({ name: "post-created", retries: 3, concurrency: { expression: "input.postId", maxRuns: 1 } });
 });
 
-test("an import's run may take fifteen minutes (ten of pages, and five for its last), one at a time per import", () => {
-  expect(taskOptions("importStep")).toMatchObject({ name: "import-step", retries: 0, executionTimeout: "15m", concurrency: { expression: "input.importId", maxRuns: 1 } });
+test("an import's run may take fifteen minutes (ten of pages, and five for its last), one at a time per import and ten on the whole server, the rest waiting up to an hour", () => {
+  expect(taskOptions("importStep")).toMatchObject({
+    name: "import-step",
+    retries: 0,
+    executionTimeout: "15m",
+    scheduleTimeout: "1h",
+    concurrency: [
+      { expression: "input.importId", maxRuns: 1 },
+      { expression: "'import-step'", maxRuns: 10 },
+    ],
+  });
   // Indexing a large API reference embeds and converts thousands of operations: longer than Hatchet's 60 seconds.
   expect(taskOptions("apiReferenceChanged")).toMatchObject({ name: "api-reference-changed", executionTimeout: "10m" });
 });
 
 test("syncing API references from their URLs may take ten minutes", () => {
   expect(taskOptions("syncApiReferences")).toMatchObject({ name: "sync-api-references", executionTimeout: "10m", on: { cron: "41 * * * *" } });
+});
+
+test("an import's run is told to stop going from page to page once the worker is asked to stop, or Hatchet has given up on the run", async () => {
+  const signals = new EventEmitter();
+  const stopping = stopSignal(signals as never);
+  const run = (cancelled: boolean) => taskFn("importStep", 0, stopping)({ importId: "import-1" }, { retryCount: () => 0, cancelled });
+  expect(await run(false)).toEqual({ stopped: false });
+  expect(await run(true)).toEqual({ stopped: true });
+  // A deploy stops the worker with SIGTERM; Ctrl-C is SIGINT.
+  signals.emit("SIGTERM");
+  expect(await run(false)).toEqual({ stopped: true });
+  const interrupted = new EventEmitter();
+  const interrupt = stopSignal(interrupted as never);
+  interrupted.emit("SIGINT");
+  expect(interrupt()).toBe(true);
 });
