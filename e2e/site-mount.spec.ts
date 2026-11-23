@@ -92,6 +92,10 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByRole("button", { name: "Check setup" }).click();
   await expect(owner.getByText(`Your portal is at ${siteUrl()}/portal`)).toBeVisible();
   await expect(owner.getByText("Verified", { exact: true })).toBeVisible();
+  // Verified: the rules to keep, with no setup tabs.
+  await expect(owner.getByText(`Your portal answers at ${siteUrl()}/portal.`)).toBeVisible();
+  await expect(owner.getByRole("listitem", { name: "Forward /portal/*" })).toContainText(`${portalUrl(slug)}/portal/*`);
+  await expect(owner.getByRole("tab", { name: "Prompt for your agent" })).toHaveCount(0);
   // The project switcher's View portal says the portal's address, path and all.
   await owner.reload();
   await owner.getByRole("button", { name: /Acme/ }).first().click();
