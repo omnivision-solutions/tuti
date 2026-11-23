@@ -140,7 +140,7 @@ const conversationSelect = {
   snoozedUntil: true,
   createdAt: true,
   assignee: { select: { name: true, email: true } },
-  user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+  user: { select: { name: true, email: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true } } } },
 } satisfies Prisma.ConversationSelect;
 
 type ConversationRow = Prisma.ConversationGetPayload<{ select: typeof conversationSelect }>;
@@ -167,7 +167,8 @@ type MessageRow = Prisma.ConversationMessageGetPayload<{ select: typeof messageS
 export function conversationPerson(row: Pick<ConversationRow, "user" | "email" | "name" | "emailVerified">) {
   if (row.user) {
     const sso = row.user.ssoIdentity;
-    return { id: sso?.externalId ?? null, name: row.user.name, email: sso ? sso.email : row.user.email, verified: true };
+    // A deleted user's account address is a placeholder too.
+    return { id: sso?.externalId ?? null, name: row.user.name, email: sso ? sso.email : row.user.deletedAt ? null : row.user.email, verified: true };
   }
   // The name their email gave only once its address is verified: anyone can give any name, and the list would show it
   // alone (as with the company, conversationCompanies). Unverified, they're their address.

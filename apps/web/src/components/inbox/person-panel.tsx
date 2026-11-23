@@ -147,6 +147,7 @@ export async function PersonPanel({
             email: true,
             emailVerified: true,
             image: true,
+            deletedAt: true,
             ssoIdentity: { select: { externalId: true, email: true, properties: true, createdAt: true, updatedAt: true } },
           },
         })
@@ -195,7 +196,8 @@ export async function PersonPanel({
     : [[], 0, [], 0];
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const headings = propertyHeadings(formats, Object.keys(view?.properties ?? {}));
-  const shownEmail = sso ? sso.email : (user?.email ?? email);
+  // A deleted user (users.delete) has only a placeholder address.
+  const shownEmail = sso ? sso.email : user?.deletedAt ? null : (user?.email ?? email);
   const verified = sso ? true : user ? user.emailVerified : person.emailVerified;
   // They marked an email from the project as spam (SES's complaint): replies aren't emailed to that address any more.
   const blocked = shownEmail

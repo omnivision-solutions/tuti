@@ -124,7 +124,7 @@ const LISTED = {
   id: true,
   assignee: { select: { name: true, image: true } },
   userId: true,
-  user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
+  user: { select: { name: true, email: true, emailVerified: true, image: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
 } as const;
 
 /** A view's first `pages` pages of conversations, the latest message first. */

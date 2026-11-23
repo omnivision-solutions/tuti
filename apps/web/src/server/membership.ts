@@ -86,9 +86,11 @@ export async function listMyProjects(userId: string) {
 /**
  * Users who came in through a project's SSO belong to that project: their
  * identity is vouched for by its app only, so they can't act in other projects.
- * Nobody acts on a private portal they may not read (see portal-access.ts).
+ * Nobody acts on a private portal they may not read (see portal-access.ts), nor once their project's app
+ * deleted them (users.delete), with a widget token from before.
  */
 export async function canActIn(userId: string, projectId: string): Promise<boolean> {
-  const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { projectId: true } });
-  return (!identity || identity.projectId === projectId) && (await canReadPortal({ id: projectId }, userId));
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { deletedAt: true, ssoIdentity: { select: { projectId: true } } } });
+  const identity = user?.ssoIdentity;
+  return !!user && !user.deletedAt && (!identity || identity.projectId === projectId) && (await canReadPortal({ id: projectId }, userId));
 }

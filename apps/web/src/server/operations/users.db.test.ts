@@ -8,10 +8,13 @@ import type { z } from "zod";
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { canActIn } from "../membership";
+import { createConversation, getConversation } from "./conversations";
+import { createComment, createPost } from "./create";
 import { createGroup } from "./groups";
-import { updateProject } from "./more";
+import { setSubscription, setVote, updateProject } from "./more";
 import { call } from "./run";
-import { getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
+import { deleteUser, getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
 
 /** The project's users (users.*): what the team's app sends, and what reader groups match. */
 
@@ -379,4 +382,70 @@ test("a company's votes count each once, though two of its users are the same pe
     await prisma.vote.create({ data: { postId: post.id, userId: portal.id, projectId: project.id } });
   }
   expect((await call(listCompanies, team(), {})).companies).toEqual([{ name: "Acme", users: 2, votes: 3, total: null }]);
+});
+
+test("delete forgets a user: their details, votes, follows, sessions and changelog subscription go; posts, comments and conversations stay as by Deleted user", async () => {
+  const email = "e2e-ada@example.com";
+  await sync([{ id: "user-1", name: "Ada", email, avatar: "https://example.com/ada.png", properties: { plan: "pro" } }]);
+  const { userId: ada } = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
+  const author = { id: "user-1" };
+  // Only API keys write on someone's behalf.
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  await call(createPost, key, { board: "feature-requests", title: "Export to CSV", author });
+  const others = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, key, { number: others.number, voted: true, author });
+  await call(setSubscription, key, { number: others.number, subscribed: true, author });
+  await call(createComment, key, { number: others.number, body: "Me too, at night", author });
+  await call(createConversation, team(), { user: author, body: "The export button does nothing" });
+  // Started by email from their address, verified: theirs too.
+  await call(createConversation, team(), { email, body: "Writing by email" });
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { emailVerified: true } });
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: ada, expiresAt: new Date(Date.now() + 60_000) } });
+  expect(await canActIn(ada, project.id)).toBe(true);
+
+  expect(await call(deleteUser, team(), { user: "user-1" })).toEqual({ deleted: "user-1" });
+
+  await expect(get("user-1")).rejects.toMatchObject({ status: 404 });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: ada } });
+  expect(user).toMatchObject({ name: "Deleted user", image: null, emailVerified: false, deletedAt: expect.any(Date) });
+  expect(user.email).not.toContain("ada");
+  // Their content stays, theirs; their votes go, and the counts follow.
+  const posts = await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { authorId: true, voteCount: true } });
+  expect(posts).toEqual([
+    { authorId: ada, voteCount: 0 },
+    { authorId: owner.id, voteCount: 1 },
+  ]);
+  expect(await prisma.comment.findMany({ where: { projectId: project.id }, select: { authorId: true, body: true } })).toEqual([{ authorId: ada, body: "Me too, at night" }]);
+  for (const count of [
+    prisma.vote.count({ where: { userId: ada } }),
+    prisma.postSubscription.count({ where: { userId: ada } }),
+    prisma.session.count({ where: { userId: ada } }),
+    prisma.changelogSubscriber.count({ where: { projectId: project.id } }),
+  ]) {
+    expect(await count).toBe(0);
+  }
+  // Their conversations stay for the team, without their address.
+  for (const number of [1, 2]) {
+    expect((await call(getConversation, team(), { number })).user).toEqual({ id: null, name: "Deleted user", email: null, verified: true });
+  }
+  expect(await prisma.conversation.findMany({ where: { projectId: project.id }, select: { userId: true, email: true } })).toEqual([
+    { userId: ada, email: null },
+    { userId: ada, email: null },
+  ]);
+  // A widget token from before acts no more.
+  expect(await canActIn(ada, project.id)).toBe(false);
+
+  // The same id later is someone new, with nothing of theirs.
+  expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0 });
+  expect(await get("user-1")).toMatchObject({ name: "Anonymous", email: null, properties: {} });
+  const again = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
+  expect(again.userId).not.toBe(ada);
+});
+
+test("delete is 404 for an id there's no user with, here", async () => {
+  const other = await createProject(owner);
+  await sync([{ id: "theirs" }], other.id);
+  await expect(call(deleteUser, team(), { user: "theirs" })).rejects.toMatchObject({ status: 404, message: "There's no user “theirs”" });
+  expect(await call(getUser, team(other.id), { user: "theirs" })).toMatchObject({ id: "theirs" });
 });

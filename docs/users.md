@@ -47,3 +47,21 @@ the users with their address, once it's verified.
 `GET /api/v1/users` lists them by name (`q` finds them by name, email or id; `limit` and `cursor`
 page through them), and `GET /api/v1/users/{id}` gets one, each with their properties and the
 `groups` (keys) they're in now.
+
+## Deleting users
+
+When someone deletes their account in your app, or asks to be forgotten, `DELETE /api/v1/users/{id}`
+with a read and write key (`users.delete`) removes them from Tuti too:
+
+- Their name, email, avatar and properties go, as do their votes (vote counts follow), the posts
+  they follow, their changelog reactions, email preferences and this project's changelog email
+  subscription for their address.
+- They're signed out at once: portal sessions end and widget tokens stop working.
+- What they wrote stays for your team, shown as by **Deleted user**: their posts, comments and
+  support conversations (with those started by email from their address, verified), with their
+  email address taken off them, so replies are no longer emailed to them.
+- The same id signing in or synced again later is a new, empty user.
+- An id there's no user with is `404`.
+
+An account someone made on your portal another way (an email link, a password) is theirs, not
+your app's, and isn't touched.

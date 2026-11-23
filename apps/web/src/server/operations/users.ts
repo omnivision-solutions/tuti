@@ -323,6 +323,82 @@ export const syncUsersOperation = defineOperation({
   },
 });
 
+export const deleteUser = defineOperation({
+  name: "users.delete",
+  summary:
+    "Delete one of the project's users, by their id in your app (for when they delete their account there, or ask to be forgotten). Their name, email, avatar and properties go, as do their votes, follows, reactions, email preferences, sessions and changelog subscription; their posts, comments and support conversations stay for the team, shown as by \"Deleted user\", with their email address taken off them. Signed-in sessions end at once. The same id signing in or synced later is a new, empty user. 404 for an id there's no user with",
+  method: "DELETE",
+  path: "/users/{user}",
+  scope: "write",
+  access: "admin",
+  input: z.object({ user: userId }),
+  run: async ({ projectId }, input) => {
+    await prisma.$transaction(
+      async (tx) => {
+        // Locked, as syncUsers locks it: a sign-in or sync at once waits, then makes them anew.
+        const [identity] = await tx.$queryRaw<{ id: string; userId: string; email: string | null }[]>`
+          SELECT id, "userId", email FROM sso_identity WHERE "projectId" = ${projectId} AND "externalId" = ${input.user} FOR UPDATE`;
+        if (!identity) {
+          throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
+        }
+        const { userId, email } = identity;
+        // The posts they voted on, locked first as votes.set and merges lock them (a merge moving their votes finishes,
+        // and the post it moved them to is found on the next pass), then counted again without their votes.
+        const voted: string[] = [];
+        for (;;) {
+          const found = (await tx.vote.findMany({ where: { userId, postId: { notIn: voted } }, orderBy: { postId: "asc" }, select: { postId: true } })).map(
+            (vote) => vote.postId,
+          );
+          if (found.length === 0) {
+            break;
+          }
+          await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+          voted.push(...found);
+        }
+        await tx.vote.deleteMany({ where: { userId } });
+        if (voted.length > 0) {
+          await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${voted}::text[])`;
+        }
+        // Their conversations, and those started by email from their address, verified (as their page counts them):
+        // kept for the team, as the deleted user's, without the address.
+        const conversations = (
+          await tx.conversation.findMany({
+            where: { projectId, OR: [{ userId }, ...(email ? [{ userId: null, emailVerified: true, email }] : [])] },
+            select: { id: true },
+          })
+        ).map((conversation) => conversation.id);
+        await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, emailVerified: false } });
+        if (email) {
+          await tx.conversationMessage.updateMany({
+            where: { conversationId: { in: conversations }, fromAddress: { equals: email, mode: "insensitive" } },
+            data: { fromAddress: null },
+          });
+          await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations }, sender: email }, data: { sender: "" } });
+          await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
+        }
+        await tx.postSubscription.deleteMany({ where: { userId } });
+        await tx.changelogReaction.deleteMany({ where: { userId } });
+        await tx.changelogSeen.deleteMany({ where: { userId } });
+        await tx.emailPreference.deleteMany({ where: { userId } });
+        await tx.emailOptOut.deleteMany({ where: { userId } });
+        await tx.widgetPresence.deleteMany({ where: { projectId, who: userId } });
+        await tx.portalHandoff.deleteMany({ where: { userId } });
+        // Signed out everywhere: the portal's sessions end, and the widget's tokens stop working (canActIn).
+        await tx.session.deleteMany({ where: { userId } });
+        await tx.account.deleteMany({ where: { userId } });
+        await tx.ssoIdentity.delete({ where: { id: identity.id } });
+        // Its placeholder address freed, so the same id is a new user later.
+        await tx.user.update({
+          where: { id: userId },
+          data: { name: "Deleted user", image: null, imageId: null, email: `deleted-${userId}@users.tuti.invalid`, emailVerified: false, deletedAt: new Date() },
+        });
+      },
+      { timeout: 30_000 },
+    );
+    return { deleted: input.user };
+  },
+});
+
 export const COMPANY_SORTS = ["users", "votes", "total"] as const;
 
 export const listCompanies = defineOperation({

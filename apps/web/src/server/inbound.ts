@@ -205,7 +205,7 @@ async function conversationAddresses(conversationId: string) {
       name: true,
       emailVerified: true,
       visitorHash: true,
-      user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+      user: { select: { name: true, email: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true } } } },
       messages: { where: { fromAddress: { not: null } }, select: { fromAddress: true }, distinct: ["fromAddress"] },
     },
   });

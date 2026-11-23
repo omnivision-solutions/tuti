@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, replyRecipient } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -9,8 +9,9 @@ import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
 import { type InboxChange, listening, notifyInboxNow, subscribeInbox } from "./live";
-import { replyToConversation, updateConversation } from "./operations/conversations";
+import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
+import { deleteUser } from "./operations/users";
 import { widgetConversation, widgetStartConversation } from "./widget-inbox";
 
 /** Replies by email (packages/jobs send-conversation-replies): the team's replies the user hasn't seen a minute on. */
@@ -322,4 +323,18 @@ test("the widget says a reply will be emailed exactly when this job emails it (b
     results.push([name, "emailedTo" in promised && promised.emailedTo === email, emailsTo(email).length > 0]);
   }
   expect(results).toEqual(cases.map(([name], i) => [name, i === 0, i === 0]));
+});
+
+test("someone the project's app deleted (users.delete) is emailed no replies: their address is gone", async () => {
+  const { project, team } = await setup();
+  const sam = `e2e-sam-${project.slug}@example.com`;
+  await call(createConversation, team, { user: { id: "user-42", name: "Sam", email: sam }, body: "The export does nothing" });
+  await call(deleteUser, team, { user: "user-42" });
+  await call(replyToConversation, team, { number: 2, body: "Fixed now." });
+  await aMinuteOn(project.id);
+  await run();
+  // Not to their old address, nor to the account's placeholder.
+  const { id } = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 2 } } });
+  expect(await replyRecipient(id)).toEqual({ error: "They have no email address" });
+  expect(mailbox.emails.filter((email) => email.to.includes(sam) || email.to.includes(".invalid"))).toEqual([]);
 });

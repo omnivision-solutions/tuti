@@ -133,7 +133,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         userId: true,
         visitorHash: true,
         createdAt: true,
-        user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+        user: { select: { name: true, email: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true } } } },
         posts: { orderBy: { createdAt: "asc" }, select: { post: { select: { number: true, title: true, status: true } } } },
         _count: { select: { messages: true } },
         // The latest ones, newest first (put in order below).
