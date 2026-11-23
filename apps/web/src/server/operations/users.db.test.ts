@@ -419,7 +419,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   // From their address, and one their app has since changed.
   for (const sender of [email, "e2e-ada-before@example.com"]) {
     await prisma.inboundEmail.create({
-      data: { projectId: project.id, recipient: "support@example.com", sender, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
     });
   }
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
@@ -525,7 +525,7 @@ test("delete takes their address off what they wrote in someone else's conversat
       data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress, createdAt: new Date(Date.now() + i * 1000) },
     });
     await prisma.inboundEmail.create({
-      data: { projectId: project.id, recipient: "support@example.com", sender: fromAddress.toLowerCase(), dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: bobs.id },
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender: fromAddress.toLowerCase(), dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: bobs.id },
     });
   }
   await call(deleteUser, team(), { user: "user-2" });
@@ -600,7 +600,7 @@ test("delete leaves what goes by their address alone while it's someone else's t
   const user6 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-6" } } })).userId;
   const mailbox = await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Invoice", origin: "EMAIL", userId: user6 } });
   await prisma.inboundEmail.create({
-    data: { projectId: project.id, recipient: "support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: mailbox.id },
+    data: { projectId: project.id, recipient: "e2e-support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: mailbox.id },
   });
   const kept = async () => [
     await prisma.conversationMessage.count({ where: { conversationId: bobs.id, fromAddress: email } }),
