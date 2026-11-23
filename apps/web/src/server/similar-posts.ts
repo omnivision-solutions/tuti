@@ -42,7 +42,8 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
   }
 
   // Only posts they may see (post-visibility.ts): the widget's person, or whoever's reading the portal.
-  const viewer = widgetToken ? await postViewer(project.id, await widgetTokenUser(project.id, String(widgetToken))) : await currentPostViewer(project.id);
+  const tokenUser = widgetToken ? await widgetTokenUser(project.id, String(widgetToken)) : null;
+  const viewer = widgetToken ? await postViewer(project.id, tokenUser) : await currentPostViewer(project.id);
   const [byWords, byMeaning] = await Promise.all([
     trigramMatches(project.id, query.data, viewer),
     query.data.length >= MIN_EMBED_LENGTH && embeddingsEnabled() ? embeddingMatches(project.id, query.data, viewer) : [],
@@ -53,7 +54,7 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
     ...byMeaning.filter((p) => !both.has(p.id)),
     ...byWords.filter((p) => !both.has(p.id)),
   ];
-  const userId = widgetToken ? await widgetTokenUser(project.id, String(widgetToken)) : (await sessionIn(project.id))?.user.id;
+  const userId = widgetToken ? tokenUser : (await sessionIn(project.id))?.user.id;
   // Every candidate is judged (up to twice LIMIT, one request), so a duplicate found only by its words isn't cut first.
   // Only for someone who can post here: the check is charged to the project, and anyone can type on a portal.
   const judged = userId && (await canActIn(userId, project.id)) ? await duplicatesOnly(project.id, query.data, ranked) : ranked;

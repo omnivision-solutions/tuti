@@ -63,5 +63,9 @@ with a read and write key (`users.delete`) removes them from Tuti too:
 - The same id signing in or synced again later is a new, empty user.
 - An id there's no user with is `404`.
 
+Tuti knows only the address you gave them last. An email they sent from an earlier one (before a
+sync changed it) is in the thread as from someone else, and keeps that address; so does a
+conversation they started by email from it.
+
 An account someone made on your portal another way (an email link, a password) is theirs, not
 your app's, and isn't touched.
