@@ -658,6 +658,11 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await expect(tada).toHaveAttribute("aria-pressed", "true");
   await expect(tada).toHaveAccessibleName("React with 🎉 (1)");
   await checkpoint(laptop, "widget-entry-reacted");
+  // The page switches to someone else: until their token is traded (held here), nobody's reactions, and none to give.
+  await laptop.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
+  await laptop.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
+  await expect(tada).toHaveAttribute("aria-pressed", "false");
+  await expect(tada).toBeDisabled();
   await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
   await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "true");
   // The page signs them out: the count stays, but it isn't theirs any more, nor anyone's to give.
@@ -1170,6 +1175,16 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await expect(widget.locator("[data-seen]")).toHaveAttribute("data-seen", /^\d{4}-/);
   await expect(unread).toHaveCount(1);
   await checkpoint(ada, "widget-whats-new-portal-session");
+  // She reacts as herself, and after a reload it's still hers.
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await widget.getByRole("button", { name: "React with ❤️" }).click();
+  await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toHaveAttribute("aria-pressed", "true");
+  await ada.reload();
+  await ada.getByRole("button", { name: /^Feedback/ }).click();
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toHaveAttribute("aria-pressed", "true");
+  await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toBeEnabled();
   // A link to an update that isn't there (taken down, or never was): it says so, with the way back to the list.
   await ada.goto(`${portalUrl(slug)}/widget?tab=whats-new&entry=999`);
   await expect(ada.getByText("This update isn't here")).toBeVisible();

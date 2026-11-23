@@ -25,8 +25,9 @@ export function WidgetReactions({
   reacted: Reaction[];
   portalSignedIn: boolean;
 }) {
-  const { signedIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
-  const token = signedIn?.token ?? null;
+  const { signedIn, pending, signingOut } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  // While the page switches people or signs them out, nobody: never the last person's token.
+  const token = pending || signingOut ? null : (signedIn?.token ?? null);
   const [total, setTotal] = useState(counts);
   // Whose reactions these are: anyone else's (signed out, or the page switched people) are the ones the page
   // rendered (none on a customer's site) until theirs are read, never the last person's.
