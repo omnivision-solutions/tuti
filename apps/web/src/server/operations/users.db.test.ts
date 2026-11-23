@@ -11,10 +11,13 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { widgetToken } from "@/lib/widget-session";
 
 import { canActIn } from "../membership";
+import { widgetIdeaNews } from "../widget";
 import { widgetConversations } from "../widget-inbox";
+import { widgetTokenUser } from "../widget-person";
 import { createConversation, getConversation } from "./conversations";
 import { createComment, createPost } from "./create";
 import { createGroup } from "./groups";
+import { updatePost } from "./manage";
 import { setSubscription, setVote, updateProject } from "./more";
 import { call } from "./run";
 import { deleteUser, getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
@@ -409,6 +412,10 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   const token = widgetToken(project.id, ada);
   expect(await widgetConversations(project.slug, { token })).toMatchObject({ conversations: [{ number: 1 }] });
+  await call(updatePost, team(), { number: 1, status: "planned" });
+  expect(await widgetIdeaNews(project.slug, token)).toMatchObject([{ title: "Export to CSV" }]);
+  // What the widget's live stream asks of the token, on every check.
+  expect(await widgetTokenUser(project.id, token)).toBe(ada);
 
   expect(await call(deleteUser, team(), { user: "user-1" })).toEqual({ deleted: "user-1" });
 
@@ -442,6 +449,8 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   // A widget token from before acts no more, nor reads their conversations.
   expect(await canActIn(ada, project.id)).toBe(false);
   expect(await widgetConversations(project.slug, { token })).toEqual({ error: expect.any(String) });
+  expect(await widgetIdeaNews(project.slug, token)).toEqual([]);
+  expect(await widgetTokenUser(project.id, token)).toBeNull();
 
   // The same id later is someone new, with nothing of theirs.
   expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0 });
