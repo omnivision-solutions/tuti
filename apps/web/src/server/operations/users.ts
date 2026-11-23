@@ -7,6 +7,7 @@ import { readerGroup } from "@/lib/reader-groups";
 import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
 
 import { inGroupSql } from "../group-conditions-sql";
+import { withLockRetries } from "../lock-retries";
 import { syncUsers } from "../project-users";
 import { defineOperation, OperationError } from "./define";
 
@@ -335,71 +336,75 @@ export const deleteUser = defineOperation({
   input: z.object({ user: userId.describe("Their id in your app; signed in or synced again later, the same id is a new, empty user") }),
   output: z.object({ deleted: z.string().describe("The deleted user's id in your app").meta({ examples: ["user-42"] }) }).describe("The user is gone"),
   run: async ({ projectId }, input) => {
-    await prisma.$transaction(
-      async (tx) => {
-        // Locked, as syncUsers locks it: a sign-in or sync at once waits, then makes them anew.
-        const [identity] = await tx.$queryRaw<{ id: string; userId: string; email: string | null }[]>`
-          SELECT id, "userId", email FROM sso_identity WHERE "projectId" = ${projectId} AND "externalId" = ${input.user} FOR UPDATE`;
-        if (!identity) {
-          throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
-        }
-        const { userId, email } = identity;
-        // The posts they voted on, locked first as votes.set and merges lock them (a merge moving their votes finishes,
-        // and the post it moved them to is found on the next pass), then counted again without their votes.
-        const voted: string[] = [];
-        for (;;) {
-          const found = (await tx.vote.findMany({ where: { userId, postId: { notIn: voted } }, orderBy: { postId: "asc" }, select: { postId: true } })).map(
-            (vote) => vote.postId,
-          );
-          if (found.length === 0) {
-            break;
+    // Posts locked in another order by a vote at once can deadlock it: Postgres aborts one, and an aborted delete runs again.
+    await withLockRetries(() =>
+      prisma.$transaction(
+        async (tx) => {
+          // Locked, as syncUsers locks it: a sign-in or sync at once waits, then makes them anew.
+          const [identity] = await tx.$queryRaw<{ id: string; userId: string; email: string | null }[]>`
+            SELECT id, "userId", email FROM sso_identity WHERE "projectId" = ${projectId} AND "externalId" = ${input.user} FOR UPDATE`;
+          if (!identity) {
+            throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
           }
-          await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
-          voted.push(...found);
-        }
-        // Every post the delete touched is counted again, with one a vote landed on since (votes.set never waits on this).
-        const removed = await tx.$queryRaw<{ postId: string }[]>`DELETE FROM vote WHERE "userId" = ${userId} RETURNING "postId"`;
-        const counted = [...new Set([...voted, ...removed.map((vote) => vote.postId)])];
-        if (counted.length > 0) {
-          // Locked first, in a statement of its own: a recount waiting on a vote's post lock would count from before it.
-          await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${counted}::text[]) ORDER BY id FOR NO KEY UPDATE`;
-          await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${counted}::text[])`;
-        }
-        // Their conversations, and those started by email from their address, verified (as their page counts them):
-        // kept for the team, as the deleted user's, without the address.
-        const conversations = (
-          await tx.conversation.findMany({
-            where: { projectId, OR: [{ userId }, ...(email ? [{ userId: null, emailVerified: true, email }] : [])] },
-            select: { id: true },
-          })
-        ).map((conversation) => conversation.id);
-        await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
-        if (email) {
-          // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
-          await tx.$executeRaw`UPDATE conversation_message SET "fromAddress" = NULL
-            WHERE "conversationId" = ANY(${conversations}::text[]) AND lower("fromAddress") = ${email}`;
-          await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations }, sender: email }, data: { sender: "" } });
-          await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
-        }
-        await tx.postSubscription.deleteMany({ where: { userId } });
-        await tx.changelogReaction.deleteMany({ where: { userId } });
-        await tx.commentLike.deleteMany({ where: { userId } });
-        await tx.changelogSeen.deleteMany({ where: { userId } });
-        await tx.emailPreference.deleteMany({ where: { userId } });
-        await tx.emailOptOut.deleteMany({ where: { userId } });
-        await tx.widgetPresence.deleteMany({ where: { projectId, who: userId } });
-        await tx.portalHandoff.deleteMany({ where: { userId } });
-        // Signed out everywhere: the portal's sessions end, and the widget's tokens stop working (canActIn).
-        await tx.session.deleteMany({ where: { userId } });
-        await tx.account.deleteMany({ where: { userId } });
-        await tx.ssoIdentity.delete({ where: { id: identity.id } });
-        // Its placeholder address freed, so the same id is a new user later.
-        await tx.user.update({
-          where: { id: userId },
-          data: { name: "Deleted user", image: null, imageId: null, email: `deleted-${userId}@users.tuti.invalid`, emailVerified: false, deletedAt: new Date() },
-        });
-      },
-      { timeout: 30_000 },
+          const { userId, email } = identity;
+          // The posts they voted on, locked first as votes.set and merges lock them (a merge moving their votes finishes,
+          // and the post it moved them to is found on the next pass), then counted again without their votes.
+          const voted: string[] = [];
+          for (;;) {
+            const found = (await tx.vote.findMany({ where: { userId, postId: { notIn: voted } }, orderBy: { postId: "asc" }, select: { postId: true } })).map(
+              (vote) => vote.postId,
+            );
+            if (found.length === 0) {
+              break;
+            }
+            await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+            voted.push(...found);
+          }
+          // Every post the delete touched is counted again, with one a vote landed on since (votes.set never waits on this).
+          const removed = await tx.$queryRaw<{ postId: string }[]>`DELETE FROM vote WHERE "userId" = ${userId} RETURNING "postId"`;
+          const counted = [...new Set([...voted, ...removed.map((vote) => vote.postId)])];
+          if (counted.length > 0) {
+            // Locked first, in a statement of its own: a recount waiting on a vote's post lock would count from before it.
+            await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${counted}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+            await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${counted}::text[])`;
+          }
+          // Their conversations, and those started by email from their address, verified (as their page counts them):
+          // kept for the team, as the deleted user's, without the address.
+          const conversations = (
+            await tx.conversation.findMany({
+              where: { projectId, OR: [{ userId }, ...(email ? [{ userId: null, emailVerified: true, email }] : [])] },
+              select: { id: true },
+            })
+          ).map((conversation) => conversation.id);
+          await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
+          // Whichever address it came from (one users.sync has changed since too): nothing reads it once the email is in.
+          await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
+          if (email) {
+            // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
+            await tx.$executeRaw`UPDATE conversation_message SET "fromAddress" = NULL
+              WHERE "conversationId" = ANY(${conversations}::text[]) AND lower("fromAddress") = ${email}`;
+            await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
+          }
+          await tx.postSubscription.deleteMany({ where: { userId } });
+          await tx.changelogReaction.deleteMany({ where: { userId } });
+          await tx.commentLike.deleteMany({ where: { userId } });
+          await tx.changelogSeen.deleteMany({ where: { userId } });
+          await tx.emailPreference.deleteMany({ where: { userId } });
+          await tx.emailOptOut.deleteMany({ where: { userId } });
+          await tx.widgetPresence.deleteMany({ where: { projectId, who: userId } });
+          await tx.portalHandoff.deleteMany({ where: { userId } });
+          // Signed out everywhere: the portal's sessions end, and the widget's tokens stop working (canActIn).
+          await tx.session.deleteMany({ where: { userId } });
+          await tx.account.deleteMany({ where: { userId } });
+          await tx.ssoIdentity.delete({ where: { id: identity.id } });
+          // Its placeholder address freed, so the same id is a new user later.
+          await tx.user.update({
+            where: { id: userId },
+            data: { name: "Deleted user", image: null, imageId: null, email: `deleted-${userId}@users.tuti.invalid`, emailVerified: false, deletedAt: new Date() },
+          });
+        },
+        { timeout: 30_000 },
+      ),
     );
     return { deleted: input.user };
   },

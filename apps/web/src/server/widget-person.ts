@@ -2,7 +2,7 @@ import { type Prisma, prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
 
 import { newVisitor, visitorHash } from "@/lib/visitor-session";
-import { widgetUser } from "@/lib/widget-session";
+import { widgetTokenUser } from "@/lib/widget-session";
 
 import type { InboxChange } from "./live";
 import { canActIn } from "./membership";
@@ -87,15 +87,6 @@ const visitor = (projectId: string, hash: string, shown: Prisma.ConversationWher
   visitorHash: hash,
   email: null,
 });
-
-/**
- * The person a widget token is for (widgetUser), while their project's app hasn't deleted them (users.delete): a
- * token outlives the delete by up to 12 hours.
- */
-export async function widgetTokenUser(projectId: string, token: string): Promise<string | null> {
-  const userId = widgetUser(projectId, token);
-  return userId && (await prisma.user.count({ where: { id: userId, deletedAt: null } })) > 0 ? userId : null;
-}
 
 /** Whoever the panel says is here, signed in first; null if nobody is (or the inbox is off). */
 export async function widgetPerson(projectSlug: string, auth: WidgetAuth): Promise<WidgetPerson | null> {

@@ -7,7 +7,7 @@ import { linksFrom } from "@/lib/forms";
 import { WIDGET_PARTS } from "@/lib/portal-look";
 import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import type { WidgetIcon } from "@/lib/widget-icons";
-import { widgetToken, widgetUser } from "@/lib/widget-session";
+import { widgetToken, widgetTokenUser, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
 
 import type { FormState } from "./form-state";
@@ -22,7 +22,6 @@ import { postViewer } from "./post-visibility";
 import { sessionIn } from "./session";
 import { updateWidgetSettings } from "./operations/widget";
 import { type IdeaNews, ideaNews } from "./widget-home";
-import { widgetTokenUser } from "./widget-person";
 
 /**
  * The widget's actions: on customers' sites (see lib/widget-session.ts for its

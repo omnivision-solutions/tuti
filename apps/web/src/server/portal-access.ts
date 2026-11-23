@@ -13,7 +13,7 @@ import { storedProperties } from "@tuti/shared/user-properties";
 import type { Actor } from "./operations/define";
 import type { PostViewer } from "./post-visibility";
 import { previewUser } from "@/lib/preview-session";
-import { widgetUser } from "@/lib/widget-session";
+import { widgetTokenUser } from "@/lib/widget-session";
 
 import { onTeam, sessionFrom, sessionIn } from "./session";
 
@@ -130,7 +130,7 @@ const reader = cache(async (projectId: string): Promise<{ userId: string | null;
     return { userId: session.user.id };
   }
   const token = jar.get(WIDGET_READER_COOKIE)?.value;
-  const widget = token ? widgetUser(projectId, token) : null;
+  const widget = token ? await widgetTokenUser(projectId, token) : null;
   return widget ? { userId: widget, session: null } : { userId: session?.user.id ?? null };
 });
 

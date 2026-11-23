@@ -8,12 +8,12 @@ import type { z } from "zod";
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken, widgetTokenUser } from "@/lib/widget-session";
 
 import { canActIn } from "../membership";
+import { findSimilarPosts } from "../similar-posts";
 import { widgetIdeaNews } from "../widget";
 import { widgetConversations } from "../widget-inbox";
-import { widgetTokenUser } from "../widget-person";
 import { createConversation, getConversation } from "./conversations";
 import { createComment, createPost } from "./create";
 import { createGroup } from "./groups";
@@ -416,9 +416,12 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
       data: { projectId: project.id, conversationId: conversation2.id, author: "USER", channel: "EMAIL", body: `From ${fromAddress}`, fromAddress, createdAt: new Date(Date.now() + i * 1000) },
     });
   }
-  await prisma.inboundEmail.create({
-    data: { projectId: project.id, recipient: "support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
-  });
+  // From their address, and one their app has since changed.
+  for (const sender of [email, "e2e-ada-before@example.com"]) {
+    await prisma.inboundEmail.create({
+      data: { projectId: project.id, recipient: "support@example.com", sender, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
+    });
+  }
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
   const entry = await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
   await prisma.changelogReaction.create({ data: { entryId: entry.id, userId: ada, kind: "TADA" } });
@@ -438,6 +441,11 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   expect(await widgetIdeaNews(project.slug, token)).toMatchObject([{ title: "Export to CSV" }]);
   // What the widget's live stream asks of the token, on every check.
   expect(await widgetTokenUser(project.id, token)).toBe(ada);
+  // Their post only they see, found as they type in the widget.
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await prisma.post.updateMany({ where: { projectId: project.id, number: 1 }, data: { visibility: "PRIVATE" } });
+  const similar = async () => (await findSimilarPosts(project.slug, "Export to CSV", token)).map((post) => post.title);
+  expect(await similar()).toEqual(["Export to CSV"]);
 
   expect(await call(deleteUser, team(), { user: "user-1" })).toEqual({ deleted: "user-1" });
 
@@ -465,7 +473,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     prisma.widgetPresence.count({ where: { who: ada } }),
     prisma.portalHandoff.count({ where: { userId: ada } }),
     prisma.account.count({ where: { userId: ada } }),
-    prisma.inboundEmail.count({ where: { projectId: project.id, sender: email } }),
+    prisma.inboundEmail.count({ where: { conversationId: conversation2.id, sender: { not: "" } } }),
   ]) {
     expect(await count).toBe(0);
   }
@@ -486,6 +494,8 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   expect(await widgetConversations(project.slug, { token })).toEqual({ error: expect.any(String) });
   expect(await widgetIdeaNews(project.slug, token)).toEqual([]);
   expect(await widgetTokenUser(project.id, token)).toBeNull();
+  expect(await similar()).toEqual([]);
+  vi.unstubAllEnvs();
 
   // The same id later is someone new, with nothing of theirs.
   expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0 });

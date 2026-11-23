@@ -1,9 +1,10 @@
 import { prisma } from "@tuti/db";
 
 import { visitorHash } from "@/lib/visitor-session";
+import { widgetTokenUser } from "@/lib/widget-session";
 import { inboxStream } from "@/server/live";
 import { getSession } from "@/server/session";
-import { hears, widgetPerson, widgetTokenUser } from "@/server/widget-person";
+import { hears, widgetPerson } from "@/server/widget-person";
 
 /**
  * The widget's live updates for someone's Messages (`?project=<slug>`; server/live.ts): only their own
