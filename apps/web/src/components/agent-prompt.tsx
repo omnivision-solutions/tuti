@@ -12,7 +12,7 @@ import { CopyButton } from "@/components/copy-button";
 export function AgentPrompt({ prompt, steps }: { prompt: string; steps: ReactNode[] }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex flex-wrap items-start gap-3 rounded-lg border p-3">
+    <div className="flex flex-wrap items-start gap-3 rounded-xl border p-3">
       <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted">
         <SparklesIcon aria-hidden className="size-4" />
       </span>
