@@ -317,3 +317,27 @@ test("on a phone the Feedback overview's board cards fit the screen, however lon
     await checkpoint(visitor, `portal-feedback-overview-long-title-${width}`);
   }
 });
+
+test("a long idea scrolls in the Share an idea dialog, down to its Submit post, on a short screen", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.setViewportSize({ width: 1280, height: 600 });
+  await ada.goto("/feedback/feature-requests");
+  await ada.getByRole("button", { name: "New post" }).click();
+  const dialog = ada.getByRole("dialog", { name: "Share an idea" });
+  await dialog.getByLabel("Title").fill("Dynamic routing");
+  await dialog.getByRole("textbox", { name: "Details" }).click();
+  for (let line = 1; line <= 30; line++) await ada.keyboard.press("Enter");
+  await ada.keyboard.type("The last line");
+  // The dialog stays on the screen, and scrolls to what's below it.
+  const box = (await dialog.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(600);
+  await dialog.getByRole("button", { name: "Submit post" }).scrollIntoViewIfNeeded();
+  await expect(dialog.getByRole("button", { name: "Submit post" })).toBeInViewport();
+  await checkpoint(ada, "portal-share-idea-long");
+  await dialog.getByRole("button", { name: "Submit post" }).click();
+  await expect(ada.getByRole("link", { name: "Dynamic routing" })).toBeVisible({ timeout: 15_000 });
+});

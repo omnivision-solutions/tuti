@@ -39,8 +39,9 @@ export function NewIdea({
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
         {/* Kept while closed: a half-written idea is still there when it opens again. Near the top, not centred by a transform:
-            a transform would be the editor's floating toolbar's frame (it's fixed), putting it out of place. */}
-        <DialogContent keepMounted className="top-[8vh] right-0 left-0 mx-auto translate-none gap-3 p-5 sm:max-w-xl">
+            a transform would be the editor's floating toolbar's frame (it's fixed), putting it out of place. A long idea scrolls
+            in it, down to its Submit. */}
+        <DialogContent keepMounted className="top-[8dvh] right-0 left-0 mx-auto max-h-[calc(92dvh-1rem)] translate-none grid-cols-[minmax(0,1fr)] gap-3 overflow-y-auto p-5 sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-lg">Share an idea</DialogTitle>
           </DialogHeader>
