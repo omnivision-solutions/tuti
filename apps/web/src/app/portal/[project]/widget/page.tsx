@@ -558,7 +558,7 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
     <div className="flex flex-col gap-4">
       {back}
       <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" base={await portalBase()} />
-      <WidgetReactions projectSlug={slug} number={entry.number} counts={entry.reactions} reacted={entry.reacted} portalSignedIn={portalSignedIn} />
+      <WidgetReactions key={entry.number} projectSlug={slug} number={entry.number} counts={entry.reactions} reacted={entry.reacted} portalSignedIn={portalSignedIn} />
     </div>
   );
 }

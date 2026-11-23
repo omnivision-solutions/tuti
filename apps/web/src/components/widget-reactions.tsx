@@ -63,8 +63,10 @@ export function WidgetReactions({
         const result = await widgetReact(projectSlug, token, number, reaction, on);
         if (result.reactions) {
           setTotal(result.reactions);
-          const now = on ? [...shown.filter((r) => r !== reaction), reaction] : shown.filter((r) => r !== reaction);
-          setMine({ for: token, reacted: now });
+          // Only while they're still who's here: a save that ends after the page switched people changes nobody's list.
+          setMine((m) =>
+            m.for !== token ? m : { for: token, reacted: on ? [...m.reacted.filter((r) => r !== reaction), reaction] : m.reacted.filter((r) => r !== reaction) },
+          );
         }
         return result;
       }}
