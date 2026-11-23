@@ -325,13 +325,15 @@ export const syncUsersOperation = defineOperation({
 
 export const deleteUser = defineOperation({
   name: "users.delete",
+  title: "Delete a user",
   summary:
-    "Delete one of the project's users, by their id in your app (for when they delete their account there, or ask to be forgotten). Their name, email, avatar and properties go, as do their votes, follows, reactions, email preferences, sessions and changelog subscription; their posts, comments and support conversations stay for the team, shown as by \"Deleted user\", with their email address taken off them. Signed-in sessions end at once. The same id signing in or synced later is a new, empty user. 404 for an id there's no user with",
+    "Delete one of the project's users by their id in your app, when they delete their account there or ask to be forgotten: their details, votes, likes, follows, reactions, sessions and changelog subscription go; their posts, comments and conversations stay as by \"Deleted user\", without their address.",
   method: "DELETE",
   path: "/users/{user}",
   scope: "write",
   access: "admin",
-  input: z.object({ user: userId }),
+  input: z.object({ user: userId.describe("Their id in your app; signed in or synced again later, the same id is a new, empty user") }),
+  output: z.object({ deleted: z.string().describe("The deleted user's id in your app").meta({ examples: ["user-42"] }) }).describe("The user is gone"),
   run: async ({ projectId }, input) => {
     await prisma.$transaction(
       async (tx) => {
@@ -369,7 +371,7 @@ export const deleteUser = defineOperation({
             select: { id: true },
           })
         ).map((conversation) => conversation.id);
-        await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, emailVerified: false } });
+        await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
         if (email) {
           await tx.conversationMessage.updateMany({
             where: { conversationId: { in: conversations }, fromAddress: { equals: email, mode: "insensitive" } },
@@ -380,6 +382,7 @@ export const deleteUser = defineOperation({
         }
         await tx.postSubscription.deleteMany({ where: { userId } });
         await tx.changelogReaction.deleteMany({ where: { userId } });
+        await tx.commentLike.deleteMany({ where: { userId } });
         await tx.changelogSeen.deleteMany({ where: { userId } });
         await tx.emailPreference.deleteMany({ where: { userId } });
         await tx.emailOptOut.deleteMany({ where: { userId } });

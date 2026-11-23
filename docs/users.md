@@ -54,7 +54,7 @@ When someone deletes their account in your app, or asks to be forgotten, `DELETE
 with a read and write key (`users.delete`) removes them from Tuti too:
 
 - Their name, email, avatar and properties go, as do their votes (vote counts follow), the posts
-  they follow, their changelog reactions, email preferences and this project's changelog email
+  they follow, their comment likes and changelog reactions, email preferences and this project's changelog email
   subscription for their address.
 - They're signed out at once: portal sessions end and widget tokens stop working.
 - What they wrote stays for your team, shown as by **Deleted user**: their posts, comments and

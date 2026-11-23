@@ -18,7 +18,7 @@ import { createConversation, getConversation } from "./conversations";
 import { createComment, createPost } from "./create";
 import { createGroup } from "./groups";
 import { updatePost } from "./manage";
-import { setSubscription, setVote, updateProject } from "./more";
+import { likeComment, setSubscription, setVote, updateProject } from "./more";
 import { call } from "./run";
 import { deleteUser, getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
 
@@ -256,7 +256,7 @@ test("someone who signs in to the portal another way, with a user's address veri
   await prisma.vote.create({ data: { postId: others.id, userId: portal.id, projectId, createdAt: new Date("2026-10-06") } });
   // Not while it isn't verified: anyone can type an address.
   expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
-  await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true } });
+  await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true, name: "Ada L" } });
   expect((await list()).users[0]!.activity).toEqual({ posts: 1, votes: 1, conversations: 0, lastSeenAt: new Date("2026-10-06") });
   // An email from their address (verified) started a conversation before they were a user: theirs. Someone else
   // on the email (in Cc), writing later, doesn't make them seen then.
@@ -401,17 +401,20 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   const others = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
   await call(setVote, key, { number: others.number, voted: true, author });
   await call(setSubscription, key, { number: others.number, subscribed: true, author });
+  const comment = await call(createComment, team(), { number: others.number, body: "Planned for spring" });
+  await call(likeComment, key, { number: others.number, id: comment.id, liked: true, author });
   await call(createComment, key, { number: others.number, body: "Me too, at night", author });
   await call(createConversation, team(), { user: author, body: "The export button does nothing" });
   // Started by email from their address, verified: theirs too.
   await call(createConversation, team(), { email, body: "Writing by email" });
-  await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { emailVerified: true } });
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { emailVerified: true, name: "Ada L" } });
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
   await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: ada, expiresAt: new Date(Date.now() + 60_000) } });
   expect(await canActIn(ada, project.id)).toBe(true);
   await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
   const token = widgetToken(project.id, ada);
-  expect(await widgetConversations(project.slug, { token })).toMatchObject({ conversations: [{ number: 1 }] });
+  // Theirs, and the one by email from their address.
+  expect(await widgetConversations(project.slug, { token })).toMatchObject({ conversations: [{ number: 2 }, { number: 1 }] });
   await call(updatePost, team(), { number: 1, status: "planned" });
   expect(await widgetIdeaNews(project.slug, token)).toMatchObject([{ title: "Export to CSV" }]);
   // What the widget's live stream asks of the token, on every check.
@@ -429,10 +432,11 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     { authorId: ada, voteCount: 0 },
     { authorId: owner.id, voteCount: 1 },
   ]);
-  expect(await prisma.comment.findMany({ where: { projectId: project.id }, select: { authorId: true, body: true } })).toEqual([{ authorId: ada, body: "Me too, at night" }]);
+  expect(await prisma.comment.findMany({ where: { projectId: project.id, authorId: ada }, select: { body: true } })).toEqual([{ body: "Me too, at night" }]);
   for (const count of [
     prisma.vote.count({ where: { userId: ada } }),
     prisma.postSubscription.count({ where: { userId: ada } }),
+    prisma.commentLike.count({ where: { userId: ada } }),
     prisma.session.count({ where: { userId: ada } }),
     prisma.changelogSubscriber.count({ where: { projectId: project.id } }),
   ]) {
@@ -442,9 +446,9 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   for (const number of [1, 2]) {
     expect((await call(getConversation, team(), { number })).user).toEqual({ id: null, name: "Deleted user", email: null, verified: true });
   }
-  expect(await prisma.conversation.findMany({ where: { projectId: project.id }, select: { userId: true, email: true } })).toEqual([
-    { userId: ada, email: null },
-    { userId: ada, email: null },
+  expect(await prisma.conversation.findMany({ where: { projectId: project.id }, select: { userId: true, email: true, name: true } })).toEqual([
+    { userId: ada, email: null, name: null },
+    { userId: ada, email: null, name: null },
   ]);
   // A widget token from before acts no more, nor reads their conversations.
   expect(await canActIn(ada, project.id)).toBe(false);
