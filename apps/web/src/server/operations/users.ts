@@ -384,6 +384,13 @@ export const deleteUser = defineOperation({
             await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${counted}::text[]) ORDER BY id FOR NO KEY UPDATE`;
             await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${counted}::text[])`;
           }
+          // A shared address's own: what it emailed in was filed under whoever of its users was synced last (inbound.ts
+          // userWithAddress), this one maybe. Those go back to the address, which still answers them, as they were.
+          if (shared) {
+            await tx.$executeRaw`UPDATE conversation c SET "userId" = NULL, email = ${identity.email}, "emailVerified" = true
+              WHERE c."projectId" = ${projectId} AND c."userId" = ${userId} AND c.origin = 'EMAIL'
+                AND EXISTS (SELECT 1 FROM inbound_email i WHERE i."conversationId" = c.id AND i.sender = ${identity.email})`;
+          }
           // Their conversations, and those started by email from their address, verified (as their page counts them):
           // kept for the team, as the deleted user's, without the address.
           const conversations = (

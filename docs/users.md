@@ -65,7 +65,7 @@ with a read and write key (`users.delete`) removes them from Tuti too:
 
 While their address is still someone else's too (another of your users with it, such as a shared
 mailbox, or a portal account that verified it), nothing that goes by the address is changed: their
-changelog subscription, messages from it and conversations started by email from it stay.
+changelog subscription and messages from it stay, and conversations started by email from it stay with the address.
 
 Tuti knows only the address you gave them last. An email they sent from an earlier one (before a
 sync changed it) is in the thread as from someone else, and keeps that address; so does a

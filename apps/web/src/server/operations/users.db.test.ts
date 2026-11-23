@@ -596,12 +596,25 @@ test("delete leaves what goes by their address alone while it's someone else's t
   const bobs = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
   await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress: email } });
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  // What the mailbox emailed in, filed under the user synced with it last (inbound.ts userWithAddress): user-6 here.
+  const user6 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-6" } } })).userId;
+  const mailbox = await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Invoice", origin: "EMAIL", userId: user6 } });
+  await prisma.inboundEmail.create({
+    data: { projectId: project.id, recipient: "support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: mailbox.id },
+  });
   const kept = async () => [
     await prisma.conversationMessage.count({ where: { conversationId: bobs.id, fromAddress: email } }),
     await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } }),
   ];
   await call(deleteUser, team(), { user: "user-6" });
   expect(await kept()).toEqual([1, 1]);
+  // Back with the address, which still answers it.
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: mailbox.id }, select: { userId: true, email: true, emailVerified: true } })).toEqual({
+    userId: null,
+    email,
+    emailVerified: true,
+  });
+  expect(await prisma.inboundEmail.count({ where: { conversationId: mailbox.id, sender: email } })).toBe(1);
   // The other one deleted too, with a portal account that verified the address: still someone's.
   await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
   await call(deleteUser, team(), { user: "user-7" });
