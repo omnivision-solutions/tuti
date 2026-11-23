@@ -346,7 +346,18 @@ export const deleteUser = defineOperation({
           if (!identity) {
             throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
           }
-          const { userId, email } = identity;
+          const { userId } = identity;
+          // Their address, unless it's someone else's too (as inbound.ts userWithAddress finds people by it): another of
+          // the project's users with it (a shared mailbox), or an account that verified it (theirs, made on the portal,
+          // isn't touched). Then nothing goes by it: the messages, conversations and subscription are that person's too.
+          const [shared] = identity.email
+            ? await tx.$queryRaw<unknown[]>`
+                SELECT 1 FROM sso_identity WHERE "projectId" = ${projectId} AND email = ${identity.email} AND id <> ${identity.id}
+                UNION ALL
+                SELECT 1 FROM "user" u WHERE lower(u.email) = ${identity.email} AND u."emailVerified" AND NOT EXISTS (SELECT 1 FROM sso_identity s WHERE s."userId" = u.id)
+                LIMIT 1`
+            : [];
+          const email = shared ? null : identity.email;
           // The posts they voted on, locked first as votes.set and merges lock them (a merge moving their votes finishes,
           // and the post it moved them to is found on the next pass), then counted again without their votes.
           const voted: string[] = [];

@@ -585,3 +585,25 @@ test("delete while someone else's vote on a post they voted on is being saved: t
   expect(await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { voteCount: true } })).toEqual({ voteCount: await prisma.vote.count({ where: { postId } }) });
   expect(await prisma.vote.count({ where: { postId } })).toBe(2);
 });
+
+test("delete leaves what goes by their address alone while it's someone else's too: another user's (a shared mailbox), or a portal account's", async () => {
+  const email = "e2e-billing@example.com";
+  await sync([
+    { id: "user-6", email },
+    { id: "user-7", email },
+  ]);
+  await call(createConversation, team(), { email: "e2e-bob@example.com", body: "Our invoices are wrong" });
+  const bobs = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress: email } });
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  const kept = async () => [
+    await prisma.conversationMessage.count({ where: { conversationId: bobs.id, fromAddress: email } }),
+    await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } }),
+  ];
+  await call(deleteUser, team(), { user: "user-6" });
+  expect(await kept()).toEqual([1, 1]);
+  // The other one deleted too, with a portal account that verified the address: still someone's.
+  await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
+  await call(deleteUser, team(), { user: "user-7" });
+  expect(await kept()).toEqual([1, 1]);
+});
