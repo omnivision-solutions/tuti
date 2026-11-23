@@ -44,6 +44,8 @@ test("a team enables SSO; their app signs people into the portal, once per token
   const enabled = owner.getByRole("switch", { name: "Single sign-on" });
   await expect(enabled).not.toBeChecked();
   await expect(owner.getByRole("button", { name: "Replace key" })).toHaveCount(0);
+  // The field the prompt's last step fills is there while SSO is off too.
+  await expect(owner.getByLabel("Your app's sign-in page")).toBeVisible();
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your secret key now" });
   const secret = await secretAlert.locator("code").innerText();

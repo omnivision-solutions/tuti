@@ -7,11 +7,17 @@ to Tuti, which signs them in.
 ## 1. Enable SSO
 
 In the Tuti app, open your project's **Settings → Single sign-on** (owners and
-admins) and turn on **Single sign-on**. Copy the secret (`tsso_…`) — it's shown
-once. Store it on your server only, e.g. as `TUTI_SSO_SECRET`. Never send it to
-the browser.
+admins) and turn on **Single sign-on**. Copy the secret key (`tsso_…`, with its
+own Copy): it's shown once. Store it on your server only, e.g. as
+`TUTI_SSO_SECRET`. Never send it to the browser.
 
-**Rotate secret** issues a new one and invalidates the old one immediately.
+**Let your coding agent set it up** on the same page gives a prompt to paste into
+the agent working on your app (it has no secret in it, only the variable's name):
+it adds a `/tuti` page that does steps 2 and 3 below, and you enter that page as
+**Your app's sign-in page** (see [Signing in on the portal with your app's
+accounts](#signing-in-on-the-portal-with-your-apps-accounts)).
+
+**Replace key** issues a new one and invalidates the old one immediately.
 Turning the switch off (it asks first) turns SSO off.
 
 ## 2. Sign a token on your server

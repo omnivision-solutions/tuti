@@ -48,7 +48,7 @@ export function agentPrompt(portal: string) {
 /**
  * Settings → Single sign-on: the switch (turning it off asks first) with how sign-in goes, the secret (shown once,
  * when it's made), a prompt for the team's coding agent (or the code), the app's own sign-in page (saved by the page's
- * "Save changes") and the address to send people back to, then replacing the secret.
+ * "Save changes", on or off) and the address to send people back to, then replacing the secret.
  */
 export function SsoSettings({
   projectSlug,
@@ -201,7 +201,8 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
       </SettingsCard>
 
       <SettingsCard title="Or set it up yourself">
-        {enabled && <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />}
+        {/* There while SSO is off too (it applies once SSO is on): the agent card's last step needs it. */}
+        <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />
         <SettingRow label="Return address" description="Your app sends people back here, with a token saying who they are.">
           <div className="flex min-w-0 items-center gap-1 @min-[34rem]/settings:max-w-96">
             <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{ssoUrl}</code>
