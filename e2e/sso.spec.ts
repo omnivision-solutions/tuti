@@ -29,6 +29,7 @@ test("a team enables SSO; their app signs people into the portal, once per token
   const prompt = owner.locator("pre").filter({ hasText: "TUTI_SSO_SECRET environment variable" });
   await expect(prompt).toContainText(`${portalUrl(slug)}/sso?token=<jwt>&redirect=<r>`);
   await expect(prompt).toContainText(`I enter it in Tuti as "Your app's sign-in page"`);
+  await expect(prompt).toContainText("email, only if our app has verified it");
   await owner.getByRole("button", { name: "Copy prompt" }).click();
   await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toContain(`Tuti feedback portal at ${portalUrl(slug)}.`);
   const code = owner.locator("pre").filter({ hasText: "setProtectedHeader" });
@@ -44,9 +45,9 @@ test("a team enables SSO; their app signs people into the portal, once per token
   const enabled = owner.getByRole("switch", { name: "Single sign-on" });
   await expect(enabled).not.toBeChecked();
   await expect(owner.getByRole("button", { name: "Replace key" })).toHaveCount(0);
-  // The field the prompt's last step fills is there while SSO is off too.
-  await expect(owner.getByLabel("Your app's sign-in page")).toBeVisible();
-  await expect(owner.getByText("Used once single sign-on is on.")).toBeVisible();
+  // The app's sign-in page only once SSO is on: entered before the key exists, portal sign-ins would fail.
+  await expect(owner.getByText("Turn on single sign-on first, for the secret key.", { exact: false })).toBeVisible();
+  await expect(owner.getByLabel("Your app's sign-in page")).toHaveCount(0);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your secret key now" });
   const secret = await secretAlert.locator("code").innerText();

@@ -38,17 +38,18 @@ export function agentPrompt(portal: string) {
    - sub: our user id as a string (required; Tuti matches people by it)
    - jti: a random UUID (each token works once)
    - iat: now; exp: 5 minutes from now (10 minutes at most)
-   - optional: email, name (shown on their posts), avatar (an http(s) image URL)
+   - optional: name (shown on their posts), avatar (an http(s) image URL)
+   - optional: email, only if our app has verified it: Tuti shows them the support conversations emailed from that address
 3. Redirect to ${portal}/sso?token=<jwt>&redirect=<r>, where <r> is the "redirect" query parameter Tuti sent to /tuti (URL-encoded; "/" if missing).
 4. Use the JWT library this project already has; otherwise add the standard one for our stack (jose for Node).
 5. Add TUTI_SSO_SECRET to .env.example with an empty value.
-6. When it's done, tell me the full https:// address of /tuti: I enter it in Tuti as "Your app's sign-in page".`;
+6. When it's done, tell me the full https:// address of /tuti: once it's deployed with TUTI_SSO_SECRET set, I enter it in Tuti as "Your app's sign-in page".`;
 }
 
 /**
  * Settings → Single sign-on: the switch (turning it off asks first) with how sign-in goes, the secret (shown once,
  * when it's made), a prompt for the team's coding agent (or the code), the app's own sign-in page (saved by the page's
- * "Save changes", on or off) and the address to send people back to, then replacing the secret.
+ * "Save changes") and the address to send people back to, then replacing the secret.
  */
 export function SsoSettings({
   projectSlug,
@@ -97,7 +98,7 @@ export function SsoSettings({
 import { SignJWT } from "jose";
 
 const token = await new SignJWT({
-  email: user.email,      // optional
+  email: user.email,      // optional; only an address your app has verified
   name: user.name,        // optional, shown on posts
   avatar: user.avatarUrl, // optional, http(s) URL
 })
@@ -151,7 +152,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
               ["In your app", "They sign in, and your server signs a token saying who they are."],
               ["Back on your portal", "They're signed in, with their own name."],
             ].map(([title, line], i) => (
-              <li key={title} className="flex flex-col rounded-lg bg-muted px-3 py-2.5">
+              <li key={title} className="flex flex-col rounded-xl bg-muted px-3 py-2.5">
                 <span className="font-medium">
                   {i + 1}. {title}
                 </span>
@@ -180,7 +181,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
         </SettingBlock>
       </SettingsCard>
 
-      <SettingsCard title="Let your coding agent set it up" description="Paste the prompt into the agent working on your app (it doesn't include your secret key), then enter the page it makes as your app's sign-in page.">
+      <SettingsCard title="Let your coding agent set it up" description="Turn on single sign-on first, for the secret key. Paste the prompt into the agent working on your app (the key isn't in it); once its page is live, enter it as your app's sign-in page.">
         <SettingBlock>
           <Tabs value={tab} onValueChange={(value) => setTab(value as "prompt" | "code")} className="gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -201,8 +202,8 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
       </SettingsCard>
 
       <SettingsCard title="Or set it up yourself">
-        {/* There while SSO is off too (it applies once SSO is on): the agent card's last step needs it. */}
-        <SignInPageRow projectSlug={projectSlug} enabled={enabled} ssoUrl={ssoUrl} signInUrl={signInUrl} />
+        {/* Only once SSO is on: entered before the key exists, turning SSO on would send portal sign-ins to a page that can't sign tokens yet. */}
+        {enabled && <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />}
         <SettingRow label="Return address" description="Your app sends people back here, with a token saying who they are.">
           <div className="flex min-w-0 items-center gap-1 @min-[34rem]/settings:max-w-96">
             <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{ssoUrl}</code>
@@ -233,7 +234,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
 }
 
 /** The app's own sign-in page (empty removes it), saved by the page's "Save changes". */
-function SignInPageRow({ projectSlug, enabled, ssoUrl, signInUrl }: { projectSlug: string; enabled: boolean; ssoUrl: string; signInUrl: string | null }) {
+function SignInPageRow({ projectSlug, ssoUrl, signInUrl }: { projectSlug: string; ssoUrl: string; signInUrl: string | null }) {
   const { state, form } = useCustomizeForm({
     save: async (_prev, formData) => {
       const result = await setSsoSignInUrl(projectSlug, formData);
@@ -246,7 +247,7 @@ function SignInPageRow({ projectSlug, enabled, ssoUrl, signInUrl }: { projectSlu
   return (
     <SettingRow
       label="Your app's sign-in page"
-      description={enabled ? "Sign in on the portal takes people here. Empty keeps email sign-in." : "Used once single sign-on is on."}
+      description="Sign in on the portal takes people here. Empty keeps email sign-in."
       info={
         <>
           Tuti adds <code>redirect</code>, the portal page to come back to. Sign them in, then send them to <code className="break-all">{ssoUrl}</code> with a token and that{" "}
