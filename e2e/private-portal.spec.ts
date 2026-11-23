@@ -25,7 +25,7 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   // SSO on, then Access → Who can see your portal → Private.
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
   await owner.goto(`/app/${slug}/settings/access`);
   // One row: the label names the control, the line under it says what the chosen option does, and the rest is behind ⓘ.
   const access = owner.getByRole("combobox", { name: "Who can see your portal" });

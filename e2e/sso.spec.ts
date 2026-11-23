@@ -22,28 +22,41 @@ test("a team enables SSO; their app signs people into the portal, once per token
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  // The example is behind its button, with Copy; the address to send people to has one too.
+  // A prompt for the team's coding agent, with Copy: the portal's addresses in it, no secret. The code is the other
+  // tab; the address to send people back to has Copy too.
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  const example = owner.locator("pre").filter({ hasText: "setProtectedHeader" });
-  await expect(example).toHaveCount(0);
-  await owner.getByRole("button", { name: "Show example" }).click();
-  await expect(example).toContainText(`${portalUrl(slug)}/sso?token=`);
-  await owner.getByRole("button", { name: "Copy example" }).click();
+  const prompt = owner.locator("pre").filter({ hasText: "TUTI_SSO_SECRET environment variable" });
+  await expect(prompt).toContainText(`${portalUrl(slug)}/sso?token=<jwt>&redirect=<r>`);
+  await expect(prompt).toContainText(`I enter it in Tuti as "Your app's sign-in page"`);
+  await expect(prompt).toContainText("email, only if our app has verified it");
+  await owner.getByRole("button", { name: "Copy prompt" }).click();
+  await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toContain(`Tuti feedback portal at ${portalUrl(slug)}.`);
+  const code = owner.locator("pre").filter({ hasText: "setProtectedHeader" });
+  await expect(code).toHaveCount(0);
+  await owner.getByRole("tab", { name: "Code (Node)" }).click();
+  await expect(code).toContainText(`${portalUrl(slug)}/sso?token=`);
+  await owner.getByRole("button", { name: "Copy code" }).click();
   await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toContain('.setProtectedHeader({ alg: "HS256" })');
-  await owner.getByRole("button", { name: "Hide example" }).click();
-  await expect(example).toHaveCount(0);
-  await owner.getByRole("button", { name: "Copy sign-in address" }).click();
+  await owner.getByRole("button", { name: "Copy return address" }).click();
   await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}/sso`);
 
   // Enabling SSO (its switch) shows the secret once.
   const enabled = owner.getByRole("switch", { name: "Single sign-on" });
   await expect(enabled).not.toBeChecked();
-  await expect(owner.getByRole("button", { name: "Rotate secret" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Replace key" })).toHaveCount(0);
+  // The app's sign-in page only once SSO is on: entered before the key exists, portal sign-ins would fail.
+  await expect(owner.getByText("Turn on single sign-on first, for the secret key.", { exact: false })).toBeVisible();
+  await expect(owner.getByLabel("Your app's sign-in page")).toHaveCount(0);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" });
+  const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your secret key now" });
   const secret = await secretAlert.locator("code").innerText();
   expect(secret).toMatch(/^tsso_/);
+  await secretAlert.getByRole("button", { name: "Copy secret key" }).click();
+  await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toBe(secret);
+  // The prompt, copied any time, never has the secret in it.
+  await owner.getByRole("tab", { name: "Prompt" }).click();
+  await expect(prompt).not.toContainText(secret);
   await expect(enabled).toBeChecked();
   await expect(owner.getByText(`${portalUrl(slug)}/sso`).first()).toBeVisible();
   await checkpoint(owner, "team-sso-enabled");
@@ -65,13 +78,16 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await expect(replay.getByText("This sign-in link was already used.")).toBeVisible();
   await checkpoint(replay, "portal-sso-error");
 
-  // Rotating the secret (after confirming) shows a new one; tokens signed with the old one stop working.
-  await owner.getByRole("button", { name: "Rotate secret" }).click();
-  const rotateDialog = owner.getByRole("alertdialog", { name: "Rotate the SSO secret?" });
+  // Replacing the secret (after confirming) shows a new one; tokens signed with the old one stop working.
+  await owner.getByRole("button", { name: "Replace key" }).click();
+  const rotateDialog = owner.getByRole("alertdialog", { name: "Replace the secret key?" });
   await checkpoint(owner, "team-rotate-sso-confirm", { fullPage: false });
-  await rotateDialog.getByRole("button", { name: "Rotate secret" }).click();
-  await expect(owner.getByText("SSO secret rotated")).toBeVisible();
+  await rotateDialog.getByRole("button", { name: "Replace key" }).click();
+  await expect(owner.getByText("Secret key replaced")).toBeVisible();
   const newSecret = await secretAlert.locator("code").innerText();
+  // Replace key is at the page's end; the new key comes into view, with focus on its Copy.
+  await expect(secretAlert).toBeInViewport();
+  await expect(secretAlert.getByRole("button", { name: "Copy secret key" })).toBeFocused();
   expect(newSecret).not.toBe(secret);
   await replay.goto(`/sso?token=${ssoToken(secret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=invalid_token$/);
@@ -79,10 +95,10 @@ test("a team enables SSO; their app signs people into the portal, once per token
   // Turning the switch off asks first: cancelled, SSO stays on. Once disabled (after confirming), even a token signed
   // with the current secret is refused.
   await enabled.click();
-  await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Cancel" }).click();
+  await owner.getByRole("alertdialog", { name: "Turn off single sign-on?" }).getByRole("button", { name: "Cancel" }).click();
   await expect(enabled).toBeChecked();
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
+  await owner.getByRole("alertdialog", { name: "Turn off single sign-on?" }).getByRole("button", { name: "Turn off" }).click();
   await expect(owner.getByRole("switch", { name: "Single sign-on" })).not.toBeChecked();
   await replay.goto(`/sso?token=${ssoToken(newSecret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=sso_not_enabled$/);
@@ -97,7 +113,7 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   await createProject(owner, name, slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
 
   // Where the team's app signs its users in: https only, saved by the page's one Save.
   const signInPage = owner.getByLabel("Your app's sign-in page");
@@ -193,7 +209,7 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   expect(await sentTo("/sign-in")).toBeUndefined();
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
+  await owner.getByRole("alertdialog", { name: "Turn off single sign-on?" }).getByRole("button", { name: "Turn off" }).click();
   await expect(owner.getByRole("switch", { name: "Single sign-on" })).not.toBeChecked();
   await visitor.goto("/sign-in");
   await expect(visitor.getByLabel("Email")).toBeVisible();
@@ -232,7 +248,7 @@ test("a collection for one reader group: people the app signs in with that group
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
   await api("/collections", { name: "Basics" });
 
@@ -345,7 +361,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
   await api("/groups", { name: "Enterprise customers", conditions: [{ property: "groups", op: "is", value: "enterprise" }] });
   await api("/tabs", { name: "Guides" });
@@ -557,7 +573,7 @@ test("a group from conditions: readers whose properties match read its collectio
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
 
   // The app has signed in two people: one on the Pro plan, one on Free.

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { SsoSettings } from "@/components/sso-settings";
-import { SettingsCard, SettingsPane } from "@/components/settings-card";
+import { SettingsPane } from "@/components/settings-card";
 import { portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
@@ -17,9 +17,7 @@ export default async function SsoSettingsPage(props: PageProps<"/app/[project]/s
   }
   return (
     <SettingsPane title="Single sign-on">
-      <SettingsCard>
-        <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`} signInUrl={project.ssoSignInUrl} />
-      </SettingsCard>
+      <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} portal={portalUrl(project.slug)} signInUrl={project.ssoSignInUrl} />
     </SettingsPane>
   );
 }

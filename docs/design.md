@@ -821,6 +821,9 @@ widths, in light and dark (in development only).
   - A setting is one row. Under its label, at most one short line; a label that says it needs none. What takes longer
     to explain goes in `info` (an ⓘ beside the label, opening on hover or a press) or behind a link ("See
     details", "Show example"). No intro paragraphs, and no card title repeating the page's title or a field's label.
+  - A page that connects the team's own code to Tuti (Single sign-on) is the exception: what it does only makes sense
+    as a round trip, so the steps show under its switch (a short numbered list), and a card gives a prompt for the
+    team's coding agent with Copy (no secret in it) and the code as the other tab. The rows to fill in by hand follow.
   - The page's description is one short line beside its title in the header (`SettingsPane`'s `description`; above
     the cards under 56rem, where the header has no room), or nothing. One given as elements (a link in it) stays above
     the cards at every width.
