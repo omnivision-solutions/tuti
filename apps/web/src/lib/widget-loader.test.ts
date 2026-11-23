@@ -1978,6 +1978,30 @@ test("a cover that doesn't load goes, and the title makes room for Close", async
   expect(all(page.popup!).find((part) => part.textContent === texts[0])!.style.paddingRight).toBe("28px");
 });
 
+test("signed in after the popup showed, it waits for what they've seen elsewhere, and doesn't come back if they've read it", async () => {
+  let answer = () => {};
+  const page = loadWidget({ latest: ANNOUNCED, seen: "2026-10-19T00:00:00.000Z", seenAfter: new Promise<void>((resolve) => (answer = resolve)), before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(page.popup).toBeDefined();
+  page.Tuti.identify(token);
+  expect(page.popup).toBeUndefined();
+  answer();
+  await settled();
+  await settled();
+  expect(page.popup).toBeUndefined();
+  expect(page.Tuti.unseen()).toBe(false);
+});
+
+test("no popup on the portal's changelog pages, where the announcement is already", async () => {
+  const location = { pathname: "/help/changelog/7", origin: "https://acme.com" };
+  const page = loadWidget({ attributes: { "data-on-portal": "/help" }, latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), (p.window.location = location)) });
+  await settled();
+  expect(page.popup).toBeUndefined();
+  const home = loadWidget({ attributes: { "data-on-portal": "/help" }, latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), (p.window.location = { ...location, pathname: "/help" })) });
+  await settled();
+  expect(home.popup).toBeDefined();
+});
+
 test("no popup with the launcher hidden, inline or as a sidebar; on the left with a left launcher", async () => {
   for (const attributes of [{ "data-hide-launcher": "" }, { "data-display": "inline" }, { "data-display": "sidebar" }] as Record<string, string>[]) {
     const page = loadWidget({ attributes, latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });

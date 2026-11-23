@@ -277,8 +277,12 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   var popup = null;
   var popupMore = null;
   var popupExcerpt = null;
+  // Lookups of what the person the page signs in has seen elsewhere, under way: no popup till they're back.
+  var checking = 0;
+  // On the portal's changelog, the announcement is on the page already.
+  var onChangelog = onPortal && String(window.location.pathname).indexOf(portalPath + "/changelog") === 0;
   function popupWanted() {
-    return !!announcement && !hideLauncher && !sidebar && !opened && known && isUnseen() && hidden.indexOf("whatsNew") < 0 &&
+    return !!announcement && !hideLauncher && !sidebar && !opened && known && !checking && !onChangelog && isUnseen() && hidden.indexOf("whatsNew") < 0 &&
       !!lastVisit && latest > lastVisit && storage(function (s) { return s.getItem(popupKey); }) !== String(announcement.number);
   }
   // Closed or read: never again for this entry in this browser.
@@ -303,9 +307,11 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     popup.setAttribute("aria-label", "What's new");
     css(popup, {
       position: "fixed", bottom: "88px", zIndex: "2147483000", width: "min(300px, calc(100vw - 40px))", boxSizing: "border-box",
-      borderRadius: "14px", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)", textAlign: "left",
-      font: "14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+      borderRadius: "14px", overflowX: "hidden", overflowY: "auto", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)", textAlign: "left",
+      font: "14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", maxHeight: "calc(100vh - 108px)"
     });
+    // Never taller than the screen above the launcher (a phone on its side): it scrolls, its Close in reach at the top.
+    popup.style.maxHeight = "calc(100dvh - 108px)";
     var hasCover = typeof announcement.image === "string" && announcement.image;
     if (hasCover) {
       var cover = document.createElement("img");
@@ -783,7 +789,10 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   }
   // Unseen in this browser: maybe they've seen it on another device; and the team's messages to them.
   function checkElsewhere() {
+    checking++;
+    showPopup();
     return seenOnServer().then(function (at) {
+      checking--;
       if (at) remember(at);
       setUnseen(anyUnseen());
     });

@@ -689,6 +689,10 @@ test("a new announcement pops up by the launcher, once, for visitors who were he
   expect(card.x + card.width).toBeLessThanOrEqual(390);
   expect(card.y + card.height).toBeLessThanOrEqual(button.y);
   await checkpoint(ada, "popup-phone-light");
+  // On its side the card fits above the launcher, scrolling, its Close on screen.
+  await ada.setViewportSize({ width: 844, height: 360 });
+  expect((await popup.getByRole("button", { name: "Close" }).boundingBox())!.y).toBeGreaterThanOrEqual(0);
+  expect((await popup.boundingBox())!.y).toBeGreaterThanOrEqual(0);
   await ada.setViewportSize({ width: 1280, height: 720 });
 
   // Closing it keeps it away for that entry in this browser, without marking it seen: the dot stays.
