@@ -323,6 +323,10 @@ describe("Markdown's images", () => {
   test("aren't copied for a request refused anyway", async () => {
     const markdown = `![The menu](${origin}/shot.png)`;
     await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", markdown, posts: [999] })).rejects.toMatchObject({ status: 400 });
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", markdown, cover: "not-an-upload" })).rejects.toMatchObject({ status: 409 });
+    const sample = await post("A sample idea");
+    await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: sample.number } }, data: { sample: true } });
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", markdown, posts: [sample.number] })).rejects.toMatchObject({ status: 400 });
     await expect(call(createChangelogEntry, as(owner), { title: "Long", markdown: `${markdown}\n\n${"word ".repeat(5_000)}` })).rejects.toMatchObject({ status: 400 });
     const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
     await expect(

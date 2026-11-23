@@ -9,7 +9,7 @@ import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
-import { attachMedia, displayDoc, readContent } from "../content";
+import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
 import { lastingImage } from "../media-urls";
 import {
   blocksToNotes,
@@ -236,6 +236,20 @@ export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entr
   await db.changelogEntryPost.createMany({ data: links, skipDuplicates });
 }
 
+/**
+ * Markdown's images are copied as its text is read, so what would refuse the save anyway (a cover that isn't this
+ * project's finished image, a sample post on a real entry or the other way round) is checked first, and a refused request
+ * copies none. The save checks both again, under its lock.
+ */
+async function refusedBeforeCopying(projectId: string, { cover, postIds, sample }: { cover?: string | null; postIds?: string[]; sample: boolean }) {
+  if (cover && (await prisma.media.count({ where: { id: cover, projectId, status: "READY", filename: null } })) === 0) {
+    throw new OperationError(409, "media_gone", MEDIA_GONE);
+  }
+  if (postIds?.length && (await prisma.post.count({ where: { id: { in: postIds }, sample: !sample } })) > 0) {
+    throw new OperationError(400, "invalid_input", sample ? "Sample updates can only complete sample posts" : "Sample posts can only be completed by the sample update");
+  }
+}
+
 /** Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the same limits. */
 async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor) {
   if (input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "")) {
@@ -413,6 +427,9 @@ export const createChangelogEntry = defineOperation({
     const portal = await projectPortal(projectId);
     // Before the text: Markdown's images are copied as it's read, so a request refused anyway copies none.
     const posts = await postIds(projectId, input.posts);
+    if (input.markdown !== undefined) {
+      await refusedBeforeCopying(projectId, { cover: input.cover, postIds: posts, sample: false });
+    }
     const text = await entryText(input, projectId, actor);
     const entry = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -484,6 +501,9 @@ export const updateChangelogEntry = defineOperation({
       throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
     }
     const posts = input.posts && (await postIds(projectId, input.posts));
+    if (input.markdown !== undefined) {
+      await refusedBeforeCopying(projectId, { cover: input.cover, postIds: posts, sample: entry.sample });
+    }
     const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor) : null;
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
