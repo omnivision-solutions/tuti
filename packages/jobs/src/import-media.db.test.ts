@@ -229,6 +229,13 @@ test("an uploaded image (a cover) cut off as its host stalls is the host's failu
   } finally {
     stalled = undefined;
   }
+  // Fetched as the clock passes its time, before the timer fires: kept, not refused as a failure of ours.
+  const now = Date.now.bind(Date);
+  let late = false;
+  whileServing = async () => void (late = true);
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now() + (late ? 2 * 60_000 : 0));
+  expect(await uploadImage(`${origin}/a.png`, { projectId, uploaderId }).finally(() => clock.mockRestore())).toMatchObject({ mediaId: expect.any(String) });
+  whileServing = undefined;
   vi.stubEnv("MEDIA_S3_ENDPOINT", "http://127.0.0.1:9");
   expect(await uploadImage(`${origin}/a.png`, { projectId, uploaderId })).toEqual({ leftOut: "unreachable", passing: true });
 });
