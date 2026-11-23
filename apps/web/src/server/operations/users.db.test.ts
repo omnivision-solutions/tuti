@@ -453,7 +453,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   await expect(get("user-1")).rejects.toMatchObject({ status: 404 });
   const user = await prisma.user.findUniqueOrThrow({ where: { id: ada } });
   expect(user).toMatchObject({ name: "Deleted user", image: null, emailVerified: false, deletedAt: expect.any(Date) });
-  expect(user.email).not.toContain("ada");
+  expect(user.email).toBe(`deleted-${ada}@users.tuti.invalid`);
   // Their content stays, theirs; their votes go, and the counts follow.
   const posts = await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { authorId: true, voteCount: true } });
   expect(posts).toEqual([
@@ -599,6 +599,7 @@ test("delete leaves what goes by their address alone while it's someone else's t
   // What the mailbox emailed in, filed under the user synced with it last (inbound.ts userWithAddress): user-6 here.
   const user6 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-6" } } })).userId;
   const mailbox = await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Invoice", origin: "EMAIL", userId: user6 } });
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mailbox.id, author: "USER", authorId: user6, channel: "EMAIL", body: "Invoice attached" } });
   await prisma.inboundEmail.create({
     data: { projectId: project.id, recipient: "e2e-support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: mailbox.id },
   });
@@ -615,18 +616,46 @@ test("delete leaves what goes by their address alone while it's someone else's t
     emailVerified: true,
   });
   expect(await prisma.inboundEmail.count({ where: { conversationId: mailbox.id, sender: email } })).toBe(1);
+  // Its mail the address's too, not Deleted user's.
+  expect(await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, select: { authorId: true } })).toEqual([{ authorId: null }]);
   // The other one deleted too, with a portal account that verified the address: still someone's.
   await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
   await call(deleteUser, team(), { user: "user-7" });
   expect(await kept()).toEqual([1, 1]);
 });
 
-test("the last users with a shared address deleted at once all go, queued rather than deadlocked, and the address with the last", async () => {
+test("the last two users with a shared address deleted at once queue rather than deadlock, and the address goes with the second", async () => {
   const email = "e2e-shared@example.com";
-  const ids = ["user-8", "user-9", "user-10"];
+  const ids = ["user-8", "user-9"];
   await sync(ids.map((id) => ({ id, email })));
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
-  const results = await Promise.allSettled(ids.map((user) => call(deleteUser, team(), { user })));
-  expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+  // Both identities held, so both deletes wait, then go on at once: locking their own first and then the other's, they
+  // would deadlock (and one run again); locking both in one order, one waits for the other.
+  let holding!: () => void;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (holding = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const holder = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM sso_identity WHERE "projectId" = ${project.id} AND "externalId" = ANY(${ids}::text[]) ORDER BY "externalId" FOR UPDATE`;
+      holding();
+      await released;
+    },
+    { timeout: 20_000 },
+  );
+  await held;
+  const transaction = vi.spyOn(prisma, "$transaction");
+  try {
+    const deletes = ids.map((user) => call(deleteUser, team(), { user }));
+    await untilWaitingOnLock(2);
+    release();
+    await holder;
+    expect((await Promise.allSettled(deletes)).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    // Each ran once: nothing deadlocked.
+    expect(transaction).toHaveBeenCalledTimes(2);
+  } finally {
+    transaction.mockRestore();
+  }
   expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } })).toBe(0);
 });
+

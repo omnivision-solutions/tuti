@@ -398,9 +398,16 @@ export const deleteUser = defineOperation({
           // A shared address's own: what it emailed in was filed under whoever of its users was synced last (inbound.ts
           // userWithAddress), this one maybe. Those go back to the address, which still answers them, as they were.
           if (shared) {
-            await tx.$executeRaw`UPDATE conversation c SET "userId" = NULL, email = ${identity.email}, "emailVerified" = true
+            const handedBack = await tx.$queryRaw<{ id: string }[]>`
+              UPDATE conversation c SET "userId" = NULL, email = ${identity.email}, "emailVerified" = true
               WHERE c."projectId" = ${projectId} AND c."userId" = ${userId} AND c.origin = 'EMAIL'
-                AND EXISTS (SELECT 1 FROM inbound_email i WHERE i."conversationId" = c.id AND i.sender = ${identity.email})`;
+                AND EXISTS (SELECT 1 FROM inbound_email i WHERE i."conversationId" = c.id AND i.sender = ${identity.email})
+              RETURNING c.id`;
+            // The mailbox's own messages in them are the address's too, as those it sends from now on.
+            await tx.conversationMessage.updateMany({
+              where: { conversationId: { in: handedBack.map((row) => row.id) }, author: "USER", authorId: userId },
+              data: { authorId: null },
+            });
           }
           // Their conversations, and those started by email from their address, verified (as their page counts them):
           // kept for the team, as the deleted user's, without the address.

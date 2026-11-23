@@ -211,12 +211,12 @@ export function failTeamLookupAfterComment(postId: string, error = new Error("da
   return () => failed;
 }
 
-/** Waits until some query in this database waits on a lock (another transaction holds what it needs). */
-export async function untilWaitingOnLock() {
+/** Waits until `count` queries in this database (one by default) wait on a lock (another transaction holds what they need). */
+export async function untilWaitingOnLock(count = 1) {
   for (let i = 0; i < 200; i++) {
     const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
       SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-    if (waiting > 0) {
+    if (waiting >= count) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
