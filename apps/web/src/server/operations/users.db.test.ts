@@ -600,6 +600,7 @@ test("delete leaves what goes by their address alone while it's someone else's t
   const user6 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-6" } } })).userId;
   const mailbox = await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Invoice", origin: "EMAIL", userId: user6 } });
   await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mailbox.id, author: "USER", authorId: user6, channel: "EMAIL", body: "Invoice attached" } });
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mailbox.id, author: "USER", authorId: user6, channel: "WIDGET", body: "Also from me" } });
   await prisma.inboundEmail.create({
     data: { projectId: project.id, recipient: "e2e-support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: mailbox.id },
   });
@@ -616,8 +617,11 @@ test("delete leaves what goes by their address alone while it's someone else's t
     emailVerified: true,
   });
   expect(await prisma.inboundEmail.count({ where: { conversationId: mailbox.id, sender: email } })).toBe(1);
-  // Its mail the address's too, not Deleted user's.
-  expect(await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, select: { authorId: true } })).toEqual([{ authorId: null }]);
+  // Its mail the address's too, not Deleted user's; what they wrote in the widget stays theirs.
+  expect(await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, orderBy: { channel: "asc" }, select: { channel: true, authorId: true } })).toEqual([
+    { channel: "WIDGET", authorId: user6 },
+    { channel: "EMAIL", authorId: null },
+  ]);
   // The other one deleted too, with a portal account that verified the address: still someone's.
   await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
   await call(deleteUser, team(), { user: "user-7" });
