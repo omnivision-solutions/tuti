@@ -361,6 +361,8 @@ export const deleteUser = defineOperation({
         const removed = await tx.$queryRaw<{ postId: string }[]>`DELETE FROM vote WHERE "userId" = ${userId} RETURNING "postId"`;
         const counted = [...new Set([...voted, ...removed.map((vote) => vote.postId)])];
         if (counted.length > 0) {
+          // Locked first, in a statement of its own: a recount waiting on a vote's post lock would count from before it.
+          await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${counted}::text[]) ORDER BY id FOR NO KEY UPDATE`;
           await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${counted}::text[])`;
         }
         // Their conversations, and those started by email from their address, verified (as their page counts them):
