@@ -529,9 +529,10 @@ test("delete takes their address off what they wrote in someone else's conversat
     });
   }
   await call(deleteUser, team(), { user: "user-2" });
+  // Theirs says Deleted user, not nothing: a message with no address in Bob's conversation would be Bob's.
   expect(
-    await prisma.conversationMessage.findMany({ where: { conversationId: bobs.id, fromAddress: { not: null } }, select: { fromAddress: true } }),
-  ).toEqual([{ fromAddress: lookalike }]);
+    await prisma.conversationMessage.findMany({ where: { conversationId: bobs.id, fromAddress: { not: null } }, orderBy: { createdAt: "asc" }, select: { fromAddress: true } }),
+  ).toEqual([{ fromAddress: "Deleted user" }, { fromAddress: lookalike }]);
   expect((await prisma.inboundEmail.findMany({ where: { conversationId: bobs.id }, select: { sender: true } })).map((row) => row.sender).sort()).toEqual(["", lookalike]);
   // Bob's conversation stays his.
   expect(await prisma.conversation.findUniqueOrThrow({ where: { id: bobs.id }, select: { userId: true, email: true } })).toEqual({ userId: null, email: "e2e-bob@example.com" });

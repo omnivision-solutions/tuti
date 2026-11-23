@@ -381,9 +381,13 @@ export const deleteUser = defineOperation({
         // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
           await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
           if (email) {
-            // Wherever they wrote from it, someone else's conversation too (Cc'd on it). lower() = lower(), not Prisma's
-            // insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
-            await tx.$executeRaw`UPDATE conversation_message SET "fromAddress" = NULL WHERE "projectId" = ${projectId} AND lower("fromAddress") = ${email}`;
+            // Wherever they wrote from it. In theirs, none: the conversation's person wrote it (Deleted user now). In someone
+            // else's (Cc'd on it), "Deleted user" in its place, as none there would say that person wrote it. By the
+            // project's conversations (indexed), not every message. lower() = lower(), not Prisma's insensitive equals:
+            // that's ILIKE, where "_" or "%" would match someone else's.
+            await tx.$executeRaw`UPDATE conversation_message m
+              SET "fromAddress" = CASE WHEN m."conversationId" = ANY(${conversations}::text[]) THEN NULL ELSE 'Deleted user' END
+              FROM conversation c WHERE c.id = m."conversationId" AND c."projectId" = ${projectId} AND lower(m."fromAddress") = ${email}`;
             await tx.inboundEmail.updateMany({ where: { projectId, sender: email }, data: { sender: "" } });
             await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
           }
