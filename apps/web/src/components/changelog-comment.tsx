@@ -1,7 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
-import { useActionState, useId, useState, useTransition } from "react";
+import { useActionState, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { type EditorUploads, RichEditor } from "@/components/rich-editor";
@@ -22,6 +22,9 @@ import type { FormState } from "@/server/form-state";
 import { deleteChangelogComment, editChangelogComment } from "@/server/changelog";
 
 const ACTION = "inline-flex h-8 items-center rounded-lg px-1.5 -mx-1.5 text-sm font-medium text-muted-foreground hover:text-foreground";
+
+/** The comments' heading's id: focus goes there once a comment is deleted (its Delete is gone with it). */
+export const COMMENTS_HEADING = "entry-comments";
 
 /**
  * A comment on a changelog entry: its text (`children`), and under it Edit (its author's: the text becomes its editor)
@@ -49,12 +52,22 @@ export function ChangelogComment({
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
+  const editButton = useRef<HTMLButtonElement>(null);
+  // Saved or cancelled: back on Edit, where the keyboard was.
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (wasEditing.current && !editing) {
+      editButton.current?.focus();
+    }
+    wasEditing.current = editing;
+  }, [editing]);
   const [deleting, startDelete] = useTransition();
   const errorId = useId();
   const [state, save, saving] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await editChangelogComment(projectSlug, number, commentId, prev, formData);
     if (!result.error) {
       setEditing(false);
+      toast.success("Comment saved");
     }
     return result;
   }, {});
@@ -92,7 +105,7 @@ export function ChangelogComment({
       {(canEdit || canDelete) && (
         <div className="flex items-center gap-4">
           {canEdit && (
-            <button type="button" className={ACTION} aria-label="Edit your comment" onClick={() => setEditing(true)}>
+            <button ref={editButton} type="button" className={ACTION} aria-label="Edit your comment" onClick={() => setEditing(true)}>
               Edit
             </button>
           )}
@@ -119,6 +132,7 @@ export function ChangelogComment({
                           toast.error(result.error);
                         } else {
                           toast.success("Comment deleted");
+                          document.getElementById(COMMENTS_HEADING)?.focus();
                         }
                       })
                     }

@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
-import { ChangelogComment } from "@/components/changelog-comment";
+import { ChangelogComment, COMMENTS_HEADING } from "@/components/changelog-comment";
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
@@ -106,7 +106,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         base={await portalBase()}
       />
       <section className="flex flex-col gap-3 border-t pt-8" aria-label="Comments">
-        <h2 className="font-sans text-lg font-semibold">
+        <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-sans text-lg font-semibold outline-none">
           {comments.length} {comments.length === 1 ? "comment" : "comments"}
         </h2>
         {/* The box before the thread; signed out, a bar to sign in instead. */}

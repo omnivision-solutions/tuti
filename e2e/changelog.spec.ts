@@ -1423,7 +1423,10 @@ test("readers comment on an entry's page: they edit and delete their own, and si
   await expect(edit).toContainText("Finally! My eyes thank you.");
   await edit.fill("Finally! Works on my phone too.");
   await comments.getByRole("button", { name: "Save" }).click();
+  await expect(ada.getByText("Comment saved")).toBeVisible();
   await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveCount(0);
+  // The keyboard's back on Edit.
+  await expect(comments.getByRole("button", { name: "Edit your comment" })).toBeFocused();
   await expect(comments.getByRole("listitem")).toContainText("Finally! Works on my phone too.");
   // On a phone.
   await ada.setViewportSize({ width: 390, height: 844 });
@@ -1437,5 +1440,7 @@ test("readers comment on an entry's page: they edit and delete their own, and si
   await confirm.getByRole("button", { name: "Delete comment" }).click();
   await expect(ada.getByText("Comment deleted")).toBeVisible();
   await expect(comments.getByRole("heading", { name: "0 comments" })).toBeVisible();
+  // The keyboard's on the comments' heading, its Delete gone with the comment.
+  await expect(comments.getByRole("heading", { name: "0 comments" })).toBeFocused();
   await expect(comments.getByText("Finally! Works on my phone too.")).toHaveCount(0);
 });
