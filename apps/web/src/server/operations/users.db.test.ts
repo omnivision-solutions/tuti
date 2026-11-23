@@ -607,3 +607,15 @@ test("delete leaves what goes by their address alone while it's someone else's t
   await call(deleteUser, team(), { user: "user-7" });
   expect(await kept()).toEqual([1, 1]);
 });
+
+test("the last two users with a shared address deleted at once: the address goes with the second", async () => {
+  const email = "e2e-shared@example.com";
+  await sync([
+    { id: "user-8", email },
+    { id: "user-9", email },
+  ]);
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  const results = await Promise.allSettled([call(deleteUser, team(), { user: "user-8" }), call(deleteUser, team(), { user: "user-9" })]);
+  expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } })).toBe(0);
+});

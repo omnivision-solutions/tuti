@@ -350,13 +350,18 @@ export const deleteUser = defineOperation({
           // Their address, unless it's someone else's too (as inbound.ts userWithAddress finds people by it): another of
           // the project's users with it (a shared mailbox), or an account that verified it (theirs, made on the portal,
           // isn't touched). Then nothing goes by it: the messages, conversations and subscription are that person's too.
-          const [shared] = identity.email
-            ? await tx.$queryRaw<unknown[]>`
-                SELECT 1 FROM sso_identity WHERE "projectId" = ${projectId} AND email = ${identity.email} AND id <> ${identity.id}
-                UNION ALL
-                SELECT 1 FROM "user" u WHERE lower(u.email) = ${identity.email} AND u."emailVerified" AND NOT EXISTS (SELECT 1 FROM sso_identity s WHERE s."userId" = u.id)
-                LIMIT 1`
-            : [];
+          // The others locked too: two of them deleted at once would each see the other and leave the address behind; this
+          // way one waits (or, deadlocked, runs again) and finds the other gone.
+          const shared =
+            !!identity.email &&
+            ((
+              await tx.$queryRaw<unknown[]>`
+                SELECT id FROM sso_identity WHERE "projectId" = ${projectId} AND email = ${identity.email} AND id <> ${identity.id} ORDER BY id FOR UPDATE`
+            ).length > 0 ||
+              (
+                await tx.$queryRaw<unknown[]>`
+                  SELECT 1 FROM "user" u WHERE lower(u.email) = ${identity.email} AND u."emailVerified" AND NOT EXISTS (SELECT 1 FROM sso_identity s WHERE s."userId" = u.id) LIMIT 1`
+              ).length > 0);
           const email = shared ? null : identity.email;
           // The posts they voted on, locked first as votes.set and merges lock them (a merge moving their votes finishes,
           // and the post it moved them to is found on the next pass), then counted again without their votes.
