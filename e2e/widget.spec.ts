@@ -660,6 +660,10 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await checkpoint(laptop, "widget-entry-reacted");
   await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
   await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "true");
+  // The page signs them out: the count stays, but it isn't theirs any more, nor anyone's to give.
+  await phone.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
+  await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "false");
+  await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toBeDisabled();
   await phone.context().close();
   await laptop.context().close();
 });

@@ -215,4 +215,10 @@ test("the widget reacts to a published entry as its person, and says which react
   expect(await widgetReact(project.slug, "made.up.token", 1, "tada", true)).toEqual({ error: "Sign in to react" });
   expect(await widgetReact(project.slug, token, 2, "tada", true)).toEqual({ error: expect.any(String) });
   expect(await prisma.changelogReaction.count()).toBe(1);
+
+  // Without a token, on the portal's own site: its signed-in reader.
+  const reader = await signUp("Reader");
+  actAs(reader);
+  expect(await widgetReact(project.slug, null, 1, "thumbs_up", true)).toEqual({ reactions: { thumbs_up: 1, heart: 1, tada: 0 } });
+  expect(await widgetReacted(project.slug, null, 1)).toEqual(["thumbs_up"]);
 });
