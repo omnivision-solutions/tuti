@@ -717,6 +717,8 @@ test("a new announcement pops up by the launcher, once, for visitors who were he
   await expect(boPopup).toHaveCount(0);
   await closeWithEscape(bo, bo.locator("#tuti-widget"));
   await expect(boPopup).toHaveCount(0);
+  // Read, it's seen: the dot's gone.
+  await expect(launcherOf(bo)).toHaveAccessibleName("Feedback");
 
   // A private portal says nothing of its announcements to the script: no popup, nor a dot.
   await owner.goto(`/app/${slug}/settings/access`);

@@ -1952,8 +1952,30 @@ test("Read more opens the panel at the entry and the popup is gone for good; it 
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=whats-new&entry=7");
   expect(page.panel.style.display).toBe("block");
   expect(page.stored.get("tuti:popup:acme")).toBe("7");
+  // Read, it's seen: the dot goes.
+  expect(page.Tuti.unseen()).toBe(false);
+  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-18T10:00:00.000Z");
   page.Tuti.close();
   expect(page.popup).toBeUndefined();
+});
+
+test("Read more from someone the page signs in is recorded for them, so their other devices know", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: ANNOUNCED, seen: null, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  popupParts(page.popup!).readMore.click();
+  await settled();
+  expect(page.seenRequests.at(-1)![1]).toMatchObject({ method: "POST", body: JSON.stringify({ at: "2026-10-18T10:00:00.000Z" }) });
+});
+
+test("a cover that doesn't load goes, and the title makes room for Close", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  const { cover, texts } = popupParts(page.popup!);
+  (cover!.onerror as () => void)();
+  const title = popupParts(page.popup!);
+  expect(title.cover).toBeUndefined();
+  const all = (element: FakeElement): FakeElement[] => element.children.flatMap((child) => (child instanceof FakeElement ? [child, ...all(child)] : []));
+  expect(all(page.popup!).find((part) => part.textContent === texts[0])!.style.paddingRight).toBe("28px");
 });
 
 test("no popup with the launcher hidden, inline or as a sidebar; on the left with a left launcher", async () => {

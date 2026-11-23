@@ -312,7 +312,6 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
       cover.src = announcement.image;
       cover.alt = "";
       css(cover, { display: "block", width: "100%", height: "auto", aspectRatio: "2 / 1", objectFit: "cover", margin: "0" });
-      cover.onerror = function () { if (cover.parentNode) cover.parentNode.removeChild(cover); };
       popup.appendChild(cover);
     }
     var text = document.createElement("div");
@@ -320,6 +319,11 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     var title = document.createElement("div");
     title.textContent = announcement.title;
     css(title, { fontWeight: "600", fontSize: "15px", paddingRight: hasCover ? "0" : "28px", overflowWrap: "anywhere" });
+    // A cover that doesn't load goes, and Close sits by the title then: it makes room.
+    if (hasCover) cover.onerror = function () {
+      if (cover.parentNode) cover.parentNode.removeChild(cover);
+      title.style.paddingRight = "28px";
+    };
     popupExcerpt = document.createElement("div");
     popupExcerpt.textContent = typeof announcement.excerpt === "string" ? announcement.excerpt : "";
     css(popupExcerpt, { marginTop: "4px", display: "-webkit-box", webkitLineClamp: "2", webkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" });
@@ -327,9 +331,14 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     popupMore.type = "button";
     popupMore.textContent = "Read more";
     css(popupMore, { display: "block", marginTop: "12px", padding: "6px 14px", border: "0", borderRadius: "999px", cursor: "pointer", font: "inherit", fontWeight: "600" });
+    // Read, it's seen, here and (for someone signed in) on their other devices, as What's new would mark it.
     popupMore.addEventListener("click", function () {
       var number = announcement.number;
+      var at = latest;
       dismissPopup();
+      remember(at);
+      seenOnServer(at);
+      setUnseen(anyUnseen());
       open({ entry: number }, button);
     });
     text.appendChild(title);

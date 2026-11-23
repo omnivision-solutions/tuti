@@ -156,7 +156,7 @@ const AI_FIRST_LINE =
   "Whether a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with “Ask a person” to pass it to the team; one with files goes to the team (true for new projects)";
 
 const POPUP_LINE =
-  "Whether a new announcement pops up as a small card by the launcher (its cover, title and Read more), for visitors who haven't seen it, once per browser (false for new projects)";
+  "Whether a new announcement pops up as a small card by the launcher (its cover, title and Read more), once per browser, for visitors who haven't seen it and were last on the site before it was published (not on a first visit); public portals only (false for new projects)";
 
 const widgetOutput = z
   .object({

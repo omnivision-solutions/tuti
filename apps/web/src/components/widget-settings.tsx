@@ -214,7 +214,7 @@ export function WidgetSettings({
         <SettingRow label="Show on your portal" htmlFor="widget-on-portal" info="The launcher on every page of your portal too, opening the same panel as on your site." inline>
           <Switch id="widget-on-portal" name="onPortal" defaultChecked={onPortal} />
         </SettingRow>
-        <SettingRow label="Show new announcements as a popup" htmlFor="widget-popup" info="A card by the button for a new announcement, once, for people who haven't seen it." inline>
+        <SettingRow label="Show new announcements as a popup" htmlFor="widget-popup" info="A card by the button for a new announcement, once, for returning visitors who haven't seen it. Public portals only." inline>
           <Switch id="widget-popup" name="popup" defaultChecked={popup} />
         </SettingRow>
       </SettingsCard>

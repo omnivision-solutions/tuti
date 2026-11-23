@@ -199,7 +199,7 @@ portal, the Changelog tab says "New" until they've looked. On a private portal, 
 with `identify` who may read it hear of an announcement; nobody else's button shows the dot.
 
 With **Show new announcements as a popup** on (Settings → Widget), a new announcement also shows as a small card
-above Tuti's button: its cover, title, two lines and Read more, which opens it in the panel. It shows only for an
+above Tuti's button: its cover, title, two lines and Read more, which opens it in the panel and marks it seen. It shows only for an
 announcement published since this browser last loaded a page with the widget (`tuti:visit:<project>`), still unseen
 by the rule above, so a first visit or an announcement someone has ignored for a while gets just the dot. Closing it
 keeps it away for that entry in this browser (`tuti:popup:<project>`) and leaves the dot until What's new is opened.
