@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { ArrowRightIcon, ExternalLinkIcon } from "lucide-react";
 import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -15,19 +15,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CopyButton, CopyField } from "@/components/copy-button";
+import { AgentPrompt } from "@/components/agent-prompt";
+import { CopyButton } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SettingBlock, SettingRow } from "@/components/settings-card";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { keepingFields } from "@/lib/forms";
-import { type SiteGuide, siteGuides } from "@/lib/site-guides";
+import { sitePrompt } from "@/lib/site-prompt";
 import type { FormState } from "@/server/form-state";
 import { removeSiteMount, saveSite, verifySiteSetup } from "@/server/portal-settings";
 
-/** The guide for every other platform (the rules in general). */
+/** The rules in general, with each platform's: for doing it by hand. */
 const SITE_PATH_DOCS = "https://github.com/omnivision-solutions/tuti/blob/main/docs/site-path.md";
 
 type Site = { url: string; status: "pending" | "verified"; forward: { from: string; to: string }[] };
@@ -35,32 +36,30 @@ type Site = { url: string; status: "pending" | "verified"; forward: { from: stri
 /**
  * Settings → Domain → Sub-folder (see the site.* operations): the portal under a path of the
  * team's own site (yourcompany.com/help). They set the site and the path, make their site forward
- * them to Tuti (a guide per platform, with their own rules written out), and check it.
+ * two paths to Tuti (a prompt for their coding agent, or the rules by hand), and check it.
  */
 export function SiteMountSettings({ projectSlug, site, portalAddress, tutiAddress }: { projectSlug: string; site: Site | null; portalAddress: string; tutiAddress: string }) {
   if (!site) {
     return <AddSiteForm projectSlug={projectSlug} portalAddress={portalAddress} />;
   }
   const verified = site.status === "verified";
-  const path = new URL(site.url).pathname;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium break-all">{site.url.replace(/^https?:\/\//, "")}</span>
         <Badge variant={verified ? "default" : "secondary"}>{verified ? "Verified" : "Waiting for your site"}</Badge>
       </div>
-      <p className="text-sm text-muted-foreground">
-        {verified
-          ? `Your portal answers at ${site.url}, and every link Tuti makes goes there. Keep your site forwarding:`
-          : "Make your site forward these to Tuti, paths and all (rewrite or proxy rules): the path, and /_tuti for the portal's scripts and styles. Then check:"}
-      </p>
-      {site.forward.map((rule) => (
-        <section key={rule.from} aria-label={`Forward ${rule.from}`} className="flex flex-col gap-2">
-          <CopyField label="From" name={`${rule.from} from`} value={rule.from} />
-          <CopyField label="To" name={`${rule.from} to`} value={rule.to} />
-        </section>
-      ))}
-      <SiteGuides path={path} tutiAddress={tutiAddress} />
+      {verified ? (
+        <>
+          <p className="text-sm text-muted-foreground">Your portal answers at {site.url}.</p>
+          <ForwardRules rules={site.forward} tutiAddress={tutiAddress} />
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">Show your portal at {site.url}, without visitors leaving your site.</p>
+          <SiteSetup url={site.url} rules={site.forward} tutiAddress={tutiAddress} />
+        </>
+      )}
       <div className="flex flex-wrap justify-end gap-2">
         {!verified && <CheckSiteButton projectSlug={projectSlug} url={site.url} />}
         <RemoveSiteButton projectSlug={projectSlug} url={site.url} portalAddress={portalAddress} />
@@ -69,60 +68,61 @@ export function SiteMountSettings({ projectSlug, site, portalAddress, tutiAddres
   );
 }
 
-/** "Pick the platform your site runs on": each opens its rules for this portal, ready to paste; and docs for the rest. */
-function SiteGuides({ path, tutiAddress }: { path: string; tutiAddress: string }) {
-  const [open, setOpen] = useState<SiteGuide | null>(null);
-  const guides = siteGuides({ path, tuti: tutiAddress });
+/** A prompt for the team's coding agent (the main way), and the rules to add by hand as the other tab. */
+function SiteSetup({ url, rules, tutiAddress }: { url: string; rules: Site["forward"]; tutiAddress: string }) {
+  const [tab, setTab] = useState<"prompt" | "rules">("prompt");
+  const prompt = sitePrompt({ url, tuti: tutiAddress });
+  return (
+    <Tabs value={tab} onValueChange={(value) => setTab(value as "prompt" | "rules")} className="gap-3">
+      <TabsList>
+        <TabsTrigger value="prompt">Prompt for your agent</TabsTrigger>
+        <TabsTrigger value="rules">Rules</TabsTrigger>
+      </TabsList>
+      <TabsContent value="prompt">
+        <AgentPrompt
+          prompt={prompt}
+          steps={[
+            <>
+              Proxy <code>{rules[0]?.from}</code> and <code>{rules[1]?.from}</code> to Tuti
+            </>,
+            "Test both before handing back",
+          ]}
+        />
+      </TabsContent>
+      <TabsContent value="rules">
+        <ForwardRules rules={rules} tutiAddress={tutiAddress} guides />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+/** Each path the site forwards, and where to: as a proxy, path and all. */
+function ForwardRules({ rules, tutiAddress, guides }: { rules: Site["forward"]; tutiAddress: string; guides?: boolean }) {
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm">To set it up, pick the platform your site runs on:</p>
       <ul className="flex flex-col divide-y rounded-lg border">
-        {guides.map((guide) => (
-          <li key={guide.id}>
-            <button type="button" onClick={() => setOpen(guide)} className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-accent">
-              {guide.name}
-              <ChevronRightIcon className="size-4 text-muted-foreground" />
-            </button>
+        {rules.map((rule) => (
+          <li key={rule.from} aria-label={`Forward ${rule.from}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5 pr-1.5 pl-3 font-mono text-xs">
+            <code>{rule.from}</code>
+            <ArrowRightIcon aria-label="to" className="size-3.5 text-muted-foreground" />
+            <code className="min-w-0 flex-1 break-all">{rule.to}</code>
+            <CopyButton value={rule.to} label={`where ${rule.from} goes`} />
           </li>
         ))}
-        <li>
-          <a
-            href={SITE_PATH_DOCS}
-            target="_blank"
-            rel="noreferrer"
-            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm hover:bg-accent"
-          >
-            My platform isn&apos;t listed
-            <ExternalLinkIcon className="size-4 text-muted-foreground" />
-          </a>
-        </li>
       </ul>
-      <Sheet open={open !== null} onOpenChange={(next) => !next && setOpen(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-          {open && (
-            <>
-              <SheetHeader className="pr-12">
-                <SheetTitle>Put your portal under {path} with {open.name}</SheetTitle>
-                <SheetDescription>{open.where}</SheetDescription>
-              </SheetHeader>
-              <div className="flex flex-col gap-3 px-4 pb-4">
-                <div className="rounded-lg border">
-                  <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5">
-                    <span className="text-xs text-muted-foreground">{open.language}</span>
-                    <CopyButton value={open.code} label={`${open.name} rules`} />
-                  </div>
-                  <pre className="overflow-x-auto px-3 py-2 text-xs">
-                    <code>{open.code}</code>
-                  </pre>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Then come back here and choose Check setup. Forward requests as a proxy does, not as a redirect: your visitors only ever see your site.
-                </p>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      <p className="text-sm text-muted-foreground">
+        {rules[0] && <>Forward {rules[0].from.replace(/\/\*$/, "")} itself too. </>}A proxy, not a redirect, with Host{" "}
+        <code className="font-mono text-xs text-foreground">{new URL(tutiAddress).host}</code>.
+        {guides && (
+          <>
+            {" "}
+            <a href={SITE_PATH_DOCS} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground">
+              Guides
+              <ExternalLinkIcon aria-hidden className="size-3.5" />
+            </a>
+          </>
+        )}
+      </p>
     </div>
   );
 }

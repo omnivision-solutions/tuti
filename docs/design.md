@@ -771,7 +771,8 @@ Use these instead of hand-rolling layout:
   name and content is selectable text with its own Copy button (copying is
   blocked over plain HTTP, so self-hosters select it), named for its record. On
   phones each record is a block, its parts labelled. `CopyRows` is the same for labelled values that aren't
-  records (an address to forward, and where to).
+  records. Paths a site forwards (Sub-folder's rules) are one line each, path → address, with Copy on the address
+  only: the path is the team's own, a word or two.
 - **`ColorField`**: a colour is the browser's swatch with its hex beside it,
   kept in step, so a brand colour can be typed exactly.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled
@@ -824,6 +825,9 @@ widths, in light and dark (in development only).
   - A page that connects the team's own code to Tuti (Single sign-on) is the exception: what it does only makes sense
     as a round trip, so the steps show under its switch (a short numbered list), and a card gives a prompt for the
     team's coding agent with Copy (no secret in it) and the code as the other tab. The rows to fill in by hand follow.
+  - A prompt for the team's coding agent (Single sign-on, Sub-folder) is an `AgentPrompt`: "Paste into your coding
+    agent. It will:", two or three short steps, Copy prompt, and the full text only behind "Show full prompt". It's
+    the first tab; doing it by hand (code, rules) is the other.
   - The page's description is one short line beside its title in the header (`SettingsPane`'s `description`; above
     the cards under 56rem, where the header has no room), or nothing. One given as elements (a link in it) stays above
     the cards at every width.
