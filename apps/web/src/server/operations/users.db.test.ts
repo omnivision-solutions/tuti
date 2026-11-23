@@ -8,7 +8,10 @@ import type { z } from "zod";
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { widgetToken } from "@/lib/widget-session";
+
 import { canActIn } from "../membership";
+import { widgetConversations } from "../widget-inbox";
 import { createConversation, getConversation } from "./conversations";
 import { createComment, createPost } from "./create";
 import { createGroup } from "./groups";
@@ -403,6 +406,9 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
   await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: ada, expiresAt: new Date(Date.now() + 60_000) } });
   expect(await canActIn(ada, project.id)).toBe(true);
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const token = widgetToken(project.id, ada);
+  expect(await widgetConversations(project.slug, { token })).toMatchObject({ conversations: [{ number: 1 }] });
 
   expect(await call(deleteUser, team(), { user: "user-1" })).toEqual({ deleted: "user-1" });
 
@@ -433,8 +439,9 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     { userId: ada, email: null },
     { userId: ada, email: null },
   ]);
-  // A widget token from before acts no more.
+  // A widget token from before acts no more, nor reads their conversations.
   expect(await canActIn(ada, project.id)).toBe(false);
+  expect(await widgetConversations(project.slug, { token })).toEqual({ error: expect.any(String) });
 
   // The same id later is someone new, with nothing of theirs.
   expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0 });

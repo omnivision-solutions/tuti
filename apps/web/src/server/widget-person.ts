@@ -88,6 +88,15 @@ const visitor = (projectId: string, hash: string, shown: Prisma.ConversationWher
   email: null,
 });
 
+/**
+ * The person a widget token is for (widgetUser), while their project's app hasn't deleted them (users.delete): a
+ * token outlives the delete by up to 12 hours.
+ */
+export async function widgetTokenUser(projectId: string, token: string): Promise<string | null> {
+  const userId = widgetUser(projectId, token);
+  return userId && (await prisma.user.count({ where: { id: userId, deletedAt: null } })) > 0 ? userId : null;
+}
+
 /** Whoever the panel says is here, signed in first; null if nobody is (or the inbox is off). */
 export async function widgetPerson(projectSlug: string, auth: WidgetAuth): Promise<WidgetPerson | null> {
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true, supportInbox: true } });
@@ -95,7 +104,7 @@ export async function widgetPerson(projectSlug: string, auth: WidgetAuth): Promi
     return null;
   }
   if (auth.token) {
-    const userId = widgetUser(project.id, String(auth.token));
+    const userId = await widgetTokenUser(project.id, String(auth.token));
     return userId ? await signedIn(project.id, userId) : null;
   }
   const session = await sessionIn(project.id);

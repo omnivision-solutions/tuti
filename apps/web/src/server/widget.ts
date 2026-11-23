@@ -22,6 +22,7 @@ import { postViewer } from "./post-visibility";
 import { sessionIn } from "./session";
 import { updateWidgetSettings } from "./operations/widget";
 import { type IdeaNews, ideaNews } from "./widget-home";
+import { widgetTokenUser } from "./widget-person";
 
 /**
  * The widget's actions: on customers' sites (see lib/widget-session.ts for its
@@ -68,7 +69,7 @@ export async function widgetSignIn(
 /** The news of the ideas of the person a widget token is for (Home's "Your ideas"); none for a token that doesn't check out. */
 export async function widgetIdeaNews(projectSlug: string, token: string): Promise<IdeaNews[]> {
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
-  const userId = project && widgetUser(project.id, String(token));
+  const userId = project && (await widgetTokenUser(project.id, String(token)));
   return project && userId ? ideaNews(project.id, userId) : [];
 }
 

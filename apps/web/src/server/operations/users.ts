@@ -355,9 +355,11 @@ export const deleteUser = defineOperation({
           await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
           voted.push(...found);
         }
-        await tx.vote.deleteMany({ where: { userId } });
-        if (voted.length > 0) {
-          await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${voted}::text[])`;
+        // Every post the delete touched is counted again, with one a vote landed on since (votes.set never waits on this).
+        const removed = await tx.$queryRaw<{ postId: string }[]>`DELETE FROM vote WHERE "userId" = ${userId} RETURNING "postId"`;
+        const counted = [...new Set([...voted, ...removed.map((vote) => vote.postId)])];
+        if (counted.length > 0) {
+          await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${counted}::text[])`;
         }
         // Their conversations, and those started by email from their address, verified (as their page counts them):
         // kept for the team, as the deleted user's, without the address.
