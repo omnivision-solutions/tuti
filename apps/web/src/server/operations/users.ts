@@ -403,11 +403,17 @@ export const deleteUser = defineOperation({
               WHERE c."projectId" = ${projectId} AND c."userId" = ${userId} AND c.origin = 'EMAIL'
                 AND EXISTS (SELECT 1 FROM inbound_email i WHERE i."conversationId" = c.id AND i.sender = ${identity.email})
               RETURNING c.id`;
-            // The mailbox's own messages in them (by email) are the address's too, as those it sends from now on; their
-            // replies in the widget stay theirs (Deleted user).
+            // The mailbox's own messages in them (by email) are the address's too, as those it sends from now on. Their
+            // replies in the widget stay theirs: named Deleted user, as none would make them the address's (the inbox
+            // names a message by its fromAddress, else the conversation's person).
+            const handedBackIds = handedBack.map((row) => row.id);
             await tx.conversationMessage.updateMany({
-              where: { conversationId: { in: handedBack.map((row) => row.id) }, author: "USER", authorId: userId, channel: "EMAIL" },
+              where: { conversationId: { in: handedBackIds }, author: "USER", authorId: userId, channel: "EMAIL" },
               data: { authorId: null },
+            });
+            await tx.conversationMessage.updateMany({
+              where: { conversationId: { in: handedBackIds }, author: "USER", authorId: userId, channel: { not: "EMAIL" } },
+              data: { fromAddress: "Deleted user" },
             });
           }
           // Their conversations, and those started by email from their address, verified (as their page counts them):

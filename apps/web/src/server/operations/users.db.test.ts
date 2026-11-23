@@ -618,9 +618,12 @@ test("delete leaves what goes by their address alone while it's someone else's t
   });
   expect(await prisma.inboundEmail.count({ where: { conversationId: mailbox.id, sender: email } })).toBe(1);
   // Its mail the address's too, not Deleted user's; what they wrote in the widget stays theirs.
-  expect(await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, orderBy: { channel: "asc" }, select: { channel: true, authorId: true } })).toEqual([
-    { channel: "WIDGET", authorId: user6 },
-    { channel: "EMAIL", authorId: null },
+  // As the inbox names them (its fromAddress, else the conversation's person).
+  expect(
+    await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, orderBy: { channel: "asc" }, select: { channel: true, authorId: true, fromAddress: true } }),
+  ).toEqual([
+    { channel: "WIDGET", authorId: user6, fromAddress: "Deleted user" },
+    { channel: "EMAIL", authorId: null, fromAddress: null },
   ]);
   // The other one deleted too, with a portal account that verified the address: still someone's.
   await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
