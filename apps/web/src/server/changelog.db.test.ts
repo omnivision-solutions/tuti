@@ -3,7 +3,7 @@ import { UPLOADS_PER_HOUR_TEAM } from "@tuti/jobs";
 import { createServer } from "node:http";
 import { type AddressInfo } from "node:net";
 
-import { FAKE_PNG, type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
+import { configFile, FAKE_PNG, type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -271,6 +271,9 @@ describe("Markdown's images", () => {
   const files = createServer((request, response) => {
     if (request.url === "/shot.png") {
       response.writeHead(200, { "content-type": "image/png" }).end(FAKE_PNG);
+    } else if (request.url === "/big.png") {
+      // Over the team's image limit (1 MB below), under the import's.
+      response.writeHead(200, { "content-type": "image/png" }).end(Buffer.alloc(2 * 1024 * 1024));
     } else {
       response.writeHead(404).end();
     }
@@ -308,6 +311,24 @@ describe("Markdown's images", () => {
     const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![The menu](${origin}/shot.png)\n\nAfter.` });
     expect((entry.content as { content: { type: string }[] }).content.map((node) => node.type)).not.toContain("image");
     expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(UPLOADS_PER_HOUR_TEAM);
+  });
+
+  test("are held to the team's image size, not the import's", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamImage: 1 } } }));
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![Huge](${origin}/big.png)\n\nAfter.` });
+    expect((entry.content as { content: { type: string }[] }).content.map((node) => node.type)).not.toContain("image");
+    expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(0);
+  });
+
+  test("aren't copied for a request refused anyway", async () => {
+    const markdown = `![The menu](${origin}/shot.png)`;
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", markdown, posts: [999] })).rejects.toMatchObject({ status: 400 });
+    await expect(call(createChangelogEntry, as(owner), { title: "Long", markdown: `${markdown}\n\n${"word ".repeat(5_000)}` })).rejects.toMatchObject({ status: 400 });
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
+    await expect(
+      call(updateChangelogEntry, as(owner), { number: entry.number, markdown, expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(0);
   });
 });
 

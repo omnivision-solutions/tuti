@@ -239,7 +239,11 @@ export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entr
 /** Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the same limits. */
 async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor) {
   if (input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "")) {
-    const html = await markdownToContent("changelog", input.markdown, { projectId, uploaderId: actor.kind === "user" ? actor.userId : actor.createdById });
+    const html = await markdownToContent("changelog", input.markdown, {
+      projectId,
+      uploaderId: actor.kind === "user" ? actor.userId : actor.createdById,
+      maxLength: MAX_ENTRY_LENGTH,
+    });
     if ("error" in html) {
       throw new OperationError(400, "invalid_content", html.error);
     }
@@ -407,8 +411,9 @@ export const createChangelogEntry = defineOperation({
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
-    const text = await entryText(input, projectId, actor);
+    // Before the text: Markdown's images are copied as it's read, so a request refused anyway copies none.
     const posts = await postIds(projectId, input.posts);
+    const text = await entryText(input, projectId, actor);
     const entry = await saving(() =>
       prisma.$transaction(async (tx) => {
         // Locks the project row, so concurrent entries get distinct numbers.
@@ -474,8 +479,12 @@ export const updateChangelogEntry = defineOperation({
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
-    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor) : null;
+    // Checked again under the lock below; here first, so Markdown's images aren't copied for an edit refused anyway.
+    if (input.expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+      throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
+    }
     const posts = input.posts && (await postIds(projectId, input.posts));
+    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor) : null;
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         if (posts) {
