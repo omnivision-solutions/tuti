@@ -378,6 +378,12 @@ describe("a cover given by URL", () => {
     expect(await ready()).toBe(0);
   });
 
+  test("that couldn't be kept on our side is a 503 to try again, not a bad URL", async () => {
+    vi.stubEnv("MEDIA_S3_ENDPOINT", "http://127.0.0.1:1");
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/shot.png` })).rejects.toMatchObject({ status: 503, code: "copy_failed" });
+    expect(await ready()).toBe(0);
+  });
+
   test("past the member's hourly uploads is a 409", async () => {
     await prisma.media.createMany({
       data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),

@@ -271,6 +271,9 @@ async function coverId(projectId: string, actor: Actor, cover: string | null | u
   if ("mediaId" in copied) {
     return copied.mediaId;
   }
+  if (copied.passing) {
+    throw new OperationError(503, "copy_failed", "Couldn't keep the cover just now: try again in a moment");
+  }
   switch (copied.leftOut) {
     case "unsupported":
       throw new OperationError(503, "uploads_unavailable", "Uploads aren't set up on this server");

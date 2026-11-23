@@ -2,10 +2,7 @@ import type { Profile } from "@tuti/content";
 import { type HtmlContent, htmlToContent } from "@tuti/content/html";
 import { marked } from "marked";
 
-import { mediaImporter } from "./import-media";
-
-/** How long an API request waits for the images its Markdown links to: those not copied by then are left out. */
-const COPY_TIME_MS = 30_000;
+import { COPY_TIME_MS, mediaImporter } from "./import-media";
 
 /**
  * Markdown an API client sends (release notes, say) as rich content: rendered to HTML and read as imports read it, the
@@ -27,7 +24,3 @@ export async function markdownToContent(
   const media = mediaImporter({ projectId, uploaderId, deadline: Date.now() + COPY_TIME_MS, upload: true });
   return htmlToContent(profile, html, { media });
 }
-
-/** The image at `url` (a changelog entry's cover) copied in as `uploaderId`'s upload, as Markdown's images are, or why not. */
-export const uploadImage = (url: string, { projectId, uploaderId }: { projectId: string; uploaderId: string }) =>
-  mediaImporter({ projectId, uploaderId, deadline: Date.now() + COPY_TIME_MS, upload: true })({ kind: "image", url, key: url });

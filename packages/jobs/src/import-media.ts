@@ -80,6 +80,16 @@ export function mediaImporter({
   };
 }
 
+/** How long an API request waits for the images it names (Markdown's, a cover): those not copied by then are left out. */
+export const COPY_TIME_MS = 30_000;
+
+/**
+ * The image at `url` (a changelog entry's cover) copied in as `uploaderId`'s upload, as an API client's Markdown images
+ * are, or why not; `passing` when the failure is ours or the time ran out (storage, processing), not the image's.
+ */
+export const uploadImage = (url: string, { projectId, uploaderId }: { projectId: string; uploaderId: string }) =>
+  copy(projectId, uploaderId, { kind: "image", url, key: url }, Date.now() + COPY_TIME_MS, undefined, true);
+
 /** A team member's uploads an hour (createUpload, apps/web server/media.ts), and copies made as uploads (`upload`). */
 export const UPLOADS_PER_HOUR_TEAM = 300;
 
