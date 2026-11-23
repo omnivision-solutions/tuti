@@ -202,7 +202,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
 
       <SettingsCard title="Or set it up yourself">
         {/* There while SSO is off too (it applies once SSO is on): the agent card's last step needs it. */}
-        <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />
+        <SignInPageRow projectSlug={projectSlug} enabled={enabled} ssoUrl={ssoUrl} signInUrl={signInUrl} />
         <SettingRow label="Return address" description="Your app sends people back here, with a token saying who they are.">
           <div className="flex min-w-0 items-center gap-1 @min-[34rem]/settings:max-w-96">
             <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{ssoUrl}</code>
@@ -233,7 +233,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
 }
 
 /** The app's own sign-in page (empty removes it), saved by the page's "Save changes". */
-function SignInPageRow({ projectSlug, ssoUrl, signInUrl }: { projectSlug: string; ssoUrl: string; signInUrl: string | null }) {
+function SignInPageRow({ projectSlug, enabled, ssoUrl, signInUrl }: { projectSlug: string; enabled: boolean; ssoUrl: string; signInUrl: string | null }) {
   const { state, form } = useCustomizeForm({
     save: async (_prev, formData) => {
       const result = await setSsoSignInUrl(projectSlug, formData);
@@ -246,7 +246,7 @@ function SignInPageRow({ projectSlug, ssoUrl, signInUrl }: { projectSlug: string
   return (
     <SettingRow
       label="Your app's sign-in page"
-      description="Sign in on the portal takes people here. Empty keeps email sign-in."
+      description={enabled ? "Sign in on the portal takes people here. Empty keeps email sign-in." : "Used once single sign-on is on."}
       info={
         <>
           Tuti adds <code>redirect</code>, the portal page to come back to. Sign them in, then send them to <code className="break-all">{ssoUrl}</code> with a token and that{" "}
