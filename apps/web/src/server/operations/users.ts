@@ -377,7 +377,8 @@ export const deleteUser = defineOperation({
             })
           ).map((conversation) => conversation.id);
           await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
-          // Whichever address it came from (one users.sync has changed since too): nothing reads it once the email is in.
+          // Whichever address it came from (one users.sync has changed since too). A later email from it then finds none of
+        // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
           await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
           if (email) {
             // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
