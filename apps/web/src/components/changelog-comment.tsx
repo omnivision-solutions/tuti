@@ -2,6 +2,7 @@
 
 import type { Doc } from "@tuti/content";
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { type EditorUploads, RichEditor } from "@/components/rich-editor";
@@ -62,42 +63,10 @@ export function ChangelogComment({
     wasEditing.current = editing;
   }, [editing]);
   const [deleting, startDelete] = useTransition();
-  const errorId = useId();
-  const [state, save, saving] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await editChangelogComment(projectSlug, number, commentId, prev, formData);
-    if (!result.error) {
-      setEditing(false);
-      toast.success("Comment saved");
-    }
-    return result;
-  }, {});
+  const router = useRouter();
 
   if (editing) {
-    return (
-      <form action={save} className="flex flex-col gap-2">
-        <Field data-invalid={state.error ? true : undefined}>
-          <RichEditor
-            profile="comment"
-            name="content"
-            label="Edit your comment"
-            initial={doc}
-            uploads={uploads}
-            invalid={!!state.error}
-            describedBy={errorId}
-            onCreate={(editor) => editor.commands.focus("end")}
-          />
-          {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
-        </Field>
-        <div className="flex justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="outline" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      </form>
-    );
+    return <EditForm projectSlug={projectSlug} number={number} commentId={commentId} doc={doc} uploads={uploads} onDone={() => setEditing(false)} />;
   }
   return (
     <>
@@ -133,6 +102,8 @@ export function ChangelogComment({
                         const result = await deleteChangelogComment(projectSlug, number, commentId);
                         if (result.error) {
                           toast.error(result.error);
+                          // Deleted meanwhile (another tab, the team): the list as it is now.
+                          router.refresh();
                         } else {
                           toast.success("Comment deleted");
                           document.getElementById(COMMENTS_HEADING)?.focus();
@@ -149,5 +120,57 @@ export function ChangelogComment({
         </div>
       )}
     </>
+  );
+}
+
+/** Its author's editor for it, in place of its text; made afresh each time Edit opens it (no error from last time). */
+function EditForm({
+  projectSlug,
+  number,
+  commentId,
+  doc,
+  uploads,
+  onDone,
+}: {
+  projectSlug: string;
+  number: number;
+  commentId: string;
+  doc: Doc;
+  uploads?: EditorUploads;
+  onDone: () => void;
+}) {
+  const errorId = useId();
+  const [state, save, saving] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await editChangelogComment(projectSlug, number, commentId, prev, formData);
+    if (!result.error) {
+      onDone();
+      toast.success("Comment saved");
+    }
+    return result;
+  }, {});
+  return (
+    <form action={save} className="flex flex-col gap-2">
+      <Field data-invalid={state.error ? true : undefined}>
+        <RichEditor
+          profile="comment"
+          name="content"
+          label="Edit your comment"
+          initial={doc}
+          uploads={uploads}
+          invalid={!!state.error}
+          describedBy={errorId}
+          onCreate={(editor) => editor.commands.focus("end")}
+        />
+        {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
+      </Field>
+      <div className="flex justify-end gap-3">
+        <Button type="button" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="outline" disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
