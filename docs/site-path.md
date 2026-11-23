@@ -6,8 +6,10 @@ Your portal and docs can live under a path of your own site, like
 that path.
 
 In the Tuti app, your project's **Settings → Domain** (owners and admins): pick
-**Sub-folder**, enter your site and the path, make your site forward two paths to Tuti (pick
-your platform there for its rules, written out for your portal), then **Check setup**. Until it's checked, your portal stays at its own address.
+**Sub-folder**, enter your site and the path, make your site forward two paths to Tuti, then
+**Check setup**. **Prompt for your agent** there is written out for your portal: paste it into the
+coding agent working on your site and it adds the rules below for your platform. **Rules** has them
+to add by hand. Until it's checked, your portal stays at its own address.
 
 ## What your site forwards
 

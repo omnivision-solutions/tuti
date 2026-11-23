@@ -26,7 +26,11 @@ test("a team enables SSO; their app signs people into the portal, once per token
   // tab; the address to send people back to has Copy too.
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Folded: what it does and Copy, the whole text on request.
+  await expect(owner.getByText("Add a /tuti sign-in page to your app")).toBeVisible();
   const prompt = owner.locator("pre").filter({ hasText: "TUTI_SSO_SECRET environment variable" });
+  await expect(prompt).toHaveCount(0);
+  await owner.getByRole("button", { name: "Show full prompt" }).click();
   await expect(prompt).toContainText(`${portalUrl(slug)}/sso?token=<jwt>&redirect=<r>`);
   await expect(prompt).toContainText(`I enter it in Tuti as "Your app's sign-in page"`);
   await expect(prompt).toContainText("email, only if our app has verified it");
@@ -56,6 +60,7 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toBe(secret);
   // The prompt, copied any time, never has the secret in it.
   await owner.getByRole("tab", { name: "Prompt" }).click();
+  await owner.getByRole("button", { name: "Show full prompt" }).click();
   await expect(prompt).not.toContainText(secret);
   await expect(enabled).toBeChecked();
   await expect(owner.getByText(`${portalUrl(slug)}/sso`).first()).toBeVisible();

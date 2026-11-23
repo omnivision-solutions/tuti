@@ -4,6 +4,7 @@ import { TriangleAlertIcon } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { AgentPrompt } from "@/components/agent-prompt";
 import { CopyButton } from "@/components/copy-button";
 import { useCustomizeForm } from "@/components/customize-shell";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
@@ -189,7 +190,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
         </SettingBlock>
       </SettingsCard>
 
-      <SettingsCard title="Let your coding agent set it up" description="Turn on single sign-on first, for the secret key. Paste the prompt into the agent working on your app (the key isn't in it); once its page is live, enter it as your app's sign-in page.">
+      <SettingsCard title="Let your coding agent set it up" description="Turn on single sign-on first, for the secret key.">
         <SettingBlock>
           <Tabs value={tab} onValueChange={(value) => setTab(value as "prompt" | "code")} className="gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -197,10 +198,18 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
                 <TabsTrigger value="prompt">Prompt</TabsTrigger>
                 <TabsTrigger value="code">Code (Node)</TabsTrigger>
               </TabsList>
-              {tab === "prompt" ? <CopyButton value={prompt} label="prompt" wide /> : <CopyButton value={sample} label="code" wide />}
+              {tab === "code" && <CopyButton value={sample} label="code" wide />}
             </div>
             <TabsContent value="prompt">
-              <pre className="rounded-lg bg-muted p-3 font-mono text-xs break-words whitespace-pre-wrap">{prompt}</pre>
+              <AgentPrompt
+                prompt={prompt}
+                steps={[
+                  <>
+                    Add a <code>/tuti</code> sign-in page to your app
+                  </>,
+                  "Sign visitors into your portal from it",
+                ]}
+              />
             </TabsContent>
             <TabsContent value="code">
               <pre className="overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs">{sample}</pre>

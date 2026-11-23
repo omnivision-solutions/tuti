@@ -52,14 +52,24 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
   await expect(owner.getByRole("textbox", { name: "Custom domain" })).toHaveCount(0);
   await expect(owner.getByText(`To switch, remove ${new URL(siteUrl()).host}/portal first.`)).toBeVisible();
-  await expect(owner.getByRole("region", { name: "Forward /portal/*" })).toContainText(`${portalUrl(slug)}/portal/*`);
-  // A guide per platform, with the team's own rules written out.
-  await owner.getByRole("button", { name: "Vercel" }).click();
-  const guide = owner.getByRole("dialog", { name: "Put your portal under /portal with Vercel" });
-  await expect(guide).toContainText(`"destination": "${portalUrl(slug)}/portal/:path*"`);
-  await checkpoint(owner, "settings-site-guide", { fullPage: false });
-  await owner.keyboard.press("Escape");
-  await expect(guide).toBeHidden();
+  // A prompt for the team's coding agent first, folded (what it does, Copy); in full, the team's own path and Tuti address.
+  await expect(owner.getByText("Proxy /portal/* and /_tuti/* to Tuti")).toBeVisible();
+  const prompt = owner.locator("pre").filter({ hasText: "Put our Tuti help portal at" });
+  await expect(prompt).toHaveCount(0);
+  await owner.getByRole("button", { name: "Show full prompt" }).click();
+  await expect(prompt).toContainText(`Put our Tuti help portal at ${siteUrl()}/portal on our site.`);
+  await expect(prompt).toContainText(`/_tuti/*  ->  ${portalUrl(slug)}/_tuti/*`);
+  await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await owner.getByRole("button", { name: "Copy prompt" }).click();
+  await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toContain(`${siteUrl()}/portal/.well-known/tuti-site`);
+  await checkpoint(owner, "settings-site-prompt", { fullPage: false });
+  // The rules by hand, as the other tab.
+  await owner.getByRole("tab", { name: "Rules" }).click();
+  await expect(prompt).toHaveCount(0);
+  await expect(owner.getByRole("listitem", { name: "Forward /portal/*" })).toContainText(`${portalUrl(slug)}/portal/*`);
+  await owner.getByRole("button", { name: "Copy where /_tuti/* goes" }).click();
+  await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}/_tuti/*`);
+  await owner.getByRole("tab", { name: "Prompt for your agent" }).click();
   // Not forwarded yet. While it checks, the button is off and keeps focus.
   release = await holdActions(owner);
   await owner.getByRole("button", { name: "Check setup" }).click();
