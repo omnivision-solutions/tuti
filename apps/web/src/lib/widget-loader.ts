@@ -279,10 +279,13 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   var popupExcerpt = null;
   // Lookups of what the person the page signs in has seen elsewhere, under way: no popup till they're back.
   var checking = 0;
-  // On the portal's changelog, the announcement is on the page already.
-  var onChangelog = onPortal && String(window.location.pathname).indexOf(portalPath + "/changelog") === 0;
+  // On the portal's changelog, the announcement is on the page already (checked each time: the portal changes pages without
+  // reloading the script, which hears it as the page changing).
+  function onChangelog() {
+    return onPortal && String(window.location.pathname).indexOf(portalPath + "/changelog") === 0;
+  }
   function popupWanted() {
-    return !!announcement && !hideLauncher && !sidebar && !opened && known && !checking && !onChangelog && isUnseen() && hidden.indexOf("whatsNew") < 0 &&
+    return !!announcement && !hideLauncher && !sidebar && !opened && known && !checking && !onChangelog() && isUnseen() && hidden.indexOf("whatsNew") < 0 &&
       !!lastVisit && latest > lastVisit && storage(function (s) { return s.getItem(popupKey); }) !== String(announcement.number);
   }
   // Closed or read: never again for this entry in this browser.
@@ -303,6 +306,8 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   }
   function buildPopup() {
     popup = document.createElement("div");
+    // For the page's CSS (the portal's and Tuti's app put it under their dialogs, as the launcher).
+    popup.id = "tuti-popup";
     popup.setAttribute("role", "region");
     popup.setAttribute("aria-label", "What's new");
     css(popup, {
@@ -960,6 +965,8 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
       new window.MutationObserver(function () {
         mountInline();
         coverPage();
+        // Another page of a single-page site (the portal's changelog), maybe.
+        if (popup && onChangelog()) showPopup();
       }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-modal", "open", "hidden"] });
     }
   });

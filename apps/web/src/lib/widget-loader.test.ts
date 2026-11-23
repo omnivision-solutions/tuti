@@ -2000,6 +2000,11 @@ test("no popup on the portal's changelog pages, where the announcement is alread
   const home = loadWidget({ attributes: { "data-on-portal": "/help" }, latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), (p.window.location = { ...location, pathname: "/help" })) });
   await settled();
   expect(home.popup).toBeDefined();
+  expect(home.popup!.id).toBe("tuti-popup");
+  // The portal goes to its changelog without reloading the script: the page changing takes it away.
+  (home.window.location as { pathname: string }).pathname = "/help/changelog";
+  home.mutated();
+  expect(home.popup).toBeUndefined();
 });
 
 test("no popup with the launcher hidden, inline or as a sidebar; on the left with a left launcher", async () => {

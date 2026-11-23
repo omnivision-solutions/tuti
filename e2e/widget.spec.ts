@@ -724,12 +724,25 @@ test("a new announcement pops up by the launcher, once, for visitors who were he
   // Read, it's seen: the dot's gone.
   await expect(launcherOf(bo)).toHaveAccessibleName("Feedback");
 
+  // On the portal itself (its own browser storage): under the portal's dialogs and menus, as its launcher, and gone once
+  // the visitor goes to the changelog, where the announcement is (without reloading the script).
+  await ada.goto(portalUrl(slug));
+  await expect(ada.getByRole("button", { name: /^Feedback/ })).toBeVisible();
+  await announce(4, "Exports", "Download your data.");
+  await ada.reload();
+  const portalPopup = popupOf(ada);
+  await expect(portalPopup.getByText("Exports")).toBeVisible();
+  await expect(ada.locator("#tuti-popup")).toHaveCSS("z-index", "45");
+  await ada.getByRole("banner").getByRole("link", { name: "Changelog" }).click();
+  await expect(ada).toHaveURL(/\/changelog/);
+  await expect(portalPopup).toHaveCount(0);
+
   // A private portal says nothing of its announcements to the script: no popup, nor a dot.
   await owner.goto(`/app/${slug}/settings/access`);
   await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
-  await announce(4, "Exports", "Download your data.");
+  await announce(5, "Audit log", "See who changed what.");
   expect(await visit(ada)).toMatchObject({ latest: null, private: true });
   await expect(launcherOf(ada)).toHaveAccessibleName("Feedback");
   await expect(popupOf(ada)).toHaveCount(0);
