@@ -103,7 +103,7 @@ test("Tuti's own widget in the team app signs people in with their account once 
   // On, the app signs them in to the widget (Tuti.identify), as any app does.
   await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  await expect(owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" })).toBeVisible();
+  await expect(owner.getByRole("alert").filter({ hasText: "Copy your secret key now" })).toBeVisible();
   await owner.reload();
   await launcher.click();
   await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();

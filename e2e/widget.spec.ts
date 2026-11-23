@@ -398,7 +398,7 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
   ssoSecrets.set(slug, secret);
 
   // A visitor of the customer's site, not signed in to Tuti at all.
@@ -546,7 +546,7 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
   // An announcement: new to whoever may read the portal, and nobody else hears of it.
   const api = await apiFor(owner, slug);
   await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
@@ -602,7 +602,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
   const key = await createApiKey(owner, slug, "Widget seen test");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
@@ -1170,7 +1170,7 @@ test("someone signed in on the portal opens its widget: Home greets them by thei
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
 
   // On the portal's own site, its session comes along to the panel; the page signs nobody in.
   const rita = await signUp(browser, portalUrl(slug), "Rita Reader");
@@ -1383,7 +1383,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await owner.goto(`/app/${slug}/settings/sso`);
   // SSO, so the customer's site signs its visitor in to the widget's Feedback tab.
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
   const key = await createApiKey(owner, slug, "Widget answers test");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
@@ -2139,7 +2139,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
 
   // No Messages until the team turns the inbox on.
   const before = await (await browser.newContext()).newPage();
@@ -2808,7 +2808,7 @@ test("the widget's Home: help first with suggested articles, a message to the te
   // Someone the page signs in posts an idea; the team plans it.
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
   const sam = await (await browser.newContext()).newPage();
   await sam.goto(sitePage("customer.localhost", slug));
   await sam.getByRole("button", { name: "Feedback" }).click();
@@ -2901,7 +2901,7 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
-  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
