@@ -266,24 +266,29 @@ describe("changelog entries", () => {
   });
 });
 
-describe("Markdown's images", () => {
+/**
+ * For a describe block: an S3 fake and a local server of images (private addresses allowed, as tests' are), at
+ * `images.origin` once started. /shot.png is an image, /big.png 2 MB, /page.png a page served as one; the rest 404.
+ */
+function imageServer() {
+  const images = { origin: "" };
   let s3: S3Fake;
   const files = createServer((request, response) => {
-    if (request.url === "/shot.png") {
+    if (request.url?.startsWith("/shot.png")) {
       response.writeHead(200, { "content-type": "image/png" }).end(FAKE_PNG);
     } else if (request.url === "/big.png") {
-      // Over the team's image limit (1 MB below), under the import's.
+      // Over the team's image limit (1 MB in the size test), under the import's.
       response.writeHead(200, { "content-type": "image/png" }).end(Buffer.alloc(2 * 1024 * 1024));
+    } else if (request.url === "/page.png") {
+      response.writeHead(200, { "content-type": "image/png" }).end("<!doctype html><title>Not an image</title>");
     } else {
       response.writeHead(404).end();
     }
   });
-  let origin: string;
-
   beforeAll(async () => {
     s3 = await startS3Fake();
     await new Promise<void>((resolve) => files.listen(0, "127.0.0.1", resolve));
-    origin = `http://127.0.0.1:${(files.address() as AddressInfo).port}`;
+    images.origin = `http://127.0.0.1:${(files.address() as AddressInfo).port}`;
   });
   afterAll(() => Promise.all([s3.close(), new Promise((resolve) => files.close(resolve))]));
   beforeEach(() => {
@@ -291,15 +296,20 @@ describe("Markdown's images", () => {
       vi.stubEnv(name, value);
     }
   });
+  return images;
+}
+
+describe("Markdown's images", () => {
+  const images = imageServer();
 
   test("are copied into the project and kept attached; one that can't be fetched is left out", async () => {
     const entry = await call(createChangelogEntry, as(owner), {
       title: "Dark mode",
-      markdown: `Before:\n\n![The menu](${origin}/shot.png)\n\n![Gone](${origin}/gone.png)\n\nAfter.`,
+      markdown: `Before:\n\n![The menu](${images.origin}/shot.png)\n\n![Gone](${images.origin}/gone.png)\n\nAfter.`,
     });
-    const images = (entry.content as { content: { type: string; attrs?: { mediaId?: string } }[] }).content.filter((node) => node.type === "image");
-    expect(images).toHaveLength(1);
-    const media = await prisma.media.findUniqueOrThrow({ where: { id: images[0]!.attrs!.mediaId! } });
+    const copied = (entry.content as { content: { type: string; attrs?: { mediaId?: string } }[] }).content.filter((node) => node.type === "image");
+    expect(copied).toHaveLength(1);
+    const media = await prisma.media.findUniqueOrThrow({ where: { id: copied[0]!.attrs!.mediaId! } });
     expect(media).toMatchObject({ projectId: project.id, uploaderId: owner.id, status: "READY", attachedAt: expect.any(Date) });
     expect(entry.body).toContain("After.");
   });
@@ -308,20 +318,20 @@ describe("Markdown's images", () => {
     await prisma.media.createMany({
       data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),
     });
-    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![The menu](${origin}/shot.png)\n\nAfter.` });
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![The menu](${images.origin}/shot.png)\n\nAfter.` });
     expect((entry.content as { content: { type: string }[] }).content.map((node) => node.type)).not.toContain("image");
     expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(UPLOADS_PER_HOUR_TEAM);
   });
 
   test("are held to the team's image size, not the import's", async () => {
     vi.stubEnv("TUTI_CONFIG", configFile({ media: { maxMb: { teamImage: 1 } } }));
-    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![Huge](${origin}/big.png)\n\nAfter.` });
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![Huge](${images.origin}/big.png)\n\nAfter.` });
     expect((entry.content as { content: { type: string }[] }).content.map((node) => node.type)).not.toContain("image");
     expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(0);
   });
 
   test("aren't copied for a request refused anyway", async () => {
-    const markdown = `![The menu](${origin}/shot.png)`;
+    const markdown = `![The menu](${images.origin}/shot.png)`;
     await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", markdown, posts: [999] })).rejects.toMatchObject({ status: 400 });
     await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", markdown, cover: "not-an-upload" })).rejects.toMatchObject({ status: 409 });
     const sample = await post("A sample idea");
@@ -332,6 +342,59 @@ describe("Markdown's images", () => {
     await expect(
       call(updateChangelogEntry, as(owner), { number: entry.number, markdown, expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }),
     ).rejects.toMatchObject({ status: 409 });
+    expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(0);
+  });
+});
+
+describe("a cover given by URL", () => {
+  const images = imageServer();
+  const ready = () => prisma.media.count({ where: { uploaderId: owner.id, status: "READY" } });
+
+  test("is copied into the project as the member's upload, on create and edit", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/shot.png` });
+    const media = await prisma.media.findUniqueOrThrow({ where: { id: entry.cover!.id } });
+    expect(media).toMatchObject({ projectId: project.id, uploaderId: owner.id, status: "READY", filename: null, attachedAt: expect.any(Date) });
+
+    const edited = await call(updateChangelogEntry, as(owner), { number: entry.number, cover: `${images.origin}/shot.png?v=2`, markdown: `![Shot](${images.origin}/shot.png)` });
+    expect(edited.cover!.id).not.toBe(entry.cover!.id);
+    expect(await ready()).toBe(3);
+  });
+
+  test("that can't be fetched, isn't an image or is private is a 400, and nothing is saved", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
+    for (const [cover, message] of [
+      [`${images.origin}/gone.png`, "Couldn't fetch the cover"],
+      [`${images.origin}/page.png`, "The cover's URL isn't an image"],
+      ["ftp://example.com/cover.png", "Couldn't fetch the cover"],
+    ]) {
+      await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover })).rejects.toMatchObject({ status: 400, code: "invalid_cover", message: expect.stringContaining(message) });
+      await expect(call(updateChangelogEntry, as(owner), { number: entry.number, title: "Changed", cover })).rejects.toMatchObject({ status: 400, code: "invalid_cover" });
+    }
+    // Off the test's allowance: a private address is refused, as webhooks' are.
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "false");
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/shot.png` })).rejects.toMatchObject({ status: 400, code: "invalid_cover" });
+    expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(1);
+    expect((await call(getChangelogEntry, as(owner), { number: entry.number })).title).toBe("Dark mode");
+    expect(await ready()).toBe(0);
+  });
+
+  test("past the member's hourly uploads is a 409", async () => {
+    await prisma.media.createMany({
+      data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),
+    });
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover: `${images.origin}/shot.png` })).rejects.toMatchObject({ status: 409, code: "no_room" });
+  });
+
+  test("isn't copied for a request refused anyway", async () => {
+    const cover = `${images.origin}/shot.png`;
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover, posts: [999] })).rejects.toMatchObject({ status: 400 });
+    const sample = await post("A sample idea");
+    await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: sample.number } }, data: { sample: true } });
+    await expect(call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x", cover, posts: [sample.number] })).rejects.toMatchObject({ status: 400 });
+    await expect(call(createChangelogEntry, as(owner), { title: "Long", markdown: "word ".repeat(5_000), cover })).rejects.toMatchObject({ status: 400 });
+    await expect(call(createChangelogEntry, as(owner), { title: "Bad", content: { type: "nope" }, cover })).rejects.toMatchObject({ status: 400 });
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
+    await expect(call(updateChangelogEntry, as(owner), { number: entry.number, cover, expectedUpdatedAt: "2020-01-01T00:00:00.000Z" })).rejects.toMatchObject({ status: 409 });
     expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(0);
   });
 });
