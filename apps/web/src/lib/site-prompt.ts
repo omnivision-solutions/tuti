@@ -20,7 +20,7 @@ export function sitePrompt({ url, tuti }: { url: string; tuti: string }): string
    - Vercel: "rewrites" in vercel.json
    - Netlify: lines in _redirects ending in 200!
    - Nginx: location = ${path}, location ${path}/ and location ${ASSET_PATH}/, each with proxy_pass ${origin} (no path after it), proxy_set_header Host ${host} and proxy_ssl_server_name on
-   - Cloudflare: a Worker on the routes ${site.host}${path}, ${site.host}${path}/* and ${site.host}${ASSET_PATH}/* that sets the request URL's host to ${host} and fetches it
+   - Cloudflare: a Worker on the routes ${site.host}${path}, ${site.host}${path}/* and ${site.host}${ASSET_PATH}/* that fetches ${origin}, plus the request's path and query string
    - Anything else: the same reverse proxy rules
 3. Once it's deployed, test it: ${site.origin}${path}/.well-known/tuti-site and ${site.origin}${ASSET_PATH}/.well-known/tuti-site must both answer with text starting "tuti-site=". Then tell me, and I'll choose Check setup in Tuti.`;
 }
