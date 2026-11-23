@@ -264,6 +264,8 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // At its top, though the list was scrolled down to it.
   await expect(widget.getByRole("link", { name: "What's new", exact: true })).toBeInViewport();
   await expect(widget.getByText("Every screen follows your system's setting until you pick one.").first()).toBeVisible();
+  // Its reactions: signed in only on the portal, not by this site, so they're shown but not hers to give.
+  await expect(widget.getByRole("button", { name: /^React with 🎉/ })).toBeDisabled();
   await checkpoint(ada, "widget-whats-new-entry");
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-whats-new-entry-dark");
@@ -648,6 +650,16 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await expect.poll(answered).toBeGreaterThan(0);
   await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread")).toHaveCount(0);
   await checkpoint(laptop, "widget-seen-on-another-device");
+  // Reacting in the panel, as them: 🎉 on the laptop is theirs on the phone too.
+  await laptopWidget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  const tada = laptopWidget.getByRole("button", { name: /^React with 🎉/ });
+  await expect(tada).toBeEnabled();
+  await tada.click();
+  await expect(tada).toHaveAttribute("aria-pressed", "true");
+  await expect(tada).toHaveAccessibleName("React with 🎉 (1)");
+  await checkpoint(laptop, "widget-entry-reacted");
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "true");
   await phone.context().close();
   await laptop.context().close();
 });

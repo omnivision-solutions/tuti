@@ -737,6 +737,14 @@ const matrix: Matrix = {
         return widget.widgetVote(slug, widgetToken(project.id, users.MEMBER.id), f.postId, true);
       },
     },
+    widgetReacted: { allowed: "public", call: (slug) => widget.widgetReacted(slug, null, 1) },
+    widgetReact: {
+      allowed: "public",
+      call: async (slug) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetReact(slug, widgetToken(project.id, users.MEMBER.id), 1, "tada", true);
+      },
+    },
   },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },

@@ -19,6 +19,7 @@ export function ChangelogReactions({
   reacted,
   signedIn,
   quiet = false,
+  onReact = (reaction, reacted) => reactToChangelogEntry(projectSlug, number, reaction, reacted),
 }: {
   projectSlug: string;
   number: number;
@@ -27,6 +28,8 @@ export function ChangelogReactions({
   signedIn: boolean;
   /** Small (a list's entries, under each one). */
   quiet?: boolean;
+  /** Saves one (the widget's acts for whoever the customer's page signed in); the portal's server action by default. */
+  onReact?: (reaction: Reaction, reacted: boolean) => Promise<{ error?: string }>;
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ counts, reacted });
@@ -62,7 +65,7 @@ export function ChangelogReactions({
                   reacted: on ? s.reacted.filter((r) => r !== reaction) : [...s.reacted, reaction],
                 }));
                 // The state wanted, not a toggle: a repeated request can't undo it.
-                const result = await reactToChangelogEntry(projectSlug, number, reaction, !on);
+                const result = await onReact(reaction, !on);
                 // Refused, the page isn't refreshed, so the optimistic state falls back to what it was.
                 if (result.error) {
                   toast.error(result.error);

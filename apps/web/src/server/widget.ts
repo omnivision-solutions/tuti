@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { linksFrom } from "@/lib/forms";
 import { WIDGET_PARTS } from "@/lib/portal-look";
 import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
+import type { Reaction } from "@/lib/reactions";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
@@ -15,6 +16,7 @@ import { canActIn } from "./membership";
 import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
 import { setVote } from "./operations/more";
+import { reactToChangelogEntry } from "./operations/changelog";
 import { asAdmin, call, postNumberOf } from "./operations/run";
 import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
 import { boardPosts } from "./post-lists";
@@ -146,6 +148,38 @@ export async function widgetVote(projectSlug: string, token: string | null, post
   try {
     const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
     return { votes: (await call(setVote, context, { number: await postNumberOf(project.id, postId), voted: voted === true })).votes };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** The reactions its person (widgetPerson) left on a published entry; none for nobody, or a portal they may not read. */
+export async function widgetReacted(projectSlug: string, token: string | null, number: number): Promise<Reaction[]> {
+  const project = await readableProject(projectSlug);
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || !userId) {
+    return [];
+  }
+  const reactions = await prisma.changelogReaction.findMany({
+    where: { userId, entry: { projectId: project.id, number: Number(number), publishedAt: { not: null } } },
+    select: { kind: true },
+  });
+  return reactions.map((r) => r.kind.toLowerCase() as Reaction);
+}
+
+/** Reacts to a published entry (or takes it back) as the widget's person; the entry's counts after. */
+export async function widgetReact(projectSlug: string, token: string | null, number: number, reaction: Reaction, reacted: boolean) {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || !userId) {
+    return { error: "Sign in to react" };
+  }
+  try {
+    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    return { reactions: (await call(reactToChangelogEntry, context, { number: Number(number), reaction, reacted: reacted === true })).reactions };
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
