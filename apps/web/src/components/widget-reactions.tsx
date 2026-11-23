@@ -57,7 +57,8 @@ export function WidgetReactions({
       number={number}
       counts={total}
       reacted={shown}
-      signedIn={portalSignedIn || !!token}
+      // Theirs to give once theirs are read: a click before then would be counted against a list that's about to change.
+      signedIn={portalSignedIn || (!!token && mine.for === token)}
       onReact={async (reaction, on) => {
         const result = await widgetReact(projectSlug, token, number, reaction, on);
         if (result.reactions) {
