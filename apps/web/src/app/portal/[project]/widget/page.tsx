@@ -16,6 +16,7 @@ import { PortalBaseProvider } from "@/components/portal-base";
 import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
 import { WidgetClose } from "@/components/widget-close";
+import { WidgetReactions } from "@/components/widget-reactions";
 import { WidgetThemeScript } from "@/components/widget-theme-script";
 import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
@@ -190,7 +191,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         )}
         {whatsNew &&
           (typeof entry === "string" && /^[1-9]\d{0,8}$/.test(entry) ? (
-            <WhatsNewEntry slug={slug} number={Number(entry)} />
+            <WhatsNewEntry projectId={project.id} slug={slug} number={Number(entry)} />
           ) : (
             <WhatsNew projectId={project.id} slug={slug} />
           ))}
@@ -539,8 +540,11 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
 }
 
 /** One entry, from its card's Read more, with the way back to the list. */
-async function WhatsNewEntry({ slug, number }: { slug: string; number: number }) {
-  const [entry] = await publishedEntries(slug, { number, take: 1 });
+async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; slug: string; number: number }) {
+  // As Feedback: the portal's signed-in reader on its own site, else whoever the customer's page signs in (WidgetReactions).
+  const session = await getSession();
+  const portalSignedIn = !!session && (await canActIn(session.user.id, projectId));
+  const [entry] = await publishedEntries(slug, { number, take: 1, userId: portalSignedIn ? session.user.id : undefined });
   const back = <BackLink href={await portalHref("/widget?tab=whats-new")}>What&apos;s new</BackLink>;
   if (!entry) {
     return (
@@ -554,6 +558,7 @@ async function WhatsNewEntry({ slug, number }: { slug: string; number: number })
     <div className="flex flex-col gap-4">
       {back}
       <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" base={await portalBase()} />
+      <WidgetReactions projectSlug={slug} number={entry.number} counts={entry.reactions} reacted={entry.reacted} portalSignedIn={portalSignedIn} />
     </div>
   );
 }

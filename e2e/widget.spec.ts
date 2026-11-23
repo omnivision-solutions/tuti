@@ -264,6 +264,8 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // At its top, though the list was scrolled down to it.
   await expect(widget.getByRole("link", { name: "What's new", exact: true })).toBeInViewport();
   await expect(widget.getByText("Every screen follows your system's setting until you pick one.").first()).toBeVisible();
+  // Its reactions: signed in only on the portal, not by this site, so they're shown but not hers to give.
+  await expect(widget.getByRole("button", { name: /^React with 🎉/ })).toBeDisabled();
   await checkpoint(ada, "widget-whats-new-entry");
   await ada.emulateMedia({ colorScheme: "dark" });
   await checkpoint(ada, "widget-whats-new-entry-dark");
@@ -648,6 +650,51 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await expect.poll(answered).toBeGreaterThan(0);
   await expect(laptopWidget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread")).toHaveCount(0);
   await checkpoint(laptop, "widget-seen-on-another-device");
+  // Reacting in the panel, as them: 🎉 on the laptop is theirs on the phone too.
+  await laptopWidget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  const tada = laptopWidget.getByRole("button", { name: /^React with 🎉/ });
+  await expect(tada).toBeEnabled();
+  await tada.click();
+  await expect(tada).toHaveAttribute("aria-pressed", "true");
+  await expect(tada).toHaveAccessibleName("React with 🎉 (1)");
+  await checkpoint(laptop, "widget-entry-reacted");
+  // The page switches to someone else: until their token is traded (held here), nobody's reactions, and none to give.
+  await laptop.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
+  await laptop.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
+  await expect(tada).toHaveAttribute("aria-pressed", "false");
+  await expect(tada).toBeDisabled();
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "true");
+  // The page signs them out: the count stays, but it isn't theirs any more, nor anyone's to give.
+  await phone.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
+  await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "false");
+  await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toBeDisabled();
+  // On a third device: their token is traded, but until their own reactions are read (held here), none to give.
+  const tablet = await (await browser.newContext()).newPage();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let held = false;
+  // The read of which reactions they left: `widgetReacted(slug, token, 1)`.
+  await tablet.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"] && /^\["[^"]+","[^"]+",1\]$/.test(route.request().postData() ?? "")) {
+      held = true;
+      await released;
+    }
+    await route.fallback();
+  });
+  await tablet.goto(site);
+  await tablet.getByRole("button", { name: /^Feedback/ }).click();
+  const tabletWidget = tablet.frameLocator('iframe[title="Feedback"]');
+  await tabletWidget.getByRole("link", { name: /^What's new/ }).click();
+  await tabletWidget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await expect.poll(() => held).toBe(true);
+  const tabletTada = tabletWidget.getByRole("button", { name: "React with 🎉 (1)" });
+  await expect(tabletTada).toBeDisabled();
+  await expect(tabletTada).toHaveAttribute("aria-pressed", "false");
+  release();
+  await expect(tabletTada).toBeEnabled();
+  await expect(tabletTada).toHaveAttribute("aria-pressed", "true");
+  await tablet.context().close();
   await phone.context().close();
   await laptop.context().close();
 });
@@ -1154,6 +1201,16 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await expect(widget.locator("[data-seen]")).toHaveAttribute("data-seen", /^\d{4}-/);
   await expect(unread).toHaveCount(1);
   await checkpoint(ada, "widget-whats-new-portal-session");
+  // She reacts as herself, and after a reload it's still hers.
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await widget.getByRole("button", { name: "React with ❤️" }).click();
+  await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toHaveAttribute("aria-pressed", "true");
+  await ada.reload();
+  await ada.getByRole("button", { name: /^Feedback/ }).click();
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toHaveAttribute("aria-pressed", "true");
+  await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toBeEnabled();
   // A link to an update that isn't there (taken down, or never was): it says so, with the way back to the list.
   await ada.goto(`${portalUrl(slug)}/widget?tab=whats-new&entry=999`);
   await expect(ada.getByText("This update isn't here")).toBeVisible();

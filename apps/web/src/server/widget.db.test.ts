@@ -9,7 +9,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { findSimilarPosts } from "./similar-posts";
-import { widgetCreatePost, widgetIdeas, widgetSignIn, widgetVote } from "./widget";
+import { widgetCreatePost, widgetIdeas, widgetReact, widgetReacted, widgetSignIn, widgetVote } from "./widget";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -192,4 +192,33 @@ test("a private portal's reader whose access the team takes away can't vote or p
   expect(await widgetCreatePost(project.slug, token, {}, form("Sneaky"))).toEqual({ error: "Sign in to post feedback" });
   expect(await prisma.post.count({ where: { projectId: project.id, title: "Sneaky" } })).toBe(0);
   expect((await prisma.post.findUniqueOrThrow({ where: { id: idea.id } })).voteCount).toBe(2);
+});
+
+test("the widget reacts to a published entry as its person, and says which reactions they left; not to drafts nor for nobody", async () => {
+  const fan = await signUp("Fan");
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() },
+      { projectId: project.id, number: 2, title: "Draft", body: "Soon" },
+    ],
+  });
+  const token = widgetToken(project.id, fan.id);
+  expect(await widgetReacted(project.slug, token, 1)).toEqual([]);
+  expect(await widgetReact(project.slug, token, 1, "tada", true)).toEqual({ reactions: { thumbs_up: 0, heart: 0, tada: 1 } });
+  expect(await widgetReact(project.slug, token, 1, "heart", true)).toEqual({ reactions: { thumbs_up: 0, heart: 1, tada: 1 } });
+  expect((await widgetReacted(project.slug, token, 1)).sort()).toEqual(["heart", "tada"]);
+  expect(await widgetReact(project.slug, token, 1, "tada", false)).toEqual({ reactions: { thumbs_up: 0, heart: 1, tada: 0 } });
+  expect(await widgetReacted(project.slug, token, 1)).toEqual(["heart"]);
+
+  expect(await widgetReacted(project.slug, null, 1)).toEqual([]);
+  expect(await widgetReact(project.slug, null, 1, "tada", true)).toEqual({ error: "Sign in to react" });
+  expect(await widgetReact(project.slug, "made.up.token", 1, "tada", true)).toEqual({ error: "Sign in to react" });
+  expect(await widgetReact(project.slug, token, 2, "tada", true)).toEqual({ error: expect.any(String) });
+  expect(await prisma.changelogReaction.count()).toBe(1);
+
+  // Without a token, on the portal's own site: its signed-in reader.
+  const reader = await signUp("Reader");
+  actAs(reader);
+  expect(await widgetReact(project.slug, null, 1, "thumbs_up", true)).toEqual({ reactions: { thumbs_up: 1, heart: 1, tada: 0 } });
+  expect(await widgetReacted(project.slug, null, 1)).toEqual(["thumbs_up"]);
 });
