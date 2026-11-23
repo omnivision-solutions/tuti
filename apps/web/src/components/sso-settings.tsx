@@ -41,7 +41,8 @@ export function agentPrompt(portal: string) {
    - optional: email, name (shown on their posts), avatar (an http(s) image URL)
 3. Redirect to ${portal}/sso?token=<jwt>&redirect=<r>, where <r> is the "redirect" query parameter Tuti sent to /tuti (URL-encoded; "/" if missing).
 4. Use the JWT library this project already has; otherwise add the standard one for our stack (jose for Node).
-5. Add TUTI_SSO_SECRET to .env.example with an empty value.`;
+5. Add TUTI_SSO_SECRET to .env.example with an empty value.
+6. When it's done, tell me the full https:// address of /tuti: I enter it in Tuti as "Your app's sign-in page".`;
 }
 
 /**
@@ -179,7 +180,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
         </SettingBlock>
       </SettingsCard>
 
-      <SettingsCard title="Let your coding agent set it up" description="Paste the prompt into the agent working on your app. It doesn't include your secret key.">
+      <SettingsCard title="Let your coding agent set it up" description="Paste the prompt into the agent working on your app (it doesn't include your secret key), then enter the page it makes as your app's sign-in page.">
         <SettingBlock>
           <Tabs value={tab} onValueChange={(value) => setTab(value as "prompt" | "code")} className="gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

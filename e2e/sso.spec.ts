@@ -28,6 +28,7 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const prompt = owner.locator("pre").filter({ hasText: "TUTI_SSO_SECRET environment variable" });
   await expect(prompt).toContainText(`${portalUrl(slug)}/sso?token=<jwt>&redirect=<r>`);
+  await expect(prompt).toContainText(`I enter it in Tuti as "Your app's sign-in page"`);
   await owner.getByRole("button", { name: "Copy prompt" }).click();
   await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toContain(`Tuti feedback portal at ${portalUrl(slug)}.`);
   const code = owner.locator("pre").filter({ hasText: "setProtectedHeader" });
