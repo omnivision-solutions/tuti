@@ -393,6 +393,8 @@ export const deleteUser = defineOperation({
           await tx.emailOptOut.deleteMany({ where: { userId } });
           await tx.widgetPresence.deleteMany({ where: { projectId, who: userId } });
           await tx.portalHandoff.deleteMany({ where: { userId } });
+          // What an import noted of them (a contact in the other tool is this user): a later import makes them anew.
+          await tx.importedRecord.deleteMany({ where: { projectId, localId: userId } });
           // Signed out everywhere: the portal's sessions end, and the widget's tokens stop working (canActIn).
           await tx.session.deleteMany({ where: { userId } });
           await tx.account.deleteMany({ where: { userId } });

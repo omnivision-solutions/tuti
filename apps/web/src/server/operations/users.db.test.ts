@@ -392,7 +392,7 @@ test("a company's votes count each once, though two of its users are the same pe
 
 test("delete forgets a user: their details, votes, follows, sessions and changelog subscription go; posts, comments and conversations stay as by Deleted user", async () => {
   // With an "_", which a LIKE would take for any letter: a colleague's address it could match keeps its own.
-  const email = "e2e_ada@example.com";
+  const email = "e2e-a_a@example.com";
   const colleague = "e2e-ada@example.com";
   await sync([{ id: "user-1", name: "Ada", email, avatar: "https://example.com/ada.png", properties: { plan: "pro" } }]);
   const { userId: ada } = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
@@ -430,6 +430,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   await prisma.emailOptOut.create({ data: { projectId: project.id, userId: ada } });
   await prisma.widgetPresence.create({ data: { projectId: project.id, who: ada, lastSeenAt: new Date() } });
   await prisma.portalHandoff.create({ data: { codeHash: randomUUID(), projectId: project.id, userId: ada, stateHash: "state", expiresAt: new Date(Date.now() + 60_000) } });
+  await prisma.importedRecord.create({ data: { projectId: project.id, source: "FEATUREBASE", kind: "contact", externalId: "contact-1", localId: ada } });
   await prisma.account.create({ data: { id: randomUUID(), accountId: randomUUID(), providerId: "credential", userId: ada } });
   await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: ada, expiresAt: new Date(Date.now() + 60_000) } });
   expect(await canActIn(ada, project.id)).toBe(true);
@@ -473,6 +474,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     prisma.widgetPresence.count({ where: { who: ada } }),
     prisma.portalHandoff.count({ where: { userId: ada } }),
     prisma.account.count({ where: { userId: ada } }),
+    prisma.importedRecord.count({ where: { projectId: project.id, localId: ada } }),
     prisma.inboundEmail.count({ where: { conversationId: conversation2.id, sender: { not: "" } } }),
   ]) {
     expect(await count).toBe(0);
