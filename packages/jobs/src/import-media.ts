@@ -43,6 +43,10 @@ type Copied = ImportedMedia | { leftOut: LeftOutReason };
  * `cache`, by the source's key: kept by the caller for a whole import, the same file is copied once. Left-out ones are
  * remembered too, so a file that's gone isn't fetched again for every post that has it.
  *
+ * `upload` makes each copy a team member's upload as the app makes them (an API client's Markdown, not a one-off import):
+ * dated now, so it counts against the uploader's hourly limit and is refused past it (UPLOADS_PER_HOUR_TEAM); images up
+ * to the team's own limit, not the import's.
+ *
  * `deadline` (a time, in ms): every copy is done by then or left out (`unreachable`), its download and upload cut off,
  * so a step holding several large videos stays inside its job's time limit. `signal` cuts copies off too, when it's
  * aborted (a caller's own stop; tests). One cut off isn't remembered: a later run, with time of its own, tries again.
@@ -53,19 +57,21 @@ export function mediaImporter({
   cache = new Map(),
   deadline,
   signal,
+  upload,
 }: {
   projectId: string;
   uploaderId: string;
   cache?: Map<string, Copied>;
   deadline?: number;
   signal?: AbortSignal;
+  upload?: boolean;
 }): MediaImporter {
   return async (source) => {
     const cached = cache.get(source.key);
     if (cached) {
       return cached;
     }
-    const { passing, ...copied } = await copy(projectId, uploaderId, source, deadline, signal);
+    const { passing, ...copied } = await copy(projectId, uploaderId, source, deadline, signal, upload);
     // A failure of our own (storage, processing) may pass: the next document tries again.
     if (!passing) {
       cache.set(source.key, copied);
@@ -74,16 +80,26 @@ export function mediaImporter({
   };
 }
 
+/** A team member's uploads an hour (createUpload, apps/web server/media.ts), and copies made as uploads (`upload`). */
+export const UPLOADS_PER_HOUR_TEAM = 300;
+
 /** More than processing ever keeps for one image (a 2400px WebP set and the email JPEG): its quota while it's processed. */
 const PROCESSED_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /** A video goes through a temporary file (never whole in memory: the worker is every project's), deleted however it ends. */
-async function copy(projectId: string, uploaderId: string, source: MediaSource, deadline?: number, signal?: AbortSignal): Promise<Copied & { passing?: true }> {
+async function copy(
+  projectId: string,
+  uploaderId: string,
+  source: MediaSource,
+  deadline?: number,
+  signal?: AbortSignal,
+  upload?: boolean,
+): Promise<Copied & { passing?: true }> {
   const stops = [...(deadline === undefined ? [] : [AbortSignal.timeout(Math.max(1, deadline - Date.now()))]), ...(signal ? [signal] : [])];
   const late = stops.length > 0 ? AbortSignal.any(stops) : undefined;
   const dir = source.kind === "video" ? await mkdtemp(join(tmpdir(), "tuti-video-")) : null;
   try {
-    const copied = await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"), late, deadline);
+    const copied = await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"), late, deadline, upload);
     return late?.aborted && "leftOut" in copied ? { ...copied, passing: true } : copied;
   } finally {
     if (dir) {
@@ -99,6 +115,7 @@ async function copyThrough(
   path: string | null,
   late: AbortSignal | undefined,
   deadline: number | undefined,
+  upload: boolean | undefined,
 ): Promise<Copied & { passing?: true }> {
   const storage = mediaStorage();
   if (!storage) {
@@ -109,7 +126,7 @@ async function copyThrough(
   if (kind === "file" && !(extension in UPLOAD_FILE_TYPES)) {
     return { leftOut: "type" };
   }
-  const limit = kind === "image" ? "importImage" : kind === "video" ? "teamVideo" : "teamFile";
+  const limit = kind === "image" ? (upload ? "teamImage" : "importImage") : kind === "video" ? "teamVideo" : "teamFile";
   // With `path`, the body is only its first bytes; the whole of it is in the file.
   const body = await download(url, mediaLimit(limit), path ?? undefined, late);
   if (typeof body === "string") {
@@ -140,12 +157,23 @@ async function copyThrough(
   const media = await prisma.$transaction(async (tx) => {
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
+    if (upload && (await tx.media.count({ where: { uploaderId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } } })) >= UPLOADS_PER_HOUR_TEAM) {
+      return null;
+    }
     const { _sum } = await tx.media.aggregate({ where: { projectId, status: { not: "FAILED" } }, _sum: { size: true } });
     if ((_sum.size ?? 0) + size > mediaLimit("projectQuota")) {
       return null;
     }
     return tx.media.create({
-      data: { projectId, uploaderId, size, filename, status: "PROCESSING", attachedAt: new Date(), createdAt: new Date(Date.now() - OUTSIDE_UPLOAD_LIMIT_MS) },
+      data: {
+        projectId,
+        uploaderId,
+        size,
+        filename,
+        status: "PROCESSING",
+        attachedAt: new Date(),
+        createdAt: upload ? new Date() : new Date(Date.now() - OUTSIDE_UPLOAD_LIMIT_MS),
+      },
       select: { id: true },
     });
   });

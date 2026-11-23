@@ -32,7 +32,7 @@ export type LeftOutReason =
   | "type"
   /** Over the upload limit for its kind. */
   | "size"
-  /** The project's media quota is full. */
+  /** The project's media quota is full, or (copied as an upload) the uploader's hourly uploads are used up. */
   | "quota"
   /** Couldn't be fetched: a private address, an error, too slow. */
   | "unreachable";

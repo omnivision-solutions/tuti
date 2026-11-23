@@ -19,7 +19,7 @@ import {
   videoType,
 } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { enqueue, UPLOADS_PER_HOUR_TEAM } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { savedPicture } from "@tuti/shared/media-links";
 import { mediaLimit, mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
@@ -41,9 +41,8 @@ import { actsIn, getAccountSession, getSession, onTeam } from "./session";
  */
 
 const MB = 1024 * 1024;
-/** Portal users add a picture or two to a post; a team member writing docs adds dozens in a sitting. The project's quota bounds both. */
+/** Portal users add a picture or two to a post; a team member (UPLOADS_PER_HOUR_TEAM) writing docs adds dozens in a sitting. The project's quota bounds both. */
 const UPLOADS_PER_HOUR = 30;
-const UPLOADS_PER_HOUR_TEAM = 300;
 
 const size = z.number().int().positive({ error: "This file is empty" });
 const fileSchema = z.object({
