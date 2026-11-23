@@ -2814,8 +2814,8 @@ enum ImportState {
   FAILED
 }
 
-/// An import from another tool (docs/plan.md, Switching from Featurebase): one run, a chain of short jobs
-/// (import-step), each doing one page of its current step and saving where it got to.
+/// An import from another tool (docs/plan.md, Switching from Featurebase): one run, a chain of jobs (import-step),
+/// each doing page after page of its current step for a while, saving where it got to with each.
 model DataImport {
   id          String       @id @default(cuid())
   projectId   String

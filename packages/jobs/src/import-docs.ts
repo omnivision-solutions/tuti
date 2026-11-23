@@ -30,12 +30,12 @@ const MAX_DEPTH = 5;
 const CONTENT_PAGE = 20;
 /**
  * How long a page of content converts articles (copying their media) before it saves those it has and reads the same
- * page again for the rest: import-step's time limit is 5 minutes, and a page reads Featurebase for up to 3. At least
+ * page again for the rest: a page has 5 minutes (imports.ts), and reads Featurebase for up to 3. At least
  * one article a page, so it always gets on. Changeable for tests.
  */
 /**
  * `mediaMs`: from the page's start, when every media copy is done or left out (mediaImporter's `deadline`), well inside
- * import-step's 5 minutes: a video may take minutes to copy, and an article may hold several.
+ * a page's 5 minutes: a video may take minutes to copy, and an article may hold several.
  */
 export const contentBudget = { ms: 90_000, mediaMs: 240_000 };
 /** An article's media past the page's media deadline (contentBudget.mediaMs): the article is left to the next run. */

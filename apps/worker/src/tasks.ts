@@ -7,8 +7,11 @@ type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: 
 /** How long a queued code change may wait for its turn before Hatchet gives up on it (its default is 5 minutes). */
 const CODE_CHANGE_QUEUE = "24h" as const;
 
-/** How long one page of an import may take (Hatchet's default is 60 seconds): Featurebase's rate limit can hold it up. */
-const IMPORT_STEP_TIMEOUT = "5m" as const;
+/**
+ * How long an import's run may take (Hatchet's default is 60 seconds): it goes from page to page for 10 minutes
+ * (@tuti/jobs IMPORT_RUN), and its last page may take 5 (the source's rate limit can hold it up).
+ */
+const IMPORT_STEP_TIMEOUT = "15m" as const;
 
 /**
  * How long indexing an API reference may take (Hatchet's default is 60 seconds): a spec of thousands of operations is

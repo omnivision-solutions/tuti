@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
-import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject, upsertProjectUser } from "@tuti/jobs";
+import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_RUN, importsSettled, importStep, loadAdmins, lockProject, upsertProjectUser } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -126,6 +126,37 @@ test("Contacts come across as the project's users, page after page: their app's 
   // Its three contacts, Juno remembered as a lead too.
   expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(4);
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: again.id, state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
+});
+
+test("one run brings page after page; the next is queued only when its time is up or the worker is stopping, and goes on from the page after", async () => {
+  fake.pageSize = 1;
+  const runs = vi.spyOn(handlers, "importStep");
+  const done = { state: "DONE", counts: { contacts: { imported: 3, leftOut: {} } } };
+  const first = await running();
+  expect(await handlers.importStep({ importId: first.id }, log)).toEqual({ step: "done" });
+  expect(runs).toHaveBeenCalledTimes(1);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: first.id } })).toMatchObject(done);
+
+  // Stopping (a deploy): it hands over after the page it's on, and the run it queued brings the rest.
+  runs.mockClear();
+  const stopped = await running();
+  expect(await importStep({ importId: stopped.id }, log, () => true)).toEqual({ step: "contacts" });
+  expect(runs).toHaveBeenCalledTimes(1);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stopped.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
+
+  // Out of time: a run a page.
+  runs.mockClear();
+  const { ms } = IMPORT_RUN;
+  IMPORT_RUN.ms = 0;
+  try {
+    const slow = await running();
+    await handlers.importStep({ importId: slow.id }, log);
+    // Its three contacts, and the empty item Featurebase sends among them.
+    expect(runs).toHaveBeenCalledTimes(4);
+    expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: slow.id } })).toMatchObject({ state: "DONE" });
+  } finally {
+    IMPORT_RUN.ms = ms;
+  }
 });
 
 test("the key is kept encrypted while the import runs, and a worker that can't open it fails the import, saying why", async () => {

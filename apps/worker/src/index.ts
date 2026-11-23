@@ -1,4 +1,4 @@
-import { codeChange, handlers } from "@tuti/jobs";
+import { codeChange, handlers, importStep } from "@tuti/jobs";
 import { assertEnv, billingConfig, checkAiProvider, checkConfig, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
@@ -22,6 +22,8 @@ if (process.env.TUTI_SCHEMA_MIGRATION) {
 }
 
 const hatchet = getHatchet();
+// Asked to stop (a deploy): Hatchet's worker waits for its runs, so an import's hands over after the page it's on.
+let stopping = false;
 const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
   const options = taskOptions(key);
   return hatchet.task({
@@ -29,13 +31,20 @@ const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
     inputValidator: jobs[key].input,
     // `log` rather than ctx.logger: withRunLogs sends it, and any console output, to this run's logs.
     // A code change's run is told whether it's the last try: until then a failure leaves it analysing (it's retried).
+    // An import's run stops going from page to page once the worker is stopping, or Hatchet has given up on the run.
     fn: withRunLogs((input, ctx) =>
-      key === "codeChange" ? codeChange(input as never, log, { lastTry: ctx.retryCount() >= options.retries }) : handlers[key](input as never, log),
+      key === "codeChange"
+        ? codeChange(input as never, log, { lastTry: ctx.retryCount() >= options.retries })
+        : key === "importStep"
+          ? importStep(input as never, log, () => stopping || ctx.cancelled)
+          : handlers[key](input as never, log),
     ),
   });
 });
 
 const worker = await hatchet.worker("tuti-worker", { workflows: tasks, slots: 20 });
+// Beside the worker's own listener (it's what exits): alone, this one would keep the process from stopping.
+process.once("SIGTERM", () => (stopping = true));
 
 // A self-hosted server's own receiver for the support domain's mail (off without INBOUND_SMTP_PORT).
 const receiver = receiverFromEnv();

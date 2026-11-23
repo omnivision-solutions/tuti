@@ -126,9 +126,9 @@ export const jobs = {
     retries: 0,
   },
   /**
-   * One page of an import from another tool (docs/plan.md, Switching from Featurebase), then the next. Tried once: the
-   * Featurebase client retries what fails for a while, and a page that still fails fails the import, which can be started
-   * again. One at a time per import, so a duplicate waits and then finds its page done.
+   * An import from another tool (docs/plan.md, Switching from Featurebase), page after page for a while, then the next
+   * run. Tried once: the Featurebase client retries what fails for a while, and a page that still fails fails the import,
+   * which can be started again. One at a time per import, so a duplicate waits and then finds its page done.
    */
   importStep: {
     name: "import-step",

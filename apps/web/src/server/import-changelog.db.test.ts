@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { CHANGELOG_PAGE, handlers, importsSettled } from "@tuti/jobs";
+import { CHANGELOG_PAGE, handlers, IMPORT_RUN, importsSettled } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -17,6 +17,8 @@ let s3: S3Fake;
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
+// A run a page: tests here watch each page as its run starts (handlers.importStep).
+IMPORT_RUN.ms = 0;
 beforeAll(async () => {
   [fake, s3] = await Promise.all([startFeaturebaseFake(), startS3Fake()]);
 });
