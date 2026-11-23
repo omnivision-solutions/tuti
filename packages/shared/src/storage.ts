@@ -106,7 +106,7 @@ export function mediaStorage(): MediaStorage | null {
       await send(key, {
         method: "PUT",
         body: body as RequestInit["body"],
-        // Its own length, signed: Next's fetch sends a request's body on as a stream of unknown length (inside a request,
+        // Its own length: Next's fetch sends a request's body on as a stream of unknown length (inside a request,
         // it rebuilds the Request: next/dist/server/lib/patch-fetch.js), and without one the PUT goes out chunked, which
         // S3 and R2 refuse.
         headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE, "content-length": String(body.byteLength) },
