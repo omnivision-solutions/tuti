@@ -1,5 +1,8 @@
 import { prisma } from "@tuti/db";
-import { startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
+import { createServer } from "node:http";
+import { type AddressInfo } from "node:net";
+
+import { FAKE_PNG, type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -232,6 +235,69 @@ describe("changelog entries", () => {
         content: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "x", marks: [{ type: "highlight" }] }] }] },
       }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("Markdown is read as rich text, on create and edit; `content` wins over it", async () => {
+    const entry = await call(createChangelogEntry, as(owner), {
+      title: "Dark mode",
+      markdown: "## New\n\nSwitch themes from your **menu**:\n\n- Light\n- Dark\n\nSee [the docs](https://example.com/themes).",
+    });
+    expect(entry.content).toMatchObject({
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "New" }] },
+        { type: "paragraph", content: [{ type: "text", text: "Switch themes from your " }, { type: "text", text: "menu", marks: [{ type: "bold" }] }, { type: "text", text: ":" }] },
+        { type: "bulletList", content: [{ type: "listItem" }, { type: "listItem" }] },
+        { type: "paragraph", content: [{ type: "text", text: "See " }, { type: "text", text: "the docs", marks: [{ type: "link", attrs: { href: "https://example.com/themes" } }] }, { type: "text", text: "." }] },
+      ],
+    });
+    expect(entry.body).toContain("Switch themes from your menu:");
+
+    const edited = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: "Now *everywhere*." });
+    expect(edited.content).toMatchObject({ content: [{ type: "paragraph", content: [{ type: "text", text: "Now " }, { type: "text", text: "everywhere", marks: [{ type: "italic" }] }, { type: "text", text: "." }] }] });
+
+    const both = await call(updateChangelogEntry, as(owner), {
+      number: entry.number,
+      markdown: "## Ignored",
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Kept" }] }] },
+    });
+    expect(both.body).toBe("Kept");
+  });
+});
+
+describe("Markdown's images", () => {
+  let s3: S3Fake;
+  const files = createServer((request, response) => {
+    if (request.url === "/shot.png") {
+      response.writeHead(200, { "content-type": "image/png" }).end(FAKE_PNG);
+    } else {
+      response.writeHead(404).end();
+    }
+  });
+  let origin: string;
+
+  beforeAll(async () => {
+    s3 = await startS3Fake();
+    await new Promise<void>((resolve) => files.listen(0, "127.0.0.1", resolve));
+    origin = `http://127.0.0.1:${(files.address() as AddressInfo).port}`;
+  });
+  afterAll(() => Promise.all([s3.close(), new Promise((resolve) => files.close(resolve))]));
+  beforeEach(() => {
+    for (const [name, value] of Object.entries({ ...s3.env, WEBHOOK_ALLOW_PRIVATE_URLS: "true" })) {
+      vi.stubEnv(name, value);
+    }
+  });
+
+  test("are copied into the project and kept attached; one that can't be fetched is left out", async () => {
+    const entry = await call(createChangelogEntry, as(owner), {
+      title: "Dark mode",
+      markdown: `Before:\n\n![The menu](${origin}/shot.png)\n\n![Gone](${origin}/gone.png)\n\nAfter.`,
+    });
+    const images = (entry.content as { content: { type: string; attrs?: { mediaId?: string } }[] }).content.filter((node) => node.type === "image");
+    expect(images).toHaveLength(1);
+    const media = await prisma.media.findUniqueOrThrow({ where: { id: images[0]!.attrs!.mediaId! } });
+    expect(media).toMatchObject({ projectId: project.id, uploaderId: owner.id, status: "READY", attachedAt: expect.any(Date) });
+    expect(entry.body).toContain("After.");
   });
 });
 

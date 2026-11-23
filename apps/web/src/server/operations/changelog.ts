@@ -1,6 +1,6 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus } from "@tuti/jobs";
+import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
@@ -42,13 +42,22 @@ const fields = {
     .string()
     .max(MAX_ENTRY_LENGTH)
     .optional()
-    .describe("Its text, as plain text; ignored when `content` is sent")
+    .describe("Its text, as plain text; ignored when `content` or `markdown` is sent")
     .meta({ examples: ["Switch themes from your profile menu."] }),
   content: z
     .unknown()
     .optional()
     .describe("Its text as rich content: the editor's JSON (a `doc`, the changelog profile)")
     .meta({ examples: [exampleDoc] }),
+  markdown: z
+    .string()
+    // Its markup counts too: the text it makes is held to the limit below.
+    .max(MAX_ENTRY_LENGTH * 2)
+    .optional()
+    .describe(
+      "Its text, as Markdown (headings, lists, links, images, code); the images it links to are copied into your project, and those that can't be (unreachable, not an image, too large) are left out. Ignored when `content` is sent",
+    )
+    .meta({ examples: ["## Dark mode\n\nSwitch themes from your **profile menu**."] }),
   tags: z
     .array(z.enum(TAGS))
     .max(TAGS.length)
@@ -227,7 +236,15 @@ export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entr
   await db.changelogEntryPost.createMany({ data: links, skipDuplicates });
 }
 
-async function entryText(input: { body?: string; content?: unknown }, projectId: string) {
+/** Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor` uploaded them. */
+async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor) {
+  if (input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "")) {
+    const html = await markdownToContent("changelog", input.markdown, { projectId, uploaderId: actor.kind === "user" ? actor.userId : actor.createdById });
+    if ("error" in html) {
+      throw new OperationError(400, "invalid_content", html.error);
+    }
+    input = { content: html.doc };
+  }
   const text = await readContent("changelog", input, { projectId, maxLength: MAX_ENTRY_LENGTH });
   if (text.error !== undefined) {
     throw new OperationError(400, "invalid_content", text.error);
@@ -390,7 +407,7 @@ export const createChangelogEntry = defineOperation({
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
-    const text = await entryText(input, projectId);
+    const text = await entryText(input, projectId, actor);
     const posts = await postIds(projectId, input.posts);
     const entry = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -437,6 +454,7 @@ export const updateChangelogEntry = defineOperation({
     title: fields.title.optional(),
     body: fields.body,
     content: fields.content,
+    markdown: fields.markdown,
     tags: fields.tags.optional(),
     posts: fields.posts
       .optional()
@@ -450,13 +468,13 @@ export const updateChangelogEntry = defineOperation({
   }),
   output: entryOutput.describe("The entry"),
   example: { tags: ["new", "improved"] },
-  run: async ({ projectId }, input) => {
+  run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, input.number);
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
-    const text = input.body !== undefined || input.content !== undefined ? await entryText(input, projectId) : null;
+    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor) : null;
     const posts = input.posts && (await postIds(projectId, input.posts));
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
