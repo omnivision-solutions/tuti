@@ -111,7 +111,8 @@ function ForwardRules({ rules, tutiAddress, guides }: { rules: Site["forward"]; 
         ))}
       </ul>
       <p className="text-sm text-muted-foreground">
-        A proxy, not a redirect, with Host <code className="font-mono text-xs text-foreground">{new URL(tutiAddress).host}</code>.
+        {rules[0] && <>Forward {rules[0].from.replace(/\/\*$/, "")} itself too. </>}A proxy, not a redirect, with Host{" "}
+        <code className="font-mono text-xs text-foreground">{new URL(tutiAddress).host}</code>.
         {guides && (
           <>
             {" "}

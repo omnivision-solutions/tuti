@@ -67,6 +67,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByRole("tab", { name: "Rules" }).click();
   await expect(prompt).toHaveCount(0);
   await expect(owner.getByRole("listitem", { name: "Forward /portal/*" })).toContainText(`${portalUrl(slug)}/portal/*`);
+  await expect(owner.getByText("Forward /portal itself too.", { exact: false })).toBeVisible();
   await owner.getByRole("button", { name: "Copy where /_tuti/* goes" }).click();
   await expect.poll(() => owner.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}/_tuti/*`);
   await owner.getByRole("tab", { name: "Prompt for your agent" }).click();
