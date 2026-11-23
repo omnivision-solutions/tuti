@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { useWidgetSignIn } from "@/components/widget-feedback";
@@ -62,11 +62,15 @@ export function WidgetReactions({
       onReact={async (reaction, on) => {
         const result = await widgetReact(projectSlug, token, number, reaction, on);
         if (result.reactions) {
-          setTotal(result.reactions);
-          // Only while they're still who's here: a save that ends after the page switched people changes nobody's list.
-          setMine((m) =>
-            m.for !== token ? m : { for: token, reacted: on ? [...m.reacted.filter((r) => r !== reaction), reaction] : m.reacted.filter((r) => r !== reaction) },
-          );
+          const counts = result.reactions;
+          // With the action's end, so the optimistic +1 isn't applied again on top of the server's counts.
+          startTransition(() => {
+            setTotal(counts);
+            // Only while they're still who's here: a save that ends after the page switched people changes nobody's list.
+            setMine((m) =>
+              m.for !== token ? m : { for: token, reacted: on ? [...m.reacted.filter((r) => r !== reaction), reaction] : m.reacted.filter((r) => r !== reaction) },
+            );
+          });
         }
         return result;
       }}

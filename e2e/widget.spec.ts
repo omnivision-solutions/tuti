@@ -669,6 +669,32 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await phone.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
   await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toHaveAttribute("aria-pressed", "false");
   await expect(widget.getByRole("button", { name: "React with 🎉 (1)" })).toBeDisabled();
+  // On a third device: their token is traded, but until their own reactions are read (held here), none to give.
+  const tablet = await (await browser.newContext()).newPage();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let held = false;
+  // The read of which reactions they left: `widgetReacted(slug, token, 1)`.
+  await tablet.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"] && /^\["[^"]+","[^"]+",1\]$/.test(route.request().postData() ?? "")) {
+      held = true;
+      await released;
+    }
+    await route.fallback();
+  });
+  await tablet.goto(site);
+  await tablet.getByRole("button", { name: /^Feedback/ }).click();
+  const tabletWidget = tablet.frameLocator('iframe[title="Feedback"]');
+  await tabletWidget.getByRole("link", { name: /^What's new/ }).click();
+  await tabletWidget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  await expect.poll(() => held).toBe(true);
+  const tabletTada = tabletWidget.getByRole("button", { name: "React with 🎉 (1)" });
+  await expect(tabletTada).toBeDisabled();
+  await expect(tabletTada).toHaveAttribute("aria-pressed", "false");
+  release();
+  await expect(tabletTada).toBeEnabled();
+  await expect(tabletTada).toHaveAttribute("aria-pressed", "true");
+  await tablet.context().close();
   await phone.context().close();
   await laptop.context().close();
 });
