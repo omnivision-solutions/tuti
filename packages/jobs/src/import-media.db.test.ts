@@ -11,7 +11,7 @@ import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { mediaImporter } from "./import-media";
+import { mediaImporter, uploadImage } from "./import-media";
 
 let s3: S3Fake;
 let server: Server;
@@ -21,7 +21,7 @@ let served: string[];
 let png: Buffer;
 /** Just over the app's 10 MB per image: uncompressed, as other tools often keep screenshots. */
 let bigPng: Buffer;
-/** Runs once /stalled.mp4 has sent its first bytes (and will send no more). */
+/** Runs once /stalled.mp4 or /stalled.png has sent its first bytes (and will send no more). */
 let stalled: (() => void) | undefined;
 /** Runs as each file is asked for, before it's answered. */
 let whileServing: (() => Promise<void>) | undefined;
@@ -52,10 +52,11 @@ beforeAll(async () => {
       res.writeHead(302, { location: req.url === "/loop.png" ? "/loop.png" : "/a.png" }).end();
       return;
     }
-    if (req.url === "/stalled.mp4") {
-      // A video's first bytes, then nothing more: as slow as a copy can be.
-      res.writeHead(200, { "content-type": "video/mp4" });
-      res.write(MP4.subarray(0, 32));
+    if (req.url === "/stalled.mp4" || req.url === "/stalled.png") {
+      // A file's first bytes, then nothing more: as slow as a copy can be.
+      const video = req.url === "/stalled.mp4";
+      res.writeHead(200, { "content-type": video ? "video/mp4" : "image/png" });
+      res.write((video ? MP4 : png).subarray(0, 32));
       stalled?.();
       return;
     }
@@ -218,6 +219,18 @@ test("a copy that can't finish by the deadline is cut off and left out, its temp
     stalled = undefined;
     await rm(temporary, { recursive: true });
   }
+});
+
+test("an uploaded image (a cover) cut off as its host stalls is the host's failure; storage failing is ours (passing)", async () => {
+  const stop = new AbortController();
+  stalled = () => stop.abort();
+  try {
+    expect(await uploadImage(`${origin}/stalled.png`, { projectId, uploaderId, signal: stop.signal })).toEqual({ leftOut: "unreachable" });
+  } finally {
+    stalled = undefined;
+  }
+  vi.stubEnv("MEDIA_S3_ENDPOINT", "http://127.0.0.1:9");
+  expect(await uploadImage(`${origin}/a.png`, { projectId, uploaderId })).toEqual({ leftOut: "unreachable", passing: true });
 });
 
 test("a copy fetched after the deadline, before its timer cuts it off, isn't kept or remembered: a later run tries again", async () => {

@@ -86,10 +86,19 @@ export const COPY_TIME_MS = 30_000;
 /**
  * The image at `url` (a changelog entry's cover) copied in as `uploaderId`'s upload, as an API client's Markdown images
  * are, or why not; `passing` when the failure is ours (storage, processing), not the image's. Not through `copy`, which
- * counts a download the deadline cut off as passing too: here that's the image's host, too slow.
+ * counts a download the deadline cut off as passing too: here that's the image's host, too slow. `signal` cuts it off
+ * too (tests).
  */
-export const uploadImage = (url: string, { projectId, uploaderId }: { projectId: string; uploaderId: string }) =>
-  copyThrough(projectId, uploaderId, { kind: "image", url, key: url }, null, AbortSignal.timeout(COPY_TIME_MS), Date.now() + COPY_TIME_MS, true);
+export const uploadImage = (url: string, { projectId, uploaderId, signal }: { projectId: string; uploaderId: string; signal?: AbortSignal }) =>
+  copyThrough(
+    projectId,
+    uploaderId,
+    { kind: "image", url, key: url },
+    null,
+    AbortSignal.any([AbortSignal.timeout(COPY_TIME_MS), ...(signal ? [signal] : [])]),
+    Date.now() + COPY_TIME_MS,
+    true,
+  );
 
 /** A team member's uploads an hour (createUpload, apps/web server/media.ts), and copies made as uploads (`upload`). */
 export const UPLOADS_PER_HOUR_TEAM = 300;
