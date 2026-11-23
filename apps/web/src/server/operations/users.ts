@@ -381,9 +381,10 @@ export const deleteUser = defineOperation({
         // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
           await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
           if (email) {
-            // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
-            await tx.$executeRaw`UPDATE conversation_message SET "fromAddress" = NULL
-              WHERE "conversationId" = ANY(${conversations}::text[]) AND lower("fromAddress") = ${email}`;
+            // Wherever they wrote from it, someone else's conversation too (Cc'd on it). lower() = lower(), not Prisma's
+            // insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
+            await tx.$executeRaw`UPDATE conversation_message SET "fromAddress" = NULL WHERE "projectId" = ${projectId} AND lower("fromAddress") = ${email}`;
+            await tx.inboundEmail.updateMany({ where: { projectId, sender: email }, data: { sender: "" } });
             await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
           }
           await tx.postSubscription.deleteMany({ where: { userId } });

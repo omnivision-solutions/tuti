@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { type Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { createProject, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 
 import { widgetToken, widgetTokenUser } from "@/lib/widget-session";
 
@@ -511,4 +511,76 @@ test("delete is 404 for an id there's no user with, here", async () => {
   await sync([{ id: "theirs" }], other.id);
   await expect(call(deleteUser, team(), { user: "theirs" })).rejects.toMatchObject({ status: 404, message: "There's no user “theirs”" });
   expect(await call(getUser, team(other.id), { user: "theirs" })).toMatchObject({ id: "theirs" });
+});
+
+test("delete takes their address off what they wrote in someone else's conversation too (Cc'd on it), and only theirs", async () => {
+  const email = "e2e-c_c@example.com";
+  // Who a LIKE pattern of theirs would take for them.
+  const lookalike = "e2e-ccc@example.com";
+  await sync([{ id: "user-2", email }]);
+  await call(createConversation, team(), { email: "e2e-bob@example.com", body: "Our invoices are wrong" });
+  const bobs = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
+  for (const [i, fromAddress] of [email.toUpperCase(), lookalike].entries()) {
+    await prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress, createdAt: new Date(Date.now() + i * 1000) },
+    });
+    await prisma.inboundEmail.create({
+      data: { projectId: project.id, recipient: "support@example.com", sender: fromAddress.toLowerCase(), dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: bobs.id },
+    });
+  }
+  await call(deleteUser, team(), { user: "user-2" });
+  expect(
+    await prisma.conversationMessage.findMany({ where: { conversationId: bobs.id, fromAddress: { not: null } }, select: { fromAddress: true } }),
+  ).toEqual([{ fromAddress: lookalike }]);
+  expect((await prisma.inboundEmail.findMany({ where: { conversationId: bobs.id }, select: { sender: true } })).map((row) => row.sender).sort()).toEqual(["", lookalike]);
+  // Bob's conversation stays his.
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: bobs.id }, select: { userId: true, email: true } })).toEqual({ userId: null, email: "e2e-bob@example.com" });
+});
+
+test("delete that Postgres aborts for its locks on the first try runs again and finishes", async () => {
+  await sync([{ id: "user-3", name: "Cy" }]);
+  // Its first transaction is aborted as a deadlock would be; the next goes through.
+  const transaction = vi
+    .spyOn(prisma, "$transaction")
+    .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("deadlock detected (40P01)", { code: "P2034", clientVersion: "test" }));
+  try {
+    expect(await call(deleteUser, team(), { user: "user-3" })).toEqual({ deleted: "user-3" });
+    expect(transaction).toHaveBeenCalledTimes(2);
+  } finally {
+    transaction.mockRestore();
+  }
+  await expect(get("user-3")).rejects.toMatchObject({ status: 404 });
+});
+
+test("delete while someone else's vote on a post they voted on is being saved: the count ends as its rows", async () => {
+  await sync([{ id: "user-4", name: "Dot" }]);
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  const post = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, key, { number: post.number, voted: true, author: { id: "user-4" } });
+  const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
+  const reader = await signUp("Rita Reader");
+
+  // A vote being saved, as votes.set does: the post locked first, then the vote inserted and counted.
+  let postLocked!: () => void;
+  let insert!: () => void;
+  const locked = new Promise<void>((resolve) => (postLocked = resolve));
+  const goOn = new Promise<void>((resolve) => (insert = resolve));
+  const vote = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${postId} FOR NO KEY UPDATE`;
+      postLocked();
+      await goOn;
+      await tx.vote.create({ data: { projectId: project.id, postId, userId: reader.id } });
+      await tx.post.update({ where: { id: postId }, data: { voteCount: { increment: 1 } } });
+    },
+    { timeout: 20_000 },
+  );
+  await locked;
+  const deleted = call(deleteUser, team(), { user: "user-4" });
+  await untilWaitingOnLock();
+  insert();
+  expect((await Promise.allSettled([vote, deleted])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  // The owner's own vote and Rita's.
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { voteCount: true } })).toEqual({ voteCount: await prisma.vote.count({ where: { postId } }) });
+  expect(await prisma.vote.count({ where: { postId } })).toBe(2);
 });
