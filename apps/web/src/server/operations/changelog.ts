@@ -73,7 +73,7 @@ const fields = {
     .nullable()
     .optional()
     .describe(
-      "Its featured image, also its link-preview image: an image upload's id (uploaded in the app), or an image's https:// URL, copied into your project as your upload (a 400 if it can't be fetched or isn't an image); null for none, or to remove it",
+      "Its featured image, also its link-preview image: an image upload's id (uploaded in the app), or an image's https:// URL, copied into your project as your upload (a 400 if it can't be fetched or isn't an image), and again each time it's sent: to keep a cover, leave it out or send its `cover.id`; null for none, or to remove it",
     )
     .meta({ examples: ["https://cdn.example.com/releases/dark-mode.png", "cm3k9q2xv0001abcd1234efgh"] }),
 };
