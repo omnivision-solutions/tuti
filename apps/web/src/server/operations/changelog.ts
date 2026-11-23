@@ -236,7 +236,7 @@ export async function linkEntryPosts(db: Prisma.TransactionClient, links: { entr
   await db.changelogEntryPost.createMany({ data: links, skipDuplicates });
 }
 
-/** Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor` uploaded them. */
+/** Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the same limits. */
 async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor) {
   if (input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "")) {
     const html = await markdownToContent("changelog", input.markdown, { projectId, uploaderId: actor.kind === "user" ? actor.userId : actor.createdById });

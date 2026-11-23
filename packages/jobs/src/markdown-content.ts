@@ -9,9 +9,10 @@ const COPY_TIME_MS = 30_000;
 
 /**
  * Markdown an API client sends (release notes, say) as rich content: rendered to HTML and read as imports read it, the
- * images it links to copied into the project's media. Network I/O: never call it under the project lock.
+ * images it links to copied into the project's media as `uploaderId`'s uploads, held to the same limits as uploads from
+ * the app. Network I/O: never call it under the project lock.
  */
 export function markdownToContent(profile: Profile, markdown: string, { projectId, uploaderId }: { projectId: string; uploaderId: string }) {
-  const media = mediaImporter({ projectId, uploaderId, deadline: Date.now() + COPY_TIME_MS });
+  const media = mediaImporter({ projectId, uploaderId, deadline: Date.now() + COPY_TIME_MS, upload: true });
   return htmlToContent(profile, marked.parse(markdown, { async: false }), { media });
 }

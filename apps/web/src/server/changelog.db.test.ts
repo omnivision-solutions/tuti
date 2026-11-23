@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { UPLOADS_PER_HOUR_TEAM } from "@tuti/jobs";
 import { createServer } from "node:http";
 import { type AddressInfo } from "node:net";
 
@@ -298,6 +299,15 @@ describe("Markdown's images", () => {
     const media = await prisma.media.findUniqueOrThrow({ where: { id: images[0]!.attrs!.mediaId! } });
     expect(media).toMatchObject({ projectId: project.id, uploaderId: owner.id, status: "READY", attachedAt: expect.any(Date) });
     expect(entry.body).toContain("After.");
+  });
+
+  test("count as the member's uploads: past their hourly limit, an image is left out", async () => {
+    await prisma.media.createMany({
+      data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),
+    });
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `![The menu](${origin}/shot.png)\n\nAfter.` });
+    expect((entry.content as { content: { type: string }[] }).content.map((node) => node.type)).not.toContain("image");
+    expect(await prisma.media.count({ where: { uploaderId: owner.id } })).toBe(UPLOADS_PER_HOUR_TEAM);
   });
 });
 
