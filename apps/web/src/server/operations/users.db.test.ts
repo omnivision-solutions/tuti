@@ -391,7 +391,9 @@ test("a company's votes count each once, though two of its users are the same pe
 });
 
 test("delete forgets a user: their details, votes, follows, sessions and changelog subscription go; posts, comments and conversations stay as by Deleted user", async () => {
-  const email = "e2e-ada@example.com";
+  // With an "_", which a LIKE would take for any letter: a colleague's address it could match keeps its own.
+  const email = "e2e_ada@example.com";
+  const colleague = "e2e-ada@example.com";
   await sync([{ id: "user-1", name: "Ada", email, avatar: "https://example.com/ada.png", properties: { plan: "pro" } }]);
   const { userId: ada } = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
   const author = { id: "user-1" };
@@ -408,7 +410,24 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   // Started by email from their address, verified: theirs too.
   await call(createConversation, team(), { email, body: "Writing by email" });
   await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { emailVerified: true, name: "Ada L" } });
+  const conversation2 = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 2 } } });
+  for (const [i, fromAddress] of [email.toUpperCase(), colleague].entries()) {
+    await prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: conversation2.id, author: "USER", channel: "EMAIL", body: `From ${fromAddress}`, fromAddress, createdAt: new Date(Date.now() + i * 1000) },
+    });
+  }
+  await prisma.inboundEmail.create({
+    data: { projectId: project.id, recipient: "support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
+  });
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  const entry = await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+  await prisma.changelogReaction.create({ data: { entryId: entry.id, userId: ada, kind: "TADA" } });
+  await prisma.changelogSeen.create({ data: { projectId: project.id, userId: ada, seenAt: new Date() } });
+  await prisma.emailPreference.create({ data: { projectId: project.id, userId: ada, ownPosts: false } });
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: ada } });
+  await prisma.widgetPresence.create({ data: { projectId: project.id, who: ada, lastSeenAt: new Date() } });
+  await prisma.portalHandoff.create({ data: { codeHash: randomUUID(), projectId: project.id, userId: ada, stateHash: "state", expiresAt: new Date(Date.now() + 60_000) } });
+  await prisma.account.create({ data: { id: randomUUID(), accountId: randomUUID(), providerId: "credential", userId: ada } });
   await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: ada, expiresAt: new Date(Date.now() + 60_000) } });
   expect(await canActIn(ada, project.id)).toBe(true);
   await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
@@ -439,6 +458,14 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     prisma.commentLike.count({ where: { userId: ada } }),
     prisma.session.count({ where: { userId: ada } }),
     prisma.changelogSubscriber.count({ where: { projectId: project.id } }),
+    prisma.changelogReaction.count({ where: { userId: ada } }),
+    prisma.changelogSeen.count({ where: { userId: ada } }),
+    prisma.emailPreference.count({ where: { userId: ada } }),
+    prisma.emailOptOut.count({ where: { userId: ada } }),
+    prisma.widgetPresence.count({ where: { who: ada } }),
+    prisma.portalHandoff.count({ where: { userId: ada } }),
+    prisma.account.count({ where: { userId: ada } }),
+    prisma.inboundEmail.count({ where: { projectId: project.id, sender: email } }),
   ]) {
     expect(await count).toBe(0);
   }
@@ -450,6 +477,10 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     { userId: ada, email: null, name: null },
     { userId: ada, email: null, name: null },
   ]);
+  // Their address is off their messages; the colleague's stays on theirs.
+  expect(
+    await prisma.conversationMessage.findMany({ where: { conversationId: conversation2.id, channel: "EMAIL" }, orderBy: { createdAt: "asc" }, select: { fromAddress: true } }),
+  ).toEqual([{ fromAddress: null }, { fromAddress: colleague }]);
   // A widget token from before acts no more, nor reads their conversations.
   expect(await canActIn(ada, project.id)).toBe(false);
   expect(await widgetConversations(project.slug, { token })).toEqual({ error: expect.any(String) });

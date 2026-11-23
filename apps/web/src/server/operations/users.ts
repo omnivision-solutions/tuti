@@ -375,10 +375,9 @@ export const deleteUser = defineOperation({
         ).map((conversation) => conversation.id);
         await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
         if (email) {
-          await tx.conversationMessage.updateMany({
-            where: { conversationId: { in: conversations }, fromAddress: { equals: email, mode: "insensitive" } },
-            data: { fromAddress: null },
-          });
+          // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where "_" or "%" would match someone else's.
+          await tx.$executeRaw`UPDATE conversation_message SET "fromAddress" = NULL
+            WHERE "conversationId" = ANY(${conversations}::text[]) AND lower("fromAddress") = ${email}`;
           await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations }, sender: email }, data: { sender: "" } });
           await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
         }
