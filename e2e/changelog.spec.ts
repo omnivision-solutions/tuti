@@ -1428,6 +1428,8 @@ test("readers comment on an entry's page: they edit and delete their own, and si
   await expect(edit).toContainText("Finally! My eyes thank you.");
   // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh.
   await edit.fill("");
+  // (What Save sends, once the editor's caught up.)
+  await expect(comments.locator("form").filter({ has: ada.getByRole("textbox", { name: "Edit your comment" }) }).locator('input[name="content"]')).toHaveValue("");
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(comments.getByText("Write something first")).toBeVisible();
   await comments.getByRole("button", { name: "Cancel" }).click();
