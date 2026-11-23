@@ -340,24 +340,35 @@ export const deleteUser = defineOperation({
     await withLockRetries(() =>
       prisma.$transaction(
         async (tx) => {
-          // Locked, as syncUsers locks it: a sign-in or sync at once waits, then makes them anew.
-          const [identity] = await tx.$queryRaw<{ id: string; userId: string; email: string | null }[]>`
-            SELECT id, "userId", email FROM sso_identity WHERE "projectId" = ${projectId} AND "externalId" = ${input.user} FOR UPDATE`;
-          if (!identity) {
-            throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
+          // Locked with everyone else who has their address, in one statement and in syncUsers' order (by id in the app), so
+          // a sign-in or sync at once waits, then makes them anew, and two deletes of users sharing an address queue rather
+          // than deadlock: the second finds the first gone. Their address read first, unlocked; changed meanwhile, again.
+          let identity: { id: string; userId: string; email: string | null; externalId: string } | undefined;
+          for (;;) {
+            const [seen] = await tx.$queryRaw<{ email: string | null }[]>`
+              SELECT email FROM sso_identity WHERE "projectId" = ${projectId} AND "externalId" = ${input.user}`;
+            if (!seen) {
+              throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
+            }
+            const locked = await tx.$queryRaw<{ id: string; userId: string; email: string | null; externalId: string }[]>`
+              SELECT id, "userId", email, "externalId" FROM sso_identity
+              WHERE "projectId" = ${projectId} AND ("externalId" = ${input.user} OR email = ${seen.email})
+              ORDER BY "externalId" FOR UPDATE`;
+            identity = locked.find((row) => row.externalId === input.user);
+            if (!identity) {
+              throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
+            }
+            if (identity.email === seen.email) {
+              break;
+            }
           }
           const { userId } = identity;
           // Their address, unless it's someone else's too (as inbound.ts userWithAddress finds people by it): another of
           // the project's users with it (a shared mailbox), or an account that verified it (theirs, made on the portal,
           // isn't touched). Then nothing goes by it: the messages, conversations and subscription are that person's too.
-          // The others locked too: two of them deleted at once would each see the other and leave the address behind; this
-          // way one waits (or, deadlocked, runs again) and finds the other gone.
           const shared =
             !!identity.email &&
-            ((
-              await tx.$queryRaw<unknown[]>`
-                SELECT id FROM sso_identity WHERE "projectId" = ${projectId} AND email = ${identity.email} AND id <> ${identity.id} ORDER BY id FOR UPDATE`
-            ).length > 0 ||
+            ((await tx.ssoIdentity.count({ where: { projectId, email: identity.email, id: { not: identity.id } } })) > 0 ||
               (
                 await tx.$queryRaw<unknown[]>`
                   SELECT 1 FROM "user" u WHERE lower(u.email) = ${identity.email} AND u."emailVerified" AND NOT EXISTS (SELECT 1 FROM sso_identity s WHERE s."userId" = u.id) LIMIT 1`

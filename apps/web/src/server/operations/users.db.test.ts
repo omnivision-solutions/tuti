@@ -621,14 +621,12 @@ test("delete leaves what goes by their address alone while it's someone else's t
   expect(await kept()).toEqual([1, 1]);
 });
 
-test("the last two users with a shared address deleted at once: the address goes with the second", async () => {
+test("the last users with a shared address deleted at once all go, queued rather than deadlocked, and the address with the last", async () => {
   const email = "e2e-shared@example.com";
-  await sync([
-    { id: "user-8", email },
-    { id: "user-9", email },
-  ]);
+  const ids = ["user-8", "user-9", "user-10"];
+  await sync(ids.map((id) => ({ id, email })));
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
-  const results = await Promise.allSettled([call(deleteUser, team(), { user: "user-8" }), call(deleteUser, team(), { user: "user-9" })]);
-  expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  const results = await Promise.allSettled(ids.map((user) => call(deleteUser, team(), { user })));
+  expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
   expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } })).toBe(0);
 });
