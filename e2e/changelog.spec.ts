@@ -1381,7 +1381,7 @@ test("readers get the changelog by email: confirmed first, each entry published 
   expect(countEmailsTo(address)).toBe(before);
 });
 
-test("readers comment on an entry's page: they edit and delete their own, and signed out are asked to sign in", async ({ browser }, testInfo) => {
+test("readers comment on an entry's page: they edit and delete their own, the team deletes any in the app, and signed out are asked to sign in", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1447,6 +1447,29 @@ test("readers comment on an entry's page: they edit and delete their own, and si
   await ada.setViewportSize({ width: 390, height: 844 });
   await checkpoint(ada, "portal-entry-commented-phone");
   await ada.setViewportSize({ width: 1280, height: 720 });
+
+  // The team sees them on the entry's page in the app, and deletes one (moderation).
+  await comments.getByRole("textbox", { name: "Comment" }).fill("Buy cheap watches here");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(comments.getByRole("heading", { name: "3 comments" })).toBeVisible();
+  await team.goto(`/app/${slug}/changelog/1`);
+  const teamComments = team.getByRole("region", { name: "Comments" });
+  await expect(teamComments.getByRole("heading", { name: "3 comments" })).toBeVisible();
+  const spam = teamComments.getByRole("listitem").filter({ hasText: "Buy cheap watches here" });
+  // A reader's to delete, not to edit (their own they edit too).
+  await expect(spam.getByRole("button", { name: /^Edit/ })).toHaveCount(0);
+  await expect(teamComments.getByRole("listitem").filter({ hasText: "Glad it helps!" }).getByRole("button", { name: "Edit your comment" })).toBeVisible();
+  await checkpoint(team, "team-entry-comments");
+  await spam.getByRole("button", { name: "Delete Ada Reader's comment" }).click();
+  await team.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
+  await expect(team.getByText("Comment deleted")).toBeVisible();
+  await expect(teamComments.getByRole("heading", { name: "2 comments" })).toBeVisible();
+  await expect(teamComments.getByText("Buy cheap watches here")).toHaveCount(0);
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-entry-comments-phone");
+  await ada.reload();
+  await expect(comments.getByRole("heading", { name: "2 comments" })).toBeVisible();
+  await expect(comments.getByText("Buy cheap watches here")).toHaveCount(0);
 
   // One deleted meanwhile (elsewhere, here over the API): Delete says so, and it's gone from the list.
   await comments.getByRole("textbox", { name: "Comment" }).fill("One more thing");
