@@ -17,6 +17,8 @@ import {
   droppedFacts,
   factsIn,
   readReleaseNotes,
+  droppedMarkers,
+  markersIn,
   releaseNotesPrompt,
   REWRITE_MODES,
   rewritePrompt,
@@ -687,6 +689,18 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
           await linkEntryPosts(tx, posts.map((postId) => ({ entryId: entry.id, postId })));
         }
+        // A line still to fill in ("[Check: …]", "[Screenshot: …]") isn't added to an entry that's out to readers, as
+        // it isn't published with one: read under the entry's lock, so a save that waited for a publish finds it
+        // published. Only ones this save adds: text that had such a line already (an older or imported entry's) is
+        // still edited, and can lose it.
+        if (text && markersIn(text.doc).length > 0) {
+          // The entry as it is now, held: what this save read before may be a draft that has since lost the line and gone out.
+          const [now] = await tx.$queryRaw<{ publishedAt: Date | null; content: Prisma.JsonValue; body: string }[]>`SELECT "publishedAt", content, body FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+          const markers = now?.publishedAt ? droppedMarkers(text.doc, displayDoc(now)) : [];
+          if (markers.length > 0) {
+            throw new OperationError(409, "markers", `This entry is published. Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+          }
+        }
         await attachCover(tx, projectId, cover);
         const saved = await tx.changelogEntry.update({
           where: { id: entry.id },
@@ -953,7 +967,9 @@ export const rewriteChangelogEntry = defineOperation({
       throw new OperationError(502, "ai_failed", "The AI's version couldn't be used. Try again.");
     }
     // Facts are checked, not trusted: a version that drops a link, an image or a video isn't offered.
-    const dropped = droppedFacts(target, rewritten.doc.content!);
+    // Nor one that drops a line the team still has to fill in: accepted, the entry could be published with the question never answered.
+    const unanswered = droppedMarkers({ type: "doc", content: target }, rewritten.doc);
+    const dropped = [...droppedFacts(target, rewritten.doc.content!), ...(unanswered.length > 0 ? [unanswered.length === 1 ? "a line still to fill in" : `${unanswered.length} lines still to fill in`] : [])];
     if (dropped.length > 0) {
       const list = dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} and ${dropped.at(-1)}` : dropped[0];
       throw new OperationError(502, "dropped_facts", `The AI's version left out ${list}, so it wasn't used. Try again.`);
@@ -1110,11 +1126,12 @@ export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   title: "Publish a changelog entry",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there.",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     number: entryNumber,
     announce: z
@@ -1140,7 +1157,18 @@ export const publishChangelogEntry = defineOperation({
       // After any merge being added to this (running) draft, and before the next (see lockProject).
       await lockProject(tx, projectId);
       // Sample content (server/sample-content.ts) is never announced, and reaches no webhooks; nor do sample posts it completes.
-      const { sample, importedPublishedAt } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true, importedPublishedAt: true } });
+      // Its text as it is now, held until this commits (a save made meanwhile waits, then finds it published): what a
+      // draft left for the team to fill in ("[Check: …]", "[Screenshot: …]") doesn't go out to readers, or by email,
+      // which can't be taken back.
+      await tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+      const { sample, importedPublishedAt, publishedAt, ...text } = await tx.changelogEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+        select: { sample: true, importedPublishedAt: true, publishedAt: true, body: true, content: true },
+      });
+      const markers = publishedAt ? [] : markersIn(displayDoc(text));
+      if (markers.length > 0) {
+        throw new OperationError(409, "markers", `Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+      }
       // Published in the tool it was imported from: old news, so it keeps that date and isn't announced or emailed.
       const quiet = sample || importedPublishedAt !== null;
       // Only the first publish counts (a repeated call changes nothing).
