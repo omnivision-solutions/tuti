@@ -73,7 +73,7 @@ for (const pane of [
         expect(title.y + title.height <= actions.y || title.x + title.width <= actions.x).toBe(true);
       }
       if (pane.name === "conversation list") {
-        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluateAll((rows) => Math.max(...rows.map((row) => row.scrollWidth - row.clientWidth)))).toBeLessThanOrEqual(0);
         if ((await team.locator(".inbox-workspace").boundingBox())!.width >= 1096) await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeVisible();
         else await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeHidden();
         expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
@@ -250,7 +250,7 @@ for (const pane of [
       expect(Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(Number(await handle.getAttribute("aria-valuemin")));
       expect(await width()).toBe(expectedDefault);
       if (pane.name === "conversation list") {
-        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluateAll((rows) => Math.max(...rows.map((row) => row.scrollWidth - row.clientWidth)))).toBeLessThanOrEqual(0);
       }
       await handle.focus();
       await team.keyboard.press("ArrowLeft");
@@ -271,7 +271,7 @@ for (const pane of [
         await expect(handle).toHaveAttribute("aria-valuenow", String(expectedMin));
         expect(await width()).toBe(expectedMin);
         expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("352");
-        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluateAll((rows) => Math.max(...rows.map((row) => row.scrollWidth - row.clientWidth)))).toBeLessThanOrEqual(0);
         if (fontSize === 20) await checkpoint(team, "inbox-enlarged-text-minimum", { fullPage: false });
         await handle.dblclick();
         await expect(handle).toHaveAttribute("aria-valuenow", String(expectedDefault));
@@ -291,7 +291,7 @@ for (const pane of [
         await expect(team.locator("html")).toHaveCSS("font-size", `${fontSize}px`);
         expect(await width()).toBe(renderedWidth);
         expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(savedWidth));
-        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluateAll((rows) => Math.max(...rows.map((row) => row.scrollWidth - row.clientWidth)))).toBeLessThanOrEqual(0);
         // Let hydration resume at the same text size: the reported width must match the first render.
         await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
         await team.reload();
@@ -362,10 +362,10 @@ for (const pane of [
       await handle.focus();
       await team.keyboard.press("End");
       expect(await width()).toBe(availableMax);
-      expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluateAll((rows) => Math.max(...rows.map((row) => row.scrollWidth - row.clientWidth)))).toBeLessThanOrEqual(0);
       await team.keyboard.press("Home");
       expect(await width()).toBe(pane.min);
-      expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluateAll((rows) => Math.max(...rows.map((row) => row.scrollWidth - row.clientWidth)))).toBeLessThanOrEqual(0);
       expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
       expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBe(withSidebar);
       await checkpoint(team, "inbox-sidebar-open", { fullPage: false });
