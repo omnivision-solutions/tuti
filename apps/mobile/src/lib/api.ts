@@ -1,0 +1,67 @@
+import { hostOf } from "./server";
+
+/**
+ * Talking to a Tuti server. `/api/v1` (the operations, docs at the server's /api/docs) takes the teammate's session
+ * token and the project's slug; `/api/auth` (signing in and out) takes the session's cookie and the app's scheme in
+ * place of an origin (apps/web/src/lib/app-sign-in.ts has the contract).
+ */
+
+/** What went wrong, in the server's words when it gives them: `{ error: { code, message } }` from /api/v1, `{ code, message }` from /api/auth. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+type Fetch = typeof fetch;
+type Init = { method?: string; body?: unknown; headers?: Record<string, string> };
+
+async function send<T>(url: string, { method = "GET", body, headers }: Init, fetchFn: Fetch): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetchFn(url, {
+      method,
+      // No cookie jar: a session goes only where the app puts it (the bearer token, or /api/auth's Cookie).
+      credentials: "omit",
+      headers: { accept: "application/json", ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, "unreachable", `Couldn't reach ${hostOf(url)}. Check the address and your connection.`);
+  }
+  const json = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = json?.error ?? json;
+    throw new ApiError(response.status, error?.code ?? `http_${response.status}`, error?.message || `${hostOf(url)} answered ${response.status}. Try again.`);
+  }
+  return json as T;
+}
+
+/** The app's scheme, standing in for the origin a page's request would have. */
+const APP_ORIGIN = "tuti://";
+
+/** `/api/auth<path>`: a POST with `body`, a GET without. */
+export const authRequest = <T>(server: string, path: string, { body, cookie }: { body?: unknown; cookie?: string } = {}, fetchFn: Fetch = fetch) =>
+  send<T>(`${server}/api/auth${path}`, { method: body === undefined ? "GET" : "POST", body, headers: { "expo-origin": APP_ORIGIN, ...(cookie ? { cookie } : {}) } }, fetchFn);
+
+/** Calls `/api/v1<path>` as the signed-in teammate, in their chosen project. */
+export type Api = <T>(path: string, init?: { method?: string; body?: unknown }) => Promise<T>;
+
+/** The API as the session's teammate. A 401 means the session is over (signed out elsewhere, expired): `onUnauthorized` signs out here too. */
+export function createApi(session: { server: string; token: string; project?: string }, onUnauthorized: () => void, fetchFn: Fetch = fetch): Api {
+  const headers = { authorization: `Bearer ${session.token}`, ...(session.project ? { "tuti-project": session.project } : {}) };
+  return async (path, init = {}) => {
+    try {
+      return await send(`${session.server}/api/v1${path}`, { ...init, headers }, fetchFn);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        onUnauthorized();
+      }
+      throw error;
+    }
+  };
+}

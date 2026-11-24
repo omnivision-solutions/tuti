@@ -22,6 +22,8 @@ export function appConfig(env: Env): ExpoConfig {
     },
     plugins: [
       "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
       [
         "expo-splash-screen",
         { image: "./assets/splash-icon.png", imageWidth: 96, backgroundColor: "#fbf9f3", dark: { backgroundColor: "#0f1411" } },
