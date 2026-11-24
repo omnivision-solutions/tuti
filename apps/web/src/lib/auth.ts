@@ -13,7 +13,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
-import { APP_ORIGIN, appSignIn, keepAppSignInLink } from "./app-sign-in";
+import { APP_ORIGIN, appSignIn, keepAppSignInLink, noAccountFromApp } from "./app-sign-in";
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -302,7 +302,8 @@ export const auth = betterAuth({
     },
     // However an address comes to be verified (its link, a sign-in link, an account from Google or GitHub), an import's
     // placeholders for it hand over, in the projects they're on (a password reset is a direct update: it calls it too).
-    user: { update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
+    // No account comes of a sign-in the mobile app started: it has no sign-up (lib/app-sign-in.ts).
+    user: { create: { before: noAccountFromApp }, update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
     account: {
       create: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
       update: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },

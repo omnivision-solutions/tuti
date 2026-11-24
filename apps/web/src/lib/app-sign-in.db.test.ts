@@ -240,8 +240,8 @@ test("a sign-in from the app starts with a challenge, or not at all", async () =
     throughProxy: false,
     before: async (state) => {
       const row = await prisma.verification.findFirstOrThrow({ where: { identifier: `auth-state:${state}` } });
-      const kept = JSON.parse(row.value) as Record<string, unknown>;
-      delete kept.challenge;
+      const kept = JSON.parse(row.value) as { serverContext?: unknown };
+      delete kept.serverContext;
       await prisma.verification.update({ where: { id: row.id }, data: { value: JSON.stringify(kept) } });
     },
   });
@@ -269,10 +269,13 @@ test("the app signs in accounts that exist: someone new is sent back with an err
   expect(web.headers.get("location")).toBe("/app");
   expect(cookiesOf(web)).toContain("tuti.session_token=");
   expect(await prisma.user.findUniqueOrThrow({ where: { email: newcomer.email } })).toMatchObject({ name: "Nora New", emailVerified: true });
-  // Even a web start that says not to: the server decides, as it did when the providers signed anyone up.
-  const other = { email: newAddress(), name: "Otto Other" };
-  expect((await continueWithGoogle(other, "/app", { fromThe: "web", more: { requestSignUp: false } })).headers.get("location")).toBe("/app");
-  expect(await prisma.user.count({ where: { email: other.email } })).toBe(1);
+  // What a web start says of itself changes nothing either, and neither does naming a challenge without a way back
+  // to the app: the sign-in is the web's, as before.
+  for (const more of [{ requestSignUp: false }, { additionalData: { challenge: newProof().challenge, app: { challenge: "x" } } }]) {
+    const other = { email: newAddress(), name: "Otto Other" };
+    expect((await continueWithGoogle(other, "/app", { fromThe: "web", more })).headers.get("location"), JSON.stringify(more)).toBe("/app");
+    expect(await prisma.user.count({ where: { email: other.email } })).toBe(1);
+  }
   // And with the account made, the app signs them in.
   const proof = newProof();
   const back = await continueWithGoogle(newcomer, BACK, { challenge: proof.challenge });
@@ -341,8 +344,8 @@ test("the browser's first stop takes the sign-in's state and goes on to the prov
   for (const extra of [{ additionalParams: { login: "someone" } }, { scopes: ["repo"] }, { loginHint: "someone@example.com" }]) {
     expect((await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: BACK, additionalData, ...extra } })).status, JSON.stringify(extra)).toBe(400);
   }
-  // Nor does what it says of the provider in its extra data count: the one it started with is kept.
-  const lying = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: BACK, additionalData: { ...additionalData, provider: "google" } } });
+  // Nor does what it says of the provider in its extra data count: the one it started with is kept, where only the server writes.
+  const lying = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: BACK, additionalData: { ...additionalData, provider: "google", serverContext: { app: { provider: "google" } } } } });
   const lyingUrl = ((await lying.json()) as { url: string }).url;
   expect((await proxy(lyingUrl)).headers.get("location")).toBe(lyingUrl);
   expect(new URL(lyingUrl).origin).toBe("https://github.com");

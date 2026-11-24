@@ -12,9 +12,6 @@ const trim = (url: string) => url.replace(/\/$/, "");
  * them at local fakes (GOOGLE_URL, GITHUB_URL and GITHUB_API_URL). Someone whose verified email already has
  * an account signs in to it; Better Auth links only when that account's email is verified too, so nobody
  * can sign up with someone else's address first and wait for them to arrive.
- *
- * Neither makes an account by itself (`disableImplicitSignUp`): a sign-in's start asks for that, and lib/app-sign-in.ts
- * decides it, so the web's start signs someone new up, as ever, and the mobile app's never does (it has no sign-up).
  */
 export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
   const env = process.env;
@@ -33,7 +30,6 @@ export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
       scopes: ["openid", "email", "profile"],
       prompt: "select_account",
       redirectURI: callback("google"),
-      disableImplicitSignUp: true,
       // The ID token from the token endpoint (over TLS, for our client secret) has the email, whether
       // Google verified it, the name and the photo. Only an address Google verified.
       async getUserInfo({ idToken }) {
@@ -61,7 +57,6 @@ export function socialSignInConfig(appOrigin: string): GenericOAuthConfig[] {
       // An OAuth App needs these; a GitHub App ignores them and needs "Email addresses" (read).
       scopes: ["read:user", "user:email"],
       redirectURI: callback("github"),
-      disableImplicitSignUp: true,
       async getUserInfo({ accessToken }) {
         // Any failure (an error status, no connection, a bad body) is no user info: back to the sign-in page with why.
         const get = async <T>(path: string) => {

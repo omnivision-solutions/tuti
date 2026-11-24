@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { log } from "@tuti/shared";
 import type { BetterAuthPlugin } from "better-auth";
-import { APIError, createAuthEndpoint, createAuthMiddleware, getOAuthState } from "better-auth/api";
+import { addOAuthServerContext, APIError, createAuthEndpoint, createAuthMiddleware, getOAuthState } from "better-auth/api";
 import { parseSetCookieHeader } from "better-auth/cookies";
 import { makeSignature } from "better-auth/crypto";
 import { z } from "zod";
@@ -84,6 +84,23 @@ export const appSignInReturn = (state: string) => `${APP_ORIGIN}sign-in?state=${
 
 const refused = () => new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
 
+/** What the server keeps with a Google or GitHub sign-in the app started: in its state's server context, as `app`. */
+type AppSignIn = { challenge: string; provider: unknown };
+const appSignInOf = (state: unknown) => (state as { serverContext?: { app?: Partial<AppSignIn> } } | null)?.serverContext?.app;
+
+/**
+ * For `databaseHooks.user.create.before` (lib/auth.ts): the app has no sign-up, so a Google or GitHub sign-in it
+ * started makes no account. Someone new goes back to the app with this error, to make their account on the web first.
+ * Every other way an account is made, the web's Continue with Google and GitHub among them, is as it was.
+ */
+export async function noAccountFromApp() {
+  // No sign-in under way (an account made outside a request): nothing to read.
+  const state = await getOAuthState().catch(() => null);
+  if (appSignInOf(state)) {
+    throw new APIError("FORBIDDEN", { code: "signup_disabled", message: "There's no account for this address yet. Create one on the web first." });
+  }
+}
+
 /** The session token a signed cookie's value holds (`<token>.<signature>`, percent-encoded). */
 const sessionTokenOf = (signed: string) => decodeURIComponent(signed).split(".")[0]!;
 
@@ -106,29 +123,27 @@ export const appSignIn = () =>
     hooks: {
       before: [
         {
-          // Continue with Google or GitHub starts here, for the web and the app. The providers make no account by
-          // themselves (lib/social-sign-in.ts: `disableImplicitSignUp`): one is made only for a start that asks, and
-          // the start says so here, never the caller. The web's asks, as it always has: someone new signs up. The
-          // app's (any way back is the app's) doesn't: it signs in accounts that exist, and it must come with a
-          // challenge, kept with the sign-in's state, and tell the app of an error where it tells it of the rest.
+          // Continue with Google or GitHub starts here, for the web and the app; the web's start is left as it is.
+          // The app's (any way back is the app's) comes back to the app, must come with a challenge, and tells the app
+          // of an error where it tells it of the rest. What marks the sign-in as the app's is kept with its state,
+          // where only the server writes (Better Auth's server context): its challenge, and its provider.
           matcher: (ctx) => ctx.path === "/sign-in/social",
           handler: createAuthMiddleware(async (ctx) => {
             const body = (ctx.body ?? {}) as Record<string, unknown> & { additionalData?: { challenge?: unknown } };
             if (![body.callbackURL, body.newUserCallbackURL, body.errorCallbackURL].some(isAppLink)) {
-              return { context: { body: { ...body, requestSignUp: true } } };
+              return;
             }
             const challenge = body.additionalData?.challenge;
             if (!isAppLink(body.callbackURL) || !isChallenge(challenge)) {
               throw new APIError("BAD_REQUEST", { code: "CHALLENGE_REQUIRED", message: "A sign-in from the app comes back to the app and has a challenge." });
             }
             // Nothing of the caller's goes into the provider's address: the browser's stop (below) makes it again from
-            // what's kept, the provider with it, and sends the browser nowhere else.
+            // what's kept, and sends the browser nowhere else.
             if (["scopes", "loginHint", "additionalParams", "idToken"].some((extra) => body[extra] !== undefined)) {
               throw new APIError("BAD_REQUEST", { message: "A sign-in from the app takes a provider, where to come back to and a challenge." });
             }
-            return {
-              context: { body: { ...body, requestSignUp: false, errorCallbackURL: body.errorCallbackURL ?? body.callbackURL, additionalData: { challenge, provider: body.provider } } },
-            };
+            await addOAuthServerContext({ app: { challenge, provider: body.provider } satisfies AppSignIn });
+            return { context: { body: { ...body, errorCallbackURL: body.errorCallbackURL ?? body.callbackURL } } };
           }),
         },
       ],
@@ -138,7 +153,7 @@ export const appSignIn = () =>
           // "Open the app"). The session it made isn't the browser's, which had no say in whose sign-in it finished:
           // its cookies come out of the answer. Nor does it ride in the redirect, which any app that registered the
           // scheme may get: a code does, for the app that holds the verifier of this sign-in's challenge to exchange
-          // (/app/session). No challenge kept (a sign-in the endpoints above didn't start): no session at all.
+          // (/app/session). No challenge kept (a sign-in the start above didn't mark as the app's): no session at all.
           matcher: (ctx) => !!ctx.path?.startsWith("/callback") || ctx.path === "/magic-link/verify",
           handler: createAuthMiddleware(async (ctx) => {
             const headers = ctx.context.responseHeaders;
@@ -154,7 +169,7 @@ export const appSignIn = () =>
               return;
             }
             const token = typeof ctx.query?.token === "string" ? ctx.query.token : "";
-            const challenge = ctx.path === "/magic-link/verify" ? (await appSignInLink(token))?.challenge : ((await getOAuthState()) as { challenge?: unknown } | null)?.challenge;
+            const challenge = ctx.path === "/magic-link/verify" ? (await appSignInLink(token))?.challenge : appSignInOf(await getOAuthState())?.challenge;
             const now = Date.now();
             await prisma.verification.deleteMany({ where: { identifier: { startsWith: "app-sign-in-" }, expiresAt: { lt: new Date(now) } } });
             const to = new URL(location);
@@ -191,13 +206,14 @@ export const appSignIn = () =>
         const state = URL.canParse(authorizationURL) ? new URL(authorizationURL).searchParams.get("state") : null;
         // As Better Auth keeps a sign-in's state (`auth-state:`), with everywhere it may go back to and what it was started with.
         const kept = state ? await ctx.context.internalAdapter.findVerificationValue(`auth-state:${state}`) : null;
-        let started: { callbackURL?: unknown; newUserURL?: unknown; errorURL?: unknown; challenge?: unknown; provider?: unknown; codeVerifier?: string; idTokenNonce?: string } = {};
+        let started: { callbackURL?: unknown; newUserURL?: unknown; errorURL?: unknown; codeVerifier?: string; idTokenNonce?: string } = {};
         try {
           started = (kept && new Date(kept.expiresAt) > new Date() && (JSON.parse(kept.value) as typeof started)) || {};
         } catch {}
         const appOrNone = (back: unknown) => back === undefined || back === null || isAppLink(back);
-        const provider = ctx.context.socialProviders.find((one) => one.id === started.provider);
-        if (!state || !provider || !isAppLink(started.callbackURL) || !appOrNone(started.newUserURL) || !appOrNone(started.errorURL) || !isChallenge(started.challenge)) {
+        const app = appSignInOf(started);
+        const provider = ctx.context.socialProviders.find((one) => one.id === app?.provider);
+        if (!state || !provider || !isAppLink(started.callbackURL) || !appOrNone(started.newUserURL) || !appOrNone(started.errorURL) || !isChallenge(app?.challenge)) {
           throw refused();
         }
         // Where the browser goes is made here, from what was kept, as the start made it (Better Auth's /sign-in/social):
