@@ -20,9 +20,10 @@ import {
 import type { ImportSourceDefinition } from "./index";
 
 /**
- * Ferndesk (docs/plan.md, Import from Ferndesk): its help center, its changelogs, the people who signed in to it, its
- * helpdesk's conversations and its AI assistant's, mapped into Featurebase's shapes. Its API has no team, no authors, no order for collections and
- * articles (they come by name, as Tuti sorts ties) and no article descriptions or visibility.
+ * Ferndesk (docs/plan.md, Import from Ferndesk): its team (its helpdesk's teammates), its help center, its changelogs,
+ * the people who signed in to it, its helpdesk's conversations and its AI assistant's, mapped into Featurebase's shapes.
+ * Its API has no article authors, no order for collections and articles (they come by name, as Tuti sorts ties) and no
+ * article descriptions or visibility.
  */
 
 /** Null for a record Ferndesk no longer has, or a helpdesk the workspace hasn't turned on (404: none of its conversations). */
@@ -234,6 +235,8 @@ export const ferndeskSource: ImportSourceDefinition = {
           }
         }),
       checks: {
+        // Its teammates need Read inbox; a workspace without the helpdesk (404) lists none.
+        team: () => unlessGone(api.get("/teammates")),
         contacts: () => api.get("/users", { page_size: 1 }),
         // Drafts need a key that can write content (Ferndesk's scopes).
         docs: () =>
@@ -258,7 +261,7 @@ export const ferndeskSource: ImportSourceDefinition = {
         // teammate is on one page (Ferndesk's API reference).
         admins: async () => {
           const teammates = await unless([403, 404], api.get<{ data: FerndeskTeammate[] }>("/teammates", { include_removed: "true" }));
-          return (teammates?.data ?? []).map((t): FeaturebaseAdmin => ({ id: t.id, name: t.name, email: t.email, profilePicture: t.avatar_url }));
+          return (teammates?.data ?? []).map((t): FeaturebaseAdmin => ({ id: t.id, name: t.name, email: t.email, profilePicture: t.avatar_url, removed: t.status === "removed" }));
         },
         contacts: async (cursor) => {
           const { items, next } = await api.page<FerndeskUser>("/users", cursor);

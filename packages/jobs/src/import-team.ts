@@ -10,7 +10,7 @@ import { generateInvitationToken, hashInvitationToken, pendingInvitation, teamPl
  * project, as a member (Featurebase's roles are its own names, which can't be mapped), not sent: an owner or admin
  * reviews and sends them from Team & roles (`sentAt` null; its token is one nobody has, and it "expired" long ago for the
  * release before, so it can't be accepted till then: UNSENT_EXPIRY). Unsent, it waits till it's sent or removed. Left out, and counted: whoever started the import, people already on the team (by verified address) or
- * already invited, admins without an address, and those past the plan's room for the team. An admin is remembered
+ * already invited, those no longer on the team there (`removed`), admins without an address, and those past the plan's room for the team. An admin is remembered
  * (ImportedRecord "invite"), so another import never invites them again, even once the team removed the invitation.
  */
 
@@ -23,6 +23,7 @@ export const TEAM_LEFT_OUT = {
   member: "for people already on the team",
   invited: "for people already invited",
   noEmail: "for admins without an email",
+  removed: "for people no longer on the team there",
   full: "past the plan's team limit (invite them after upgrading)",
 } as const;
 
@@ -62,6 +63,8 @@ async function inviteAdmins(tx: Tx, job: ImportJob, admins: FeaturebaseAdmin[]) 
     const email = admin.email?.trim().toLowerCase();
     if (recorded.has(admin.id)) {
       leaveOut(ALREADY_HERE);
+    } else if (admin.removed) {
+      leaveOut(TEAM_LEFT_OUT.removed);
     } else if (!email) {
       leaveOut(TEAM_LEFT_OUT.noEmail);
     } else if (!by || by.email.toLowerCase() === email) {

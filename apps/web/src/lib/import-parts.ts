@@ -131,8 +131,8 @@ export const IMPORT_SOURCES = {
   },
   ferndesk: {
     name: "Ferndesk",
-    description: "Bring your help center, its changelog, its users and your helpdesk's and AI assistant's conversations across with an API key.",
-    parts: ["contacts", "changelog", "docs", "inbox"],
+    description: "Bring your team, help center, changelog, users and your helpdesk's and AI assistant's conversations across with an API key.",
+    parts: ["team", "contacts", "changelog", "docs", "inbox"],
     // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are its helpdesk's and its AI assistant's.
     partDescriptions: {
       contacts: "Your help center's users, with their attributes, as Users.",

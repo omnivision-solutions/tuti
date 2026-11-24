@@ -21,10 +21,11 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
 
   // Ferndesk: its key, made in its dashboard, and only the parts it has.
   await owner.getByRole("radio", { name: /^Ferndesk/ }).check();
-  await expect(owner.getByText("Bring your help center, its changelog, its users and your helpdesk's and AI assistant's conversations across with an API key.")).toBeVisible();
+  await expect(owner.getByText("Bring your team, help center, changelog, users and your helpdesk's and AI assistant's conversations across with an API key.")).toBeVisible();
   await expect(owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ })).toHaveAttribute("href", "https://ferndesk.com/app/settings/developers");
   await expect(owner.getByText("In Ferndesk, Developers → API → New API key, with Full access (it reads drafts, the helpdesk and AI conversations). It's kept only while the import runs.")).toBeVisible();
-  await expect(owner.getByRole("checkbox", { name: /^Team/ })).toHaveCount(0);
+  // Its helpdesk's teammates, as invitations to send.
+  await expect(owner.getByRole("checkbox", { name: /^Team/ })).toBeChecked();
   await expect(owner.getByRole("checkbox", { name: /^Feedback/ })).toHaveCount(0);
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
   // What each part brings from Ferndesk: its users have no company; its conversations are its helpdesk's and the AI's.
@@ -56,7 +57,10 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await key.fill(FAKE_FERNDESK_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Ferndesk" });
-  await expect(status).toHaveText("Imported from Ferndesk. 3 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 5 conversations, 1 attachment brought across. Left out: 1 attachment that couldn't be fetched.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Ferndesk. 1 invitation, 3 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 5 conversations, 1 attachment brought across. Left out: 1 invitation for people no longer on the team there; 1 attachment that couldn't be fetched.", { timeout: 15_000 });
+  // Ines, still on Ferndesk's team, is invited, once an owner sends it.
+  await owner.getByText("1 invitation ready to send.").scrollIntoViewIfNeeded();
+  await expect(owner.getByText("1 invitation ready to send.")).toBeInViewport();
   await checkpoint(owner, "setup-ferndesk-imported");
 
   // On the portal: its sections as collections, an article with its image and its link to another, which goes there.
@@ -152,6 +156,7 @@ test("in Settings → Import, Ferndesk's published changelog entries come as dra
   await createProject(owner, "Acme", slug);
   await owner.goto(`/app/${slug}/settings/import`);
   await owner.getByRole("radio", { name: "Ferndesk", exact: true }).check();
+  await owner.getByRole("checkbox", { name: "Team", exact: true }).uncheck();
   await owner.getByRole("checkbox", { name: "Contacts", exact: true }).uncheck();
   // Asked only while the changelog or the help center is picked.
   const publishAs = owner.getByRole("radiogroup", { name: "Articles and changelog entries published in Ferndesk" });
