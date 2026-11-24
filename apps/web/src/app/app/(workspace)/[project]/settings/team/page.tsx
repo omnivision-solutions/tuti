@@ -12,7 +12,7 @@ import { MemberActions, MemberRoleSelect } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { formatDay } from "@/lib/format";
-import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
+import { oneTool } from "@/lib/import-parts";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -51,13 +51,13 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   // An import's invitations (docs/plan.md, Switching from Featurebase) wait apart until someone sends them.
   const sent = invitations.filter((invitation) => invitation.sentAt);
   const unsent = invitations.filter((invitation) => !invitation.sentAt && invitation.email);
-  // The tool they came from, by the import's record of each: named when they all came from one.
-  const tools = new Set(
-    (await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "invite", localId: { in: unsent.map((invitation) => invitation.id) } }, select: { source: true } })).map(
-      (record) => IMPORT_SOURCES[record.source.toLowerCase() as ImportSourceKey].name,
+  // The tool they came from, by the import's record of each pending one: sent ones too, so the card still names it while
+  // it shows the links of those just sent (a server without email).
+  const tool = oneTool(
+    (await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "invite", localId: { in: invitations.map((invitation) => invitation.id) } }, select: { source: true } })).map(
+      (record) => record.source,
     ),
   );
-  const tool = tools.size === 1 ? [...tools][0]! : null;
   const assignable = ROLES.filter((r) => canAssignRole(myRole, r));
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } });
   const limit = teamLimit(plan);

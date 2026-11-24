@@ -233,6 +233,12 @@ export type ImportSourceInfo = {
 };
 export type ImportSourceKey = keyof typeof IMPORT_SOURCES;
 
+/** The tool these imported records came from (their stored sources, `FERNDESK`), by name; null for none or more than one. */
+export function oneTool(sources: string[]) {
+  const names = new Set(sources.map((source) => IMPORT_SOURCES[source.toLowerCase() as ImportSourceKey].name));
+  return names.size === 1 ? [...names][0]! : null;
+}
+
 /** What a part brings from a source, as the setup step and Settings → Import offer it. */
 export const partDescription = (source: ImportSourceInfo, part: ImportPart): string => (source.partDescriptions?.[part] ?? IMPORT_PARTS[part].description).replace("{source}", source.name);
 

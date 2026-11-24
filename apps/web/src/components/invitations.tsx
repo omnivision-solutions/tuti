@@ -199,12 +199,7 @@ export type UnsentInvitation = { id: string; email: string; title: string; meta:
  * (#pending-invites). On a server without email nothing is emailed: the links are shown to pass on, as inviting does.
  * Mounted while the list empties, so it can move focus once the last row is gone.
  */
-export function UnsentInvitations({ projectSlug, invitations, tool: from, counted }: { projectSlug: string; invitations: UnsentInvitation[]; tool: string | null; counted: boolean }) {
-  // Once the last is sent the page knows no tool (it goes by those unsent), while the card stays for its links: the one it named.
-  const [tool, setTool] = useState(from);
-  if (invitations.length > 0 && from !== tool) {
-    setTool(from);
-  }
+export function UnsentInvitations({ projectSlug, invitations, tool, counted }: { projectSlug: string; invitations: UnsentInvitation[]; tool: string | null; counted: boolean }) {
   const [pending, startTransition] = useTransition();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const sendButtons = useRef(new Map<string, HTMLButtonElement>());
