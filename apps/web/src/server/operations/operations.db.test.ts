@@ -132,6 +132,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.list": () => ({ status: "open", q: "matrix" }),
   "companies.list": () => ({}),
   "conversations.get": () => ({ number: 1 }),
+  "conversations.person": () => ({ number: 1 }),
   "conversations.markRead": () => ({ number: 1, seen: new Date().toISOString() }),
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
