@@ -15,11 +15,19 @@ import { widgetComment, widgetComments, widgetDeleteComment, widgetEditComment }
 
 const NONE = new Set<string>();
 
+/**
+ * What a save answers while the page trades a token: without one the server would act for the portal's session, which may
+ * be someone else's. Nothing's sent; what's typed stays, to send once they're signed in.
+ */
+const SIGNING_IN = { error: "Signing you in… Try again in a moment." };
+
 const Commenter = createContext<{
   projectSlug: string;
   number: number;
   token: string | null;
   person: string | null;
+  /** The portal's signed-in reader, whose actions take no token. */
+  portal?: boolean;
   mine: Set<string>;
   uploads?: EditorUploads;
   mediaUrls?: MediaUrls | null;
@@ -56,9 +64,10 @@ export function WidgetComments({
   const link = usePortalHref();
   // While the page switches people or signs them out, nobody: never the last person's token.
   const token = pending || signingOut ? null : (signedIn?.token ?? null);
-  // Who's here: the same person while the page trades them a fresh token (each trade makes a new one), so their box and an
-  // open edit stay; while that's pending they act as nobody (no token), and Edit and Delete wait for it.
-  const person = portalSignedIn ? "portal" : (signedIn?.id ?? null);
+  // Who's here: the same person while the page trades a token (each trade makes a new one, for them or someone else), so
+  // their box and an open edit stay, waiting (no token: never sent, see SIGNING_IN), and Edit and Delete wait for it. Signing
+  // out, they're leaving: nobody's box, and their open edits close.
+  const person = portalSignedIn ? "portal" : signingOut ? null : (signedIn?.id ?? null);
   // Whose own comments these are; anyone else's are none until theirs are read, never the last person's.
   const [mine, setMine] = useState<{ for: string | null; ids: Set<string> }>({ for: null, ids: NONE });
   const read = !portalSignedIn && !!person && mine.for === person;
@@ -86,7 +95,11 @@ export function WidgetComments({
       // Theirs: one person's draft is never another's box.
       key={person}
       postId={`${entryId}:${person}`}
+      waiting={!token}
       action={async (prev, formData) => {
+        if (!token) {
+          return SIGNING_IN;
+        }
         const result = await widgetComment(projectSlug, token, number, prev, formData);
         const id = result.id;
         if (id) {
@@ -118,7 +131,8 @@ export function WidgetComments({
   );
 
   return (
-    <Commenter value={{ projectSlug, number, token, person, mine: own, uploads, mediaUrls }}>
+    <Commenter value={{ projectSlug, number, token, person, portal: portalSignedIn, mine: own, uploads, mediaUrls }}>
+      {read && !token && <p className="text-sm text-muted-foreground">Signing you in…</p>}
       {box}
       {children}
     </Commenter>
@@ -127,7 +141,9 @@ export function WidgetComments({
 
 /** A comment's text in the widget, with Edit and Delete when it's its person's own (WidgetComments). */
 export function WidgetComment({ commentId, author, doc, children }: { commentId: string; author: string; doc: Doc; children: React.ReactNode }) {
-  const { projectSlug, number, token, person, mine, uploads, mediaUrls } = use(Commenter);
+  const { projectSlug, number, token, person, portal, mine, uploads, mediaUrls } = use(Commenter);
+  // Someone the page signs in acts only with their token: never the portal session's fallback (SIGNING_IN).
+  const signingIn = !portal && !token;
   const theirs = mine.has(commentId);
   return (
     <ChangelogComment
@@ -143,8 +159,8 @@ export function WidgetComment({ commentId, author, doc, children }: { commentId:
       canDelete={theirs}
       uploads={uploads}
       mediaUrls={mediaUrls}
-      onEdit={(prev, formData) => widgetEditComment(projectSlug, token, number, commentId, prev, formData)}
-      onDelete={() => widgetDeleteComment(projectSlug, token, number, commentId)}
+      onEdit={async (prev, formData) => (signingIn ? SIGNING_IN : widgetEditComment(projectSlug, token, number, commentId, prev, formData))}
+      onDelete={async () => (signingIn ? SIGNING_IN : widgetDeleteComment(projectSlug, token, number, commentId))}
     >
       {children}
     </ChangelogComment>

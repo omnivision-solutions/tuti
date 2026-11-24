@@ -903,6 +903,39 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(own).toContainText("Works with all my calendars.");
   await expect(own.getByRole("button", { name: "Edit your comment" })).toBeVisible();
+  // Signed in again with the trade held: no token yet, so commenting sends nothing (the server would act for the portal's
+  // session, which could be someone else's), and what they typed stays for once it's in.
+  let releaseTrade!: () => void;
+  const tradeReleased = new Promise<void>((resolve) => (releaseTrade = resolve));
+  let trading = false;
+  // The trade: `widgetSignIn(slug, ssoToken)`.
+  await sam.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"] && /^\["[^"]+","[^"]+"\]$/.test(route.request().postData() ?? "")) {
+      trading = true;
+      await tradeReleased;
+    }
+    await route.fallback();
+  });
+  const sent: string[] = [];
+  const record = (request: { headers(): Record<string, string>; postData(): string | null }) => void (request.headers()["next-action"] && sent.push(request.postData() ?? ""));
+  sam.on("request", record);
+  await comments.getByRole("textbox", { name: "Comment" }).fill("Sent while signing in?");
+  await sam.evaluate(() =>
+    (window as unknown as { Tuti: { identify(getToken: () => Promise<string>): void } }).Tuti.identify(() => fetch(`/token${location.pathname}`).then((r) => r.text())),
+  );
+  await expect.poll(() => trading).toBe(true);
+  // Comment waits for the token (the same person's, or someone else's, then their box goes).
+  await expect(comments.getByText("Signing you in…", { exact: true })).toBeVisible();
+  await expect(comments.getByRole("button", { name: "Comment", exact: true })).toBeDisabled();
+  await comments.getByRole("textbox", { name: "Comment" }).press("Control+Enter");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click({ force: true });
+  expect(sent.filter((body) => body.includes("Sent while signing in?"))).toEqual([]);
+  await expect(comments.getByRole("textbox", { name: "Comment" })).toHaveText("Sent while signing in?");
+  sam.off("request", record);
+  releaseTrade();
+  await sam.unroute("**/*");
+  await expect(own.getByRole("button", { name: "Edit your comment" })).toBeVisible();
+  await expect(comments.getByRole("button", { name: "Comment", exact: true })).toBeEnabled();
   // A second one, which they delete.
   await comments.getByRole("textbox", { name: "Comment" }).fill("Oops, posted twice.");
   await comments.getByRole("button", { name: "Comment", exact: true }).click();
@@ -954,6 +987,26 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await checkpoint(sam, "widget-entry-comments-phone");
   await sam.setViewportSize({ width: 1280, height: 720 });
 
+  // The page signs Sam out: while that's done (held here), they're leaving, so their box and their comments' Edit go.
+  let releaseSignOut!: () => void;
+  const signOutReleased = new Promise<void>((resolve) => (releaseSignOut = resolve));
+  let signingOut = false;
+  // `widgetSignOut()`.
+  await sam.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"] && route.request().postData() === "[]") {
+      signingOut = true;
+      await signOutReleased;
+    }
+    await route.fallback();
+  });
+  await expect(comments.getByRole("textbox", { name: "Comment" })).toBeVisible();
+  await sam.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
+  await expect.poll(() => signingOut).toBe(true);
+  await expect(comments.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
+  await expect(own.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+  releaseSignOut();
+  await expect(comments.getByText("Sign in to comment.")).toBeVisible();
+  await sam.unroute("**/*");
   // The page switches to someone else: until their own comments are read (held here), nobody's are theirs to edit.
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
