@@ -1,17 +1,26 @@
 import { randomUUID } from "node:crypto";
 
-import { type Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { createProject, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 
+import { widgetToken, widgetTokenUser } from "@/lib/widget-session";
+
+import { canActIn } from "../membership";
+import { findSimilarPosts } from "../similar-posts";
+import { widgetIdeaNews } from "../widget";
+import { widgetConversations } from "../widget-inbox";
+import { createConversation, getConversation } from "./conversations";
+import { createComment, createPost } from "./create";
 import { createGroup } from "./groups";
-import { updateProject } from "./more";
+import { updatePost } from "./manage";
+import { likeComment, setSubscription, setVote, updateProject } from "./more";
 import { call } from "./run";
-import { getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
+import { deleteUser, getUser, listCompanies, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
 
 /** The project's users (users.*): what the team's app sends, and what reader groups match. */
 
@@ -247,7 +256,7 @@ test("someone who signs in to the portal another way, with a user's address veri
   await prisma.vote.create({ data: { postId: others.id, userId: portal.id, projectId, createdAt: new Date("2026-10-06") } });
   // Not while it isn't verified: anyone can type an address.
   expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
-  await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true } });
+  await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true, name: "Ada L" } });
   expect((await list()).users[0]!.activity).toEqual({ posts: 1, votes: 1, conversations: 0, lastSeenAt: new Date("2026-10-06") });
   // An email from their address (verified) started a conversation before they were a user: theirs. Someone else
   // on the email (in Cc), writing later, doesn't make them seen then.
@@ -380,3 +389,281 @@ test("a company's votes count each once, though two of its users are the same pe
   }
   expect((await call(listCompanies, team(), {})).companies).toEqual([{ name: "Acme", users: 2, votes: 3, total: null }]);
 });
+
+test("delete forgets a user: their details, votes, follows, sessions and changelog subscription go; posts, comments and conversations stay as by Deleted user", async () => {
+  // With an "_", which a LIKE would take for any letter: a colleague's address it could match keeps its own.
+  const email = "e2e-a_a@example.com";
+  const colleague = "e2e-ada@example.com";
+  await sync([{ id: "user-1", name: "Ada", email, avatar: "https://example.com/ada.png", properties: { plan: "pro" } }]);
+  const { userId: ada } = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
+  const author = { id: "user-1" };
+  // Only API keys write on someone's behalf.
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  await call(createPost, key, { board: "feature-requests", title: "Export to CSV", author });
+  const others = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, key, { number: others.number, voted: true, author });
+  await call(setSubscription, key, { number: others.number, subscribed: true, author });
+  const comment = await call(createComment, team(), { number: others.number, body: "Planned for spring" });
+  await call(likeComment, key, { number: others.number, id: comment.id, liked: true, author });
+  await call(createComment, key, { number: others.number, body: "Me too, at night", author });
+  await call(createConversation, team(), { user: author, body: "The export button does nothing" });
+  // Started by email from their address, verified: theirs too.
+  await call(createConversation, team(), { email, body: "Writing by email" });
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number: 2 }, data: { emailVerified: true, name: "Ada L" } });
+  const conversation2 = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 2 } } });
+  for (const [i, fromAddress] of [email.toUpperCase(), colleague].entries()) {
+    await prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: conversation2.id, author: "USER", channel: "EMAIL", body: `From ${fromAddress}`, fromAddress, createdAt: new Date(Date.now() + i * 1000) },
+    });
+  }
+  // From their address, and one their app has since changed.
+  for (const sender of [email, "e2e-ada-before@example.com"]) {
+    await prisma.inboundEmail.create({
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
+    });
+  }
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  const entry = await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+  await prisma.changelogReaction.create({ data: { entryId: entry.id, userId: ada, kind: "TADA" } });
+  await prisma.changelogSeen.create({ data: { projectId: project.id, userId: ada, seenAt: new Date() } });
+  await prisma.emailPreference.create({ data: { projectId: project.id, userId: ada, ownPosts: false } });
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: ada } });
+  await prisma.widgetPresence.create({ data: { projectId: project.id, who: ada, lastSeenAt: new Date() } });
+  await prisma.portalHandoff.create({ data: { codeHash: randomUUID(), projectId: project.id, userId: ada, stateHash: "state", expiresAt: new Date(Date.now() + 60_000) } });
+  await prisma.importedRecord.create({ data: { projectId: project.id, source: "FEATUREBASE", kind: "contact", externalId: "contact-1", localId: ada } });
+  await prisma.account.create({ data: { id: randomUUID(), accountId: randomUUID(), providerId: "credential", userId: ada } });
+  await prisma.session.create({ data: { id: randomUUID(), token: randomUUID(), userId: ada, expiresAt: new Date(Date.now() + 60_000) } });
+  expect(await canActIn(ada, project.id)).toBe(true);
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const token = widgetToken(project.id, ada);
+  // Theirs, and the one by email from their address.
+  expect(await widgetConversations(project.slug, { token })).toMatchObject({ conversations: [{ number: 2 }, { number: 1 }] });
+  await call(updatePost, team(), { number: 1, status: "planned" });
+  expect(await widgetIdeaNews(project.slug, token)).toMatchObject([{ title: "Export to CSV" }]);
+  // What the widget's live stream asks of the token, on every check.
+  expect(await widgetTokenUser(project.id, token)).toBe(ada);
+  // Their post only they see, found as they type in the widget.
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await prisma.post.updateMany({ where: { projectId: project.id, number: 1 }, data: { visibility: "PRIVATE" } });
+  const similar = async () => (await findSimilarPosts(project.slug, "Export to CSV", token)).map((post) => post.title);
+  expect(await similar()).toEqual(["Export to CSV"]);
+
+  expect(await call(deleteUser, team(), { user: "user-1" })).toEqual({ deleted: "user-1" });
+
+  await expect(get("user-1")).rejects.toMatchObject({ status: 404 });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: ada } });
+  expect(user).toMatchObject({ name: "Deleted user", image: null, emailVerified: false, deletedAt: expect.any(Date) });
+  expect(user.email).toBe(`deleted-${ada}@users.tuti.invalid`);
+  // Their content stays, theirs; their votes go, and the counts follow.
+  const posts = await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { authorId: true, voteCount: true } });
+  expect(posts).toEqual([
+    { authorId: ada, voteCount: 0 },
+    { authorId: owner.id, voteCount: 1 },
+  ]);
+  expect(await prisma.comment.findMany({ where: { projectId: project.id, authorId: ada }, select: { body: true } })).toEqual([{ body: "Me too, at night" }]);
+  for (const count of [
+    prisma.vote.count({ where: { userId: ada } }),
+    prisma.postSubscription.count({ where: { userId: ada } }),
+    prisma.commentLike.count({ where: { userId: ada } }),
+    prisma.session.count({ where: { userId: ada } }),
+    prisma.changelogSubscriber.count({ where: { projectId: project.id } }),
+    prisma.changelogReaction.count({ where: { userId: ada } }),
+    prisma.changelogSeen.count({ where: { userId: ada } }),
+    prisma.emailPreference.count({ where: { userId: ada } }),
+    prisma.emailOptOut.count({ where: { userId: ada } }),
+    prisma.widgetPresence.count({ where: { who: ada } }),
+    prisma.portalHandoff.count({ where: { userId: ada } }),
+    prisma.account.count({ where: { userId: ada } }),
+    prisma.importedRecord.count({ where: { projectId: project.id, localId: ada } }),
+    prisma.inboundEmail.count({ where: { conversationId: conversation2.id, sender: { not: "" } } }),
+  ]) {
+    expect(await count).toBe(0);
+  }
+  // Their conversations stay for the team, without their address.
+  for (const number of [1, 2]) {
+    expect((await call(getConversation, team(), { number })).user).toEqual({ id: null, name: "Deleted user", email: null, verified: true });
+  }
+  expect(await prisma.conversation.findMany({ where: { projectId: project.id }, select: { userId: true, email: true, name: true } })).toEqual([
+    { userId: ada, email: null, name: null },
+    { userId: ada, email: null, name: null },
+  ]);
+  // Their address is off their messages; the colleague's stays on theirs.
+  expect(
+    await prisma.conversationMessage.findMany({ where: { conversationId: conversation2.id, channel: "EMAIL" }, orderBy: { createdAt: "asc" }, select: { fromAddress: true } }),
+  ).toEqual([{ fromAddress: null }, { fromAddress: colleague }]);
+  // A widget token from before acts no more, nor reads their conversations.
+  expect(await canActIn(ada, project.id)).toBe(false);
+  expect(await widgetConversations(project.slug, { token })).toEqual({ error: expect.any(String) });
+  expect(await widgetIdeaNews(project.slug, token)).toEqual([]);
+  expect(await widgetTokenUser(project.id, token)).toBeNull();
+  expect(await similar()).toEqual([]);
+  vi.unstubAllEnvs();
+
+  // The same id later is someone new, with nothing of theirs.
+  expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0 });
+  expect(await get("user-1")).toMatchObject({ name: "Anonymous", email: null, properties: {} });
+  const again = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
+  expect(again.userId).not.toBe(ada);
+});
+
+test("delete is 404 for an id there's no user with, here", async () => {
+  const other = await createProject(owner);
+  await sync([{ id: "theirs" }], other.id);
+  await expect(call(deleteUser, team(), { user: "theirs" })).rejects.toMatchObject({ status: 404, message: "There's no user “theirs”" });
+  expect(await call(getUser, team(other.id), { user: "theirs" })).toMatchObject({ id: "theirs" });
+});
+
+test("delete takes their address off what they wrote in someone else's conversation too (Cc'd on it), and only theirs", async () => {
+  const email = "e2e-c_c@example.com";
+  // Who a LIKE pattern of theirs would take for them.
+  const lookalike = "e2e-ccc@example.com";
+  await sync([{ id: "user-2", email }]);
+  await call(createConversation, team(), { email: "e2e-bob@example.com", body: "Our invoices are wrong" });
+  const bobs = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
+  for (const [i, fromAddress] of [email.toUpperCase(), lookalike].entries()) {
+    await prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress, createdAt: new Date(Date.now() + i * 1000) },
+    });
+    await prisma.inboundEmail.create({
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender: fromAddress.toLowerCase(), dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: bobs.id },
+    });
+  }
+  await call(deleteUser, team(), { user: "user-2" });
+  // Theirs says Deleted user, not nothing: a message with no address in Bob's conversation would be Bob's.
+  expect(
+    await prisma.conversationMessage.findMany({ where: { conversationId: bobs.id, fromAddress: { not: null } }, orderBy: { createdAt: "asc" }, select: { fromAddress: true } }),
+  ).toEqual([{ fromAddress: "Deleted user" }, { fromAddress: lookalike }]);
+  expect((await prisma.inboundEmail.findMany({ where: { conversationId: bobs.id }, select: { sender: true } })).map((row) => row.sender).sort()).toEqual(["", lookalike]);
+  // Bob's conversation stays his.
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: bobs.id }, select: { userId: true, email: true } })).toEqual({ userId: null, email: "e2e-bob@example.com" });
+});
+
+test("delete that Postgres aborts for its locks on the first try runs again and finishes", async () => {
+  await sync([{ id: "user-3", name: "Cy" }]);
+  // Its first transaction is aborted as a deadlock would be; the next goes through.
+  const transaction = vi
+    .spyOn(prisma, "$transaction")
+    .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("deadlock detected (40P01)", { code: "P2034", clientVersion: "test" }));
+  try {
+    expect(await call(deleteUser, team(), { user: "user-3" })).toEqual({ deleted: "user-3" });
+    expect(transaction).toHaveBeenCalledTimes(2);
+  } finally {
+    transaction.mockRestore();
+  }
+  await expect(get("user-3")).rejects.toMatchObject({ status: 404 });
+});
+
+test("delete while someone else's vote on a post they voted on is being saved: the count ends as its rows", async () => {
+  await sync([{ id: "user-4", name: "Dot" }]);
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  const post = await call(createPost, team(), { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, key, { number: post.number, voted: true, author: { id: "user-4" } });
+  const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
+  const reader = await signUp("Rita Reader");
+
+  // A vote being saved, as votes.set does: the post locked first, then the vote inserted and counted.
+  let postLocked!: () => void;
+  let insert!: () => void;
+  const locked = new Promise<void>((resolve) => (postLocked = resolve));
+  const goOn = new Promise<void>((resolve) => (insert = resolve));
+  const vote = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${postId} FOR NO KEY UPDATE`;
+      postLocked();
+      await goOn;
+      await tx.vote.create({ data: { projectId: project.id, postId, userId: reader.id } });
+      await tx.post.update({ where: { id: postId }, data: { voteCount: { increment: 1 } } });
+    },
+    { timeout: 20_000 },
+  );
+  await locked;
+  const deleted = call(deleteUser, team(), { user: "user-4" });
+  await untilWaitingOnLock();
+  insert();
+  expect((await Promise.allSettled([vote, deleted])).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  // The owner's own vote and Rita's.
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { voteCount: true } })).toEqual({ voteCount: await prisma.vote.count({ where: { postId } }) });
+  expect(await prisma.vote.count({ where: { postId } })).toBe(2);
+});
+
+test("delete leaves what goes by their address alone while it's someone else's too: another user's (a shared mailbox), or a portal account's", async () => {
+  const email = "e2e-billing@example.com";
+  await sync([
+    { id: "user-6", email },
+    { id: "user-7", email },
+  ]);
+  await call(createConversation, team(), { email: "e2e-bob@example.com", body: "Our invoices are wrong" });
+  const bobs = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress: email } });
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  // What the mailbox emailed in, filed under the user synced with it last (inbound.ts userWithAddress): user-6 here. In
+  // one of them, user-6 also wrote in the widget.
+  const user6 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-6" } } })).userId;
+  const [mailbox, mixed] = await Promise.all(
+    [2, 3].map((number) => prisma.conversation.create({ data: { projectId: project.id, number, subject: "Invoice", origin: "EMAIL", userId: user6 } })),
+  );
+  for (const conversation of [mailbox, mixed]) {
+    await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "USER", authorId: user6, channel: "EMAIL", body: "Invoice attached" } });
+    await prisma.inboundEmail.create({
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation.id },
+    });
+  }
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mixed.id, author: "USER", authorId: user6, channel: "WIDGET", body: "Also from me" } });
+  const kept = async () => [
+    await prisma.conversationMessage.count({ where: { conversationId: bobs.id, fromAddress: email } }),
+    await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } }),
+  ];
+  await call(deleteUser, team(), { user: "user-6" });
+  expect(await kept()).toEqual([1, 1]);
+  // The mailbox's own back with the address, which still answers it; its mail the address's, not Deleted user's.
+  const where = (id: string) => ({ where: { id }, select: { userId: true, email: true, emailVerified: true } });
+  expect(await prisma.conversation.findUniqueOrThrow(where(mailbox.id))).toEqual({ userId: null, email, emailVerified: true });
+  expect(await prisma.inboundEmail.count({ where: { conversationId: mailbox.id, sender: email } })).toBe(1);
+  expect(await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, select: { authorId: true } })).toEqual([{ authorId: null }]);
+  // The one they wrote in the widget stays theirs, anonymised: user-7, with the same address, never sees it as theirs.
+  expect(await prisma.conversation.findUniqueOrThrow(where(mixed.id))).toEqual({ userId: user6, email: null, emailVerified: false });
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const user7 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-7" } } })).userId;
+  const listed = await widgetConversations(project.slug, { token: widgetToken(project.id, user7) });
+  expect("conversations" in listed && listed.conversations.map((c) => c.number)).toEqual([2]);
+  // The other one deleted too, with a portal account that verified the address: still someone's.
+  await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
+  await call(deleteUser, team(), { user: "user-7" });
+  expect(await kept()).toEqual([1, 1]);
+});
+
+test("the last two users with a shared address deleted at once queue rather than deadlock, and the address goes with the second", async () => {
+  const email = "e2e-shared@example.com";
+  const ids = ["user-8", "user-9"];
+  await sync(ids.map((id) => ({ id, email })));
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
+  // Both identities held, so both deletes wait, then go on at once: locking their own first and then the other's, they
+  // would deadlock (and one run again); locking both in one order, one waits for the other.
+  let holding!: () => void;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (holding = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const holder = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM sso_identity WHERE "projectId" = ${project.id} AND "externalId" = ANY(${ids}::text[]) ORDER BY "externalId" FOR UPDATE`;
+      holding();
+      await released;
+    },
+    { timeout: 20_000 },
+  );
+  await held;
+  const transaction = vi.spyOn(prisma, "$transaction");
+  try {
+    const deletes = ids.map((user) => call(deleteUser, team(), { user }));
+    await untilWaitingOnLock(2);
+    release();
+    await holder;
+    expect((await Promise.allSettled(deletes)).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    // Each ran once: nothing deadlocked.
+    expect(transaction).toHaveBeenCalledTimes(2);
+  } finally {
+    transaction.mockRestore();
+  }
+  expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } })).toBe(0);
+});
+

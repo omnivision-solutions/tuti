@@ -233,3 +233,15 @@ describe("SSO users only exist in their project's portal", () => {
     expect(await prisma.teamMember.count({ where: { projectId: project.id } })).toBe(1);
   });
 });
+
+test("a session a sign-in made as the project's app deleted them (users.delete) doesn't work", async () => {
+  const result = await visit(await token({ email: "e2e-ada@example.com" }));
+  const [identity] = await ssoUsers();
+  actAs({ id: identity!.userId, email: "", cookie: result.cookie });
+  request.host = `${slug}.localhost:3100`;
+  expect((await getSession())?.user.id).toBe(identity!.userId);
+  // The delete committed between the sign-in's finding them and its making the session: the session outlives it.
+  await prisma.user.update({ where: { id: identity!.userId }, data: { deletedAt: new Date() } });
+  expect(await getSession()).toBeNull();
+  request.host = "";
+});

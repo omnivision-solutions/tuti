@@ -11,7 +11,7 @@ import { GET as rss } from "@/app/portal/[project]/(site)/changelog/rss.xml/rout
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { postPath } from "@/lib/post-urls";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp, untilWaitingOnLock } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 import { entryTold, publishedEntries } from "./changelog-queries";
@@ -505,19 +505,6 @@ test("embedding posts (the post-created job, the backfill) leaves sample posts o
     await openai.close();
   }
 });
-
-/** Waits until some query in this database waits on a lock (another transaction holds what it needs). */
-async function untilWaitingOnLock() {
-  for (let i = 0; i < 200; i++) {
-    const [{ waiting }] = await prisma.$queryRaw<[{ waiting: number }]>`
-      SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-    if (waiting > 0) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("Nothing waited on a lock");
-}
 
 test("removing sample content while the team merges two of its own posts: both posts' counts end as their rows", async () => {
   const { project, team, owner } = await setup();

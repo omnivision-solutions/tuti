@@ -2,7 +2,8 @@ import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
 
-import { userAccounts } from "@/server/operations/users";
+import { call } from "@/server/operations/run";
+import { deleteUser, userAccounts } from "@/server/operations/users";
 import { upsertProjectUser } from "@/server/project-users";
 import { createProject, signUp } from "@/test/helpers";
 
@@ -76,4 +77,16 @@ test("Inbox shows every property under an open Customer details, with no Company
   };
   // Company, plan and seats are properties like any other, in the order they're stored.
   expect((await panel("lee-1", { role: "admin", seats: 40, Company: "Initech", plan: "Business", region: "EU" })).sort()).toEqual(["40", "Business", "EU", "Initech", "admin"]);
+});
+
+test("a user the project's app deleted shows as Deleted user, with no address (their account's is a placeholder)", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  const userId = await upsertProjectUser(project.id, "dee-4", { name: "Dee Dot", email: "e2e-dee@example.com" });
+  await call(deleteUser, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { user: "dee-4" });
+  // Beside a conversation, where the panel names them.
+  const html = renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true } }));
+  expect(html).toContain("Deleted user");
+  expect(html).not.toContain(".invalid");
+  expect(html).not.toContain("e2e-dee");
 });

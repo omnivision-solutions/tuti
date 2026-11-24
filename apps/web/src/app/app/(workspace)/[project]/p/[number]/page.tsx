@@ -93,7 +93,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 email: true,
                 name: true,
                 emailVerified: true,
-                user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+                user: { select: { name: true, email: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true } } } },
               },
             },
           },

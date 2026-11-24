@@ -13,10 +13,14 @@ import { sessionWorksOn } from "./custom-domains";
  * On a server that sends email, a session counts only once its address is verified: signing in with a password needs
  * that (lib/auth.ts), and one from before it did (or the previous release's, while a deploy overlaps) is signed out here:
  * on the app, and on a portal a password account's ("Continue as" from the app). Not a portal's single sign-on user's:
- * the project's app vouches for them.
+ * the project's app vouches for them. Never one of a user their project's app deleted.
  */
 export async function sessionFrom(requestHeaders: Headers) {
   const session = await auth.api.getSession({ headers: requestHeaders });
+  // Deleted by their project's app (users.delete): a sign-in that was under way as it happened may still have made one.
+  if (session?.user.deletedAt) {
+    return null;
+  }
   if (session && !session.user.emailVerified && emailConfigured() && (session.session.boundTo === "app" || (await unprovenPassword(session.user.id)))) {
     return null;
   }

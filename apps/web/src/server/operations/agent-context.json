@@ -141,6 +141,7 @@
   "tabs.update": ["access","another","article","card","change","collection","create","default","docs","first","follows","groups","hidden","instead","landing","landingpage","level","moved","name","names","noaccess","order","overview","page","path","picked","read","reader","reading","rename","required","rest","restricted","search","shows","slug","tabs","unpublished"],
   "team.list": ["list","names","project","roles","team"],
   "usage.get": ["calendar","charged","cost","credits","dollars","feature","first","gave","instead","month","newest","price","project","provider","requests","server","tokens","unpriced","whose"],
+  "users.delete": ["account","address","changelog","comments","conversations","delete","deleted","details","follows","forgotten","likes","posts","project","reactions","sessions","stay","subscription","user","users","votes"],
   "users.get": ["email","groups","name","project","properties","reader","users"],
   "users.list": ["activity","company","conversations","counts","email","every","finds","first","group","groups","keeps","last","latest","list","name","page","people","posts","project","properties","property","puts","reader","seen","sends","signs","sort","sync","total","users","votes","whoever"],
   "users.sync": ["1000","address","avatar","booleans","change","changes","conditions","created","email","given","groups","keeping","lists","many","match","name","names","nothing","null","numbers","ones","portal","project","properties","reader","removes","rest","sets","signed","someone","strings","tokens","updated","user","users","verified"],
