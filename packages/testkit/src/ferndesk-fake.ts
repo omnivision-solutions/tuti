@@ -60,7 +60,7 @@ const article = (id: string, title: string, slug: string, shortId: string, rest:
  * changelog in a section of its own (Changelog) with entries published (one with an image, one dated before it went
  * live) and a draft, which Ferndesk lists as a collection and articles too. Its helpdesk: an email from a customer with
  * an attached file and one without an address, answered by a teammate who left a note, and still going; a chat with an
- * anonymous visitor the AI agent answered, closed, with a reply never sent; one the AI agent handed over with a note,
+ * anonymous visitor the AI agent answered, closed, with a reply never sent and one that failed; one the AI agent handed over with a note,
  * snoozed; and spam.
  */
 export function ferndeskFixtures(): FerndeskFixtures {
@@ -151,6 +151,7 @@ export function ferndeskFixtures(): FerndeskFixtures {
           message("msg_chat_1", "conv_hd_chat", { type: "customer", id: null, name: null, avatar_url: null }, "Is there a dark mode?", ago(6.003)),
           message("msg_chat_2", "conv_hd_chat", { type: "ai_agent", id: null, name: "Fern", avatar_url: null }, "Yes: Settings → Appearance.", ago(6.002)),
           message("msg_chat_3", "conv_hd_chat", ines, "Drafted, never sent.", ago(6.001), { delivery: { status: "cancelled" } }),
+          message("msg_chat_5", "conv_hd_chat", ines, "Sent, but it bounced.", ago(6.0005), { delivery: { status: "failed" } }),
           message("msg_chat_4", "conv_hd_chat", { type: "system", id: null, name: null, avatar_url: null }, "Conversation closed.", ago(6)),
         ],
       }),

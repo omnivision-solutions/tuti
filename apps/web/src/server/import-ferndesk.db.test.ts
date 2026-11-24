@@ -442,7 +442,7 @@ test("the helpdesk's conversations come across first, with their messages, notes
       { author: "TEAM", note: false, body: "Yes: it's on its way.", authorUser: { name: "Ines Hart" } },
     ],
   });
-  // An anonymous visitor's chat the AI agent answered: its cancelled reply and the system's event aren't messages.
+  // An anonymous visitor's chat the AI agent answered: its replies that never reached them (cancelled, failed) and the system's event aren't messages.
   expect(chat).toMatchObject({ status: "CLOSED", user: null, messages: [{ author: "USER", channel: "WIDGET", body: "Is there a dark mode?" }, { author: "AI", body: "Yes: Settings → Appearance." }] });
   expect(await prisma.conversation.count({ where: { projectId: project.id, subject: "Cheap watches" } })).toBe(0);
   expect(mailbox.emails.length).toBe(emailed);
@@ -467,11 +467,15 @@ test("the helpdesk's conversations and their messages a page at a time, then the
 });
 
 test("Rosa, who wrote to the helpdesk, isn't matched to the user here with her address: anyone can type any address into a chat", async () => {
-  const rosa = await signUp("Rosa Here", "e2e-ferndesk-rosa@example.com");
+  // The project's own user with her address, as the app says who its users are.
+  await call(syncUsersOperation, asOwner(), { users: [{ id: "app-rosa", name: "Rosa Here", email: "e2e-ferndesk-rosa@example.com" }] });
   await importParts(["contacts", "inbox"]);
-  const invoice = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, subject: "Invoice for October" }, select: { userId: true, user: { select: { name: true } } } });
-  expect(invoice.userId).not.toBe(rosa.id);
+  const invoice = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, subject: "Invoice for October" }, select: { user: { select: { name: true } } } });
   expect(invoice.user).toEqual({ name: "Rosa Lind" });
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id, email: "e2e-ferndesk-rosa@example.com" }, orderBy: { externalId: "asc" }, select: { externalId: true, user: { select: { name: true } } } })).toEqual([
+    { externalId: "app-rosa", user: { name: "Rosa Here" } },
+    { externalId: "ferndesk:cust_rosa", user: { name: "Rosa Lind" } },
+  ]);
 });
 
 test("a key that can't read the helpdesk can't start the Inbox: its conversations would be left out", async () => {

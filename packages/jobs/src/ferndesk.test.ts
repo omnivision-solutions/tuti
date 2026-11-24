@@ -65,3 +65,9 @@ test("a key it refuses fails at once, with Ferndesk's reason", async () => {
   await expect(client("fdsk_wrong").get("/articles")).rejects.toEqual(new FerndeskError(401, "Unauthorized"));
   expect(waits).toEqual([]);
 });
+
+test("the helpdesk's errors give their reason inside an object: it's read from there", async () => {
+  fake.helpdesk = false;
+  await expect(client().helpdeskPage("/conversations", null)).rejects.toEqual(new FerndeskError(404, "Helpdesk is not turned on in this workspace."));
+  fake.helpdesk = true;
+});

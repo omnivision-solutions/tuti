@@ -126,12 +126,15 @@ const ASSISTANT = "assistant:";
 /** One who wrote to the helpdesk is a lead: an address typed into a chat, or an email's sender, proves nothing. */
 const customerOf = (c: FerndeskCustomer): FeaturebaseContact => ({ id: c.id, type: "lead", email: c.email, name: c.name, customFields: c.properties });
 
-/** A helpdesk timeline entry as a conversation part: a reply never sent (cancelled) and a system event aren't messages. */
+/**
+ * A helpdesk timeline entry as a conversation part. A reply that hasn't reached the customer (cancelled, failed, held,
+ * still queued) isn't one, nor is a system event: the team's message would say they were answered.
+ */
 function partOf(m: FerndeskMessage, ticket: FerndeskTicket): FeaturebasePart[] {
   const who = m.author.type;
   const author =
     who === "customer" ? { id: m.author.id ?? ticket.customer?.id ?? null, type: "lead", name: m.author.name } : who === "teammate" ? { id: m.author.id, type: "admin", name: m.author.name } : { type: "bot" };
-  const partType = m.type === "note" ? (who === "teammate" || who === "ai_agent" ? "admin_note" : null) : m.type !== "message" || m.delivery?.status === "cancelled" ? null : who === "customer" ? "user_msg" : who === "teammate" ? "admin_msg" : who === "ai_agent" ? "bot_msg" : null;
+  const partType = m.type === "note" ? (who === "teammate" || who === "ai_agent" ? "admin_note" : null) : m.type !== "message" || (m.delivery && !["sent", "delivered"].includes(m.delivery.status)) ? null : who === "customer" ? "user_msg" : who === "teammate" ? "admin_msg" : who === "ai_agent" ? "bot_msg" : null;
   if (!partType) {
     return [];
   }
