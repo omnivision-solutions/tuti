@@ -1,9 +1,8 @@
 "use client";
 
-import { EllipsisIcon, SearchIcon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { usePathname } from "next/navigation";
-import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -25,14 +24,5 @@ export function ConversationMore({ children, label = "More actions" }: { childre
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-/** Opens the existing project search without leaving the Inbox. */
-export function InboxSearchButton() {
-  return (
-    <Button variant="outline" size="icon-sm" aria-label="Search project" onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
-      <SearchIcon />
-    </Button>
   );
 }

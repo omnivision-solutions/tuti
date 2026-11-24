@@ -198,7 +198,14 @@ the list picks none to approve at once.
   The Inbox is panes (`PaneLayout`, under Panes): its views in a section pane titled "Inbox" (Needs reply, Mine,
   Unassigned, Waiting on user, Snoozed, Closed, Spam, each with its count; on phones the list header's menu), the
   list and the open conversation side by side when the room beside the section pane has 52.5rem, each scrolling on
-  its own (the page itself doesn't; `InboxPanes`). The list's pane header is its view and count; the conversation's
+  its own (the page itself doesn't; `InboxPanes`). The list's pane header is its view and count, with the list's search
+  (`PaneSearch`, "Search conversations") a row of its own under them, the pane's whole width: the list is too narrow
+  for a field to type a name or an address in beside its title. It's the header's only search (no button for ⌘K there:
+  two searches side by side read as one; ⌘K is the sidebar's and the key's). A search (on Enter, `?q=`) lists what
+  it finds in every view but Spam, as `conversations.list`'s `q` does, the latest message first, under the title
+  "Results" and their count, with no view marked current; a row shows the message that has the text instead of the
+  latest (around the text, which is marked; "Note:" before a note's), and "Closed" on a closed one. An open
+  conversation stays open beside the results; "Clear search" (where nothing matched) and an emptied field go back to the view. The conversation's
   is its subject (no way back: the list is beside it), with Close, More actions and the details toggle. With less room, the list or the
   conversation ("Inbox ›" before its subject; "‹ Inbox" on phones, its subject on a line of its own under the header).
   Opening the app sidebar can switch to this single-pane layout without changing the sidebar preference. A row reads in three

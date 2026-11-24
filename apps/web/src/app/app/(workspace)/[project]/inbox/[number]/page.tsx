@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
+import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxQuery, inboxView } from "@/components/inbox/inbox-panes";
 import { MarkRead } from "@/components/inbox/mark-read";
 import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle, DetailsPanel } from "@/components/inbox/conversation-details";
@@ -101,6 +101,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const searchParams = await props.searchParams;
   const view = inboxView(searchParams.view);
   const pages = inboxPages(searchParams.page);
+  const q = inboxQuery(searchParams.q);
   const messagePages = inboxPages(searchParams.messages);
   const shown = MESSAGES_PER_PAGE * messagePages;
   const membership = await getMembership(slug);
@@ -181,11 +182,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     if (past) {
       const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
       return (
-        <InboxPanes slug={slug} view={view} open={number} pages={pages}>
+        <InboxPanes slug={slug} view={view} open={number} pages={pages} q={q}>
           <PastHistory
             slug={slug}
             view={view}
             pages={pages}
+            q={q}
             number={number}
             days={historyDays(plan)!}
             admin={isAdminRole(membership.role)}
@@ -284,12 +286,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             : wait?.status;
 
   return (
-    <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
+    <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages} q={q}>
       <MarkRead slug={slug} number={number} seen={conversation.messages.at(-1)?.createdAt.toISOString() ?? null} unread={read?.unread ?? false} />
       <ConversationPane open detailsHidden={detailsHidden}>
         <Pane className="inbox-conversation col-start-1 row-start-1">
           <PaneHeader
-            back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }}
+            back={{ href: inboxHref(slug, view, null, pages, 1, q), label: "Inbox", className: INBOX_BACK }}
             title={<span title={conversation.subject} className={INBOX_TITLE}>{conversation.subject}</span>}
             actions={
               <>
@@ -339,7 +341,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           <div id="conversation" className="inbox-conversation-body relative min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
             <div className="inbox-messages-and-composer flex min-h-full flex-col gap-2.5 px-6 pt-3 @max-[52.5rem]/inbox:px-3 @min-[77rem]/app:group-data-[details=hidden]/thread:px-9">
               <EarlierMessages
-                href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
+                href={inboxHref(slug, view, conversation.number, pages, messagePages + 1, q)}
                 first={conversation.messages[0]?.id ?? ""}
                 more={conversation._count.messages > shown}
               />
@@ -512,6 +514,7 @@ function PastHistory({
   slug,
   view,
   pages,
+  q,
   number,
   days,
   admin,
@@ -520,6 +523,7 @@ function PastHistory({
   slug: string;
   view: ReturnType<typeof inboxView>;
   pages: number;
+  q: string;
   number: number;
   days: number;
   admin: boolean;
@@ -529,7 +533,7 @@ function PastHistory({
     <ConversationPane open>
       {/* The whole thread's grid: there are no details beside it. */}
       <Pane className="col-span-full">
-        <PaneHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }} title={<span className={INBOX_TITLE}>{`Conversation #${number}`}</span>} />
+        <PaneHeader back={{ href: inboxHref(slug, view, null, pages, 1, q), label: "Inbox", className: INBOX_BACK }} title={<span className={INBOX_TITLE}>{`Conversation #${number}`}</span>} />
         <PaneBody className="p-6">
           <EmptyState
             title="Past your plan's history"

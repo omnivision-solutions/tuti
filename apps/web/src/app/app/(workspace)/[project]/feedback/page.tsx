@@ -10,7 +10,7 @@ import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys, ListScrollReset } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
-import { FeedbackSearch } from "@/components/feedback-search";
+import { PaneSearch } from "@/components/pane-search";
 import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
 import { ListFilters } from "@/components/list-filters";
 import { feedbackMenu } from "@/components/feedback-menu";
@@ -176,12 +176,12 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               filters={<FilterPills label="Statuses" current={href(tab)} items={tabs.map((t) => ({ href: href(t.key), title: t.title, count: t.count }))} />}
               actions={
                 <>
-                  <FeedbackSearch action={`/app/${slug}/feedback`} q={q}>
+                  <PaneSearch action={`/app/${slug}/feedback`} q={q} label="Search feedback">
                     {board && <input type="hidden" name="board" value={board} />}
                     {group && <input type="hidden" name="group" value={group.key} />}
                     {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
                     {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
-                  </FeedbackSearch>
+                  </PaneSearch>
                   {/* Searching doesn't load a new page, so a screen reader hears what it found here (polite, there from the start). */}
                   <p role="status" className="sr-only">
                     {q ? `Search for “${q}” found ${listed.length === 0 ? "no posts" : listed.length === 1 && !more ? "1 post" : `${listed.length}${more ? " posts, and more to load" : " posts"}`}` : ""}
