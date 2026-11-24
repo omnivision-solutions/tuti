@@ -398,8 +398,8 @@ export function importNote(run: ImportView) {
   if (run.state !== "running") {
     return run.state === "failed" ? run.error : null;
   }
-  // "Usually": a failure of Tuti's own (the database) makes it wait too.
-  const waiting = run.resumesAt && `Paused for now, usually because ${IMPORT_SOURCES[run.source].name} asked Tuti to slow down. It picks up again by itself.`;
+  // Whatever it waits for: the tool's rate limit, its trouble or silence, or a failure of Tuti's own (the database).
+  const waiting = run.resumesAt && `Paused for now, waiting for ${IMPORT_SOURCES[run.source].name} to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.`;
   return [importAt(run) && `${importAt(run)}.`, waiting].filter(Boolean).join(" ") || null;
 }
 

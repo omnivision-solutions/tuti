@@ -100,9 +100,9 @@ test("the changelog runs after feedback and says its own images, apart from feed
 test("under an import's title: the part under way, that it's waiting for its tool when it is, or why it stopped", () => {
   const run = (data: object) => ({ source: "featurebase", state: "running", step: "contacts", error: null, resumesAt: null, parts: ["team", "contacts"], counts: {}, ...data }) as never;
   expect(importNote(run({}))).toBe("Part 2 of 2.");
-  expect(importNote(run({ resumesAt: "2026-11-24T10:00:00.000Z" }))).toBe("Part 2 of 2. Paused for now, usually because Featurebase asked Tuti to slow down. It picks up again by itself.");
+  expect(importNote(run({ resumesAt: "2026-11-24T10:00:00.000Z" }))).toBe("Part 2 of 2. Paused for now, waiting for Featurebase to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.");
   expect(importNote(run({ source: "website", parts: ["docs"], step: "docs-content", resumesAt: "2026-11-24T10:00:00.000Z" }))).toBe(
-    "Part 1 of 1. Paused for now, usually because your help center asked Tuti to slow down. It picks up again by itself.",
+    "Part 1 of 1. Paused for now, waiting for your help center to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.",
   );
   expect(importNote(run({ state: "failed", error: "Featurebase couldn't be reached." }))).toBe("Featurebase couldn't be reached.");
   expect(importNote(run({ state: "done", step: null }))).toBeNull();

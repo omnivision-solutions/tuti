@@ -293,7 +293,7 @@ test("an import Featurebase's rate limit holds up says it's waiting and goes on 
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_LIMITED_KEY);
   await owner.getByRole("button", { name: "Start import" }).click();
   // The team came across; Contacts, held up, is still under way, and the import says why nothing moves.
-  await expect(owner.getByText("Part 2 of 3. Paused for now, usually because Featurebase asked Tuti to slow down. It picks up again by itself.", { exact: false })).toBeVisible({ timeout: 15_000 });
+  await expect(owner.getByText("Part 2 of 3. Paused for now, waiting for Featurebase to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.", { exact: false })).toBeVisible({ timeout: 15_000 });
   const parts = owner.getByRole("list", { name: "What's brought across", exact: true });
   await expect(parts.getByRole("listitem").filter({ has: owner.getByText("Contacts", { exact: true }) })).toContainText("In progress");
   await expect(owner.getByRole("button", { name: "Start import" })).toHaveCount(0);
@@ -301,7 +301,7 @@ test("an import Featurebase's rate limit holds up says it's waiting and goes on 
   // The same under the title of its details.
   await owner.goto(`/app/${slug}`);
   await owner.getByRole("button", { name: "View progress" }).click();
-  await expect(owner.getByRole("dialog").getByText("Paused for now, usually because Featurebase asked Tuti to slow down. It picks up again by itself.", { exact: false })).toBeVisible();
+  await expect(owner.getByRole("dialog").getByText("Paused for now, waiting for Featurebase to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.", { exact: false })).toBeVisible();
 });
 
 test("Feedback comes across with Contacts: the posts with their dates, votes and comments on the portal, and the team's private comment as a note in the app", async ({ browser }, testInfo) => {
