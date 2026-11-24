@@ -505,7 +505,7 @@ describe("a cover given by URL", () => {
     expect(second.cover!.id).toBe(first.cover!.id);
     const picture = /\((\S+)\)/.exec(first.markdown!)![1]!;
     const third = await call(updateChangelogEntry, as(owner), { number: second.number, cover: picture });
-    expect(third.cover!.id).toBe((first.content as { content: { attrs: { mediaId: string } }[] }).content[0]!.attrs.mediaId);
+    expect(third.cover!.id).toBe((first.content as unknown as { content: { attrs: { mediaId: string } }[] }).content[0]!.attrs.mediaId);
     expect(await ready()).toBe(2);
   });
 
