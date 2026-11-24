@@ -11,7 +11,7 @@ import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-/** Imports from Ferndesk (docs/plan.md, Import from Ferndesk): its help center, changelog, users and AI conversations, against its fake. */
+/** Imports from Ferndesk (docs/plan.md, Import from Ferndesk): its help center, changelog, users, helpdesk and AI conversations, against its fake. */
 
 let fake: FerndeskFake;
 let s3: S3Fake;
@@ -34,7 +34,7 @@ beforeEach(async () => {
   }
   // The fake serves its files on this machine.
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  Object.assign(fake, { fixtures: ferndeskFixtures(), pageSize: 100, requests: [], forbidden: new Set() });
+  Object.assign(fake, { fixtures: ferndeskFixtures(), pageSize: 100, requests: [], forbidden: new Set(), helpdesk: true });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -346,6 +346,7 @@ test("an imported draft published by a release that didn't know its date, then u
 
 test("one who never verified their address in Ferndesk isn't matched to the user here who has it: anyone can type any address", async () => {
   await call(syncUsersOperation, asOwner(), { users: [{ id: "app-tobias", name: "The real Tobias", email: "e2e-ferndesk-tobias@example.com" }] });
+  fake.helpdesk = false;
   await importParts(["contacts", "inbox"]);
   expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, orderBy: { externalId: "asc" }, select: { externalId: true, user: { select: { name: true } } } })).toEqual([
     { externalId: "app-tobias", user: { name: "The real Tobias" } },
@@ -357,6 +358,8 @@ test("one who never verified their address in Ferndesk isn't matched to the user
 });
 
 test("users come across as Contacts, and the AI assistant's conversations as closed ones in the Inbox, by their person or a visitor; again, nothing twice", async () => {
+  // A workspace that hasn't turned the helpdesk on: only the AI assistant's.
+  fake.helpdesk = false;
   const emailed = mailbox.emails.length;
   const done = await importParts(["contacts", "inbox"]);
 
@@ -389,4 +392,65 @@ test("users come across as Contacts, and the AI assistant's conversations as clo
   expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(2);
   expect((await conversations())[0]!.messages.map((m) => m.body)).toEqual(["Can I export my data to CSV?", expect.stringContaining("Yes: Settings"), "And to Excel?", "Open the CSV in Excel."]);
   expect(await prisma.ssoIdentity.count({ where: { projectId: project.id } })).toBe(2);
+});
+
+test("the helpdesk's conversations come across first, with their messages, notes and files, each by who wrote it; then the AI assistant's; spam and replies never sent stay out; again, only what's new", async () => {
+  const emailed = mailbox.emails.length;
+  const done = await importParts(["contacts", "inbox"]);
+
+  expect(done).toMatchObject({ state: "done", counts: { conversations: { imported: 4, leftOut: {} }, attachments: { imported: 1 } } });
+  // Rosa came with her conversation, beside the help center's users (she never signed in to it), with her address.
+  expect(done.counts.contacts).toMatchObject({ imported: 3 });
+  expect(await prisma.ssoIdentity.findFirst({ where: { projectId: project.id, externalId: "ferndesk:cust_rosa" }, select: { email: true, properties: true } })).toEqual({ email: "e2e-ferndesk-rosa@example.com", properties: { plan: "team" } });
+  const all = await prisma.conversation.findMany({
+    where: { projectId: project.id },
+    orderBy: { number: "asc" },
+    select: {
+      subject: true,
+      status: true,
+      user: { select: { name: true } },
+      heldBy: { select: { name: true } },
+      messages: { orderBy: { createdAt: "asc" }, select: { author: true, note: true, channel: true, body: true, authorUser: { select: { name: true } }, attachments: { select: { filename: true, contentType: true } } } },
+    },
+  });
+  expect(all.map((c) => c.subject)).toEqual(["Invoice for October", "Is there a dark mode?", "Can I export my data to CSV?", "Do you have an <API>?"]);
+  const [invoice, chat] = all;
+  expect(invoice).toMatchObject({
+    // Rosa wrote last: it waits for the team. Ines isn't on the team here: her placeholder holds it.
+    status: "OPEN",
+    user: { name: "Rosa Lind" },
+    heldBy: { name: "Ines Hart" },
+    messages: [
+      { author: "USER", note: false, channel: "EMAIL", body: "Could you resend October's invoice? The total looks off.", authorUser: { name: "Rosa Lind" }, attachments: [{ filename: "invoice-october.png", contentType: "image/png" }] },
+      { author: "TEAM", note: true, body: "Asked billing to check the total.", authorUser: { name: "Ines Hart" }, attachments: [] },
+      { author: "TEAM", note: false, channel: "EMAIL", body: "Here it is, with the total fixed.", authorUser: { name: "Ines Hart" } },
+      { author: "USER", body: "Thanks! And September's?" },
+    ],
+  });
+  // An anonymous visitor's chat the AI agent answered: its cancelled reply and the system's event aren't messages.
+  expect(chat).toMatchObject({ status: "CLOSED", user: null, messages: [{ author: "USER", channel: "WIDGET", body: "Is there a dark mode?" }, { author: "AI", body: "Yes: Settings → Appearance." }] });
+  expect(await prisma.conversation.count({ where: { projectId: project.id, subject: "Cheap watches" } })).toBe(0);
+  expect(mailbox.emails.length).toBe(emailed);
+
+  // Rosa wrote again: another import adds only that.
+  const ticket = fake.fixtures.tickets[0]!;
+  ticket.last_message_at = ticket.updated_at = new Date().toISOString();
+  (ticket.messages as unknown[]).push({ ...(ticket.messages as Record<string, unknown>[])[3], id: "msg_invoice_4", body_text: "Found it, never mind.", created_at: new Date().toISOString() });
+  const again = await importParts(["contacts", "inbox"]);
+  expect(again.counts).toMatchObject({ conversations: { imported: 0, leftOut: { "already brought across earlier": 4 } }, messages: { imported: 1 } });
+  expect((await prisma.conversationMessage.findMany({ where: { conversation: { projectId: project.id, subject: "Invoice for October" } }, orderBy: { createdAt: "asc" }, select: { body: true } })).at(-1)).toEqual({ body: "Found it, never mind." });
+  expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(4);
+});
+
+test("Rosa, who wrote to the helpdesk, isn't matched to the user here with her address: anyone can type any address into a chat", async () => {
+  const rosa = await signUp("Rosa Here", "e2e-ferndesk-rosa@example.com");
+  await importParts(["contacts", "inbox"]);
+  const invoice = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, subject: "Invoice for October" }, select: { userId: true, user: { select: { name: true } } } });
+  expect(invoice.userId).not.toBe(rosa.id);
+  expect(invoice.user).toEqual({ name: "Rosa Lind" });
+});
+
+test("a key that can't read the helpdesk can't start the Inbox: its conversations would be left out", async () => {
+  fake.forbidden.add("/v1/conversations");
+  expect(await refusal(start(["contacts", "inbox"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Inbox in Ferndesk. Use a key that can, or leave Inbox out." });
 });

@@ -25,10 +25,12 @@ const UNREACHABLE = "Ferndesk couldn't be reached.";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Its error's message ({ error: "…" }). */
+/** Its error's message ({ error: "…" }, the helpdesk's { error: { message: "…" } }). */
 async function messageOf(response: Response): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-  return typeof body?.error === "string" ? body.error : `Ferndesk answered ${response.status}`;
+  const error = body?.error;
+  const message = typeof error === "string" ? error : typeof error === "object" && error && "message" in error ? error.message : null;
+  return typeof message === "string" ? message : `Ferndesk answered ${response.status}`;
 }
 
 /**
@@ -82,6 +84,12 @@ export function ferndesk(key: string, { wait = pause, deadline = Infinity }: { w
     return { items: body.results, next: body.has_more && body.next_cursor && body.next_cursor !== cursor ? body.next_cursor : null };
   }
 
+  /** One page of a helpdesk list (`cursor` null: the first), 100 at most: its lists page with `limit` and `cursor`. */
+  async function helpdeskPage<T>(path: string, cursor: string | null, query: Record<string, string | number> = {}): Promise<Page<T>> {
+    const body = await get<{ data: T[]; has_more: boolean; next_cursor: string | null }>(path, { limit: 100, ...query, cursor });
+    return { items: body.data, next: body.has_more && body.next_cursor && body.next_cursor !== cursor ? body.next_cursor : null };
+  }
+
   /** Every page of a list. */
   async function all<T>(path: string, query: Record<string, string | number> = {}): Promise<T[]> {
     const items: T[] = [];
@@ -94,7 +102,7 @@ export function ferndesk(key: string, { wait = pause, deadline = Infinity }: { w
     return items;
   }
 
-  return { get, page, all };
+  return { get, page, all, helpdeskPage };
 }
 
 /** A top-level section of the help center's navigation (GET /v1/sections). */
@@ -162,3 +170,36 @@ export type FerndeskEntry = {
   updatedAt: string;
   draft: { title?: string | null; contentHtml?: string | null } | null;
 };
+
+/** A helpdesk conversation (GET /v1/conversations, newest activity first; its timeline from GET …/{id}/messages). */
+export type FerndeskTicket = {
+  id: string;
+  subject: string | null;
+  status: string;
+  channel: string;
+  assignee: { id: string; name: string } | null;
+  /** Null for an anonymous widget visitor. */
+  customer: { id: string; name: string | null; email: string | null } | null;
+  snoozed_until: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string | null;
+};
+
+/** A helpdesk conversation's timeline entry: a message, a reply (with its delivery) or a note the customer never sees. */
+export type FerndeskMessage = {
+  id: string;
+  type: string;
+  author: { type: string; id: string | null; name: string | null };
+  body_text: string;
+  body_html: string | null;
+  attachments: { filename: string; url: string | null }[];
+  delivery: { status: string } | null;
+  created_at: string;
+};
+
+/** Someone who wrote to the helpdesk (GET /v1/customers/{id}). */
+export type FerndeskCustomer = { id: string; name: string | null; email: string | null; properties: Record<string, unknown> | null };
+
+/** Someone who works the helpdesk (GET /v1/teammates). */
+export type FerndeskTeammate = { id: string; name: string; email: string | null; avatar_url: string | null };

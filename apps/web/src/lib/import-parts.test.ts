@@ -159,7 +159,7 @@ test("the sources the app offers are the ones the jobs read, each with a check f
 
 test("a source says what a part brings from it where that isn't what it brings from every source", () => {
   expect(partDescription(IMPORT_SOURCES.ferndesk, "contacts")).toBe("Your help center's users, with their attributes, as Users.");
-  expect(partDescription(IMPORT_SOURCES.ferndesk, "inbox")).toBe("Your AI assistant's conversations with readers, closed, as the Inbox.");
+  expect(partDescription(IMPORT_SOURCES.ferndesk, "inbox")).toBe("Your helpdesk's conversations with their notes and files, and your AI assistant's chats, closed, as the Inbox. Nothing is emailed.");
   expect(partDescription(IMPORT_SOURCES.ferndesk, "docs")).toBe(IMPORT_PARTS.docs.description);
   expect(partDescription(IMPORT_SOURCES.featurebase, "contacts")).toBe(IMPORT_PARTS.contacts.description);
 });
