@@ -11,7 +11,7 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
-import { automaticDesign, COVER_DESIGNS, coverContent, coverDesigns, drawCover, MAX_COVER_HEADLINE } from "../cover-card";
+import { automaticDesign, COVER_DESIGNS, coverContent, coverDesigns, CoverPictureUnread, drawCover, MAX_COVER_HEADLINE } from "../cover-card";
 import { lastingImage, lastingMediaUrls } from "../media-urls";
 import {
   blocksToNotes,
@@ -790,8 +790,15 @@ export const composeChangelogCover = defineOperation({
     if (!coverDesigns(content).includes(picked)) {
       throw new OperationError(400, "invalid_input", picked === "screenshot" ? "This entry has no image at least 600px wide for the Screenshot design" : "This entry needs two headings for the Sections design");
     }
-    // Drawing and storing: never under the project lock (storeImage takes it itself).
-    const stored = await storeImage(await drawCover({ project, brand: brand! }, content, picked), { projectId, uploaderId: uploaderOf(actor) });
+    // Drawing and storing: never under the project lock (storeImage takes it itself). A design asked for by name is that
+    // design or nothing: Screenshot whose image storage won't give just now isn't kept as a Title cover (`auto` is).
+    const png = await drawCover({ project, brand: brand! }, content, picked, undefined, { asAsked: design !== "auto" }).catch((error: unknown) => {
+      if (error instanceof CoverPictureUnread) {
+        throw new OperationError(503, "copy_failed", "Couldn't read the entry's image just now: try again in a moment");
+      }
+      throw error;
+    });
+    const stored = await storeImage(png, { projectId, uploaderId: uploaderOf(actor) });
     if (!("mediaId" in stored)) {
       throw stored.leftOut === "quota"
         ? new OperationError(409, "no_room", "The cover can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour")
@@ -800,7 +807,12 @@ export const composeChangelogCover = defineOperation({
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         await attachCover(tx, projectId, stored.mediaId);
-        return tx.changelogEntry.update({ where: { id: entry.id }, data: { coverId: stored.mediaId }, select: entrySelect });
+        // Deleted while its cover was drawn: gone, not an error of ours (the upload, in no entry, is freed like any unused one).
+        const { count } = await tx.changelogEntry.updateMany({ where: { id: entry.id }, data: { coverId: stored.mediaId } });
+        if (count === 0) {
+          throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
+        }
+        return tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
       }),
     );
     return entryView(updated, portal);

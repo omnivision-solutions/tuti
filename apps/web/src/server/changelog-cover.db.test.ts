@@ -99,6 +99,14 @@ test("with no design picked, the entry's image where it has one big enough, else
   await compose({ number: pictured.number });
   expect(read).toContain(imageKey(shot.id, 960));
   expect(drawn().map((cover) => cover.design)).toEqual(["title", "screenshot"]);
+
+  // Storage loses the image's file: Screenshot asked for by name is refused, to try again, and the cover it has stays;
+  // nobody picking (`auto`), the entry gets its title's design instead.
+  const had = (await call(getChangelogEntry, team(), { number: pictured.number })).cover!.id;
+  s3.objects.delete(imageKey(shot.id, 960));
+  await expect(compose({ number: pictured.number, design: "screenshot" })).rejects.toMatchObject({ status: 503, code: "copy_failed", message: "Couldn't read the entry's image just now: try again in a moment" });
+  expect((await call(getChangelogEntry, team(), { number: pictured.number })).cover!.id).toBe(had);
+  expect((await compose({ number: pictured.number })).cover!.id).not.toBe(had);
 });
 
 test("without uploads set up it's a 503, and past the member's hourly uploads a 409: the entry keeps the cover it has", async () => {
