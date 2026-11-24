@@ -387,6 +387,9 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     }
     if (!popup) return;
     if (!wanted) {
+      // Taken out under someone's keyboard (a check elsewhere, the portal's changelog): their place is the launcher,
+      // unless the panel is opening, which takes the focus itself.
+      if (!opened && document.activeElement && popup.contains(document.activeElement)) button.focus();
       if (popup.parentNode) popup.parentNode.removeChild(popup);
       popup = null;
       return;

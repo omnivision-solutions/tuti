@@ -21,7 +21,7 @@ export function latestAnnouncement(project: Prisma.ProjectWhereInput) {
   return prisma.changelogEntry.findFirst({
     where: { project, announced: true, publishedAt: { not: null, gte: freshSince() } },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
-    select: { id: true, publishedAt: true, number: true, title: true, body: true, cover: { select: { id: true, status: true, width: true, height: true } } },
+    select: { id: true, publishedAt: true },
   });
 }
 

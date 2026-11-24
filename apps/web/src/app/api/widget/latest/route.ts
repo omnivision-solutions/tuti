@@ -64,8 +64,16 @@ export async function GET(request: Request) {
   // public, whose latest announcement /api/widget/seen tells only someone signed in who may read it.
   const latest = entry?.publishedAt ?? null;
   // The popup's card: plain text only (the script puts it in as text), its cover a lasting link to its smallest size.
-  const announcement = entry && settings?.popup
-    ? { number: entry.number, title: entry.title, excerpt: entry.body.replace(/\s+/g, " ").trim().slice(0, 200), image: lastingImage(entry.cover)?.url ?? null }
+  // Read only with the popup on: every page load of every site with the widget asks this.
+  const card =
+    entry && settings?.popup
+      ? await prisma.changelogEntry.findUnique({
+          where: { id: entry.id },
+          select: { number: true, title: true, body: true, cover: { select: { id: true, status: true, width: true, height: true } } },
+        })
+      : null;
+  const announcement = card
+    ? { number: card.number, title: card.title, excerpt: card.body.replace(/\s+/g, " ").trim().slice(0, 200), image: lastingImage(card.cover)?.url ?? null }
     : null;
   return Response.json(
     {

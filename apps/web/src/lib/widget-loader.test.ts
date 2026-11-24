@@ -85,6 +85,9 @@ class FakeElement {
   ancestors(): FakeElement[] {
     return [this, ...(this.parent?.ancestors() ?? [])];
   }
+  contains(element: unknown) {
+    return element instanceof FakeElement && element.ancestors().includes(this);
+  }
   /** The launcher's name: what screen readers say, and its tooltip. */
   get accessibleName() {
     return { label: this.getAttribute("aria-label"), title: this.title };
@@ -1954,6 +1957,16 @@ test("Close hides the popup for this page view even when the browser refuses sto
   await settled();
   popupParts(page.popup!).close.click();
   expect(page.popup).toBeUndefined();
+});
+
+test("taken away under the keyboard (signed in, so it's checked elsewhere first), the popup leaves focus on the launcher", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, seenAfter: new Promise(() => {}), before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  popupParts(page.popup!).close.focus();
+  page.Tuti.identify(token);
+  await settled();
+  expect(page.popup).toBeUndefined();
+  expect(page.document.activeElement).toBe(page.button);
 });
 
 test("without an answer from the app, no visit is recorded: the last one still counts next time", async () => {
