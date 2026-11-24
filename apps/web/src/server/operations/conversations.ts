@@ -106,7 +106,7 @@ const latestMessageOutput = z
     author: z.enum(["user", "team", "ai", "tuti"]).describe("Who wrote it").meta({ examples: ["user"] }),
     name: z.string().nullable().describe("The teammate who wrote it; null for anyone else's").meta({ examples: [null] }),
     fromYou,
-    fromAddress: z.string().nullable().describe("The address it was emailed from, for a message that came by email; null otherwise").meta({ examples: [null] }),
+    fromAddress: z.string().nullable().describe("Someone else on the email thread (a Cc'd colleague, say) wrote it: the address they wrote from, or `Deleted user` once they're erased. Null for the conversation's own person, and for messages that didn't come by email").meta({ examples: [null] }),
     line: z
       .string()
       .nullable()
@@ -619,7 +619,7 @@ export const getConversation = defineOperation({
             fromAddress: z
               .string()
               .nullable()
-              .describe("The address it was emailed from, for a message that came by email (someone else on the thread writes from their own); null otherwise")
+              .describe("Someone else on the email thread (a Cc'd colleague, say) wrote it: the address they wrote from, or `Deleted user` once they're erased. Null for the conversation's own person, and for messages that didn't come by email")
               .meta({ examples: [null] }),
             seenAt: at("When the user saw it in the widget; null when they haven't, and for what isn't the team's reply").nullable(),
             emailStatus: z
