@@ -251,7 +251,8 @@ export const ferndeskSource: ImportSourceDefinition = {
       },
       read: {
         // Who works the helpdesk, those removed since too (they wrote its replies and notes); none without a helpdesk
-        // (404) or for a key that can't read it (403: only the inbox needs them, and its check asks for Read inbox).
+        // (404) or for a key that can't read it (403: only the inbox needs them, and its check asks for Read inbox). Every
+        // teammate is on one page (Ferndesk's API reference).
         admins: async () => {
           const teammates = await unless([403, 404], api.get<{ data: FerndeskTeammate[] }>("/teammates", { include_removed: "true" }));
           return (teammates?.data ?? []).map((t): FeaturebaseAdmin => ({ id: t.id, name: t.name, email: t.email, profilePicture: t.avatar_url }));
