@@ -484,7 +484,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             slug={slug}
             person={{ ...conversation, name: person.name }}
             besides={conversation.number}
-            inbox={{ view, pages, userId: membership.userId }}
+            inbox={{ view, pages, userId: membership.userId, q }}
           />
           <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
           <DetailSection title="Conversation attributes" count={3} icon={ListIcon}>

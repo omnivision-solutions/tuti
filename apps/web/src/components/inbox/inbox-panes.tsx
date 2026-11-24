@@ -108,12 +108,13 @@ function viewWhere(view: View, projectId: string, userId: string, since: Date | 
   return { AND: [filters[view], visibleConversations(since)], projectId };
 }
 
-/** Which of these conversations (ids) are in the view, by the list's own filter: their numbers. */
-export async function inInboxView(projectId: string, userId: string, view: View, ids: string[]): Promise<Set<number>> {
+/** Which of these conversations (ids) are in the view, or among a search's results (`q`), by the list's own filter: their numbers. */
+export async function inInboxView(projectId: string, userId: string, view: View, ids: string[], q = ""): Promise<Set<number>> {
   if (ids.length === 0) {
     return new Set();
   }
-  const listed = await prisma.conversation.findMany({ where: { AND: [viewWhere(view, projectId, userId), { id: { in: ids } }] }, select: { number: true } });
+  const list = q ? { projectId, spam: false, ...(await conversationsMatching(projectId, q)) } : viewWhere(view, projectId, userId);
+  const listed = await prisma.conversation.findMany({ where: { AND: [list, { id: { in: ids } }] }, select: { number: true } });
   return new Set(listed.map((c) => c.number));
 }
 

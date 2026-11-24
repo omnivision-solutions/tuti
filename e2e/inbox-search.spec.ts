@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, openPersonDetails, signUp } from "./helpers";
 
 // Wide enough for the Inbox's panes side by side: its views, the list and the conversation.
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -14,7 +14,7 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
-  // #1: Sam, at Northwind, answered (waiting on Sam). #2: closed. #3: open, about something else. #4: spam.
+  // #1: Sam, at Northwind, answered (waiting on Sam). #2: closed. #3: open, about something else. #4: Sam again. #5: spam.
   await api("/conversations", { user: { id: "sam", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Charged twice", body: "I was charged twice this month." });
   await api("/users", { users: [{ id: "sam", properties: { company: "Northwind" } }] });
   await api("/conversations/1/messages", { body: "Sorry about that, Sam. I've looked at both charges on your account, and the refund for the second one is on its way: it takes about five days." });
@@ -22,8 +22,9 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await api("/conversations", { email: "e2e-jamie@example.com", subject: "Calendar won't connect", body: "It keeps asking me to sign in again." });
   await api("/conversations/3/messages", { body: "Jamie's on the legacy plan: check before answering.", note: true });
+  await api("/conversations", { user: { id: "sam" }, subject: "A copy of my invoice", body: "Could you send last month's invoice?" });
   await api("/conversations", { email: "e2e-spammer@example.com", body: "Refund guaranteed, click here" });
-  await api("/conversations/4", { spam: true }, "PATCH");
+  await api("/conversations/5", { spam: true }, "PATCH");
 
   await owner.goto(`/app/${slug}/inbox?view=waiting`);
   const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
@@ -62,8 +63,14 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await search.fill("NORTHWIND");
   await search.press("Enter");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?view=waiting&q=NORTHWIND$`));
-  await expect(rows).toHaveCount(1);
-  await expect(rows).toContainText("Sam Smith");
+  await expect(rows).toHaveCount(2);
+  await expect(rows).toContainText(["A copy of my invoice", "Charged twice"]);
+  // Their other conversation, opened from the details, is one of the results: they stay beside it.
+  await openPersonDetails(owner);
+  await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: "A copy of my invoice" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4\\?view=waiting&q=NORTHWIND$`));
+  await expect(owner.getByRole("heading", { level: 1, name: "A copy of my invoice" })).toBeVisible();
+  await expect(rows).toHaveCount(2);
   await search.fill("#3");
   await search.press("Enter");
   await expect(rows).toHaveCount(1);
