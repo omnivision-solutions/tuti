@@ -590,10 +590,11 @@ export const updateChangelogEntry = defineOperation({
         // it isn't published with one: read under the entry's lock, so a save that waited for a publish finds it
         // published. Only ones this save adds: text that had such a line already (an older or imported entry's) is
         // still edited, and can lose it.
-        const markers = text ? droppedMarkers(text.doc, displayDoc(entry)) : [];
-        if (markers.length > 0) {
-          const [now] = await tx.$queryRaw<{ publishedAt: Date | null }[]>`SELECT "publishedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
-          if (now?.publishedAt) {
+        if (text && markersIn(text.doc).length > 0) {
+          // The entry as it is now, held: what this save read before may be a draft that has since lost the line and gone out.
+          const [now] = await tx.$queryRaw<{ publishedAt: Date | null; content: Prisma.JsonValue; body: string }[]>`SELECT "publishedAt", content, body FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+          const markers = now?.publishedAt ? droppedMarkers(text.doc, displayDoc(now)) : [];
+          if (markers.length > 0) {
             throw new OperationError(409, "markers", `This entry is published. Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
           }
         }

@@ -279,14 +279,19 @@ test("a draft leaves a line where it needs a fact; the entry isn't published wit
 });
 
 test("once it's published, an entry's text can't gain a marker: a save with one is refused, also one that waited for the publish", async () => {
-  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode", body: "Dark mode is here." });
-  // A save with a marker, started while the entry is a draft and held up by a publish that's committing.
+  // A draft with a line still to fill in, open in two tabs.
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode", body: "Dark mode is here.\n[Check: is it out on iOS yet?]" });
+  // In one, the line is taken out and the entry published; the other saves what it has, the line still in it, while
+  // that publish is committing. What it read was a draft with that line: only the entry as it is now says otherwise.
   let commit!: () => void;
   const held = new Promise<void>((resolve) => (commit = resolve));
   let locked!: () => void;
   const publishing = new Promise<void>((resolve) => (locked = resolve));
   const publish = prisma.$transaction(async (tx) => {
-    await tx.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number } }, data: { publishedAt: new Date() } });
+    await tx.changelogEntry.update({
+      where: { projectId_number: { projectId: project.id, number } },
+      data: { publishedAt: new Date(), body: "Dark mode is here.", content: { type: "doc", content: [paragraph(text("Dark mode is here."))] } },
+    });
     locked();
     await held;
   });
