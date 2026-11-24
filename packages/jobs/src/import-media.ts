@@ -222,8 +222,9 @@ async function copyThrough(
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
   } catch (error) {
-    // Ours, not the file's (storage, processing): logged, as nothing else says why. One cut off by its deadline isn't.
-    if (!late?.aborted) {
+    // Ours, not the file's (storage, processing): logged, as nothing else says why. Only the deadline's own stop isn't
+    // (its reason, thrown as the upload's cut off); a failure that merely comes after it still is.
+    if (!late?.aborted || error !== late.reason) {
       log.error("Copying a file into media failed", { projectId, mediaId: media.id, kind, error });
     }
     return { ...(await leaveOut("unreachable")), passing: true };

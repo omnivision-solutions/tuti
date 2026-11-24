@@ -365,6 +365,18 @@ test("a copy cut off while it's being stored isn't logged as an error: its deadl
   expect(logged).not.toHaveBeenCalled();
 });
 
+test("a storage failure that comes after the deadline is still logged: only the deadline's own stop isn't", async () => {
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  const stop = new AbortController();
+  // The deadline passes as the image is stored, and the storage fails anyway (an image's upload isn't cut off by it).
+  s3.onPut = () => {
+    stop.abort();
+    return 500;
+  };
+  expect(await mediaImporter({ projectId, uploaderId, signal: stop.signal })({ kind: "image", url: `${origin}/a.png`, key: "a" })).toEqual({ leftOut: "unreachable" });
+  expect(logged).toHaveBeenCalledExactlyOnceWith("Copying a file into media failed", expect.objectContaining({ kind: "image", error: expect.objectContaining({ message: expect.stringContaining("failed with 500") }) }));
+});
+
 test("a storage failure isn't remembered by the cache: the next document tries again", async () => {
   const cache = new Map();
   const source = { kind: "image" as const, url: `${origin}/a.png`, key: `${origin}/a.png` };
