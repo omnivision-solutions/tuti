@@ -119,7 +119,7 @@ test("an import in a line, as Home's card says it", () => {
   // Importing again: everything already here is left out, page after page, which isn't "starting".
   const again = (state: string, step: string | null) =>
     ({ state, step, error: null, parts: ["team", "contacts"], counts: { invitations: { imported: 0, leftOut: { x: 1 } }, contacts: { imported: 0, leftOut: { "already brought across earlier": 1300 } } } }) as never;
-  expect(importBrief(again("running", "contacts"))).toBe("Part 2 of 2: Contacts, nothing new so far.");
+  expect(importBrief(again("running", "contacts"))).toBe("Part 2 of 2: Contacts, nothing new so far (1,300 already here).");
   expect(importBrief(again("done", null))).toBe("Nothing new brought across.");
   // Only new messages in conversations brought earlier: Inbox brought them.
   const messages = {

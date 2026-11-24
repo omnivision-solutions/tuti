@@ -48,8 +48,6 @@ const PART_STATE = {
 export function ImportProgress({ projectSlug, run, invitations }: { projectSlug: string; run: ImportView; invitations: number }) {
   const progress = importProgress(run);
   const toSend = <InvitationsToSend projectSlug={projectSlug} count={invitations} />;
-  // What an earlier import brought, said once for all the parts rather than in each.
-  const anySkipped = progress.some((part) => part.skipped > 0);
   return (
     <>
       <ol aria-label="What's brought across" className="flex flex-col divide-y">
@@ -58,21 +56,27 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
           const steps = Object.entries(info.steps as Record<string, string>);
           const at = steps.findIndex(([name]) => name === step);
           const toSendHere = part === "team" && (state === "done" || state === "stopped") && invitations > 0;
-          const said = state === "now" ? (leftOut.length > 0 || skipped > 0 ? "Nothing new so far." : "Starting…") : state === "done" || state === "stopped" ? "Nothing new." : info.brings;
+          const said = state === "now" ? (leftOut.length > 0 ? "Nothing new so far." : "Starting…") : state === "done" || state === "stopped" ? "Nothing new." : info.brings;
           return (
             <li key={part} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
               <span className="mt-0.5 shrink-0">{PART_STATE[state].icon}</span>
               <div className="min-w-0 flex-1">
                 <p className={cn("text-sm font-medium", (state === "next" || state === "waiting") && "text-muted-foreground")}>{info.label}</p>
                 {/* Once the team's part is done (or stopped), the invitations waiting to be sent say it, with their link, instead. */}
-                {toSendHere ? null : state !== "next" && state !== "waiting" && brought.length > 0 ? (
-                  // The numbers first, so a glance down the list reads what came across.
+                {toSendHere ? null : state !== "next" && state !== "waiting" && (brought.length > 0 || skipped > 0) ? (
+                  // The numbers first, so a glance down the list reads what came across; then what an earlier import
+                  // brought, skipped, which climbs page by page while importing again brings nothing new.
                   <p className="flex flex-wrap gap-x-3 text-sm">
                     {brought.map(([n, kind]) => (
                       <span key={kind}>
                         <span className="font-semibold tabular-nums">{n}</span> <span className="text-muted-foreground">{kind}</span>
                       </span>
                     ))}
+                    {skipped > 0 && (
+                      <span className="text-muted-foreground">
+                        <span className="tabular-nums">{skipped.toLocaleString("en")}</span> already here
+                      </span>
+                    )}
                     {state === "now" && <span className="text-muted-foreground">so far</span>}
                   </p>
                 ) : (
@@ -125,7 +129,6 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
           );
         })}
       </ol>
-      {anySkipped && <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Skipped what was already brought across earlier.</p>}
       {/* From an earlier import that brought the team, when this one didn't. */}
       {!progress.some(({ part }) => part === "team") && toSend}
     </>
