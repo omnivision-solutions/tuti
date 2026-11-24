@@ -1476,6 +1476,18 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("menuitem", { name: "Not spam" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=spam&page=2$`));
+
+  // A search's results load more the same way, the search kept; with no more than a page of them, there's no button.
+  await owner.goto(`/app/${slug}/inbox?q=question`);
+  await expect(owner.getByRole("heading", { name: "Results 102" })).toBeVisible();
+  await expect(rows).toHaveCount(100);
+  await more.click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?q=question&page=2$`));
+  await expect(rows).toHaveCount(102);
+  await expect(more).toHaveCount(0);
+  await owner.goto(`/app/${slug}/inbox?q=oldest`);
+  await expect(rows).toHaveCount(1);
+  await expect(more).toHaveCount(0);
 });
 
 test("a long conversation opens at its latest fifty messages; Show earlier messages loads the ones before, where they were read stays in view", async ({ browser }, testInfo) => {

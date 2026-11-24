@@ -19,6 +19,7 @@ export function PaneSearch({
   label,
   placeholder = "Search",
   className = "w-32 @min-[64rem]/app:w-40",
+  maxLength = 255,
   children,
 }: {
   action: string;
@@ -26,6 +27,8 @@ export function PaneSearch({
   label: string;
   placeholder?: string;
   className?: string;
+  /** The longest search the page takes: the field takes no more, so its results are known as its own. */
+  maxLength?: number;
   children?: ReactNode;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -50,13 +53,13 @@ export function PaneSearch({
       action={action}
       scroll={false}
       role="search"
-      onSubmit={() => { submitted.current = input.current?.value.trim().slice(0, 255) ?? null; }}
+      onSubmit={() => { submitted.current = input.current?.value.trim().slice(0, maxLength) ?? null; }}
       className={cn("relative flex min-w-0", className)}
     >
       {children}
       <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
       {/* Not restored by the browser (a reload, Back to a page out of the cache): what's in it at hydration was typed. */}
-      <Input ref={input} type="search" name="q" defaultValue={q} autoComplete="off" placeholder={placeholder} aria-label={label} className="h-8 rounded-full pl-8" />
+      <Input ref={input} type="search" name="q" defaultValue={q} autoComplete="off" maxLength={maxLength} placeholder={placeholder} aria-label={label} className="h-8 rounded-full pl-8" />
     </Form>
   );
 }

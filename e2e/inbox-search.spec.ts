@@ -21,6 +21,7 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await api("/conversations", { email: "e2e-alex@example.com", subject: "Cancel my plan", body: "Please cancel. Can I get a refund for this year?" });
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await api("/conversations", { email: "e2e-jamie@example.com", subject: "Calendar won't connect", body: "It keeps asking me to sign in again." });
+  await api("/conversations/3/messages", { body: "Jamie's on the legacy plan: check before answering.", note: true });
   await api("/conversations", { email: "e2e-spammer@example.com", body: "Refund guaranteed, click here" });
   await api("/conversations/4", { spam: true }, "PATCH");
 
@@ -67,6 +68,11 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await search.press("Enter");
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Calendar won't connect");
+  // The team's notes are searched too: the row says it's one.
+  await search.fill("legacy plan");
+  await search.press("Enter");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Note: Jamie's on the legacy plan: check before answering.");
 
   // Nothing found says so; Clear search goes back to the view.
   await search.fill("zebra");
@@ -87,4 +93,11 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await expect(search).toHaveValue("refund");
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "search-phone", { fullPage: false });
+  // A result opens alone there; the way back is to the results.
+  await rows.nth(1).getByRole("link", { name: /Sam Smith/ }).click();
+  await expect(owner.getByRole("heading", { name: "Charged twice" })).toBeVisible();
+  await owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("link", { name: "Inbox" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?q=refund$`));
+  await expect(rows).toHaveCount(2);
+  await expect(search).toHaveValue("refund");
 });

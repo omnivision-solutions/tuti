@@ -246,7 +246,7 @@ export async function InboxPanes({
               filtersBelow
               filters={
                 // With a conversation open, it stays open beside the results; cleared, back to the view.
-                <PaneSearch action={`/app/${slug}/inbox${open === null ? "" : `/${open}`}`} q={q} label="Search conversations" placeholder="Search conversations" className="w-full">
+                <PaneSearch action={`/app/${slug}/inbox${open === null ? "" : `/${open}`}`} q={q} label="Search conversations" placeholder="Search conversations" className="w-full" maxLength={MAX_SEARCH_LENGTH}>
                   {view !== "open" && <input type="hidden" name="view" value={view} />}
                 </PaneSearch>
               }
