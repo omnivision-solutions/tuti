@@ -240,10 +240,10 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
         <div style={{ ...root, backgroundColor: theme.page, color: theme.text }}>
           {/* Rings of the colour around the corner, fading as they widen. */}
           {[0, 1, 2, 3, 4].map((i) => {
-            const size = 360 + i * 200;
+            const size = 360 + i * 180;
             return <div key={i} style={{ display: "flex", position: "absolute", right: -size / 2, bottom: -size / 2, width: size, height: size, borderRadius: 9999, border: `46px solid ${accent}`, opacity: 0.9 - i * 0.18 }} />;
           })}
-          {/* Clear of the widest ring, which reaches 1000 across at the title's height. */}
+          {/* Clear of the widest ring, which reaches 1050 across at the title's height. */}
           <div style={{ ...column, width: 840 }}>
             {brand}
             <div style={{ display: "flex", flexDirection: "column" }}>
