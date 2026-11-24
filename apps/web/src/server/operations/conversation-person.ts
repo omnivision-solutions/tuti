@@ -59,14 +59,14 @@ export async function personDetails(projectId: string, person: Person, { besides
   const { userId, email } = person;
   const accounts = userId ? (person.accounts ?? [userId]) : [];
   // Theirs: with one of their accounts, or (known or not) started by email from their address, verified. Not spam, nor
-  // past the plan's history.
+  // past the plan's history. Nobody's with neither (an anonymous contact an import brought in): none is theirs.
   const theirs = {
     projectId,
     spam: false,
     AND: [visibleConversations(await historySince(projectId))],
     ...(besides !== undefined && { number: { not: besides } }),
     OR: [
-      ...(accounts.length > 0 ? [{ userId: { in: accounts } }] : [{ userId: null, email }]),
+      ...(accounts.length > 0 ? [{ userId: { in: accounts } }] : email ? [{ userId: null, email }] : []),
       ...(accounts.length > 0 && email && person.emailVerified ? [{ userId: null, emailVerified: true, email }] : []),
     ],
   };

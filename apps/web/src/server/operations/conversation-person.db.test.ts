@@ -128,3 +128,16 @@ test("conversations.person gives a signed-out visitor by the address they typed,
   expect(result).toMatchObject({ id: null, name: null, email: "e2e-vic@example.com", verified: false, account: false, blocked: false, maybe: null });
   expect(result.conversations.map((c) => c.number)).toEqual([2]);
 });
+
+test("conversations.person gives someone with neither an account nor an address (an imported contact) no other conversations, not every such one", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  await conversation(project, 1, { origin: "EMAIL" });
+  await conversation(project, 2, { origin: "EMAIL" });
+
+  const result = await both(project, owner, 1, { userId: null, email: null, emailVerified: false, name: null });
+  expect(result).toMatchObject({ name: null, email: null, account: false, conversations: [], conversationCount: 0 });
+  // Nor beside it in the web's panel.
+  const html = renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId: null, email: null, emailVerified: false }, besides: 1 }));
+  expect(html).not.toContain("Conversation 2");
+});
