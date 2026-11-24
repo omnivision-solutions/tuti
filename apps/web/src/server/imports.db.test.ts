@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
-import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_RUN, importsSettled, importStep, loadAdmins, lockProject, upsertProjectUser } from "@tuti/jobs";
-import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
+import { adminMember, contactUsers, FeaturebaseError, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_RUN, importsSettled, importStep, loadAdmins, lockProject, SiteError, upsertProjectUser, waitBefore } from "@tuti/jobs";
+import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -52,9 +52,13 @@ const usersOf = () =>
   prisma.ssoIdentity.findMany({ where: { projectId: project.id }, orderBy: { externalId: "asc" }, select: { externalId: true, email: true, properties: true, user: { select: { name: true, image: true } } } });
 /** The fake's key as an import keeps it: sealed (encrypted at rest). */
 const sealedKey = () => sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY);
+/** Earlier tests' imports left running, out of the way: resume-imports takes up every project's. */
+const alone = () => prisma.dataImport.updateMany({ where: { state: "RUNNING" }, data: { state: "FAILED", apiKey: null } });
 /** An import's row, as if one had started (running, with the key), at `step`. */
-const running = (data: { apiKey?: string; step?: string; updatedAt?: Date } = {}) =>
-  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts: ["contacts"], step: "contacts", ...data } });
+const running = (data: { apiKey?: string; step?: string; updatedAt?: Date; tries?: number; progressAt?: Date } = {}) =>
+  prisma.dataImport.create({
+    data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts: ["contacts"], step: "contacts", progressAt: data.updatedAt, ...data },
+  });
 
 test("every part the app offers can be imported", () => {
   expect(Object.keys(STEPS)).toEqual(expect.arrayContaining(Object.keys(IMPORT_PARTS)));
@@ -309,6 +313,156 @@ test("a stuck import goes on when it's looked at; one that hasn't moved for a da
   expect(await handlers.failStaleImports({}, log)).toEqual({ failed: 1 });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ state: "RUNNING", apiKey: recent.apiKey });
+});
+
+test("a page Featurebase's rate limit refuses for longer than a request waits leaves the import waiting as long as it asked, its key kept; then it goes on by itself, from that page", async () => {
+  await alone();
+  const row = await running();
+  fake.requests.length = 0;
+  fake.failNext(429, 1, { "retry-after": "600" });
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ waiting: true });
+  const waiting = await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } });
+  expect(waiting).toMatchObject({ state: "RUNNING", apiKey: row.apiKey, step: "contacts", tries: 1, error: "", finishedAt: null });
+  const minutes = (waiting.resumeAt!.getTime() - Date.now()) / 60_000;
+  expect(minutes).toBeGreaterThan(9.5);
+  expect(minutes).toBeLessThanOrEqual(10);
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "running", step: "contacts", error: null, resumesAt: waiting.resumeAt!.toISOString() });
+
+  // Before its time, nothing asks Featurebase again: not a run that comes early, a look at it, nor resume-imports,
+  // even once it has gone longer without moving than a stuck import does.
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ waiting: true });
+  await prisma.$executeRaw`UPDATE data_import SET "updatedAt" = now() - interval '9 minutes' WHERE id = ${row.id}`;
+  expect(await handlers.resumeImports({}, log)).toEqual({ resumed: 0 });
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "running", resumesAt: waiting.resumeAt!.toISOString() });
+  await importsSettled();
+  expect(fake.requests.filter((request) => request.startsWith("GET /v2/contacts"))).toHaveLength(1);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ resumeAt: waiting.resumeAt, tries: 1 });
+
+  // Its time come, resume-imports queues it, and the page saves.
+  await prisma.dataImport.update({ where: { id: row.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+  expect(await handlers.resumeImports({}, log)).toEqual({ resumed: 1 });
+  await importsSettled();
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", apiKey: null, resumeAt: null, tries: 0, counts: { contacts: { imported: 3 } } });
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done", resumesAt: null });
+});
+
+test("a wait that's over is taken up when the import is looked at too, without waiting for resume-imports' minute", async () => {
+  const row = await running();
+  fake.failNext(429, 1, { "retry-after": "600" });
+  await handlers.importStep({ importId: row.id }, log);
+  await prisma.dataImport.update({ where: { id: row.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "running", resumesAt: null });
+  await importsSettled();
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done", counts: { contacts: { imported: 3 } } });
+});
+
+test("a page that keeps failing waits longer each time, and fails the import after its last try, saying why; asked to wait longer than an import does, it fails at once", async () => {
+  // Begun three times before: the fourth wait is 15 minutes, more than the 2 Featurebase asks.
+  const row = await running({ tries: 3 });
+  fake.failNext(429, 1, { "retry-after": "120" });
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ waiting: true });
+  const waiting = await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } });
+  expect(waiting).toMatchObject({ state: "RUNNING", tries: 4 });
+  expect(Math.round((waiting.resumeAt!.getTime() - Date.now()) / 60_000)).toBe(15);
+
+  // Its last try.
+  await prisma.dataImport.update({ where: { id: row.id }, data: { resumeAt: null, tries: 6 } });
+  fake.failNext(429, 1, { "retry-after": "120" });
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+    state: "FAILED",
+    apiKey: null,
+    error: expect.stringMatching(/^Featurebase answered 429 \(.+\)\. Start it again to go on: what came across already is skipped\.$/),
+    finishedAt: expect.any(Date),
+  });
+
+  // Seven hours: past what an import waits.
+  const long = await running();
+  fake.failNext(429, 1, { "retry-after": String(7 * 60 * 60) });
+  expect(await handlers.importStep({ importId: long.id }, log)).toEqual({ failed: true });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: long.id } })).toMatchObject({ state: "FAILED", apiKey: null });
+});
+
+test("what may pass is waited for: a rate limit, the source's own trouble, no answer, one of our own; a refusal, or a page past its tries, fails the import", () => {
+  const featurebase = (status: number, retryAfterMs: number | null = null) => Object.assign(new FeaturebaseError(status, "fake failure"), { retryAfterMs });
+  const first = { source: "FEATUREBASE", tries: 0 } as const;
+  const minute = 60_000;
+  expect([429, 500, 503, 0].map((status) => waitBefore(first, featurebase(status)))).toEqual([minute, minute, minute, minute]);
+  expect(waitBefore(first, new Error("the database went away"))).toBe(minute);
+  expect([400, 401, 403, 404, 422].map((status) => waitBefore(first, featurebase(status)))).toEqual([null, null, null, null, null]);
+  // Longer each time, and never sooner than the source asks; past the last wait, or asked for more than six hours, failed.
+  expect([0, 1, 2, 3, 4, 5, 6].map((tries) => waitBefore({ source: "FEATUREBASE", tries }, featurebase(503)))).toEqual([1, 2, 5, 15, 30, 60].map((m) => m * minute).concat(null as never));
+  expect(waitBefore(first, featurebase(429, 10 * minute))).toBe(10 * minute);
+  expect(waitBefore({ source: "FEATUREBASE", tries: 4 }, featurebase(429, 10 * minute))).toBe(30 * minute);
+  expect(waitBefore(first, featurebase(429, 7 * 60 * minute))).toBeNull();
+  // A crawled site: out of time or asking for a pause passes; refused (robots.txt, not public) or a name that doesn't exist won't.
+  const site = (status: number, reason: "refused" | "late" | "unknown" | "wait" | null) => new SiteError(status, "fake failure", reason);
+  const crawl = { source: "WEBSITE", tries: 0 } as const;
+  expect([site(0, "late"), site(429, "wait"), site(503, null), site(0, null)].map((error) => waitBefore(crawl, error))).toEqual([minute, minute, minute, minute]);
+  expect([site(0, "refused"), site(0, "unknown"), site(404, null)].map((error) => waitBefore(crawl, error))).toEqual([null, null, null]);
+});
+
+test("a page counts as begun before its source answers: one whose job dies while it reads still moves on to failing the import; inline, resume-imports leaves it reading in the background", async () => {
+  await alone();
+  // Stuck, and Featurebase holds its answer: resumed, the page is reading.
+  const row = await running({ apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_SLOW_KEY), updatedAt: new Date(Date.now() - 10 * 60_000) });
+  // Inline (as the web server's timer runs it), resume-imports doesn't wait for the import's pages.
+  expect(await handlers.resumeImports({}, log)).toEqual({ resumed: 1 });
+  await expect.poll(async () => (await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).tries).toBe(1);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "RUNNING" });
+  fake.release();
+  await importsSettled();
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", tries: 0 });
+});
+
+test("a failure of our own (the database) waits a minute and is tried again, not failed", async () => {
+  await alone();
+  const row = await running();
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce((() => Promise.reject(new Error("the database went away"))) as never);
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ waiting: true });
+  const waiting = await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } });
+  expect(waiting).toMatchObject({ state: "RUNNING", apiKey: row.apiKey, tries: 1 });
+  expect(Math.round((waiting.resumeAt!.getTime() - Date.now()) / 60_000)).toBe(1);
+  expect(await usersOf()).toEqual([]);
+  await prisma.dataImport.update({ where: { id: row.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+  expect(await handlers.resumeImports({}, log)).toEqual({ resumed: 1 });
+  await importsSettled();
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3, leftOut: {} } } });
+});
+
+test("a stuck import (its job went away) is resumed by resume-imports, nobody looking; one whose page was begun too often without ever ending is failed, its key cleared", async () => {
+  await alone();
+  const stuck = await running({ updatedAt: new Date(Date.now() - 10 * 60_000) });
+  const recent = await running({ updatedAt: new Date(Date.now() - 60_000) });
+  // Its job died at this page each of the seven times it was begun.
+  const dying = await running({ updatedAt: new Date(Date.now() - 10 * 60_000), tries: 7 });
+  fake.requests.length = 0;
+  expect(await handlers.resumeImports({}, log)).toEqual({ resumed: 2 });
+  await importsSettled();
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stuck.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3 } } });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ state: "RUNNING", apiKey: recent.apiKey, counts: {} });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: dying.id } })).toMatchObject({
+    state: "FAILED",
+    apiKey: null,
+    error: "It kept stopping at the same place. Start it again to go on: what came across already is skipped.",
+    finishedAt: expect.any(Date),
+  });
+  // Only the stuck one's page was read.
+  expect(fake.requests.filter((request) => request.startsWith("GET /v2/contacts"))).toHaveLength(1);
+});
+
+test("an import resumed again and again (its runs can't be queued) but saving no page is still failed after a day, its key cleared", async () => {
+  await alone();
+  // Resumed eight minutes ago, as it has been all day: no page saved since yesterday.
+  const resumed = await running({ updatedAt: new Date(Date.now() - 8 * 60_000), progressAt: new Date(Date.now() - 25 * 60 * 60_000) });
+  expect(await handlers.failStaleImports({}, log)).toEqual({ failed: 1 });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: resumed.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
+
+  // A page saved moves it on: one saving pages isn't failed, however long it has run.
+  const saving = await running({ progressAt: new Date(Date.now() - 25 * 60 * 60_000) });
+  await handlers.importStep({ importId: saving.id }, log);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: saving.id } })).toMatchObject({ state: "DONE" });
+  expect((await prisma.dataImport.findUniqueOrThrow({ where: { id: saving.id } })).progressAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
 });
 
 test("one that hasn't moved for a day is failed when it's looked at, not resumed: inline installs run no daily job", async () => {

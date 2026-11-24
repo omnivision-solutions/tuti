@@ -2874,8 +2874,14 @@ model DataImport {
   /// Why it failed, in words.
   error       String       @default("")
   createdAt   DateTime     @default(now())
-  /// When it last moved: one that hasn't for a while is stuck (resumed when looked at, failed after a day).
+  /// When it last moved: one that hasn't for a while is stuck (resumed by resume-imports, failed after a day).
   updatedAt   DateTime     @default(now()) @updatedAt
+  /// While it waits for its source (a rate limit, or a failure that may pass): when its page is tried again.
+  resumeAt    DateTime?
+  /// How many times the page it's at was begun without saving: 0 once one saves.
+  tries       Int          @default(0)
+  /// When it last saved a page (or started): one that hasn't for a day is failed. Not `updatedAt`: resuming it moves that.
+  progressAt  DateTime     @default(now())
   finishedAt  DateTime?
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

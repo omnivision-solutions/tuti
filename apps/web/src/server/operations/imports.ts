@@ -1,5 +1,5 @@
 import { type ImportSource, prisma, type Prisma } from "@tuti/db";
-import { continueImport, failStaleImports, type ImportCounts, IMPORT_KEY, IMPORT_SOURCES as SOURCES, type ImportSourceDefinition, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
+import { continueImport, failStaleImports, type ImportCounts, IMPORT_KEY, IMPORT_SOURCES as SOURCES, type ImportSourceDefinition, importStale, importDue, lockProject, nextStep, resumeImport } from "@tuti/jobs";
 import { boardLimit, log, planDisplay, type PlanKey, plansAbove } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { z } from "zod";
@@ -25,6 +25,8 @@ const importSelect = {
   error: true,
   createdAt: true,
   updatedAt: true,
+  progressAt: true,
+  resumeAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },
 } satisfies Prisma.DataImportSelect;
@@ -47,6 +49,8 @@ async function importView(row: ImportRow) {
     startedBy: row.startedBy?.name ?? null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
+    /** While it waits for its source (a rate limit, or a failure that may pass): when it goes on, by itself. */
+    resumesAt: row.state === "RUNNING" ? (row.resumeAt?.toISOString() ?? null) : null,
     /** The invitations an import (this one or an earlier one) left waiting to be sent, as Team & roles lists them. */
     invitationsToSend: await prisma.invitation.count({ where: { projectId: row.projectId, sentAt: null, acceptedAt: null, revokedAt: null } }),
   };
@@ -82,6 +86,11 @@ const importOutput = z
     startedBy: z.string().nullable().describe("Who started it, or null for someone who left").meta({ examples: ["Olive Owner"] }),
     createdAt: z.string().describe("When it started (ISO 8601)").meta({ examples: ["2026-11-19T09:00:00.000Z"] }),
     finishedAt: z.string().nullable().describe("When it ended (ISO 8601), or null while it runs").meta({ examples: [null] }),
+    resumesAt: z
+      .string()
+      .nullable()
+      .describe("While it runs but waits for the tool it reads (its rate limit, or a failure that may pass): when it goes on by itself (ISO 8601); else null")
+      .meta({ examples: [null] }),
     invitationsToSend: z
       .number()
       .int()
@@ -94,12 +103,13 @@ const importOutput = z
 const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 
 /**
- * The project's latest import (null: none yet); a stuck one (its job went away) goes on here, and one that hasn't moved
- * for a day is failed, its key cleared, as the daily fail-stale-imports would (inline installs run no scheduled jobs).
+ * The project's latest import (null: none yet); one whose wait is over or that's stuck (its job went away) goes on
+ * here, without waiting for resume-imports' minute, and one that hasn't moved for a day is failed, its key cleared,
+ * as fail-stale-imports would.
  */
 export async function latestImport(projectId: string): Promise<ImportView | null> {
   const latest = await prisma.dataImport.findFirst({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: importSelect });
-  if (!latest || !importStuck(latest)) {
+  if (!latest || !importDue(latest)) {
     return latest && (await importView(latest));
   }
   if (importStale(latest)) {

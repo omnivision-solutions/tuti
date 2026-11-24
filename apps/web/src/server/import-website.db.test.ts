@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, portalAddress } from "@tuti/jobs";
+import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_WAITS, importsSettled, importStep, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { type HelpCenterFake, type S3Fake, startHelpCenterFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -27,6 +27,9 @@ vi.mock("node:dns/promises", async (original) => {
 
 const budgetMs = contentBudget.ms;
 const pace = { ...crawlPace, ms: 0 };
+// No waits here but where a test sets them: a page that fails for a while fails the import at once, as after its last try.
+const waits = IMPORT_WAITS.ms;
+IMPORT_WAITS.ms = [];
 let site: HelpCenterFake;
 let s3: S3Fake;
 let owner: TestUser;
@@ -177,6 +180,31 @@ test("without a sitemap, the start page's links (and theirs) are followed; a lin
   try {
     expect((await importSite(bare.url)).state).toBe("done");
     expect((await articles()).map((a) => a.title)).toEqual(["Getting started", "Install Acme", "Your first project"]);
+  } finally {
+    await bare.close();
+  }
+});
+
+test("a site without a sitemap that rate-limits partway through the link crawl: where the crawl got to is kept, the import waits what it asked, then goes on from there", async () => {
+  const bare = await startHelpCenterFake();
+  bare.sitemap = false;
+  // The crawl's second link.
+  bare.failing.set("/docs/billing", 429);
+  bare.failingOnce.add("/docs/billing");
+  bare.retryAfter = "120";
+  try {
+    const waiting = await importSite(bare.url);
+    expect(waiting).toMatchObject({ state: "running", resumesAt: expect.any(String) });
+    expect(Math.round((Date.parse(waiting.resumesAt!) - Date.now()) / 60_000)).toBe(2);
+    expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: waiting.id } })).toMatchObject({ sourceState: { crawl: { fetched: 1 } } });
+
+    await prisma.dataImport.update({ where: { id: waiting.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+    await call(getImport, asOwner(), {});
+    await importsSettled();
+    expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done" });
+    expect((await articles()).map((a) => a.title)).toEqual(["Getting started", "Install Acme", "Your first project"]);
+    // Crawled once (not again after the wait), and read once more for its content.
+    expect(bare.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(2);
   } finally {
     await bare.close();
   }
@@ -502,7 +530,7 @@ test("gone pages count towards a run's time: with none left, two gone ones befor
   expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
 });
 
-test("an article page asking (Retry-After) to be left longer than a step waits ends the import after one request, saying when to start again; the next import brings the rest", async () => {
+test("an article page asking (Retry-After) to be left longer than a step waits, on the import's last try, ends it after one request, saying when to start again; the next import brings the rest", async () => {
   site.failing.set("/docs/getting-started", 429);
   site.failingOnce.add("/docs/getting-started");
   site.retryAfter = "300";
@@ -515,18 +543,57 @@ test("an article page asking (Retry-After) to be left longer than a step waits e
   expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
 });
 
-test("a run that brought articles across saves them when a later one asks (Retry-After 300) to be left: the next run brings the rest", async () => {
+test("an article page asking (Retry-After) to be left longer than a step waits leaves the import waiting that long; then it goes on by itself, and brings the rest", async () => {
+  IMPORT_WAITS.ms = waits;
+  try {
+    site.failing.set("/docs/getting-started", 429);
+    site.failingOnce.add("/docs/getting-started");
+    site.retryAfter = "300";
+    const waiting = await importSite();
+    expect(waiting).toMatchObject({ state: "running", error: null, resumesAt: expect.any(String) });
+    expect(Math.round((Date.parse(waiting.resumesAt!) - Date.now()) / 60_000)).toBe(5);
+    expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(1);
+
+    // Its five minutes over: a look at it takes it up (as resume-imports does, each minute).
+    await prisma.dataImport.update({ where: { id: waiting.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+    await call(getImport, asOwner(), {});
+    await importsSettled();
+    expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done", resumesAt: null });
+    expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
+  } finally {
+    IMPORT_WAITS.ms = [];
+  }
+});
+
+test("a run that brought articles across saves them when a later one asks (Retry-After 300) to be left, then waits that long before asking again; the rest comes after", async () => {
   // The sitemap's third page.
   site.failing.set("/docs/getting-started/first-project", 429);
   site.failingOnce.add("/docs/getting-started/first-project");
   site.retryAfter = "300";
-  const done = await importSite();
-  expect(done.state).toBe("done");
+  const waiting = await importSite();
+  expect(waiting).toMatchObject({ state: "running", resumesAt: expect.any(String) });
+  expect(Math.round((Date.parse(waiting.resumesAt!) - Date.now()) / 60_000)).toBe(5);
+  // Asked once, not again at once.
+  expect(site.requests.filter((p) => p === "/docs/getting-started/first-project")).toHaveLength(1);
+  expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme"]);
+
+  await prisma.dataImport.update({ where: { id: waiting.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+  await call(getImport, asOwner(), {});
+  await importsSettled();
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done" });
   expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
   // The two before it were saved by the run that stopped: never fetched again.
   for (const path of ["/docs/getting-started", "/docs/getting-started/install"]) {
     expect(site.requests.filter((p) => p === path), path).toHaveLength(1);
   }
+});
+
+test("a pause asked for after a run brought articles across, longer than an import waits, ends the import saying when to start again; what came across is kept", async () => {
+  site.failing.set("/docs/getting-started/first-project", 429);
+  site.retryAfter = String(2 * 24 * 60 * 60);
+  const ended = await importSite();
+  expect(ended).toMatchObject({ state: "failed", resumesAt: null, error: "127.0.0.1 asked Tuti to wait 2880 minutes. Start the import again after that: it goes on from where it stopped." });
+  expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme"]);
 });
 
 test("a short Retry-After the step hasn't the time left to wait ends the run, not the import: the next run waits it", async () => {

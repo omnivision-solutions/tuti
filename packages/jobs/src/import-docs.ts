@@ -185,7 +185,7 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
   const found = job.read.find ? await job.read.find() : null;
   const keep = (tx: Tx) => found && tx.dataImport.update({ where: { id: job.id }, data: { sourceState: found.state as Prisma.InputJsonValue } });
   if (found && !found.done) {
-    return { next: `find:${found.progress}`, save: async (tx) => void (await keep(tx)) };
+    return { next: `find:${found.progress}`, save: async (tx) => void (await keep(tx)), waitMs: found.waitMs };
   }
   let page = await job.read.collections!(null);
   const all = [...page.items];
@@ -433,6 +433,8 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];
   // How many of `todo` this run got to (one a source no longer has too): the page is read again for the rest.
   let reached = 0;
+  // How long the source asked to be left, when it did after this page had work to save (StepPage's `waitMs`).
+  let waitMs: number | undefined;
   // Those the source no longer has (its `article` reader's null), decided in this run: counted as gone and marked
   // counted by this import (not landed), so a page read again doesn't fetch them again, but a later import does (a
   // page that was refused for a while, by a firewall or a redeploy, isn't an empty draft for good).
@@ -459,6 +461,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         // fails: a source that keeps failing, or one asking to be left longer than a step waits (`wait`, its message
         // saying when to start again), ends the import, and a re-import brings only what's new.
         if (texts.length > 0 || gone.size > 0 || (error as { reason?: unknown }).reason === "late") {
+          // Asked to be left a while (`wait`): the import waits that out before the next page, never asking again at once.
+          const { reason, retryAfterMs } = error as { reason?: unknown; retryAfterMs?: unknown };
+          waitMs = reason === "wait" && typeof retryAfterMs === "number" ? retryAfterMs : undefined;
           break;
         }
         throw error;
@@ -512,6 +517,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   let published: string[] = [];
   return {
     next,
+    waitMs,
     save: async (tx) => {
       published = [];
       await makeArticles(tx, job, items);

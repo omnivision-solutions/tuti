@@ -59,8 +59,9 @@ export type ImportReaders = Partial<{
    * A source that finds its records by crawling (a help center by address): a step's worth of finding, from where the
    * import's kept state (connect's `state`) left it. The help center's first step runs it until `done`, keeping `state` on
    * the import (`data_import.sourceState`) with each page, so every later step, in whichever worker, reads the same list.
+   * `waitMs`: the site failed for a while after this step fetched something: the import keeps where it got to and waits.
    */
-  find: () => Promise<{ state: unknown; done: boolean; progress: string }>;
+  find: () => Promise<{ state: unknown; done: boolean; progress: string; waitMs?: number }>;
 }>;
 
 /** The parts an import can bring (IMPORT_PARTS' names). */
