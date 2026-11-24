@@ -7,8 +7,8 @@
     "start": "expo start",
     "ios": "expo start --ios",
     "android": "expo start --android",
-    "bundle": "expo export --platform ios --platform android",
-    "lint": "expo lint",
+    "build": "expo export --platform ios --platform android",
+    "lint": "expo install --check && expo lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
