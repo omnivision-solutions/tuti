@@ -596,35 +596,36 @@ test("delete leaves what goes by their address alone while it's someone else's t
   const bobs = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
   await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: bobs.id, author: "USER", channel: "EMAIL", body: "Replying all", fromAddress: email } });
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
-  // What the mailbox emailed in, filed under the user synced with it last (inbound.ts userWithAddress): user-6 here.
+  // What the mailbox emailed in, filed under the user synced with it last (inbound.ts userWithAddress): user-6 here. In
+  // one of them, user-6 also wrote in the widget.
   const user6 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-6" } } })).userId;
-  const mailbox = await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Invoice", origin: "EMAIL", userId: user6 } });
-  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mailbox.id, author: "USER", authorId: user6, channel: "EMAIL", body: "Invoice attached" } });
-  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mailbox.id, author: "USER", authorId: user6, channel: "WIDGET", body: "Also from me" } });
-  await prisma.inboundEmail.create({
-    data: { projectId: project.id, recipient: "e2e-support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: mailbox.id },
-  });
+  const [mailbox, mixed] = await Promise.all(
+    [2, 3].map((number) => prisma.conversation.create({ data: { projectId: project.id, number, subject: "Invoice", origin: "EMAIL", userId: user6 } })),
+  );
+  for (const conversation of [mailbox, mixed]) {
+    await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "USER", authorId: user6, channel: "EMAIL", body: "Invoice attached" } });
+    await prisma.inboundEmail.create({
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender: email, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation.id },
+    });
+  }
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: mixed.id, author: "USER", authorId: user6, channel: "WIDGET", body: "Also from me" } });
   const kept = async () => [
     await prisma.conversationMessage.count({ where: { conversationId: bobs.id, fromAddress: email } }),
     await prisma.changelogSubscriber.count({ where: { projectId: project.id, email } }),
   ];
   await call(deleteUser, team(), { user: "user-6" });
   expect(await kept()).toEqual([1, 1]);
-  // Back with the address, which still answers it.
-  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: mailbox.id }, select: { userId: true, email: true, emailVerified: true } })).toEqual({
-    userId: null,
-    email,
-    emailVerified: true,
-  });
+  // The mailbox's own back with the address, which still answers it; its mail the address's, not Deleted user's.
+  const where = (id: string) => ({ where: { id }, select: { userId: true, email: true, emailVerified: true } });
+  expect(await prisma.conversation.findUniqueOrThrow(where(mailbox.id))).toEqual({ userId: null, email, emailVerified: true });
   expect(await prisma.inboundEmail.count({ where: { conversationId: mailbox.id, sender: email } })).toBe(1);
-  // Its mail the address's too, not Deleted user's; what they wrote in the widget stays theirs.
-  // As the inbox names them (its fromAddress, else the conversation's person).
-  expect(
-    await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, orderBy: { channel: "asc" }, select: { channel: true, authorId: true, fromAddress: true } }),
-  ).toEqual([
-    { channel: "WIDGET", authorId: user6, fromAddress: "Deleted user" },
-    { channel: "EMAIL", authorId: null, fromAddress: null },
-  ]);
+  expect(await prisma.conversationMessage.findMany({ where: { conversationId: mailbox.id }, select: { authorId: true } })).toEqual([{ authorId: null }]);
+  // The one they wrote in the widget stays theirs, anonymised: user-7, with the same address, never sees it as theirs.
+  expect(await prisma.conversation.findUniqueOrThrow(where(mixed.id))).toEqual({ userId: user6, email: null, emailVerified: false });
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const user7 = (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-7" } } })).userId;
+  const listed = await widgetConversations(project.slug, { token: widgetToken(project.id, user7) });
+  expect("conversations" in listed && listed.conversations.map((c) => c.number)).toEqual([2]);
   // The other one deleted too, with a portal account that verified the address: still someone's.
   await prisma.user.create({ data: { id: randomUUID(), name: "Billing", email: "E2E-Billing@example.com", emailVerified: true } });
   await call(deleteUser, team(), { user: "user-7" });

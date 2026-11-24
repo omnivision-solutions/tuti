@@ -398,22 +398,22 @@ export const deleteUser = defineOperation({
           // A shared address's own: what it emailed in was filed under whoever of its users was synced last (inbound.ts
           // userWithAddress), this one maybe. Those go back to the address, which still answers them, as they were.
           if (shared) {
+            // Only those they wrote nothing else in: handed back, one is the other users' with the address too (the
+            // widget lists it for them, every message from the user as the reader's own), and what they wrote in the
+            // widget isn't theirs. Those stay with them, anonymised like the rest.
             const handedBack = await tx.$queryRaw<{ id: string }[]>`
               UPDATE conversation c SET "userId" = NULL, email = ${identity.email}, "emailVerified" = true
               WHERE c."projectId" = ${projectId} AND c."userId" = ${userId} AND c.origin = 'EMAIL'
                 AND EXISTS (SELECT 1 FROM inbound_email i WHERE i."conversationId" = c.id AND i.sender = ${identity.email})
+                AND NOT EXISTS (
+                  SELECT 1 FROM conversation_message m
+                  WHERE m."conversationId" = c.id AND m.author = 'USER' AND m."authorId" = ${userId} AND m.channel <> 'EMAIL'
+                )
               RETURNING c.id`;
-            // The mailbox's own messages in them (by email) are the address's too, as those it sends from now on. Their
-            // replies in the widget stay theirs: named Deleted user, as none would make them the address's (the inbox
-            // names a message by its fromAddress, else the conversation's person).
-            const handedBackIds = handedBack.map((row) => row.id);
+            // The mailbox's messages in them are the address's, as those it sends from now on.
             await tx.conversationMessage.updateMany({
-              where: { conversationId: { in: handedBackIds }, author: "USER", authorId: userId, channel: "EMAIL" },
+              where: { conversationId: { in: handedBack.map((row) => row.id) }, author: "USER", authorId: userId },
               data: { authorId: null },
-            });
-            await tx.conversationMessage.updateMany({
-              where: { conversationId: { in: handedBackIds }, author: "USER", authorId: userId, channel: { not: "EMAIL" } },
-              data: { fromAddress: "Deleted user" },
             });
           }
           // Their conversations, and those started by email from their address, verified (as their page counts them):
