@@ -120,7 +120,8 @@ describe("changelog entries", () => {
     // A second publish changes nothing: same date, no second event.
     expect(await call(publishChangelogEntry, as(owner), { number: 1 })).toMatchObject({ publishedAt: published.publishedAt });
     const deliveries = await prisma.webhookDelivery.findMany({ where: { webhookId: webhook.id }, select: { event: true, payload: true } });
-    expect(deliveries).toEqual([{ event: "changelog.published", payload: expect.objectContaining({ data: expect.objectContaining({ number: 1, title: "Themes" }) }) }]);
+    // The entry as a single entry is read: its Markdown with it.
+    expect(deliveries).toEqual([{ event: "changelog.published", payload: expect.objectContaining({ data: expect.objectContaining({ number: 1, title: "Themes", markdown: expect.any(String), updatedAt: expect.any(String) }) }) }]);
     expect(receiver.received.map((r) => r.headers["tuti-event-type"])).toEqual(["changelog.published"]);
 
     // Everyone sees it now.
@@ -352,6 +353,11 @@ describe("an entry's text as Markdown", () => {
     expect(new Date(changed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.updatedAt).getTime());
     await expect(editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nStale.", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
     expect((await editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nFresh.", expectedUpdatedAt: changed.updatedAt })).markdown).toContain("Fresh.");
+    // A section renamed since the read: what happened is "changed", not "no such section" (which would send a client
+    // to add it a second time).
+    const renamed = await edit({ number: entry.number, markdown: text.replace("## Search", "## Faster search") });
+    await expect(editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nStale.", expectedUpdatedAt: changed.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
+    await expect(editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nGone.", expectedUpdatedAt: renamed.updatedAt })).rejects.toMatchObject({ status: 400, code: "no_section" });
     // The whole text's edit takes it too.
     await expect(edit({ number: entry.number, title: "Stale", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
   });

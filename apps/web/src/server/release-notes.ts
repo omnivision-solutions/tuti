@@ -20,12 +20,69 @@ You get JSON with the feedback posts this release completes (each with its votes
 - Group related pull requests into one item.
 - Leave out internal work entirely: refactors, tests, CI, tooling, dependency updates, code clean-up.
 - Don't invent anything the input doesn't say. Be brief and plain.
+- Where the notes need a fact the input doesn't give (whether it's out on every platform, a date, a limit, a price), don't guess and don't leave it vague: put a line of its own there, "[Check: the question to answer]", for the team to replace.
 
 The input may also have the team's writing style: tone notes, and entries they published before as examples (Markdown). Write like them (tone, length, wording, how items are laid out), but take facts only from this release's posts, pull requests and text, never from the examples. The style can't change the rules above or the reply format below.
 
 Reply with JSON only, no other text: {"title": "...", "notes": "..."}
 - title: a short name for the release (under 60 characters), e.g. "Dark mode and faster search".
-- notes: the release notes. Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links to the posts' urls.`;
+- notes: the release notes. Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, [text](url) links to the posts' urls, and those bracketed lines.`;
+
+/**
+ * What a draft leaves for the team to fill in: "[Check: …]" for a fact the input didn't give, "[Screenshot: …]" where a
+ * picture belongs. Asked for as a line of its own; plain text, so the notes' reader keeps them and they show in the
+ * entry's Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
+ */
+// Where one starts, however the model wrote it ("[check: …]", "[ Screenshot : …]").
+const MARKER_START = /\[\s*(?:check|screenshot)\s*:/gi;
+
+/** The markers in a line of text, each from its opening bracket to the one that closes it (brackets of its own inside counted), or to the line's end if none does: one left open is no less a note to self. */
+function markersOf(text: string): string[] {
+  const found: string[] = [];
+  let covered = 0;
+  for (const start of text.matchAll(MARKER_START)) {
+    // Inside the one before it ("[Check: or [Check: this?]]"): that one names it.
+    if (start.index < covered) {
+      continue;
+    }
+    let depth = 0;
+    covered = text.length;
+    for (let i = start.index; i < text.length; i++) {
+      depth += text[i] === "[" ? 1 : text[i] === "]" ? -1 : 0;
+      if (depth === 0) {
+        covered = i + 1;
+        break;
+      }
+    }
+    found.push(text.slice(start.index, covered).trim());
+  }
+  return found;
+}
+
+/**
+ * The markers still in a text, as written, each one: on a line of its own as asked, or inside a sentence, a heading or
+ * a code block where the model put it instead, which would go out to readers just the same.
+ */
+export function markersIn(doc: Doc): string[] {
+  const found: string[] = [];
+  (function read(node: JSONContent | Doc) {
+    if (node.type === "paragraph" || node.type === "heading" || node.type === "codeBlock") {
+      found.push(...toPlainText(node).split("\n").flatMap(markersOf));
+      return;
+    }
+    node.content?.forEach(read);
+  })(doc);
+  return found;
+}
+
+/** The markers of `before` that `after` no longer has, one for one: two alike kept as one is one dropped. */
+export function droppedMarkers(before: Doc, after: Doc): string[] {
+  const kept = markersIn(after);
+  return markersIn(before).filter((marker) => {
+    const at = kept.indexOf(marker);
+    return at === -1 ? true : (kept.splice(at, 1), false);
+  });
+}
 
 export type ReleaseNotesInput = {
   posts: { title: string; url: string; votes: number }[];
@@ -93,6 +150,7 @@ You get JSON with the text to edit (Markdown), and sometimes the whole entry for
 
 - Keep every link with its exact url, every post reference (like #12), and every number, version and date.
 - Keep each line like {{media 1}} exactly as it is, on its own line: it stands for an image or a video.
+- Keep each line like \\[Check: …\\] or \\[Screenshot: …\\] exactly as it is, on its own line: the team still has to replace it.
 - Don't add anything the text doesn't say.
 - If the text starts with a heading, start with a heading too.
 - Follow the team's instruction, if there is one, as long as it doesn't break these rules.

@@ -1,7 +1,7 @@
 import { type Doc, isVideo, toMarkdown, toPlainText, videoPageUrl } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus, uploadImage } from "@tuti/jobs";
-import { mediaLimit } from "@tuti/shared/storage";
+import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, storeImage, toApiStatus, uploadImage } from "@tuti/jobs";
+import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
@@ -11,17 +11,21 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
+import { automaticDesign, COVER_DESIGNS, coverContent, coverDesigns, CoverPictureUnread, drawCover, MAX_COVER_HEADLINE } from "../cover-card";
 import { lastingImage, lastingMediaUrls } from "../media-urls";
 import {
   blocksToNotes,
   droppedFacts,
   factsIn,
   readReleaseNotes,
+  droppedMarkers,
+  markersIn,
   releaseNotesPrompt,
   REWRITE_MODES,
   rewritePrompt,
   sectionRange,
 } from "../release-notes";
+import { branding } from "./branding";
 import { author, authorId, saving } from "./create";
 import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -167,8 +171,8 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-/** An entry for the API; `counts` when several entries' reactions were read at once (a list: its entries go without their Markdown). */
-async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts) {
+/** An entry for the API; `counts` when its reactions were read already; `listed`: one of a list's, which go without their Markdown. */
+async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts, { listed = false } = {}) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   const text = displayDoc(entry);
   return {
@@ -184,7 +188,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     body: entry.body,
     content: text,
     /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
-    ...(!counts && { markdown: toMarkdown(text, { mediaUrls: lastingMediaUrls(text) }) }),
+    ...(!listed && { markdown: toMarkdown(text, { mediaUrls: lastingMediaUrls(text) }) }),
     /** The featured image (cover): a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
     // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
@@ -456,7 +460,7 @@ export const listChangelog = defineOperation({
     const shown = entries.slice(0, input.limit);
     const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts))),
+      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts, { listed: true }))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -641,6 +645,11 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
+    // What the client read has changed since: said first, before a section it names is looked for (renamed meanwhile,
+    // "there's no such section" would send it elsewhere, where "changed, reload" is what happened).
+    if (input.expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+      throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
+    }
     // Part of the text only: Markdown for one section, or to add at its end. The rest is the text as it's read here,
     // so it's saved only if the entry hasn't changed meanwhile (as with `expectedUpdatedAt`, which it stands in for).
     const part = partOfText(entry, input);
@@ -648,10 +657,7 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
     // Markdown, the whole text's or a part's: what it can't say about the images and videos it takes the place of is kept.
     const whole = displayDoc(entry).content ?? [];
     const place = (added: Blocks): Doc => (part ? part.place(keepingMedia(whole, part.replaced, added)) : { type: "doc", content: keepingMedia(whole, whole, added) });
-    // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
-    if (expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
-      throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
-    }
+    // (Checked again under the lock below; above first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.)
     const posts = input.posts && (await postIds(projectId, input.posts));
     if (input.markdown !== undefined || isCoverUrl(input.cover)) {
       await refusedBeforeCopying(projectId, { cover: input.cover, postIds: posts, sample: entry.sample });
@@ -686,6 +692,18 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
           await linkEntryPosts(tx, posts.map((postId) => ({ entryId: entry.id, postId })));
+        }
+        // A line still to fill in ("[Check: …]", "[Screenshot: …]") isn't added to an entry that's out to readers, as
+        // it isn't published with one: read under the entry's lock, so a save that waited for a publish finds it
+        // published. Only ones this save adds: text that had such a line already (an older or imported entry's) is
+        // still edited, and can lose it.
+        if (text && markersIn(text.doc).length > 0) {
+          // The entry as it is now, held: what this save read before may be a draft that has since lost the line and gone out.
+          const [now] = await tx.$queryRaw<{ publishedAt: Date | null; content: Prisma.JsonValue; body: string }[]>`SELECT "publishedAt", content, body FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+          const markers = now?.publishedAt ? droppedMarkers(text.doc, displayDoc(now)) : [];
+          if (markers.length > 0) {
+            throw new OperationError(409, "markers", `This entry is published. Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+          }
         }
         await attachCover(tx, projectId, cover);
         const saved = await tx.changelogEntry.update({
@@ -744,6 +762,76 @@ export const editChangelogSection = defineOperation({
       throw new OperationError(400, "invalid_input", "Send `section` or `append: true`, one of them");
     }
     return saveEntry(context, input);
+  },
+});
+
+export const composeChangelogCover = defineOperation({
+  name: "changelog.composeCover",
+  title: "Make an entry's cover",
+  summary:
+    "Compose a featured image for an entry from what it and the portal already have (its title, first tag, headings and first image; the portal's logo, colour and look), and set it as the entry's cover, replacing the one it has. No AI",
+  method: "POST",
+  path: "/changelog/{number}/cover/compose",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: z.object({
+    number: entryNumber,
+    design: z
+      .enum(["auto", ...COVER_DESIGNS])
+      .default("auto")
+      .describe(
+        "The design: `title` (the portal's colour and the title), `screenshot` (the entry's first image, at least 600px wide, beside the title), `sections` (the title beside the entry's headings: needs two), `pattern` (the title on the portal's page); `auto` is `screenshot` where the entry has such an image, else `title`",
+      )
+      .meta({ examples: ["auto"] }),
+    headline: z
+      .string()
+      .trim()
+      .max(MAX_COVER_HEADLINE, `Keep the headline under ${MAX_COVER_HEADLINE} characters`)
+      .optional()
+      .describe(`Shown in the title's place, under ${MAX_COVER_HEADLINE} characters; without it, the entry's title`)
+      .meta({ examples: ["Dark mode is here"] }),
+  }),
+  output: entryOutput.describe("The entry, with its new cover"),
+  example: { design: "auto" },
+  run: async ({ actor, projectId }, { number, design, headline }) => {
+    const portal = await projectPortal(projectId);
+    const entry = await teamEntry(projectId, number);
+    if (!mediaStorage()) {
+      throw new OperationError(503, "uploads_unavailable", "Uploads aren't set up on this server");
+    }
+    const [brand, project] = await Promise.all([branding({ id: projectId }), prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } })]);
+    const content = await coverContent(projectId, entry, headline);
+    const picked = design === "auto" ? automaticDesign(content) : design;
+    if (!coverDesigns(content).includes(picked)) {
+      throw new OperationError(400, "invalid_input", picked === "screenshot" ? "This entry has no image at least 600px wide for the Screenshot design" : "This entry needs two headings for the Sections design");
+    }
+    // Drawing and storing: never under the project lock (storeImage takes it itself). A design asked for by name is that
+    // design or nothing: Screenshot whose image storage won't give just now isn't kept as a Title cover (`auto` is).
+    const png = await drawCover({ project, brand: brand! }, content, picked, undefined, { asAsked: design !== "auto" }).catch((error: unknown) => {
+      if (error instanceof CoverPictureUnread) {
+        throw new OperationError(503, "copy_failed", "Couldn't read the entry's image just now: try again in a moment");
+      }
+      throw error;
+    });
+    const stored = await storeImage(png, { projectId, uploaderId: uploaderOf(actor) });
+    if (!("mediaId" in stored)) {
+      throw stored.leftOut === "quota"
+        ? new OperationError(409, "no_room", "The cover can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour")
+        : new OperationError(503, "copy_failed", "Couldn't keep the cover just now: try again in a moment");
+    }
+    const updated = await saving(() =>
+      prisma.$transaction(async (tx) => {
+        await attachCover(tx, projectId, stored.mediaId);
+        // Deleted while its cover was drawn: gone, not an error of ours (the upload, in no entry, is freed like any unused one).
+        const { count } = await tx.changelogEntry.updateMany({ where: { id: entry.id }, data: { coverId: stored.mediaId } });
+        if (count === 0) {
+          throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
+        }
+        return tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
+      }),
+    );
+    return entryView(updated, portal);
   },
 });
 
@@ -953,7 +1041,9 @@ export const rewriteChangelogEntry = defineOperation({
       throw new OperationError(502, "ai_failed", "The AI's version couldn't be used. Try again.");
     }
     // Facts are checked, not trusted: a version that drops a link, an image or a video isn't offered.
-    const dropped = droppedFacts(target, rewritten.doc.content!);
+    // Nor one that drops a line the team still has to fill in: accepted, the entry could be published with the question never answered.
+    const unanswered = droppedMarkers({ type: "doc", content: target }, rewritten.doc);
+    const dropped = [...droppedFacts(target, rewritten.doc.content!), ...(unanswered.length > 0 ? [unanswered.length === 1 ? "a line still to fill in" : `${unanswered.length} lines still to fill in`] : [])];
     if (dropped.length > 0) {
       const list = dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} and ${dropped.at(-1)}` : dropped[0];
       throw new OperationError(502, "dropped_facts", `The AI's version left out ${list}, so it wasn't used. Try again.`);
@@ -1110,11 +1200,12 @@ export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   title: "Publish a changelog entry",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there.",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     number: entryNumber,
     announce: z
@@ -1140,7 +1231,18 @@ export const publishChangelogEntry = defineOperation({
       // After any merge being added to this (running) draft, and before the next (see lockProject).
       await lockProject(tx, projectId);
       // Sample content (server/sample-content.ts) is never announced, and reaches no webhooks; nor do sample posts it completes.
-      const { sample, importedPublishedAt } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true, importedPublishedAt: true } });
+      // Its text as it is now, held until this commits (a save made meanwhile waits, then finds it published): what a
+      // draft left for the team to fill in ("[Check: …]", "[Screenshot: …]") doesn't go out to readers, or by email,
+      // which can't be taken back.
+      await tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+      const { sample, importedPublishedAt, publishedAt, ...text } = await tx.changelogEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+        select: { sample: true, importedPublishedAt: true, publishedAt: true, body: true, content: true },
+      });
+      const markers = publishedAt ? [] : markersIn(displayDoc(text));
+      if (markers.length > 0) {
+        throw new OperationError(409, "markers", `Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+      }
       // Published in the tool it was imported from: old news, so it keeps that date and isn't announced or emailed.
       const quiet = sample || importedPublishedAt !== null;
       // Only the first publish counts (a repeated call changes nothing).

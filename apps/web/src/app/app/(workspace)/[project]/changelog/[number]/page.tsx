@@ -5,6 +5,7 @@ import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { markersIn } from "@/server/release-notes";
 import { aiEnabled } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
@@ -161,6 +162,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   canDraftWithAi={aiEnabled() && entry.publishedAt === null}
                   aiPaused={paused}
                   unwritten={unwritten}
+                  // What an AI draft left to fill in: Publish waits for them (changelog.publish refuses it too).
+                  markers={entry.publishedAt ? [] : markersIn(displayDoc(entry))}
                   part="publish"
                 />
               </PageActions>

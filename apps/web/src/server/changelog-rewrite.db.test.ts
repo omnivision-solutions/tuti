@@ -155,6 +155,31 @@ test("with no examples picked, a rewrite follows the project's other latest publ
   });
 });
 
+test("a line the team still has to fill in is kept by a rewrite: the model is told to, and a version without it isn't offered", async () => {
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode", markdown: "Dark mode is here, and it follows your system's setting when you ask it to.\n\n[Check: is it out on iOS yet?]\n\nSearch is faster." });
+  model.reply(reply("Dark mode is here.\n\nSearch is faster."));
+
+  await expect(rewrite({ number, mode: "shorten" })).rejects.toMatchObject({ status: 502, code: "dropped_facts", message: "The AI's version left out a line still to fill in, so it wasn't used. Try again." });
+
+  const [request] = model.requests;
+  // Named as the model sees it: the text goes to it as Markdown, its brackets escaped.
+  expect(request!.system).toContain("Keep each line like \\[Check: …\\] or \\[Screenshot: …\\] exactly as it is");
+  expect((JSON.parse(request!.user.slice(request!.user.indexOf("{"))) as { textToEdit: string }).textToEdit).toContain("\\[Check: is it out on iOS yet?\\]");
+  // Kept (as it came, or with its brackets bare), the version is offered, the line still in it.
+  for (const line of ["\\[Check: is it out on iOS yet?\\]", "[Check: is it out on iOS yet?]"]) {
+    model.reply(reply(`Dark mode is here.\n\n${line}\n\nSearch is faster.`));
+    expect((await rewrite({ number, mode: "shorten" })).proposed.body).toContain("Dark mode is here.\n[Check: is it out on iOS yet?]\nSearch is faster.");
+  }
+});
+
+test("two lines alike, each still to fill in: a rewrite that keeps one of them has dropped the other", async () => {
+  const { number } = await call(createChangelogEntry, team(), { title: "Plans", markdown: "Search is faster than it was, for everyone who uses it.\n\n[Check: which plans?]\n\nDark mode is here, and it follows your system.\n\n[Check: which plans?]" });
+  model.reply(reply("Search is faster and dark mode is here.\n\n[Check: which plans?]"));
+  await expect(rewrite({ number, mode: "shorten" })).rejects.toMatchObject({ status: 502, code: "dropped_facts", message: "The AI's version left out a line still to fill in, so it wasn't used. Try again." });
+  model.reply(reply("Search is faster.\n\n[Check: which plans?]\n\nDark mode is here.\n\n[Check: which plans?]"));
+  expect((await rewrite({ number, mode: "shorten" })).proposed.body.match(/\[Check: which plans\?\]/g)).toHaveLength(2);
+});
+
 test("section: only that section is rewritten, with the team's instruction and the whole entry as context", async () => {
   const { number, content } = await entry();
   model.reply(reply("## Search, faster\n\nResults show up as you type."));
