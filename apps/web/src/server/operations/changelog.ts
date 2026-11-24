@@ -812,7 +812,10 @@ export const rewriteChangelogEntry = defineOperation({
       throw new OperationError(502, "ai_failed", "The AI's version couldn't be used. Try again.");
     }
     // Facts are checked, not trusted: a version that drops a link, an image or a video isn't offered.
-    const dropped = droppedFacts(target, rewritten.doc.content!);
+    // Nor one that drops a line the team still has to fill in: accepted, the entry could be published with the question never answered.
+    const kept = markersIn(rewritten.doc);
+    const unanswered = markersIn({ type: "doc", content: target }).filter((marker) => !kept.includes(marker));
+    const dropped = [...droppedFacts(target, rewritten.doc.content!), ...(unanswered.length > 0 ? [unanswered.length === 1 ? "a line still to fill in" : `${unanswered.length} lines still to fill in`] : [])];
     if (dropped.length > 0) {
       const list = dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} and ${dropped.at(-1)}` : dropped[0];
       throw new OperationError(502, "dropped_facts", `The AI's version left out ${list}, so it wasn't used. Try again.`);
@@ -1003,11 +1006,6 @@ export const publishChangelogEntry = defineOperation({
   example: { announce: true, emailSubscribers: true },
   run: async ({ actor, projectId }, { number, announce, emailSubscribers }) => {
     const entry = await teamEntry(projectId, number);
-    // What a draft left for the team to fill in ("[Check: …]", "[Screenshot: …]") doesn't go out to readers, or by email, which can't be taken back.
-    const markers = entry.publishedAt ? [] : markersIn(displayDoc(entry));
-    if (markers.length > 0) {
-      throw new OperationError(409, "markers", `Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
-    }
     const slug = await projectSlug(projectId);
     const portal = await portalAddress(slug);
     // One transaction: published, its posts completed (and due for their shipped
@@ -1016,7 +1014,18 @@ export const publishChangelogEntry = defineOperation({
       // After any merge being added to this (running) draft, and before the next (see lockProject).
       await lockProject(tx, projectId);
       // Sample content (server/sample-content.ts) is never announced, and reaches no webhooks; nor do sample posts it completes.
-      const { sample, importedPublishedAt } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true, importedPublishedAt: true } });
+      // Its text as it is now, held until this commits (a save made meanwhile waits, then finds it published): what a
+      // draft left for the team to fill in ("[Check: …]", "[Screenshot: …]") doesn't go out to readers, or by email,
+      // which can't be taken back.
+      await tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+      const { sample, importedPublishedAt, publishedAt, ...text } = await tx.changelogEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+        select: { sample: true, importedPublishedAt: true, publishedAt: true, body: true, content: true },
+      });
+      const markers = publishedAt ? [] : markersIn(displayDoc(text));
+      if (markers.length > 0) {
+        throw new OperationError(409, "markers", `Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+      }
       // Published in the tool it was imported from: old news, so it keeps that date and isn't announced or emailed.
       const quiet = sample || importedPublishedAt !== null;
       // Only the first publish counts (a repeated call changes nothing).

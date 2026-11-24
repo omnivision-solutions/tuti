@@ -252,12 +252,13 @@ test("a draft leaves a line where it needs a fact, and where a screenshot belong
 
   // Asked for (Settings → Changelog): the draft is told where a picture belongs, and each line left holds publishing back.
   expect(await setStyle({ screenshotMarkers: true })).toMatchObject({ screenshotMarkers: true, tone: "" });
-  model.reply(notes("Dark mode is here.", "[Screenshot: the theme menu, open]", "- Faster search\n- [Check: which plans?]", "It says [Check: later] in a sentence, which is only text."));
+  model.reply(notes("Dark mode is here.", "[Screenshot: the [Theme] menu, open]", "- Faster search\n- [Check: which plans?]", "It says [Check: later] in a sentence, which is only text."));
   await draft(number);
   expect(model.requests[1]!.system).toContain('"[Screenshot: what it should show]"');
   await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({
     status: 409,
-    message: "Replace or remove the 2 markers in its text first: [Screenshot: the theme menu, open] [Check: which plans?]",
+    // One with brackets of its own in it is one all the same.
+    message: "Replace or remove the 2 markers in its text first: [Screenshot: the [Theme] menu, open] [Check: which plans?]",
   });
   // Replaced (the picture in, the answer written), it's published.
   await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan. It says [Check: later] in a sentence, which is only text." });

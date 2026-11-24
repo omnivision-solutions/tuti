@@ -36,7 +36,7 @@ const SCREENSHOTS = `
  * "[Screenshot: …]" where a picture belongs. Plain text, so the notes' reader keeps them and they show in the entry's
  * Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
  */
-const MARKER = /^\[(?:Check|Screenshot): [^\]\n]+\]$/;
+const MARKER = /^\[(?:Check|Screenshot): .+\]$/;
 
 /** The markers still in a text, as written: paragraphs that are nothing else, wherever they are. */
 export function markersIn(doc: Doc): string[] {
@@ -121,7 +121,7 @@ You get JSON with the text to edit (Markdown), and sometimes the whole entry for
 
 - Keep every link with its exact url, every post reference (like #12), and every number, version and date.
 - Keep each line like {{media 1}} exactly as it is, on its own line: it stands for an image or a video.
-- Keep each line like [Check: …] or [Screenshot: …] exactly as it is, on its own line: the team still has to replace it.
+- Keep each line like \\[Check: …\\] or \\[Screenshot: …\\] exactly as it is, on its own line: the team still has to replace it.
 - Don't add anything the text doesn't say.
 - If the text starts with a heading, start with a heading too.
 - Follow the team's instruction, if there is one, as long as it doesn't break these rules.

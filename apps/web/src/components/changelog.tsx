@@ -1238,41 +1238,48 @@ export function ChangelogEntryActions({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {unwritten === "titles" ? "Publish the pull requests' titles?" : unwritten === "lines" ? "Publish Autopilot's lines as they are?" : unwritten === "empty" ? "Publish it without text?" : `Publish “${title}”?`}
+            {markers.length > 0
+              ? markers.length === 1
+                ? "Replace a line before publishing"
+                : `Replace ${markers.length} lines before publishing`
+              : unwritten === "titles"
+                ? "Publish the pull requests' titles?"
+                : unwritten === "lines"
+                  ? "Publish Autopilot's lines as they are?"
+                  : unwritten === "empty"
+                    ? "Publish it without text?"
+                    : `Publish “${title}”?`}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
-            {unwritten === "lines" && `“${title}” still lists its pull requests a line each, as they came in, not release notes. `}
-            {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
-            {aiFirst && "Draft with AI writes release notes from them. "}
-            {sample || importedOn
-              ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
-              : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
-            {postCount > 0 &&
-              ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
-            {sample && " Sample updates are published without announcing."}
-            {importedOn && ` Published before you imported it, it keeps that date (${importedOn}) and isn't announced.`}
+            {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
+            {markers.length > 0 ? (
+              `“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`
+            ) : (
+              <>
+                {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
+                {unwritten === "lines" && `“${title}” still lists its pull requests a line each, as they came in, not release notes. `}
+                {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
+                {aiFirst && "Draft with AI writes release notes from them. "}
+                {sample || importedOn
+                  ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
+                  : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
+                {postCount > 0 &&
+                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
+                {sample && " Sample updates are published without announcing."}
+                {importedOn && ` Published before you imported it, it keeps that date (${importedOn}) and isn't announced.`}
+              </>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {/* What the draft left to fill in: named, so they're found in the text; Publish waits for them. */}
-        {markers.length > 0 && (
-          <div className="flex flex-col gap-1.5 text-sm">
-            <p className="font-medium">{markers.length === 1 ? "Replace or remove this line first" : `Replace or remove these ${markers.length} lines first`}</p>
-            <ul aria-label="Lines to replace" className="flex flex-col gap-1 text-muted-foreground">
-              {markers.map((marker, i) => (
-                <li key={i} className="break-words">
-                  {marker}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
           <AlertDialogAction
             variant={aiFirst ? "outline" : "default"}
+            // Off while lines are left to fill in, but in the keyboard's reach: the description says why.
             disabled={busy || markers.length > 0}
+            focusableWhenDisabled
             onClick={() =>
               sample || importedOn
                 ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")
