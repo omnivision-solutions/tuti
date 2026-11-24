@@ -341,7 +341,7 @@ test("the browser's first stop takes the sign-in's state and goes on to the prov
     expect(refused.headers.getSetCookie(), elsewhere).toEqual([]);
   }
   // Nor does a start from the app put anything of its own into the provider's address.
-  for (const extra of [{ additionalParams: { login: "someone" } }, { scopes: ["repo"] }, { loginHint: "someone@example.com" }]) {
+  for (const extra of [{ additionalParams: { login: "someone" } }, { scopes: ["repo"] }, { loginHint: "e2e-someone@example.com" }]) {
     expect((await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: BACK, additionalData, ...extra } })).status, JSON.stringify(extra)).toBe(400);
   }
   // Nor does what it says of the provider in its extra data count: the one it started with is kept, where only the server writes.
