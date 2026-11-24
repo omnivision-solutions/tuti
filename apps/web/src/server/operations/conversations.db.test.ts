@@ -173,8 +173,8 @@ test("a search finds conversations by number, subject, person and what their mes
   expect(refunds.map((c) => c.number)).toEqual([4, 2]);
   expect(refunds[0]!.match).toBeNull();
   expect(refunds[1]!.match).toMatchObject({ author: "team", note: false });
-  // One line, around the text, cut at both ends.
-  expect(refunds[1]!.match!.snippet).toMatch(/^….*for writing in\. REFUNDS take five days to arrive, and then.*…$/);
+  // One line, around the text, cut at both ends, between words.
+  expect(refunds[1]!.match!.snippet).toMatch(/^…in\. Thanks for writing in\. REFUNDS take five days to arrive, and then some more\. .* (and|then|some|more\.)…$/);
   expect(refunds[1]!.match!.snippet.length).toBeLessThanOrEqual(162);
   // A short message whole; of two with the text, the newer.
   expect((await found({ q: "legacy plan" })).map((c) => [c.number, c.match?.note, c.match?.snippet])).toEqual([[2, true, "They are on the legacy plan, 100% sure"]]);

@@ -86,7 +86,7 @@ const matchOutput = z
     note: z.boolean().describe("Whether it's an internal note").meta({ examples: [false] }),
     snippet: z
       .string()
-      .describe("Its text around the first place it has the search text, on one line, up to 160 characters; … where it's cut")
+      .describe("Its text around the first place it has the search text, on one line, up to 160 characters, cut between words; … where it's cut")
       .meta({ examples: ["…tried twice and the export button does nothing on the reports page. Chrome on a Mac, if that…"] }),
     createdAt: at("When it was written"),
   })
@@ -334,7 +334,7 @@ const SNIPPET_LEAD = 30;
 
 /**
  * Where a search for `q` found each of these conversations (ids) in a message: the newest message or note with the text,
- * and its text around the first place it has it, on one line. By conversation id; none for one found by its number,
+ * and its text around the first place it has it, on one line, in whole words where there's a space to cut at. By conversation id; none for one found by its number,
  * subject or person alone.
  */
 export async function matchedMessages(ids: string[], q: string) {
@@ -349,16 +349,22 @@ export async function matchedMessages(ids: string[], q: string) {
         ) m`
     : [];
   return new Map(
-    rows.map((row) => [
-      row.conversationId,
-      {
-        messageId: row.id,
-        author: row.author.toLowerCase(),
-        note: row.note,
-        snippet: `${row.from > 1 ? "…" : ""}${row.text.replace(/\s+/g, " ").trim()}${row.from + SNIPPET_LENGTH <= row.length ? "…" : ""}`,
-        createdAt: row.createdAt,
-      },
-    ]),
+    rows.map((row) => {
+      const [before, after] = [row.from > 1, row.from + SNIPPET_LENGTH <= row.length];
+      // Whole words where it's cut: not the rest of one before the text found, nor the start of one in its last 30 characters.
+      const start = before ? row.text.replace(new RegExp(`^\\S{0,${SNIPPET_LEAD - 1}}\\s+`), "") : row.text;
+      const words = after ? start.replace(/(?<=^[^]{130,})\s+\S*$/, "") : start;
+      return [
+        row.conversationId,
+        {
+          messageId: row.id,
+          author: row.author.toLowerCase(),
+          note: row.note,
+          snippet: `${before ? "…" : ""}${words.replace(/\s+/g, " ").trim()}${after ? "…" : ""}`,
+          createdAt: row.createdAt,
+        },
+      ];
+    }),
   );
 }
 
