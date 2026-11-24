@@ -7,6 +7,7 @@ import { addMember, actAs, createProject, signUp } from "@/test/helpers";
 
 import { homeOverview } from "../home";
 import { listMyProjects } from "../membership";
+import { upsertProjectUser } from "../project-users";
 import { removeMember } from "../team";
 import {
   createConversation,
@@ -204,6 +205,40 @@ test("a search finds conversations by number, subject, person and what their mes
   await call(createConversation, other.context, { email: "e2e-elsewhere@example.com", body: "A refund, elsewhere" });
   expect(await numbers({ q: "refund" })).toEqual([4, 2]);
   await expect(call(listConversations, context, { q: "x".repeat(201) })).rejects.toThrow(OperationError);
+});
+
+test("a search finds who a conversation is with as the Inbox shows them: an account by its name and address, never by a placeholder address nor a teammate's company", async () => {
+  const { context, project, owner } = await setup();
+  const projectId = project.id;
+  const numbers = async (q: string) => (await call(listConversations, context, { q })).conversations.map((c) => c.number);
+  const conversation = (number: number, userId: string) => prisma.conversation.create({ data: { projectId, number, subject: `Subject ${number}`, origin: "WIDGET", userId } });
+
+  // #1: someone from the app: their name, and the address the app gave (their account's own is a placeholder).
+  await call(createConversation, context, { user: { id: "user-7", name: "Zoe Quill", email: "e2e-zoe@example.com" }, body: "Hello" });
+  const zoe = await prisma.user.findFirstOrThrow({ where: { ssoIdentity: { projectId, externalId: "user-7" } }, select: { email: true } });
+  expect(await numbers("zoe quill")).toEqual([1]);
+  expect(await numbers("E2E-ZOE@")).toEqual([1]);
+  expect(await numbers(zoe.email)).toEqual([]);
+
+  // #2: a portal account, with the verified address someone from the app at Globex has: its name, address and their company.
+  await upsertProjectUser(projectId, "cy", { name: "Cy", email: "e2e-cy@example.com", properties: { company: "Globex" } });
+  const pat = await signUp("Pat Portal", "e2e-cy@example.com");
+  await conversation(2, pat.id);
+  expect(await numbers("pat portal")).toEqual([2]);
+  expect(await numbers("e2e-cy")).toEqual([2]);
+  expect(await numbers("globex")).toEqual([2]);
+  // Unverified, the address isn't known to be theirs: no company.
+  await prisma.user.update({ where: { id: pat.id }, data: { emailVerified: false } });
+  expect(await numbers("globex")).toEqual([]);
+  // A deleted account's address isn't shown.
+  await prisma.user.update({ where: { id: pat.id }, data: { deletedAt: new Date() } });
+  expect(await numbers("e2e-cy")).toEqual([]);
+
+  // #3: a teammate's own, whose address someone from the app at Hooli has: the Inbox shows no company for the team.
+  await upsertProjectUser(projectId, "twin", { name: "Twin", email: owner.email, properties: { company: "Hooli" } });
+  await conversation(3, owner.id);
+  expect(await numbers("hooli")).toEqual([]);
+  expect(await numbers(owner.email)).toEqual([3]);
 });
 
 test("webhooks hear of new conversations and of the user's messages, not the team's replies", async () => {

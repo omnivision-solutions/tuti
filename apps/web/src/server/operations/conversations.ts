@@ -290,8 +290,9 @@ const likeText = (q: string) => q.replace(/[\\%_]/g, "\\$&");
  * the text in their subject, in who they're with as the Inbox shows them (conversationPerson's name and email; their
  * company, conversationCompanies'), or in a message or note. For the team only: notes are theirs. The trigram index on
  * messages' text answers the last (its project's messages alone under three characters).
- * ponytail: an address-linked company is found through at most 1,000 of the project's users at companies with the text;
- * join conversations to identities in SQL if a project outgrows that.
+ * ponytail: an address-linked company is found through at most 1,000 of the project's users at companies with the text,
+ * any of those sharing the address (the Inbox shows the oldest one's); join conversations to identities in SQL if a
+ * project outgrows that.
  */
 export async function conversationsMatching(projectId: string, q: string): Promise<Prisma.ConversationWhereInput> {
   const has = { contains: likeText(q), mode: "insensitive" as const };
