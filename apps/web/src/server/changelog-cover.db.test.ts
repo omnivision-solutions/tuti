@@ -200,6 +200,13 @@ test("in the app: Publish with a design picked adds that cover first, and publis
     expect(await saved(raced.number)).toEqual({ coverId: meanwhile.coverId ?? null, publishedAt: expect.any(Date) });
   }
 
+  // Lines left to fill in, added since the dialog opened: publishing refuses it, and no cover is made for it.
+  const marked = await call(createChangelogEntry, team(), { title: "Marked", body: "Dark mode.\n[Check: on iOS?]" });
+  const drawnBefore = drawn().length;
+  expect(await publishAction(project.slug, marked.number, true, false, "title")).toEqual({ error: expect.stringContaining("[Check: on iOS?]") });
+  expect(await saved(marked.number)).toEqual({ coverId: null, publishedAt: null });
+  expect(drawn()).toHaveLength(drawnBefore);
+
   // No design (its dialog's "No cover", or an entry that has one): published as it is.
   const plain = await call(createChangelogEntry, team(), { title: "Fixes" });
   expect(await publishAction(project.slug, plain.number)).toEqual({});

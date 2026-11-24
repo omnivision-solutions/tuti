@@ -808,8 +808,9 @@ export async function composeCover(
 ) {
   const portal = await projectPortal(projectId);
   const entry = await teamEntry(projectId, number);
-  // Nothing to draw: checked again where it's set, as it can change while the cover is drawn.
-  if (ifBare && (entry.cover !== null || entry.publishedAt !== null)) {
+  // Nothing to draw: it has a cover or is out (checked again where it's set, as that can change while the cover is drawn),
+  // or it has lines left to fill in, so publishing will refuse it and a cover would be kept for nothing.
+  if (ifBare && (entry.cover !== null || entry.publishedAt !== null || markersIn(displayDoc(entry)).length > 0)) {
     return entryView(entry, portal);
   }
   if (!mediaStorage()) {

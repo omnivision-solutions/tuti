@@ -438,6 +438,7 @@ function MakeCover({
           <Button
             type="button"
             disabled={pending}
+            focusableWhenDisabled
             onClick={() =>
               startTransition(async () => {
                 const result = await composeChangelogCover(projectSlug, number, design, headline);
