@@ -1458,11 +1458,12 @@ test("readers comment on an entry's page: they edit and delete their own, and si
   await api(`/changelog/1/comments/${listed.comments.find((c) => c.body === "One more thing")!.id}`, undefined, "DELETE");
   await confirm.getByRole("button", { name: "Delete comment" }).click();
   await expect(ada.getByText("There's no such comment on this entry")).toBeVisible();
-  await ada.keyboard.press("Escape");
+  // The list drops it, its dialog with it, and the keyboard goes to the heading.
   await expect(confirm).toBeHidden();
   // (Role queries, once the dialog's closed: the page behind it is hidden from them while it's open.)
   await expect(comments.getByRole("listitem")).toHaveCount(2);
   await expect(comments.getByRole("heading", { name: "2 comments" })).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "2 comments" })).toBeFocused();
 
   // They delete theirs, once sure; the team's stays.
   await comments.getByRole("listitem").filter({ hasText: "Ada Reader" }).getByRole("button", { name: "Delete your comment" }).click();

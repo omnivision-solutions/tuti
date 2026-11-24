@@ -1,5 +1,5 @@
 import { isEmptyDoc } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { attachMedia, displayDoc, readContent } from "../content";
@@ -69,6 +69,18 @@ function published(entry: { publishedAt: Date | null }) {
   }
 }
 
+/**
+ * In a comment's write: the entry's row locked (FOR SHARE: unpublishing and deleting it update its row, so they wait for
+ * this write, or this one sees what they did) and still published. Gone meanwhile: its 404, as `visibleEntry` says it.
+ */
+async function stillPublished(tx: Prisma.TransactionClient, entryId: string, number: number) {
+  const [row] = await tx.$queryRaw<{ publishedAt: Date | null }[]>`SELECT "publishedAt" FROM changelog_entry WHERE id = ${entryId} FOR SHARE`;
+  if (!row) {
+    throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
+  }
+  published(row);
+}
+
 async function readText(projectId: string, input: { body?: string; content?: unknown }) {
   const read = await readContent("comment", input, { projectId, maxLength: MAX_TEXT_LENGTH });
   if (read.error !== undefined) {
@@ -81,10 +93,12 @@ async function readText(projectId: string, input: { body?: string; content?: unk
   return read;
 }
 
+const noSuchComment = () => new OperationError(404, "not_found", "There's no such comment on this entry");
+
 const findComment = async (entryId: string, id: string) => {
   const comment = await prisma.changelogComment.findFirst({ where: { id, entryId }, select: { ...select, authorId: true } });
   if (!comment) {
-    throw new OperationError(404, "not_found", "There's no such comment on this entry");
+    throw noSuchComment();
   }
   return comment;
 };
@@ -131,6 +145,7 @@ export const createChangelogComment = defineOperation({
     const asReader = await signedInAsReader(userId);
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {
+        await stillPublished(tx, entry.id, input.number);
         const created = await tx.changelogComment.create({
           data: { entryId: entry.id, authorId: userId, body: read.text, content: read.doc, asReader },
           select,
@@ -166,9 +181,14 @@ export const updateChangelogComment = defineOperation({
     const read = await readText(projectId, input);
     const edited = await saving(() =>
       prisma.$transaction(async (tx) => {
-        const saved = await tx.changelogComment.update({ where: { id: comment.id }, data: { body: read.text, content: read.doc, editedAt: new Date() }, select });
+        await stillPublished(tx, entry.id, input.number);
+        // Deleted meanwhile (its author's other tab, the team): it's gone, not an error.
+        const { count } = await tx.changelogComment.updateMany({ where: { id: comment.id, entryId: entry.id }, data: { body: read.text, content: read.doc, editedAt: new Date() } });
+        if (count === 0) {
+          throw noSuchComment();
+        }
         await attachMedia(tx, projectId, read.mediaIds);
-        return saved;
+        return tx.changelogComment.findUniqueOrThrow({ where: { id: comment.id }, select });
       }),
     );
     return view(edited, await teamIds(projectId));

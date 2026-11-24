@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
-import { ChangelogComment, COMMENTS_HEADING } from "@/components/changelog-comment";
+import { ChangelogComment } from "@/components/changelog-comment";
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
@@ -23,6 +23,7 @@ import { portalBase, portalLinks } from "@/server/portal-base";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
+import { COMMENTS_HEADING } from "@/lib/comment-threads";
 
 /** A published entry's search listing, once per request (its metadata and its page's JSON-LD). */
 const listedEntry = cache(async (project: string, number: string) =>

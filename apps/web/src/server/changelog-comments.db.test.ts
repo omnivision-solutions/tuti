@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { commentOnChangelogEntry, deleteChangelogComment as deleteAction, editChangelogComment } from "@/server/changelog";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
@@ -8,6 +8,21 @@ import { call } from "@/server/operations/run";
 import { actAs, addMember, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 
 /** Comments on changelog entries (changelogComments.*), and the portal's actions for them. */
+
+// Something to happen between a write's reads and its write: run once as the comment's text is read.
+const meanwhile = vi.hoisted(() => ({ run: null as null | (() => Promise<unknown>) }));
+vi.mock("@/server/content", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/server/content")>();
+  return {
+    ...real,
+    readContent: async (...args: Parameters<typeof real.readContent>) => {
+      const run = meanwhile.run;
+      meanwhile.run = null;
+      await run?.();
+      return real.readContent(...args);
+    },
+  };
+});
 
 let owner: TestUser;
 let reader: TestUser;
@@ -101,6 +116,34 @@ describe("operations", () => {
     await prisma.changelogEntry.create({ data: { projectId: theirs.id, number: 1, title: "Elsewhere", publishedAt: new Date() } });
     await expect(call(deleteChangelogComment, { ...as(owner), projectId: theirs.id }, { number: 1, id: mine.id })).rejects.toMatchObject({ status: 404 });
     expect(await rows()).toBe(1);
+  });
+});
+
+describe("races", () => {
+  test("an edit to a comment deleted meanwhile says it's gone", async () => {
+    const mine = await comment(reader);
+    meanwhile.run = () => prisma.changelogComment.delete({ where: { id: mine.id } });
+    await expect(call(updateChangelogComment, as(reader), { number: 1, id: mine.id, body: "Edit" })).rejects.toMatchObject({
+      status: 404,
+      message: "There's no such comment on this entry",
+    });
+  });
+
+  test("a comment or an edit on an entry unpublished meanwhile is refused, and nothing's saved", async () => {
+    const mine = await comment(reader);
+    meanwhile.run = () => call(unpublishChangelogEntry, as(owner), { number: 1 });
+    await expect(comment(reader, "Late")).rejects.toMatchObject({ status: 409, message: "Only published entries take comments" });
+    expect(await rows()).toBe(1);
+
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    meanwhile.run = () => call(unpublishChangelogEntry, as(owner), { number: 1 });
+    await expect(call(updateChangelogComment, as(reader), { number: 1, id: mine.id, body: "Edit" })).rejects.toMatchObject({ status: 409 });
+    expect((await prisma.changelogComment.findUniqueOrThrow({ where: { id: mine.id } })).body).toBe("Love it");
+  });
+
+  test("a comment on an entry deleted meanwhile says the entry's gone", async () => {
+    meanwhile.run = () => prisma.changelogEntry.deleteMany({ where: { projectId: project.id, number: 1 } });
+    await expect(comment(reader)).rejects.toMatchObject({ status: 404, message: "There's no changelog entry #1" });
   });
 });
 

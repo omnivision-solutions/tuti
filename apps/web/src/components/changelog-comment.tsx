@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { type EditorUploads, RichEditor } from "@/components/rich-editor";
+import { COMMENTS_HEADING } from "@/lib/comment-threads";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,9 +24,6 @@ import type { FormState } from "@/server/form-state";
 import { deleteChangelogComment, editChangelogComment } from "@/server/changelog";
 
 const ACTION = "inline-flex h-8 items-center rounded-lg px-1.5 -mx-1.5 text-sm font-medium text-muted-foreground hover:text-foreground";
-
-/** The comments' heading's id: focus goes there once a comment is deleted (its Delete is gone with it). */
-export const COMMENTS_HEADING = "entry-comments";
 
 /**
  * A comment on a changelog entry: its text (`children`), and under it Edit (its author's: the text becomes its editor)
@@ -64,6 +62,16 @@ export function ChangelogComment({
   }, [editing]);
   const [deleting, startDelete] = useTransition();
   const router = useRouter();
+  // Its Delete pressed for a comment that's gone: once the list drops it, the keyboard goes to the comments' heading.
+  const gone = useRef(false);
+  useEffect(
+    () => () => {
+      if (gone.current) {
+        document.getElementById(COMMENTS_HEADING)?.focus();
+      }
+    },
+    [],
+  );
 
   if (editing) {
     return <EditForm projectSlug={projectSlug} number={number} commentId={commentId} doc={doc} uploads={uploads} onDone={() => setEditing(false)} />;
@@ -81,7 +89,7 @@ export function ChangelogComment({
           {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger
-                render={<button type="button" className={ACTION} aria-label={canEdit ? "Delete your comment" : `Delete ${author}'s comment`} disabled={deleting} />}
+                render={<button type="button" className={ACTION} aria-label={canEdit ? "Delete your comment" : `Delete ${author}'s comment`} aria-disabled={deleting || undefined} />}
               >
                 Delete
               </AlertDialogTrigger>
@@ -102,7 +110,9 @@ export function ChangelogComment({
                         const result = await deleteChangelogComment(projectSlug, number, commentId);
                         if (result.error) {
                           toast.error(result.error);
-                          // Deleted meanwhile (another tab, the team): the list as it is now.
+                          // Deleted meanwhile (another tab, the team): the list as it is now, which takes this comment (and
+                          // its Delete) away: the keyboard goes to the heading then, as below.
+                          gone.current = true;
                           router.refresh();
                         } else {
                           toast.success("Comment deleted");
