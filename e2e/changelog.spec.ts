@@ -1417,8 +1417,9 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   // The team's answer (by the key's creator) is marked as the team's; Ada's isn't.
   await api("/changelog/1/comments", { body: "Glad it helps!" });
   await ada.reload();
-  await expect(comments.getByRole("listitem").filter({ hasText: "Glad it helps!" })).toContainText("Team");
-  await expect(comments.getByRole("listitem").filter({ hasText: "Ada Reader" })).not.toContainText("Team");
+  // The badge itself: "Tess Team"'s name has the word too.
+  await expect(comments.getByRole("listitem").filter({ hasText: "Glad it helps!" }).getByText("Team", { exact: true })).toHaveCount(1);
+  await expect(comments.getByRole("listitem").filter({ hasText: "Ada Reader" }).getByText("Team", { exact: true })).toHaveCount(0);
   // Others read them.
   await visitor.reload();
   await expect(visitorComments.getByRole("listitem").first()).toContainText("Finally! My eyes thank you.");
