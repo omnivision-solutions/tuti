@@ -256,11 +256,24 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
   await expect(screenshots).toBeChecked();
   await expect(save).toBeDisabled();
+  // Its row's line is what a screen reader reads with it.
+  await expect(screenshots).toHaveAccessibleDescription("A draft leaves a line where a picture belongs, to replace before publishing.");
   // Turned off again, it's a change to save; on again, none.
   await screenshots.uncheck();
   await expect(save).toBeEnabled();
   await screenshots.check();
   await expect(save).toBeDisabled();
+  // Saved off (the form then has no field for it), it's off after a reload; then on again, as the rest of this expects.
+  await screenshots.uncheck();
+  await save.click();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
+  await team.reload();
+  await expect(screenshots).not.toBeChecked();
+  await screenshots.check();
+  await save.click();
+  await expect(team.getByText("Changelog saved")).toBeVisible();
+  await team.reload();
+  await expect(screenshots).toBeChecked();
   // A chip removed is a change to save; the same one picked again is none.
   await team.getByRole("button", { name: "Remove Faster month view" }).click();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);

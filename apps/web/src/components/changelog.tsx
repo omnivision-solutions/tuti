@@ -1045,7 +1045,7 @@ export function ChangelogStyleForm({
         info="AI can't take screenshots. With this on, a draft has a line like [Screenshot: the new theme menu] where one would help, and the entry can't be published while such a line is left."
         inline
       >
-        <Switch id="style-screenshots" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
+        <Switch id="style-screenshots" aria-describedby="style-screenshots-description" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
       </SettingRow>
       {/* Outside the form in the page (a portal): typing in its search isn't a change to save. */}
       <Dialog open={picking} onOpenChange={setPicking}>
