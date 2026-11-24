@@ -32,21 +32,24 @@ const SCREENSHOTS = `
 - Where a screenshot would show a change better than words, put a line of its own there, "[Screenshot: what it should show]", for the team to replace with the picture. One for each change that has something to see, none for the rest.`;
 
 /**
- * What a draft leaves for the team to fill in, each a line of its own: "[Check: …]" for a fact the input didn't give,
- * "[Screenshot: …]" where a picture belongs. Plain text, so the notes' reader keeps them and they show in the entry's
- * Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
+ * What a draft leaves for the team to fill in: "[Check: …]" for a fact the input didn't give, "[Screenshot: …]" where a
+ * picture belongs. Asked for as a line of its own; plain text, so the notes' reader keeps them and they show in the
+ * entry's Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
  */
-const MARKER = /^\[(?:Check|Screenshot): .+\]$/;
+const MARKER_LINE = /^\[(?:Check|Screenshot): .+\]$/;
+const MARKER_WITHIN = /\[(?:Check|Screenshot): [^\]]+\]/g;
 
-/** The markers still in a text, as written: paragraphs that are nothing else, wherever they are. */
+/**
+ * The markers still in a text, as written: a paragraph that's nothing else (whole, brackets of its own and all), and
+ * any the model put inside a sentence or a heading instead, which would go out to readers just the same.
+ */
 export function markersIn(doc: Doc): string[] {
   const found: string[] = [];
   (function read(node: JSONContent | Doc) {
-    if (node.type === "paragraph") {
+    if (node.type === "paragraph" || node.type === "heading") {
       const text = toPlainText(node).trim();
-      if (MARKER.test(text)) {
-        found.push(text);
-      }
+      found.push(...(MARKER_LINE.test(text) ? [text] : (text.match(MARKER_WITHIN) ?? [])));
+      return;
     }
     node.content?.forEach(read);
   })(doc);

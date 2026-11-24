@@ -16,7 +16,7 @@ import {
 } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { createProject, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 
 /** Drafting a changelog entry with AI (changelog.draft), against the model fake. */
 
@@ -257,14 +257,51 @@ test("a draft leaves a line where it needs a fact, and where a screenshot belong
   expect(model.requests[1]!.system).toContain('"[Screenshot: what it should show]"');
   await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({
     status: 409,
-    // One with brackets of its own in it is one all the same.
-    message: "Replace or remove the 2 markers in its text first: [Screenshot: the [Theme] menu, open] [Check: which plans?]",
+    // One with brackets of its own in it is one all the same; and one the model put inside a sentence, not on a line
+    // of its own as asked, would go out to readers just the same.
+    message: "Replace or remove the 3 markers in its text first: [Screenshot: the [Theme] menu, open] [Check: which plans?] [Check: later]",
   });
-  // Replaced (the picture in, the answer written), it's published.
-  await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan. It says [Check: later] in a sentence, which is only text." });
+  // In a heading too.
+  await call(updateChangelogEntry, team(), { number, markdown: "## Dark mode [Check: the name]\n\nIt's here." });
+  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({ status: 409, message: "Replace or remove the marker in its text first: [Check: the name]" });
+  // Replaced (the picture in, the answers written), it's published. Square brackets that aren't a marker are only text.
+  await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan [beta]. Check: it works." });
   expect((await call(publishChangelogEntry, team(), { number })).status).toBe("published");
-  // Each setting is its own: turning the screenshots off keeps the tone and examples.
-  expect(await setStyle({ screenshotMarkers: false })).toEqual({ tone: "", examples: [], screenshotMarkers: false });
+});
+
+test("publishing reads the text as it is under its lock: a marker saved while it waits holds it back", async () => {
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode", body: "Dark mode is here." });
+  // A save that adds a marker, not committed yet.
+  let commit!: () => void;
+  const held = new Promise<void>((resolve) => (commit = resolve));
+  let saved!: () => void;
+  const written = new Promise<void>((resolve) => (saved = resolve));
+  const saving = prisma.$transaction(async (tx) => {
+    const content = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "[Check: is it out on iOS yet?]" }] }] };
+    await tx.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number } }, data: { body: "[Check: is it out on iOS yet?]", content } });
+    saved();
+    await held;
+  });
+  await written;
+  // Publishing read the entry before that save; it waits for the entry's row, then goes by what's there.
+  const publishing = call(publishChangelogEntry, team(), { number });
+  publishing.catch(() => {});
+  await untilWaitingOnLock();
+  commit();
+  await saving;
+  await expect(publishing).rejects.toMatchObject({ status: 409, code: "markers" });
+  expect((await get(number)).status).toBe("draft");
+});
+
+test("each writing style setting is saved on its own: the screenshots' switch keeps the tone and the examples, and they keep it", async () => {
+  const example = await call(createChangelogEntry, team(), { title: "Faster search", body: "Search is quicker now." });
+  await call(publishChangelogEntry, team(), { number: example.number });
+  const set = { tone: "Short sentences.", examples: [{ number: example.number, title: "Faster search" }] };
+  await setStyle({ tone: set.tone, examples: [example.number], screenshotMarkers: true });
+  expect(await setStyle({ tone: "Plain words." })).toEqual({ ...set, tone: "Plain words.", screenshotMarkers: true });
+  expect(await setStyle({ examples: [] })).toEqual({ tone: "Plain words.", examples: [], screenshotMarkers: true });
+  await setStyle({ tone: set.tone, examples: [example.number] });
+  expect(await setStyle({ screenshotMarkers: false })).toEqual({ ...set, screenshotMarkers: false });
 });
 
 const setStyle = (input: { tone?: string; examples?: number[]; screenshotMarkers?: boolean }) => call(updateChangelogStyle, team(), input);
