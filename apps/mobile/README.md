@@ -3,7 +3,7 @@
 The Inbox on a phone (`docs/plan.md`, "Mobile app"). React Native with Expo; routes live in `src/app`.
 
 ```sh
-pnpm --filter @tuti/mobile start    # the dev server; open it in a development build
+pnpm --filter @tuti/mobile start    # the dev server; Expo Go opens it until the app needs a build of its own
 pnpm --filter @tuti/mobile bundle   # bundle for both platforms, as a build would
 ```
 
