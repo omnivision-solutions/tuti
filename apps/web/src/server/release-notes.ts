@@ -36,19 +36,18 @@ const SCREENSHOTS = `
  * picture belongs. Asked for as a line of its own; plain text, so the notes' reader keeps them and they show in the
  * entry's Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
  */
-const MARKER_LINE = /^\[(?:Check|Screenshot): .+\]$/;
-const MARKER_WITHIN = /\[(?:Check|Screenshot): [^\]]+\]/g;
+// However the model wrote it ("[check: …]", "[Screenshot : …]"), with a pair of brackets of its own inside ("the [Share] button").
+const MARKER = /\[\s*(?:check|screenshot)\s*:(?:[^[\]]|\[[^[\]]*\])+\]/gi;
 
 /**
- * The markers still in a text, as written: a paragraph that's nothing else (whole, brackets of its own and all), and
- * any the model put inside a sentence or a heading instead, which would go out to readers just the same.
+ * The markers still in a text, as written, each one: on a line of its own as asked, or inside a sentence or a heading
+ * where the model put it instead, which would go out to readers just the same.
  */
 export function markersIn(doc: Doc): string[] {
   const found: string[] = [];
   (function read(node: JSONContent | Doc) {
     if (node.type === "paragraph" || node.type === "heading") {
-      const text = toPlainText(node).trim();
-      found.push(...(MARKER_LINE.test(text) ? [text] : (text.match(MARKER_WITHIN) ?? [])));
+      found.push(...(toPlainText(node).match(MARKER) ?? []));
       return;
     }
     node.content?.forEach(read);

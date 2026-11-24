@@ -261,9 +261,12 @@ test("a draft leaves a line where it needs a fact, and where a screenshot belong
     // of its own as asked, would go out to readers just the same.
     message: "Replace or remove the 3 markers in its text first: [Screenshot: the [Theme] menu, open] [Check: which plans?] [Check: later]",
   });
-  // In a heading too.
-  await call(updateChangelogEntry, team(), { number, markdown: "## Dark mode [Check: the name]\n\nIt's here." });
-  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({ status: 409, message: "Replace or remove the marker in its text first: [Check: the name]" });
+  // In a heading too; two on one line are two; and however it's cased or spaced, it's one.
+  await call(updateChangelogEntry, team(), { number, markdown: "## Dark mode [Check: the name]\n\n[Check: iOS?] [Screenshot: the menu]\n\nIt's here [check:when] and [ Screenshot : there ]." });
+  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({
+    status: 409,
+    message: "Replace or remove the 5 markers in its text first: [Check: the name] [Check: iOS?] [Screenshot: the menu] [check:when] [ Screenshot : there ]",
+  });
   // Replaced (the picture in, the answers written), it's published. Square brackets that aren't a marker are only text.
   await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan [beta]. Check: it works." });
   expect((await call(publishChangelogEntry, team(), { number })).status).toBe("published");

@@ -399,18 +399,23 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await expect(save(team)).toBeDisabled();
 
   // Saved in another tab while this one has nothing edited: this one shows it, with nothing to save.
+  const screenshots = (page: typeof team) => page.getByRole("switch", { name: "Mark where screenshots go" });
   await instructions(other).fill("From the other tab.");
   await pickExample(other, "Agenda view");
+  await screenshots(other).check();
   await save(other).click();
   await expect(other.getByText("Changelog saved")).toBeVisible();
   await hearAgain("Best", "Claude Opus 5.5");
   await expect(instructions(team)).toHaveValue("From the other tab.");
   await expect(chips(team)).toHaveText(["Agenda view"]);
+  await expect(screenshots(team)).toBeChecked();
   await expect(save(team)).toBeDisabled();
 
   // Typed here, then an example picked there: the instructions typed stay, the examples follow, and Save sends both.
   await instructions(team).fill("Typed here.");
   await expect(save(team)).toBeEnabled();
+  // The switch changed here and not saved stays as it's set here, too.
+  await screenshots(team).uncheck();
   await pickExample(other, "Faster month view");
   await expect(other.getByText("Changelog saved")).toHaveCount(0, { timeout: 15_000 });
   await save(other).click();
@@ -418,7 +423,10 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await hearAgain("Balanced", "Claude Haiku 5.5");
   await expect(instructions(team)).toHaveValue("Typed here.");
   await expect(chips(team)).toHaveText(["Agenda view", "Faster month view"]);
+  await expect(screenshots(team)).not.toBeChecked();
   await expect(save(team)).toBeEnabled();
+  // Set back to what's saved, it's no change.
+  await screenshots(team).check();
   // Typed back to what's saved, there's nothing to save.
   await instructions(team).fill("From the other tab.");
   await expect(save(team)).toBeDisabled();
