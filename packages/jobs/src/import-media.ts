@@ -6,6 +6,7 @@ import type { ImportedMedia, LeftOutReason, MediaImporter, MediaSource } from "@
 import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey, videoType } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
+import { verifyForever } from "@tuti/shared/signed";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
 import { Agent, fetch } from "undici";
@@ -143,6 +144,11 @@ async function copyThrough(
   if (!storage) {
     return { leftOut: "unsupported" };
   }
+  // The project's own image, by the link Tuti gave for it: that upload, not another copy of it.
+  const own = kind === "image" && upload ? await ownImage(projectId, url) : null;
+  if (own) {
+    return own;
+  }
   let filename = kind === "file" ? attachmentName(name) : null;
   let extension = filename ? fileExtension(filename) : "";
   if (kind === "file" && !(extension in UPLOAD_FILE_TYPES)) {
@@ -235,6 +241,28 @@ async function copyThrough(
     select: { id: true, width: true, height: true, filename: true, size: true },
   });
   return { mediaId: id, ...ready };
+}
+
+/**
+ * `url` as this server's own lasting link (lastingMediaUrl) to one of the project's finished images: that upload. An
+ * API client that reads an entry's Markdown (changelog.get) and sends it back names its images this way, and each save
+ * would otherwise copy every one of them again. Another project's image, or a link whose signature isn't ours, is no
+ * one's own: it's fetched like any address (and ours answers only while its image is in use).
+ */
+async function ownImage(projectId: string, url: string): Promise<ImportedMedia | null> {
+  if (!process.env.APP_URL || !URL.canParse(url)) {
+    return null;
+  }
+  const link = new URL(url);
+  const [, id, file] = /^\/api\/media\/([a-z0-9]+)\/([^/]+)$/.exec(link.pathname) ?? [];
+  if (!id || !file || link.origin !== new URL(process.env.APP_URL).origin || !verifyForever("media", `m/${id}/${file}`, link.searchParams.get("s") ?? "")) {
+    return null;
+  }
+  const media = await prisma.media.findFirst({
+    where: { id, projectId, status: "READY", filename: null, width: { not: null } },
+    select: { id: true, width: true, height: true, size: true },
+  });
+  return media && { mediaId: media.id, width: media.width, height: media.height, filename: null, size: media.size };
 }
 
 /**

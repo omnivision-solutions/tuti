@@ -1413,10 +1413,13 @@ model ConversationMessage {
   attachments  ConversationAttachment[]
 
   @@index([conversationId, createdAt])
-  /// The Inbox's search (conversations.list's `q`): a project's messages, and trigrams of their text (pg_trgm), so
-  /// `contains` doesn't read every message. Searches of one or two characters read the project's.
+  /// The Inbox's search (conversations.list's `q`): one index of a project's messages by the trigrams of their
+  /// text (pg_trgm, with btree_gin for the project), so `contains` reads only the project's messages that may
+  /// have it. Searches of one or two characters have no trigram, and read the project's through the index on `projectId`.
+  /// Prisma doesn't know btree_gin: `text_ops` is there for it to accept a text column in a GIN index, and
+  /// `prisma migrate dev` then offers to drop and build the index again. Delete those lines from a new migration.
   @@index([projectId])
-  @@index([body(ops: raw("gin_trgm_ops"))], type: Gin, map: "conversation_message_body_trgm_idx")
+  @@index([projectId(ops: raw("text_ops")), body(ops: raw("gin_trgm_ops"))], type: Gin, map: "conversation_message_project_body_trgm_idx")
   @@map("conversation_message")
 }
 

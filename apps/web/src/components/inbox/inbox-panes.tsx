@@ -28,21 +28,21 @@ import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
 import { conversationReads } from "@/server/conversation-reads";
 import { inboxStats } from "@/server/inbox-stats";
-import { awake, conversationPerson, conversationsMatching, latestMessages, matchedMessages, MAX_SEARCH_LENGTH } from "@/server/operations/conversations";
+import { conversationPerson, conversationsMatching, INBOX_VIEWS, type InboxView, latestMessages, matchedMessages, MAX_SEARCH_LENGTH, viewCounts, viewWhere } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
-/** The inbox's views: what needs an answer first, then the rest. */
-const VIEWS = {
-  open: { title: "Needs reply", empty: "No replies waiting" },
-  mine: { title: "Mine", empty: "Nothing's assigned to you." },
-  unassigned: { title: "Unassigned", empty: "Every open conversation has someone on it." },
-  waiting: { title: "Waiting on user", empty: "No conversations wait on a user." },
-  snoozed: { title: "Snoozed", empty: "Nothing's snoozed." },
-  closed: { title: "Closed", empty: "No closed conversations yet." },
-  spam: { title: "Spam", empty: "No spam." },
-} as const;
+/** The inbox's views (INBOX_VIEWS: what needs an answer first, then the rest; conversations.views lists the same), and what each says with nothing in it. */
+export type View = InboxView;
 
-export type View = keyof typeof VIEWS;
+const EMPTY: Record<View, string> = {
+  open: "No replies waiting",
+  mine: "Nothing's assigned to you.",
+  unassigned: "Every open conversation has someone on it.",
+  waiting: "No conversations wait on a user.",
+  snoozed: "Nothing's snoozed.",
+  closed: "No closed conversations yet.",
+  spam: "No spam.",
+};
 
 const VIEW_ICONS: Record<View, ReactNode> = {
   open: <InboxIcon />,
@@ -57,7 +57,7 @@ const VIEW_ICONS: Record<View, ReactNode> = {
 /** The view a `?view=` asks for; Needs reply for none, or one it doesn't know. */
 export function inboxView(param: string | string[] | undefined): View {
   // Own keys only: `in` would also take inherited names like "constructor".
-  return typeof param === "string" && Object.hasOwn(VIEWS, param) ? (param as View) : "open";
+  return typeof param === "string" && Object.hasOwn(INBOX_VIEWS, param) ? (param as View) : "open";
 }
 
 /** How many pages a `?page=` (or `?messages=`) asks for: 1 for none, or one that isn't a count. */
@@ -87,25 +87,6 @@ export function inboxHref(slug: string, view: View, number: number | null = null
     ...(messages > 1 && { messages: String(messages) }),
   });
   return `/app/${slug}/inbox${number === null ? "" : `/${number}`}${params.size > 0 ? `?${params}` : ""}`;
-}
-
-/**
- * A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). With
- * `since` (historySince), closed ones from before it are past the plan's history: in no view.
- */
-function viewWhere(view: View, projectId: string, userId: string, since: Date | null = null): Prisma.ConversationWhereInput {
-  const now = new Date();
-  const filters: Record<View, Prisma.ConversationWhereInput> = {
-    open: { spam: false, status: "OPEN", ...awake(now) },
-    mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" }, ...awake(now) },
-    unassigned: { spam: false, assigneeId: null, status: "OPEN", ...awake(now) },
-    waiting: { spam: false, status: "WAITING", ...awake(now) },
-    // Closed is done with, snoozed or not (a snooze left on one, by a release from before, doesn't hide it).
-    snoozed: { spam: false, status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
-    closed: { spam: false, status: "CLOSED" },
-    spam: { spam: true },
-  };
-  return { AND: [filters[view], visibleConversations(since)], projectId };
 }
 
 /** Which of these conversations (ids) are in the view, or among a search's results (`q`), by the list's own filter: their numbers. */
@@ -185,7 +166,7 @@ export async function InboxPanes({
   const projectId = membership.project.id;
   const userId = session.user.id;
 
-  const views = Object.keys(VIEWS) as View[];
+  const views = Object.keys(INBOX_VIEWS) as View[];
   const history = await historySince(projectId);
   // A search's results: every status, never spam nor what's past the plan's history.
   const matching = q ? await conversationsMatching(projectId, q) : null;
@@ -195,7 +176,7 @@ export async function InboxPanes({
   // What its rows say apart from a view's: Needs reply and Closed on those that are, the message found.
   const shown = q ? "search" : view;
   const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
-    Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
+    viewCounts(projectId, userId, history),
     listed(where, pages),
     prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
@@ -225,7 +206,7 @@ export async function InboxPanes({
         <SectionGroup>
           {views.map((v, i) => (
             <SectionLink key={v} href={inboxHref(slug, v)} icon={VIEW_ICONS[v]} count={counts[i]} active={!q && v === view} currentIs={open === null ? "page" : "true"}>
-              {VIEWS[v].title}
+              {INBOX_VIEWS[v]}
             </SectionLink>
           ))}
         </SectionGroup>
@@ -244,7 +225,7 @@ export async function InboxPanes({
               level={open === null ? 1 : 2}
               title={
                 <>
-                  {q ? "Results" : VIEWS[view].title} <span className="font-sans text-base font-normal text-muted-foreground tabular-nums">{total}</span>
+                  {q ? "Results" : INBOX_VIEWS[view]} <span className="font-sans text-base font-normal text-muted-foreground tabular-nums">{total}</span>
                 </>
               }
               // A row of its own under the title: the list is too narrow for a field to type a name or an address in beside it.
@@ -304,7 +285,7 @@ export async function InboxPanes({
                 // With room for both panes, an empty Inbox says new conversations show up here, beside the list, with its numbers.
                 <div className="inbox-list-empty mt-18 mx-5 flex flex-col items-center gap-2 text-center max-md:mt-37.5 [&>svg]:size-6.25 [&>svg]:text-primary [&>p]:text-sm [&>p]:leading-normal [&>p]:font-[550] [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
                   <CheckIcon aria-hidden />
-                  <p>{VIEWS[view].empty}</p>
+                  <p>{EMPTY[view]}</p>
                   <span className={cn(none && view !== "open" && "@min-[52.5rem]/inbox:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
                 </div>
               ) : (

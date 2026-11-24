@@ -7,6 +7,7 @@ import { addMember, actAs, createProject, signUp } from "@/test/helpers";
 
 import { homeOverview } from "../home";
 import { listMyProjects } from "../membership";
+import { ONLINE_FOR_MS, presenceKey, touchPresence } from "../presence";
 import { upsertProjectUser } from "../project-users";
 import { removeMember } from "../team";
 import {
@@ -14,6 +15,7 @@ import {
   getConversation,
   linkConversationPost,
   listConversations,
+  markConversationRead,
   replyToConversation,
   unlinkConversationPost,
   updateConversation,
@@ -145,6 +147,70 @@ test("lists filter by status and user, newest message first, and leave spam out 
   expect(await numbers({ spam: "true" })).toEqual([3]);
 });
 
+test("a list's rows say what the Inbox's do: the company, the latest message's first line and who wrote it, and unread for whoever asks; the total counts every page", async () => {
+  const { context, owner, project } = await setup();
+  const tess = await addMember(project.id, "MEMBER");
+  await call(createConversation, context, { user: sam, subject: "Export", body: "The export button does nothing.\nOn reports." });
+  await upsertProjectUser(project.id, sam.id, { properties: { company: "Acme" } });
+  // Its subject is the start of its only message: the row has no line to add to it.
+  await call(createConversation, context, { email: "e2e-asker@example.com", body: "Where are invoices?" });
+
+  const asUser = (userId: string) => ({ actor: { kind: "user", userId } as Actor, projectId: project.id });
+  const rows = async (who: { actor: Actor; projectId: string } = context) => (await call(listConversations, who, {})).conversations;
+  expect(await rows()).toMatchObject([
+    { number: 2, company: null, unread: true, latestMessage: { author: "user", name: null, fromYou: false, fromAddress: null, line: null } },
+    { number: 1, company: "Acme", unread: true, latestMessage: { author: "user", name: null, line: "The export button does nothing." } },
+  ]);
+  // Someone else on an emailed thread wrote the latest message: the row says from which address, as the Inbox's does.
+  await prisma.conversationMessage.updateMany({ where: { conversation: { projectId: project.id, number: 2 } }, data: { fromAddress: "e2e-colleague@example.com" } });
+  expect((await rows()).find((c) => c.number === 2)).toMatchObject({ latestMessage: { author: "user", fromAddress: "e2e-colleague@example.com" } });
+
+  // The team's reply is the latest message; a note after it isn't. Read by one teammate, it's still unread for another.
+  await call(replyToConversation, asUser(owner.id), { number: 1, body: "On it.\nMore soon." });
+  await call(replyToConversation, asUser(owner.id), { number: 1, body: "Ask Ravi", note: true });
+  await call(markConversationRead, asUser(owner.id), { number: 1, seen: new Date().toISOString() });
+  const row = async (who: NonNullable<Parameters<typeof rows>[0]>) => (await rows(who)).find((c) => c.number === 1);
+  expect(await row(asUser(owner.id))).toMatchObject({ unread: false, latestMessage: { author: "team", name: "Olive Owner", fromYou: true, line: "On it." } });
+  expect(await row(asUser(tess.id))).toMatchObject({ unread: true, latestMessage: { name: "Olive Owner", fromYou: false } });
+  // An API key's is its creator's.
+  expect(await row(context)).toMatchObject({ unread: false, latestMessage: { fromYou: true } });
+  // In the conversation too: the reply and the note are the owner's, the user's message nobody's on the team.
+  const theirs = async (who: NonNullable<Parameters<typeof rows>[0]>) => (await call(getConversation, who, { number: 1 })).messages.map((m) => m.fromYou);
+  expect(await theirs(asUser(owner.id))).toEqual([false, true, true]);
+  expect(await theirs(asUser(tess.id))).toEqual([false, false, false]);
+
+  expect(await call(listConversations, context, { limit: 1 })).toMatchObject({ nextCursor: "1", total: 2 });
+  expect(await call(listConversations, context, { status: "waiting" })).toMatchObject({ nextCursor: null, total: 1 });
+});
+
+test("a conversation says what the Inbox shows with it: the company, unread, whether they're online, and how each reply went", async () => {
+  const { context, owner, project } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  const userId = await upsertProjectUser(project.id, sam.id, { properties: { company: "Acme" } });
+  const reply = await call(replyToConversation, context, { number: 1, body: "On it" });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({
+    company: "Acme",
+    unread: true,
+    onlineUntil: null,
+    messages: [{ author: "user" }, { id: reply.id, fromAddress: null, seenAt: null, emailStatus: null, emailError: null }],
+  });
+
+  // They open the widget's Messages and see the reply; emailing it bounced; someone else on the thread writes from their own address.
+  const seenAt = new Date();
+  // An hour ahead, so no slow run can outlast it: the real clock is what "online" is measured against.
+  const here = new Date(Date.now() + 3_600_000);
+  await touchPresence(project.id, presenceKey({ userId, visitorHash: null }), here);
+  await prisma.conversationMessage.update({ where: { id: reply.id }, data: { seenAt, emailStatus: "BOUNCED", emailError: "Mailbox full" } });
+  await prisma.conversationMessage.updateMany({ where: { conversation: { projectId: project.id }, author: "USER" }, data: { fromAddress: "e2e-colleague@example.com" } });
+  await call(markConversationRead, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number: 1, seen: new Date().toISOString() });
+  const shown = await call(getConversation, context, { number: 1 });
+  expect(shown).toMatchObject({
+    unread: false,
+    messages: [{ fromAddress: "e2e-colleague@example.com" }, { seenAt, emailStatus: "bounced", emailError: "Mailbox full" }],
+  });
+  expect(new Date(shown.onlineUntil!)).toEqual(new Date(here.getTime() + ONLINE_FOR_MS));
+});
+
 test("a search finds conversations by number, subject, person and what their messages and notes say, newest first, within the other filters", async () => {
   const { context, project } = await setup();
   // #1: Sam, from the app, at Acme.
@@ -201,7 +267,7 @@ test("a search finds conversations by number, subject, person and what their mes
   // Wildcards are text; nothing found is an empty page; no text is no search.
   expect(await numbers({ q: "100%" })).toEqual([2]);
   expect(await numbers({ q: "nothing_" })).toEqual([5]);
-  expect(await call(listConversations, context, { q: "zebra" })).toEqual({ conversations: [], nextCursor: null });
+  expect(await call(listConversations, context, { q: "zebra" })).toEqual({ conversations: [], nextCursor: null, total: 0 });
   expect(await numbers({ q: "  " })).toEqual([6, 5, 4, 2, 1]);
   expect((await found({}))[0]!.match).toBeNull();
 
@@ -244,6 +310,20 @@ test("a search finds who a conversation is with as the Inbox shows them: an acco
   await conversation(3, owner.id);
   expect(await numbers("hooli")).toEqual([]);
   expect(await numbers(owner.email)).toEqual([3]);
+});
+
+test("message text is searched through the index of a project's messages by their text's trigrams", async () => {
+  const index = "conversation_message_project_body_trgm_idx";
+  expect(await prisma.$queryRaw`SELECT indisvalid AS valid, pg_get_indexdef(indexrelid) AS built FROM pg_index WHERE indexrelid = ${index}::regclass`).toEqual([
+    { valid: true, built: `CREATE INDEX ${index} ON public.conversation_message USING gin ("projectId", body gin_trgm_ops)` },
+  ]);
+  // Text alone, without reading the table: only this index can answer it. (With so few messages, Postgres reads a
+  // project's through the index on `projectId` whatever the text.)
+  const [, plan] = await prisma.$transaction([
+    prisma.$executeRaw`SET LOCAL enable_seqscan = off`,
+    prisma.$queryRaw`EXPLAIN SELECT 1 FROM conversation_message WHERE body ILIKE '%refund%'`,
+  ]);
+  expect(JSON.stringify(plan)).toContain(`Bitmap Index Scan on ${index}`);
 });
 
 test("webhooks hear of new conversations and of the user's messages, not the team's replies", async () => {

@@ -1,4 +1,4 @@
-import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
+import { type Doc, isVideo, toMarkdown, toPlainText, videoPageUrl } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
 import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus, uploadImage } from "@tuti/jobs";
 import { mediaLimit } from "@tuti/shared/storage";
@@ -11,7 +11,7 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
-import { lastingImage } from "../media-urls";
+import { lastingImage, lastingMediaUrls } from "../media-urls";
 import {
   blocksToNotes,
   droppedFacts,
@@ -73,7 +73,7 @@ const fields = {
     .nullable()
     .optional()
     .describe(
-      "Its featured image, also its link-preview image: an image upload's id (uploaded in the app), or an image's https:// URL, copied into your project as your upload (a 400 if it can't be fetched or isn't an image), and again each time it's sent: to keep a cover, leave it out or send its `cover.id`; null for none, or to remove it",
+      "Its featured image, also its link-preview image: an image upload's id (uploaded in the app), or an image's https:// URL, copied into your project as your upload (a 400 if it can't be fetched or isn't an image), and again each time it's sent (the link Tuti gave for one of your project's own images, a `cover.url` or one in an entry's `markdown`, is that upload, not a copy): to keep a cover, leave it out or send its `cover.id`; null for none, or to remove it",
     )
     .meta({ examples: ["https://cdn.example.com/releases/dark-mode.png", "cm3k9q2xv0001abcd1234efgh"] }),
 };
@@ -102,6 +102,13 @@ const entryOutput = z
     tags: z.array(z.enum(TAGS)).describe("What kind of change it is").meta({ examples: [["new"]] }),
     body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
     content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
+    markdown: z
+      .string()
+      .optional()
+      .describe(
+        "Its text as Markdown, its images as lasting links: to change it, edit this and send it to changelog.update as `markdown`, or one section of it to changelog.editSection; an image sent back by its link keeps its size and alignment, and a video's link stays its player. On one entry, not in changelog.list",
+      )
+      .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu."] }),
     cover: z
       .object({
         id: z.string().describe("The upload's id").meta({ examples: ["cm3k9q2xv0001abcd1234efgh"] }),
@@ -133,6 +140,10 @@ const entryOutput = z
     reactions: reactionsOutput,
     url: z.string().describe("Its page on the portal").meta({ examples: ["https://feedback.example.com/changelog/7"] }),
     createdAt: z.string().describe("When it was written").meta({ examples: ["2026-11-01T14:30:00.000Z"] }),
+    updatedAt: z
+      .string()
+      .describe("When it last changed: sent to changelog.update as `expectedUpdatedAt`, the edit is saved only if nothing changed since")
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
   })
   .meta({ id: "ChangelogEntry", description: "An entry in the project's changelog" });
 
@@ -156,9 +167,10 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-/** An entry for the API; `counts` when several entries' reactions were read at once. */
+/** An entry for the API; `counts` when several entries' reactions were read at once (a list: its entries go without their Markdown). */
 async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
+  const text = displayDoc(entry);
   return {
     number: entry.number,
     title: entry.title,
@@ -170,7 +182,9 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
     body: entry.body,
-    content: displayDoc(entry),
+    content: text,
+    /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
+    ...(!counts && { markdown: toMarkdown(text, { mediaUrls: lastingMediaUrls(text) }) }),
     /** The featured image (cover): a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
     // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
@@ -181,6 +195,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     reactions,
     url: `${portal}/changelog/${entry.number}`,
     createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
   };
 }
 
@@ -291,8 +306,15 @@ async function coverId(projectId: string, actor: Actor, cover: string | null | u
 /**
  * Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the
  * same limits. `beforeCopying` (a cover's copy) runs once the text is known to be fine, before Markdown's images are copied.
+ * `place` puts Markdown's blocks where they go in the text there is (one section's place, or its end).
  */
-async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor, beforeCopying: () => Promise<void>) {
+async function entryText(
+  input: { body?: string; content?: unknown; markdown?: string },
+  projectId: string,
+  actor: Actor,
+  beforeCopying: () => Promise<void>,
+  place?: (blocks: NonNullable<Doc["content"]>) => Doc,
+) {
   const fromMarkdown = input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "");
   if (fromMarkdown) {
     const html = await markdownToContent("changelog", input.markdown!, {
@@ -304,7 +326,7 @@ async function entryText(input: { body?: string; content?: unknown; markdown?: s
     if ("error" in html) {
       throw new OperationError(400, "invalid_content", html.error);
     }
-    input = { content: html.doc };
+    input = { content: place ? place(html.doc.content ?? []) : html.doc };
   }
   const text = await readContent("changelog", input, { projectId, maxLength: MAX_ENTRY_LENGTH });
   if (text.error !== undefined) {
@@ -314,6 +336,67 @@ async function entryText(input: { body?: string; content?: unknown; markdown?: s
     await beforeCopying();
   }
   return text;
+}
+
+/**
+ * Where an edit of part of the text puts its Markdown (changelog.editSection's `section` or `append`): in that section's
+ * place, heading and all (`replaced`: what was there), or after everything; undefined for an edit of the whole text. They need `markdown`, one or the
+ * other, and a section that's there.
+ */
+type Blocks = NonNullable<Doc["content"]>;
+
+/**
+ * Markdown read back from an entry (changelog.get) can't say an image's size and alignment, and writes a video as a
+ * link named "Video" to its page (an entry's videos are YouTube's, Vimeo's or Loom's: uploaded ones are articles'). Sent back, an image the text already has keeps the size
+ * and alignment it has there, and such a link to a video the text has is that video's player again: the round trip
+ * changes only what was edited. A video only as a block of its own, where the Markdown wrote it: inside a list item,
+ * say, the link stays a link (a video can't go there). `replaced` is what the Markdown takes the place of (the whole
+ * text, or the one section): an image there more than once keeps each one's own layout, in the order they come
+ * (Markdown names them alike, so their order is all that tells them apart). One brought in from elsewhere in the text
+ * (an appended copy, another section's) takes the layout it first has there.
+ */
+function keepingMedia(whole: Blocks, replaced: Blocks, added: Blocks): Blocks {
+  const videos = new Map<string, Blocks[number]>();
+  const layoutsIn = (blocks: Blocks) => {
+    const images = new Map<unknown, Record<string, unknown>[]>();
+    blocks.forEach(function read(node: Blocks[number]) {
+      if (node.type === "image" && node.attrs) {
+        images.set(node.attrs.mediaId, [...(images.get(node.attrs.mediaId) ?? []), node.attrs]);
+      } else if (node.type === "video" && node.attrs && isVideo(node.attrs)) {
+        videos.set(videoPageUrl(node.attrs), node);
+      }
+      node.content?.forEach(read);
+    });
+    return images;
+  };
+  const [images, elsewhere] = [layoutsIn(replaced), layoutsIn(whole)];
+  const sized = (node: Blocks[number]): Blocks[number] => {
+    const layouts = node.type === "image" ? images.get(node.attrs?.mediaId) : undefined;
+    // Each time it comes, the next one's; the last one's from then on.
+    const had = layouts ? (layouts.length > 1 ? layouts.shift()! : layouts[0]) : node.type === "image" ? elsewhere.get(node.attrs?.mediaId)?.[0] : undefined;
+    return had ? { ...node, attrs: { ...node.attrs, width: had.width, align: had.align } } : node.content ? { ...node, content: node.content.map(sized) } : node;
+  };
+  return added.map((node) => {
+    // A paragraph that's nothing but toMarkdown's link for a video.
+    const [only, ...rest] = node.type === "paragraph" ? (node.content ?? []) : [];
+    const link = rest.length === 0 && only?.type === "text" && only.text === "Video" && only.marks?.length === 1 && only.marks[0]!.type === "link" && only.marks[0]!.attrs?.href;
+    return (typeof link === "string" && videos.get(link)) || sized(node);
+  });
+}
+
+function partOfText(entry: { content: unknown; body: string }, input: { markdown?: string; content?: unknown; section?: number | string; append?: boolean }) {
+  if (input.section === undefined && !input.append) {
+    return undefined;
+  }
+  const blocks = displayDoc(entry).content ?? [];
+  const range = input.section === undefined ? { start: blocks.length, end: blocks.length } : sectionRange(blocks, input.section);
+  if (!range) {
+    throw new OperationError(400, "no_section", `There's no section ${typeof input.section === "string" ? `“${input.section}”` : input.section}`);
+  }
+  return {
+    replaced: blocks.slice(range.start, range.end),
+    place: (added: Blocks): Doc => ({ type: "doc", content: [...blocks.slice(0, range.start), ...added, ...blocks.slice(range.end)] }),
+  };
 }
 
 /**
@@ -511,16 +594,7 @@ export const createChangelogEntry = defineOperation({
   },
 });
 
-export const updateChangelogEntry = defineOperation({
-  name: "changelog.update",
-  title: "Update a changelog entry",
-  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
-  method: "PATCH",
-  path: "/changelog/{number}",
-  scope: "write",
-  access: "team",
-  errors: [409, 503],
-  input: z.object({
+const updateInput = z.object({
     number: entryNumber,
     title: fields.title.optional(),
     body: fields.body,
@@ -534,19 +608,48 @@ export const updateChangelogEntry = defineOperation({
     expectedUpdatedAt: z.iso
       .datetime()
       .optional()
-      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the `expectedUpdatedAt` changelog.rewrite returns")
+      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt`, or the `expectedUpdatedAt` changelog.rewrite returns")
       .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
-  }),
+  });
+
+export const updateChangelogEntry = defineOperation({
+  name: "changelog.update",
+  title: "Update a changelog entry",
+  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
+  method: "PATCH",
+  path: "/changelog/{number}",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: updateInput,
   output: entryOutput.describe("The entry"),
   example: { tags: ["new", "improved"] },
-  run: async ({ actor, projectId }, input) => {
+  run: (context, input) => saveEntry(context, input),
+});
+
+type EntryEdit = z.infer<typeof updateInput> & {
+  /** The one section `markdown` replaces (changelog.editSection), by its heading or number. */
+  section?: number | string;
+  /** `markdown` goes at the end of the text (changelog.editSection). */
+  append?: boolean;
+};
+
+/** An edit of an entry: changelog.update's, or changelog.editSection's of part of its text. */
+async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string }, input: EntryEdit) {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, input.number);
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
+    // Part of the text only: Markdown for one section, or to add at its end. The rest is the text as it's read here,
+    // so it's saved only if the entry hasn't changed meanwhile (as with `expectedUpdatedAt`, which it stands in for).
+    const part = partOfText(entry, input);
+    const expectedUpdatedAt = input.expectedUpdatedAt ?? (part ? entry.updatedAt.toISOString() : undefined);
+    // Markdown, the whole text's or a part's: what it can't say about the images and videos it takes the place of is kept.
+    const whole = displayDoc(entry).content ?? [];
+    const place = (added: Blocks): Doc => (part ? part.place(keepingMedia(whole, part.replaced, added)) : { type: "doc", content: keepingMedia(whole, whole, added) });
     // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
-    if (input.expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+    if (expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
       throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
     }
     const posts = input.posts && (await postIds(projectId, input.posts));
@@ -557,7 +660,7 @@ export const updateChangelogEntry = defineOperation({
     const copyCover = async () => {
       cover = await coverId(projectId, actor, input.cover);
     };
-    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor, copyCover) : null;
+    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor, copyCover, place) : null;
     if (!text) {
       await copyCover();
     }
@@ -572,11 +675,11 @@ export const updateChangelogEntry = defineOperation({
             input.posts!,
           );
         }
-        if (input.expectedUpdatedAt) {
+        if (expectedUpdatedAt) {
           // Locked until this commits, so a save in between can't slip past the check.
           const [now] = await tx.$queryRaw<{ updatedAt: Date }[]>`
             SELECT "updatedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
-          if (now?.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+          if (now?.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
             throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
           }
         }
@@ -602,6 +705,45 @@ export const updateChangelogEntry = defineOperation({
       }),
     );
     return entryView(updated, portal);
+}
+
+export const editChangelogSection = defineOperation({
+  name: "changelog.editSection",
+  title: "Change one section of an entry",
+  summary:
+    "Replace one section of an entry's text with Markdown, or add Markdown at its end; the rest of the text stays as it is. Saved only if the entry hasn't changed since it was read (a 409 otherwise)",
+  method: "POST",
+  path: "/changelog/{number}/section",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: z.object({
+    number: entryNumber,
+    markdown: z
+      .string()
+      // As changelog.update's: its markup counts too, and the text it makes is held to the entry's limit.
+      .max(MAX_ENTRY_LENGTH * 2)
+      .describe("The section's new text as Markdown, its heading included; or the text to add. Images are copied in as on changelog.update; the entry's own, by the links its `markdown` gives, stay the same uploads")
+      .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu, any time of day."] }),
+    section: z
+      .union([z.number().int().min(0), z.string().trim().min(1).max(200)])
+      .optional()
+      .describe("The section to replace, by its heading or its number (1 for the first heading, 0 for the text before it): it runs to the next heading at its level or above. Without it, send `append`")
+      .meta({ examples: ["Dark mode"] }),
+    append: z.boolean().optional().describe("Add the Markdown at the end of the text instead of replacing a section").meta({ examples: [false] }),
+    expectedUpdatedAt: z.iso
+      .datetime()
+      .optional()
+      .describe("Save only if the entry hasn't changed since this (its `updatedAt` when you read it); without it, since this request read it")
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
+  }),
+  output: entryOutput.describe("The entry, with the section changed"),
+  example: { section: "Dark mode", markdown: "## Dark mode\n\nSwitch themes from your profile menu, any time of day." },
+  run: (context, input) => {
+    if ((input.section === undefined) === (input.append !== true)) {
+      throw new OperationError(400, "invalid_input", "Send `section` or `append: true`, one of them");
+    }
+    return saveEntry(context, input);
   },
 });
 

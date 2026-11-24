@@ -3,12 +3,15 @@ import { enqueue, historySince, inSomePlansHistory, visibleConversations } from 
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
-import { subjectFrom } from "@/lib/format";
+import { rowLine, subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 
 import { attachmentLinks, checkUploads, claimUploads } from "../attachments";
+import { conversationReads } from "../conversation-reads";
 import { emitEvent } from "../events";
+import { conversationCompanies } from "../inbox-companies";
 import { notifyInbox } from "../live";
+import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
@@ -78,6 +81,39 @@ const conversationFields = {
   createdAt: at("When it started"),
   url: z.string().describe("Its page in Tuti's inbox").meta({ examples: ["https://tuti.example.com/app/acme/inbox/12"] }),
 };
+
+/** What the Inbox shows of a conversation beyond its own fields: in conversations.list and conversations.get. */
+const inboxFields = {
+  company: z
+    .string()
+    .nullable()
+    .describe("The company they're at, as your app says (their `company` property; for someone known by a verified address, that of your user with it); null when it says none")
+    .meta({ examples: ["Acme"] }),
+  unread: z
+    .boolean()
+    .describe("Whether the user has written since the teammate asking last read it (conversations.markRead); for an API key, the teammate who created it")
+    .meta({ examples: [true] }),
+};
+
+/** Whether a message is the asking teammate's own: the Inbox says "You" for it, whoever else has their name. */
+const fromYou = z
+  .boolean()
+  .describe("Whether the teammate asking wrote it; for an API key, the teammate who created it")
+  .meta({ examples: [false] });
+
+const latestMessageOutput = z
+  .object({
+    author: z.enum(["user", "team", "ai", "tuti"]).describe("Who wrote it").meta({ examples: ["user"] }),
+    name: z.string().nullable().describe("The teammate who wrote it; null for anyone else's").meta({ examples: [null] }),
+    fromYou,
+    fromAddress: z.string().nullable().describe("Someone else on the email thread (a Cc'd colleague, say) wrote it: the address they wrote from, or `Deleted user` once they're erased. Null for the conversation's own person, and for messages that didn't come by email").meta({ examples: [null] }),
+    line: z
+      .string()
+      .nullable()
+      .describe("Its first line, up to 140 characters, as the Inbox's list shows it under the subject; null when it only says what the subject does")
+      .meta({ examples: ["The export button does nothing on the reports page."] }),
+  })
+  .meta({ id: "ConversationLatestMessage", description: "A conversation's latest message (never a note), as the Inbox's list shows it" });
 
 const matchOutput = z
   .object({
@@ -245,7 +281,7 @@ export async function findConversation(projectId: string, number: number, { hidd
   const history = hidden ? null : await historySince(projectId);
   const conversation = await prisma.conversation.findUnique({
     where: { projectId_number: { projectId, number }, AND: [visibleConversations(history)] },
-    select: { ...conversationSelect, userId: true },
+    select: { ...conversationSelect, userId: true, visitorHash: true },
   });
   if (!conversation) {
     const past = history && (await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { activeAt: true, updatedAt: true } }));
@@ -264,8 +300,89 @@ export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
   OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }, { status: "CLOSED" }, { spam: true }],
 });
 
-/** The team member writing: the signed-in one, or for an API key, the one who created it. */
+/** The team member writing or looking: the signed-in one, or for an API key, the one who created it. */
 const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+
+/** The Inbox's views, in its order (what needs an answer first, then the rest), each by its name there. */
+export const INBOX_VIEWS = {
+  open: "Needs reply",
+  mine: "Mine",
+  unassigned: "Unassigned",
+  waiting: "Waiting on user",
+  snoozed: "Snoozed",
+  closed: "Closed",
+  spam: "Spam",
+} as const;
+
+export type InboxView = keyof typeof INBOX_VIEWS;
+const VIEW_NAMES = Object.keys(INBOX_VIEWS) as [InboxView, ...InboxView[]];
+
+/**
+ * A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). With
+ * `since` (historySince), closed ones from before it are past the plan's history: in no view. Mine is `userId`'s.
+ */
+export function viewWhere(view: InboxView, projectId: string, userId: string, since: Date | null = null): Prisma.ConversationWhereInput {
+  const now = new Date();
+  const filters: Record<InboxView, Prisma.ConversationWhereInput> = {
+    open: { spam: false, status: "OPEN", ...awake(now) },
+    mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" }, ...awake(now) },
+    unassigned: { spam: false, assigneeId: null, status: "OPEN", ...awake(now) },
+    waiting: { spam: false, status: "WAITING", ...awake(now) },
+    // Closed is done with, snoozed or not (a snooze left on one, by a release from before, doesn't hide it).
+    snoozed: { spam: false, status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
+    closed: { spam: false, status: "CLOSED" },
+    spam: { spam: true },
+  };
+  return { AND: [filters[view], visibleConversations(since)], projectId };
+}
+
+/** How many conversations each view has, in the views' order: the Inbox's numbers beside them, and conversations.views'. */
+export const viewCounts = (projectId: string, userId: string, since: Date | null) =>
+  Promise.all(VIEW_NAMES.map((view) => prisma.conversation.count({ where: viewWhere(view, projectId, userId, since) })));
+
+/**
+ * What the Inbox says of these conversations (ids) beyond their own fields, for the team member looking (`userId`): the
+ * company their person is at, and whether they've written since that member read it. By conversation id.
+ */
+async function inboxDetails(projectId: string, userId: string, ids: string[]) {
+  const rows = await prisma.conversation.findMany({
+    where: { projectId, id: { in: ids } },
+    select: { id: true, userId: true, email: true, emailVerified: true, user: { select: { email: true, emailVerified: true, ssoIdentity: { select: { properties: true } } } } },
+  });
+  const [companies, reads] = await Promise.all([conversationCompanies(projectId, rows), conversationReads(ids, userId)]);
+  return new Map(ids.map((id) => [id, { company: companies.get(id) ?? null, unread: reads.get(id)?.unread ?? false }]));
+}
+
+export const listInboxViews = defineOperation({
+  name: "conversations.views",
+  title: "List the Inbox's views",
+  summary:
+    "List the Inbox's views with how many conversations each has now, as Tuti's app shows them beside its list. conversations.list's `view` lists one's conversations. Mine is the signed-in teammate's; an API key's is the teammate who created it.",
+  method: "GET",
+  path: "/inbox/views",
+  scope: "read",
+  access: "team",
+  input: z.object({}),
+  output: z
+    .object({
+      views: z
+        .array(
+          z
+            .object({
+              view: z.enum(VIEW_NAMES).describe("The view, as conversations.list's `view` takes it").meta({ examples: ["open"] }),
+              title: z.string().describe("Its name in Tuti's app").meta({ examples: ["Needs reply"] }),
+              count: z.number().int().describe("How many conversations are in it now").meta({ examples: [4] }),
+            })
+            .meta({ id: "InboxView", description: "One of the Inbox's views, with how many conversations it has" }),
+        )
+        .describe("The views, in the Inbox's order: what needs a reply first"),
+    })
+    .describe("The Inbox's views and their counts"),
+  run: async ({ actor, projectId }) => {
+    const counts = await viewCounts(projectId, teamMemberId(actor), await historySince(projectId));
+    return { views: VIEW_NAMES.map((name, i) => ({ view: name, title: INBOX_VIEWS[name], count: counts[i]! })) };
+  },
+});
 
 /** A team member by their email, for assigning. */
 async function teamMemberByEmail(projectId: string, email: string) {
@@ -288,8 +405,8 @@ const likeText = (q: string) => q.replace(/[\\%_]/g, "\\$&");
 /**
  * The conversations a search for `q` finds, whatever the case: the one with that number (`12` or `#12`), and those with
  * the text in their subject, in who they're with as the Inbox shows them (conversationPerson's name and email; their
- * company, conversationCompanies'), or in a message or note. For the team only: notes are theirs. The trigram index on
- * messages' text answers the last (its project's messages alone under three characters).
+ * company, conversationCompanies'), or in a message or note. For the team only: notes are theirs. The index of a
+ * project's messages by their text's trigrams answers the last (the project's messages alone under three characters).
  * ponytail: an address-linked company is found through at most 1,000 of the project's users at companies with the text,
  * any of those sharing the address (the Inbox shows the oldest one's); join conversations to identities in SQL if a
  * project outgrows that.
@@ -371,7 +488,7 @@ export async function matchedMessages(ids: string[], q: string) {
 export const listConversations = defineOperation({
   name: "conversations.list",
   title: "List conversations",
-  summary: "List conversations, latest message first, a page at a time, or search them with `q`. Spam is left out unless asked for.",
+  summary: "List conversations, latest message first, a page at a time: one of the Inbox's views with `view`, or search them with `q`. Spam is left out unless asked for.",
   method: "GET",
   path: "/conversations",
   scope: "read",
@@ -387,6 +504,13 @@ export const listConversations = defineOperation({
         "Only those with this text, whatever the case, in their subject, their person's name, email or company, or a message or note; a number (`12` or `#12`) finds that conversation too. With the other filters: every status unless `status` says one",
       )
       .meta({ examples: ["refund"] }),
+    view: z
+      .enum(VIEW_NAMES)
+      .optional()
+      .describe(
+        "Only those in this view of the Inbox, as conversations.views counts them: open (needs a reply), mine (assigned to the signed-in teammate, or to whoever created the API key; not closed), unassigned (and open), waiting (on the user), snoozed, closed or spam. Snoozed ones are only in snoozed. It decides spam: `spam` isn't read with it",
+      )
+      .meta({ examples: ["open"] }),
     status: z.enum(CONVERSATION_STATUSES).optional().describe("Only those with this status").meta({ examples: ["open"] }),
     assignee: z
       .union([z.literal("none"), z.email()])
@@ -406,6 +530,8 @@ export const listConversations = defineOperation({
           z
             .object({
               ...conversationFields,
+              ...inboxFields,
+              latestMessage: latestMessageOutput.nullable().describe("Its latest message, as the Inbox's list shows it; null when it has none but notes"),
               match: matchOutput
                 .nullable()
                 .describe("With `q`: the newest message or note with the text; null when none has it (its number, subject or person does), and without `q`"),
@@ -414,40 +540,59 @@ export const listConversations = defineOperation({
         )
         .describe("The conversations, latest message first"),
       nextCursor: z.string().nullable().describe("The next page's `cursor`; null on the last page").meta({ examples: ["25"] }),
+      total: z.number().int().describe("How many conversations the filters find in all, on every page").meta({ examples: [42] }),
     })
     .describe("A page of conversations"),
-  example: { status: "open", assignee: "none", limit: 10 },
-  run: async ({ projectId }, input) => {
+  example: { view: "open", limit: 10 },
+  run: async ({ actor, projectId }, input) => {
     const assigneeId =
       input.assignee === undefined || input.assignee === "none" ? null : await teamMemberByEmail(projectId, input.assignee);
+    const me = teamMemberId(actor);
+    const history = await historySince(projectId);
+    const where: Prisma.ConversationWhereInput = {
+      projectId,
+      ...(!input.view && { spam: input.spam }),
+      ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
+      ...(input.assignee !== undefined && { assigneeId }),
+      ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
+      // With the status asked for, if any (each a condition of its own, so neither takes the other's place). Not those
+      // past the plan's history. A view is the Inbox's own filter (viewWhere), so the two list the same.
+      AND: [
+        input.view ? viewWhere(input.view, projectId, me, history) : visibleConversations(history),
+        ...(input.q ? [await conversationsMatching(projectId, input.q)] : []),
+        ...(input.snoozed === true ? [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" as const } }, { spam: false }] : []),
+        ...(input.snoozed === false ? [awake()] : []),
+      ],
+    };
     // ponytail: offset cursors, like posts.list.
-    const rows = await prisma.conversation.findMany({
-      where: {
-        projectId,
-        spam: input.spam,
-        ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
-        ...(input.assignee !== undefined && { assigneeId }),
-        ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
-        // With the status asked for, if any (each a condition of its own, so neither takes the other's place). Not those
-        // past the plan's history.
-        AND: [
-          visibleConversations(await historySince(projectId)),
-          ...(input.q ? [await conversationsMatching(projectId, input.q)] : []),
-          ...(input.snoozed === true ? [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" as const } }, { spam: false }] : []),
-          ...(input.snoozed === false ? [awake()] : []),
-        ],
-      },
-      orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }],
-      skip: input.cursor,
-      take: input.limit + 1,
-      select: conversationSelect,
-    });
+    const [rows, total] = await Promise.all([
+      prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], skip: input.cursor, take: input.limit + 1, select: conversationSelect }),
+      prisma.conversation.count({ where }),
+    ]);
     const slug = await projectSlug(projectId);
     const page = rows.slice(0, input.limit);
-    const matches = input.q ? await matchedMessages(page.map((row) => row.id), input.q) : null;
+    const ids = page.map((row) => row.id);
+    const [matches, latest, details] = await Promise.all([input.q ? matchedMessages(ids, input.q) : null, latestMessages(ids), inboxDetails(projectId, me, ids)]);
     return {
-      conversations: page.map((row) => ({ ...view(row, slug), match: matches?.get(row.id) ?? null })),
+      conversations: page.map((row) => {
+        const message = latest.get(row.id);
+        return {
+          ...view(row, slug),
+          ...details.get(row.id)!,
+          latestMessage: message
+            ? {
+                author: message.author.toLowerCase(),
+                name: message.author === "TEAM" ? message.name : null,
+                fromYou: message.author === "TEAM" && message.authorId === me,
+                fromAddress: message.fromAddress,
+                line: rowLine(row.subject, message.body) ?? null,
+              }
+            : null,
+          match: matches?.get(row.id) ?? null,
+        };
+      }),
       nextCursor: rows.length > input.limit ? String(input.cursor + input.limit) : null,
+      total,
     };
   },
 });
@@ -464,16 +609,36 @@ export const getConversation = defineOperation({
   output: z
     .object({
       ...conversationFields,
+      ...inboxFields,
+      onlineUntil: at("Till when they count as online: they have the widget's Messages open, or had in the last 2 minutes; null when they aren't").nullable(),
       posts: z.array(linkedPostOutput).describe("The posts it's linked to, the first linked first"),
-      messages: z.array(messageOutput).describe("Its messages and notes, oldest first"),
+      messages: z
+        .array(
+          messageOutput.extend({
+            fromYou,
+            fromAddress: z
+              .string()
+              .nullable()
+              .describe("Someone else on the email thread (a Cc'd colleague, say) wrote it: the address they wrote from, or `Deleted user` once they're erased. Null for the conversation's own person, and for messages that didn't come by email")
+              .meta({ examples: [null] }),
+            seenAt: at("When the user saw it in the widget; null when they haven't, and for what isn't the team's reply").nullable(),
+            emailStatus: z
+              .enum(["sent", "delivered", "bounced", "complained", "failed"])
+              .nullable()
+              .describe("How emailing the team's reply went: sent, delivered, bounced, complained (they marked it as spam) or failed; null when it wasn't emailed, or not yet")
+              .meta({ examples: ["delivered"] }),
+            emailError: z.string().nullable().describe("Why it bounced or failed, when the mail server said; null otherwise").meta({ examples: [null] }),
+          }),
+        )
+        .describe("Its messages and notes, oldest first"),
     })
     .describe("The conversation"),
-  run: async ({ projectId }, { number }) => {
+  run: async ({ actor, projectId }, { number }) => {
     const conversation = await findConversation(projectId, number);
     const messages = await prisma.conversationMessage.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "asc" },
-      select: messageSelect,
+      select: { ...messageSelect, authorId: true, fromAddress: true, seenAt: true, emailStatus: true, emailError: true },
     });
     // Each attachment with a link to it, signed for a while: images to show, other files saved under their name.
     const links = new Map(
@@ -486,12 +651,24 @@ export const getConversation = defineOperation({
         )
       ).map((link) => [link.id, link.url]),
     );
+    const online = conversation.userId || conversation.visitorHash ? await onlineUntil(projectId, presenceKey(conversation)) : null;
+    const me = teamMemberId(actor);
     return {
       ...view(conversation, await projectSlug(projectId)),
+      ...(await inboxDetails(projectId, me, [conversation.id])).get(conversation.id)!,
+      onlineUntil: online,
       posts: await linkedPosts(conversation.id),
       messages: messages.map((message) => {
         const shown = messageView(message);
-        return { ...shown, attachments: shown.attachments.map((a) => ({ ...a, url: links.get(a.id) ?? null })) };
+        return {
+          ...shown,
+          attachments: shown.attachments.map((a) => ({ ...a, url: links.get(a.id) ?? null })),
+          fromYou: message.author === "TEAM" && message.authorId === me,
+          fromAddress: message.fromAddress,
+          seenAt: message.seenAt,
+          emailStatus: message.emailStatus?.toLowerCase() ?? null,
+          emailError: message.emailError,
+        };
       }),
     };
   },

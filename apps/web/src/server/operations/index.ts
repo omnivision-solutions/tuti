@@ -9,6 +9,7 @@ import {
   getConversation,
   linkConversationPost,
   listConversations,
+  listInboxViews,
   markConversationRead,
   replyToConversation,
   unlinkConversationPost,
@@ -21,6 +22,7 @@ import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
   createChangelogEntry,
+  editChangelogSection,
   deleteChangelogEntry,
   draftChangelogEntry,
   rewriteChangelogEntry,
@@ -90,6 +92,7 @@ const all = [
   updateProject,
   updatePropertyFormats,
   listTeam,
+  listInboxViews,
   listConversations,
   markConversationRead,
   getConversation,
@@ -117,6 +120,7 @@ const all = [
   markChangelogSeen,
   createChangelogEntry,
   updateChangelogEntry,
+  editChangelogSection,
   draftChangelogEntry,
   rewriteChangelogEntry,
   publishChangelogEntry,
