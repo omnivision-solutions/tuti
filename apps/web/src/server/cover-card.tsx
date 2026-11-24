@@ -85,10 +85,20 @@ export const coverDesigns = (content: Pick<CoverContent, "headings" | "image">):
 /** The design picked when nobody picks: the entry's image where it has one, else its title on the portal's colour. */
 export const automaticDesign = (content: Pick<CoverContent, "image">): CoverDesign => (content.image ? "screenshot" : "title");
 
-/** The cover as a PNG, `width` pixels wide (the stored one at its full size, a preview smaller). */
-export async function drawCover(site: Site, content: CoverContent, design: CoverDesign, width: number = COVER_SIZE.width): Promise<Buffer> {
+/** The entry's image couldn't be read for the Screenshot design it was asked for by name (storage's own trouble: try again). */
+export class CoverPictureUnread extends Error {}
+
+/**
+ * The cover as a PNG, `width` pixels wide (the stored one at its full size, a preview smaller). `asAsked`: the design
+ * was asked for by name, so Screenshot whose image can't be read is refused (CoverPictureUnread) rather than drawn as
+ * another design.
+ */
+export async function drawCover(site: Site, content: CoverContent, design: CoverDesign, width: number = COVER_SIZE.width, { asAsked = false } = {}): Promise<Buffer> {
   const dark = site.brand.colorScheme === "dark";
   const [logo, picture] = await Promise.all([logoImage(dark ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo), design === "screenshot" ? pictureOf(content.image) : null]);
+  if (design === "screenshot" && !picture && asAsked) {
+    throw new CoverPictureUnread();
+  }
   // Its image can't be read after all: the title's design, not a frame with nothing in it.
   const drawn = design === "screenshot" && !picture ? "title" : design;
   const svg = await satori(coverElement(site, content, drawn, logo, picture), { ...COVER_SIZE, fonts: await fonts() });

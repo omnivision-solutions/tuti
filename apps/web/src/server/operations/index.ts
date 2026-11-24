@@ -21,6 +21,7 @@ import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
+  composeChangelogCover,
   createChangelogEntry,
   editChangelogSection,
   deleteChangelogEntry,
@@ -121,6 +122,7 @@ const all = [
   createChangelogEntry,
   updateChangelogEntry,
   editChangelogSection,
+  composeChangelogCover,
   draftChangelogEntry,
   rewriteChangelogEntry,
   publishChangelogEntry,

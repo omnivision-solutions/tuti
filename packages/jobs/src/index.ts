@@ -32,7 +32,7 @@ export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featur
 export { contentBudget, FEATUREBASE_ICONS } from "./import-docs";
 export { adminMember, contactDetails, contactUsers, continueImport, failStaleImports, handOverOnVerified, handOverPlaceholders, type ImportCounts, importJob, IMPORT_KEY, IMPORT_PARTS, IMPORT_RUN, IMPORT_WAITS, importsSettled, importStale, importStep, importDue, loadAdmins, nextStep, resumeImport, type StepPage, tally, waitBefore } from "./imports";
 export { CHANGELOG_PAGE } from "./import-changelog";
-export { uploadImage, UPLOADS_PER_HOUR_TEAM } from "./import-media";
+export { storeImage, uploadImage, UPLOADS_PER_HOUR_TEAM } from "./import-media";
 export { markdownToContent } from "./markdown-content";
 export { type ImportPart, IMPORT_SOURCES, type ImportSourceDefinition } from "./import-sources";
 export { crawlBudget, crawlPace, SiteError } from "./import-sources/website";

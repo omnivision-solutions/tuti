@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { billingFile, configFile, type DnsFake, type ModelFake, type SiteFake, startDnsFake, startModelFake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, configFile, type DnsFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
@@ -50,6 +50,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
   "changelog.editSection": () => ({ number: 1, append: true, markdown: "Added by the matrix." }),
+  "changelog.composeCover": () => ({ number: 1 }),
   "changelog.draft": () => ({ number: 2 }),
   "changelog.rewrite": () => ({ number: 2, mode: "shorten" }),
   "changelog.publish": () => ({ number: 1 }),
@@ -215,6 +216,7 @@ let dns: DnsFake;
 let site: SiteFake;
 let stripe: StripeFake;
 let ses: SesFake;
+let s3: S3Fake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -237,6 +239,7 @@ beforeAll(async () => {
     vi.stubEnv(name, value);
   }
   ses = await startSesFake();
+  s3 = await startS3Fake();
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -250,7 +253,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close()]));
+afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close(), s3.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -543,6 +546,10 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", operation.name.startsWith("support.") || operation.name === "docs.escalate" ? "tuti.email" : "");
   for (const [name, value] of Object.entries(ses.env)) {
     vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
+  }
+  // Uploads, for the cover an entry's composed one is kept as.
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, operation.name === "changelog.composeCover" ? value : "");
   }
 
   // Another project's key: nothing of this project comes back, and nothing changes.
