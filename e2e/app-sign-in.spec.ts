@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 
 import { expect, test } from "./fixtures";
 
@@ -7,22 +7,22 @@ import { APP_URL } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
-test("the mobile app's emailed link hands the app a session for the API, and leaves the browser signed out", async ({ browser }, testInfo) => {
+test("the mobile app's emailed link sends the app a code it exchanges for a session on the API, and leaves the browser signed out", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const olive = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(olive, "Acme", slug);
 
-  // The app asks for a link, with a state it made up: no browser, its link scheme where a page's origin would be.
+  // The app asks for a link, with a state it made up and the challenge of a verifier it keeps: no browser, its link
+  // scheme where a page's origin would be.
   const ip = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
+  const post = (path: string, body: unknown) =>
+    fetch(`${APP_URL}/api/auth/app/${path}`, { method: "POST", headers: { "content-type": "application/json", "expo-origin": "tuti://", "x-forwarded-for": ip }, body: JSON.stringify(body) });
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
   const ask = async (state: string) => {
     const before = countEmailsTo(olive.email);
-    const asked = await fetch(`${APP_URL}/api/auth/app/sign-in-link`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "expo-origin": "tuti://", "x-forwarded-for": ip },
-      body: JSON.stringify({ email: olive.email, state }),
-    });
-    expect(asked.status).toBe(200);
+    expect((await post("sign-in-link", { email: olive.email, state, challenge })).status).toBe(200);
     return linkIn(await latestEmailTo(olive.email, { after: before, subject: /^Sign in to Tuti$/ }), `${APP_URL}/app/auth/app-link`);
   };
   const state = randomUUID();
@@ -55,15 +55,28 @@ test("the mobile app's emailed link hands the app a session for the API, and lea
   await checkpoint(phone, "opening");
   expect(`${handed.protocol}//${handed.host}`).toBe("tuti://sign-in");
   expect(handed.searchParams.get("state")).toBe(state);
+  // A code, and nothing of the session: whatever app the phone opens with it can't use it without the verifier.
+  expect([...handed.searchParams.keys()].sort()).toEqual(["code", "state"]);
+  const exchange = async (code: string | null, proof: string) => {
+    const response = await post("session", { code, verifier: proof });
+    return { status: response.status, body: (await response.json()) as { token?: string; cookie?: string } };
+  };
 
-  // What the app does with it: the session's token on the API, first for its projects, then in one of them.
-  const token = /session_token=([^;]+)/.exec(handed.searchParams.get("cookie") ?? "")![1]!;
+  // What the app does with it: the code and its verifier for the session, then the session's token on the API, first
+  // for its projects, then in one of them.
+  const session = await exchange(handed.searchParams.get("code"), verifier);
+  expect(session.status).toBe(200);
+  const { token } = session.body;
   const api = (path: string, headers: Record<string, string> = {}) => fetch(`${APP_URL}/api/v1${path}`, { headers: { authorization: `Bearer ${token}`, ...headers } });
   const projects = await api("/projects");
   expect(await projects.json()).toEqual({ projects: [{ slug, name: "Acme", role: "OWNER", openConversations: 0 }] });
   const inbox = await api("/conversations", { "tuti-project": slug });
   expect({ status: inbox.status, body: await inbox.json() }).toMatchObject({ status: 200, body: { conversations: [] } });
   expect((await api("/conversations")).status).toBe(400);
+
+  // The code worked once: again, even with the verifier, it's refused, and the session it gave is ended.
+  expect((await exchange(handed.searchParams.get("code"), verifier)).status).toBe(401);
+  expect((await api("/projects")).status).toBe(401);
 
   // The browser that opened the link isn't signed in: the session is the app's alone.
   await phone.goto("/app");
@@ -78,7 +91,7 @@ test("the mobile app's emailed link hands the app a session for the API, and lea
   // A browser already signed in to the web app (Olive's own) opens another link: the app gets its session, and the
   // browser stays signed in as it was.
   await olive.goto(await ask(randomUUID()));
-  expect((await open(olive)).searchParams.get("cookie")).toContain("session_token=");
+  expect((await exchange((await open(olive)).searchParams.get("code"), verifier)).status).toBe(200);
   await olive.goto("/app");
   await olive.waitForURL(new RegExp(`/app/${slug}`));
 });

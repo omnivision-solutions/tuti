@@ -13,7 +13,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
-import { APP_ORIGIN, appSignIn } from "./app-sign-in";
+import { APP_ORIGIN, appSignIn, keepAppSignInLink } from "./app-sign-in";
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -27,10 +27,11 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
   const link = metadata as SignInLinkMetadata;
   await prisma.signInLink.update({ where: { id: link.linkId }, data: { tokenHash: hashSecret(token) } });
   if ("app" in link) {
-    // The mobile app's (lib/app-sign-in.ts): opened on the app's host, from Tuti, and it hands the session to the app.
+    // The mobile app's (lib/app-sign-in.ts): opened on the app's host, from Tuti, and it sends the app that asked a
+    // code for the session. What the app asked with stays here, for as long as the link works: nothing of it is in the link.
+    await keepAppSignInLink(token, link.app, new Date(Date.now() + SIGN_IN_LINK_MINUTES * 60_000));
     const url = new URL("/app/auth/app-link", appUrl());
     url.searchParams.set("token", token);
-    url.searchParams.set("state", link.app);
     await sendEmail({ to: email, ...signInLinkEmail({ projectName: "Tuti", url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }) });
     return;
   }
@@ -361,7 +362,7 @@ export const auth = betterAuth({
     // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
     genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
     // The mobile app (lib/app-sign-in.ts): a sign-in it starts (Google, GitHub) or asks for (the emailed link) ends in
-    // the device's browser with a redirect to tuti://…, which carries the session's cookie for the app to keep.
+    // the device's browser with a redirect to tuti://…, which carries a code the app exchanges for the session.
     appSignIn(),
     nextCookies(),
   ],
