@@ -51,6 +51,19 @@ class FakeElement {
     this.children.push(child);
     return child;
   }
+  removeChild(child: FakeElement) {
+    this.children.splice(this.children.indexOf(child), 1);
+    child.parent = null;
+    return child;
+  }
+  get parentNode() {
+    return this.parent;
+  }
+  cloneNode() {
+    const copy = new FakeElement(this.tagName, this.page);
+    this.attributes.forEach((value, name) => copy.setAttribute(name, value));
+    return copy;
+  }
   replaceChild(child: FakeElement, old: FakeElement) {
     child.parent = this;
     this.children[this.children.indexOf(old)] = child;
@@ -71,6 +84,9 @@ class FakeElement {
   /** This element, its parent, and so on up. */
   ancestors(): FakeElement[] {
     return [this, ...(this.parent?.ancestors() ?? [])];
+  }
+  contains(element: unknown) {
+    return element instanceof FakeElement && element.ancestors().includes(this);
   }
   /** The launcher's name: what screen readers say, and its tooltip. */
   get accessibleName() {
@@ -247,6 +263,10 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
     },
     get button() {
       return page.body.children.find((child) => (child as FakeElement).tagName === "button") as FakeElement | undefined;
+    },
+    /** The popup's card for a new announcement, if it's showing. */
+    get popup() {
+      return page.body.children.find((child) => (child as FakeElement).getAttribute?.("role") === "region") as FakeElement | undefined;
     },
     get panel() {
       return page.body.children.find((child) => (child as FakeElement).id === "tuti-widget") as FakeElement;
@@ -1840,4 +1860,220 @@ test("on a phone, a native dialog of the page's opened over everything once the 
   // Closed: the panel is out of reach.
   expect(page.panel.hasAttribute("inert")).toBe(true);
   expect(dialog.hasAttribute("inert")).toBe(false);
+});
+
+/** The popup's buttons and text, by what they say. */
+function popupParts(popup: FakeElement) {
+  const all = (element: FakeElement): FakeElement[] => element.children.flatMap((child) => (child instanceof FakeElement ? [child, ...all(child)] : []));
+  const parts = all(popup);
+  return {
+    texts: parts.map((part) => part.textContent).filter(Boolean),
+    cover: parts.find((part) => part.tagName === "img"),
+    readMore: parts.find((part) => part.tagName === "button" && part.textContent === "Read more")!,
+    close: parts.find((part) => part.tagName === "button" && part.getAttribute("aria-label") === "Close")!,
+  };
+}
+
+const ANNOUNCED = {
+  latest: "2026-10-18T10:00:00.000Z",
+  now: "2026-10-18T12:00:00.000Z",
+  launcher: null,
+  announcement: { number: 7, title: "Dark mode", excerpt: "The app follows your system's theme now.", image: "https://app.tuti.example/api/media/m1/480.webp" },
+};
+/** This browser last loaded a page with the widget then. */
+const visitedAt = (at: string) => (page: FakePage) => page.stored.set("tuti:visit:acme", at);
+
+test("an announcement published since this browser's last visit pops up by the launcher: cover, title, excerpt, Read more and Close; it never takes focus", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  const focused = page.document.activeElement;
+  await settled();
+  const popup = page.popup!;
+  expect(popup.getAttribute("aria-label")).toBe("What's new");
+  const parts = popupParts(popup);
+  expect(parts.texts).toEqual(["Dark mode", "The app follows your system's theme now.", "Read more"]);
+  expect(parts.cover!.src).toBe("https://app.tuti.example/api/media/m1/480.webp");
+  // On the launcher's side, above it; after the launcher, so Tab reaches it next.
+  expect(popup.style).toMatchObject({ position: "fixed", bottom: "88px", right: "20px", left: "auto" });
+  expect(page.body.children.indexOf(popup)).toBeGreaterThan(page.body.children.indexOf(page.button));
+  expect(page.document.activeElement).toBe(focused);
+  // This page view is the last visit now: as when the answer was made (the server's clock; a browser may reuse an answer).
+  expect(page.stored.get("tuti:visit:acme")).toBe("2026-10-18T12:00:00.000Z");
+});
+
+test("no popup on a first visit, for an announcement from before the last visit (the dot still shows), or with the popup off", async () => {
+  const first = loadWidget({ latest: ANNOUNCED });
+  await settled();
+  expect(first.popup).toBeUndefined();
+  expect(first.stored.get("tuti:visit:acme")).toBe("2026-10-18T12:00:00.000Z");
+
+  const before = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-19T00:00:00.000Z") });
+  await settled();
+  expect(before.popup).toBeUndefined();
+  expect(before.Tuti.unseen()).toBe(true);
+  expect(before.button!.getAttribute("aria-label")).toBe("Feedback, new updates");
+
+  const off = loadWidget({ latest: LATEST, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(off.popup).toBeUndefined();
+});
+
+test("no popup for an announcement seen already (here or, for someone signed in, elsewhere), or with What's new turned off", async () => {
+  const here = loadWidget({ latest: ANNOUNCED, seenHere: "2026-10-18T10:00:00.000Z", before: visitedAt("2026-10-17T00:00:00.000Z") });
+  const elsewhere = loadWidget({ settings: { identify: token }, latest: ANNOUNCED, seen: "2026-10-19T00:00:00.000Z", before: visitedAt("2026-10-17T00:00:00.000Z") });
+  const hidden = loadWidget({ latest: { ...ANNOUNCED, hidden: ["whatsNew"] }, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect([here.popup, elsewhere.popup, hidden.popup]).toEqual([undefined, undefined, undefined]);
+});
+
+test("Close keeps the popup away for that entry in this browser, without marking it seen; focus goes to the launcher; a newer one can pop up", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  popupParts(page.popup!).close.click();
+  expect(page.popup).toBeUndefined();
+  expect(page.stored.get("tuti:popup:acme")).toBe("7");
+  expect(page.document.activeElement).toBe(page.button);
+  expect(page.Tuti.unseen()).toBe(true);
+  expect(page.stored.get("tuti:seen:acme")).toBeUndefined();
+
+  const again = loadWidget({ latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), p.stored.set("tuti:popup:acme", "7")) });
+  await settled();
+  expect(again.popup).toBeUndefined();
+  const newer = { ...ANNOUNCED, latest: "2026-10-20T10:00:00.000Z", announcement: { ...ANNOUNCED.announcement, number: 8, title: "Exports" } };
+  const next = loadWidget({ latest: newer, before: (p) => (visitedAt("2026-10-19T00:00:00.000Z")(p), p.stored.set("tuti:popup:acme", "7")) });
+  await settled();
+  expect(popupParts(next.popup!).texts[0]).toBe("Exports");
+});
+
+test("Close hides the popup for this page view even when the browser refuses storage writes", async () => {
+  const page = loadWidget({
+    latest: ANNOUNCED,
+    before: (p) => {
+      visitedAt("2026-10-17T00:00:00.000Z")(p);
+      (p.window.localStorage as { setItem: () => void }).setItem = () => {
+        throw new DOMException("Blocked", "SecurityError");
+      };
+    },
+  });
+  await settled();
+  popupParts(page.popup!).close.click();
+  expect(page.popup).toBeUndefined();
+});
+
+test("taken away under the keyboard (signed in, so it's checked elsewhere first), the popup leaves focus on the launcher", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, seenAfter: new Promise(() => {}), before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  popupParts(page.popup!).close.focus();
+  page.Tuti.identify(token);
+  await settled();
+  expect(page.popup).toBeUndefined();
+  expect(page.document.activeElement).toBe(page.button);
+});
+
+test("shown once is enough: a reload that reuses the app's answer (cached a minute) doesn't bring it back", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(page.popup).toBeDefined();
+  expect(page.stored.get("tuti:popup:acme")).toBe("7");
+  // The same answer again, and a last visit from before it, as a reload within the minute would have.
+  const reloaded = loadWidget({ latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), p.stored.set("tuti:popup:acme", "7")) });
+  await settled();
+  expect(reloaded.popup).toBeUndefined();
+});
+
+test("without an answer from the app, no visit is recorded: the last one still counts next time", async () => {
+  const page = loadWidget({ latest: null, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(page.stored.get("tuti:visit:acme")).toBe("2026-10-17T00:00:00.000Z");
+});
+
+test("Read more opens the panel at the entry and the popup is gone for good; it hides while the panel is open", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  page.Tuti.open();
+  expect(page.popup).toBeUndefined();
+  page.Tuti.close();
+  expect(page.popup).toBeDefined();
+  popupParts(page.popup!).readMore.click();
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=whats-new&entry=7");
+  expect(page.panel.style.display).toBe("block");
+  expect(page.stored.get("tuti:popup:acme")).toBe("7");
+  // Read, it's seen: the dot goes.
+  expect(page.Tuti.unseen()).toBe(false);
+  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-18T10:00:00.000Z");
+  page.Tuti.close();
+  expect(page.popup).toBeUndefined();
+});
+
+test("Read more from someone the page signs in is recorded for them, so their other devices know", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: ANNOUNCED, seen: null, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  popupParts(page.popup!).readMore.click();
+  await settled();
+  expect(page.seenRequests.at(-1)![1]).toMatchObject({ method: "POST", body: JSON.stringify({ at: "2026-10-18T10:00:00.000Z" }) });
+});
+
+test("a cover that doesn't load goes, and the title makes room for Close", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  const { cover, texts } = popupParts(page.popup!);
+  (cover!.onerror as () => void)();
+  const title = popupParts(page.popup!);
+  expect(title.cover).toBeUndefined();
+  const all = (element: FakeElement): FakeElement[] => element.children.flatMap((child) => (child instanceof FakeElement ? [child, ...all(child)] : []));
+  expect(all(page.popup!).find((part) => part.textContent === texts[0])!.style.paddingRight).toBe("28px");
+});
+
+test("signed in after the popup showed, it waits for what they've seen elsewhere, and doesn't come back if they've read it", async () => {
+  let answer = () => {};
+  const page = loadWidget({ latest: ANNOUNCED, seen: "2026-10-19T00:00:00.000Z", seenAfter: new Promise<void>((resolve) => (answer = resolve)), before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(page.popup).toBeDefined();
+  page.Tuti.identify(token);
+  expect(page.popup).toBeUndefined();
+  answer();
+  await settled();
+  await settled();
+  expect(page.popup).toBeUndefined();
+  expect(page.Tuti.unseen()).toBe(false);
+});
+
+test("no popup on the portal's changelog pages, where the announcement is already", async () => {
+  const location = { pathname: "/help/changelog/7", origin: "https://acme.com" };
+  const page = loadWidget({ attributes: { "data-on-portal": "/help" }, latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), (p.window.location = location)) });
+  await settled();
+  expect(page.popup).toBeUndefined();
+  const home = loadWidget({ attributes: { "data-on-portal": "/help" }, latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), (p.window.location = { ...location, pathname: "/help" })) });
+  await settled();
+  expect(home.popup).toBeDefined();
+  expect(home.popup!.id).toBe("tuti-popup");
+  // The portal goes to its changelog without reloading the script: the page changing takes it away.
+  (home.window.location as { pathname: string }).pathname = "/help/changelog";
+  home.mutated();
+  expect(home.popup).toBeUndefined();
+});
+
+test("no popup with the launcher hidden, inline or as a sidebar; on the left with a left launcher", async () => {
+  for (const attributes of [{ "data-hide-launcher": "" }, { "data-display": "inline" }, { "data-display": "sidebar" }] as Record<string, string>[]) {
+    const page = loadWidget({ attributes, latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+    await settled();
+    expect(page.popup).toBeUndefined();
+  }
+  const left = loadWidget({
+    latest: { ...ANNOUNCED, launcher: { label: "Help", color: null, textColor: null, position: "bottom-left", icon: "chat", iconUrl: null } },
+    before: visitedAt("2026-10-17T00:00:00.000Z"),
+  });
+  await settled();
+  expect(left.popup!.style).toMatchObject({ left: "20px", right: "auto" });
+});
+
+test("a page view told an older answer (reused by the browser) records the visit as of that answer, so an announcement published since still pops up next time", async () => {
+  // Told of "Faster search" only, by an answer made before "Dark mode" was published.
+  const stale = loadWidget({ latest: { latest: "2026-10-16T10:00:00.000Z", launcher: null, now: "2026-10-18T09:00:00.000Z" }, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(stale.popup).toBeUndefined();
+  const visit = stale.stored.get("tuti:visit:acme")!;
+  expect(visit).toBe("2026-10-18T09:00:00.000Z");
+  const next = loadWidget({ latest: ANNOUNCED, before: visitedAt(visit) });
+  await settled();
+  expect(next.popup).toBeDefined();
 });

@@ -248,6 +248,8 @@ model Project {
   widgetOnPortal        Boolean      @default(true)
   /// A new message in Messages goes to the docs' AI first, with "Ask a person" to pass it to the team.
   widgetAiFirst         Boolean      @default(true)
+  /// A new announcement pops up as a small card by the launcher (once per browser), on top of its dot.
+  widgetPopup           Boolean      @default(false)
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the

@@ -100,6 +100,33 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(appLauncher).toBeVisible();
 
+  // With the popup on (Settings → Widget), an announcement published since the last visit shows by the launcher: under
+  // the app's dialogs, above the launcher where it's raised over a phone's tab bar, and not in the Inbox. Every cloud
+  // journey shows this project's widget, so its settings and changelog stay as they are: this page alone is told of one.
+  await owner.route("**/api/widget/latest*", async (route) => {
+    const answer = await (await route.fetch()).json();
+    await route.fulfill({
+      json: { ...answer, latest: new Date().toISOString(), announcement: { number: 1, title: "Calendar sync is here", excerpt: "Your events, both ways.", image: null } },
+    });
+  });
+  await owner.evaluate((slug) => localStorage.setItem(`tuti:visit:${slug}`, "2000-01-01T00:00:00.000Z"), APP_WIDGET_SLUG);
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${APP_WIDGET_SLUG}/feedback`);
+  const popup = owner.locator("#tuti-popup");
+  await expect(popup).toBeVisible();
+  await expect(popup).toHaveCSS("z-index", "40");
+  await expect.poll(async () => (await popup.boundingBox())!.y + (await popup.boundingBox())!.height).toBeLessThanOrEqual((await appLauncher.boundingBox())!.y);
+  await checkpoint(owner, "app-widget-popup-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await sidebar.getByRole("link", { name: /^Inbox/ }).click();
+  await expect(owner).toHaveURL(/\/inbox/);
+  await expect(popup).toBeHidden();
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(popup).toBeVisible();
+  await popup.getByRole("button", { name: "Close" }).click();
+  await expect(popup).toHaveCount(0);
+  await owner.unroute("**/api/widget/latest*");
+
   // On, the app signs them in to the widget (Tuti.identify), as any app does.
   await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/sso`);
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
