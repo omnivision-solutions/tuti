@@ -1317,6 +1317,8 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   await team.reload();
   await team.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Publish “Dark mode is here”?");
+  // With the lines gone, its cover's designs are offered (another journey makes one): published as it is.
+  await dialog.getByRole("group", { name: "Cover" }).getByText("No cover", { exact: true }).click();
   await dialog.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
 });
