@@ -268,6 +268,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Someone else on the email (in Cc) shows as their address.
   const byName = (message: Message) =>
     message.author === "USER" ? (message.fromAddress ?? personName) : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
+  // The tool an imported message came from, by name.
+  const importedFrom = (message: Message) => (message.import ? IMPORT_SOURCES[message.import.source.toLowerCase() as ImportSourceKey].name : null);
   // A team reply's email, under it. Imported history was never emailed: no email status for it (docs/plan.md, Switching
   // from Featurebase), but the tool it came from.
   const emailed = (message: Message) =>
@@ -276,7 +278,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       : message.seenAt
         ? "Seen"
         : message.import
-          ? `Imported from ${IMPORT_SOURCES[message.import.source.toLowerCase() as ImportSourceKey].name}`
+          ? `Imported from ${importedFrom(message)}`
           : message.emailStatus
             ? EMAIL_STATUS[message.emailStatus](message.emailError)
             : wait?.status;
@@ -382,7 +384,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               cards
                               attachments={message.attachments.map((a) => links.get(a.id)!)}
                               dropped={message.attachmentsDropped}
-                              imported={!!message.importId}
+                              imported={importedFrom(message) ?? false}
                             />
                             {message.original && (
                               <details className="text-xs text-muted-foreground">

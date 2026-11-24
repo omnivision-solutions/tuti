@@ -98,6 +98,8 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await expect(thread.nth(2)).toContainText("Here it is, with the total fixed.");
   // Never emailed from here: brought from Ferndesk.
   await expect(thread.nth(2)).toContainText("Imported from Ferndesk");
+  // Her file Ferndesk gave no address for: said, in her message.
+  await expect(thread.nth(4)).toContainText("1 attachment wasn't brought across from Ferndesk.");
   await checkpoint(owner, "conversation-ferndesk-helpdesk");
 
   // The AI assistant's conversations: history, closed, the user's question and the AI's answer; the helpdesk's chat the AI agent closed.
