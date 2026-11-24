@@ -137,18 +137,26 @@ test("one run brings page after page; the next is queued only when its time is u
   expect(runs).toHaveBeenCalledTimes(1);
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: first.id } })).toMatchObject(done);
 
-  // A run queued before the import last moved (it was resumed while that run waited its turn) leaves it to the one queued since.
-  const moved = await running();
-  expect(await handlers.importStep({ importId: moved.id, asOf: moved.updatedAt.getTime() - 1 }, log)).toEqual({ skipped: true });
-  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: moved.id } })).toMatchObject({ state: "RUNNING", counts: {} });
-  await prisma.dataImport.delete({ where: { id: moved.id } });
+  // Found stuck while its run only waited its turn, an import has two runs queued for the same page: the first to
+  // come brings it, keeping its place in the queue, and the other, finding the import past that page, does nothing.
+  const waited = await running({ updatedAt: new Date(Date.now() - 10 * 60_000) });
+  const queued = { importId: waited.id, at: "contacts:" };
+  // As looking at it does (resumeImport): claimed by moving it, and a second run queued for the same page.
+  await prisma.dataImport.update({ where: { id: waited.id }, data: { updatedAt: new Date() } });
+  expect(await handlers.importStep(queued, log)).toEqual({ step: "done" });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: waited.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
+  fake.requests.length = 0;
+  await prisma.dataImport.update({ where: { id: waited.id }, data: { state: "RUNNING", apiKey: sealedKey(), step: "contacts", cursor: "MQ" } });
+  expect(await handlers.importStep(queued, log)).toEqual({ skipped: true });
+  expect(fake.requests).toEqual([]);
+  await prisma.dataImport.delete({ where: { id: waited.id } });
 
   // Stopping (a deploy): it hands over after the page it's on, and the run it queued brings the rest.
   runs.mockClear();
   const stopped = await running();
   expect(await importStep({ importId: stopped.id }, log, () => true)).toEqual({ step: "contacts" });
-  // Queued as of the page just saved.
-  expect(runs.mock.calls).toEqual([[{ importId: stopped.id, asOf: expect.any(Number) }, expect.anything()]]);
+  // Queued for the page after the one just saved.
+  expect(runs.mock.calls).toEqual([[{ importId: stopped.id, at: expect.stringMatching(/^contacts:.+/) }, expect.anything()]]);
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stopped.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
 
   // Out of time: a run a page.

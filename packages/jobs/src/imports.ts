@@ -115,16 +115,20 @@ export const ALREADY_HERE = "already brought across earlier";
 /** Imports' next pages not waited for (continueImport's `wait: false`), till each chain ends. */
 const inBackground = new Set<Promise<void>>();
 
+/** The page an import is at, as a run is queued for it (import-step's `at`). */
+const placeOf = (row: Pick<DataImport, "step" | "cursor">) => `${row.step}:${row.cursor ?? ""}`;
+
 /**
- * Queues the import's next run, as of when the import last moved: by whoever has it (its start, the run before, or the
- * one resuming it), so a run queued earlier that's still waiting its turn ends when it comes, rather than going on
- * beside this one. `wait: false` doesn't wait for it: inline (JOBS_DRIVER=inline) the job, and every page after it,
- * would run inside the request that started it. One that can't be queued goes on when it's looked at (stuck).
+ * Queues the import's next run, for the page it's at. An import found stuck while its run is only waiting its turn
+ * (ten run at once: apps/worker tasks.ts) gets a second run for the same page: whichever comes first goes on, so the
+ * import keeps its place in the queue, and the other, finding the import past that page, ends. `wait: false` doesn't
+ * wait for the run: inline (JOBS_DRIVER=inline) the job, and every page after it, would run inside the request that
+ * started it. One that can't be queued goes on when it's looked at (stuck).
  */
 export async function continueImport(importId: string, log: JobLogger, { wait = true } = {}): Promise<void> {
   const going = prisma.dataImport
-    .findUnique({ where: { id: importId }, select: { updatedAt: true } })
-    .then((row) => enqueue("importStep", { importId, asOf: row?.updatedAt.getTime() }))
+    .findUnique({ where: { id: importId }, select: { step: true, cursor: true } })
+    .then((row) => enqueue("importStep", { importId, at: row ? placeOf(row) : undefined }))
     .then(
     () => undefined,
     (error: unknown) => log.warn(`Import ${importId}: couldn't queue its next page (${String(error)}); it goes on when it's looked at`),
@@ -239,12 +243,13 @@ async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise
 /**
  * An import's pages, one after another (import-step), till it ends, a page saves nothing (another run has it), or the
  * run's time is up (IMPORT_RUN) or it's asked to stop (`stop`: the worker is shutting down, for a deploy): then the
- * next run is queued, and goes on from the page after. Its result is its last page's. A run the import has moved on
- * from since it was queued (`asOf`) does nothing.
+ * next run is queued, and goes on from the page after. Its result is its last page's. A run queued for a page the
+ * import is past (`at`) does nothing.
  */
-export async function importStep({ importId, asOf }: JobInput<"importStep">, log: JobLogger, stop: () => boolean = () => false): Promise<JobResult> {
-  // Queued before the import last moved (it was resumed as stuck while this run waited its turn): the run queued then has it.
-  if (asOf !== undefined && (await prisma.dataImport.findUnique({ where: { id: importId }, select: { updatedAt: true } }))?.updatedAt.getTime() !== asOf) {
+export async function importStep({ importId, at }: JobInput<"importStep">, log: JobLogger, stop: () => boolean = () => false): Promise<JobResult> {
+  // Queued for a page the import is past: another run queued for it (the import looked stuck while they waited their turn) has it.
+  const row = at === undefined ? null : await prisma.dataImport.findUnique({ where: { id: importId }, select: { step: true, cursor: true } });
+  if (row && placeOf(row) !== at) {
     return { skipped: true };
   }
   const until = Date.now() + IMPORT_RUN.ms;
