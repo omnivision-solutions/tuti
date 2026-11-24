@@ -328,11 +328,15 @@ test("a page Featurebase's rate limit refuses for longer than a request waits le
   expect(minutes).toBeLessThanOrEqual(10);
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "running", step: "contacts", error: null, resumesAt: waiting.resumeAt!.toISOString() });
 
-  // Before its time, nothing asks Featurebase again: not a run that comes early, a look at it, nor resume-imports.
+  // Before its time, nothing asks Featurebase again: not a run that comes early, a look at it, nor resume-imports,
+  // even once it has gone longer without moving than a stuck import does.
   expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ waiting: true });
+  await prisma.$executeRaw`UPDATE data_import SET "updatedAt" = now() - interval '9 minutes' WHERE id = ${row.id}`;
   expect(await handlers.resumeImports({}, log)).toEqual({ resumed: 0 });
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "running", resumesAt: waiting.resumeAt!.toISOString() });
   await importsSettled();
   expect(fake.requests.filter((request) => request.startsWith("GET /v2/contacts"))).toHaveLength(1);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ resumeAt: waiting.resumeAt, tries: 1 });
 
   // Its time come, resume-imports queues it, and the page saves.
   await prisma.dataImport.update({ where: { id: row.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
