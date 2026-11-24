@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { auth } from "@/lib/auth";
 import { appUrl } from "@/lib/hosts";
@@ -215,18 +215,26 @@ test("the projects list is the teammate's own, with their role in each", async (
 });
 
 test("requests are limited per teammate, over their projects and sessions", async () => {
+  // A clock that stands still half a minute into a minute: the test and the server count in the same one.
   const window = new Date(Math.floor(Date.now() / 60_000) * 60_000);
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => void vi.useRealTimers());
+  vi.setSystemTime(window.getTime() + 30_000);
+
   expect(await api("/conversations", { token: tokenOf(owner) })).toMatchObject({ status: 200 });
   expect(await prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).toMatchObject({ apiRateCount: 1, apiRateWindowStart: window });
 
-  await prisma.user.update({ where: { id: owner.id }, data: { apiRateCount: 600, apiRateWindowStart: window } });
+  await prisma.user.update({ where: { id: owner.id }, data: { apiRateCount: 600 } });
   const limited = await api("/conversations", { token: tokenOf(owner) });
   expect(limited).toMatchObject({ status: 429, body: { error: { code: "rate_limited", message: "Up to 600 requests a minute per teammate" } } });
-  expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(limited.headers.get("retry-after")).toBe("30");
   expect(await api("/projects", { token: tokenOf(owner) })).toMatchObject({ status: 429 });
+  // Someone else's count is their own.
+  const member = await addMember(project.id, "MEMBER");
+  expect(await api("/conversations", { token: tokenOf(member) })).toMatchObject({ status: 200 });
 
-  // The next minute starts a new count; someone else's is their own.
-  await prisma.user.update({ where: { id: owner.id }, data: { apiRateWindowStart: new Date(window.getTime() - 60_000) } });
+  // The next minute starts a new count.
+  vi.setSystemTime(window.getTime() + 60_000);
   expect(await api("/conversations", { token: tokenOf(owner) })).toMatchObject({ status: 200 });
   expect((await prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).apiRateCount).toBe(1);
 });

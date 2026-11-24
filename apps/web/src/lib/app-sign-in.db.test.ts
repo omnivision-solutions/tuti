@@ -8,7 +8,8 @@ import { beforeAll, beforeEach, expect, test, vi } from "vitest";
 const google = await vi.hoisted(async () => {
   const { startGoogleFake } = await import("@tuti/testkit");
   const fake = await startGoogleFake();
-  Object.assign(process.env, fake.env);
+  // GitHub too, at its real address: nothing here fetches it, and the Expo plugin's step in the browser takes https only.
+  Object.assign(process.env, fake.env, { GITHUB_CLIENT_ID: "test-github-client", GITHUB_CLIENT_SECRET: "test-github-secret", GITHUB_URL: "", GITHUB_API_URL: "" });
   return fake;
 });
 
@@ -17,7 +18,8 @@ import { GET as listProjects } from "@/app/api/v1/projects/route";
 import { auth } from "@/lib/auth";
 import { appUrl } from "@/lib/hosts";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
-import { confirmAppSignInLink, confirmSignInLink, emailSignInLink } from "@/server/sign-in-link";
+import { POST as openAppLink } from "@/app/app/(account-pages)/auth/app-link/open/route";
+import { confirmSignInLink, emailSignInLink } from "@/server/sign-in-link";
 import { actAs, createProject, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
@@ -123,6 +125,23 @@ test("only the app's link scheme is trusted, on the app's host, and the web's si
   expect(cookiesOf(web)).toContain("tuti.session_token=");
 });
 
+test("the browser's first stop takes the sign-in's state and goes on to the provider, and nowhere else", async () => {
+  // The app starts Continue with GitHub, then opens the device's browser at Better Auth's Expo plugin's proxy, which
+  // gives that browser the state the app's request got and sends it on.
+  const started = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: `tuti://sign-in?state=${STATE}` } });
+  expect(started.status).toBe(200);
+  const { url } = (await started.json()) as { url: string };
+  expect(new URL(url).origin).toBe("https://github.com");
+  const proxy = (authorizationURL: string) => fromApp(`/expo-authorization-proxy?${new URLSearchParams({ authorizationURL })}`, { origin: null });
+  const onward = await proxy(url);
+  expect(onward.status).toBe(302);
+  expect(onward.headers.get("location")).toBe(url);
+  expect(cookiesOf(onward)).toContain("tuti.state=");
+  // Not an open redirect: only to a provider set up here.
+  expect((await proxy(`https://evil.example/login/oauth/authorize?state=${new URL(url).searchParams.get("state")}`)).status).toBe(400);
+  expect((await proxy("https://github.com.evil.example/login/oauth/authorize?state=x")).status).toBe(400);
+});
+
 /** Asks for the app's sign-in link as the app does. */
 const ask = (email: string, state = STATE, host?: string) => fromApp("/app/sign-in-link", { host, body: { email, state } });
 
@@ -140,13 +159,16 @@ async function view(link: URL) {
   return html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
 }
 
-/** "Open the app" on that page. */
-function open(link: URL, state = link.searchParams.get("state") ?? "") {
-  const form = new FormData();
-  form.set("token", link.searchParams.get("token") ?? "");
-  form.set("state", state);
-  return confirmAppSignInLink(form);
+/** "Open the app" on that page, on `host`: where its form's post sends the browser. */
+async function open(link: URL, state = link.searchParams.get("state") ?? "", host = APP.host) {
+  const form = new URLSearchParams({ token: link.searchParams.get("token") ?? "", state });
+  const response = await openAppLink(new Request(`http://${host}/app/auth/app-link/open`, { method: "POST", headers: { host }, body: form }));
+  expect(response.status).toBe(303);
+  return { location: response.headers.get("location") };
 }
+
+/** Back on the page, which says the link doesn't work: nothing for the app. */
+const NOTHING = { location: "/app/auth/app-link" };
 
 const sentTo = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).length;
 
@@ -161,7 +183,7 @@ test("the emailed link opens a page that hands the app a session, once, and leav
   expect(link.searchParams.get("state")).toBe(STATE);
 
   // Opening it uses nothing up: it says whose account, and waits for the tap.
-  expect(await view(link)).toBe(`Sign in to the Tuti app as ${owner.email}, on the phone or tablet you're holding. Open the app`);
+  expect(await view(link)).toBe(`Sign in to the Tuti app as ${owner.email} Open the app It opens the Tuti app, so use the phone or tablet the app is on.`);
   expect(await view(link)).toContain("Open the app");
 
   const session = handedOver((await open(link)).location);
@@ -209,8 +231,8 @@ test("the app's link and a portal's are never each other's, and a state that isn
   onPortal.set("token", appLink.searchParams.get("token")!);
   onPortal.set("next", "/");
   expect(await confirmSignInLink(onPortal)).toEqual({ location: "/sign-in?link=failed" });
-  // And the app's confirm does nothing from a portal's host.
-  expect(await open(appLink)).toEqual({ location: null });
+  // And the app's own does nothing from a portal's host.
+  expect(await open(appLink, STATE, `${project.slug}.localhost:3100`)).toEqual(NOTHING);
   request.host = APP.host;
 
   // A portal's link, opened as if it were the app's: no session for the app, and the portal's link still works there.
@@ -226,7 +248,7 @@ test("the app's link and a portal's are never each other's, and a state that isn
 
   // The state goes into the app's link as it is: only what the app could have made up.
   for (const state of ["", "short", "x&cookie=stolen-0123456789", "tuti://elsewhere/0123456789"]) {
-    expect(await open(appLink, state)).toEqual({ location: null });
+    expect(await open(appLink, state)).toEqual(NOTHING);
   }
   // The app's link still works after all of that: none of it used it up.
   expect(handedOver((await open(appLink)).location).token).toBeTruthy();
@@ -248,11 +270,15 @@ test("a browser signed in to the web app stays signed in as it was when it opens
 
 test("a verification link never opens the app: anyone can have one sent, and it signs in whoever opens it", async () => {
   const unverified = await signUp("Una Unverified", undefined, { verified: false });
-  const sent = await fromApp("/send-verification-email", { body: { email: unverified.email, callbackURL: `tuti://sign-in?state=${STATE}` } });
-  expect(sent.status).toBe(200);
-  const message = await mailbox.latestTo(unverified.email);
-  const link = new URL(message.text.split(/\s+/).find((word) => word.includes("/verify-email?"))!);
-  expect(link.searchParams.get("callbackURL")).toBe("/app");
+  let link!: URL;
+  // However the scheme is written: Better Auth takes it in any case, with or without the slashes.
+  for (const scheme of ["tuti://", "TUTI://", "tuti:"]) {
+    const sent = await fromApp("/send-verification-email", { body: { email: unverified.email, callbackURL: `${scheme}sign-in?state=${STATE}` } });
+    expect(sent.status, scheme).toBe(200);
+    const message = await mailbox.latestTo(unverified.email);
+    link = new URL(message.text.split(/\s+/).find((word) => word.includes("/verify-email?"))!);
+    expect(link.searchParams.get("callbackURL"), scheme).toBe("/app");
+  }
   // Opened, it verifies and signs the browser in, on the web: nothing is handed to an app.
   const opened = await fromApp(`/verify-email${link.search}`, { origin: null });
   expect(opened.status).toBe(302);

@@ -642,8 +642,6 @@ const matrix: Matrix = {
     },
     // The emailed token is the permission (a dead one goes back to the sign-in page).
     confirmSignInLink: { allowed: "public", call: () => signInLink.confirmSignInLink(form({ token: "not-a-token", next: "/" })) },
-    // The mobile app's link (lib/app-sign-in.ts): the same, and a dead one tells the app so.
-    confirmAppSignInLink: { allowed: "public", call: () => signInLink.confirmAppSignInLink(form({ token: "not-a-token", state: "matrix-state-0123456789" })) },
   },
   // Anyone may ask for a reset link on a portal or the app; only the address's owner can use it (see password-reset.db.test.ts).
   "password-reset": {

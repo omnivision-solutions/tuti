@@ -121,13 +121,16 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
  * /continue starts a new handoff. Only for the email a sign-up, or a sign-in before verifying, sends its own account
  * (`signingUp`): sending it again takes any address and callbackURL from anyone, so there it would sign a way back for
  * someone else's account. Elsewhere it goes to the app, as does a link with none (Better Auth's "/", on Tuti's cloud its
- * marketing site), and one to the mobile app's link scheme (trusted on the app's host for its own sign-in, lib/app-sign-in.ts):
- * anyone can have this email sent to any address, and it signs in whoever opens it, so it never hands a session to an app.
+ * marketing site), and one that isn't a page's address, as the mobile app's link scheme is (trusted on the app's host for
+ * its own sign-in, lib/app-sign-in.ts): anyone can have this email sent to any address, and it signs in whoever opens it,
+ * so it never hands a session to an app.
  */
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
-  if (!back || back === "/" || back.startsWith(APP_ORIGIN) || (back.startsWith("/app/auth/continue?") && !signingUp)) {
+  // Only a page: Better Auth reads a scheme more loosely than a prefix would (TUTI://…, tuti:…).
+  const page = !!back && (back.startsWith("/") || /^https?:\/\//i.test(back));
+  if (!page || back === "/" || (back.startsWith("/app/auth/continue?") && !signingUp)) {
     url.searchParams.set("callbackURL", "/app");
   } else if (back?.startsWith("/app/auth/continue?")) {
     const callback = new URL(back, url);

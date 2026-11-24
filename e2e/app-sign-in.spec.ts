@@ -33,16 +33,21 @@ test("the mobile app's emailed link hands the app a session for the API, and lea
   await phone.setViewportSize({ width: 390, height: 844 });
   await phone.goto(link);
   await expect(phone.getByText("Sign in to the Tuti app")).toBeVisible();
-  await expect(phone.getByText(`as ${olive.email}, on the phone or tablet you're holding.`)).toBeVisible();
+  await expect(phone.getByText(`as ${olive.email}`)).toBeVisible();
+  await expect(phone.getByText("It opens the Tuti app, so use the phone or tablet the app is on.")).toBeVisible();
   await checkpoint(phone, "confirm");
 
-  // "Open the app" goes to the app's own link. This browser has no such app, so the link stays to tap.
-  await phone.getByRole("button", { name: "Open the app" }).click();
-  const open = phone.getByRole("link", { name: "Open the Tuti app" });
-  await expect(open).toBeVisible();
-  await expect(phone.getByText("Nothing happened? This works on a phone or tablet with the Tuti app.")).toBeVisible();
-  await checkpoint(phone, "open-the-app");
-  const handed = new URL((await open.getAttribute("href"))!);
+  // "Open the app" is answered with a redirect to the app's own link, as a provider's sign-in ends. This browser has no
+  // such app, so it stays where it is.
+  const open = async (page: typeof phone) => {
+    const [response] = await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith("/app/auth/app-link/open")),
+      page.getByRole("button", { name: "Open the app" }).click(),
+    ]);
+    expect(response.status()).toBe(303);
+    return new URL((await response.headerValue("location"))!);
+  };
+  const handed = await open(phone);
   expect(`${handed.protocol}//${handed.host}`).toBe("tuti://sign-in");
   expect(handed.searchParams.get("state")).toBe(state);
 
@@ -68,8 +73,7 @@ test("the mobile app's emailed link hands the app a session for the API, and lea
   // A browser already signed in to the web app (Olive's own) opens another link: the app gets its session, and the
   // browser stays signed in as it was.
   await olive.goto(await ask(randomUUID()));
-  await olive.getByRole("button", { name: "Open the app" }).click();
-  await expect(olive.getByRole("link", { name: "Open the Tuti app" })).toBeVisible();
+  expect((await open(olive)).searchParams.get("cookie")).toContain("session_token=");
   await olive.goto("/app");
   await olive.waitForURL(new RegExp(`/app/${slug}`));
 });
