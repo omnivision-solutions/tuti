@@ -109,6 +109,19 @@ test("with no design picked, the entry's image where it has one big enough, else
   expect((await compose({ number: pictured.number })).cover!.id).not.toBe(had);
 });
 
+test("an entry deleted while its cover is drawn is gone (a 404), not an error of ours", async () => {
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode" });
+  const real = await vi.importActual<typeof import("@/server/cover-card")>("@/server/cover-card");
+  vi.mocked(coverCard.drawCover).mockImplementationOnce(async (...args) => {
+    await prisma.changelogEntry.delete({ where: { projectId_number: { projectId: project.id, number } } });
+    return real.drawCover(...args);
+  });
+
+  await expect(compose({ number })).rejects.toMatchObject({ status: 404, code: "not_found", message: `There's no changelog entry #${number}` });
+  // Its cover is no entry's: an upload like any unused one, for the daily release to free.
+  expect(await prisma.changelogEntry.count({ where: { projectId: project.id, coverId: { not: null } } })).toBe(0);
+});
+
 test("without uploads set up it's a 503, and past the member's hourly uploads a 409: the entry keeps the cover it has", async () => {
   const { number } = await call(createChangelogEntry, team(), { title: "Dark mode" });
   const first = await compose({ number });
