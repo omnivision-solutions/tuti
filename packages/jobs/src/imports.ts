@@ -97,9 +97,8 @@ export const IMPORT_STUCK_MS = 6 * 60_000;
 /** One that hasn't moved for a day is failed by the daily fail-stale-imports (or, inline, when it's looked at), its key cleared. */
 const STALE_MS = 24 * 60 * 60_000;
 /**
- * How long a page may spend reading its source, retries and their waits included: a page has 5 minutes in all (a run's
- * last one fits import-step's time limit, apps/worker tasks.ts), so it has time left to save, and IMPORT_STUCK_MS is
- * longer than both.
+ * How long a page may spend reading its source, retries and their waits included, so it has time left to save (a run's
+ * last page, read and saved, fits import-step's time limit: apps/worker tasks.ts), and IMPORT_STUCK_MS is longer.
  */
 const PAGE_READ_MS = 3 * 60_000;
 /**

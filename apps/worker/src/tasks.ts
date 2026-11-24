@@ -10,9 +10,10 @@ const CODE_CHANGE_QUEUE = "24h" as const;
 
 /**
  * How long an import's run may take (Hatchet's default is 60 seconds): it goes from page to page for 10 minutes
- * (@tuti/jobs IMPORT_RUN), and its last page may take 5 (the source's rate limit can hold it up).
+ * (@tuti/jobs IMPORT_RUN), and its last page may take 3 to read (the source's rate limit can hold it up) and, at
+ * worst, 3 tries of a minute each to save (imports.ts `locked`): 20 minutes leaves room for both.
  */
-const IMPORT_STEP_TIMEOUT = "15m" as const;
+const IMPORT_STEP_TIMEOUT = "20m" as const;
 /**
  * Imports' runs at once on the whole server: each holds a worker slot for its ten minutes, and the worker's other jobs
  * (emails, webhooks) need theirs. The rest wait their turn, up to an hour rather than Hatchet's 5 minutes; one Hatchet

@@ -225,9 +225,10 @@ type CrawlState = { crawl?: { found: string[]; fetched: number; gone: string[] }
 function site(start: string, deadline: number, kept: unknown) {
   let state = (typeof kept === "object" && kept !== null ? kept : {}) as CrawlState;
   const robots = new Map<string, Promise<ReturnType<typeof robotsRules>>>();
-  // A Crawl-delay is 5s at most: past it, a site's pace is as good as none.
+  // `last` is when a request began, and one may take PAGE_TIMEOUT_MS; a Crawl-delay is 5s at most. Past both, a
+  // site's pace is as good as none (forgetting it sooner would let a reader start while another's request is out).
   for (const [address, { last }] of crawlPace.sites) {
-    if (crawlPace.now() - last > 5_000 + crawlPace.ms) {
+    if (crawlPace.now() - last > PAGE_TIMEOUT_MS + 5_000 + crawlPace.ms) {
       crawlPace.sites.delete(address);
     }
   }

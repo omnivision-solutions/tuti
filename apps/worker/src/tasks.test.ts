@@ -36,11 +36,11 @@ test("other jobs keep Hatchet's time limits, and their own key's one run at a ti
   expect(other).toMatchObject({ name: "post-created", retries: 3, concurrency: { expression: "input.postId", maxRuns: 1 } });
 });
 
-test("an import's run may take fifteen minutes (ten of pages, and five for its last), one at a time per import and ten on the whole server, the rest waiting up to an hour", () => {
+test("an import's run may take twenty minutes (ten of pages, and a worst-case last page's read and saves), one at a time per import and ten on the whole server, the rest waiting up to an hour", () => {
   expect(taskOptions("importStep")).toMatchObject({
     name: "import-step",
     retries: 0,
-    executionTimeout: "15m",
+    executionTimeout: "20m",
     scheduleTimeout: "1h",
     concurrency: [
       { expression: "input.importId", maxRuns: 1 },
