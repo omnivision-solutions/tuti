@@ -249,6 +249,8 @@ export const auth = betterAuth({
   // A session is bound to where it was started: a portal's (signing in there, "Continue as", SSO) to its project, as a
   // team runs its portal's custom domain or site, so can see its cookies there. It works there only (hooks.before).
   session: { additionalFields: { boundTo: { type: "string", required: false, input: false } } },
+  // Read with the user, so a session of someone their project's app deleted (users.delete) is refused (server/session.ts).
+  user: { additionalFields: { deletedAt: { type: "date", required: false, input: false } } },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       await passwordOnAppOnly(ctx);
