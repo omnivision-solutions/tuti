@@ -896,8 +896,8 @@ export function ChangelogStyleForm({
   tone: string;
   /** The entries picked as examples, by number. */
   examples: number[];
-  /** Published entries, newest first. */
-  published: { number: number; title: string }[];
+  /** Published entries, newest first; `sample`: one of Home's sample updates, which AI never follows unpicked. */
+  published: { number: number; title: string; sample?: boolean }[];
 }) {
   const [picked, setPicked] = useState(examples);
   // Saved elsewhere meanwhile (another tab), what isn't edited here follows: the examples as the server sends them…
@@ -978,7 +978,7 @@ export function ChangelogStyleForm({
         description={
           published.length === 0
             ? "Publish an entry to use it as an example."
-            : chosen.length === 0
+            : chosen.length === 0 && published.some((entry) => !entry.sample)
               ? "Entries that read the way you like. With none picked, AI follows your latest ones."
               : "Entries that read the way you like."
         }
