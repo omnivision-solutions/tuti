@@ -236,7 +236,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     let dropped = unshown;
     const attached = [...urls.map((url) => ({ url, name: fileName(url) })), ...(part.files ?? [])];
     for (const { url, name } of attached) {
-      const stored = Date.now() < copyUntil ? await copyAttachment(job, url, name) : { leftOut: null };
+      const stored = !url ? { leftOut: "unreachable" as const } : Date.now() < copyUntil ? await copyAttachment(job, url, name) : { leftOut: null };
       if ("leftOut" in stored) {
         leftOut.push(stored.leftOut ? (LEFT_OUT[stored.leftOut] ?? "that couldn't be fetched") : NO_TIME);
         dropped++;

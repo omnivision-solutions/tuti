@@ -56,7 +56,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await key.fill(FAKE_FERNDESK_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Ferndesk" });
-  await expect(status).toHaveText("Imported from Ferndesk. 3 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 4 conversations, 1 attachment brought across.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Ferndesk. 3 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 4 conversations, 1 attachment brought across. Left out: 1 attachment that couldn't be fetched.", { timeout: 15_000 });
   await checkpoint(owner, "setup-ferndesk-imported");
 
   // On the portal: its sections as collections, an article with its image and its link to another, which goes there.
@@ -90,7 +90,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   const rows = owner.getByRole("main").getByRole("listitem");
   await rows.filter({ hasText: "Invoice for October" }).getByRole("link").click();
   const thread = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
-  await expect(thread).toHaveCount(4);
+  await expect(thread).toHaveCount(5);
   await expect(thread.nth(0)).toContainText("Rosa Lind");
   // Her file, an image, shows in her message.
   await expect(thread.nth(0).getByRole("img", { name: "invoice-october.png" })).toBeVisible();

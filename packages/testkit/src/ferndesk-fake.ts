@@ -103,8 +103,8 @@ export function ferndeskFixtures(): FerndeskFixtures {
         assignee: { id: "mem_ines", name: "Ines Hart", avatar_url: null },
         customer: rosa,
         created_at: ago(3),
-        updated_at: ago(1),
-        last_message_at: ago(1),
+        updated_at: ago(0.9),
+        last_message_at: ago(0.9),
         messages: [
           message("msg_invoice_1", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "Could you resend October's invoice? The total looks off.", ago(3), {
             body_html: "<p>Could you resend October's invoice? The total looks off.</p>",
@@ -113,6 +113,10 @@ export function ferndeskFixtures(): FerndeskFixtures {
           message("note_invoice", "conv_hd_invoice", ines, "Asked billing to check the total.", ago(2.5), { type: "note", visibility: "team", delivery: null }),
           message("msg_invoice_2", "conv_hd_invoice", ines, "Here it is, with the total fixed.", ago(2), { body_html: "<p>Here it is, with the total fixed.</p>" }),
           message("msg_invoice_3", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "Thanks! And September's?", ago(1)),
+          // Only a file, which Ferndesk gives no address for.
+          message("msg_invoice_4", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "", ago(0.9), {
+            attachments: [{ object: "attachment", id: "att_2", filename: "september.pdf", content_type: "application/pdf", size_bytes: 1000, url: null }],
+          }),
         ],
       }),
       ticket("conv_hd_chat", {
@@ -126,9 +130,9 @@ export function ferndeskFixtures(): FerndeskFixtures {
         last_message_at: ago(6),
         closed_at: ago(6),
         messages: [
-          message("msg_chat_1", "conv_hd_chat", { type: "customer", id: null, name: null, avatar_url: null }, "Is there a dark mode?", ago(6)),
-          message("msg_chat_2", "conv_hd_chat", { type: "ai_agent", id: null, name: "Fern", avatar_url: null }, "Yes: Settings → Appearance.", ago(6)),
-          message("msg_chat_3", "conv_hd_chat", ines, "Drafted, never sent.", ago(6), { delivery: { status: "cancelled" } }),
+          message("msg_chat_1", "conv_hd_chat", { type: "customer", id: null, name: null, avatar_url: null }, "Is there a dark mode?", ago(6.003)),
+          message("msg_chat_2", "conv_hd_chat", { type: "ai_agent", id: null, name: "Fern", avatar_url: null }, "Yes: Settings → Appearance.", ago(6.002)),
+          message("msg_chat_3", "conv_hd_chat", ines, "Drafted, never sent.", ago(6.001), { delivery: { status: "cancelled" } }),
           message("msg_chat_4", "conv_hd_chat", { type: "system", id: null, name: null, avatar_url: null }, "Conversation closed.", ago(6)),
         ],
       }),

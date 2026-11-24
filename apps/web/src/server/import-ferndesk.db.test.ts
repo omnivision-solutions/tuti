@@ -398,7 +398,7 @@ test("the helpdesk's conversations come across first, with their messages, notes
   const emailed = mailbox.emails.length;
   const done = await importParts(["contacts", "inbox"]);
 
-  expect(done).toMatchObject({ state: "done", counts: { conversations: { imported: 4, leftOut: {} }, attachments: { imported: 1 } } });
+  expect(done).toMatchObject({ state: "done", counts: { conversations: { imported: 4, leftOut: {} }, attachments: { imported: 1, leftOut: { "that couldn't be fetched": 1 } } } });
   // Rosa came with her conversation, beside the help center's users (she never signed in to it), with her address.
   expect(done.counts.contacts).toMatchObject({ imported: 3 });
   expect(await prisma.ssoIdentity.findFirst({ where: { projectId: project.id, externalId: "ferndesk:cust_rosa" }, select: { email: true, properties: true } })).toEqual({ email: "e2e-ferndesk-rosa@example.com", properties: { plan: "team" } });
@@ -410,7 +410,10 @@ test("the helpdesk's conversations come across first, with their messages, notes
       status: true,
       user: { select: { name: true } },
       heldBy: { select: { name: true } },
-      messages: { orderBy: { createdAt: "asc" }, select: { author: true, note: true, channel: true, body: true, authorUser: { select: { name: true } }, attachments: { select: { filename: true, contentType: true } } } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: { author: true, note: true, channel: true, body: true, authorUser: { select: { name: true } }, attachments: { select: { filename: true, contentType: true } }, attachmentsDropped: true },
+      },
     },
   });
   expect(all.map((c) => c.subject)).toEqual(["Invoice for October", "Is there a dark mode?", "Can I export my data to CSV?", "Do you have an <API>?"]);
@@ -425,6 +428,8 @@ test("the helpdesk's conversations come across first, with their messages, notes
       { author: "TEAM", note: true, body: "Asked billing to check the total.", authorUser: { name: "Ines Hart" }, attachments: [] },
       { author: "TEAM", note: false, channel: "EMAIL", body: "Here it is, with the total fixed.", authorUser: { name: "Ines Hart" } },
       { author: "USER", body: "Thanks! And September's?" },
+      // Only a file Ferndesk gave no address for: counted as left out, the message kept (Rosa still waits for an answer).
+      { author: "USER", body: "", attachments: [], attachmentsDropped: 1 },
     ],
   });
   // An anonymous visitor's chat the AI agent answered: its cancelled reply and the system's event aren't messages.
@@ -435,7 +440,7 @@ test("the helpdesk's conversations come across first, with their messages, notes
   // Rosa wrote again: another import adds only that.
   const ticket = fake.fixtures.tickets[0]!;
   ticket.last_message_at = ticket.updated_at = new Date().toISOString();
-  (ticket.messages as unknown[]).push({ ...(ticket.messages as Record<string, unknown>[])[3], id: "msg_invoice_4", body_text: "Found it, never mind.", created_at: new Date().toISOString() });
+  (ticket.messages as unknown[]).push({ ...(ticket.messages as Record<string, unknown>[])[3], id: "msg_invoice_5", body_text: "Found it, never mind.", created_at: new Date().toISOString() });
   const again = await importParts(["contacts", "inbox"]);
   expect(again.counts).toMatchObject({ conversations: { imported: 0, leftOut: { "already brought across earlier": 4 } }, messages: { imported: 1 } });
   expect((await prisma.conversationMessage.findMany({ where: { conversation: { projectId: project.id, subject: "Invoice for October" } }, orderBy: { createdAt: "asc" }, select: { body: true } })).at(-1)).toEqual({ body: "Found it, never mind." });
@@ -453,4 +458,9 @@ test("Rosa, who wrote to the helpdesk, isn't matched to the user here with her a
 test("a key that can't read the helpdesk can't start the Inbox: its conversations would be left out", async () => {
   fake.forbidden.add("/v1/conversations");
   expect(await refusal(start(["contacts", "inbox"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Inbox in Ferndesk. Use a key that can, or leave Inbox out." });
+});
+
+test("a key that can't read the helpdesk (no Read inbox) still brings the help center, which looks for its authors among the teammates", async () => {
+  fake.forbidden.add("/v1/teammates").add("/v1/conversations");
+  expect(await importParts(["docs"], { publishArticles: true })).toMatchObject({ state: "done", counts: { articles: { imported: 4 } } });
 });

@@ -143,7 +143,8 @@ function partOf(m: FerndeskMessage, ticket: FerndeskTicket): FeaturebasePart[] {
       bodyHtml: m.body_html ?? html(m.body_text),
       channel: ticket.channel === "email" ? "email" : "chat",
       author,
-      files: m.attachments.flatMap((a) => (a.url ? [{ url: a.url, name: a.filename }] : [])),
+      // One with no address is left out and counted; its message stays.
+      files: m.attachments.map((a) => ({ url: a.url, name: a.filename })),
     },
   ];
 }
