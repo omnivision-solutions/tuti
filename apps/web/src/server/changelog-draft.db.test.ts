@@ -188,6 +188,49 @@ test("without an AI key it says AI isn't set up", async () => {
   await expect(draft(number)).rejects.toMatchObject({ status: 503, message: "AI isn't set up on this server" });
 });
 
+test("the model gets what Autopilot wrote about each pull request and the posts it completes, the most voted first", async () => {
+  const { number, postUrl } = await entryWithPullRequests();
+  const faster = await call(createPost, team(), { board: "feature-requests", title: "Faster search" });
+  // Linked to the pull request too, but not for readers: nothing of it reaches the model.
+  const secret = await call(createPost, team(), { board: "feature-requests", title: "Tokens logged in plain text", visibility: "team" });
+  const entry = await call(updateChangelogEntry, team(), { number, posts: [...(await get(number)).posts.map((post) => post.number), faster.number, secret.number] });
+  const url = (post: { number: number }) => entry.posts.find((other) => other.number === post.number)!.url;
+  const id = async (post: { number: number }) => (await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } })).id;
+  const [darkId, fasterId, secretId] = [await id(entry.posts.find((post) => post.url === postUrl)!), await id(faster), await id(secret)];
+  await prisma.post.update({ where: { id: darkId }, data: { voteCount: 2 } });
+  await prisma.post.update({ where: { id: fasterId }, data: { voteCount: 5 } });
+  const pr = (n: number) => ({ projectId: project.id, repo: "acme/app", number: n, url: `https://github.com/acme/app/pull/${n}` });
+  // Autopilot analysed #12 and wrote what it changed for users; #13 has no analysis.
+  await prisma.codeChange.create({
+    data: { ...pr(12), repoId: 1, title: "Add dark theme toggle", author: "dev", mergedAt: new Date(), state: "READY", summary: "You can switch to a dark theme from your profile menu." },
+  });
+  await prisma.postLink.createMany({
+    data: [
+      { ...pr(12), postId: darkId, kind: "PULL_REQUEST", source: "CODE_CHANGE" },
+      { ...pr(12), postId: secretId, kind: "PULL_REQUEST", source: "MANUAL" },
+      { ...pr(13), postId: fasterId, kind: "PULL_REQUEST", source: "MANUAL" },
+    ],
+  });
+  model.reply(reply("Faster search and dark mode", "Search is faster, and there's a dark mode."));
+
+  await draft(number);
+
+  const [request] = model.requests;
+  expect(request!.system).toContain("the most voted first");
+  const data = JSON.parse(request!.user.slice(request!.user.indexOf("{"))) as Record<string, unknown>;
+  expect(data.postsItCompletes).toEqual([
+    { title: "Faster search", url: url(faster), votes: 5 },
+    { title: "Dark mode", url: postUrl, votes: 2 },
+  ]);
+  // The one completing the most voted post leads, though it merged later.
+  expect(data.pullRequests).toEqual([
+    { title: "Speed up post search", ref: "acme/app#13", completes: [url(faster)] },
+    { title: "Add dark theme toggle", ref: "acme/app#12", whatChangedForUsers: "You can switch to a dark theme from your profile menu.", completes: [postUrl] },
+  ]);
+  expect(request!.user).not.toContain("Tokens logged in plain text");
+  expect(request!.user).not.toContain(url(secret));
+});
+
 const setStyle = (input: { tone?: string; examples?: number[] }) => call(updateChangelogStyle, team(), input);
 const getStyle = () => call(getChangelogStyle, team(), {});
 
