@@ -190,7 +190,8 @@ function kindOf(part: FeaturebasePart): { author: MessageAuthor; note: boolean }
     case "admin_msg":
       return { author: "TEAM", note: false };
     case "admin_note":
-      return { author: "TEAM", note: true };
+      // An AI agent's (Ferndesk's leaves notes for the team when it hands a chat over) is the AI's, as Tuti's own are.
+      return { author: part.author?.type === "bot" ? "AI" : "TEAM", note: true };
     case "bot_msg":
       return { author: "AI", note: false };
     default:

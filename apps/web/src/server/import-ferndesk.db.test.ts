@@ -398,7 +398,7 @@ test("the helpdesk's conversations come across first, with their messages, notes
   const emailed = mailbox.emails.length;
   const done = await importParts(["contacts", "inbox"]);
 
-  expect(done).toMatchObject({ state: "done", counts: { conversations: { imported: 4, leftOut: {} }, attachments: { imported: 1, leftOut: { "that couldn't be fetched": 1 } } } });
+  expect(done).toMatchObject({ state: "done", counts: { conversations: { imported: 5, leftOut: {} }, attachments: { imported: 1, leftOut: { "that couldn't be fetched": 1 } } } });
   // Rosa came with her conversation, beside the help center's users (she never signed in to it), with her address.
   expect(done.counts.contacts).toMatchObject({ imported: 3 });
   expect(await prisma.ssoIdentity.findFirst({ where: { projectId: project.id, externalId: "ferndesk:cust_rosa" }, select: { email: true, properties: true } })).toEqual({ email: "e2e-ferndesk-rosa@example.com", properties: { plan: "team" } });
@@ -408,6 +408,7 @@ test("the helpdesk's conversations come across first, with their messages, notes
     select: {
       subject: true,
       status: true,
+      snoozedUntil: true,
       user: { select: { name: true } },
       heldBy: { select: { name: true } },
       messages: {
@@ -416,8 +417,8 @@ test("the helpdesk's conversations come across first, with their messages, notes
       },
     },
   });
-  expect(all.map((c) => c.subject)).toEqual(["Invoice for October", "Is there a dark mode?", "Can I export my data to CSV?", "Do you have an <API>?"]);
-  const [invoice, chat] = all;
+  expect(all.map((c) => c.subject)).toEqual(["Invoice for October", "Can I get a refund?", "Is there a dark mode?", "Can I export my data to CSV?", "Do you have an <API>?"]);
+  const [invoice, handoff, chat] = all;
   expect(invoice).toMatchObject({
     // Rosa wrote last: it waits for the team. Ines isn't on the team here: her placeholder holds it.
     status: "OPEN",
@@ -432,6 +433,15 @@ test("the helpdesk's conversations come across first, with their messages, notes
       { author: "USER", body: "", attachments: [], attachmentsDropped: 1 },
     ],
   });
+  // Handed over by the AI agent, whose note for the team is the AI's; snoozed there, snoozed here till then.
+  expect(handoff).toMatchObject({
+    snoozedUntil: new Date("2099-01-05T09:00:00.000Z"),
+    messages: [
+      { author: "USER", channel: "WIDGET", body: "Can I get a refund?" },
+      { author: "AI", note: true, body: "Refunds need a teammate: the docs don't cover them.", authorUser: null },
+      { author: "TEAM", note: false, body: "Yes: it's on its way.", authorUser: { name: "Ines Hart" } },
+    ],
+  });
   // An anonymous visitor's chat the AI agent answered: its cancelled reply and the system's event aren't messages.
   expect(chat).toMatchObject({ status: "CLOSED", user: null, messages: [{ author: "USER", channel: "WIDGET", body: "Is there a dark mode?" }, { author: "AI", body: "Yes: Settings → Appearance." }] });
   expect(await prisma.conversation.count({ where: { projectId: project.id, subject: "Cheap watches" } })).toBe(0);
@@ -442,9 +452,18 @@ test("the helpdesk's conversations come across first, with their messages, notes
   ticket.last_message_at = ticket.updated_at = new Date().toISOString();
   (ticket.messages as unknown[]).push({ ...(ticket.messages as Record<string, unknown>[])[3], id: "msg_invoice_5", body_text: "Found it, never mind.", created_at: new Date().toISOString() });
   const again = await importParts(["contacts", "inbox"]);
-  expect(again.counts).toMatchObject({ conversations: { imported: 0, leftOut: { "already brought across earlier": 4 } }, messages: { imported: 1 } });
+  expect(again.counts).toMatchObject({ conversations: { imported: 0, leftOut: { "already brought across earlier": 5 } }, messages: { imported: 1 } });
   expect((await prisma.conversationMessage.findMany({ where: { conversation: { projectId: project.id, subject: "Invoice for October" } }, orderBy: { createdAt: "asc" }, select: { body: true } })).at(-1)).toEqual({ body: "Found it, never mind." });
-  expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(4);
+  expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(5);
+});
+
+test("the helpdesk's conversations and their messages a page at a time, then the AI assistant's: nothing lost between pages", async () => {
+  fake.pageSize = 1;
+  const done = await importParts(["contacts", "inbox"]);
+  expect(done).toMatchObject({ state: "done", counts: { conversations: { imported: 5 } } });
+  const invoice = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, subject: "Invoice for October" }, select: { _count: { select: { messages: true } } } });
+  expect(invoice._count.messages).toBe(5);
+  expect(fake.requests.filter((r) => r.startsWith("GET /v1/conversations/conv_hd_invoice/messages")).length).toBeGreaterThanOrEqual(5);
 });
 
 test("Rosa, who wrote to the helpdesk, isn't matched to the user here with her address: anyone can type any address into a chat", async () => {

@@ -59,8 +59,9 @@ const article = (id: string, title: string, slug: string, shortId: string, rest:
  * their public addresses; two help center users; an AI conversation with a user and one with an anonymous visitor; a
  * changelog in a section of its own (Changelog) with entries published (one with an image, one dated before it went
  * live) and a draft, which Ferndesk lists as a collection and articles too. Its helpdesk: an email from a customer with
- * an attached file, answered by a teammate who left a note, and still going; a chat with an anonymous visitor the AI
- * agent answered, closed, with a reply never sent; and spam.
+ * an attached file and one without an address, answered by a teammate who left a note, and still going; a chat with an
+ * anonymous visitor the AI agent answered, closed, with a reply never sent; one the AI agent handed over with a note,
+ * snoozed; and spam.
  */
 export function ferndeskFixtures(): FerndeskFixtures {
   const ines = { type: "teammate", id: "mem_ines", name: "Ines Hart", avatar_url: null };
@@ -117,6 +118,23 @@ export function ferndeskFixtures(): FerndeskFixtures {
           message("msg_invoice_4", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "", ago(0.9), {
             attachments: [{ object: "attachment", id: "att_2", filename: "september.pdf", content_type: "application/pdf", size_bytes: 1000, url: null }],
           }),
+        ],
+      }),
+      // Handed over by the AI agent, with its note for the team, and snoozed until Rosa's team is back.
+      ticket("conv_hd_handoff", {
+        subject: "Can I get a refund?",
+        status: "snoozed",
+        channel: "chat",
+        customer: rosa,
+        ai_agent: { outcome: "handed_off" },
+        snoozed_until: "2099-01-05T09:00:00.000Z",
+        created_at: ago(2),
+        updated_at: ago(2),
+        last_message_at: ago(2),
+        messages: [
+          message("msg_handoff_1", "conv_hd_handoff", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "Can I get a refund?", ago(2.002)),
+          message("note_handoff", "conv_hd_handoff", { type: "ai_agent", id: null, name: "Fern", avatar_url: null }, "Refunds need a teammate: the docs don't cover them.", ago(2.001), { type: "note", visibility: "team", delivery: null }),
+          message("msg_handoff_2", "conv_hd_handoff", ines, "Yes: it's on its way.", ago(2)),
         ],
       }),
       ticket("conv_hd_chat", {
