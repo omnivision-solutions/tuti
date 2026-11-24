@@ -10,9 +10,12 @@ import { z } from "zod";
 
 export type Scope = "read" | "write";
 
-/** Who's calling: someone signed in (in the app or on a portal), or a project's API key (acting as its team). */
+/**
+ * Who's calling: someone signed in (in the app or on a portal), or a project's API key (acting as its team). `sessionId`:
+ * the app session a teammate called the API with (server/api-auth.ts), which a device they register belongs to.
+ */
 export type Actor =
-  | { kind: "user"; userId: string }
+  | { kind: "user"; userId: string; sessionId?: string }
   | { kind: "apiKey"; keyId: string; projectId: string; scope: Scope; createdById: string };
 export type ApiKeyActor = Extract<Actor, { kind: "apiKey" }>;
 

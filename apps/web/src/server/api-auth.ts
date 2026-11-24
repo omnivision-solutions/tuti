@@ -11,7 +11,7 @@ import { sessionFrom } from "./session";
 export type ApiKey = ApiKeyActor & { role: TeamRole };
 
 /** A teammate signed in to an app of Tuti's (the mobile app), acting in one of their projects with their role there. */
-export type Teammate = { kind: "user"; userId: string; projectId: string; role: TeamRole };
+export type Teammate = { kind: "user"; userId: string; sessionId: string; projectId: string; role: TeamRole };
 
 /** Where a session's request names its project, by slug: a teammate can be on several teams, and a session has none. */
 export const PROJECT_HEADER = "Tuti-Project";
@@ -85,7 +85,7 @@ export const sendsSession = (request: Request) => /^Bearer (?!tuti_)\S+$/.test(r
  * never carries a session's cookie (an ended session's may clear them). One started on the app only: a portal's session
  * is a reader's, never the team's.
  */
-export async function authenticateSession(request: Request): Promise<{ userId: string } | Response> {
+export async function authenticateSession(request: Request): Promise<{ userId: string; sessionId: string } | Response> {
   let token = request.headers.get("authorization")!.slice("Bearer ".length);
   try {
     // A cookie's value is percent-encoded; the app may send it as stored or decoded.
@@ -111,7 +111,7 @@ export async function authenticateSession(request: Request): Promise<{ userId: s
   if (counted && counted.apiRateCount > API_RATE_LIMIT) {
     return rateLimited(window, "teammate");
   }
-  return { userId: session.user.id };
+  return { userId: session.user.id, sessionId: session.session.id };
 }
 
 /**
@@ -132,7 +132,7 @@ export async function authenticateTeammate(request: Request): Promise<Teammate |
     // The same for a project that isn't there: nothing tells which slugs are taken.
     return apiError(403, "forbidden", "You're not on the team of a project with that slug");
   }
-  return { kind: "user", userId: session.userId, projectId: member.projectId, role: member.role };
+  return { kind: "user", ...session, projectId: member.projectId, role: member.role };
 }
 
 /**

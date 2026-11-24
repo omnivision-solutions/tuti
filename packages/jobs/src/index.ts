@@ -16,10 +16,12 @@ import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 export { replyRecipient, type ReplyRecipient } from "./conversations";
+export { checkPushReceipts, PUSH_TEXT_MAX, RECEIPT_AFTER_MS } from "./push";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
+import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
 import { postShipped, resubmitShippedEmails } from "./shipped";
@@ -92,6 +94,8 @@ export type JobRun = { lastTry: boolean };
 export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => Promise<JobResult> } = {
   postCreated,
   conversationMessage,
+  conversationPush,
+  checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,
   checkEmailDomains,
   tellEmailPauses,

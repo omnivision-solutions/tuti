@@ -44,6 +44,8 @@ model User {
   /// Requests in the current minute with their app session, for the API's rate limit per teammate (as api_key's, per key).
   apiRateWindowStart DateTime?
   apiRateCount       Int            @default(0)
+  /// "Show message text" in the mobile app's notifications (packages/jobs push.ts): off, one says who wrote, not what.
+  pushShowsText      Boolean        @default(true)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          Session[]
@@ -90,6 +92,7 @@ model User {
   autopilotNotices      AutopilotNotice[]
   autopilotDigests      AutopilotDigest[]
   planLicenses          PlanLicense[]
+  devices               Device[]
 
   @@unique([email])
   /// Partial: only sample people have it.
@@ -111,6 +114,7 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Where it was started (lib/auth.ts): "app", or the project whose portal started it, the only place it then works. Null: from before, works nowhere.
   boundTo   String?
+  devices   Device[]
 
   @@unique([token])
   @@index([userId])
@@ -3133,4 +3137,39 @@ model AutopilotDigest {
   @@id([userId, projectId, day])
   @@index([day])
   @@map("autopilot_digest")
+}
+
+/// A teammate's phone with the mobile app, for push notifications (packages/jobs push.ts): one per teammate and the id the
+/// app chose for the install, across all their projects. Gone with the session it was registered under (signing out;
+/// an expired one gets nothing until then), or once Expo says its token is no longer registered.
+model Device {
+  id         String   @id @default(cuid())
+  userId     String
+  /// The id the app keeps for the install, so registering again (a new token, a reinstall that kept it) replaces this row.
+  deviceId   String
+  /// Expo's push token: ExponentPushToken[…].
+  token      String
+  /// "ios" or "android".
+  platform   String
+  sessionId  String
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([token])
+  @@index([sessionId])
+  @@map("device")
+}
+
+/// A push Expo took (its ticket's id) and the token it went to, whose receipt is read later: a token that's no longer
+/// registered loses its devices (push.ts). By the token, not the device: a device registered again has a new one.
+model PushTicket {
+  id        String   @id
+  token     String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("push_ticket")
 }

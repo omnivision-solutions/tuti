@@ -128,6 +128,12 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.assignees": () => ({}),
   // People only: every key is refused (below).
   "conversations.upload": () => ({ filename: "matrix.pdf", contentType: "application/pdf", size: 1000 }),
+  // People only too, and a device only from the app's session (devices.db.test.ts).
+  "devices.register": () => ({ deviceId: "matrix-phone", token: "ExponentPushToken[matrix]", platform: "ios" }),
+  "devices.remove": () => ({ deviceId: "matrix-phone" }),
+  // A key reads its creator's.
+  "notifications.get": () => ({}),
+  "notifications.update": () => ({ showMessageText: false }),
   "conversations.articles": () => ({ number: 1, q: "matrix" }),
   "conversations.list": () => ({ status: "open", q: "matrix" }),
   "companies.list": () => ({}),
@@ -455,7 +461,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
 }
 
 /** Operations only a person can run, in the app: API keys (and MCP, with the same keys) get 403. */
-const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start", "conversations.markRead", "conversations.upload"]);
+const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start", "conversations.markRead", "conversations.upload", "devices.register", "devices.remove", "notifications.update"]);
 
 /** Calls an operation over REST like a client would. */
 async function call(operation: Operation, input: Record<string, unknown>, key: string) {
@@ -532,6 +538,9 @@ const snapshot = () =>
     prisma.emailDomain.findUnique({ where: { projectId: project.id } }),
     prisma.verifyAll.findMany({ where: { projectId: project.id } }),
     prisma.dataImport.findMany({ where: { projectId: project.id } }),
+    // The keys' creator's phones and notification settings.
+    prisma.device.findMany({ where: { userId: owner.id } }),
+    prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { pushShowsText: true } }),
     prisma.articleVerification.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } }),
   ]);
 

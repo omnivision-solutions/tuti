@@ -873,13 +873,22 @@ export const createConversation = defineOperation({
   },
 });
 
-/** Emails the team about the user's message (packages/jobs, conversation-message); never fails or holds up the request. */
+/**
+ * Emails the team about the user's message (packages/jobs, conversation-message) and pushes it to their phones
+ * (conversation-push); never fails or holds up the request.
+ */
 async function tellTeam(messageId: string) {
   try {
     await enqueue("conversationMessage", { messageId });
   } catch (error) {
     // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
     log.error("Enqueueing the team's email about a message failed", { error, messageId });
+  }
+  try {
+    await enqueue("conversationPush", { messageId });
+  } catch (error) {
+    // Not queued again: a notification is for now, and the email still tells them.
+    log.error("Enqueueing the team's push about a message failed", { error, messageId });
   }
 }
 
