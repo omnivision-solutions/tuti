@@ -65,6 +65,11 @@ export type StepPage = {
   save: (tx: Tx) => Promise<void>;
   /** Once its save is in (not for a duplicate run, which saves nothing): what follows from it, such as articles indexed for search. */
   after?: () => Promise<void>;
+  /**
+   * The source asked to be left this long as the page read (a Retry-After) after it had work to save: the page saves
+   * that, and the import waits this long before the next page (or longer, by its tries), rather than asking again at once.
+   */
+  waitMs?: number;
 };
 type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Promise<StepPage> };
 
@@ -375,6 +380,7 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
   let next: string | null = null;
   let saved: boolean;
   let after: StepPage["after"];
+  let waitMs: number | undefined;
   try {
     const step = STEPS.find((s) => s.name === row.step);
     if (!step) {
@@ -383,6 +389,7 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
     await assertStarterAdmin(prisma, row);
     const page = await step.page(job, row.cursor);
     after = page.after;
+    waitMs = page.waitMs;
     next = page.next ? step.name : nextStep(row.parts, step.name);
     const counted = structuredClone(job.counts);
     saved = await locked(row.projectId, async (tx) => {
@@ -400,7 +407,8 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
       await assertStarterAdmin(tx, row);
       await page.save(tx);
       const data = next ? { step: next, cursor: page.next, counts: job.counts } : { state: "DONE" as const, apiKey: null, step: "", cursor: null, counts: job.counts, finishedAt: new Date() };
-      await tx.dataImport.update({ where: { id: row.id }, data: { ...data, resumeAt: null, tries: 0, progressAt: new Date() } });
+      const resumeAt = next && waitMs ? new Date(Date.now() + waitMs) : null;
+      await tx.dataImport.update({ where: { id: row.id }, data: { ...data, resumeAt, tries: 0, progressAt: new Date() } });
       return true;
     });
   } catch (error) {
@@ -416,6 +424,9 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
   }
   if (saved) {
     await after?.();
+  }
+  if (saved && next && waitMs) {
+    return ended({ step: next, waiting: true });
   }
   return saved ? { result: { step: next ?? "done" }, more: next !== null } : ended({ skipped: true });
 }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
 import { adminMember, contactUsers, FeaturebaseError, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_RUN, importsSettled, importStep, loadAdmins, lockProject, SiteError, upsertProjectUser, waitBefore } from "@tuti/jobs";
-import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
+import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -399,6 +399,16 @@ test("what may pass is waited for: a rate limit, the source's own trouble, no an
   const crawl = { source: "WEBSITE", tries: 0 } as const;
   expect([site(0, "late"), site(429, "wait"), site(503, null), site(0, null)].map((error) => waitBefore(crawl, error))).toEqual([minute, minute, minute, minute]);
   expect([site(0, "refused"), site(0, "unknown"), site(404, null)].map((error) => waitBefore(crawl, error))).toEqual([null, null, null]);
+});
+
+test("a page counts as begun before its source answers: one whose job dies while it reads still moves on to failing the import", async () => {
+  // Featurebase holds its answer: the page is reading.
+  const row = await running({ apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_SLOW_KEY) });
+  const reading = handlers.importStep({ importId: row.id }, log);
+  await expect.poll(async () => (await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).tries).toBe(1);
+  fake.release();
+  expect(await reading).toEqual({ step: "done" });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", tries: 0 });
 });
 
 test("a failure of our own (the database) waits a minute and is tried again, not failed", async () => {

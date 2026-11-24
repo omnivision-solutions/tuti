@@ -540,13 +540,22 @@ test("an article page asking (Retry-After) to be left longer than a step waits l
   }
 });
 
-test("a run that brought articles across saves them when a later one asks (Retry-After 300) to be left: the next run brings the rest", async () => {
+test("a run that brought articles across saves them when a later one asks (Retry-After 300) to be left, then waits that long before asking again; the rest comes after", async () => {
   // The sitemap's third page.
   site.failing.set("/docs/getting-started/first-project", 429);
   site.failingOnce.add("/docs/getting-started/first-project");
   site.retryAfter = "300";
-  const done = await importSite();
-  expect(done.state).toBe("done");
+  const waiting = await importSite();
+  expect(waiting).toMatchObject({ state: "running", resumesAt: expect.any(String) });
+  expect(Math.round((Date.parse(waiting.resumesAt!) - Date.now()) / 60_000)).toBe(5);
+  // Asked once, not again at once.
+  expect(site.requests.filter((p) => p === "/docs/getting-started/first-project")).toHaveLength(1);
+  expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme"]);
+
+  await prisma.dataImport.update({ where: { id: waiting.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+  await call(getImport, asOwner(), {});
+  await importsSettled();
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done" });
   expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
   // The two before it were saved by the run that stopped: never fetched again.
   for (const path of ["/docs/getting-started", "/docs/getting-started/install"]) {
