@@ -37,6 +37,7 @@ export function ChangelogComment({
   doc,
   canEdit,
   canDelete,
+  mine = canEdit,
   uploads,
   children,
 }: {
@@ -47,6 +48,8 @@ export function ChangelogComment({
   doc: Doc;
   canEdit: boolean;
   canDelete: boolean;
+  /** Its author's (Delete says "your"); by default whoever may edit it. */
+  mine?: boolean;
   uploads?: EditorUploads;
   children: React.ReactNode;
 }) {
@@ -89,7 +92,7 @@ export function ChangelogComment({
           {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger
-                render={<button type="button" className={ACTION} aria-label={canEdit ? "Delete your comment" : `Delete ${author}'s comment`} aria-disabled={deleting || undefined} />}
+                render={<button type="button" className={ACTION} aria-label={mine ? "Delete your comment" : `Delete ${author}'s comment`} aria-disabled={deleting || undefined} />}
               >
                 Delete
               </AlertDialogTrigger>

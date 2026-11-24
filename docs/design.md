@@ -253,8 +253,8 @@ the list picks none to approve at once.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
-  beside the text (under it on phones), and once published its readers' comments under both ("N comments", the
-  thread as on a post, flat; Delete under each, Edit under the team's own): its tags as chips, the posts it completes
+  beside the text (under it on phones), and its readers' comments under both ("N comments", the
+  thread as on a post, flat; Delete under each, Edit under the team's own while it's published): its tags as chips, the posts it completes
   ("Link post…"), how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
   "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
