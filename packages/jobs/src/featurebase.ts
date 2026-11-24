@@ -32,24 +32,25 @@ export function inFeaturebaseStorage(url: string): boolean {
 /** A list's page, and where the next one starts (null: it was the last). */
 export type Page<T> = { items: T[]; next: string | null };
 
-/** How many times a request that failed for a while (429, 5xx, no answer) is tried again, and the longest wait between. */
+/**
+ * How many times a request that failed for a while (429, 5xx, no answer) is tried again, and the longest wait between:
+ * asked to be left longer (askedWait), it isn't asked again early; its error says how long (`retryAfterMs`), and an
+ * import waits that out itself (imports.ts).
+ */
 const RETRIES = 4;
 const MAX_WAIT_MS = 60_000;
 const TIMEOUT_MS = 30_000;
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** How long to wait before trying again: what Featurebase says (Retry-After, or its rate limit's reset), else 0.5s doubling up to 8s. */
-function waitFor(response: Response | null, attempt: number): number {
+/** How long Featurebase asks to be left (Retry-After, or its rate limit's reset), null when it doesn't say. */
+function askedWait(response: Response | null): number | null {
   const after = Number(response?.headers.get("retry-after"));
   if (after > 0) {
-    return Math.min(after * 1000, MAX_WAIT_MS);
+    return after * 1000;
   }
   const reset = Number(response?.headers.get("x-ratelimit-reset"));
-  if (response?.status === 429 && reset > 0) {
-    return Math.min(Math.max(reset * 1000 - Date.now(), 0), MAX_WAIT_MS);
-  }
-  return Math.min(500 * 2 ** attempt, 8_000);
+  return response?.status === 429 && reset > 0 ? Math.max(reset * 1000 - Date.now(), 0) : null;
 }
 
 /** The error's message from either of Featurebase's shapes ({ error: { message } }, { message }). */
@@ -100,9 +101,11 @@ export function featurebase(key: string, { wait = pause, deadline = Infinity }: 
           response = null;
         }
       }
-      const error = response ? new FeaturebaseError(response.status, await messageOf(response)) : failure;
-      if ((!response || response.status === 429 || response.status >= 500) && attempt < RETRIES) {
-        const ms = waitFor(response, attempt);
+      const asked = askedWait(response);
+      const error = response ? Object.assign(new FeaturebaseError(response.status, await messageOf(response)), { retryAfterMs: asked }) : failure;
+      if ((!response || response.status === 429 || response.status >= 500) && attempt < RETRIES && (asked ?? 0) <= MAX_WAIT_MS) {
+        // What Featurebase asks, else 0.5s doubling up to 8s.
+        const ms = asked ?? Math.min(500 * 2 ** attempt, 8_000);
         // Judged after the error's body was read, so its reading counts against the deadline too.
         if (Date.now() + ms < deadline) {
           last = error;

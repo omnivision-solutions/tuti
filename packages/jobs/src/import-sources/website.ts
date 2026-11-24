@@ -344,10 +344,14 @@ function site(start: string, deadline: number, kept: unknown) {
         // said (`wait`: the content pass ends the import, saying when to start it again, unless its run has work to save).
         if (asked != null && asked > RETRY_AFTER_MAX_MS) {
           const minutes = Math.max(1, Math.ceil(asked / 60_000));
-          throw new SiteError(
-            error.status,
-            `${new URL(url).hostname} asked Tuti to wait ${minutes === 1 ? "a minute" : `${minutes} minutes`}. Start the import again after that: it goes on from where it stopped.`,
-            "wait",
+          // `retryAfterMs`: the import waits that long itself (imports.ts), and says this only if it gives up.
+          throw Object.assign(
+            new SiteError(
+              error.status,
+              `${new URL(url).hostname} asked Tuti to wait ${minutes === 1 ? "a minute" : `${minutes} minutes`}. Start the import again after that: it goes on from where it stopped.`,
+              "wait",
+            ),
+            { retryAfterMs: asked },
           );
         }
         const wait = asked ?? Math.max(crawlPace.ms, sitePace().delayMs) * 2 ** (attempt + 1);

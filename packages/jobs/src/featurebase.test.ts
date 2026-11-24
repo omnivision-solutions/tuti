@@ -45,7 +45,7 @@ test("rate limits and server errors are tried again, waiting longer each time; t
   expect(waits).toEqual([500, 1000, 2000, 4000]);
 });
 
-test("a wait Featurebase asks for is honoured, up to a minute: Retry-After in seconds, or a rate limit's reset (epoch seconds) on 429", async () => {
+test("a wait Featurebase asks for is honoured: Retry-After in seconds, or a rate limit's reset (epoch seconds) on 429; asked for more than a minute, it isn't asked again, and the error says how long", async () => {
   // Only the clock is faked: the requests still go out.
   vi.useFakeTimers({ toFake: ["Date"] });
   try {
@@ -55,18 +55,18 @@ test("a wait Featurebase asks for is honoured, up to a minute: Retry-After in se
     fake.failNext(429, 1, { "retry-after": "30" });
     await client().get("/admins");
     fake.failNext(429, 1, { "retry-after": "120" });
-    await client().get("/admins");
+    expect(await client().get("/admins").catch((error: unknown) => error)).toMatchObject({ status: 429, retryAfterMs: 120_000 });
     fake.failNext(429, 1, { "x-ratelimit-limit": "2000", "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) });
     await client().get("/admins");
-    // A reset long away waits a minute at most; one that has passed, not at all.
+    // A reset long away isn't waited for here; one that has passed, not at all.
     fake.failNext(429, 1, { "x-ratelimit-reset": String(reset + 3600) });
-    await client().get("/admins");
+    expect(await client().get("/admins").catch((error: unknown) => error)).toMatchObject({ status: 429, retryAfterMs: 3_620_000 });
     fake.failNext(429, 1, { "x-ratelimit-reset": String(reset - 60) });
     await client().get("/admins");
     // A server error's reset isn't a rate limit's: the usual backoff.
     fake.failNext(503, 1, { "x-ratelimit-reset": String(reset) });
     await client().get("/admins");
-    expect(waits).toEqual([30_000, 60_000, 20_000, 60_000, 0, 500]);
+    expect(waits).toEqual([30_000, 20_000, 0, 500]);
   } finally {
     vi.useRealTimers();
   }

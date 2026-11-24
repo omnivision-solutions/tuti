@@ -18,7 +18,7 @@ import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, s
 export { replyRecipient, type ReplyRecipient } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
-import { failStaleImports, importStep } from "./imports";
+import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
@@ -30,7 +30,7 @@ export { COMMENT_BATCH_MINUTES } from "./comment-email";
 export { DAILY_INVITE_LIMIT, generateInvitationToken, hashInvitationToken, INVITATION_TTL_DAYS, invitationExpiry, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "./invitations";
 export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featurebase";
 export { contentBudget, FEATUREBASE_ICONS } from "./import-docs";
-export { adminMember, contactDetails, contactUsers, continueImport, failStaleImports, handOverOnVerified, handOverPlaceholders, type ImportCounts, importJob, IMPORT_KEY, IMPORT_PARTS, IMPORT_RUN, importsSettled, importStale, importStep, importStuck, loadAdmins, nextStep, resumeImport, type StepPage, tally } from "./imports";
+export { adminMember, contactDetails, contactUsers, continueImport, failStaleImports, handOverOnVerified, handOverPlaceholders, type ImportCounts, importJob, IMPORT_KEY, IMPORT_PARTS, IMPORT_RUN, IMPORT_WAITS, importsSettled, importStale, importStep, importDue, loadAdmins, nextStep, resumeImport, type StepPage, tally } from "./imports";
 export { CHANGELOG_PAGE } from "./import-changelog";
 export { uploadImage, UPLOADS_PER_HOUR_TEAM } from "./import-media";
 export { markdownToContent } from "./markdown-content";
@@ -116,6 +116,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   verifyArticle,
   verifyAllArticle: verifyArticle,
   importStep,
+  resumeImports: (_, log) => resumeImports(log),
   failStaleImports: () => failStaleImports(),
   postShipped,
   resubmitShippedEmails,
