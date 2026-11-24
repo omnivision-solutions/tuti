@@ -246,6 +246,20 @@ test("a search finds who a conversation is with as the Inbox shows them: an acco
   expect(await numbers(owner.email)).toEqual([3]);
 });
 
+test("message text is searched through the index of a project's messages by their text's trigrams", async () => {
+  const index = "conversation_message_project_body_trgm_idx";
+  expect(await prisma.$queryRaw`SELECT indisvalid AS valid, pg_get_indexdef(indexrelid) AS built FROM pg_index WHERE indexrelid = ${index}::regclass`).toEqual([
+    { valid: true, built: `CREATE INDEX ${index} ON public.conversation_message USING gin ("projectId", body gin_trgm_ops)` },
+  ]);
+  // Text alone, without reading the table: only this index can answer it. (With so few messages, Postgres reads a
+  // project's through the index on `projectId` whatever the text.)
+  const [, plan] = await prisma.$transaction([
+    prisma.$executeRaw`SET LOCAL enable_seqscan = off`,
+    prisma.$queryRaw`EXPLAIN SELECT 1 FROM conversation_message WHERE body ILIKE '%refund%'`,
+  ]);
+  expect(JSON.stringify(plan)).toContain(`Bitmap Index Scan on ${index}`);
+});
+
 test("webhooks hear of new conversations and of the user's messages, not the team's replies", async () => {
   const { context, owner } = await setup();
   await prisma.webhook.create({

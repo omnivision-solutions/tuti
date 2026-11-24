@@ -51,6 +51,19 @@ describe("migrations", () => {
     expect(found).toEqual([]);
   });
 
+  // Prisma can't describe the index (btree_gin), so `prisma migrate dev` writes a drop and a plain build of it
+  // into every new migration: that would hold up new messages while it builds.
+  it("leave the Inbox's search index alone", () => {
+    const dir = new URL("../prisma/migrations/", import.meta.url);
+    const rebuilt = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name > "20261124190100_conversation_message_project_body_trigram_index")
+      .filter((entry) =>
+        readFileSync(new URL(`${entry.name}/migration.sql`, dir), "utf8").includes("conversation_message_project_body_trgm_idx"),
+      )
+      .map((entry) => entry.name);
+    expect(rebuilt).toEqual([]);
+  });
+
   it.each([
     ['ALTER TABLE "post" DROP COLUMN "title"'],
     ['DROP TABLE "post"'],

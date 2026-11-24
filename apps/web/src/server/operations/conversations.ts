@@ -288,8 +288,8 @@ const likeText = (q: string) => q.replace(/[\\%_]/g, "\\$&");
 /**
  * The conversations a search for `q` finds, whatever the case: the one with that number (`12` or `#12`), and those with
  * the text in their subject, in who they're with as the Inbox shows them (conversationPerson's name and email; their
- * company, conversationCompanies'), or in a message or note. For the team only: notes are theirs. The trigram index on
- * messages' text answers the last (its project's messages alone under three characters).
+ * company, conversationCompanies'), or in a message or note. For the team only: notes are theirs. The index of a
+ * project's messages by their text's trigrams answers the last (the project's messages alone under three characters).
  * ponytail: an address-linked company is found through at most 1,000 of the project's users at companies with the text,
  * any of those sharing the address (the Inbox shows the oldest one's); join conversations to identities in SQL if a
  * project outgrows that.

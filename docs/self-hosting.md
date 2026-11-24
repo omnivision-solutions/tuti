@@ -42,8 +42,9 @@ Requirements:
 - Node 22.22+ and pnpm (`corepack enable`)
 - PostgreSQL (tested with 17) with the [pgvector](https://github.com/pgvector/pgvector) extension available.
   pgvector isn't a trusted extension, so a superuser must run `CREATE EXTENSION vector;` in
-  the database once before the first migration (`pg_trgm`, also used, the migrations enable
-  themselves). The `pgvector/pgvector` Docker image has both.
+  the database once before the first migration (`pg_trgm` and `btree_gin`, also used, ship with
+  PostgreSQL and the migrations enable them themselves). The `pgvector/pgvector` Docker image has
+  all three.
 - Background jobs: a [Hatchet](https://hatchet.run) server (Hatchet Cloud or self-hosted,
   configured only through `HATCHET_CLIENT_*` env vars), or none with `JOBS_DRIVER=inline`
   (jobs run inside the web app; fine for small installs). Inline jobs run once, with no
