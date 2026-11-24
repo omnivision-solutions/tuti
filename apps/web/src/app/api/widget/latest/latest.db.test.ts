@@ -165,7 +165,24 @@ test("with the popup on, the widget learns the latest announcement itself: its n
     const cover = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 1200, height: 600 } });
     await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Older", body: "Old news", publishedAt: days(3), announced: true } });
     await prisma.changelogEntry.create({
-      data: { projectId: project.id, number: 2, title: "Dark mode", body: `Dark mode\n\nis here.  ${"x".repeat(300)}`, publishedAt: days(1), announced: true, coverId: cover.id },
+      data: {
+        projectId: project.id,
+        number: 2,
+        title: "Dark mode",
+        // Opening with a video: the excerpt is its words, as the changelog's list shows them, not the video's address.
+        body: "https://www.youtube.com/watch?v=abc123\n\nDark mode\n\nis here.",
+        content: {
+          type: "doc",
+          content: [
+            { type: "video", attrs: { src: "https://www.youtube.com/watch?v=abc123" } },
+            { type: "paragraph", content: [{ type: "text", text: "Dark mode" }] },
+            { type: "paragraph", content: [{ type: "text", text: "is here." }] },
+          ],
+        },
+        publishedAt: days(1),
+        announced: true,
+        coverId: cover.id,
+      },
     });
     const ask = async () => (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as Record<string, unknown>;
 
@@ -173,11 +190,13 @@ test("with the popup on, the widget learns the latest announcement itself: its n
     const before = Date.now();
     const off = await ask();
     expect(off.announcement).toBeUndefined();
-    expect(new Date(off.now as string).getTime()).toBeGreaterThanOrEqual(before - 1000);
+    // Ten seconds early, so a publish still committing when this answer was made counts as after this visit.
+    expect(new Date(off.now as string).getTime()).toBeGreaterThanOrEqual(before - 11_000);
+    expect(new Date(off.now as string).getTime()).toBeLessThanOrEqual(Date.now() - 10_000);
 
     await prisma.project.update({ where: { id: project.id }, data: { widgetPopup: true } });
     const { announcement } = (await ask()) as { announcement: { number: number; title: string; excerpt: string; image: string | null } };
-    expect(announcement).toEqual({ number: 2, title: "Dark mode", excerpt: `Dark mode is here. ${"x".repeat(181)}`, image: lastingImage(cover)!.url });
+    expect(announcement).toEqual({ number: 2, title: "Dark mode", excerpt: "Dark mode is here.", image: lastingImage(cover)!.url });
 
     // A private portal: nothing about its changelog, popup or not.
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });

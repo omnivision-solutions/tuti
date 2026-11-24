@@ -637,6 +637,9 @@ test("a new announcement pops up by the launcher, once, for visitors who were he
   expect(await visit(ada)).not.toHaveProperty("announcement");
   await expect(launcherOf(ada)).toHaveAccessibleName("Feedback, new updates");
   await expect(popupOf(ada)).toHaveCount(0);
+  // That visit is dated ten seconds early (a publish still committing counts as after it): Ada's last visit, as a later
+  // one would be, is well after the announcement.
+  await ada.evaluate((slug) => localStorage.setItem(`tuti:visit:${slug}`, new Date(Date.now() + 60_000).toISOString()), slug);
 
   // The team turns it on in Settings → Widget.
   await owner.goto(`/app/${slug}/settings/widget`);

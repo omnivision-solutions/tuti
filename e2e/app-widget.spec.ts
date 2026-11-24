@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_WIDGET_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";
-import { createApiKey, createProject, signUp } from "./helpers";
+import { createProject, signUp } from "./helpers";
 
 // On Tuti's cloud, whose team app shows its own project's widget (ownPortal.widgetProject).
 test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on the signed-out pages", async ({ browser }, testInfo) => {
@@ -101,22 +101,14 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await expect(appLauncher).toBeVisible();
 
   // With the popup on (Settings → Widget), an announcement published since the last visit shows by the launcher: under
-  // the app's dialogs, above the launcher where it's raised over a phone's tab bar, and not in the Inbox.
-  const key = await createApiKey(owner, APP_WIDGET_SLUG, "Popup test");
-  const api = async (path: string, body: object, method = "POST") => {
-    const response = await fetch(`${CLOUD_URL}/api/v1${path}`, {
-      method,
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
+  // the app's dialogs, above the launcher where it's raised over a phone's tab bar, and not in the Inbox. Every cloud
+  // journey shows this project's widget, so its settings and changelog stay as they are: this page alone is told of one.
+  await owner.route("**/api/widget/latest*", async (route) => {
+    const answer = await (await route.fetch()).json();
+    await route.fulfill({
+      json: { ...answer, latest: new Date().toISOString(), announcement: { number: 1, title: "Calendar sync is here", excerpt: "Your events, both ways.", image: null } },
     });
-    expect(response.ok).toBe(true);
-    return (await response.json()) as { number?: number };
-  };
-  await api("/widget", { popup: true }, "PATCH");
-  const { number } = await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
-  await api(`/changelog/${number}/publish`, {});
-  // Every load reads /api/widget/latest afresh (routing turns off the browser's minute-long cache), as a later visit would.
-  await owner.route("**/api/widget/latest*", (route) => route.continue());
+  });
   await owner.evaluate((slug) => localStorage.setItem(`tuti:visit:${slug}`, "2000-01-01T00:00:00.000Z"), APP_WIDGET_SLUG);
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${APP_WIDGET_SLUG}/feedback`);

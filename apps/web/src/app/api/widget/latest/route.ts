@@ -1,12 +1,17 @@
+import { excerpt } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { liveDomain, projectWith } from "@tuti/jobs";
 
 import { customDomainTarget } from "@/lib/custom-domains";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
+import { displayDoc } from "@/server/content";
 import { lastingImage } from "@/server/media-urls";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
+
+/** Longer than a publish's transaction lasts: see `now` below. */
+const PUBLISH_MARGIN_MS = 10_000;
 
 /**
  * For the widget script on customers' sites, read once per page view: when the
@@ -29,8 +34,10 @@ export async function GET(request: Request) {
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
-  // Taken before the reads: an announcement published while they run is after this visit, so the next one shows it.
-  const now = new Date().toISOString();
+  // A little before the reads: an announcement published while they run, or whose publish hasn't committed yet (it's
+  // dated when the publish starts), is after this visit, so the next one shows it. Ignored in those seconds, a card can
+  // show once more.
+  const now = new Date(Date.now() - PUBLISH_MARGIN_MS).toISOString();
   const [entry, settings, project] = await Promise.all([
     latestAnnouncement({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
@@ -69,11 +76,11 @@ export async function GET(request: Request) {
     entry && settings?.popup
       ? await prisma.changelogEntry.findUnique({
           where: { id: entry.id },
-          select: { number: true, title: true, body: true, cover: { select: { id: true, status: true, width: true, height: true } } },
+          select: { number: true, title: true, body: true, content: true, cover: { select: { id: true, status: true, width: true, height: true } } },
         })
       : null;
   const announcement = card
-    ? { number: card.number, title: card.title, excerpt: card.body.replace(/\s+/g, " ").trim().slice(0, 200), image: lastingImage(card.cover)?.url ?? null }
+    ? { number: card.number, title: card.title, excerpt: excerpt(displayDoc(card), 200).text.replace(/\s+/g, " "), image: lastingImage(card.cover)?.url ?? null }
     : null;
   return Response.json(
     {
