@@ -76,6 +76,11 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       const object = objects.get(key);
       switch (req.method) {
         case "PUT":
+          // As S3 and R2: a PUT says its length up front, or it's refused (no chunked uploads).
+          if (req.headers["content-length"] === undefined) {
+            res.writeHead(411).end();
+            return;
+          }
           const status = fake.onPut?.(key, req.headers);
           if (status) {
             res.writeHead(status).end();

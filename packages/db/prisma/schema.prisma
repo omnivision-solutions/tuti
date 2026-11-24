@@ -49,6 +49,7 @@ model User {
   postSubscriptions  PostSubscription[]
   comments           Comment[]
   changelogReactions ChangelogReaction[]
+  changelogComments  ChangelogComment[]
   commentLikes       CommentLike[]
   changelogSeen      ChangelogSeen[]
   ssoIdentity        SsoIdentity?
@@ -1732,6 +1733,7 @@ model ChangelogEntry {
   posts            ChangelogEntryPost[]
   pullRequests     ChangelogEntryPullRequest[]
   reactions        ChangelogReaction[]
+  comments         ChangelogComment[]
   /// The status changes publishing it made (its posts completed): who they emailed is how many were told.
   postEvents       PostEvent[]
   subscriberEmails ChangelogEmail[]
@@ -1800,6 +1802,30 @@ model ChangelogReaction {
   @@id([entryId, userId, kind])
   @@index([userId])
   @@map("changelog_reaction")
+}
+
+/// A reader's comment on a published changelog entry (the comment profile, as a post's). Its author edits or deletes it;
+/// the team deletes any. Unpublishing the entry hides them with it.
+model ChangelogComment {
+  id        String   @id @default(cuid())
+  entryId   String
+  authorId  String
+  /// Plain text (derived from `content`).
+  body      String
+  /// Rich content (@tuti/content "comment" profile).
+  content   Json
+  /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's, even if its author is on the team.
+  asReader  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  /// When its author last edited it; null if never.
+  editedAt  DateTime?
+
+  entry  ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  author User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([entryId, createdAt])
+  @@index([authorId])
+  @@map("changelog_comment")
 }
 
 /// How far someone has read a project's announcements (What's new in the widget, the

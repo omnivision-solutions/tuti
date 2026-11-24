@@ -2,6 +2,7 @@ import type { Operation } from "./define";
 import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
 import { analyseCodeChange, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, stopCodeChangeAction, undoCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChanges, listCodeChangeTargets, resumeCodeChanges } from "./code-changes";
+import { createChangelogComment, deleteChangelogComment, listChangelogComments, updateChangelogComment } from "./changelog-comments";
 import { createComment, createPost } from "./create";
 import {
   createConversation,
@@ -109,6 +110,10 @@ const all = [
   listChangelog,
   getChangelogEntry,
   reactToChangelogEntry,
+  listChangelogComments,
+  createChangelogComment,
+  updateChangelogComment,
+  deleteChangelogComment,
   markChangelogSeen,
   createChangelogEntry,
   updateChangelogEntry,

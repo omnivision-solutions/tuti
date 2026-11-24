@@ -41,6 +41,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.list": () => ({}),
   "changelog.get": () => ({ number: 1 }),
   "changelog.react": () => ({ number: 1, reaction: "tada", reacted: true }),
+  "changelogComments.list": () => ({ number: 1 }),
+  "changelogComments.create": () => ({ number: 1, body: "From the matrix" }),
+  // The key's creator wrote it.
+  "changelogComments.update": (f) => ({ number: 1, id: f.entryCommentId, body: "Edited by the matrix" }),
+  "changelogComments.delete": (f) => ({ number: 1, id: f.entryCommentId }),
   "changelog.seen": () => ({ at: "2026-10-20T09:00:00Z", author: { id: "matrix-reader" } }),
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
@@ -266,6 +271,15 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
   });
+  // A comment on #1 by the keys' creator, to edit and delete.
+  const entryComment = await prisma.changelogComment.create({
+    data: {
+      entry: { connect: { projectId_number: { projectId: project.id, number: 1 } } },
+      author: { connect: { id: owner.id } },
+      body: "A comment",
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "A comment" }] }] },
+    },
+  });
   // A tab, a collection in it, a published article in that and a draft.
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
@@ -415,6 +429,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     marker,
     linkId: link.id,
     commentId: comment.id,
+    entryCommentId: entryComment.id,
     suggestionId: suggestion.id,
     revisionId: revision.id,
     questionId: question.id,
@@ -467,7 +482,7 @@ const snapshot = () =>
     prisma.postLink.findMany({ where: { projectId: project.id } }),
     prisma.vote.findMany({ where: { projectId: project.id } }),
     prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
-    prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true, reactions: true } }),
+    prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true, reactions: true, comments: true } }),
     prisma.project.findUnique({
       where: { id: project.id },
       select: {

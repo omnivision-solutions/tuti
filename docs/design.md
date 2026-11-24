@@ -537,8 +537,11 @@ the list picks none to approve at once.
     picked (your own the accent's tint and ring); a line between entries. A "Jump to month" index beside the list past
     eight entries, plain rows (the page's month in the neutral fill): the latest six months, older ones under "Earlier
     months" (open when the page's month is among them). An entry's page: the page header (← Changelog, the 36px
-    title, its tags and date under it), the reactions, then "Get updates by email" as a plain section under a line
-    (no card), its Subscribe the page's one filled button.
+    title, its tags and date under it), the reactions, its comments under a line, then "Get updates by email" as a plain
+    section under a line (no card), its Subscribe the page's one filled button. The comments: "N comments", the box (the
+    face, the box, a grey Comment button), or signed out a fill with "Sign in to comment." and Sign in, then the thread
+    oldest first, flat (no sort, Reply or Like: a few reactions to an announcement, not a discussion), the team's tinted
+    as on a post; Edit and Delete under your own, Delete asking first.
   - **Sign-in**: one card (max-w-sm, the width and offset of every sign-in page) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
     "Vote, comment and follow ideas. We'll email you as they move forward and when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and

@@ -5,7 +5,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { attachMedia } from "@/server/content";
 import { createUpload } from "@/server/media";
-import { createChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
+import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
+import { createChangelogComment } from "@/server/operations/changelog-comments";
 import { createComment, createPost } from "@/server/operations/create";
 import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -74,6 +75,20 @@ test("an upload only a deleted post, comment or internal note used is released; 
   expect(await release()).toBe(3);
   expect(await attached(inPost.id, inComment.id, inNote.id)).toEqual([false, false, false]);
   expect(await attached(alsoInChangelog.id)).toEqual([true]);
+});
+
+test("an upload in a comment on a changelog entry is kept while the comment is there", async () => {
+  const inComment = await upload();
+  const { number } = await call(createChangelogEntry, as(owner), { title: "Shipped", body: "x" });
+  await call(publishChangelogEntry, as(owner), { number });
+  await call(createChangelogComment, as(owner), { number, content: { type: "doc", content: [image(inComment.id)] } });
+  await ageAttachments();
+
+  expect(await release()).toBe(0);
+
+  await prisma.changelogComment.deleteMany({ where: { entry: { projectId: project.id } } });
+  expect(await release()).toBe(1);
+  expect(await attached(inComment.id)).toEqual([false]);
 });
 
 test("a changelog entry's cover is kept while it's the cover, and released once it's replaced", async () => {

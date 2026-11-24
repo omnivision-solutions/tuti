@@ -46,6 +46,8 @@ const drafts = {
  * storage), text only.
  *
  * `replyTo`: a reply to that comment (its box opened by Reply, focused, `onDone` once posted, with Cancel: `onCancel`).
+ *
+ * `action`: where it's sent instead of a post's comments (a changelog entry's); `postId` then only keys the kept draft.
  */
 export function CommentForm({
   postId,
@@ -58,8 +60,10 @@ export function CommentForm({
   autoFocus,
   onDone,
   onCancel,
+  action: send = addComment,
 }: {
   postId: string;
+  action?: (prev: FormState, formData: FormData) => Promise<FormState>;
   replyTo?: string;
   autoFocus?: boolean;
   onDone?: () => void;
@@ -88,7 +92,7 @@ export function CommentForm({
     setEmailVoters(false);
   }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await addComment(prev, formData);
+    const result = await send(prev, formData);
     if (!result.error) {
       if (portal) {
         drafts.save(draftKey, null);

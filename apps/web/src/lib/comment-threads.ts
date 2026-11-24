@@ -27,3 +27,6 @@ export function threads<T extends { id: string; createdAt: Date; parentId?: stri
   }
   return top.map((item) => ({ item, replies: replies.get(item.id) ?? [] }));
 }
+
+/** A changelog entry's comments' heading's id: focus goes there once a comment is deleted (its Delete is gone with it). */
+export const COMMENTS_HEADING = "entry-comments";
