@@ -278,6 +278,8 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   await owner.getByRole("button", { name: "Import again" }).click();
   await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
   await expect(status).toContainText("Skipped what was already brought across earlier.");
+  // Each part counts what it skipped as an earlier import brought it: importing again moving along.
+  await expect(owner.getByRole("list", { name: "What's brought across", exact: true }).getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 skipped (brought earlier)");
   await checkpoint(owner, "settings-import-again");
 });
 

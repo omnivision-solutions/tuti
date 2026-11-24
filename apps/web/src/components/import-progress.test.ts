@@ -40,12 +40,14 @@ test("each part's tag: done, in progress, next, waiting; a failed import's stopp
   expect(rows(run("done", null))[0]).toBe("Contacts Nothing new. Done See users");
 });
 
-test("a part going through what's already here says so, not that it's starting, and the list says once that it's skipped", () => {
+test("a part going through what's already here counts it as it goes, so importing again visibly moves", () => {
   const counts = { contacts: { imported: 0, leftOut: { "already brought across earlier": 1300 } } };
-  const html = renderToStaticMarkup(createElement(ImportProgress, { projectSlug: "acme", run: run("running", "contacts", counts), invitations: 0 }));
-  expect(rows(run("running", "contacts", counts))[0]).toBe("Contacts Nothing new so far. In progress");
-  expect(html).toContain("Skipped what was already brought across earlier.");
-  expect(renderToStaticMarkup(createElement(ImportProgress, { projectSlug: "acme", run: run("running", "contacts"), invitations: 0 }))).not.toContain("Skipped");
+  expect(rows(run("running", "contacts", counts))[0]).toBe("Contacts 1,300 skipped (brought earlier) so far In progress");
+  expect(rows(run("running", "contacts", { contacts: { imported: 60, leftOut: { "already brought across earlier": 137_412 } } }))[0]).toBe(
+    "Contacts 60 contacts 137,412 skipped (brought earlier) so far In progress",
+  );
+  // Only left out for other reasons: nothing new.
+  expect(rows(run("running", "contacts", { contacts: { imported: 0, leftOut: { "without a name": 2 } } }))[0]).toMatch(/^Contacts Nothing new so far\. 2 left out/);
   // Under way with some brought: its numbers, so far.
   expect(rows(run("running", "votes", { posts: { imported: 4, leftOut: {} } }))[1]).toBe("Feedback 4 posts so far Posts (done) Votes (in progress) Comments Duplicate check In progress");
   // Only its own: the next part, with nothing counted yet, is starting.
@@ -62,11 +64,12 @@ test("once done, each part shows its numbers and folds away what it left out and
   const html = renderToStaticMarkup(createElement(ImportProgress, { projectSlug: "acme", run: r, invitations: 0 }));
   expect(html).toMatch(/<span class="font-semibold tabular-nums">218<\/span> <span class="text-muted-foreground">posts<\/span>/);
   expect(html).toMatch(/<details[^>]*><summary[^>]*>12 left out<\/summary><ul[^>]*><li>9 comments deleted or spam<\/li><li>2 comments with nothing left in them<\/li><li>1 video Tuti has no place for<\/li><\/ul><\/details>/);
-  expect(html).not.toContain("281");
+  // What an earlier import brought, skipped, apart from what came across and what was left out.
+  expect(html).toMatch(/<span class="text-muted-foreground"><span class="tabular-nums">281<\/span> skipped \(brought earlier\)<\/span>/);
   // Its tick says it's done; a pill beside no link reads as a button, so only screen readers hear it.
   expect(html).not.toContain("rounded-full border");
   expect(html).toMatch(/Profile pictures<\/p>.*<span class="sr-only">Done<\/span><\/li><\/ol>/);
-  expect(rows(r)).toEqual(["Contacts Nothing new. Done See users", expect.stringMatching(/^Feedback 218 posts 253 comments 12 left out .* Done See feedback$/), "Profile pictures Nothing new. Done"]);
+  expect(rows(r)).toEqual(["Contacts Nothing new. Done See users", expect.stringMatching(/^Feedback 218 posts 253 comments 281 skipped \(brought earlier\) 12 left out .* Done See feedback$/), "Profile pictures Nothing new. Done"]);
 });
 
 test("Home's button says View progress while it runs, View details after", () => {
