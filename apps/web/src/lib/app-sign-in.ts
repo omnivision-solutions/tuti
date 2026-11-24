@@ -7,11 +7,17 @@ import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
 
+import { socialSignInConfig } from "./social-sign-in";
+
 /**
  * Signing in from Tuti's mobile app (docs/plan.md, Mobile app). The app has no web view of its own for it: Google,
  * GitHub and an emailed link finish in the device's browser, which then opens the app through its link scheme with the
- * session (Better Auth's Expo plugin, lib/auth.ts). Only this scheme is trusted, on the app's host only, on every
- * server: a self-hosted one needs no setting for it.
+ * session. Only this scheme is trusted (lib/auth.ts), on the app's host only, on every server: a self-hosted one needs
+ * no setting for it.
+ *
+ * The app uses Better Auth's Expo client (`@better-auth/expo/client`), and this is the server it expects: what that
+ * package's own server plugin does, written here, narrower. Its package isn't a dependency of the web app: beside the
+ * mobile app in one workspace, its optional peers would bring Expo and React Native into the web app's install.
  */
 export const APP_ORIGIN = "tuti://";
 
@@ -25,55 +31,85 @@ export const isAppSignInState = (state: unknown): state is string => typeof stat
 /** Where an emailed link's "Open the app" sends the browser: the app, which checks `state`. */
 export const appSignInReturn = (state: string) => `${APP_ORIGIN}sign-in?state=${state}`;
 
-/**
- * POST /api/auth/app/sign-in-link `{ email, state }`: emails an account a link that signs the app in (the page it opens:
- * /app/auth/app-link). Under the limits of every emailed link (server/email-link-limits.ts), and it answers the same
- * whether or not the address has an account: one without gets nothing, as the app has no sign-up.
- */
+const refused = () => new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
+
 export const appSignIn = () =>
   ({
     id: "tuti-app-sign-in",
-    // After Better Auth's Expo plugin in the list (lib/auth.ts): what it does for the app stays the app's.
+    // The app's requests come from no page, so they have no Origin; the Expo client says its scheme in `expo-origin`
+    // instead, and that stands in for it: Better Auth checks it like any origin (trusted on the app's host only). A page
+    // in a browser can't send that header to another site, and a request that has an Origin keeps it.
+    async onRequest(request) {
+      if (request.headers.get("origin") || !isAppLink(request.headers.get("expo-origin"))) {
+        return;
+      }
+      const headers = new Headers(request.headers);
+      headers.set("origin", APP_ORIGIN);
+      return { request: new Request(request, { headers }) };
+    },
     hooks: {
-      before: [
-        {
-          // The plugin's stop in the device's browser, on the way to Google or GitHub: it gives the browser the state of a
-          // sign-in someone else's request started, which a provider's way back is checked against. Only for a sign-in
-          // that can only end at the app (where a session nobody asked for is refused by its state), never one of the web's: any
-          // page could send a visitor here with the state of its own sign-in, and have their browser signed in to its
-          // account. Nor with a state for a cookie (`oauthState`): states are kept in the database here.
-          matcher: (ctx) => ctx.path === "/expo-authorization-proxy",
-          handler: createAuthMiddleware(async (ctx) => {
-            const { authorizationURL, oauthState } = (ctx.query ?? {}) as { authorizationURL?: string; oauthState?: string };
-            const state = authorizationURL && URL.canParse(authorizationURL) ? new URL(authorizationURL).searchParams.get("state") : null;
-            // As Better Auth keeps a sign-in's state (`auth-state:`), with everywhere it may go back to: all of them the
-            // app's, or a new account's way back (`newUserURL`) could be a page, where the browser would keep its session.
-            const kept = state && !oauthState ? await ctx.context.internalAdapter.findVerificationValue(`auth-state:${state}`) : null;
-            let ends: { callbackURL?: unknown; newUserURL?: unknown; errorURL?: unknown } = {};
-            try {
-              ends = (kept && (JSON.parse(kept.value) as typeof ends)) || {};
-            } catch {}
-            const appOrNone = (url: unknown) => url === undefined || url === null || isAppLink(url);
-            if (!isAppLink(ends.callbackURL) || !appOrNone(ends.newUserURL) || !appOrNone(ends.errorURL)) {
-              throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
-            }
-          }),
-        },
-      ],
       after: [
         {
-          // A sign-in that ends at the app is the app's alone: the browser it went through, which had no say in whose
-          // sign-in it finished, keeps no session (the plugin has put the cookie in the app's link by now).
-          matcher: (ctx) => !!ctx.path?.startsWith("/callback"),
+          // A sign-in that ends with a redirect to the app (Google's or GitHub's way back, the emailed link's
+          // "Open the app"): the session's cookie rides in that redirect, as `cookie`, for the app to keep, and is the
+          // app's alone. The browser it went through, which had no say in whose sign-in it finished, gets none.
+          matcher: (ctx) => !!ctx.path?.startsWith("/callback") || ctx.path === "/magic-link/verify",
           handler: createAuthMiddleware(async (ctx) => {
-            if (isAppLink(ctx.context.responseHeaders?.get("location"))) {
-              ctx.context.responseHeaders?.delete("set-cookie");
+            const headers = ctx.context.responseHeaders;
+            const location = headers?.get("location");
+            if (!headers || !isAppLink(location) || !ctx.context.isTrustedOrigin(location)) {
+              return;
+            }
+            const cookie = headers.get("set-cookie");
+            headers.delete("set-cookie");
+            if (cookie) {
+              const to = new URL(location);
+              to.searchParams.set("cookie", cookie);
+              ctx.setHeader("location", to.toString());
             }
           }),
         },
       ],
     },
     endpoints: {
+      /**
+       * GET /api/auth/expo-authorization-proxy?authorizationURL=…: the device's browser's first stop for Google or
+       * GitHub. The app's own request started the sign-in, so the browser has nothing of it: this gives it the sign-in's
+       * state (the cookie a provider's way back is checked against) and sends it on to the provider.
+       *
+       * Only for a sign-in that can only end at the app, where a session nobody asked for is refused by its state:
+       * every way back it was started with (an account's, a new account's, an error's) is the app's. Never one of the
+       * web's: any page could send a visitor here with the state of its own sign-in, and have their browser finish it,
+       * signed in to the page's account. And only on to a provider set up here: never an open redirect.
+       */
+      expoAuthorizationProxy: createAuthEndpoint("/expo-authorization-proxy", { method: "GET", query: z.object({ authorizationURL: z.string().max(4000) }) }, async (ctx) => {
+        const { authorizationURL } = ctx.query;
+        const url = URL.canParse(authorizationURL) ? new URL(authorizationURL) : null;
+        const state = url?.searchParams.get("state");
+        const providers = socialSignInConfig("").map((provider) => new URL(provider.authorizationUrl!).origin);
+        if (!url || !state || url.hash || !providers.includes(url.origin)) {
+          throw refused();
+        }
+        // As Better Auth keeps a sign-in's state (`auth-state:`), with everywhere it may go back to.
+        const kept = await ctx.context.internalAdapter.findVerificationValue(`auth-state:${state}`);
+        let ends: { callbackURL?: unknown; newUserURL?: unknown; errorURL?: unknown } = {};
+        try {
+          ends = (kept && new Date(kept.expiresAt) > new Date() && (JSON.parse(kept.value) as typeof ends)) || {};
+        } catch {}
+        const appOrNone = (back: unknown) => back === undefined || back === null || isAppLink(back);
+        if (!isAppLink(ends.callbackURL) || !appOrNone(ends.newUserURL) || !appOrNone(ends.errorURL)) {
+          throw refused();
+        }
+        // The cookie Better Auth's own start of a sign-in sets (`state`, signed), for five minutes.
+        const cookie = ctx.context.createAuthCookie("state", { maxAge: 300 });
+        await ctx.setSignedCookie(cookie.name, state, ctx.context.secret, cookie.attributes);
+        throw ctx.redirect(url.toString());
+      }),
+      /**
+       * POST /api/auth/app/sign-in-link `{ email, state }`: emails an account a link that signs the app in (the page it
+       * opens: /app/auth/app-link). Under the limits of every emailed link (server/email-link-limits.ts), and it answers
+       * the same whether or not the address has an account: one without gets nothing, as the app has no sign-up.
+       */
       appSignInLink: createAuthEndpoint(
         "/app/sign-in-link",
         {

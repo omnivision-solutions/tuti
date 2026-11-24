@@ -4,7 +4,6 @@ import { prisma } from "@tuti/db";
 import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
 import { emailConfigured, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
-import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -362,9 +361,7 @@ export const auth = betterAuth({
     // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
     genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
     // The mobile app (lib/app-sign-in.ts): a sign-in it starts (Google, GitHub) or asks for (the emailed link) ends in
-    // the device's browser with a redirect to tuti://…, to which Better Auth's Expo plugin adds the session's cookie
-    // for the app to keep. Only for a redirect to a trusted origin, so only that scheme, on the app's host.
-    expo(),
+    // the device's browser with a redirect to tuti://…, which carries the session's cookie for the app to keep.
     appSignIn(),
     nextCookies(),
   ],

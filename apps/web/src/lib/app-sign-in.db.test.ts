@@ -81,19 +81,29 @@ async function projectsOf(token: string | undefined) {
   return { status: response.status, body: await response.json() };
 }
 
-/** Continue with Google from the app as `person`, back to `callbackURL`: the response of Google's redirect back to Tuti. */
-async function continueWithGoogle(person: { email: string; name: string }, callbackURL: string) {
-  const started = await fromApp("/sign-in/social", { body: { provider: "google", callbackURL } });
+/**
+ * Continue with Google as `person`, back to `callbackURL`: the response of Google's redirect back to Tuti. From the app,
+ * its own request starts it and the device's browser goes through the proxy for the sign-in's state; a page's browser
+ * starts it itself.
+ */
+async function continueWithGoogle(person: { email: string; name: string }, callbackURL: string, { fromThe = "app" as "app" | "web" } = {}) {
+  const started = await fromApp("/sign-in/social", { body: { provider: "google", callbackURL }, origin: fromThe === "app" ? "tuti://" : null });
   if (started.status !== 200) {
     return started;
   }
   const { url } = (await started.json()) as { url: string };
-  const browser = randomUUID();
-  await fetch(`${google.url}/_fake/next-sign-in`, { method: "POST", body: JSON.stringify({ forwardedFor: browser, sub: randomUUID(), ...person }) });
-  const consented = await fetch(url, { headers: { "x-forwarded-for": browser }, redirect: "manual" });
+  let browser = cookiesOf(started);
+  if (fromThe === "app") {
+    const proxied = await fromApp(`/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: url })}`, { origin: null });
+    expect(proxied.status).toBe(302);
+    expect(proxied.headers.get("location")).toBe(url);
+    browser = cookiesOf(proxied);
+  }
+  const who = randomUUID();
+  await fetch(`${google.url}/_fake/next-sign-in`, { method: "POST", body: JSON.stringify({ forwardedFor: who, sub: randomUUID(), ...person }) });
+  const consented = await fetch(url, { headers: { "x-forwarded-for": who }, redirect: "manual" });
   const back = new URL(consented.headers.get("location")!);
-  // In the device's browser, which has the sign-in's state cookie (Better Auth's Expo plugin puts it there on the way out).
-  return fromApp(`${back.pathname.replace("/api/auth", "")}${back.search}`, { cookie: cookiesOf(started), origin: null });
+  return fromApp(`${back.pathname.replace("/api/auth", "")}${back.search}`, { cookie: browser, origin: null });
 }
 
 test("Continue with Google from the app ends at the app's link with a session that works on the API", async () => {
@@ -107,6 +117,14 @@ test("Continue with Google from the app ends at the app's link with a session th
   // The app's own session, like one from the web's sign-in: nothing of Google's kept.
   expect(await prisma.session.findFirstOrThrow({ where: { userId: owner.id }, orderBy: { createdAt: "desc" } })).toMatchObject({ boundTo: "app" });
   expect(await prisma.account.findFirstOrThrow({ where: { userId: owner.id, providerId: "google" } })).toMatchObject({ accessToken: null, refreshToken: null, idToken: null });
+
+  // Signing out from the app: its cookie by hand and its scheme where a page's origin would be. Without that, a request
+  // with a cookie and no origin is refused, as any is.
+  const cookie = `tuti.session_token=${session.token}`;
+  expect((await fromApp("/sign-out", { body: {}, cookie, origin: null })).status).toBe(403);
+  expect((await fromApp("/sign-out", { body: {}, cookie, origin: "evil://" })).status).toBe(403);
+  expect((await fromApp("/sign-out", { body: {}, cookie })).status).toBe(200);
+  expect(await projectsOf(session.token)).toMatchObject({ status: 401 });
 });
 
 test("only the app's link scheme is trusted, on the app's host, and the web's sign-in hands nothing over", async () => {
@@ -114,6 +132,7 @@ test("only the app's link scheme is trusted, on the app's host, and the web's si
   // Another scheme, another site, and a scheme that only starts like the app's: refused before anything starts.
   for (const callbackURL of ["evil://sign-in", "https://evil.example/sign-in", "tutix://sign-in", "tuti.evil://sign-in"]) {
     expect((await continueWithGoogle(person, callbackURL)).status, callbackURL).toBe(403);
+    expect((await continueWithGoogle(person, callbackURL, { fromThe: "web" })).status, callbackURL).toBe(403);
   }
   // On a portal's host the scheme means nothing: neither as where to go back to, nor as where a request is from.
   const portal = `${project.slug}.localhost:3100`;
@@ -121,15 +140,15 @@ test("only the app's link scheme is trusted, on the app's host, and the web's si
   expect((await fromApp("/sign-out", { host: portal, body: {}, cookie: owner.cookie })).status).toBe(403);
 
   // From the web, back to a page of the app's: the browser gets its cookie, and no session rides in the address.
-  const web = await continueWithGoogle(person, "/app");
+  const web = await continueWithGoogle(person, "/app", { fromThe: "web" });
   expect(web.status).toBe(302);
   expect(web.headers.get("location")).toBe("/app");
   expect(cookiesOf(web)).toContain("tuti.session_token=");
 });
 
 test("the browser's first stop takes the sign-in's state and goes on to the provider, and nowhere else", async () => {
-  // The app starts Continue with GitHub, then opens the device's browser at Better Auth's Expo plugin's proxy, which
-  // gives that browser the state the app's request got and sends it on.
+  // The app starts Continue with GitHub, then opens the device's browser at the proxy, which gives that browser the
+  // state the app's request got and sends it on.
   const started = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: `tuti://sign-in?state=${STATE}` } });
   expect(started.status).toBe(200);
   const { url } = (await started.json()) as { url: string };
@@ -159,9 +178,12 @@ test("the browser's first stop takes the sign-in's state and goes on to the prov
   // With each of them the app's, it goes on.
   const all = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: `tuti://sign-in?state=${STATE}`, newUserCallbackURL: "tuti://welcome", errorCallbackURL: "tuti://sign-in" } });
   expect((await proxy(((await all.json()) as { url: string }).url)).status).toBe(302);
+  // A value to put in a cookie as given (Better Auth's other way to keep a state) is ignored.
   const planted = await fromApp(`/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: url, oauthState: "anything" })}`, { origin: null });
-  expect(planted.status).toBe(400);
-  expect(planted.headers.getSetCookie()).toEqual([]);
+  expect(cookiesOf(planted)).not.toContain("anything");
+  // Nor on to anything but the provider's own address, or a link with a fragment.
+  expect((await proxy(url.replace("https://", "http://"))).status).toBe(400);
+  expect((await proxy(`${url}#fragment`)).status).toBe(400);
 });
 
 /** Asks for the app's sign-in link as the app does. */
@@ -194,9 +216,6 @@ const NOTHING = { location: "/app/auth/app-link" };
 
 const sentTo = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).length;
 
-/** The browser's cookies as the page's action left them: the last write to each. */
-const cookiesKept = () => new Map(request.written.map((cookie) => [cookie.name, cookie]));
-
 test("the emailed link opens a page that hands the app a session, once, and leaves the browser signed out", async () => {
   const asked = await ask(owner.email);
   expect({ status: asked.status, body: await asked.json() }).toEqual({ status: 200, body: { status: true } });
@@ -212,9 +231,8 @@ test("the emailed link opens a page that hands the app a session, once, and leav
   expect(session).toMatchObject({ to: "tuti://sign-in", state: STATE, error: null });
   expect(await projectsOf(session.token)).toMatchObject({ status: 200, body: { projects: [{ slug: project.slug, role: "OWNER" }] } });
   expect(await prisma.session.findFirstOrThrow({ where: { userId: owner.id }, orderBy: { createdAt: "desc" } })).toMatchObject({ boundTo: "app" });
-  // The browser that opened it (maybe a desk's) keeps no session: each cookie Better Auth set is taken back.
-  expect(cookiesKept().get("tuti.session_token")).toMatchObject({ value: "", maxAge: 0 });
-  expect([...cookiesKept().values()].filter((cookie) => cookie.value !== "")).toEqual([]);
+  // The browser that opened it (maybe a desk's) gets no cookie: the session is the app's alone.
+  expect(request.written).toEqual([]);
 
   // Used once: again, the app is told so and gets no session, and the page says to ask for a new one.
   expect(handedOver((await open(link)).location)).toMatchObject({ to: "tuti://sign-in", state: STATE, error: "INVALID_TOKEN", token: undefined });
@@ -283,11 +301,9 @@ test("a browser signed in to the web app stays signed in as it was when it opens
   actAs(other);
   const session = handedOver((await open(await linkTo(owner.email))).location);
   expect(await projectsOf(session.token)).toMatchObject({ status: 200, body: { projects: [{ slug: project.slug }] } });
-  const mine = /session_token=([^;]+)/.exec(other.cookie)![1];
-  // Put back as it was (not cleared), and not the app's.
-  expect(cookiesKept().get("tuti.session_token")!.value).toBe(mine);
-  expect(cookiesKept().get("tuti.session_token")!.maxAge).toBeGreaterThan(0);
-  expect(mine).not.toBe(session.token);
+  // Its own cookie isn't touched, and isn't the app's.
+  expect(request.written).toEqual([]);
+  expect(/session_token=([^;]+)/.exec(other.cookie)![1]).not.toBe(session.token);
 });
 
 test("a verification link never opens the app: anyone can have one sent, and it signs in whoever opens it", async () => {
