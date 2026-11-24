@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import type { MediaUrls } from "@tuti/content/media";
 import { MessageCircleIcon } from "lucide-react";
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
@@ -14,12 +15,15 @@ import { widgetComment, widgetComments, widgetDeleteComment, widgetEditComment }
 
 const NONE = new Set<string>();
 
-const Commenter = createContext<{ projectSlug: string; number: number; token: string | null; mine: Set<string>; uploads?: EditorUploads }>({
-  projectSlug: "",
-  number: 0,
-  token: null,
-  mine: NONE,
-});
+const Commenter = createContext<{
+  projectSlug: string;
+  number: number;
+  token: string | null;
+  person: string | null;
+  mine: Set<string>;
+  uploads?: EditorUploads;
+  mediaUrls?: MediaUrls | null;
+}>({ projectSlug: "", number: 0, token: null, person: null, mine: NONE });
 
 /**
  * An entry's comments in the widget's panel (`children`: the list the page rendered, each comment's text in a
@@ -34,6 +38,7 @@ export function WidgetComments({
   portalSignedIn,
   portalMine,
   uploads,
+  mediaUrls,
   children,
 }: {
   projectSlug: string;
@@ -43,45 +48,50 @@ export function WidgetComments({
   portalMine: string[];
   /** Images, for the portal's signed-in reader (uploads need its session). */
   uploads?: EditorUploads;
+  /** The comments' images' signed URLs, for their editors without uploads. */
+  mediaUrls?: MediaUrls | null;
   children: React.ReactNode;
 }) {
   const { signedIn, known, pending, signingOut } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const link = usePortalHref();
   // While the page switches people or signs them out, nobody: never the last person's token.
   const token = pending || signingOut ? null : (signedIn?.token ?? null);
+  // Who's here: the same person while the page trades them a fresh token (each trade makes a new one), so their box and an
+  // open edit stay; while that's pending they act as nobody (no token), and Edit and Delete wait for it.
+  const person = portalSignedIn ? "portal" : (signedIn?.id ?? null);
   // Whose own comments these are; anyone else's are none until theirs are read, never the last person's.
   const [mine, setMine] = useState<{ for: string | null; ids: Set<string> }>({ for: null, ids: NONE });
-  const read = !!token && mine.for === token;
-  const own = portalSignedIn ? new Set(portalMine) : read ? mine.ids : NONE;
+  const read = !portalSignedIn && !!person && mine.for === person;
+  const own = portalSignedIn ? new Set(portalMine) : read && token ? mine.ids : NONE;
 
   useEffect(() => {
-    if (!token) {
+    if (!token || !person) {
       return;
     }
     let current = true;
     widgetComments(projectSlug, token, number).then(
-      (result) => current && setMine({ for: token, ids: new Set(result.comments?.filter((c) => c.mine).map((c) => c.id)) }),
+      (result) => current && setMine({ for: person, ids: new Set(result.comments?.filter((c) => c.mine).map((c) => c.id)) }),
       // Unread, none are theirs to edit: they can still comment.
-      () => current && setMine({ for: token, ids: NONE }),
+      () => current && setMine({ for: person, ids: NONE }),
     );
     return () => {
       current = false;
     };
-  }, [projectSlug, token, number]);
+  }, [projectSlug, token, person, number]);
 
   const box = portalSignedIn ? (
     <CommentForm postId={`${entryId}:portal`} action={widgetComment.bind(null, projectSlug, null, number)} signedIn uploads={uploads} />
   ) : read ? (
     <CommentForm
       // Theirs: one person's draft is never another's box.
-      key={token}
-      postId={`${entryId}:${signedIn!.id}`}
+      key={person}
+      postId={`${entryId}:${person}`}
       action={async (prev, formData) => {
         const result = await widgetComment(projectSlug, token, number, prev, formData);
         const id = result.id;
         if (id) {
           // Only while they're still who's here: a comment saved after the page switched people is nobody else's.
-          startTransition(() => setMine((m) => (m.for !== token ? m : { for: token, ids: new Set([...m.ids, id]) })));
+          startTransition(() => setMine((m) => (m.for !== person ? m : { for: person, ids: new Set([...m.ids, id]) })));
         }
         return result;
       }}
@@ -108,7 +118,7 @@ export function WidgetComments({
   );
 
   return (
-    <Commenter value={{ projectSlug, number, token, mine: own, uploads }}>
+    <Commenter value={{ projectSlug, number, token, person, mine: own, uploads, mediaUrls }}>
       {box}
       {children}
     </Commenter>
@@ -117,12 +127,13 @@ export function WidgetComments({
 
 /** A comment's text in the widget, with Edit and Delete when it's its person's own (WidgetComments). */
 export function WidgetComment({ commentId, author, doc, children }: { commentId: string; author: string; doc: Doc; children: React.ReactNode }) {
-  const { projectSlug, number, token, mine, uploads } = use(Commenter);
+  const { projectSlug, number, token, person, mine, uploads, mediaUrls } = use(Commenter);
   const theirs = mine.has(commentId);
   return (
     <ChangelogComment
-      // Remounted per person: one's edit or delete left open is never another's.
-      key={token ?? "portal"}
+      // Remounted per person (not per token: the same person's fresh one keeps their edit open): one's edit or delete left
+      // open is never another's.
+      key={person ?? "nobody"}
       projectSlug={projectSlug}
       number={number}
       commentId={commentId}
@@ -131,6 +142,7 @@ export function WidgetComment({ commentId, author, doc, children }: { commentId:
       canEdit={theirs}
       canDelete={theirs}
       uploads={uploads}
+      mediaUrls={mediaUrls}
       onEdit={(prev, formData) => widgetEditComment(projectSlug, token, number, commentId, prev, formData)}
       onDelete={() => widgetDeleteComment(projectSlug, token, number, commentId)}
     >

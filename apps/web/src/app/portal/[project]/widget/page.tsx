@@ -586,6 +586,7 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
           portalMine={portalSignedIn ? comments.filter((c) => c.author.id === session.user.id).map((c) => c.id) : []}
           // Images only for the portal's reader: uploads need its session.
           uploads={portalSignedIn && mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined}
+          mediaUrls={commentMedia}
         >
           <div className="pt-2">
             <CommentList

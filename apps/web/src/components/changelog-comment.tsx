@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import type { MediaUrls } from "@tuti/content/media";
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -39,6 +40,7 @@ export function ChangelogComment({
   canDelete,
   mine = canEdit,
   uploads,
+  mediaUrls,
   onEdit = (prev, formData) => editChangelogComment(projectSlug, number, commentId, prev, formData),
   onDelete = () => deleteChangelogComment(projectSlug, number, commentId),
   children,
@@ -53,6 +55,8 @@ export function ChangelogComment({
   /** Its author's (Delete says "your"); by default whoever may edit it. */
   mine?: boolean;
   uploads?: EditorUploads;
+  /** Its images' signed URLs, for its editor when there are no `uploads`. */
+  mediaUrls?: MediaUrls | null;
   /** Saves an edit, and deletes it (the widget's act for whoever the customer's page signed in); the portal's server actions by default. */
   onEdit?: (prev: FormState, formData: FormData) => Promise<FormState>;
   onDelete?: () => Promise<FormState>;
@@ -82,7 +86,7 @@ export function ChangelogComment({
   );
 
   if (editing) {
-    return <EditForm save={onEdit} doc={doc} uploads={uploads} onDone={() => setEditing(false)} />;
+    return <EditForm save={onEdit} doc={doc} uploads={uploads} mediaUrls={mediaUrls} onDone={() => setEditing(false)} />;
   }
   return (
     <>
@@ -146,11 +150,13 @@ function EditForm({
   save: send,
   doc,
   uploads,
+  mediaUrls,
   onDone,
 }: {
   save: (prev: FormState, formData: FormData) => Promise<FormState>;
   doc: Doc;
   uploads?: EditorUploads;
+  mediaUrls?: MediaUrls | null;
   onDone: () => void;
 }) {
   const errorId = useId();
@@ -171,6 +177,7 @@ function EditForm({
           label="Edit your comment"
           initial={doc}
           uploads={uploads}
+          mediaUrls={mediaUrls}
           invalid={!!state.error}
           describedBy={errorId}
           onCreate={(editor) => editor.commands.focus("end")}

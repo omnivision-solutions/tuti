@@ -889,6 +889,20 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(widget.getByText("Comment saved")).toBeVisible();
   await expect(own).toContainText("Works with my work and home calendars.");
+  // The page signs Sam in again (a fresh token for the same person) while they're editing: what they typed stays, and saves.
+  await own.getByRole("button", { name: "Edit your comment" }).click();
+  const editing = comments.getByRole("textbox", { name: "Edit your comment" });
+  await editing.fill("Works with all my calendars.");
+  // Their own comments read again with the fresh token: `widgetComments(slug, token, 1)` (and the reactions', of the same shape).
+  const reread = sam.waitForResponse((response) => !!response.request().headers()["next-action"] && /^\["[^"]+","[^"]+",1\]$/.test(response.request().postData() ?? ""));
+  await sam.evaluate(() =>
+    (window as unknown as { Tuti: { identify(getToken: () => Promise<string>): void } }).Tuti.identify(() => fetch(`/token${location.pathname}`).then((r) => r.text())),
+  );
+  await reread;
+  await expect(editing).toHaveText("Works with all my calendars.");
+  await comments.getByRole("button", { name: "Save" }).click();
+  await expect(own).toContainText("Works with all my calendars.");
+  await expect(own.getByRole("button", { name: "Edit your comment" })).toBeVisible();
   // A second one, which they delete.
   await comments.getByRole("textbox", { name: "Comment" }).fill("Oops, posted twice.");
   await comments.getByRole("button", { name: "Comment", exact: true }).click();
@@ -899,6 +913,39 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await expect(widget.getByText("Comment deleted")).toBeVisible();
   await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
   await expect(oops).toHaveCount(0);
+  // A comment of theirs with an image (written on their behalf through the API, the image uploaded in the team's editor):
+  // the image shows in its editor too, though the panel adds no images for them.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  const body = owner.getByRole("textbox", { name: "What changed" });
+  const picture = await owner.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], "screen.png", { type: "image/png" }));
+    return transfer;
+  }, [...png(40, 20)]);
+  await body.evaluate((element, transfer) => {
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer as DataTransfer, bubbles: true, cancelable: true }));
+  }, picture);
+  await expect(body.locator("figure img")).toHaveAttribute("src", /.+/);
+  type Node = { type: string; content?: Node[] };
+  const find = (node: Node): Node | undefined => (node.type === "image" ? node : node.content?.map(find).find(Boolean));
+  let image: Node | undefined;
+  await expect.poll(async () => (image = find(JSON.parse((await owner.locator('input[name="content"]').first().inputValue()) || "{}")))).toBeTruthy();
+  await api("/changelog/1/comments", {
+    content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Here's my setup." }] }, image] },
+    author: { id: "app-user-7" },
+  });
+  await sam.reload();
+  await sam.getByRole("button", { name: /^Feedback/ }).click();
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  const setup = comments.getByRole("listitem").filter({ hasText: "Here's my setup." });
+  await setup.getByRole("button", { name: "Edit your comment" }).click();
+  const inEditor = comments.getByRole("textbox", { name: "Edit your comment" }).locator("img");
+  await expect.poll(() => inEditor.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  await comments.getByRole("button", { name: "Cancel" }).click();
+  await setup.getByRole("button", { name: "Delete your comment" }).click();
+  await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
+  await expect(setup).toHaveCount(0);
   await sam.emulateMedia({ colorScheme: "dark" });
   await checkpoint(sam, "widget-entry-comments-dark");
   await sam.setViewportSize({ width: 390, height: 844 });
@@ -935,7 +982,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await visitor.goto(`${portalUrl(slug)}/widget?tab=whats-new&entry=1`);
   const theirs = visitor.getByRole("region", { name: "Comments" });
   await expect(theirs.getByRole("heading", { name: "1 comment" })).toBeVisible();
-  await expect(theirs.getByRole("listitem")).toContainText("Works with my work and home calendars.");
+  await expect(theirs.getByRole("listitem")).toContainText("Works with all my calendars.");
   await expect(theirs.getByText("Sign in to comment.")).toBeVisible();
   await expect(theirs.getByRole("link", { name: "Sign in" })).toHaveAttribute("target", "_blank");
   await expect(theirs.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", /\/sign-in\?next=%2Fchangelog%2F1$/);
@@ -944,9 +991,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await checkpoint(visitor, "widget-entry-comments-signed-out");
   // The comment's on the portal's page for the update too.
   await visitor.goto(`${portalUrl(slug)}/changelog/1`);
-  await expect(visitor.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Sam from Acme" })).toContainText(
-    "Works with my work and home calendars.",
-  );
+  await expect(visitor.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Sam from Acme" })).toContainText("Works with all my calendars.");
   await visitor.context().close();
 });
 
