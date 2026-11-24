@@ -127,6 +127,9 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
   const ink = pale ? "rgba(28,25,23," : "rgba(255,255,255,";
   // The colour as text and shapes on the page: the nearest shade of it that reads there, else the text colour.
   const accent = readableOn(color, theme.surface, 3) ?? theme.text;
+  // The tag is small: on the page, the colour's shade that reads as text (4.5:1); on the colour, the page's own colours,
+  // as the logo's chip (white on a mid colour reads for the big title only).
+  const label = readableOn(color, theme.surface, 4.5) ?? theme.text;
   const shown = drawable(content.title);
   const title = shown.length > 90 ? `${shown.slice(0, 88).trimEnd()}…` : shown;
   const tag = content.tag && drawable(content.tag);
@@ -179,7 +182,7 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
           <div style={{ ...column, width: 1240 }}>
             {chip}
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {pill(`${ink}0.18)`, on)}
+              {pill(theme.page, theme.text)}
               {heading([124, 100, 78], [30, 60])}
             </div>
           </div>
@@ -194,7 +197,7 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
           <div style={{ ...column, width: upright ? 820 : 640 }}>
             {chip}
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {pill(`${ink}0.18)`, on)}
+              {pill(theme.page, theme.text)}
               {heading([92, 76, 62], [26, 48])}
             </div>
           </div>
@@ -216,7 +219,7 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
           <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", width: 780, padding: "84px 48px 84px 110px" }}>
             {brand}
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {pill(theme.chip, accent)}
+              {pill(theme.chip, label)}
               {heading([88, 72, 58], [26, 48])}
             </div>
           </div>
@@ -244,7 +247,7 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
           <div style={{ ...column, width: 840 }}>
             {brand}
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {pill(theme.chip, accent)}
+              {pill(theme.chip, label)}
               {heading([112, 92, 72], [24, 50])}
             </div>
           </div>

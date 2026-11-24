@@ -46,6 +46,11 @@ test("on the portal's colour the text is white where that reads, near-black on a
   // The chip is the portal's page, light or dark.
   expect(cover("#6d4aff")).toContain("background:#faf8f4;color:#1c1917");
   expect(cover("#6d4aff", "dark")).toContain("background:#0f0e0d;color:#fafaf9");
+  // The tag is small: on a mid colour, where white reads only at the title's size, it's on the page's colours too.
+  expect(cover("#939393")).toContain("color:#1c1917;background:#faf8f4;border-radius:9999px");
+  // On the page (Pattern), it's a shade of the colour that reads as text: a yellow's is darker.
+  const onPage = shown(site({ color: "#f5d90a" } as Partial<Branding>), content(), "pattern", null, null);
+  expect(onPage).not.toMatch(/font-weight:700;color:#f5d90a/);
 });
 
 test("Sections lists the entry's first four headings and counts the rest; Pattern and Sections are on the portal's page, dark if it is", () => {
