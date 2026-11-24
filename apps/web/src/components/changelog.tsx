@@ -975,13 +975,9 @@ export function ChangelogStyleForm({
             )}
           </>
         }
-        description={
-          published.length === 0
-            ? "Publish an entry to use it as an example."
-            : chosen.length === 0 && published.some((entry) => !entry.sample)
-              ? "Entries that read the way you like. With none picked, AI follows your latest ones."
-              : "Entries that read the way you like."
-        }
+        description={published.length === 0 ? "Publish an entry to use it as an example." : "Entries that read the way you like."}
+        // What drafts follow meanwhile (writingStyle): said only where there's an entry of the team's own to follow.
+        info={chosen.length === 0 && published.some((entry) => !entry.sample) ? "With none picked, AI follows your three latest published entries." : undefined}
       >
         {published.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
