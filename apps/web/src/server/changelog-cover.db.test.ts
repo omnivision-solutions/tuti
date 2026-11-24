@@ -6,11 +6,19 @@ import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import * as coverCard from "@/server/cover-card";
 import { composeChangelogCover, createChangelogEntry, getChangelogEntry, publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** An entry's composed cover (changelog.composeCover): drawn from the entry and the portal's branding, kept as a normal cover. */
+
+// The real drawing, watched: which design and what text each cover was drawn with.
+vi.mock("@/server/cover-card", async (original) => {
+  const real = await original<typeof import("@/server/cover-card")>();
+  return { ...real, drawCover: vi.fn(real.drawCover) };
+});
+const drawn = () => vi.mocked(coverCard.drawCover).mock.calls.map(([site, content, design]) => ({ project: site.project.name, title: content.title, tag: content.tag, headings: content.headings, design }));
 
 let s3: S3Fake;
 let owner: TestUser;
@@ -29,6 +37,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.mocked(coverCard.drawCover).mockClear();
   s3.beforeGet = undefined;
 });
 
@@ -53,8 +62,13 @@ test("a cover is composed, kept as the member's finished upload and set on the e
   expect([stored.width, stored.height, stored.format]).toEqual([1600, 840, "webp"]);
 
   // Another design, with a headline of its own: a new upload is the cover now (release-media frees the old one).
-  const again = await compose({ number, design: "sections", headline: "Now in the dark" });
+  const again = await compose({ number, design: "sections", headline: "  Now in the dark " });
   expect(again.cover?.id).not.toBe(media!.id);
+  // Each drawn as asked: the entry's own title, tag and headings in its own design first, then Sections with the headline.
+  expect(drawn()).toEqual([
+    { project: project.name, title: "Dark mode", tag: "New", headings: ["Themes", "Search"], design: "title" },
+    { project: project.name, title: "Now in the dark", tag: "New", headings: ["Themes", "Search"], design: "sections" },
+  ]);
   expect(await covers()).toHaveLength(2);
   // The entry's own title and text are as they were.
   expect(again).toMatchObject({ title: "Dark mode", body: entry.body });
@@ -84,6 +98,7 @@ test("with no design picked, the entry's image where it has one big enough, else
   expect(read).not.toContain(imageKey(shot.id, 960));
   await compose({ number: pictured.number });
   expect(read).toContain(imageKey(shot.id, 960));
+  expect(drawn().map((cover) => cover.design)).toEqual(["title", "screenshot"]);
 });
 
 test("without uploads set up it's a 503, and past the member's hourly uploads a 409: the entry keeps the cover it has", async () => {
