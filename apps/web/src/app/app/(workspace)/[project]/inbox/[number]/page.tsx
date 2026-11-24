@@ -50,7 +50,7 @@ import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
-import { conversationPerson } from "@/server/operations/conversations";
+import { assignableTeam, conversationPerson } from "@/server/operations/conversations";
 import { postsLikeConversation } from "@/server/post-lists";
 import { pageTitle } from "@/lib/page-title";
 
@@ -163,11 +163,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         },
       },
     }),
-    prisma.teamMember.findMany({
-      where: { projectId },
-      orderBy: { createdAt: "asc" },
-      select: { userId: true, user: { select: { name: true, image: true } } },
-    }),
+    // Who it can be assigned to, as conversations.assignees lists them.
+    assignableTeam(projectId),
     // Who wrote last, past the messages shown too (a run of notes can fill them).
     prisma.conversationMessage.findFirst({
       where: { conversation: { projectId, number }, note: false },

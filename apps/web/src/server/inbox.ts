@@ -7,13 +7,19 @@ import { emailConfigured, emailDomainTestEmail, sendEmail } from "@tuti/email";
 import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
 
-import { startUpload } from "./attachments";
-import { portalAddress } from "./custom-domains";
-import { readerToSend, searchDocs } from "./docs-search";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import { markConversationRead as markRead, linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
+import {
+  CONVERSATION_STATUSES,
+  linkConversationPost,
+  listArticlesToInsert,
+  markConversationRead as markRead,
+  replyToConversation,
+  startReplyUpload,
+  unlinkConversationPost,
+  updateConversation,
+} from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -69,20 +75,14 @@ export async function replyInConversation(
   return keptOpen ? { ...result, notice: "Sent, and kept open: they wrote again since" } : result;
 }
 
-const uploadSchema = z.object({ filename: z.string().max(1000), contentType: z.string().max(200), size: z.number().int() });
-
-/** Starts uploading a file for a reply: where the browser PUTs it, and its id for replyInConversation. */
+/** Starts uploading a file for a reply (conversations.upload): where the browser PUTs it, and its id for replyInConversation. */
 export async function uploadReplyAttachment(projectSlug: string, file: { filename: string; contentType: string; size: number }): Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }> {
   const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  const parsed = uploadSchema.safeParse(file);
   if (!session || !membership) {
     return { error: "Only the project's team can attach files" };
   }
-  if (!parsed.success) {
-    return { error: "That file can't be attached" };
-  }
   try {
-    return await startUpload(membership.project.id, { userId: session.user.id }, parsed.data);
+    return await call(startReplyUpload, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, file);
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
@@ -141,10 +141,7 @@ export async function findPostsToLink(projectSlug: string, q: string): Promise<{
   return { posts: await searchPosts(membership.project.id, q) };
 }
 
-/**
- * "Insert article" in a reply: the published articles matching what's typed that the conversation's person can be sent
- * (listed or unlisted, on a portal they can get into, and theirs to read: never hidden or AI-only), each with its address on the portal.
- */
+/** "Insert article" in a reply (conversations.articles): the articles matching what's typed that the conversation's person can be sent. */
 export async function findArticlesToInsert(
   projectSlug: string,
   conversation: number,
@@ -154,20 +151,18 @@ export async function findArticlesToInsert(
   if (!session || !membership) {
     return { error: "Only the project's team can insert articles" };
   }
-  const query = String(q).trim().slice(0, 200);
-  const parsed = number.safeParse(conversation);
-  if (!query || !parsed.success) {
-    return { articles: [] };
+  try {
+    return await call(
+      listArticlesToInsert,
+      { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id },
+      { number: conversationNumber(conversation), q: String(q).trim().slice(0, 200) },
+    );
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
   }
-  const projectId = membership.project.id;
-  const found = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number: parsed.data } }, select: { userId: true } });
-  const reader = found ? await readerToSend(projectId, found.userId) : false;
-  if (reader === false) {
-    return { articles: [] };
-  }
-  // Words only, as typed (no embedding per keystroke), and not counted as a reader's search in the team's insights.
-  const [results, portal] = await Promise.all([searchDocs(projectId, query, 10, reader, { log: false, meaning: false, unlisted: true }), portalAddress(projectSlug)]);
-  return { articles: results.map(({ slug, title }) => ({ slug, title, url: `${portal}/docs/${slug}` })) };
 }
 
 /** Links a conversation to a post it's about (by the post's number), or unlinks it. */
