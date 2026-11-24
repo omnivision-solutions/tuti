@@ -247,14 +247,18 @@ export const appSignIn = () =>
             throw new APIError("BAD_REQUEST", { message: "Sign-in links aren't available here." });
           }
           const { email, state, challenge } = ctx.body;
-          const account = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+          // A verified account only. Opening the link verifies the address, and an unverified account's password may be
+          // someone else's, who signed up with this address first: verifying would let them in (as onExistingUserSignUp
+          // in lib/auth.ts never sends the verification link). Its owner verifies on the web first.
+          const account = await prisma.user.findUnique({ where: { email }, select: { emailVerified: true } });
+          const sends = !!account?.emailVerified;
           // Imported here: both import lib/auth.ts, which imports this file.
           const { countEmailedLink } = await import("@/server/email-link-limits");
-          const limited = await countEmailedLink(null, email, headers, account ? "address" : "nobody");
+          const limited = await countEmailedLink(null, email, headers, sends ? "address" : "nobody");
           if ("error" in limited) {
             throw new APIError("TOO_MANY_REQUESTS", { message: limited.error });
           }
-          if (limited.id && account) {
+          if (limited.id && sends) {
             try {
               const { auth } = await import("./auth");
               await auth.api.signInMagicLink({ body: { email, metadata: { linkId: limited.id, app: { state, challenge } } }, headers });
@@ -270,7 +274,9 @@ export const appSignIn = () =>
        * POST /api/auth/app/session `{ code, verifier }`: the app's last step. The code from the redirect, with the
        * verifier whose challenge the sign-in was started with, for the session: `{ token, cookie }` (the contract above).
        * Once: the first post claims the code, right or wrong. A wrong verifier, a code used before or too old: refused,
-       * and the session behind it is ended, since someone other than the app that asked has the code.
+       * and, while its record is kept (its two minutes), the session behind it is ended, since someone other than the app
+       * that asked has the code. After that a code is refused and nothing else happens: an unclaimed code's session was
+       * never handed to anyone, and a claimed one needs the verifier only the app that started the sign-in holds.
        */
       appSession: createAuthEndpoint("/app/session", { method: "POST", body: z.object({ code: z.string().max(200), verifier: z.string().max(200) }) }, async (ctx) => {
         const { code, verifier } = ctx.body;

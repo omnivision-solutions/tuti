@@ -398,11 +398,11 @@ async function open(link: URL, { host = APP.host, more = {} as Record<string, st
   const form = new URLSearchParams({ token: link.searchParams.get("token") ?? "", ...more });
   const response = await openAppLink(new Request(`http://${host}/app/auth/app-link/open`, { method: "POST", headers: { host }, body: form }));
   expect(response.status).toBe(303);
-  return { location: response.headers.get("location") };
+  return { location: response.headers.get("location"), setCookie: response.headers.getSetCookie() };
 }
 
 /** Back on the page, which says the link doesn't work: nothing for the app. */
-const NOTHING = { location: "/app/auth/app-link" };
+const NOTHING = { location: "/app/auth/app-link", setCookie: [] };
 
 const sentTo = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).length;
 
@@ -461,6 +461,21 @@ test("a link signs in an account only: no address is told apart, and none signs 
   expect((await withoutEmail(() => ask(owner.email))).status).toBe(400);
   expect(sentTo(owner.email)).toBe(0);
 
+  // An unverified account gets nothing either, with the same answer: opening a link verifies the address, and its
+  // password may be someone else's, who signed up with the address first.
+  const unverified = await signUp("Una Unverified", undefined, { verified: false });
+  const before = sentTo(unverified.email);
+  const unverifiedAsk = await ask(unverified.email);
+  expect({ status: unverifiedAsk.status, body: await unverifiedAsk.json() }).toEqual({ status: 200, body: { status: true } });
+  expect(sentTo(unverified.email)).toBe(before);
+  // And a link sent while verified that's opened once the account isn't (an address changed back) neither verifies it nor signs the app in.
+  const changed = await signUp("Cal Changed");
+  await ask(changed.email);
+  const changedLink = await linkTo(changed.email);
+  await prisma.user.update({ where: { id: changed.id }, data: { emailVerified: false } });
+  expect(handedOver((await open(changedLink)).location)).toMatchObject({ error: "INVALID_TOKEN", code: null });
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: changed.id }, select: { emailVerified: true } })).toEqual({ emailVerified: false });
+
   // An account deleted since the link was sent isn't made again by it.
   const gone = await signUp("Greta Gone");
   await ask(gone.email);
@@ -514,12 +529,17 @@ test("a browser signed in to the web app stays signed in as it was when it opens
   await ask(owner.email, { challenge });
   // Wes's browser opens Olive's link (a shared desk): the app gets Olive's session, the browser keeps Wes's.
   actAs(other);
-  const redirect = handedOver((await open(await linkTo(owner.email))).location);
+  const sessionsBefore = await sessionsOf(other.id);
+  const opened = await open(await linkTo(owner.email));
+  // No cookie for the browser at all: not Olive's, not a new one of Wes's.
+  expect(opened.setCookie).toEqual([]);
+  const redirect = handedOver(opened.location);
   const { body } = await exchange(redirect.code, verifier);
   expect(await projectsOf(body.token)).toMatchObject({ status: 200, body: { projects: [{ slug: project.slug }] } });
   // Its own cookie isn't touched, and isn't the app's.
   expect(request.written).toEqual([]);
   expect(/session_token=([^;]+)/.exec(other.cookie)![1]).not.toBe(body.token);
+  expect(await sessionsOf(other.id)).toBe(sessionsBefore);
 });
 
 test("a verification link never opens the app: anyone can have one sent, and it signs in whoever opens it", async () => {

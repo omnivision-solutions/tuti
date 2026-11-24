@@ -25,8 +25,9 @@ export async function POST(request: Request) {
   }
   const back = appSignInReturn(asked.state);
   const link = await pendingSignInLink(null, token);
-  // An account that exists: the app has no sign-up, and one deleted since the link was sent isn't made again.
-  if (!link || !(await prisma.user.findUnique({ where: { email: link.email }, select: { id: true } }))) {
+  // A verified account that exists: the app has no sign-up, one deleted since the link was sent isn't made again, and
+  // one unverified since isn't verified by it (its password may be someone else's: lib/app-sign-in.ts).
+  if (!link || !(await prisma.user.findUnique({ where: { email: link.email }, select: { emailVerified: true } }))?.emailVerified) {
     return to(`${back}&error=INVALID_TOKEN`);
   }
   // Better Auth uses the token up (once, if still fresh) and answers with the redirect; used up since the check, its
