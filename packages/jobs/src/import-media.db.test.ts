@@ -347,7 +347,8 @@ test("storage failing leaves the file out (its row failed, off the quota) rather
     projectId,
     mediaId: expect.any(String),
     kind: "image",
-    error: expect.objectContaining({ message: expect.any(String) }),
+    // Why, too: fetch says only "fetch failed", and carries the reason (here, a port it won't use) as its cause, which the log keeps.
+    error: expect.objectContaining({ message: "fetch failed", cause: expect.objectContaining({ message: "bad port" }) }),
   });
 });
 

@@ -1,11 +1,25 @@
 type Fields = Record<string, unknown>;
 type Level = "info" | "warn" | "error";
 
-/** Errors become plain fields; JSON.stringify would drop their message and stack. */
+/**
+ * An error as plain fields (JSON.stringify would drop its message and stack), with its `code` and its causes: fetch
+ * says only "fetch failed", the reason (ECONNREFUSED, a certificate) is its cause's. A few levels deep, so a cycle ends.
+ */
+function errorFields(error: Error, depth = 0): Fields {
+  const { code, cause } = error as { code?: unknown; cause?: unknown };
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    ...(code !== undefined && { code }),
+    ...(cause !== undefined && { cause: cause instanceof Error ? (depth < 4 ? errorFields(cause, depth + 1) : cause.message) : cause }),
+  };
+}
+
 function serialize(fields: Fields | undefined): Fields {
   const out: Fields = {};
   for (const [key, value] of Object.entries(fields ?? {})) {
-    out[key] = value instanceof Error ? { name: value.name, message: value.message, stack: value.stack } : value;
+    out[key] = value instanceof Error ? errorFields(value) : value;
   }
   return out;
 }
