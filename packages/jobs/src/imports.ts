@@ -92,8 +92,11 @@ export function nextStep(parts: string[], after: string | null): string | null {
   return STEPS.slice(from).find((step) => parts.includes(step.part))?.name ?? null;
 }
 
-/** An import that hasn't moved this long is stuck (its job went away): looking at it resumes it. Longer than a page may take (5 minutes: PAGE_READ_MS, then its save). */
-export const IMPORT_STUCK_MS = 6 * 60_000;
+/**
+ * An import that hasn't moved this long is stuck (its job went away): looking at it resumes it. Longer than a page may
+ * take: PAGE_READ_MS, then up to three tries of a minute each to save (`locked`).
+ */
+export const IMPORT_STUCK_MS = 8 * 60_000;
 /** One that hasn't moved for a day is failed by the daily fail-stale-imports (or, inline, when it's looked at), its key cleared. */
 const STALE_MS = 24 * 60 * 60_000;
 /**

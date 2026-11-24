@@ -225,15 +225,24 @@ type CrawlState = { crawl?: { found: string[]; fetched: number; gone: string[] }
 function site(start: string, deadline: number, kept: unknown) {
   let state = (typeof kept === "object" && kept !== null ? kept : {}) as CrawlState;
   const robots = new Map<string, Promise<ReturnType<typeof robotsRules>>>();
-  // `last` is when a request began, and one may take PAGE_TIMEOUT_MS; a Crawl-delay is 5s at most. Past both, a
-  // site's pace is as good as none (forgetting it sooner would let a reader start while another's request is out).
-  for (const [address, { last }] of crawlPace.sites) {
-    if (crawlPace.now() - last > PAGE_TIMEOUT_MS + 5_000 + crawlPace.ms) {
-      crawlPace.sites.delete(address);
+  // This reader's own Crawl-delay: robots.txt is read once a reader, and the site's shared pace may be forgotten meanwhile.
+  let delayMs = 0;
+  /**
+   * The site's pace, read afresh before each request, so no reader holds one forgotten under it (it may wait out a
+   * Retry-After first). `last` is when a request began, and one may take PAGE_TIMEOUT_MS; a Crawl-delay is 5s at most.
+   * Past both, a site's pace is as good as none, and it's forgotten.
+   */
+  const sitePace = () => {
+    for (const [address, { last }] of crawlPace.sites) {
+      if (crawlPace.now() - last > PAGE_TIMEOUT_MS + 5_000 + crawlPace.ms) {
+        crawlPace.sites.delete(address);
+      }
     }
-  }
-  const pace = crawlPace.sites.get(start) ?? { last: 0, delayMs: 0 };
-  crawlPace.sites.set(start, pace);
+    const pace = crawlPace.sites.get(start) ?? { last: 0, delayMs: 0 };
+    pace.delayMs = Math.max(pace.delayMs, delayMs);
+    crawlPace.sites.set(start, pace);
+    return pace;
+  };
 
   /** The body at `url` (following up to 3 redirects on its own host; any public one for the start page), or null for a page that's gone. */
   async function get(url: string, { anyHost = false, robotsFile = false } = {}): Promise<{ url: string; type: string; text: string } | null> {
@@ -254,12 +263,14 @@ function site(start: string, deadline: number, kept: unknown) {
       if (!robotsFile && !(await rules(parsed.origin)).allowed(parsed.pathname)) {
         throw new SiteError(0, `${parsed.hostname}'s robots.txt asks crawlers not to read ${parsed.pathname}, so Tuti doesn't.`, "refused");
       }
+      const pace = sitePace();
       const wait = pace.last + Math.max(crawlPace.ms, pace.delayMs) - crawlPace.now();
       if (Date.now() + Math.max(wait, 0) >= deadline) {
         throw new SiteError(0, `${parsed.hostname} took too long to read.`, "late");
       }
       await crawlPace.wait(Math.max(wait, 0));
-      pace.last = crawlPace.now();
+      // Into the site's pace as it is now, not one forgotten during the wait.
+      sitePace().last = crawlPace.now();
       let response;
       try {
         response = await fetch(at, {
@@ -339,7 +350,7 @@ function site(start: string, deadline: number, kept: unknown) {
             "wait",
           );
         }
-        const wait = asked ?? Math.max(crawlPace.ms, pace.delayMs) * 2 ** (attempt + 1);
+        const wait = asked ?? Math.max(crawlPace.ms, sitePace().delayMs) * 2 ** (attempt + 1);
         if (Date.now() + wait >= deadline) {
           // A short pause the site asked for that this step hasn't the time left to wait: out of time (`late`), so the run
           // ends and the next, with its own time, waits it.
@@ -365,7 +376,8 @@ function site(start: string, deadline: number, kept: unknown) {
           })
           .then((file) => {
             const parsed = robotsRules(file && !/html/i.test(file.type) ? file.text : "");
-            pace.delayMs = Math.max(pace.delayMs, parsed.delayMs);
+            delayMs = Math.max(delayMs, parsed.delayMs);
+            sitePace();
             return parsed;
           }),
       );
