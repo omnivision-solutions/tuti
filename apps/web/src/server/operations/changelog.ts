@@ -150,7 +150,7 @@ const entrySelect = {
   createdAt: true,
   updatedAt: true,
   sample: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, board: { select: { slug: true, off: true } } } } } },
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, voteCount: true, board: { select: { slug: true, off: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
@@ -609,7 +609,7 @@ export const draftChangelogEntry = defineOperation({
   name: "changelog.draft",
   title: "Draft an entry with AI",
   summary:
-    "Replace a draft entry's text with release notes the AI writes from its pull requests, the public posts it completes and its text, and name it if it still has the running draft's title. A published entry is a 409",
+    "Replace a draft entry's text with release notes the AI writes from its pull requests (with what Autopilot found each changed for users), the public posts it completes, most voted first, and its text, and name it if it still has the running draft's title. A published entry is a 409",
   method: "POST",
   path: "/changelog/{number}/draft",
   scope: "write",
@@ -628,15 +628,20 @@ export const draftChangelogEntry = defineOperation({
     }
     // Only its public posts: the text goes to the portal, RSS, the widget and subscribers' email, so a private or Team
     // only post's title and link stay out of it (and a link to one the model makes up anyway is dropped below).
-    const { posts } = await entryView(asReaderSees(entry, false), portal);
+    const reader = asReaderSees(entry, false);
+    const { posts } = await entryView(reader, portal);
     if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
       throw new OperationError(400, "nothing_to_draft", "Pick the public posts it completes or write a few notes first");
     }
+    // Those posts with their votes, and what Autopilot knows of each pull request.
+    const listed = new Map(reader.posts.map(({ post }) => [post.number, post]));
+    const asked = posts.map((post) => ({ title: post.title, url: post.url, votes: listed.get(post.number)!.voteCount, id: listed.get(post.number)!.id }));
+    const pullRequests = await withAutopilotNotes(projectId, entry.pullRequests, asked);
     const style = await writingStyle(projectId, entry.id);
     const ai = await aiOrRefuse(projectId, "changelog");
     let reply: string;
     try {
-      reply = await complete({ ...releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body, style }), ...ai });
+      reply = await complete({ ...releaseNotesPrompt({ posts: asked, pullRequests, text: entry.body, style }), ...ai });
     } catch (error) {
       log.warn("AI changelog draft failed", { projectId, number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
@@ -663,6 +668,34 @@ export const draftChangelogEntry = defineOperation({
     return entryView(await teamEntry(projectId, number), portal);
   },
 });
+
+/**
+ * A draft's pull requests with what Autopilot found (code-changes.ts): each one's summary for users, where its analysis
+ * wrote one, and which of `posts` it's linked to (by the team, by its description or by Autopilot). Only those posts:
+ * a link to one the entry doesn't list, or lists but readers can't see, says nothing here.
+ */
+async function withAutopilotNotes<PullRequest extends { repo: string; number: number }>(
+  projectId: string,
+  pullRequests: PullRequest[],
+  posts: { id: string; url: string }[],
+) {
+  if (pullRequests.length === 0) {
+    return [];
+  }
+  const theirs = { repo: { in: pullRequests.map((pr) => pr.repo) }, number: { in: pullRequests.map((pr) => pr.number) } };
+  const [changes, links] = await Promise.all([
+    prisma.codeChange.findMany({ where: { projectId, summary: { not: "" }, ...theirs }, select: { repo: true, number: true, summary: true } }),
+    prisma.postLink.findMany({
+      where: { projectId, kind: "PULL_REQUEST", postId: { in: posts.map((post) => post.id) }, ...theirs },
+      select: { repo: true, number: true, postId: true },
+    }),
+  ]);
+  const url = new Map(posts.map((post) => [post.id, post.url]));
+  return pullRequests.map((pr) => {
+    const same = (row: { repo: string; number: number | null }) => row.repo === pr.repo && row.number === pr.number;
+    return { ...pr, summary: changes.find(same)?.summary, completes: links.filter(same).map((link) => url.get(link.postId)!) };
+  });
+}
 
 export const MAX_INSTRUCTION_LENGTH = 200;
 /** AI edits (changelog.rewrite) a project may ask for per clock hour, all of its team together. */
