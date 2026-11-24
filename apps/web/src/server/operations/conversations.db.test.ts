@@ -161,6 +161,9 @@ test("a list's rows say what the Inbox's do: the company, the latest message's f
     { number: 2, company: null, unread: true, latestMessage: { author: "user", name: null, fromYou: false, fromAddress: null, line: null } },
     { number: 1, company: "Acme", unread: true, latestMessage: { author: "user", name: null, line: "The export button does nothing." } },
   ]);
+  // Someone else on an emailed thread wrote the latest message: the row says from which address, as the Inbox's does.
+  await prisma.conversationMessage.updateMany({ where: { conversation: { projectId: project.id, number: 2 } }, data: { fromAddress: "e2e-colleague@example.com" } });
+  expect((await rows()).find((c) => c.number === 2)).toMatchObject({ latestMessage: { author: "user", fromAddress: "e2e-colleague@example.com" } });
 
   // The team's reply is the latest message; a note after it isn't. Read by one teammate, it's still unread for another.
   await call(replyToConversation, asUser(owner.id), { number: 1, body: "On it.\nMore soon." });
