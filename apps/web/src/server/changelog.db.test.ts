@@ -497,6 +497,18 @@ describe("a cover given by URL", () => {
     expect(await ready()).toBe(3);
   });
 
+  test("that's the project's own image by the link Tuti gave (an entry's cover, an image in its Markdown) is that upload, not a copy", async () => {
+    const first = await call(createChangelogEntry, as(owner), { title: "Dark mode", cover: `${images.origin}/shot.png`, markdown: `![The menu](${images.origin}/shot.png?2)` });
+    expect(await ready()).toBe(2);
+    // Another entry takes the first one's cover by its link, then the picture in its text.
+    const second = await call(createChangelogEntry, as(owner), { title: "Search", cover: first.cover!.url });
+    expect(second.cover!.id).toBe(first.cover!.id);
+    const picture = /\((\S+)\)/.exec(first.markdown!)![1]!;
+    const third = await call(updateChangelogEntry, as(owner), { number: second.number, cover: picture });
+    expect(third.cover!.id).toBe((first.content as { content: { attrs: { mediaId: string } }[] }).content[0]!.attrs.mediaId);
+    expect(await ready()).toBe(2);
+  });
+
   test("that can't be fetched, isn't an image or is private is a 400, and nothing is saved", async () => {
     const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
     for (const [cover, message] of [
