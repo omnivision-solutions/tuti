@@ -164,6 +164,9 @@ test("in the app: Publish with a design picked adds that cover first, and publis
   // A design with nothing to show for it (the entry lost its image since the dialog opened): still a draft, no cover.
   expect(await publishAction(project.slug, number, true, false, "screenshot")).toEqual({ error: "This entry has no image at least 600px wide for the Screenshot design" });
   expect(await entry()).toEqual({ coverId: null, publishedAt: null });
+  // A design that isn't one: refused as the operation's input would be, nothing made or published.
+  expect(await publishAction(project.slug, number, true, false, "poster" as "title")).toEqual({ error: expect.stringContaining("expected one of") });
+  expect(await entry()).toEqual({ coverId: null, publishedAt: null });
 
   expect(await composeAction(project.slug, number, "pattern", " Now in the dark ")).toEqual({});
   const made = (await entry()).coverId;

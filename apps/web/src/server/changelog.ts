@@ -27,6 +27,7 @@ import {
   deleteChangelogComment as deleteCommentOperation,
   updateChangelogComment as updateCommentOperation,
 } from "./operations/changelog-comments";
+import { OperationError } from "./operations/define";
 import { asAdmin, asAnyone, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -117,7 +118,12 @@ export async function publishChangelogEntry(projectSlug: string, number: number,
     // Only for a draft that still has no cover when it's set: one a teammate added since the dialog opened stays, and an
     // entry published meanwhile is left as it went out.
     if (cover !== undefined) {
-      await composeCover(context, { number: Number(number), design: String(cover) as CoverDesign }, { ifBare: true });
+      // Checked as changelog.composeCover's input is: the design comes from the browser.
+      const input = composeCoverOperation.input.safeParse({ number: Number(number), design: String(cover) });
+      if (!input.success) {
+        throw new OperationError(400, "invalid_input", input.error.issues[0]?.message ?? "Invalid input");
+      }
+      await composeCover(context, input.data, { ifBare: true });
     }
     await call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true });
   });
