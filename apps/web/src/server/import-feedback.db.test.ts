@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { savedPicture } from "@tuti/shared/media-links";
-import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled, upsertProjectUser } from "@tuti/jobs";
+import { FEEDBACK_PAGE, handlers, IMPORT_KEY, IMPORT_RUN, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { billingFile, FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -29,6 +29,8 @@ beforeAll(async () => {
   [fake, s3, openai] = await Promise.all([startFeaturebaseFake(), startS3Fake(), startOpenAIFake()]);
 });
 afterAll(() => Promise.all([fake.close(), s3.close(), openai.close()]));
+// A run a page: tests here watch each page as its run starts (handlers.importStep).
+IMPORT_RUN.ms = 0;
 const limits = { ...FEEDBACK_PAGE };
 afterEach(() => void Object.assign(FEEDBACK_PAGE, limits));
 beforeEach(async () => {

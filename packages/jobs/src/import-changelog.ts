@@ -17,7 +17,7 @@ import { ALREADY_HERE, type ImportJob, type StepPage, tally } from "./imports";
  */
 
 /**
- * A page's limits, well within import-step's 5 minutes: `entries` at most (each may have several images to copy, each
+ * A page's limits, well within a page's 5 minutes: `entries` at most (each may have several images to copy, each
  * fetch taking 30 seconds at most); past `softMs` from its start no more entries are begun (the rest are the next
  * page's, reading the same list page again); past `hardMs` the entry under way's remaining images are left out, as ones
  * that couldn't be fetched. `now` is the page's clock. Tests shorten them, and drive the clock.

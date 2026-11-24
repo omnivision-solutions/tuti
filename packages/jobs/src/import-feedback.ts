@@ -23,7 +23,7 @@ import { syncUsersIn } from "./project-users";
 type Tx = Prisma.TransactionClient;
 const NOTHING: StepPage["save"] = async () => {};
 /**
- * A page's limits, well within import-step's 5 minutes (Featurebase's reads have 3 of them: imports.ts PAGE_READ_MS):
+ * A page's limits, well within its 5 minutes (Featurebase's reads have 3 of them: imports.ts PAGE_READ_MS):
  * at most `posts` posts and `avatars` avatars (`avatarsAtOnce` copied at a time); past `softMs` from its start no more of them are begun (what's begun but
  * not done is left for the next page); past `hardMs` the first one's remaining images are left out, as ones that
  * couldn't be fetched (each fetch takes 30 seconds at most), so one post with many slow images can't hold the import

@@ -1,11 +1,10 @@
-import { codeChange, handlers } from "@tuti/jobs";
 import { assertEnv, billingConfig, checkAiProvider, checkConfig, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 import { assertSesSettings } from "@tuti/shared/ses";
 
 import { waitForMigration } from "./migrations";
 import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
-import { taskOptions } from "./tasks";
+import { stopSignal, taskFn, taskOptions } from "./tasks";
 
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
@@ -22,20 +21,20 @@ if (process.env.TUTI_SCHEMA_MIGRATION) {
 }
 
 const hatchet = getHatchet();
+// Asked to stop (a deploy): Hatchet's worker waits for its runs, so an import's hands over after the page it's on.
+let stopping = () => false;
 const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
   const options = taskOptions(key);
   return hatchet.task({
     ...options,
     inputValidator: jobs[key].input,
-    // `log` rather than ctx.logger: withRunLogs sends it, and any console output, to this run's logs.
-    // A code change's run is told whether it's the last try: until then a failure leaves it analysing (it's retried).
-    fn: withRunLogs((input, ctx) =>
-      key === "codeChange" ? codeChange(input as never, log, { lastTry: ctx.retryCount() >= options.retries }) : handlers[key](input as never, log),
-    ),
+    // `log` (taskFn's) rather than ctx.logger: withRunLogs sends it, and any console output, to this run's logs.
+    fn: withRunLogs(taskFn(key, options.retries, () => stopping())),
   });
 });
 
 const worker = await hatchet.worker("tuti-worker", { workflows: tasks, slots: 20 });
+stopping = stopSignal();
 
 // A self-hosted server's own receiver for the support domain's mail (off without INBOUND_SMTP_PORT).
 const receiver = receiverFromEnv();

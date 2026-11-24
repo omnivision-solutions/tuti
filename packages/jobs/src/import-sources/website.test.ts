@@ -9,10 +9,12 @@ vi.mock("@tuti/shared/webhook-url", async (original) => {
 
 import { crawlPace, fromSlug, pageId, pageTitle, robotsMatch, robotsRules, sitemapLocs, websiteSource, withoutTrailingSlashes } from "./website";
 
+const pace = { ...crawlPace };
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
-  crawlPace.ms = 500;
+  Object.assign(crawlPace, pace);
+  crawlPace.sites.clear();
 });
 
 test("robots.txt's patterns: * any run, a final $ the end, the longest rule winning and Allow on a tie", () => {
@@ -53,6 +55,55 @@ test("starting one, a check that runs out of time once the start page is read le
     await connection.checkCredential();
     await expect(connection.checks.docs!()).resolves.toBeUndefined();
     expect(site.requests).toEqual(["/robots.txt", "/docs"]);
+  } finally {
+    await site.close();
+  }
+});
+
+test("a reader whose site's pace was forgotten while it waited (a Retry-After) still keeps the pace of the reader asking since", async () => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  const site = await startHelpCenterFake();
+  // A clock only the test and the pace's waits move.
+  let clock = Date.now();
+  const waits: number[] = [];
+  const wait = async (ms: number) => {
+    waits.push(ms);
+    clock += ms;
+  };
+  Object.assign(crawlPace, { ms: 300, now: () => clock, wait });
+  try {
+    const first = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    await first.checkCredential();
+    // The first waits half a minute: past it, its site's pace is forgotten, and another reader asks the site.
+    clock += 30_000;
+    const second = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    await second.checkCredential();
+    waits.length = 0;
+    // The first asks again (an article's page): the whole pace after the second's last request.
+    await first.read.articleExists!(`${site.url}/getting-started`);
+    expect(waits).toEqual([300]);
+  } finally {
+    await site.close();
+  }
+});
+
+test("two readers of one site at once (two projects importing it) ask it a whole pace apart, not together", async () => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  const site = await startHelpCenterFake();
+  const clock = Date.now();
+  const waits: number[] = [];
+  // Each wait is let go a moment later, so both readers have worked out theirs before either sends.
+  const wait = async (ms: number) => {
+    waits.push(ms);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  };
+  Object.assign(crawlPace, { ms: 300, now: () => clock, wait });
+  try {
+    const first = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    const second = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    await Promise.all([first.checkCredential(), second.checkCredential()]);
+    // Each request (robots.txt and the start page, twice) after the one before it, though the clock never moved.
+    expect(waits.toSorted((a, b) => a - b)).toEqual([0, 300, 600, 900]);
   } finally {
     await site.close();
   }
