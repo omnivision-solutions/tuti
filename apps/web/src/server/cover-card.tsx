@@ -87,7 +87,7 @@ export async function drawCover(site: Site, content: CoverContent, design: Cover
   const [logo, picture] = await Promise.all([logoImage(dark ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo), design === "screenshot" ? pictureOf(content.image) : null]);
   // Its image can't be read after all: the title's design, not a frame with nothing in it.
   const drawn = design === "screenshot" && !picture ? "title" : design;
-  const svg = await satori(coverElement(site, content, drawn, logo, picture), { ...COVER_SIZE, fonts: await fonts });
+  const svg = await satori(coverElement(site, content, drawn, logo, picture), { ...COVER_SIZE, fonts: await fonts() });
   return sharp(Buffer.from(svg)).resize(width).png().toBuffer();
 }
 

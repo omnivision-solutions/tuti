@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { log } from "@tuti/shared";
@@ -12,21 +13,37 @@ import type { Branding } from "@/server/operations/branding";
 /**
  * Static cuts of the brand fonts (packages/ui's) with every Latin script they have, and Noto Sans for Cyrillic and Greek
  * and Noto Sans Math's symbols (scripts/fetch-fonts.mjs makes them): the image renderer reads neither WOFF2 nor variable fonts.
+ * Read once, when a picture is first drawn: importing this module reads nothing (an entry's page and the changelog's
+ * operations import the cover's renderer, cover-card.tsx).
  */
-export const fonts = Promise.all(
-  (
-    [
-      ["Bricolage Grotesque", "bricolage-grotesque-700.ttf", 700],
-      ["Figtree", "figtree-500.ttf", 500],
-      ["Figtree", "figtree-700.ttf", 700],
-      // Cyrillic and Greek, which the brand fonts don't have.
-      ["Noto Sans", "noto-sans-500.ttf", 500],
-      ["Noto Sans", "noto-sans-700.ttf", 700],
-      // Symbols none of them has (✓, →, ⋯), as the app's and portals' fallback (docs/design.md, Type).
-      ["Noto Sans Math", "noto-sans-math.ttf", 400],
-    ] as const
-  ).map(async ([name, file, weight]) => ({ name, weight, style: "normal" as const, data: await readFile(new URL(`../fonts/og/${file}`, import.meta.url)) })),
-);
+let loaded: ReturnType<typeof loadFonts> | undefined;
+export const fonts = () => (loaded ??= loadFonts());
+
+const loadFonts = () =>
+  Promise.all(
+    (
+      [
+        ["Bricolage Grotesque", "bricolage-grotesque-700.ttf", 700],
+        ["Figtree", "figtree-500.ttf", 500],
+        ["Figtree", "figtree-700.ttf", 700],
+        // Cyrillic and Greek, which the brand fonts don't have.
+        ["Noto Sans", "noto-sans-500.ttf", 500],
+        ["Noto Sans", "noto-sans-700.ttf", 700],
+        // Symbols none of them has (✓, →, ⋯), as the app's and portals' fallback (docs/design.md, Type).
+        ["Noto Sans Math", "noto-sans-math.ttf", 400],
+      ] as const
+    ).map(async ([name, file, weight]) => ({ name, weight, style: "normal" as const, data: await readFile(fontFile(file)) })),
+  );
+
+/**
+ * Where a font's file is. Beside this module, for a route handler and for tests. A page's or a server action's bundle
+ * makes that address a public asset's instead (not a file, and reading it fails): there it's in the app's own folder,
+ * which `next` runs from (start.sh, `pnpm dev`).
+ */
+function fontFile(file: string) {
+  const beside = new URL(`../fonts/og/${file}`, import.meta.url);
+  return beside.protocol === "file:" ? beside : join(process.cwd(), "src/fonts/og", file);
+}
 
 /** The brand green (emails' too), for a portal without a colour of its own. */
 export const TUTI_GREEN = "#12804a";
@@ -61,7 +78,7 @@ export async function shareCard(site: Site, card: ShareCard, address: string, he
   const logo = await logoImage(site.brand.colorScheme === "dark" ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo);
   // Satori itself, not next/og: for a character its fonts don't have, next/og fetches a font from Google Fonts with the text
   // in the address (a private post's title too), which a server without the internet can't do either.
-  const svg = await satori(cardElement(site, card, address, logo), { width: 1200, height: 630, fonts: await fonts });
+  const svg = await satori(cardElement(site, card, address, logo), { width: 1200, height: 630, fonts: await fonts() });
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
   return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", ...headers } });
 }

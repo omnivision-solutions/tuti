@@ -30,7 +30,7 @@ test("the card's fonts draw every character a card keeps: symbols (✓ ⋯ →) 
   const missing = vi.fn(async () => []);
   const text = drawable("✓ Done: export ⋯ → CSV ↔ Привет Γειά Acme™ © Łódź 🎉 🇫🇷");
   const element = { type: "div", key: null, props: { style: { display: "flex", fontFamily: "Figtree" }, children: text } };
-  await satori(element, { width: 1200, height: 100, fonts: await fonts, loadAdditionalAsset: missing });
+  await satori(element, { width: 1200, height: 100, fonts: await fonts(), loadAdditionalAsset: missing });
   expect(missing.mock.calls).toEqual([]);
 });
 

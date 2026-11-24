@@ -75,7 +75,7 @@ test("each design draws, at the cover's size or a preview's", async () => {
   const full = content({ headings: ["Themes", "Search", "Привет", "Sharing", "More"] });
   for (const design of COVER_DESIGNS) {
     // The renderer refuses styles it can't lay out: each design as it is, with an image where it takes one.
-    await satori(coverElement(site(), full, design, null, await picture(1200, 800)), { ...COVER_SIZE, fonts: await fonts });
+    await satori(coverElement(site(), full, design, null, await picture(1200, 800)), { ...COVER_SIZE, fonts: await fonts() });
   }
   // Without uploads there's no image to read: Screenshot falls back to the title's design rather than an empty frame.
   for (const design of ["title", "screenshot"] as const) {
