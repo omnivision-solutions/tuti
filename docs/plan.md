@@ -1012,6 +1012,29 @@ Decided (2026-11-19):
 - [x] B9. Users'. Done (2026-11-19): users, companies, reader groups, portal readers, email preferences and property formats: summaries of one or two sentences, each field described (the sort and paging fields, a group's conditions and their `op`s, the email switches, a reader entry's address or domain), and outputs with example values: `User`, `ReaderGroup` (with `GroupCondition`), `PortalReader`, `EmailPreferences` and `PropertyFormat` named in the spec's schemas; no words dropped from `agent-context.json`
 - [x] B10. Portal's, Project's and Billing's; the list of operations not yet rewritten goes. Done (2026-11-19, the list with every area in: `output` is required, and under the tests every run's result is checked against it, not only in the operations matrix): their 32 operations rewritten (portal, site, domain, redirects, branding, widget; project, imports, reports, AI models; plan, licence, usage, credits): summaries of one or two sentences, what they said about a field on that field, outputs with example values (named `PortalSettings`, `SiteAddress`, `CustomDomain`, `Redirect`, `Branding`, `WidgetSettings`, `PortalLink`, `UploadedImage`, `Import`, `AiRoleModel`, `AiGroupLevel`, `AiUsageMonth`, `AiFeatureUsage`, `CreditGrant`), and no word an agent read lost. The list itself goes once every area is in
 
+## Mobile app: the Inbox on a phone (asked 2026-11-24)
+
+A team answers its users away from a desk: an app for iOS and Android that shows the Inbox, notifies a teammate when a user writes, and lets them reply from the notification or the conversation. It is a companion to the web app, for people who already have an account: nothing else of Tuti is in it.
+
+Decided (2026-11-24):
+- **The Inbox only.** No tab bar: the app opens on the Inbox, its views as filter chips, with search. A conversation has Reply and Note, attachments, assign, snooze, close, spam and Draft with AI. Chat stays plain text. On a tablet or an unfolded phone the list and the conversation sit side by side.
+- **No sign-up and no billing in the app.** A teammate signs in with Google, GitHub or an emailed link, to tuti.so or to a self-hosted server whose address they enter. No Sign in with Apple: the app is for a team's existing accounts, which Apple's rule exempts; if review disagrees, iOS offers the emailed link only.
+- **React Native with Expo, in this repository** (`apps/mobile`): one codebase, the platform's own navigation, lists and sheets, and fixes to the app's own code shipped over the air (EAS Update) without a store review. It shares the workspace with the other apps but none of their code runs in it; the Docker images are pruned per app, so they don't change.
+- **Push through Expo's push service**, which any server can send to without an account, so a self-hosted server notifies the same app. A notification shows the message's text unless the teammate turns that off; the email notifications keep going out.
+- **Works on a bad connection.** What was loaded stays readable offline; a reply that didn't send stays in the conversation with Retry.
+- **Nothing of Tuti's accounts in the repository.** The Expo account and project a build belongs to come from the environment (`EXPO_OWNER`, `EAS_PROJECT_ID`, and `APP_ID` for the app's id), so a fork builds its own app under its own account; signing keys and push keys live with the build service.
+
+- [x] M1. An empty app in `apps/mobile`. Done (2026-11-24): Expo with its router, one screen showing the parrot and "Tuti" in the light and dark palettes, the app's icons drawn from the web app's mark, and a config that reads the Expo account, project and app id from the environment (a test holds that none is written in it). `pnpm typecheck`, `pnpm lint` and `pnpm test` cover it; it has no `build` script, so `pnpm build` and the images are as before, and `pnpm --filter @tuti/mobile bundle` bundles it for both platforms
+- [ ] M2. Signing in from the app: a teammate's session over the API (today it takes project API keys only), Google, GitHub and the emailed link through the device's browser, and a self-hosted server's address
+- [ ] M3. What the app reads and does, for a signed-in teammate: the Inbox's views with their counts, the list with search, a conversation with its messages and attachments, reply, note, assign, snooze, close and spam, and live updates while it's open
+- [ ] M4. Devices and push: a device registers for a teammate, a user's message notifies the devices of who would get the email, "Show message text" per person, and a device that signs out or goes stale stops getting them
+- [ ] M5. The Inbox screen: views, search, pull to refresh, swipe to close or snooze, cached for reading offline
+- [ ] M6. The conversation screen: messages, the Reply and Note composer, attachments, Draft with AI, and a reply that didn't send kept with Retry
+- [ ] M7. The details sheet: who's writing, assign, snooze, close, spam
+- [ ] M8. Notifications in the app: asking for permission once it's useful, a tap opens the conversation, Reply and Close from the notification
+- [ ] M9. Tablets and foldables: list and conversation side by side
+- [ ] M10. Builds and releases: development, preview and store builds, over-the-air updates for fixes, the store listings and their reviews
+
 ## Later
 
 - [ ] Drop `project.assistantTone`, and `tone` from `assistant.get` and `assistant.update`, once no released code reads them (R4, AI models by role): the tone is part of the instructions, and a stored one is folded into them when read. Before dropping it, a migration folds any tone still stored into `assistantInstructions` (tone first, a blank line between)
