@@ -29,9 +29,9 @@ export const fonts = Promise.all(
 );
 
 /** The brand green (emails' too), for a portal without a colour of its own. */
-const TUTI_GREEN = "#12804a";
+export const TUTI_GREEN = "#12804a";
 
-const THEMES = {
+export const THEMES = {
   light: { page: "#faf8f4", text: "#1c1917", muted: "#6b6560", chip: "#ffffff", chipEdge: "#e7e0d5", surface: SURFACES.light },
   dark: { page: "#0f0e0d", text: "#fafaf9", muted: "#a8a29e", chip: "#1c1a18", chipEdge: "#34302c", surface: SURFACES.dark },
 };
@@ -67,7 +67,7 @@ export async function shareCard(site: Site, card: ShareCard, address: string, he
 }
 
 /** A name or logo text on the logo's row: one line, cut short with an ellipsis rather than run under the panel. */
-const oneLine = { display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 } as const;
+export const oneLine = { display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 } as const;
 
 export function cardElement(site: Site, card: ShareCard, address: string, logo: Logo) {
   const theme = THEMES[site.brand.colorScheme === "dark" ? "dark" : "light"];
@@ -292,7 +292,7 @@ export function logoSize(logo: { width: number; height: number }) {
  * The logo as a PNG (the renderer can't read the stored WebP), at most 64px tall and 360 wide; null without one, or if
  * it can't be read (the card shows the portal's name instead).
  */
-async function logoImage(logo: Branding["logo"]) {
+export async function logoImage(logo: Branding["logo"]) {
   const storage = mediaStorage();
   if (!logo || !storage) {
     return null;
