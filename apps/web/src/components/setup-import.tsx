@@ -74,7 +74,7 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
                     ))}
                     {skipped > 0 && (
                       <span className="text-muted-foreground">
-                        <span className="tabular-nums">{skipped.toLocaleString("en")}</span> already here
+                        <span className="tabular-nums">{skipped.toLocaleString("en")}</span> skipped (brought earlier)
                       </span>
                     )}
                     {state === "now" && <span className="text-muted-foreground">so far</span>}

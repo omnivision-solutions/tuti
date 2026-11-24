@@ -413,8 +413,8 @@ export function importBrief(run: ImportView) {
     if (!at) {
       return "Starting…";
     }
-    // What an earlier import brought, which it skips, climbs while importing again brings nothing new: it's moving.
-    const here = at.skipped > 0 ? ` (${at.skipped.toLocaleString("en")} already here)` : "";
+    // What an earlier import brought (some of it maybe deleted here since), skipped, climbs while importing again brings nothing new: it's moving.
+    const here = at.skipped > 0 ? ` (${at.skipped.toLocaleString("en")} skipped, brought earlier)` : "";
     return `${importAt(run)}: ${label}, ${brought ? `${brought} so far` : at.leftOut.length > 0 || at.skipped > 0 ? "nothing new so far" : "starting"}${here}.`;
   }
   if (run.state === "failed") {
