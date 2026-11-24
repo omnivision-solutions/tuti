@@ -671,7 +671,7 @@ export const draftChangelogEntry = defineOperation({
 
 /**
  * A draft's pull requests with what Autopilot found (code-changes.ts): each one's summary for users, where its analysis
- * wrote one, and which of `posts` it's linked to (by the team, by its description or by Autopilot). Only those posts:
+ * wrote one, and which of `posts` it's linked to (a post's pull request links, whoever made them). Only those posts:
  * a link to one the entry doesn't list, or lists but readers can't see, says nothing here.
  */
 async function withAutopilotNotes<PullRequest extends { repo: string; number: number }>(
