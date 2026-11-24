@@ -11,6 +11,7 @@ import { getMembership } from "./membership";
 import type { RewriteMode } from "./release-notes";
 import {
   composeChangelogCover as composeCoverOperation,
+  composeCover,
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
@@ -113,11 +114,10 @@ export async function acceptChangelogRewrite(
  */
 export async function publishChangelogEntry(projectSlug: string, number: number, announce = true, emailSubscribers = false, cover?: CoverDesign): Promise<FormState> {
   return asTeam(projectSlug, DENIED, async (context) => {
-    // Only for a draft that still has no cover: one a teammate added since the dialog opened stays, and an entry
-    // published meanwhile is left as it went out.
-    const entry = cover === undefined ? null : await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId: context.projectId, number: Number(number) } }, select: { coverId: true, publishedAt: true } });
-    if (entry && entry.coverId === null && entry.publishedAt === null) {
-      await call(composeCoverOperation, context, { number: Number(number), design: String(cover) as CoverDesign });
+    // Only for a draft that still has no cover when it's set: one a teammate added since the dialog opened stays, and an
+    // entry published meanwhile is left as it went out.
+    if (cover !== undefined) {
+      await composeCover(context, { number: Number(number), design: String(cover) as CoverDesign }, { ifBare: true });
     }
     await call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true });
   });

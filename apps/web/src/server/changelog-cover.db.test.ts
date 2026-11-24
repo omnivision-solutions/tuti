@@ -188,6 +188,18 @@ test("in the app: Publish with a design picked adds that cover first, and publis
   expect(await saved(fresh.number)).toEqual({ coverId: null, publishedAt: out.publishedAt });
   expect(drawn()).toHaveLength(before);
 
+  // A cover a teammate sets, or the entry they publish, while the picked one is drawn: theirs stays, and the drawing isn't kept on it.
+  const real = await vi.importActual<typeof import("@/server/cover-card")>("@/server/cover-card");
+  for (const meanwhile of [{ coverId: made }, { publishedAt: new Date("2026-11-24T12:00:00Z") }]) {
+    const raced = await call(createChangelogEntry, team(), { title: "Raced" });
+    vi.mocked(coverCard.drawCover).mockImplementationOnce(async (...args) => {
+      await prisma.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number: raced.number } }, data: meanwhile });
+      return real.drawCover(...args);
+    });
+    expect(await publishAction(project.slug, raced.number, true, false, "title")).toEqual({});
+    expect(await saved(raced.number)).toEqual({ coverId: meanwhile.coverId ?? null, publishedAt: expect.any(Date) });
+  }
+
   // No design (its dialog's "No cover", or an entry that has one): published as it is.
   const plain = await call(createChangelogEntry, team(), { title: "Fixes" });
   expect(await publishAction(project.slug, plain.number)).toEqual({});
