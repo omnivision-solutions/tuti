@@ -80,6 +80,7 @@
   "conversations.summarize": ["adds","conversation","done","note","open","sees","summary","team","user","wants"],
   "conversations.unlinkPost": ["conversation","post","unlink"],
   "conversations.update": ["assign","change","come","conversation","email","inbox","latest","mark","member","message","null","open","reply","replying","sets","snooze","snoozeduntil","spam","status","team","till","time","unassign","user","views","waiting","wakes","writes","year"],
+  "conversations.views": ["beside","conversations","created","inbox","list","lists","many","mine","shows","signed","teammate","tuti","view","views"],
   "credits.get": ["balance","below","cover","credits","enabled","expiresat","expiring","first","good","grant","left","next","null","past","project","request","server","soonest","uses"],
   "credits.topUp": ["1000","added","checkout","credits","dollars","gives","many","page","paid","says","stripe"],
   "docs.ask": ["answer","answers","articles","asked","assistant","cites","closest","context","cover","credits","docs","embeddings","finding","follow","follows","followupto","hour","know","last","limits","names","pass","project","published","question","questions","server","still","team","topics","turns","unavailable","unless","update"],
