@@ -50,6 +50,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   acceptChangelogRewrite,
+  composeChangelogCover,
   type ChangelogRewrite,
   deleteChangelogEntry,
   draftChangelogEntry,
@@ -60,6 +61,7 @@ import {
   saveChangelogStyle,
   unpublishChangelogEntry,
 } from "@/server/changelog";
+import type { CoverDesign } from "@/server/cover-card";
 import type { FormState } from "@/server/form-state";
 import type { RewriteMode } from "@/server/release-notes";
 
@@ -118,6 +120,9 @@ const ChangelogSavingContext = createContext<{
   /** The text has something this release's editor can't show (RichEditor's onUnreadable): AI must not rewrite it either. */
   locked: boolean;
   setLocked: (locked: boolean) => void;
+  /** The form's featured image isn't the saved one (one uploaded or removed, not saved yet): Publish offers no cover of its own over it. */
+  coverChanged: boolean;
+  setCoverChanged: (changed: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -129,9 +134,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [announce, setAnnounce] = useState<Announce>({ email: true, markNew: true });
   const [drafting, setDrafting] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [coverChanged, setCoverChanged] = useState(false);
   return (
     <ChangelogSavingContext
-      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked }}
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged }}
     >
       {children}
     </ChangelogSavingContext>
@@ -159,24 +165,59 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
 function FeaturedImage({
   projectSlug,
   entry,
+  covers,
   onBusy,
   onRemove,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** The cover designs "Make a cover" offers a saved entry; null for a new one. */
+  covers?: CoverChoices | null;
   onBusy: (delta: number) => void;
   onRemove: () => void;
 }) {
   const id = useId();
   const add = useRef<HTMLButtonElement>(null);
+  const savedCover = entry?.cover ? { id: entry.cover.id, url: entry.wideCoverUrl ?? entry.cover.url } : null;
   const { image, setImage, uploading, error, dragging, drop, inputs, pick } = useImageUpload({
     projectSlug,
     name: "cover",
     id,
     label: "Featured image",
-    image: entry?.cover ? { id: entry.cover.id, url: entry.wideCoverUrl ?? entry.cover.url } : null,
+    image: savedCover,
     onBusy,
   });
+  // A cover saved from outside the form (composed in the Publish dialog, or set by a teammate) is the form's cover
+  // from then on, so the next Save keeps it rather than taking it off: unless the form's own was changed and not saved
+  // yet (an upload, a removal), which stays. "Use this cover" is asked for here, so its cover is taken either way.
+  const [savedWas, setSavedWas] = useState(savedCover?.id);
+  const [made, setMade] = useState(false);
+  if (savedWas !== savedCover?.id) {
+    setSavedWas(savedCover?.id);
+    setMade(false);
+    if (made || image?.id === savedWas) {
+      setImage(savedCover);
+    }
+  }
+  // Told to Publish, which adds no cover of its own over one that's waiting to be saved.
+  const saving = useContext(ChangelogSavingContext);
+  const changed = image?.id !== savedCover?.id;
+  useEffect(() => saving?.setCoverChanged(changed), [saving, changed]);
+  // One dialog, whichever of its two buttons opened it (Add's row or the image's), so it's still there when the cover it
+  // made takes the first one's place; then the keyboard's focus goes to Replace, as after an upload.
+  const [making, setMaking] = useState(false);
+  const focusReplace = useRef(false);
+  useEffect(() => {
+    if (image && focusReplace.current) {
+      focusReplace.current = false;
+      replace.current?.focus({ preventScroll: true });
+    }
+  }, [image]);
+  const make = entry && covers && (
+    <Button type="button" variant="secondary" size="sm" disabled={uploading} focusableWhenDisabled onClick={() => setMaking(true)}>
+      Make a cover
+    </Button>
+  );
   // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
   // (Only then, and only if focus went with Add: a file dropped with the mouse, or someone who moved on while it
   // uploaded, to the text or by a click anywhere else, keeps theirs.)
@@ -229,6 +270,7 @@ function FeaturedImage({
             <Button type="button" variant="secondary" size="sm" aria-label="Replace featured image" ref={replace} disabled={uploading} focusableWhenDisabled onClick={pick}>
               Replace
             </Button>
+            {make}
             <Button
               type="button"
               variant="secondary"
@@ -256,16 +298,164 @@ function FeaturedImage({
             dragging && "border-primary bg-soft",
           )}
         >
-          <Button type="button" variant="outline" size="sm" className="rounded-full" ref={add} disabled={uploading} focusableWhenDisabled onClick={pick}>
-            <ImageIcon />
-            Add featured image
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button type="button" variant="outline" size="sm" className="rounded-full" ref={add} disabled={uploading} focusableWhenDisabled onClick={pick}>
+              <ImageIcon />
+              Add featured image
+            </Button>
+            {make}
+          </div>
           {status || <span className="text-xs text-muted-foreground">or drop one here · 1200×630 works best</span>}
         </div>
       )}
       {inputs}
       {error && <FieldError>{error}</FieldError>}
+      {entry && covers && (
+        <MakeCover
+          projectSlug={projectSlug}
+          number={entry.number}
+          title={entry.title}
+          covers={covers}
+          open={making}
+          onOpenChange={setMaking}
+          onMade={() => {
+            setMade(true);
+            focusReplace.current = true;
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** The cover designs with something to show for an entry as it's saved, the one picked when nobody picks, and `version`, which changes with each save (its previews are drawn again). */
+export type CoverChoices = { designs: CoverDesign[]; automatic: CoverDesign; version: number };
+
+const COVER_DESIGN_NAMES: Record<CoverDesign, string> = { title: "Title", screenshot: "Screenshot", sections: "Sections", pattern: "Pattern" };
+
+/**
+ * The cover designs to pick from, each a picture of this entry's own cover in it (the team's preview route: the saved
+ * title or `headline`, tag, headings and image, with the portal's branding), and "No cover" with `none`.
+ */
+function CoverDesigns({
+  projectSlug,
+  number,
+  covers,
+  value,
+  onChange,
+  headline = "",
+  none = false,
+}: {
+  projectSlug: string;
+  number: number;
+  covers: CoverChoices;
+  value: CoverDesign | "none";
+  onChange: (value: CoverDesign | "none") => void;
+  headline?: string;
+  none?: boolean;
+}) {
+  const name = useId();
+  const query = new URLSearchParams({ v: String(covers.version), ...(headline.trim() && { headline: headline.trim() }) });
+  // `relative`: each radio (out of sight) stays within its own option, so focus and a click on it land there.
+  const option = "relative flex cursor-pointer flex-col gap-1 text-xs text-muted-foreground has-checked:text-foreground";
+  const picture = "aspect-[1600/840] w-full rounded-md border bg-muted peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring";
+  return (
+    <fieldset className="grid grid-cols-2 gap-3">
+      <legend className="mb-2 text-sm font-medium">Cover</legend>
+      {covers.designs.map((design) => (
+        <label key={design} className={option}>
+          <input type="radio" name={name} className="peer sr-only" checked={value === design} onChange={() => onChange(design)} />
+          {/* eslint-disable-next-line @next/next/no-img-element -- drawn for this entry by the team's preview route */}
+          <img src={`/app/${projectSlug}/changelog/${number}/cover/${design}?${query}`} alt="" width={800} height={420} className={picture} />
+          {COVER_DESIGN_NAMES[design]}
+        </label>
+      ))}
+      {none && (
+        <label className={option}>
+          <input type="radio" name={name} className="peer sr-only" checked={value === "none"} onChange={() => onChange("none")} />
+          <span aria-hidden className={cn(picture, "border-dashed bg-transparent")} />
+          No cover
+        </label>
+      )}
+    </fieldset>
+  );
+}
+
+/** The design that's picked: theirs while the entry still offers it (a save can take its image away), else the entry's own. */
+const pickedCover = <None extends "none" | never>(covers: CoverChoices, picked: CoverDesign | None | undefined) =>
+  picked !== undefined && (picked === "none" || covers.designs.includes(picked as CoverDesign)) ? picked : covers.automatic;
+
+/**
+ * "Make a cover" beside the featured image's buttons: the designs drawn for the saved entry, a headline to show in its
+ * title's place, and "Use this cover", which keeps the picked one as the entry's cover (changelog.composeCover). Unsaved
+ * text stays as it is: the form's cover follows the saved one (FeaturedImage).
+ */
+function MakeCover({
+  projectSlug,
+  number,
+  title,
+  covers,
+  open,
+  onOpenChange: setOpen,
+  onMade,
+}: {
+  projectSlug: string;
+  number: number;
+  title: string;
+  covers: CoverChoices;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Its cover is the entry's now: the form takes it as its own. */
+  onMade: () => void;
+}) {
+  const [picked, setPicked] = useState<CoverDesign>();
+  const [headline, setHeadline] = useState("");
+  // The previews follow the headline once typing pauses, not at every letter.
+  const [shown, setShown] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(headline), 400);
+    return () => clearTimeout(timer);
+  }, [headline]);
+  const [pending, startTransition] = useTransition();
+  const design = pickedCover<never>(covers, picked);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {/* No taller than the screen (a phone's, with its keyboard up for the headline): it scrolls. */}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Make a cover</DialogTitle>
+          <DialogDescription>Drawn from this entry as it&apos;s saved and your portal&apos;s branding.</DialogDescription>
+        </DialogHeader>
+        <CoverDesigns projectSlug={projectSlug} number={number} covers={covers} value={design} onChange={(value) => value !== "none" && setPicked(value)} headline={shown} />
+        <Field>
+          <FieldLabel htmlFor="cover-headline">Headline</FieldLabel>
+          <Input id="cover-headline" value={headline} onChange={(event) => setHeadline(event.target.value)} maxLength={90} placeholder={title} autoComplete="off" />
+        </Field>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await composeChangelogCover(projectSlug, number, design, headline);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  onMade();
+                  setOpen(false);
+                  toast.success("Cover added");
+                }
+              })
+            }
+          >
+            {pending ? "Making it…" : "Use this cover"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -279,12 +469,15 @@ export function ChangelogForm({
   posts,
   readerUrl,
   mediaUrls,
+  covers = null,
   canEditWithAi = false,
   aiPaused = false,
   subscribers = 0,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** The cover designs "Make a cover" offers (a saved entry, where uploads are set up). */
+  covers?: CoverChoices | null;
   /** How many people confirmed they want the changelog by email (Email subscribers); null on a private portal (none are emailed). */
   subscribers?: number | null;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
@@ -355,6 +548,7 @@ export function ChangelogForm({
           <FeaturedImage
             projectSlug={projectSlug}
             entry={entry}
+            covers={covers}
             onBusy={(delta) => {
               setUploading((n) => n + delta);
               setDirty(true);
@@ -1081,6 +1275,7 @@ export function ChangelogEntryActions({
   aiPaused = false,
   unwritten,
   markers = [],
+  covers = null,
   part,
 }: {
   projectSlug: string;
@@ -1089,6 +1284,8 @@ export function ChangelogEntryActions({
   published: boolean;
   /** Lines an AI draft left for the team to fill in ("[Check: …]", "[Screenshot: …]"), still in the saved text: it isn't published with them. */
   markers?: string[];
+  /** The entry has no cover and one can be composed: the Publish dialog offers its designs, with one picked. */
+  covers?: CoverChoices | null;
   /** How many posts it completes. */
   postCount: number;
   /** How many people confirmed they want the changelog by email. */
@@ -1127,6 +1324,11 @@ export function ChangelogEntryActions({
   // Text this release's editor can't show isn't rewritten by AI either (ChangelogForm's onUnreadable).
   const locked = saving?.locked ?? false;
   const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused && !locked;
+  // The cover Publish adds (the entry's own design until they pick), or "none".
+  const [pickedCover_, setPickedCover] = useState<CoverDesign | "none">();
+  // Not over a featured image the form has and hasn't saved yet: Publish publishes what's saved, and theirs stays theirs.
+  const cover = covers && !saving?.coverChanged && pickedCover(covers, pickedCover_);
+  const withCover = cover && cover !== "none" ? cover : undefined;
   useEffect(() => {
     if (part === "publish") {
       saving?.setPublishing(pending);
@@ -1213,7 +1415,8 @@ export function ChangelogEntryActions({
     <AlertDialog key="publish">
       {/* Off while busy, but keeping the keyboard's focus. */}
       <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} focusableWhenDisabled />}>Publish</AlertDialogTrigger>
-      <AlertDialogContent>
+      {/* With the cover's designs it can be taller than a phone's screen: it scrolls, so Publish is in reach. */}
+      <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle>
             {markers.length > 0
@@ -1250,7 +1453,8 @@ export function ChangelogEntryActions({
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-
+        {/* No cover yet: its designs, drawn for this entry, with one picked already (not while lines are left to fill in: it can't be published). */}
+        {covers && cover && markers.length === 0 && <CoverDesigns projectSlug={projectSlug} number={number} covers={covers} value={cover} onChange={setPickedCover} none />}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
@@ -1261,8 +1465,8 @@ export function ChangelogEntryActions({
             focusableWhenDisabled
             onClick={() =>
               sample || importedOn
-                ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")
-                : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
+                ? run((slug, n) => publishChangelogEntry(slug, n, false, false, withCover), "Published without announcing")
+                : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing, withCover), "Published")
             }
           >
             {unwritten ? "Publish anyway" : "Publish"}

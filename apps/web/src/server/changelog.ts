@@ -5,10 +5,12 @@ import { redirect } from "next/navigation";
 
 import type { Reaction } from "@/lib/reactions";
 
+import type { CoverDesign } from "./cover-card";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import type { RewriteMode } from "./release-notes";
 import {
+  composeChangelogCover as composeCoverOperation,
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
@@ -105,9 +107,26 @@ export async function acceptChangelogRewrite(
   );
 }
 
-export async function publishChangelogEntry(projectSlug: string, number: number, announce = true, emailSubscribers = false): Promise<FormState> {
+/**
+ * Publishes an entry (see changelog.publish). With `cover` (the design picked in the Publish dialog, for an entry with
+ * no cover), that cover is composed and set first: if it can't be, nothing is published.
+ */
+export async function publishChangelogEntry(projectSlug: string, number: number, announce = true, emailSubscribers = false, cover?: CoverDesign): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, async (context) => {
+    // Only for a draft that still has no cover: one a teammate added since the dialog opened stays, and an entry
+    // published meanwhile is left as it went out.
+    const entry = cover === undefined ? null : await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId: context.projectId, number: Number(number) } }, select: { coverId: true, publishedAt: true } });
+    if (entry && entry.coverId === null && entry.publishedAt === null) {
+      await call(composeCoverOperation, context, { number: Number(number), design: String(cover) as CoverDesign });
+    }
+    await call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true });
+  });
+}
+
+/** Composes a cover for the saved entry in a design, with a headline in its title's place if one's given, and sets it (see changelog.composeCover). */
+export async function composeChangelogCover(projectSlug: string, number: number, design: CoverDesign, headline = ""): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) =>
-    call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true }),
+    call(composeCoverOperation, context, { number: Number(number), design: String(design) as CoverDesign, headline: String(headline) || undefined }),
   );
 }
 

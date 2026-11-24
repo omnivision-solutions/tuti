@@ -22,6 +22,7 @@ import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { displayDoc } from "@/server/content";
+import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
 import { lastingImage, lastingMediaUrl, mediaUrls } from "@/server/media-urls";
@@ -55,6 +56,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       body: true,
       content: true,
       tags: true,
+      updatedAt: true,
       publishedAt: true,
       announced: true,
       subscribersEmailedAt: true,
@@ -116,6 +118,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     }),
     prisma.teamMember.findMany({ where: { projectId: membership.project.id }, select: { userId: true } }),
   ]);
+  // The cover designs with something to show for the entry as it's saved, and the one picked when nobody picks; where
+  // uploads are set up (a composed cover is kept as one). `version`: its previews are drawn again after a save.
+  const coverOf = mediaStorage() ? await coverContent(membership.project.id, entry) : null;
+  const covers = coverOf && { designs: coverDesigns(coverOf), automatic: automaticDesign(coverOf), version: entry.updatedAt.getTime() };
   const commentMedia = await mediaUrls(...comments.map(displayDoc));
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
 
@@ -164,6 +170,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   unwritten={unwritten}
                   // What an AI draft left to fill in: Publish waits for them (changelog.publish refuses it too).
                   markers={entry.publishedAt ? [] : markersIn(displayDoc(entry))}
+                  // Offered while it has no cover: Publish can add one.
+                  covers={entry.cover ? null : covers}
                   part="publish"
                 />
               </PageActions>
@@ -179,11 +187,12 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   : "Draft"}
             </p>
             {/*
-              New saved text or cover (an AI draft, a save, a merged pull request added to the running draft)
-              starts the form afresh; publishing or unpublishing keeps unsaved edits.
+              New saved text (an AI draft, a save, a merged pull request added to the running draft) starts the form
+              afresh; publishing or unpublishing keeps unsaved edits, and so does a new saved cover (one composed in
+              the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
             <ChangelogForm
-              key={createHash("sha256").update(JSON.stringify([entry.title, entry.content, entry.cover?.id])).digest("base64url")}
+              key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
               projectSlug={slug}
               entry={{
                 number: entry.number,
@@ -208,6 +217,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               posts={posts}
               readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
               mediaUrls={await mediaUrls(displayDoc(entry))}
+              covers={covers}
               canEditWithAi={aiEnabled() && !unwritten}
               aiPaused={paused}
             />

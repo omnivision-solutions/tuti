@@ -6,10 +6,11 @@ import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import { composeChangelogCover as composeAction, publishChangelogEntry as publishAction } from "@/server/changelog";
 import * as coverCard from "@/server/cover-card";
 import { composeChangelogCover, createChangelogEntry, getChangelogEntry, publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** An entry's composed cover (changelog.composeCover): drawn from the entry and the portal's branding, kept as a normal cover. */
 
@@ -153,4 +154,42 @@ test("without uploads set up it's a 503, and past the member's hourly uploads a 
   vi.stubEnv("MEDIA_S3_BUCKET", "");
   await expect(compose({ number })).rejects.toMatchObject({ status: 503, code: "uploads_unavailable", message: "Uploads aren't set up on this server" });
   expect(await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } }, select: { coverId: true } })).toEqual({ coverId: first.cover!.id });
+});
+
+test("in the app: Publish with a design picked adds that cover first, and publishes nothing if it can't; Make a cover sets one with its headline", async () => {
+  actAs(owner);
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode" });
+  const entry = () => prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } }, select: { coverId: true, publishedAt: true } });
+
+  // A design with nothing to show for it (the entry lost its image since the dialog opened): still a draft, no cover.
+  expect(await publishAction(project.slug, number, true, false, "screenshot")).toEqual({ error: "This entry has no image at least 600px wide for the Screenshot design" });
+  expect(await entry()).toEqual({ coverId: null, publishedAt: null });
+
+  expect(await composeAction(project.slug, number, "pattern", " Now in the dark ")).toEqual({});
+  const made = (await entry()).coverId;
+  expect(made).not.toBeNull();
+  expect(drawn()).toEqual([expect.objectContaining({ design: "pattern", title: "Now in the dark" })]);
+
+  // Published with the design picked in its dialog: that cover, then out.
+  const fresh = await call(createChangelogEntry, team(), { title: "Search" });
+  const saved = (n: number) => prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: n } }, select: { coverId: true, publishedAt: true } });
+  expect(await publishAction(project.slug, fresh.number, true, false, "title")).toEqual({});
+  expect(await saved(fresh.number)).toEqual({ coverId: expect.any(String), publishedAt: expect.any(Date) });
+  expect(drawn().at(-1)).toMatchObject({ design: "title", title: "Search" });
+
+  // A dialog opened before the entry had its cover (a teammate's, or the one made above): that cover stays, nothing is
+  // drawn over it. Nor over one published meanwhile.
+  const before = drawn().length;
+  expect(await publishAction(project.slug, number, true, false, "title")).toEqual({});
+  expect(await entry()).toEqual({ coverId: made, publishedAt: expect.any(Date) });
+  const out = await saved(fresh.number);
+  await prisma.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number: fresh.number } }, data: { coverId: null } });
+  expect(await publishAction(project.slug, fresh.number, true, false, "pattern")).toEqual({});
+  expect(await saved(fresh.number)).toEqual({ coverId: null, publishedAt: out.publishedAt });
+  expect(drawn()).toHaveLength(before);
+
+  // No design (its dialog's "No cover", or an entry that has one): published as it is.
+  const plain = await call(createChangelogEntry, team(), { title: "Fixes" });
+  expect(await publishAction(project.slug, plain.number)).toEqual({});
+  expect(await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: plain.number } }, select: { coverId: true } })).toEqual({ coverId: null });
 });
