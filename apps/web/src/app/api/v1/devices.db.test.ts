@@ -32,6 +32,7 @@ beforeEach(async () => {
   vi.stubEnv("EXPO_PUSH_URL", expo.env.EXPO_PUSH_URL);
   expo.sent = [];
   expo.unregistered.clear();
+  expo.projects.clear();
   vi.stubEnv("EXPO_ACCESS_TOKEN", "");
   // Each test's own tickets and phones: the file shares one database.
   await prisma.pushTicket.deleteMany();
@@ -131,6 +132,30 @@ test("a device is registered with the app's session only", async () => {
     code: "app_only",
   });
   expect(await prisma.device.count()).toBe(0);
+});
+
+test("phones on different Expo projects' builds are all told: Expo takes one project a request, so each goes on its own", async () => {
+  const fork = await addMember(project.id, "MEMBER");
+  await phone(owner, "owner");
+  await phone(fork, "fork");
+  // A fork's own build of the app beside Tuti's: Expo refuses the two in one request.
+  expo.projects.set("ExponentPushToken[fork]", "@a-fork/app");
+  await userWrites();
+  expect(pushedTo()).toEqual(["fork", "owner"]);
+  expect(await prisma.pushTicket.count()).toBe(2);
+});
+
+test("a token on two accounts' rows at once (two registrations racing) is told once, about the newer", async () => {
+  const other = await addMember(project.id, "MEMBER");
+  await phone(owner, "owner");
+  await phone(other, "other");
+  // Both rows end up with one token, as two registrations committing together could leave them.
+  const now = Date.now();
+  await prisma.device.update({ where: { userId_deviceId: { userId: owner.id, deviceId: "owner-id" } }, data: { token: "ExponentPushToken[shared]", lastSeenAt: new Date(now - 60_000) } });
+  await prisma.device.update({ where: { userId_deviceId: { userId: other.id, deviceId: "other-id" } }, data: { token: "ExponentPushToken[shared]", lastSeenAt: new Date(now) } });
+  await userWrites();
+  expect(pushedTo()).toEqual(["shared"]);
+  expect(expo.sent).toHaveLength(1);
 });
 
 test("a user's message notifies the phones of exactly those its email goes to", async () => {

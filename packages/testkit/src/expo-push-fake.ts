@@ -16,6 +16,8 @@ export type ExpoPushFake = {
   receipts: Record<string, Outcome>;
   /** The ids each getReceipts asked about. */
   asked: string[][];
+  /** The Expo project a token belongs to (`@owner/slug`); any not here are `@tuti/app`. A send mixing projects is refused. */
+  projects: Map<string, string>;
   /** The status to answer every request with instead (e.g. 500), or 200. */
   status: number;
   close(): Promise<void>;
@@ -34,7 +36,7 @@ export const deviceNotRegistered = (token: string): Outcome => ({
  */
 export async function startExpoPushFake(): Promise<ExpoPushFake> {
   let tickets = 0;
-  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], status: 200, close: async () => {} };
+  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], projects: new Map(), status: 200, close: async () => {} };
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -48,6 +50,16 @@ export async function startExpoPushFake(): Promise<ExpoPushFake> {
         const messages = (Array.isArray(body) ? body : [body]) as ExpoPushMessage[];
         if (messages.length > 100) {
           return answer(400, { errors: [{ code: "PUSH_TOO_MANY_NOTIFICATIONS", message: "Up to 100 a request" }] });
+        }
+        // As Expo does: one project a request, the tokens grouped by project in the error's details otherwise.
+        const byProject: Record<string, string[]> = {};
+        for (const message of messages) {
+          (byProject[fake.projects.get(message.to) ?? "@tuti/app"] ??= []).push(message.to);
+        }
+        if (Object.keys(byProject).length > 1) {
+          return answer(400, {
+            errors: [{ code: "PUSH_TOO_MANY_EXPERIENCE_IDS", message: "All push notification messages in the same request must be for the same project", details: byProject }],
+          });
         }
         const data = messages.map((message): Outcome => {
           const ticket = fake.unregistered.has(message.to) ? null : `ticket-${++tickets}`;

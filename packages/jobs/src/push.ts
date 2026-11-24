@@ -35,9 +35,40 @@ async function expo<T>(path: "send" | "getReceipts", body: unknown): Promise<T> 
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
-    throw new Error(`Expo's push service answered ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    const text = await response.text();
+    let error: { code?: string; details?: unknown } | undefined;
+    try {
+      error = (JSON.parse(text) as { errors?: { code?: string; details?: unknown }[] }).errors?.[0];
+    } catch {}
+    throw Object.assign(new Error(`Expo's push service answered ${response.status}: ${text.slice(0, 300)}`), { code: error?.code, details: error?.details });
   }
   return (await response.json()) as T;
+}
+
+/**
+ * Sends a batch, its outcomes in its order. Expo takes one Expo project's tokens a request: a batch with more (a fork's
+ * build beside Tuti's, or a token of any Expo app someone registered) is refused whole, with the tokens by project in
+ * the error's details, so each project's go on their own. A token in none of them gets an error outcome.
+ */
+async function sendBatch(batch: { to: string }[]): Promise<Outcome[]> {
+  try {
+    return (await expo<{ data: Outcome[] }>("send", batch)).data;
+  } catch (error) {
+    const { code, details } = error as { code?: string; details?: unknown };
+    if (code !== "PUSH_TOO_MANY_EXPERIENCE_IDS" || !details || typeof details !== "object") {
+      throw error;
+    }
+    const outcomes = new Map<number, Outcome>();
+    for (const tokens of Object.values(details as Record<string, unknown>)) {
+      const group = batch.flatMap((message, i) => (Array.isArray(tokens) && tokens.includes(message.to) ? [i] : []));
+      if (group.length === 0) {
+        continue;
+      }
+      const { data } = await expo<{ data: Outcome[] }>("send", group.map((i) => batch[i]));
+      group.forEach((i, j) => outcomes.set(i, data[j]!));
+    }
+    return batch.map((_, i) => outcomes.get(i) ?? { status: "error", message: "Not in any of Expo's projects" });
+  }
 }
 
 /** A message's text as a notification shows it: on one line, cut at PUSH_TEXT_MAX. */
@@ -120,7 +151,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     // Before the send: what Expo answers is about the registrations as they were then, so a phone that registers again
     // while the request or its receipt is pending isn't dropped for it.
     const sentAt = new Date();
-    const { data } = await expo<{ data: Outcome[] }>("send", batch);
+    const data = await sendBatch(batch);
     const tickets = batch.flatMap((m, j) => (data[j]?.status === "ok" ? [{ id: (data[j] as { id: string }).id, token: m.to, createdAt: sentAt }] : []));
     const unregistered = batch.filter((_, j) => isGone(data[j])).map((m) => m.to);
     const failed = batch.length - tickets.length - unregistered.length;
