@@ -7,6 +7,7 @@ import { addMember, actAs, createProject, signUp } from "@/test/helpers";
 
 import { homeOverview } from "../home";
 import { listMyProjects } from "../membership";
+import { upsertProjectUser } from "../project-users";
 import { removeMember } from "../team";
 import {
   createConversation,
@@ -142,6 +143,107 @@ test("lists filter by status and user, newest message first, and leave spam out 
   expect(await numbers({ status: "waiting" })).toEqual([2]);
   expect(await numbers({ user: sam.id })).toEqual([1]);
   expect(await numbers({ spam: "true" })).toEqual([3]);
+});
+
+test("a search finds conversations by number, subject, person and what their messages and notes say, newest first, within the other filters", async () => {
+  const { context, project } = await setup();
+  // #1: Sam, from the app, at Acme.
+  await call(createConversation, context, { user: sam, body: "The export button does nothing." });
+  await prisma.ssoIdentity.update({ where: { projectId_externalId: { projectId: project.id, externalId: sam.id } }, data: { properties: { company: "Acme Corp" } } });
+  // #2: an address; the team answers, then leaves a note.
+  await call(createConversation, context, { email: "e2e-asker@example.com", body: "Second" });
+  const long = `${"Thanks for writing in. ".repeat(4)}REFUNDS take five days\nto arrive, ${"and then some more. ".repeat(10)}`;
+  await call(replyToConversation, context, { number: 2, body: long });
+  await call(replyToConversation, context, { number: 2, body: "They are on the legacy plan, 100% sure", note: true });
+  // #3: spam. #4: closed, the text in its subject only. #5: someone else's, with a wildcard's text.
+  await call(createConversation, context, { email: "e2e-spammer@example.com", body: "Cheap refund here" });
+  await call(updateConversation, context, { number: 3, spam: true });
+  await call(createConversation, context, { email: "e2e-other@example.com", subject: "Refund please", body: "Hello" });
+  await call(updateConversation, context, { number: 4, status: "closed" });
+  await call(createConversation, context, { email: "e2e-fifth@example.com", body: "Nothing_here at 100 percent" });
+  // An address one of the app's users has, verified: at that user's company.
+  await call(createConversation, context, { email: sam.email, body: "From my mail" });
+  await prisma.conversation.update({ where: { projectId_number: { projectId: project.id, number: 6 } }, data: { emailVerified: true, name: "Samantha Lee" } });
+
+  const found = async (input: z.input<typeof listConversations.input>) => (await call(listConversations, context, input)).conversations;
+  const numbers = async (input: z.input<typeof listConversations.input>) => (await found(input)).map((c) => c.number);
+
+  // In a message (the team's) and in a subject, whatever the case; not the spam one. The newest message first.
+  const refunds = await found({ q: "refund" });
+  expect(refunds.map((c) => c.number)).toEqual([4, 2]);
+  expect(refunds[0]!.match).toBeNull();
+  expect(refunds[1]!.match).toMatchObject({ author: "team", note: false });
+  // One line, around the text, cut at both ends, between words.
+  expect(refunds[1]!.match!.snippet).toMatch(/^…in\. Thanks for writing in\. REFUNDS take five days to arrive, and then some more\. .* (and|then|some|more\.)…$/);
+  expect(refunds[1]!.match!.snippet.length).toBeLessThanOrEqual(162);
+  // A short message whole; of two with the text, the newer.
+  expect((await found({ q: "legacy plan" })).map((c) => [c.number, c.match?.note, c.match?.snippet])).toEqual([[2, true, "They are on the legacy plan, 100% sure"]]);
+  const later = await prisma.conversationMessage.create({
+    data: { projectId: project.id, conversationId: (await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id, author: "TEAM", channel: "APP", body: "Moved off the Legacy Plan", note: true, createdAt: new Date(Date.now() + 60_000) },
+  });
+  expect((await found({ q: "legacy plan" }))[0]!.match).toMatchObject({ messageId: later.id, snippet: "Moved off the Legacy Plan" });
+  await prisma.conversationMessage.delete({ where: { id: later.id } });
+  expect(await numbers({ q: "refund", status: "closed" })).toEqual([4]);
+  expect(await numbers({ q: "refund", spam: "true" })).toEqual([3]);
+  expect(await call(listConversations, context, { q: "e", limit: 2 })).toMatchObject({ conversations: [{ number: 6 }, { number: 5 }], nextCursor: "2" });
+
+  // Its number, with # or without; the person's name, email and company.
+  expect(await numbers({ q: "#4" })).toEqual([4]);
+  expect(await numbers({ q: "4" })).toEqual([4]);
+  expect(await numbers({ q: "E2E-ASKER" })).toEqual([2]);
+  expect(await numbers({ q: "samantha" })).toEqual([6]);
+  expect(await numbers({ q: "acme" })).toEqual([6, 1]);
+  // A name an unverified address came with isn't shown, so it isn't found.
+  await prisma.conversation.update({ where: { projectId_number: { projectId: project.id, number: 6 } }, data: { emailVerified: false } });
+  expect(await numbers({ q: "samantha" })).toEqual([]);
+  expect(await numbers({ q: "acme" })).toEqual([1]);
+
+  // Wildcards are text; nothing found is an empty page; no text is no search.
+  expect(await numbers({ q: "100%" })).toEqual([2]);
+  expect(await numbers({ q: "nothing_" })).toEqual([5]);
+  expect(await call(listConversations, context, { q: "zebra" })).toEqual({ conversations: [], nextCursor: null });
+  expect(await numbers({ q: "  " })).toEqual([6, 5, 4, 2, 1]);
+  expect((await found({}))[0]!.match).toBeNull();
+
+  // Another project's messages are never found.
+  const other = await setup();
+  await call(createConversation, other.context, { email: "e2e-elsewhere@example.com", body: "A refund, elsewhere" });
+  expect(await numbers({ q: "refund" })).toEqual([4, 2]);
+  await expect(call(listConversations, context, { q: "x".repeat(201) })).rejects.toThrow(OperationError);
+});
+
+test("a search finds who a conversation is with as the Inbox shows them: an account by its name and address, never by a placeholder address nor a teammate's company", async () => {
+  const { context, project, owner } = await setup();
+  const projectId = project.id;
+  const numbers = async (q: string) => (await call(listConversations, context, { q })).conversations.map((c) => c.number);
+  const conversation = (number: number, userId: string) => prisma.conversation.create({ data: { projectId, number, subject: `Subject ${number}`, origin: "WIDGET", userId } });
+
+  // #1: someone from the app: their name, and the address the app gave (their account's own is a placeholder).
+  await call(createConversation, context, { user: { id: "user-7", name: "Zoe Quill", email: "e2e-zoe@example.com" }, body: "Hello" });
+  const zoe = await prisma.user.findFirstOrThrow({ where: { ssoIdentity: { projectId, externalId: "user-7" } }, select: { email: true } });
+  expect(await numbers("zoe quill")).toEqual([1]);
+  expect(await numbers("E2E-ZOE@")).toEqual([1]);
+  expect(await numbers(zoe.email)).toEqual([]);
+
+  // #2: a portal account, with the verified address someone from the app at Globex has: its name, address and their company.
+  await upsertProjectUser(projectId, "cy", { name: "Cy", email: "e2e-cy@example.com", properties: { company: "Globex" } });
+  const pat = await signUp("Pat Portal", "e2e-cy@example.com");
+  await conversation(2, pat.id);
+  expect(await numbers("pat portal")).toEqual([2]);
+  expect(await numbers("e2e-cy")).toEqual([2]);
+  expect(await numbers("globex")).toEqual([2]);
+  // Unverified, the address isn't known to be theirs: no company.
+  await prisma.user.update({ where: { id: pat.id }, data: { emailVerified: false } });
+  expect(await numbers("globex")).toEqual([]);
+  // A deleted account's address isn't shown.
+  await prisma.user.update({ where: { id: pat.id }, data: { deletedAt: new Date() } });
+  expect(await numbers("e2e-cy")).toEqual([]);
+
+  // #3: a teammate's own, whose address someone from the app at Hooli has: the Inbox shows no company for the team.
+  await upsertProjectUser(projectId, "twin", { name: "Twin", email: owner.email, properties: { company: "Hooli" } });
+  await conversation(3, owner.id);
+  expect(await numbers("hooli")).toEqual([]);
+  expect(await numbers(owner.email)).toEqual([3]);
 });
 
 test("webhooks hear of new conversations and of the user's messages, not the team's replies", async () => {

@@ -82,8 +82,9 @@ test("with plans, closed conversations past the plan's history are hidden; open,
   await conversation(3, "CLOSED"); // #5
   await conversation(40, "CLOSED"); // #6
 
-  // Free: 7 days.
+  // Free: 7 days. A search finds no more than the list.
   expect(await listed()).toEqual([2, 3, 4, 5]);
+  expect((await call(listConversations, team, { q: "subject" })).conversations.map((c) => c.number).sort((a, b) => a - b)).toEqual([2, 3, 4, 5]);
   await expect(call(getConversation, team, { number: 1 })).rejects.toThrow(
     new OperationError(404, "not_found", "Conversation #1 is past your plan's history: upgrade to see it again"),
   );
