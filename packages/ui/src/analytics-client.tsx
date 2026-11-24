@@ -11,6 +11,7 @@ import { useEffect } from "react";
 export const APP_ROUTES = [
   "account",
   "admin/email/resume",
+  "auth/app-link",
   "auth/continue",
   "auth/forgot-password",
   "auth/invite/[token]",

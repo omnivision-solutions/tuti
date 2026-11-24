@@ -4,9 +4,11 @@ import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { APIError } from "better-auth/api";
-import { headers } from "next/headers";
+import { parseSetCookieHeader, toCookieOptions } from "better-auth/cookies";
+import { cookies, headers } from "next/headers";
 import { z } from "zod";
 
+import { appSignInReturn, isAppSignInState } from "@/lib/app-sign-in";
 import { auth } from "@/lib/auth";
 import { requestTarget } from "@/server/custom-domains";
 import { safeRedirectPath } from "@/lib/redirects";
@@ -100,4 +102,37 @@ export async function confirmSignInLink(form: FormData): Promise<{ location: str
     }
   }
   return { location: signedIn ? next : failedSignInLinkPath(next) };
+}
+
+/**
+ * "Open the app" on the page the mobile app's sign-in link opens (/app/auth/app-link, lib/app-sign-in.ts): uses the
+ * token up, starts a session for the account and says where the browser goes: the app, through its link scheme, with
+ * the session's cookie for it to keep (Better Auth's Expo plugin adds it to that redirect) and the `state` the app asked
+ * with. A dead link sends the app `error` instead. The session is the app's alone: this browser, which may be anyone's
+ * (a link opened at a desk), is signed in as it was before, or not at all. Null: nothing to open (not the app's host,
+ * or no state of the app's).
+ */
+export async function confirmAppSignInLink(form: FormData): Promise<{ location: string | null }> {
+  const token = String(form.get("token") ?? "");
+  const state = form.get("state");
+  const requestHeaders = await headers();
+  if (!isAppSignInState(state) || (await requestTarget(requestHeaders.get("host"))).kind !== "app") {
+    return { location: null };
+  }
+  const back = appSignInReturn(state);
+  if (!(await pendingSignInLink(null, token))) {
+    return { location: `${back}&error=INVALID_TOKEN` };
+  }
+  const browser = await cookies();
+  const before = new Map(browser.getAll().map((cookie) => [cookie.name, cookie.value]));
+  // Better Auth uses the token up (once, if still fresh) and answers with the redirect; used up since the check, its
+  // redirect has `error`, as above.
+  const response = await auth.api.magicLinkVerify({ query: { token, callbackURL: back }, headers: requestHeaders, asResponse: true });
+  // Better Auth also set the session's cookies on this browser (its Next.js plugin, for every sign-in): each goes back to
+  // what it was, so whoever was signed in here still is, and nobody is otherwise.
+  for (const [name, cookie] of parseSetCookieHeader(response.headers.get("set-cookie") ?? "")) {
+    const was = before.get(name);
+    browser.set(name, was ?? "", { ...toCookieOptions(cookie), ...(was === undefined && { maxAge: 0 }) });
+  }
+  return { location: response.headers.get("location") };
 }

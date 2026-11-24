@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
 import { emailConfigured, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
+import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -13,6 +14,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
+import { APP_ORIGIN, appSignIn } from "./app-sign-in";
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -23,8 +25,17 @@ import { jwtSso } from "./sso";
 
 /** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
-  const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
-  await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
+  const link = metadata as SignInLinkMetadata;
+  await prisma.signInLink.update({ where: { id: link.linkId }, data: { tokenHash: hashSecret(token) } });
+  if ("app" in link) {
+    // The mobile app's (lib/app-sign-in.ts): opened on the app's host, from Tuti, and it hands the session to the app.
+    const url = new URL("/app/auth/app-link", appUrl());
+    url.searchParams.set("token", token);
+    url.searchParams.set("state", link.app);
+    await sendEmail({ to: email, ...signInLinkEmail({ projectName: "Tuti", url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }) });
+    return;
+  }
+  const { slug, projectName, next } = link;
   // After the address: it can have a path (a portal under its site's /portal).
   const url = new URL(`${await portalAddress(slug)}/sign-in/link`);
   url.searchParams.set("token", token);
@@ -110,12 +121,13 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
  * /continue starts a new handoff. Only for the email a sign-up, or a sign-in before verifying, sends its own account
  * (`signingUp`): sending it again takes any address and callbackURL from anyone, so there it would sign a way back for
  * someone else's account. Elsewhere it goes to the app, as does a link with none (Better Auth's "/", on Tuti's cloud its
- * marketing site).
+ * marketing site), and one to the mobile app's link scheme (trusted on the app's host for its own sign-in, lib/app-sign-in.ts):
+ * anyone can have this email sent to any address, and it signs in whoever opens it, so it never hands a session to an app.
  */
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
-  if (!back || back === "/" || (back.startsWith("/app/auth/continue?") && !signingUp)) {
+  if (!back || back === "/" || back.startsWith(APP_ORIGIN) || (back.startsWith("/app/auth/continue?") && !signingUp)) {
     url.searchParams.set("callbackURL", "/app");
   } else if (back?.startsWith("/app/auth/continue?")) {
     const callback = new URL(back, url);
@@ -189,12 +201,13 @@ export const auth = betterAuth({
     fallback: appUrl().origin,
     protocol: "auto",
   },
-  // A portal on its own domain (help.acme.com) while it's verified: its forms post from there.
+  // A portal on its own domain (help.acme.com) while it's verified: its forms post from there. On the app's host, the
+  // mobile app's link scheme (lib/app-sign-in.ts): that scheme exactly, never a pattern, and on no portal.
   trustedOrigins: async (request) => {
     const host = request?.headers.get("host") ?? null;
     const target = await requestTarget(host);
     if (target.kind !== "portal") {
-      return [];
+      return target.kind === "app" ? [APP_ORIGIN] : [];
     }
     // A portal under a path of its team's site posts from that site, once it's verified.
     const mount = await siteMount(target.slug);
@@ -345,6 +358,11 @@ export const auth = betterAuth({
     magicLink({ expiresIn: SIGN_IN_LINK_MINUTES * 60, storeToken: "hashed", sendMagicLink: sendSignInLink }),
     // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
     genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
+    // The mobile app (lib/app-sign-in.ts): a sign-in it starts (Google, GitHub) or asks for (the emailed link) ends in
+    // the device's browser with a redirect to tuti://…, to which Better Auth's Expo plugin adds the session's cookie
+    // for the app to keep. Only for a redirect to a trusted origin, so only that scheme, on the app's host.
+    expo(),
+    appSignIn(),
     nextCookies(),
   ],
 });

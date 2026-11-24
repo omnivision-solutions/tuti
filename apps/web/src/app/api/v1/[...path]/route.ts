@@ -1,11 +1,14 @@
 import { log } from "@tuti/shared";
 
-import { apiError as error, authenticate, refusal } from "@/server/api-auth";
+import { apiError as error, authenticate, authenticateTeammate, refusal, sendsSession } from "@/server/api-auth";
 import { matchOperation, OperationError } from "@/server/operations";
 
 /**
  * The REST API: /api/v1/… → an operation (server/operations). Callers send a
  * project API key as `Authorization: Bearer tuti_…`; it decides the project.
+ * A teammate signed in to the mobile app sends their session's token the same
+ * way and names the project in a header (server/api-auth.ts): the operation
+ * then runs as them, as the web app's actions run it. Never a cookie's session.
  * Errors are `{ "error": { "code", "message" } }` with a matching status.
  */
 async function handle(request: Request, { params }: RouteContext<"/api/v1/[...path]">) {
@@ -16,11 +19,11 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
   }
   const { operation } = route;
 
-  const actor = await authenticate(request);
-  if (actor instanceof Response) {
-    return actor;
+  const caller = sendsSession(request) ? await authenticateTeammate(request) : await authenticate(request);
+  if (caller instanceof Response) {
+    return caller;
   }
-  const refused = refusal(actor, operation);
+  const refused = refusal(caller, operation);
   if (refused) {
     return error(403, "forbidden", refused);
   }
@@ -45,7 +48,8 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
   }
 
   try {
-    return Response.json(await operation.run({ actor, projectId: actor.projectId }, input.data));
+    const actor = caller.kind === "user" ? { kind: caller.kind, userId: caller.userId } : caller;
+    return Response.json(await operation.run({ actor, projectId: caller.projectId }, input.data));
   } catch (e) {
     if (e instanceof OperationError) {
       return error(e.status, e.code, e.message);
