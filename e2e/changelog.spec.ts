@@ -1280,6 +1280,17 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   const api = await apiFor(team, slug);
   // As an AI draft leaves it: a fact it didn't have, and where a screenshot belongs.
   await api("/changelog", { title: "Dark mode is here", markdown: "Dark mode is here.\n\n[Check: is it out on iOS yet?]\n\n## Themes\n\n[Screenshot: the theme menu, open]\n\nPick one in your profile." });
+  // And one whose line is one long word (a link): on a phone the dialog wraps it rather than run off the screen.
+  await api("/changelog", { title: "Docs", markdown: "[Check: is https://docs.example.com/integrations/github/self-hosted-runners/configuration/advanced-settings still the right link?]" });
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/changelog/2`);
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByRole("alertdialog").getByRole("heading")).toHaveText("Replace a line before publishing");
+  expect(await team.getByRole("alertdialog").evaluate((dialog) => dialog.scrollWidth - dialog.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await checkpoint(team, "team-changelog-publish-markers-phone", { fullPage: false });
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/changelog/1`);
   await team.getByRole("button", { name: "Publish", exact: true }).click();
   const dialog = team.getByRole("alertdialog");

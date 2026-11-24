@@ -1228,7 +1228,8 @@ export function ChangelogEntryActions({
                     ? "Publish it without text?"
                     : `Publish “${title}”?`}
           </AlertDialogTitle>
-          <AlertDialogDescription>
+          {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
+          <AlertDialogDescription className={cn(markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
             {markers.length > 0 ? (
               `“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`

@@ -301,6 +301,15 @@ test("once it's published, an entry's text can't gain a marker: a save with one 
   await expect(call(updateChangelogEntry, team(), { number, markdown: "Now with [Screenshot: the menu]." })).rejects.toMatchObject({ status: 409, code: "markers" });
   expect((await get(number)).body).toBe("Dark mode is here.");
   expect((await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on iOS too." })).body).toBe("Dark mode is here, on iOS too.");
+  // One that's there already (published before this, or imported so) doesn't lock the entry: it's edited around, not
+  // added to, and taken out.
+  await prisma.changelogEntry.update({
+    where: { projectId_number: { projectId: project.id, number } },
+    data: { body: "Old notes.\n[Check: the date]", content: { type: "doc", content: [paragraph(text("Old notes.")), paragraph(text("[Check: the date]"))] } },
+  });
+  expect((await call(updateChangelogEntry, team(), { number, body: "Newer notes.\n[Check: the date]" })).body).toBe("Newer notes.\n[Check: the date]");
+  await expect(call(updateChangelogEntry, team(), { number, body: "Newer notes.\n[Check: the date]\n[Check: the date]" })).rejects.toMatchObject({ status: 409, code: "markers" });
+  expect((await call(updateChangelogEntry, team(), { number, body: "Newer notes, dated." })).body).toBe("Newer notes, dated.");
 });
 
 test("publishing reads the text as it is under its lock: a marker saved while it waits holds it back", async () => {
