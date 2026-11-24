@@ -129,4 +129,6 @@ test("conversations.articles offers the app what the reply box's Insert article 
   // Nothing typed finds nothing; a conversation that isn't there is said so.
   expect(await call(listArticlesToInsert, as(), { number: signedIn, q: "  " })).toEqual({ articles: [] });
   await expect(call(listArticlesToInsert, as(), { number: 9, q: "refunds" })).rejects.toMatchObject({ status: 404 });
+  // The web's picker says so too, where it used to show an empty list.
+  expect(await findArticlesToInsert(project.slug, 9, "refunds")).toEqual({ error: "There's no conversation #9" });
 });
