@@ -95,12 +95,25 @@ test("a phone registers under its session, registering again replaces it, and it
   expect(await prisma.device.count({ where: { userId: owner.id } })).toBe(0);
 });
 
-test("another account can't take a phone's token from its teammate, and the phone is told once", async () => {
+test("a phone on two accounts is told once, and only about the one that registered it last", async () => {
   const other = await addMember(project.id, "MEMBER");
   await phone(owner, "shared");
   await phone(other, "shared");
-  // Both kept: a token alone takes nobody's phone off their notifications.
+  // Both kept: registering a token removes none of another account's rows.
   expect(await prisma.device.count({ where: { token: "ExponentPushToken[shared]" } })).toBe(2);
+  await userWrites();
+  expect(pushedTo()).toEqual(["shared"]);
+
+  // Someone signed out offline (their row left), then a teammate from another project signed in on the phone: the
+  // first's messages no longer reach it.
+  const stranger = await signUp("Sam Stranger");
+  const theirs = await createProject(stranger);
+  expect(await api(stranger, "POST", "/devices", { deviceId: "stranger-id", token: "ExponentPushToken[shared]", platform: "ios" }, theirs.slug)).toMatchObject({ status: 200 });
+  expo.sent = [];
+  await userWrites();
+  expect(expo.sent).toEqual([]);
+  // Back on the first account, it registers again as the app opens, and it's theirs.
+  await phone(owner, "shared");
   await userWrites();
   expect(pushedTo()).toEqual(["shared"]);
 });

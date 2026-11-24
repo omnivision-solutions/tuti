@@ -77,19 +77,30 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   if (!message || !conversation || message.author !== "USER" || conversation.spam) {
     return { skipped: "nothing to tell" };
   }
-  const devices = await prisma.device.findMany({
+  const told = await prisma.device.findMany({
     where: { user: { teamMemberships: { some: teamToTell(conversation) } }, session: { expiresAt: { gt: new Date() } } },
-    select: { token: true, user: { select: { pushShowsText: true } } },
-    orderBy: { lastSeenAt: "desc" },
+    select: { id: true, token: true, user: { select: { pushShowsText: true } } },
   });
-  // A token once: a phone signed in to two accounts on the team without signing out has one.
-  const byToken = new Map(devices.map((device) => [device.token, device] as const).reverse());
-  if (byToken.size === 0) {
+  // A token goes to the account that registered it last, across everyone's: a phone someone signed out of offline (their
+  // session and row left on the server) and then signed in to as someone else is told only the latter's. It registers
+  // again each time the app opens, so this is the one it's on. Once a token, too.
+  const latest = new Set(
+    (
+      await prisma.device.findMany({
+        where: { token: { in: told.map((device) => device.token) } },
+        orderBy: [{ lastSeenAt: "desc" }, { id: "asc" }],
+        distinct: ["token"],
+        select: { id: true },
+      })
+    ).map((device) => device.id),
+  );
+  const devices = told.filter((device) => latest.has(device.id));
+  if (devices.length === 0) {
     return { skipped: "no devices" };
   }
   const title = `${whoWrote(message, conversation)} · ${conversation.project.name}`;
   const text = pushText(message.body);
-  const messages = [...byToken.values()].map((device) => ({
+  const messages = devices.map((device) => ({
     to: device.token,
     title,
     ...(device.user.pushShowsText && text && { body: text }),
@@ -100,7 +111,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   let sent = 0;
   let gone = 0;
   // ponytail: a request that fails after earlier ones went through retries them all (a second notification for those
-  // phones); only for a team with over 100 phones on one message.
+  // phones); only for a team with over 100 phones on one message. What's saved after a send never fails the job, so it
+  // isn't sent again.
   for (let i = 0; i < messages.length; i += MESSAGES_PER_REQUEST) {
     const batch = messages.slice(i, i + MESSAGES_PER_REQUEST);
     const { data } = await expo<{ data: Outcome[] }>("send", batch);
@@ -110,8 +122,13 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     if (failed > 0) {
       log.warn(`Expo refused ${failed} of ${batch.length} pushes about conversation #${conversation.number}: ${JSON.stringify(data.find((d) => d.status === "error")).slice(0, 300)}`);
     }
-    await prisma.pushTicket.createMany({ data: tickets, skipDuplicates: true });
-    await prisma.device.deleteMany({ where: { token: { in: unregistered } } });
+    try {
+      await prisma.pushTicket.createMany({ data: tickets, skipDuplicates: true });
+      await prisma.device.deleteMany({ where: { token: { in: unregistered } } });
+    } catch (error) {
+      // Lost: their receipts aren't read, and a token Expo no longer has is dropped by a later push.
+      log.warn(`Couldn't save the pushes about conversation #${conversation.number}: ${String(error)}`);
+    }
     sent += tickets.length;
     gone += unregistered.length;
   }
