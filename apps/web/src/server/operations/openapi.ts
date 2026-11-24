@@ -292,17 +292,6 @@ Authorization: Bearer tuti_…
 
 A key acts as the team, with its creator's current role: operations for owners and admins work only while its creator is one, and the key stops working when it's revoked or its creator leaves the team.
 
-## From Tuti's mobile app
-
-The mobile app calls this API as the teammate signed in to it, without a key. It sends its session's token the same way, and names the project, by its slug, in a header on every request:
-
-\`\`\`
-Authorization: Bearer <session token>
-Tuti-Project: acme
-\`\`\`
-
-Each operation then runs as that teammate with their role in the project, as it does in the web app; \`GET /api/v1/projects\` lists the projects they're on. A session in a browser's cookie is never accepted here.
-
 ## Errors
 
 An error has a status and a JSON body: \`code\` for code to check, \`message\` for people.
@@ -328,7 +317,7 @@ Lists that page take \`limit\` and \`cursor\` and return \`nextCursor\`: send it
 
 ## Rate limits
 
-Up to ${API_RATE_LIMIT} requests a minute per key, or per teammate signed in from the mobile app. Past that, requests get a 429 with a \`Retry-After\` header: the seconds until the next minute starts. Some operations have limits of their own (their description gives them); their 429 has no \`Retry-After\`.`;
+Up to ${API_RATE_LIMIT} requests a minute per key. Past that, requests get a 429 with a \`Retry-After\` header: the seconds until the next minute starts. Some operations have limits of their own (their description gives them); their 429 has no \`Retry-After\`.`;
 
 /** The OpenAPI 3.1 description of the REST API, generated from the operations so it can't drift from them. */
 export function openApiSpec(serverUrl: string) {

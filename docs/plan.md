@@ -1037,10 +1037,11 @@ Decided (2026-11-24):
 - [ ] M7. The details sheet: who's writing, assign, snooze, close, spam
 - [ ] M8. Notifications in the app: asking for permission once it's useful, a tap opens the conversation, Reply and Close from the notification
 - [ ] M9. Tablets and foldables: list and conversation side by side
-- [ ] M10. Builds and releases: development, preview and store builds, over-the-air updates for fixes, the store listings and their reviews
+- [ ] M10. Builds and releases: development, preview and store builds, over-the-air updates for fixes, the store listings and their reviews. With the first release, the API reference's overview says how the app's session is accepted (left out until there is an app to get)
 
 ## Later
 
+- [ ] The app host's hourly limit on emailed links (`SIGN_IN_LINKS_PER_PORTAL_PER_HOUR`, shared by password resets and the mobile app's sign-in link) is one count for the whole server: on a server with many teams it wants a limit of its own, or none beside the per-address and per-visitor ones
 - [ ] Drop `project.assistantTone`, and `tone` from `assistant.get` and `assistant.update`, once no released code reads them (R4, AI models by role): the tone is part of the instructions, and a stored one is folded into them when read. Before dropping it, a migration folds any tone still stored into `assistantInstructions` (tone first, a blank line between)
 - [ ] Remove `support` and `code_changes_redecide` from `project.aiModels` once no released code reads them (R1, AI models by role). Not copied again: a role put back on its default has no pick, like one never picked, so a second copy would undo that choice; a pick saved through the previous release while R1 was deploying is picked again by hand
 - [ ] Link the questions passed to the team that the release before `docs_question.conversationId` passed on while the new one was deploying (its migration links those before it): the same backfill again, for rows still without one

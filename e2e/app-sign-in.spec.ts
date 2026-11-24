@@ -47,9 +47,12 @@ test("the mobile app's emailed link hands the app a session for the API, and lea
     expect(response.status()).toBe(303);
     // The link works once: the button is off after the tap, so a second can't take the first's place.
     await expect(page.getByRole("button", { name: "Open the app" })).toBeDisabled();
+    await expect(page.getByRole("status")).toHaveText("Opening the Tuti app… If it didn't open, ask for a new link in the app.");
+    await expect(page.getByRole("button", { name: "Open the app" })).toBeFocused();
     return new URL((await response.headerValue("location"))!);
   };
   const handed = await open(phone);
+  await checkpoint(phone, "opening");
   expect(`${handed.protocol}//${handed.host}`).toBe("tuti://sign-in");
   expect(handed.searchParams.get("state")).toBe(state);
 
