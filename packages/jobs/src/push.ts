@@ -117,8 +117,11 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   // isn't sent again.
   for (let i = 0; i < messages.length; i += MESSAGES_PER_REQUEST) {
     const batch = messages.slice(i, i + MESSAGES_PER_REQUEST);
+    // Before the send: what Expo answers is about the registrations as they were then, so a phone that registers again
+    // while the request or its receipt is pending isn't dropped for it.
+    const sentAt = new Date();
     const { data } = await expo<{ data: Outcome[] }>("send", batch);
-    const tickets = batch.flatMap((m, j) => (data[j]?.status === "ok" ? [{ id: (data[j] as { id: string }).id, token: m.to }] : []));
+    const tickets = batch.flatMap((m, j) => (data[j]?.status === "ok" ? [{ id: (data[j] as { id: string }).id, token: m.to, createdAt: sentAt }] : []));
     const unregistered = batch.filter((_, j) => isGone(data[j])).map((m) => m.to);
     const failed = batch.length - tickets.length - unregistered.length;
     if (failed > 0) {
@@ -126,7 +129,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     }
     try {
       await prisma.pushTicket.createMany({ data: tickets, skipDuplicates: true });
-      await prisma.device.deleteMany({ where: { token: { in: unregistered } } });
+      await prisma.device.deleteMany({ where: { token: { in: unregistered }, lastSeenAt: { lte: sentAt } } });
     } catch (error) {
       // Lost: their receipts aren't read, and a token Expo no longer has is dropped by a later push.
       log.warn(`Couldn't save the pushes about conversation #${conversation.number}: ${String(error)}`);

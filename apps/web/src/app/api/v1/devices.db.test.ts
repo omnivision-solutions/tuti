@@ -223,8 +223,14 @@ test("a token Expo no longer has loses its device, when sending and from a recei
   await phone(owner, "owner");
   await phone(other, "other");
 
-  // Said at once, in the send's ticket.
+  // Said at once, in the send's ticket; but a phone that registered again after the send started (its app opened while
+  // the request was out) keeps its registration: the answer was about the one before.
   expo.unregistered.add("ExponentPushToken[other]");
+  await prisma.device.updateMany({ where: { userId: other.id }, data: { lastSeenAt: new Date(Date.now() + 60_000) } });
+  await userWrites();
+  expect(await prisma.device.count({ where: { userId: other.id } })).toBe(1);
+  await prisma.pushTicket.deleteMany();
+  await prisma.device.updateMany({ where: { userId: other.id }, data: { lastSeenAt: new Date(Date.now() - 60_000) } });
   await userWrites();
   expect(await prisma.device.findMany({ select: { token: true } })).toEqual([{ token: "ExponentPushToken[owner]" }]);
   const [ticket] = await prisma.pushTicket.findMany();
