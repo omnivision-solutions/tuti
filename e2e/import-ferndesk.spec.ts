@@ -62,6 +62,15 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await owner.getByText("1 invitation ready to send.").scrollIntoViewIfNeeded();
   await expect(owner.getByText("1 invitation ready to send.")).toBeInViewport();
   await checkpoint(owner, "setup-ferndesk-imported");
+  // Team & roles says where they came from, and what removing one means.
+  await owner.getByRole("link", { name: "Send them in Team & roles" }).click();
+  const fromFerndesk = owner.getByRole("heading", { name: "From Ferndesk, not sent yet" });
+  await expect(fromFerndesk).toBeVisible();
+  await expect(owner.getByText(/^Your team in Ferndesk, invited as members\./)).toBeVisible();
+  await owner.getByRole("button", { name: "Remove the invite to e2e-ferndesk-ines@example.com" }).click();
+  await expect(owner.getByRole("alertdialog")).toContainText("importing from Ferndesk again won't bring them back");
+  await owner.keyboard.press("Escape");
+  await checkpoint(owner, "team-ferndesk-invitations");
 
   // On the portal: its sections as collections, an article with its image and its link to another, which goes there.
   const visitor = await newPerson(browser, portalUrl(slug));
