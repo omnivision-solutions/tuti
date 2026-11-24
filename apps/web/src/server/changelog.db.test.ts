@@ -375,6 +375,15 @@ describe("Markdown's images", () => {
     expect(laidOut.markdown).toContain("[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)");
     const back = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: `${laidOut.markdown}\n\nAnd more.` });
     expect((back.content as { content: object[] }).content.slice(0, 2)).toMatchObject([small, video]);
+    // The same image twice, laid out two ways: each keeps its own, in the whole text and in the one section sent back.
+    const wide = { type: "image", attrs: { mediaId, width: "100", align: "center", alt: "The menu" } };
+    const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: value }] });
+    const twice = await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [heading("First"), small, heading("Second"), wide, small] } });
+    const layouts = (content: unknown) => (content as { content: { type: string; attrs?: { width?: string } }[] }).content.filter((node) => node.type === "image").map((node) => node.attrs!.width);
+    expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: twice.markdown })).content)).toEqual(["50", "100", "50"]);
+    const second = /## Second[^#]+/.exec(twice.markdown!)![0].trim();
+    expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Second", markdown: `${second}\n\nMore.` })).content)).toEqual(["50", "100", "50"]);
+    await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
     // A link that only looks like one (another video, other words) is a link.
     const linked = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
     expect((linked.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("paragraph");

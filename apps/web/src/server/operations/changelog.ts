@@ -340,7 +340,7 @@ async function entryText(
 
 /**
  * Where an edit of part of the text puts its Markdown (changelog.update's `section` or `append`): in that section's
- * place, heading and all, or after everything; undefined for an edit of the whole text. They need `markdown`, one or the
+ * place, heading and all (`replaced`: what was there), or after everything; undefined for an edit of the whole text. They need `markdown`, one or the
  * other, and a section that's there.
  */
 type Blocks = NonNullable<Doc["content"]>;
@@ -350,21 +350,24 @@ type Blocks = NonNullable<Doc["content"]>;
  * link named "Video" to its page (an entry's videos are YouTube's, Vimeo's or Loom's: uploaded ones are articles'). Sent back, an image the text already has keeps the size
  * and alignment it has there, and such a link to a video the text has is that video's player again: the round trip
  * changes only what was edited. A video only as a block of its own, where the Markdown wrote it: inside a list item,
- * say, the link stays a link (a video can't go there).
+ * say, the link stays a link (a video can't go there). `before` is what the Markdown takes the place of (the whole
+ * text, or the one section): an image there more than once keeps each one's own layout, in order.
  */
-function keepingMedia(before: Doc, added: Blocks): Blocks {
-  const images = new Map<unknown, Record<string, unknown>>();
+function keepingMedia(before: Blocks, added: Blocks): Blocks {
+  const images = new Map<unknown, Record<string, unknown>[]>();
   const videos = new Map<string, Blocks[number]>();
-  (function read(node: Blocks[number] | Doc) {
+  before.forEach(function read(node: Blocks[number]) {
     if (node.type === "image" && node.attrs) {
-      images.set(node.attrs.mediaId, node.attrs);
+      images.set(node.attrs.mediaId, [...(images.get(node.attrs.mediaId) ?? []), node.attrs]);
     } else if (node.type === "video" && node.attrs && isVideo(node.attrs)) {
-      videos.set(videoPageUrl(node.attrs), node as Blocks[number]);
+      videos.set(videoPageUrl(node.attrs), node);
     }
     node.content?.forEach(read);
-  })(before);
+  });
   const sized = (node: Blocks[number]): Blocks[number] => {
-    const had = node.type === "image" && images.get(node.attrs?.mediaId);
+    const layouts = node.type === "image" ? images.get(node.attrs?.mediaId) : undefined;
+    // Each time it comes, the next one's; the last one's from then on.
+    const had = layouts && (layouts.length > 1 ? layouts.shift()! : layouts[0]);
     return had ? { ...node, attrs: { ...node.attrs, width: had.width, align: had.align } } : node.content ? { ...node, content: node.content.map(sized) } : node;
   };
   return added.map((node) => {
@@ -390,7 +393,10 @@ function partOfText(entry: { content: unknown; body: string }, input: { markdown
   if (!range) {
     throw new OperationError(400, "no_section", `There's no section ${typeof input.section === "string" ? `“${input.section}”` : input.section}`);
   }
-  return (added: Blocks): Doc => ({ type: "doc", content: [...blocks.slice(0, range.start), ...added, ...blocks.slice(range.end)] });
+  return {
+    replaced: blocks.slice(range.start, range.end),
+    place: (added: Blocks): Doc => ({ type: "doc", content: [...blocks.slice(0, range.start), ...added, ...blocks.slice(range.end)] }),
+  };
 }
 
 /**
@@ -632,9 +638,9 @@ export const updateChangelogEntry = defineOperation({
     // so it's saved only if the entry hasn't changed meanwhile (as with `expectedUpdatedAt`, which it stands in for).
     const part = partOfText(entry, input);
     const expectedUpdatedAt = input.expectedUpdatedAt ?? (part ? entry.updatedAt.toISOString() : undefined);
-    // Markdown, the whole text's or a part's: what it can't say about the images and videos the text has is kept.
-    const before = displayDoc(entry);
-    const place = (added: Blocks): Doc => (part ?? ((content) => ({ type: "doc", content })))(keepingMedia(before, added));
+    // Markdown, the whole text's or a part's: what it can't say about the images and videos it takes the place of is kept.
+    const whole = displayDoc(entry).content ?? [];
+    const place = (added: Blocks): Doc => (part ? part.place(keepingMedia(part.replaced, added)) : { type: "doc", content: keepingMedia(whole, added) });
     // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
     if (expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
       throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
