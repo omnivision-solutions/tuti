@@ -9,7 +9,18 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { findSimilarPosts } from "./similar-posts";
-import { widgetCreatePost, widgetIdeas, widgetReact, widgetReacted, widgetSignIn, widgetVote } from "./widget";
+import {
+  widgetComment,
+  widgetComments,
+  widgetCreatePost,
+  widgetDeleteComment,
+  widgetEditComment,
+  widgetIdeas,
+  widgetReact,
+  widgetReacted,
+  widgetSignIn,
+  widgetVote,
+} from "./widget";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -221,4 +232,87 @@ test("the widget reacts to a published entry as its person, and says which react
   actAs(reader);
   expect(await widgetReact(project.slug, null, 1, "thumbs_up", true)).toEqual({ reactions: { thumbs_up: 1, heart: 1, tada: 0 } });
   expect(await widgetReacted(project.slug, null, 1)).toEqual(["thumbs_up"]);
+});
+
+const text = (body: string) => {
+  const data = new FormData();
+  data.set("body", body);
+  return data;
+};
+
+test("the widget comments on a published entry as its person, who edits and deletes their own; nobody's for nobody, nor on drafts", async () => {
+  const fan = await signUp("Fan");
+  const other = await signUp("Other");
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() },
+      { projectId: project.id, number: 2, title: "Draft", body: "Soon" },
+    ],
+  });
+  const token = widgetToken(project.id, fan.id);
+  const { id } = await widgetComment(project.slug, token, 1, {}, text("Love it"));
+  expect(id).toEqual(expect.any(String));
+  const theirs = await widgetComment(project.slug, widgetToken(project.id, other.id), 1, {}, text("Me too"));
+  expect(await widgetComments(project.slug, token, 1)).toEqual({
+    comments: [
+      expect.objectContaining({ id, body: "Love it", author: { name: "Fan", team: false }, mine: true }),
+      expect.objectContaining({ id: theirs.id, body: "Me too", mine: false }),
+    ],
+  });
+
+  expect(await widgetEditComment(project.slug, token, 1, id!, {}, text("Love it, thanks"))).toEqual({});
+  expect(await widgetEditComment(project.slug, token, 1, theirs.id!, {}, text("Hijacked"))).toEqual({ error: "Only its author can edit a comment" });
+  expect(await widgetDeleteComment(project.slug, token, 1, theirs.id!)).toEqual({ error: "Only its author or the team can delete a comment" });
+  expect((await prisma.changelogComment.findMany({ where: { entry: { projectId: project.id } }, orderBy: { createdAt: "asc" }, select: { body: true } })).map((c) => c.body)).toEqual(["Love it, thanks", "Me too"]);
+
+  // Nobody, or a token that doesn't check out.
+  for (const nobody of [null, "made.up.token"]) {
+    expect(await widgetComments(project.slug, nobody, 1)).toEqual({ error: "Sign in to comment" });
+    expect(await widgetComment(project.slug, nobody, 1, {}, text("Hi"))).toEqual({ error: "Sign in to comment" });
+    expect(await widgetEditComment(project.slug, nobody, 1, id!, {}, text("Hi"))).toEqual({ error: "Sign in to comment" });
+    expect(await widgetDeleteComment(project.slug, nobody, 1, id!)).toEqual({ error: "Sign in to comment" });
+  }
+  // Another project's token is nobody here.
+  const elsewhere = await createProject(await signUp());
+  const elsewhereToken = widgetToken(elsewhere.id, fan.id);
+  expect(await widgetComments(project.slug, elsewhereToken, 1)).toEqual({ error: "Sign in to comment" });
+  expect(await widgetComment(project.slug, elsewhereToken, 1, {}, text("Hi"))).toEqual({ error: "Sign in to comment" });
+  expect(await widgetDeleteComment(project.slug, elsewhereToken, 1, id!)).toEqual({ error: "Sign in to comment" });
+  // A draft, as the operations answer: there's no such entry to anyone off the team.
+  expect(await widgetComments(project.slug, token, 2)).toEqual({ error: "There's no changelog entry #2" });
+  expect(await widgetComment(project.slug, token, 2, {}, text("Early"))).toEqual({ error: "There's no changelog entry #2" });
+  expect(await prisma.changelogComment.count({ where: { entry: { projectId: project.id } } })).toBe(2);
+
+  // Without a token, on the portal's own site: its signed-in reader.
+  actAs(fan);
+  expect((await widgetComments(project.slug, null, 1)).comments?.map((c) => c.mine)).toEqual([true, false]);
+  expect(await widgetDeleteComment(project.slug, null, 1, id!)).toEqual({});
+  expect(await widgetComment(project.slug, null, 1, {}, text("Back again"))).toEqual({ id: expect.any(String) });
+  expect((await prisma.changelogComment.findMany({ where: { entry: { projectId: project.id } }, orderBy: { createdAt: "asc" }, select: { body: true } })).map((c) => c.body)).toEqual(["Me too", "Back again"]);
+});
+
+test("a private portal's widget lists and takes comments only from those who may read it", async () => {
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  const outsider = await signUp("Outsider");
+  const token = widgetToken(project.id, outsider.id);
+  expect(await widgetComments(project.slug, token, 1)).toEqual({ error: "Sign in to comment" });
+  expect(await widgetComment(project.slug, token, 1, {}, text("Let me in"))).toEqual({ error: "Sign in to comment" });
+  actAs(outsider);
+  expect(await widgetComment(project.slug, null, 1, {}, text("Let me in"))).toEqual({ error: "Sign in to comment" });
+  expect(await prisma.changelogComment.count({ where: { entry: { projectId: project.id } } })).toBe(0);
+
+  // A reader with access comments, until the team takes it away (their token outlives it).
+  const reader = await signUp("Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  const access = await prisma.portalReader.create({ data: { projectId: project.id, email: reader.email } });
+  actAs(reader);
+  const { id } = await widgetComment(project.slug, null, 1, {}, text("Inside"));
+  expect((await widgetComments(project.slug, null, 1)).comments).toEqual([expect.objectContaining({ id, mine: true })]);
+  await prisma.portalReader.delete({ where: { id: access.id } });
+  actAs(null);
+  const readerToken = widgetToken(project.id, reader.id);
+  expect(await widgetEditComment(project.slug, readerToken, 1, id!, {}, text("Still here?"))).toEqual({ error: "Sign in to comment" });
+  expect(await widgetDeleteComment(project.slug, readerToken, 1, id!)).toEqual({ error: "Sign in to comment" });
+  expect(await prisma.changelogComment.count({ where: { entry: { projectId: project.id } } })).toBe(1);
 });

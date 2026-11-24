@@ -39,6 +39,8 @@ export function ChangelogComment({
   canDelete,
   mine = canEdit,
   uploads,
+  onEdit = (prev, formData) => editChangelogComment(projectSlug, number, commentId, prev, formData),
+  onDelete = () => deleteChangelogComment(projectSlug, number, commentId),
   children,
 }: {
   projectSlug: string;
@@ -51,6 +53,9 @@ export function ChangelogComment({
   /** Its author's (Delete says "your"); by default whoever may edit it. */
   mine?: boolean;
   uploads?: EditorUploads;
+  /** Saves an edit, and deletes it (the widget's act for whoever the customer's page signed in); the portal's server actions by default. */
+  onEdit?: (prev: FormState, formData: FormData) => Promise<FormState>;
+  onDelete?: () => Promise<FormState>;
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
@@ -77,7 +82,7 @@ export function ChangelogComment({
   );
 
   if (editing) {
-    return <EditForm projectSlug={projectSlug} number={number} commentId={commentId} doc={doc} uploads={uploads} onDone={() => setEditing(false)} />;
+    return <EditForm save={onEdit} doc={doc} uploads={uploads} onDone={() => setEditing(false)} />;
   }
   return (
     <>
@@ -110,7 +115,7 @@ export function ChangelogComment({
                     focusableWhenDisabled
                     onClick={() =>
                       startDelete(async () => {
-                        const result = await deleteChangelogComment(projectSlug, number, commentId);
+                        const result = await onDelete();
                         if (result.error) {
                           toast.error(result.error);
                           // Deleted meanwhile (another tab, the team): the list as it is now, which takes this comment (and
@@ -138,23 +143,19 @@ export function ChangelogComment({
 
 /** Its author's editor for it, in place of its text; made afresh each time Edit opens it (no error from last time). */
 function EditForm({
-  projectSlug,
-  number,
-  commentId,
+  save: send,
   doc,
   uploads,
   onDone,
 }: {
-  projectSlug: string;
-  number: number;
-  commentId: string;
+  save: (prev: FormState, formData: FormData) => Promise<FormState>;
   doc: Doc;
   uploads?: EditorUploads;
   onDone: () => void;
 }) {
   const errorId = useId();
   const [state, save, saving] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await editChangelogComment(projectSlug, number, commentId, prev, formData);
+    const result = await send(prev, formData);
     if (!result.error) {
       onDone();
       toast.success("Comment saved");

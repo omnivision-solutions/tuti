@@ -853,6 +853,103 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.context().close();
 });
 
+test("someone a customer's site signs in comments on an update in the widget, edits and deletes their own; signed out, it says how to sign in", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
+  const api = await apiFor(owner, slug);
+  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api("/changelog/1/publish", {});
+
+  // Sam, signed in by the customer's site, opens the update from What's new.
+  const sam = await (await browser.newContext()).newPage();
+  await sam.goto(sitePage("customer.localhost", slug));
+  await sam.getByRole("button", { name: /^Feedback/ }).click();
+  const widget = sam.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  const comments = widget.getByRole("region", { name: "Comments" });
+  await expect(comments.getByRole("heading", { name: "0 comments" })).toBeVisible();
+  // Under the reactions: the box, theirs once the page signed them in.
+  await comments.getByRole("textbox", { name: "Comment" }).fill("Works with my work calendar too.");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(widget.getByText("Comment posted")).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
+  const own = comments.getByRole("listitem").filter({ hasText: "Sam from Acme" });
+  await expect(own).toContainText("Works with my work calendar too.");
+  await checkpoint(sam, "widget-entry-commented");
+  // They edit it.
+  await own.getByRole("button", { name: "Edit your comment" }).click();
+  await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Works with my work and home calendars.");
+  await comments.getByRole("button", { name: "Save" }).click();
+  await expect(widget.getByText("Comment saved")).toBeVisible();
+  await expect(own).toContainText("Works with my work and home calendars.");
+  // A second one, which they delete.
+  await comments.getByRole("textbox", { name: "Comment" }).fill("Oops, posted twice.");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(comments.getByRole("heading", { name: "2 comments" })).toBeVisible();
+  const oops = comments.getByRole("listitem").filter({ hasText: "Oops, posted twice." });
+  await oops.getByRole("button", { name: "Delete your comment" }).click();
+  await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
+  await expect(widget.getByText("Comment deleted")).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
+  await expect(oops).toHaveCount(0);
+  await sam.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(sam, "widget-entry-comments-dark");
+  await sam.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(sam, "widget-entry-comments-phone-dark");
+  await sam.emulateMedia({ colorScheme: "light" });
+  await checkpoint(sam, "widget-entry-comments-phone");
+  await sam.setViewportSize({ width: 1280, height: 720 });
+
+  // The page switches to someone else: until their own comments are read (held here), nobody's are theirs to edit.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let held = false;
+  // The read of whose comments are theirs: `widgetComments(slug, token, 1)` (and the reactions', of the same shape).
+  await sam.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"] && /^\["[^"]+","[^"]+",1\]$/.test(route.request().postData() ?? "")) {
+      held = true;
+      await released;
+    }
+    await route.fallback();
+  });
+  const bo = ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-8", name: "Bo from Acme", email: `e2e-bo-${slug}@example.com` });
+  await sam.evaluate((token) => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => token), bo);
+  await expect.poll(() => held).toBe(true);
+  await expect(own.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+  await expect(comments.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
+  release();
+  // Bo's box, and Sam's comment still isn't theirs.
+  await expect(comments.getByRole("textbox", { name: "Comment" })).toBeVisible();
+  await expect(own.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+  await sam.context().close();
+
+  // Signed out, a visitor reads the comments and the counts, and how to sign in to comment (on the portal, in a new tab).
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(`${portalUrl(slug)}/widget?tab=whats-new&entry=1`);
+  const theirs = visitor.getByRole("region", { name: "Comments" });
+  await expect(theirs.getByRole("heading", { name: "1 comment" })).toBeVisible();
+  await expect(theirs.getByRole("listitem")).toContainText("Works with my work and home calendars.");
+  await expect(theirs.getByText("Sign in to comment.")).toBeVisible();
+  await expect(theirs.getByRole("link", { name: "Sign in" })).toHaveAttribute("target", "_blank");
+  await expect(theirs.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", /\/sign-in\?next=%2Fchangelog%2F1$/);
+  await expect(theirs.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
+  await expect(theirs.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+  await checkpoint(visitor, "widget-entry-comments-signed-out");
+  // The comment's on the portal's page for the update too.
+  await visitor.goto(`${portalUrl(slug)}/changelog/1`);
+  await expect(visitor.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Sam from Acme" })).toContainText(
+    "Works with my work and home calendars.",
+  );
+  await visitor.context().close();
+});
+
 test("the portal shows the project's own widget, until the team turns it off in Settings → Widget", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
