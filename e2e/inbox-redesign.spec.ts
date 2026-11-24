@@ -31,7 +31,9 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.getByRole("link", { name: "See waiting conversations" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
   await owner.getByRole("navigation", { name: "Inbox", exact: true }).getByRole("link", { name: "Needs reply 0" }).click();
-  await owner.getByRole("button", { name: "Search project", exact: true }).click();
+  // The list's own search is in its header; the project's is ⌘K, as everywhere.
+  await expect(owner.getByRole("searchbox", { name: "Search conversations" })).toBeVisible();
+  await owner.keyboard.press("ControlOrMeta+k");
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeVisible();
   await owner.keyboard.press("Escape");
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeHidden();

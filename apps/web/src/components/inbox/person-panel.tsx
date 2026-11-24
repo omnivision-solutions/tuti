@@ -118,7 +118,7 @@ export async function PersonPanel({
    * Beside a conversation in the Inbox: the view its list shows, and who's looking. Their conversations in that view
    * open beside it there; the others in the Inbox's first view (one without them would have no row for it).
    */
-  inbox?: { view: View; pages: number; userId: string };
+  inbox?: { view: View; pages: number; userId: string; q: string };
   /** On their own page (Users): their avatar and name as its heading, the profile beside the activity, all of it. */
   page?: boolean;
 }) {
@@ -170,6 +170,7 @@ export async function PersonPanel({
         inbox.userId,
         inbox.view,
         others.map((c) => c.id),
+        inbox.q,
       )
     : new Set<number>();
   const lookalike = !userId && email ? await maybeUser(projectId, email) : null;
@@ -292,7 +293,7 @@ export async function PersonPanel({
         <Links
           rows={page}
           items={others.map((c) => ({
-            href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`,
+            href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages, 1, inbox.q) : `/app/${slug}/inbox/${c.number}`,
             title: c.subject,
             meta: (
               <>
@@ -369,7 +370,7 @@ export async function PersonPanel({
                     <ViewerDate at={c.lastMessageAt.toISOString()} /> · {CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]} · #{c.number}
                   </p>
                   <Link
-                    href={inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`}
+                    href={inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages, 1, inbox.q) : `/app/${slug}/inbox/${c.number}`}
                     className="max-w-full text-[0.8125rem] leading-snug font-[550] wrap-anywhere hover:underline"
                   >
                     {c.subject}

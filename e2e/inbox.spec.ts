@@ -1476,6 +1476,18 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("menuitem", { name: "Not spam" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=spam&page=2$`));
+
+  // A search's results load more the same way, the search kept; with no more than a page of them, there's no button.
+  await owner.goto(`/app/${slug}/inbox?q=question`);
+  await expect(owner.getByRole("heading", { name: "Results 102" })).toBeVisible();
+  await expect(rows).toHaveCount(100);
+  await more.click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?q=question&page=2$`));
+  await expect(rows).toHaveCount(102);
+  await expect(more).toHaveCount(0);
+  await owner.goto(`/app/${slug}/inbox?q=oldest`);
+  await expect(rows).toHaveCount(1);
+  await expect(more).toHaveCount(0);
 });
 
 test("a long conversation opens at its latest fifty messages; Show earlier messages loads the ones before, where they were read stays in view", async ({ browser }, testInfo) => {
@@ -2489,6 +2501,14 @@ test("on a server selling plans, a conversation closed before the plan's history
   const notice = owner.getByRole("note").filter({ hasText: "Closed conversations with nothing done in them for more than 7 days are past your plan's history." });
   await expect(notice.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "inbox-closed-past-plan-history");
+  // A search that would find it says so too, rather than only that nothing matches; one that wouldn't doesn't.
+  await owner.goto(`/app/${slug}/inbox?q=invoice`);
+  await expect(owner.getByText("No conversations match your search")).toBeVisible();
+  await expect(owner.getByRole("note").filter({ hasText: "Matching conversations with nothing done in them for more than 7 days are past your plan's history." })).toBeVisible();
+  await checkpoint(owner, "inbox-search-past-plan-history");
+  await owner.goto(`/app/${slug}/inbox?q=zebra`);
+  await expect(owner.getByText("No conversations match your search")).toBeVisible();
+  await expect(owner.getByRole("note").filter({ hasText: "past your plan's history" })).toHaveCount(0);
 
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.getByText("Past your plan's history")).toBeVisible();
