@@ -49,6 +49,16 @@ test("emails on a project's behalf show its name and initial at the top, not Tut
   expect(inbox).not.toContain("feedback, roadmap and changelog");
 });
 
+test("the mobile app's sign-in link is Tuti's own email: Tuti's mark, not a portal's initial", async () => {
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  const email = signInLinkEmail({ projectName: "Tuti", fromTuti: true, url: "https://tuti.example/app/auth/app-link?token=t", minutes: 15 });
+  expect(email.subject).toBe("Sign in to Tuti");
+  const html = await render(email.body);
+  expect(html).toContain('src="https://tuti.example/api/email-tuti.png"');
+  // A portal's link keeps its project's header.
+  expect(await render(signInLinkEmail({ projectName: "Acme", url: "https://acme.example/l", minutes: 15 }).body)).not.toContain("email-tuti.png");
+});
+
 test("a project's logo and name sit centred over the card; Tuti's own mark stays on the left", async () => {
   vi.stubEnv("APP_URL", "https://tuti.example");
   // The header row's table: its attributes before its style.

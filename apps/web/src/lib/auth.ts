@@ -32,7 +32,7 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
     await keepAppSignInLink(token, link.app, new Date(Date.now() + SIGN_IN_LINK_MINUTES * 60_000));
     const url = new URL("/app/auth/app-link", appUrl());
     url.searchParams.set("token", token);
-    await sendEmail({ to: email, ...signInLinkEmail({ projectName: "Tuti", url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }) });
+    await sendEmail({ to: email, ...signInLinkEmail({ projectName: "Tuti", fromTuti: true, url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }) });
     return;
   }
   const { slug, projectName, next } = link;
