@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { ImportedMedia, LeftOutReason, MediaImporter, MediaSource } from "@tuti/content/html";
 import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey, videoType } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
 import { Agent, fetch } from "undici";
@@ -220,7 +221,12 @@ async function copyThrough(
     } else {
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
-  } catch {
+  } catch (error) {
+    // Ours, not the file's (storage, processing): logged, as nothing else says why. Only the deadline's own stop isn't
+    // (its reason, thrown as the upload's cut off); a failure that merely comes after it still is.
+    if (!late?.aborted || error !== late.reason) {
+      log.error("Copying a file into media failed", { projectId, mediaId: media.id, kind, error });
+    }
     return { ...(await leaveOut("unreachable")), passing: true };
   }
   const { id, ...ready } = await prisma.media.update({

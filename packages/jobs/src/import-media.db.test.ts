@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { fileKey, imageKey, videoKey } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -99,7 +100,10 @@ beforeEach(async () => {
   projectId = (await prisma.project.create({ data: { slug, name: "Import" } })).id;
   uploaderId = (await prisma.user.create({ data: { id: slug, name: "Importer", email: `e2e-${slug}@example.com` } })).id;
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 const importer = (cache?: Parameters<typeof mediaImporter>[0]["cache"]) => mediaImporter({ projectId, uploaderId, cache });
 
@@ -327,8 +331,9 @@ test("with the import's cache, a file that's gone is asked for once, however it'
   expect(served).toHaveLength(1);
 });
 
-test("storage failing leaves the file out (its row failed, off the quota) rather than failing the document", async () => {
+test("storage failing leaves the file out (its row failed, off the quota) rather than failing the document, and logs why", async () => {
   vi.stubEnv("MEDIA_S3_ENDPOINT", "http://127.0.0.1:9");
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
   const result = await htmlToContent("post", `<p>Before</p><img src="${origin}/a.png" alt="Shot"><p>After</p>`, { media: importer() });
   if ("error" in result) {
     throw new Error(result.error);
@@ -338,6 +343,38 @@ test("storage failing leaves the file out (its row failed, off the quota) rather
   expect(await prisma.media.findMany({ where: { projectId }, select: { status: true, size: true, attachedAt: true } })).toEqual([
     { status: "FAILED", size: 0, attachedAt: null },
   ]);
+  expect(logged).toHaveBeenCalledExactlyOnceWith("Copying a file into media failed", {
+    projectId,
+    mediaId: expect.any(String),
+    kind: "image",
+    // Why, too: fetch says only "fetch failed", and carries the reason (here, a port it won't use) as its cause, which the log keeps.
+    error: expect.objectContaining({ message: "fetch failed", cause: expect.objectContaining({ message: "bad port" }) }),
+  });
+});
+
+test("a copy cut off while it's being stored isn't logged as an error: its deadline is expected, not a failure", async () => {
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  const stop = new AbortController();
+  // The deadline passes as the video is stored: the storage's answer is one to retry, and the retry finds it cut off.
+  s3.onPut = () => {
+    stop.abort();
+    return 500;
+  };
+  const source = { kind: "video" as const, url: `${origin}/demo.mp4`, key: "demo", name: "demo.mp4" };
+  expect(await mediaImporter({ projectId, uploaderId, signal: stop.signal })(source)).toEqual({ leftOut: "unreachable" });
+  expect(logged).not.toHaveBeenCalled();
+});
+
+test("a storage failure that comes after the deadline is still logged: only the deadline's own stop isn't", async () => {
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  const stop = new AbortController();
+  // The deadline passes as the image is stored, and the storage fails anyway (an image's upload isn't cut off by it).
+  s3.onPut = () => {
+    stop.abort();
+    return 500;
+  };
+  expect(await mediaImporter({ projectId, uploaderId, signal: stop.signal })({ kind: "image", url: `${origin}/a.png`, key: "a" })).toEqual({ leftOut: "unreachable" });
+  expect(logged).toHaveBeenCalledExactlyOnceWith("Copying a file into media failed", expect.objectContaining({ kind: "image", error: expect.objectContaining({ message: expect.stringContaining("failed with 500") }) }));
 });
 
 test("a storage failure isn't remembered by the cache: the next document tries again", async () => {

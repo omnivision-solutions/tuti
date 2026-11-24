@@ -7,6 +7,7 @@ import { readerGroup } from "@/lib/reader-groups";
 import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
 
 import { inGroupSql } from "../group-conditions-sql";
+import { withLockRetries } from "../lock-retries";
 import { syncUsers } from "../project-users";
 import { defineOperation, OperationError } from "./define";
 
@@ -320,6 +321,148 @@ export const syncUsersOperation = defineOperation({
       { strict: true },
     );
     return { created, updated: input.users.length - created };
+  },
+});
+
+export const deleteUser = defineOperation({
+  name: "users.delete",
+  title: "Delete a user",
+  summary:
+    "Delete one of the project's users by their id in your app, when they delete their account there or ask to be forgotten: their details, votes, likes, follows, reactions, sessions and changelog subscription go; their posts, comments and conversations stay as by \"Deleted user\", without their address.",
+  method: "DELETE",
+  path: "/users/{user}",
+  scope: "write",
+  access: "admin",
+  input: z.object({ user: userId.describe("Their id in your app; signed in or synced again later, the same id is a new, empty user") }),
+  output: z.object({ deleted: z.string().describe("The deleted user's id in your app").meta({ examples: ["user-42"] }) }).describe("The user is gone"),
+  run: async ({ projectId }, input) => {
+    // Posts locked in another order by a vote at once can deadlock it: Postgres aborts one, and an aborted delete runs again.
+    await withLockRetries(() =>
+      prisma.$transaction(
+        async (tx) => {
+          // Locked with everyone else who has their address, in one statement and in syncUsers' order (by id in the app), so
+          // a sign-in or sync at once waits, then makes them anew, and two deletes of users sharing an address queue rather
+          // than deadlock: the second finds the first gone. Their address read first, unlocked; changed meanwhile, again.
+          let identity: { id: string; userId: string; email: string | null; externalId: string } | undefined;
+          for (;;) {
+            const [seen] = await tx.$queryRaw<{ email: string | null }[]>`
+              SELECT email FROM sso_identity WHERE "projectId" = ${projectId} AND "externalId" = ${input.user}`;
+            if (!seen) {
+              throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
+            }
+            const locked = await tx.$queryRaw<{ id: string; userId: string; email: string | null; externalId: string }[]>`
+              SELECT id, "userId", email, "externalId" FROM sso_identity
+              WHERE "projectId" = ${projectId} AND ("externalId" = ${input.user} OR email = ${seen.email})
+              ORDER BY "externalId" FOR UPDATE`;
+            identity = locked.find((row) => row.externalId === input.user);
+            if (!identity) {
+              throw new OperationError(404, "not_found", `There's no user “${input.user}”`);
+            }
+            if (identity.email === seen.email) {
+              break;
+            }
+          }
+          const { userId } = identity;
+          // Their address, unless it's someone else's too (as inbound.ts userWithAddress finds people by it): another of
+          // the project's users with it (a shared mailbox), or an account that verified it (theirs, made on the portal,
+          // isn't touched). Then nothing goes by it: the messages, conversations and subscription are that person's too.
+          const shared =
+            !!identity.email &&
+            ((await tx.ssoIdentity.count({ where: { projectId, email: identity.email, id: { not: identity.id } } })) > 0 ||
+              (
+                await tx.$queryRaw<unknown[]>`
+                  SELECT 1 FROM "user" u WHERE lower(u.email) = ${identity.email} AND u."emailVerified" AND NOT EXISTS (SELECT 1 FROM sso_identity s WHERE s."userId" = u.id) LIMIT 1`
+              ).length > 0);
+          const email = shared ? null : identity.email;
+          // The posts they voted on, locked first as votes.set and merges lock them (a merge moving their votes finishes,
+          // and the post it moved them to is found on the next pass), then counted again without their votes.
+          const voted: string[] = [];
+          for (;;) {
+            const found = (await tx.vote.findMany({ where: { userId, postId: { notIn: voted } }, orderBy: { postId: "asc" }, select: { postId: true } })).map(
+              (vote) => vote.postId,
+            );
+            if (found.length === 0) {
+              break;
+            }
+            await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${found}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+            voted.push(...found);
+          }
+          // Every post the delete touched is counted again, with one a vote landed on since (votes.set never waits on this).
+          const removed = await tx.$queryRaw<{ postId: string }[]>`DELETE FROM vote WHERE "userId" = ${userId} RETURNING "postId"`;
+          const counted = [...new Set([...voted, ...removed.map((vote) => vote.postId)])];
+          if (counted.length > 0) {
+            // Locked first, in a statement of its own: a recount waiting on a vote's post lock would count from before it.
+            await tx.$queryRaw`SELECT id FROM post WHERE id = ANY(${counted}::text[]) ORDER BY id FOR NO KEY UPDATE`;
+            await tx.$executeRaw`UPDATE post SET "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = post.id) WHERE id = ANY(${counted}::text[])`;
+          }
+          // A shared address's own: what it emailed in was filed under whoever of its users was synced last (inbound.ts
+          // userWithAddress), this one maybe. Those go back to the address, which still answers them, as they were.
+          if (shared) {
+            // Only those they wrote nothing else in: handed back, one is the other users' with the address too (the
+            // widget lists it for them, every message from the user as the reader's own), and what they wrote in the
+            // widget isn't theirs. Those stay with them, anonymised like the rest.
+            const handedBack = await tx.$queryRaw<{ id: string }[]>`
+              UPDATE conversation c SET "userId" = NULL, email = ${identity.email}, "emailVerified" = true
+              WHERE c."projectId" = ${projectId} AND c."userId" = ${userId} AND c.origin = 'EMAIL'
+                AND EXISTS (SELECT 1 FROM inbound_email i WHERE i."conversationId" = c.id AND i.sender = ${identity.email})
+                AND NOT EXISTS (
+                  SELECT 1 FROM conversation_message m
+                  WHERE m."conversationId" = c.id AND m.author = 'USER' AND m."authorId" = ${userId} AND m.channel <> 'EMAIL'
+                )
+              RETURNING c.id`;
+            // The mailbox's messages in them are the address's, as those it sends from now on.
+            await tx.conversationMessage.updateMany({
+              where: { conversationId: { in: handedBack.map((row) => row.id) }, author: "USER", authorId: userId },
+              data: { authorId: null },
+            });
+          }
+          // Their conversations, and those started by email from their address, verified (as their page counts them):
+          // kept for the team, as the deleted user's, without the address.
+          const conversations = (
+            await tx.conversation.findMany({
+              where: { projectId, OR: [{ userId }, ...(email ? [{ userId: null, emailVerified: true, email }] : [])] },
+              select: { id: true },
+            })
+          ).map((conversation) => conversation.id);
+          await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
+          // Whichever address it came from (one users.sync has changed since too). A later email from it then finds none of
+        // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
+          await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
+          if (email) {
+            // Wherever they wrote from it. In theirs, none: the conversation's person wrote it (Deleted user now). In someone
+            // else's (Cc'd on it), "Deleted user" in its place, as none there would say that person wrote it. By the
+            // project's conversations (indexed), not every message. lower() = lower(), not Prisma's insensitive equals:
+            // that's ILIKE, where "_" or "%" would match someone else's.
+            await tx.$executeRaw`UPDATE conversation_message m
+              SET "fromAddress" = CASE WHEN m."conversationId" = ANY(${conversations}::text[]) THEN NULL ELSE 'Deleted user' END
+              FROM conversation c WHERE c.id = m."conversationId" AND c."projectId" = ${projectId} AND lower(m."fromAddress") = ${email}`;
+            await tx.inboundEmail.updateMany({ where: { projectId, sender: email }, data: { sender: "" } });
+            await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
+          }
+          await tx.postSubscription.deleteMany({ where: { userId } });
+          await tx.changelogReaction.deleteMany({ where: { userId } });
+          await tx.commentLike.deleteMany({ where: { userId } });
+          await tx.changelogSeen.deleteMany({ where: { userId } });
+          await tx.emailPreference.deleteMany({ where: { userId } });
+          await tx.emailOptOut.deleteMany({ where: { userId } });
+          await tx.widgetPresence.deleteMany({ where: { projectId, who: userId } });
+          await tx.portalHandoff.deleteMany({ where: { userId } });
+          // What an import noted of them (a contact in the other tool is this user): a later import makes them anew.
+          await tx.importedRecord.deleteMany({ where: { projectId, localId: userId } });
+          // Signed out everywhere: the portal's sessions end, and the widget's tokens stop working (canActIn).
+          await tx.session.deleteMany({ where: { userId } });
+          await tx.account.deleteMany({ where: { userId } });
+          await tx.ssoIdentity.delete({ where: { id: identity.id } });
+          // Its placeholder address freed, so the same id is a new user later.
+          await tx.user.update({
+            where: { id: userId },
+            data: { name: "Deleted user", image: null, imageId: null, email: `deleted-${userId}@users.tuti.invalid`, emailVerified: false, deletedAt: new Date() },
+          });
+        },
+        { timeout: 30_000 },
+      ),
+    );
+    return { deleted: input.user };
   },
 });
 

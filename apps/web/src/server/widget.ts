@@ -8,7 +8,7 @@ import { WIDGET_PARTS } from "@/lib/portal-look";
 import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import type { Reaction } from "@/lib/reactions";
 import type { WidgetIcon } from "@/lib/widget-icons";
-import { widgetToken, widgetUser } from "@/lib/widget-session";
+import { widgetToken, widgetTokenUser, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
 
 import type { FormState } from "./form-state";
@@ -70,7 +70,7 @@ export async function widgetSignIn(
 /** The news of the ideas of the person a widget token is for (Home's "Your ideas"); none for a token that doesn't check out. */
 export async function widgetIdeaNews(projectSlug: string, token: string): Promise<IdeaNews[]> {
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
-  const userId = project && widgetUser(project.id, String(token));
+  const userId = project && (await widgetTokenUser(project.id, String(token)));
   return project && userId ? ideaNews(project.id, userId) : [];
 }
 
@@ -202,6 +202,7 @@ export async function saveWidgetSettings(projectSlug: string, _state: FormState,
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
     links: linksFrom(formData, "link"),
     onPortal: formData.get("onPortal") === "on",
+    popup: formData.get("popup") === "on",
     // Only with its switch on the form (it isn't where the server has no AI answers).
     ...(formData.has("aiFirstShown") && { aiFirst: formData.get("aiFirst") === "on" }),
     ...(formData.has("icon") && { icon: text(formData.get("icon")) as WidgetIcon, iconImage: text(formData.get("iconImage")) || null }),

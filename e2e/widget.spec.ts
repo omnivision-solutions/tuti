@@ -597,6 +597,160 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
 });
 
+test("a new announcement pops up by the launcher, once, for visitors who were here before it, with the setting on", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const announce = async (number: number, title: string, body: string) => {
+    await api("/changelog", { title, body });
+    await api(`/changelog/${number}/publish`, {});
+  };
+  await announce(1, "Faster search", "Results as you type.");
+
+  // Visitors on the customer's site. Routing turns off the browser's cache, so every page load reads /api/widget/latest
+  // afresh (it's cached for a minute), as a visitor coming back later would.
+  const visit = async (page: Page) => {
+    const latest = page.waitForResponse((response) => response.url().includes("/api/widget/latest"));
+    await page.goto(sitePage("customer.localhost", slug));
+    return (await (await latest).json()) as Record<string, unknown>;
+  };
+  const visitorOn = async (options: Parameters<typeof browser.newContext>[0] = {}) => {
+    const page = await (await browser.newContext(options)).newPage();
+    await page.route("**/api/widget/latest*", (route) => route.continue());
+    return page;
+  };
+  const ada = await visitorOn();
+  const bo = await visitorOn({ colorScheme: "dark" });
+  const launcherOf = (page: Page) => page.getByRole("button", { name: /^Feedback/ });
+  const popupOf = (page: Page) => page.getByRole("region", { name: "What's new" });
+
+  // A first visit: the dot for the announcement, never a popup (nobody's greeted by old news).
+  await visit(ada);
+  await expect(launcherOf(ada)).toHaveAccessibleName("Feedback, new updates");
+  await expect(popupOf(ada)).toHaveCount(0);
+
+  // Off by default: an announcement published since Ada's visit is only the dot, and the script isn't told about it.
+  await announce(2, "Saved filters", "Keep the views you use.");
+  expect(await visit(ada)).not.toHaveProperty("announcement");
+  await expect(launcherOf(ada)).toHaveAccessibleName("Feedback, new updates");
+  await expect(popupOf(ada)).toHaveCount(0);
+  // That visit is dated ten seconds early (a publish still committing counts as after it): Ada's last visit, as a later
+  // one would be, is well after the announcement.
+  await ada.evaluate((slug) => localStorage.setItem(`tuti:visit:${slug}`, new Date(Date.now() + 60_000).toISOString()), slug);
+
+  // The team turns it on in Settings → Widget.
+  await owner.goto(`/app/${slug}/settings/widget`);
+  const setting = owner.getByRole("switch", { name: "Show new announcements as a popup" });
+  await expect(setting).not.toBeChecked();
+  await setting.scrollIntoViewIfNeeded();
+  await setting.click();
+  await checkpoint(owner, "settings-widget-popup", { fullPage: false });
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+
+  // Published before Ada's last visit and still unseen: the dot, no popup.
+  expect(await visit(ada)).toMatchObject({ announcement: { number: 2, title: "Saved filters" } });
+  await expect(launcherOf(ada)).toHaveAccessibleName("Feedback, new updates");
+  await expect(popupOf(ada)).toHaveCount(0);
+  await visit(bo);
+
+  // A new announcement, with a cover, published after both visited.
+  await api("/changelog", { title: "Calendar sync is here", body: `Your events, both ways. ${"Meetings you add in Acme show up in your calendar, and back. ".repeat(4)}` });
+  await owner.goto(`/app/${slug}/changelog/3`);
+  const scratch = await owner.context().newPage();
+  await scratch.setContent('<div id="cover" style="width:1200px;height:600px;background:linear-gradient(135deg,#0f766e,#1d4ed8)"></div>');
+  const coverPicture = await scratch.locator("#cover").screenshot();
+  await scratch.close();
+  const featured = owner.getByRole("group", { name: "Featured image" });
+  await featured.locator('input[type="file"]').setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: coverPicture });
+  await expect(featured.getByRole("img")).toBeVisible();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await api("/changelog/3/publish", {});
+
+  // Ada comes back: it pops up by the launcher, without taking focus.
+  await visit(ada);
+  const popup = popupOf(ada);
+  await expect(popup.getByText("Calendar sync is here")).toBeVisible();
+  await expect(popup.getByText(/^Your events, both ways\./)).toBeVisible();
+  await expect(popup.locator("img")).toHaveJSProperty("complete", true);
+  await expect(popup.getByRole("button", { name: "Close" })).toBeVisible();
+  expect(await ada.evaluate(() => document.activeElement === document.body)).toBe(true);
+  // Keyboard: right after the launcher.
+  await launcherOf(ada).focus();
+  await ada.keyboard.press("Tab");
+  await expect(popup.getByRole("button", { name: "Read more" })).toBeFocused();
+  await ada.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await checkpoint(ada, "popup-desktop-light");
+  // On a phone it's as wide as the screen allows, above the launcher, never over it.
+  await ada.setViewportSize({ width: 390, height: 844 });
+  const [card, button] = [(await popup.boundingBox())!, (await launcherOf(ada).boundingBox())!];
+  expect(card.x).toBeGreaterThanOrEqual(0);
+  expect(card.x + card.width).toBeLessThanOrEqual(390);
+  expect(card.y + card.height).toBeLessThanOrEqual(button.y);
+  await checkpoint(ada, "popup-phone-light");
+  // On its side the card fits above the launcher, scrolling, its Close on screen.
+  await ada.setViewportSize({ width: 844, height: 360 });
+  expect((await popup.getByRole("button", { name: "Close" }).boundingBox())!.y).toBeGreaterThanOrEqual(0);
+  expect((await popup.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+  await ada.setViewportSize({ width: 1280, height: 720 });
+
+  // Closing it keeps it away for that entry in this browser, without marking it seen: the dot stays.
+  await popup.getByRole("button", { name: "Close" }).click();
+  await expect(popup).toHaveCount(0);
+  await expect(launcherOf(ada)).toBeFocused();
+  await expect(launcherOf(ada)).toHaveAccessibleName("Feedback, new updates");
+  // Still away after a reload, even as if Ada hadn't been here since it was published.
+  await ada.evaluate((key) => localStorage.setItem(key, "2000-01-01T00:00:00.000Z"), `tuti:visit:${slug}`);
+  await visit(ada);
+  await expect(launcherOf(ada)).toHaveAccessibleName("Feedback, new updates");
+  await expect(popup).toHaveCount(0);
+
+  // Bo, in dark mode: Read more opens the panel at the entry, and the popup is gone.
+  await visit(bo);
+  const boPopup = popupOf(bo);
+  await expect(boPopup.getByText("Calendar sync is here")).toBeVisible();
+  await expect(boPopup.locator("img")).toHaveJSProperty("complete", true);
+  await checkpoint(bo, "popup-desktop-dark");
+  await bo.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(bo, "popup-phone-dark");
+  await bo.setViewportSize({ width: 1280, height: 720 });
+  await boPopup.getByRole("button", { name: "Read more" }).click();
+  const panel = bo.frameLocator('iframe[title="Feedback"]');
+  await expect(panel.getByRole("heading", { level: 1, name: "Calendar sync is here" })).toBeVisible();
+  await expect(boPopup).toHaveCount(0);
+  await closeWithEscape(bo, bo.locator("#tuti-widget"));
+  await expect(boPopup).toHaveCount(0);
+  // Read, it's seen: the dot's gone.
+  await expect(launcherOf(bo)).toHaveAccessibleName("Feedback");
+
+  // On the portal itself (its own browser storage): under the portal's dialogs and menus, as its launcher, and gone once
+  // the visitor goes to the changelog, where the announcement is (without reloading the script).
+  await ada.goto(portalUrl(slug));
+  await expect(ada.getByRole("button", { name: /^Feedback/ })).toBeVisible();
+  await announce(4, "Exports", "Download your data.");
+  await ada.reload();
+  const portalPopup = popupOf(ada);
+  await expect(portalPopup.getByText("Exports")).toBeVisible();
+  await expect(ada.locator("#tuti-popup")).toHaveCSS("z-index", "45");
+  await ada.getByRole("banner").getByRole("link", { name: "Changelog" }).click();
+  await expect(ada).toHaveURL(/\/changelog/);
+  await expect(portalPopup).toHaveCount(0);
+
+  // A private portal says nothing of its announcements to the script: no popup, nor a dot.
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  await announce(5, "Audit log", "See who changed what.");
+  expect(await visit(ada)).toMatchObject({ latest: null, private: true });
+  await expect(launcherOf(ada)).toHaveAccessibleName("Feedback");
+  await expect(popupOf(ada)).toHaveCount(0);
+});
+
 test("someone a customer's site signs in sees what's new on one device, and it isn't new on their others", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

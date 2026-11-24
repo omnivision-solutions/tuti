@@ -636,6 +636,9 @@ the list picks none to approve at once.
   from its first paint, and the button unless it has its own colour (Settings → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
+  A new announcement's popup (Settings → Widget) is a card above the launcher, on its side, 300px wide (the screen less
+  20px each side on a phone, never over the button): cover, title, two muted lines, Read more as a pill in the launcher's
+  colours and a round Close on it, in the panel's light or dark; it fades up and never takes focus.
   Messages has the team on top, centred above a line (their faces and when they usually reply,
   as on Home, and New message across it), then "Your conversations" (a group label)
   over their conversations, newest first, each a row with its latest line ("You:"

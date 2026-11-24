@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 
 import { visitorHash } from "@/lib/visitor-session";
-import { widgetUser } from "@/lib/widget-session";
+import { widgetTokenUser } from "@/lib/widget-session";
 import { inboxStream } from "@/server/live";
 import { getSession } from "@/server/session";
 import { hears, widgetPerson } from "@/server/widget-person";
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     wants: (change) => hears(who, change),
     stillAllowed: async () =>
       kind === "Widget"
-        ? widgetUser(projectId, token!) !== null
+        ? (await widgetTokenUser(projectId, token!)) !== null
         : kind === "Visitor"
           ? visitorHash(projectId, token!) !== null
           : !!session && (await prisma.session.count({ where: { id: session.session.id, expiresAt: { gt: new Date() } } })) > 0,

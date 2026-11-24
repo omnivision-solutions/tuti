@@ -38,6 +38,9 @@ model User {
   placeholderFor       String?
   /// When their first project started its free trial (the billing file's `trial`): one trial per account, so their later projects start on the default plan.
   trialStartedAt    DateTime?
+  /// When the project's app deleted them (users.delete): kept as "Deleted user", so their posts, comments and
+  /// conversations stay; nothing about them is left, they can't act and nothing is emailed to them.
+  deletedAt         DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          Session[]
@@ -245,6 +248,8 @@ model Project {
   widgetOnPortal        Boolean      @default(true)
   /// A new message in Messages goes to the docs' AI first, with "Ask a person" to pass it to the team.
   widgetAiFirst         Boolean      @default(true)
+  /// A new announcement pops up as a small card by the launcher (once per browser), on top of its dot.
+  widgetPopup           Boolean      @default(false)
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
@@ -2840,8 +2845,8 @@ enum ImportState {
   FAILED
 }
 
-/// An import from another tool (docs/plan.md, Switching from Featurebase): one run, a chain of short jobs
-/// (import-step), each doing one page of its current step and saving where it got to.
+/// An import from another tool (docs/plan.md, Switching from Featurebase): one run, a chain of jobs (import-step),
+/// each doing page after page of its current step for a while, saving where it got to with each.
 model DataImport {
   id          String       @id @default(cuid())
   projectId   String

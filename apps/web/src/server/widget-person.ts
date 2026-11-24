@@ -2,7 +2,7 @@ import { type Prisma, prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
 
 import { newVisitor, visitorHash } from "@/lib/visitor-session";
-import { widgetUser } from "@/lib/widget-session";
+import { widgetTokenUser } from "@/lib/widget-session";
 
 import type { InboxChange } from "./live";
 import { canActIn } from "./membership";
@@ -95,7 +95,7 @@ export async function widgetPerson(projectSlug: string, auth: WidgetAuth): Promi
     return null;
   }
   if (auth.token) {
-    const userId = widgetUser(project.id, String(auth.token));
+    const userId = await widgetTokenUser(project.id, String(auth.token));
     return userId ? await signedIn(project.id, userId) : null;
   }
   const session = await sessionIn(project.id);

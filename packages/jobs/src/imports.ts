@@ -18,10 +18,10 @@ import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } fr
 import { lockProject } from "./running-draft";
 
 /**
- * Imports from another tool (docs/plan.md, Switching from Featurebase): a chain of import-step jobs, each doing one page
- * of the import's current step: it reads the page from the source (no lock held), then saves its records, where it got
- * to and what came across in one short transaction under the project's lock (as a placeholder's handover takes it), and
- * queues the next.
+ * Imports from another tool (docs/plan.md, Switching from Featurebase): a chain of import-step jobs, each doing page
+ * after page of the import for a while (IMPORT_RUN), then queuing the next. A page is one of the import's current step:
+ * it's read from the source (no lock held), then its records, where it got to and what came across are saved in one
+ * short transaction under the project's lock (as a placeholder's handover takes it).
  */
 
 type Tx = Prisma.TransactionClient;
@@ -92,15 +92,24 @@ export function nextStep(parts: string[], after: string | null): string | null {
   return STEPS.slice(from).find((step) => parts.includes(step.part))?.name ?? null;
 }
 
-/** An import that hasn't moved this long is stuck (its job went away): looking at it resumes it. Longer than a page may take (import-step's time limit). */
-export const IMPORT_STUCK_MS = 6 * 60_000;
+/**
+ * An import that hasn't moved this long is stuck (its job went away): looking at it resumes it. Longer than a page may
+ * take: PAGE_READ_MS, then up to three tries of a minute each to save (`locked`).
+ */
+export const IMPORT_STUCK_MS = 8 * 60_000;
 /** One that hasn't moved for a day is failed by the daily fail-stale-imports (or, inline, when it's looked at), its key cleared. */
 const STALE_MS = 24 * 60 * 60_000;
 /**
- * How long a page may spend reading its source, retries and their waits included: import-step's time limit is 5
- * minutes (apps/worker tasks.ts), so a page has time left to save, and IMPORT_STUCK_MS is longer than both.
+ * How long a page may spend reading its source, retries and their waits included, so it has time left to save (a run's
+ * last page, read and saved, fits import-step's time limit: apps/worker tasks.ts), and IMPORT_STUCK_MS is longer.
  */
 const PAGE_READ_MS = 3 * 60_000;
+/**
+ * How long a run goes on to its next page before it queues the next run instead: queuing each page cost seconds of
+ * waiting for its turn, more than the page took, and one run for the whole import would hold a worker's slot for hours.
+ * Tests shorten it.
+ */
+export const IMPORT_RUN = { ms: 10 * 60_000 };
 const AGAIN = "Start it again to go on: what came across already is skipped.";
 /** Why records an earlier import (or an earlier try of this one) brought aren't brought again, as the summary says it. */
 export const ALREADY_HERE = "already brought across earlier";
@@ -108,12 +117,21 @@ export const ALREADY_HERE = "already brought across earlier";
 /** Imports' next pages not waited for (continueImport's `wait: false`), till each chain ends. */
 const inBackground = new Set<Promise<void>>();
 
+/** The page an import is at, as a run is queued for it (import-step's `at`). */
+const placeOf = (row: Pick<DataImport, "step" | "cursor">) => `${row.step}:${row.cursor ?? ""}`;
+
 /**
- * Queues the import's next page. `wait: false` doesn't wait for it: inline (JOBS_DRIVER=inline) the job, and every page
- * after it, would run inside the request that started it. One that can't be queued goes on when it's looked at (stuck).
+ * Queues the import's next run, for the page it's at. An import found stuck while its run is only waiting its turn
+ * (ten run at once: apps/worker tasks.ts) gets a second run for the same page: whichever comes first goes on, so the
+ * import keeps its place in the queue, and the other, finding the import past that page, ends. `wait: false` doesn't
+ * wait for the run: inline (JOBS_DRIVER=inline) the job, and every page after it, would run inside the request that
+ * started it. One that can't be queued goes on when it's looked at (stuck).
  */
 export async function continueImport(importId: string, log: JobLogger, { wait = true } = {}): Promise<void> {
-  const going = enqueue("importStep", { importId }).then(
+  const going = prisma.dataImport
+    .findUnique({ where: { id: importId }, select: { step: true, cursor: true } })
+    .then((row) => enqueue("importStep", { importId, at: row ? placeOf(row) : undefined }))
+    .then(
     () => undefined,
     (error: unknown) => log.warn(`Import ${importId}: couldn't queue its next page (${String(error)}); it goes on when it's looked at`),
   );
@@ -225,12 +243,38 @@ async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise
 }
 
 /**
- * One page of an import's current step (import-step): read from the source, then its records, where it got to and its
- * counts are saved together under the project's lock and a claim (the step and cursor it read), so a duplicate run of
- * the same page saves nothing; its records are remembered (ImportedRecord), so nothing comes across twice. The last
- * page ends it, done, and a failing one fails it; either way its key is cleared.
+ * An import's pages, one after another (import-step), till it ends, a page saves nothing (another run has it), or the
+ * run's time is up (IMPORT_RUN) or it's asked to stop (`stop`: the worker is shutting down, for a deploy): then the
+ * next run is queued, and goes on from the page after. Its result is its last page's. A run queued for a page the
+ * import is past (`at`) does nothing.
  */
-export async function importStep({ importId }: JobInput<"importStep">, log: JobLogger): Promise<JobResult> {
+export async function importStep({ importId, at }: JobInput<"importStep">, log: JobLogger, stop: () => boolean = () => false): Promise<JobResult> {
+  // Queued for a page the import is past: another run queued for it (the import looked stuck while they waited their turn) has it.
+  const row = at === undefined ? null : await prisma.dataImport.findUnique({ where: { id: importId }, select: { step: true, cursor: true } });
+  if (row && placeOf(row) !== at) {
+    return { skipped: true };
+  }
+  const until = Date.now() + IMPORT_RUN.ms;
+  for (;;) {
+    const { more, result } = await importPage(importId, log);
+    if (!more) {
+      return result;
+    }
+    if (stop() || Date.now() >= until) {
+      await continueImport(importId, log);
+      return result;
+    }
+  }
+}
+
+/**
+ * One page of an import's current step: read from the source, then its records, where it got to and its counts are
+ * saved together under the project's lock and a claim (the step and cursor it read), so a duplicate run of the same
+ * page saves nothing; its records are remembered (ImportedRecord), so nothing comes across twice. The last page ends
+ * it, done, and a failing one fails it; either way its key is cleared. `more`: it saved, and a page follows.
+ */
+async function importPage(importId: string, log: JobLogger): Promise<{ result: JobResult; more: boolean }> {
+  const ended = (result: JobResult) => ({ result, more: false });
   // A source this worker doesn't have (it's the release before the web that started the import, mid-deploy): its
   // client can't read the row (the enum value is unknown to it), so the source is read as text first, and the import
   // failed as a part it doesn't have is, never left running with its key.
@@ -239,7 +283,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     await prisma.$executeRaw`
       UPDATE data_import SET state = 'FAILED', "apiKey" = NULL, error = ${`Tuti was updating as it started. ${AGAIN}`}, "finishedAt" = now(), "updatedAt" = now()
       WHERE id = ${importId} AND state = 'RUNNING'`;
-    return { failed: true };
+    return ended({ failed: true });
   }
   const row = await prisma.dataImport.findUnique({ where: { id: importId } });
   let job: ImportJob | null;
@@ -251,10 +295,10 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
       where: { id: importId, state: "RUNNING" },
       data: { state: "FAILED", apiKey: null, error: `The worker couldn't read the API key: give it the web app's BETTER_AUTH_SECRET. ${AGAIN}`, finishedAt: new Date() },
     });
-    return { failed: true };
+    return ended({ failed: true });
   }
   if (!row || !job) {
-    return { skipped: true };
+    return ended({ skipped: true });
   }
   const claim = { id: row.id, state: "RUNNING", step: row.step, cursor: row.cursor } as const;
   // A part this worker doesn't have (it's the release before the web that started the import, mid-deploy) fails it,
@@ -262,7 +306,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   const unknown = row.parts.find((part) => !(part in IMPORT_PARTS));
   if (unknown) {
     await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: `Tuti was updating as it started. ${AGAIN}`, finishedAt: new Date() } });
-    return { failed: true };
+    return ended({ failed: true });
   }
   // One from before avatars were a part of their own, last (Feedback's, before its duplicate check): it goes on with the
   // rest, and copies them last.
@@ -270,10 +314,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     const parts = [...row.parts, "avatars"];
     const step = nextStep(parts, "comments")!;
     const { count } = await prisma.dataImport.updateMany({ where: claim, data: { parts, step, cursor: null } });
-    if (count > 0) {
-      await continueImport(importId, log);
-    }
-    return count > 0 ? { step } : { skipped: true };
+    return count > 0 ? { result: { step }, more: true } : ended({ skipped: true });
   }
   let next: string | null = null;
   let saved: boolean;
@@ -309,15 +350,12 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   } catch (error) {
     log.warn(`Import ${importId}: ${row.step} failed (${String(error)})`);
     await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: error instanceof StarterGone ? error.message : failure(row.source, error), finishedAt: new Date() } });
-    return { failed: true };
+    return ended({ failed: true });
   }
   if (saved) {
     await after?.();
   }
-  if (saved && next) {
-    await continueImport(importId, log);
-  }
-  return saved ? { step: next ?? "done" } : { skipped: true };
+  return saved ? { result: { step: next ?? "done" }, more: next !== null } : ended({ skipped: true });
 }
 
 /** Fails imports that haven't moved for a day (daily), clearing their keys: they can be started again. */

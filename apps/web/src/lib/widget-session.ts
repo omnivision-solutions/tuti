@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+
 import { signValue, verifyValue } from "./signed";
 
 /**
@@ -22,4 +24,13 @@ export function widgetToken(projectId: string, userId: string, now = Date.now())
 export function widgetUser(projectId: string, token: string, now = Date.now()): string | null {
   const fields = verifyValue(PURPOSE, String(token), now);
   return fields?.length === 2 && fields[0] === projectId && fields[1] ? fields[1] : null;
+}
+
+/**
+ * The person a widget token is for (widgetUser), while their project's app hasn't deleted them (users.delete): a
+ * token outlives the delete by up to 12 hours.
+ */
+export async function widgetTokenUser(projectId: string, token: string): Promise<string | null> {
+  const userId = widgetUser(projectId, token);
+  return userId && (await prisma.user.count({ where: { id: userId, deletedAt: null } })) > 0 ? userId : null;
 }

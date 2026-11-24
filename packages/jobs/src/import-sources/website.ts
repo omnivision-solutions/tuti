@@ -29,8 +29,14 @@ const MAX_REDIRECTS = 3;
 const RETRIES = 2;
 /** The longest Retry-After a step waits out before asking again; one asking for more ends the import, saying when to start it again. */
 const RETRY_AFTER_MAX_MS = 30_000;
-/** Between two requests to the site (a robots.txt Crawl-delay, up to 5s, if it asks for more). Changeable for tests. */
-export const crawlPace = { ms: 500 };
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Between two requests to the site (a robots.txt Crawl-delay, up to 5s, if it asks for more). `sites`: each site's pace
+ * as its last reader left it (when it was last asked, and its Crawl-delay), by the address an import reads: each page
+ * of an import has its own reader, and a run goes from one page to the next at once, so the next page's reader goes on
+ * from it; forgotten once any pace has passed. Changeable for tests, as are its clock and how it waits.
+ */
+export const crawlPace = { ms: 500, now: () => Date.now(), wait: pause as (ms: number) => Promise<unknown>, sites: new Map<string, { last: number; delayMs: number }>() };
 /** Pages a step of the link crawl fetches at most (its time limits it too): changeable for tests, which cut it short. */
 export const crawlBudget = { fetches: Infinity };
 const USER_AGENT = "Tuti-Import/1 (+https://tuti.so)";
@@ -123,7 +129,6 @@ export function pageId(url: string | URL): string {
 }
 
 const notPublic = (url: URL) => `${url.hostname} isn't a public address: Tuti only reads help centers anyone can open.`;
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "getting-started" as "Getting started". */
 export const fromSlug = (segment: string) => {
@@ -220,8 +225,24 @@ type CrawlState = { crawl?: { found: string[]; fetched: number; gone: string[] }
 function site(start: string, deadline: number, kept: unknown) {
   let state = (typeof kept === "object" && kept !== null ? kept : {}) as CrawlState;
   const robots = new Map<string, Promise<ReturnType<typeof robotsRules>>>();
-  let last = 0;
+  // This reader's own Crawl-delay: robots.txt is read once a reader, and the site's shared pace may be forgotten meanwhile.
   let delayMs = 0;
+  /**
+   * The site's pace, read afresh before each request, so no reader holds one forgotten under it (it may wait out a
+   * Retry-After first). `last` is when the latest request began (or will: reserved), and one may take
+   * PAGE_TIMEOUT_MS; a Crawl-delay is 5s at most. Past both, a site's pace is as good as none, and it's forgotten.
+   */
+  const sitePace = () => {
+    for (const [address, { last }] of crawlPace.sites) {
+      if (crawlPace.now() - last > PAGE_TIMEOUT_MS + 5_000 + crawlPace.ms) {
+        crawlPace.sites.delete(address);
+      }
+    }
+    const pace = crawlPace.sites.get(start) ?? { last: 0, delayMs: 0 };
+    pace.delayMs = Math.max(pace.delayMs, delayMs);
+    crawlPace.sites.set(start, pace);
+    return pace;
+  };
 
   /** The body at `url` (following up to 3 redirects on its own host; any public one for the start page), or null for a page that's gone. */
   async function get(url: string, { anyHost = false, robotsFile = false } = {}): Promise<{ url: string; type: string; text: string } | null> {
@@ -242,12 +263,14 @@ function site(start: string, deadline: number, kept: unknown) {
       if (!robotsFile && !(await rules(parsed.origin)).allowed(parsed.pathname)) {
         throw new SiteError(0, `${parsed.hostname}'s robots.txt asks crawlers not to read ${parsed.pathname}, so Tuti doesn't.`, "refused");
       }
-      const wait = last + Math.max(crawlPace.ms, delayMs) - Date.now();
-      if (Date.now() + Math.max(wait, 0) >= deadline) {
+      const pace = sitePace();
+      const slot = Math.max(crawlPace.now(), pace.last + Math.max(crawlPace.ms, pace.delayMs));
+      if (Date.now() + (slot - crawlPace.now()) >= deadline) {
         throw new SiteError(0, `${parsed.hostname} took too long to read.`, "late");
       }
-      await pause(Math.max(wait, 0));
-      last = Date.now();
+      // Its time reserved before the wait, so another reader of the site (another project's import) goes after it.
+      pace.last = slot;
+      await crawlPace.wait(slot - crawlPace.now());
       let response;
       try {
         response = await fetch(at, {
@@ -327,7 +350,7 @@ function site(start: string, deadline: number, kept: unknown) {
             "wait",
           );
         }
-        const wait = asked ?? Math.max(crawlPace.ms, delayMs) * 2 ** (attempt + 1);
+        const wait = asked ?? Math.max(crawlPace.ms, sitePace().delayMs) * 2 ** (attempt + 1);
         if (Date.now() + wait >= deadline) {
           // A short pause the site asked for that this step hasn't the time left to wait: out of time (`late`), so the run
           // ends and the next, with its own time, waits it.
@@ -354,6 +377,7 @@ function site(start: string, deadline: number, kept: unknown) {
           .then((file) => {
             const parsed = robotsRules(file && !/html/i.test(file.type) ? file.text : "");
             delayMs = Math.max(delayMs, parsed.delayMs);
+            sitePace();
             return parsed;
           }),
       );

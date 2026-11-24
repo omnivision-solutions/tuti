@@ -126,13 +126,15 @@ export const jobs = {
     retries: 0,
   },
   /**
-   * One page of an import from another tool (docs/plan.md, Switching from Featurebase), then the next. Tried once: the
-   * Featurebase client retries what fails for a while, and a page that still fails fails the import, which can be started
-   * again. One at a time per import, so a duplicate waits and then finds its page done.
+   * An import from another tool (docs/plan.md, Switching from Featurebase), page after page for a while, then the next
+   * run. Tried once: the Featurebase client retries what fails for a while, and a page that still fails fails the import,
+   * which can be started again. One at a time per import, so a duplicate waits and then finds its page done. `at`:
+   * the page the import was at as the run was queued (its step and cursor): once the import is past it (another run,
+   * queued for the same page, got there first), this one ends at once.
    */
   importStep: {
     name: "import-step",
-    input: z.object({ importId: z.string() }),
+    input: z.object({ importId: z.string(), at: z.string().optional() }),
     retries: 0,
     concurrencyKey: "input.importId",
   },

@@ -253,14 +253,16 @@ export async function replyRecipient(conversationId: string): Promise<ReplyRecip
       spam: true,
       sample: true,
       email: true,
-      user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
+      user: { select: { email: true, deletedAt: true, ssoIdentity: { select: { email: true } } } },
       project: { select: { mailSubdomain: { select: { subdomain: true } } } },
     },
   });
   if (conversation.spam || conversation.sample) {
     return { error: conversation.spam ? "It's marked as spam" : "It's sample content" };
   }
-  const to = conversation.user ? (conversation.user.ssoIdentity ? conversation.user.ssoIdentity.email : conversation.user.email) : conversation.email;
+  const { user } = conversation;
+  // Deleted by the project's app (users.delete): no address of theirs is left.
+  const to = user ? (user.ssoIdentity ? user.ssoIdentity.email : user.deletedAt ? null : user.email) : conversation.email;
   const subdomain = conversation.project.mailSubdomain?.subdomain;
   if (!to || !subdomain) {
     return { error: to ? "The project has no support address" : "They have no email address" };

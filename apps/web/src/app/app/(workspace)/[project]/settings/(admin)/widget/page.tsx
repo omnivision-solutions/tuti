@@ -70,6 +70,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
           greeting={widget.greeting}
           hidden={widget.hidden}
           onPortal={widget.onPortal}
+          popup={widget.popup}
           // Under a path of the team's site, or Tuti's own portal under the app's.
           aiFirst={answersEnabled() ? widget.aiFirst : null}
         />

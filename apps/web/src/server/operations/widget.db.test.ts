@@ -20,7 +20,7 @@ const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projec
 const update = (input: z.input<typeof updateWidgetSettings.input>) =>
   call(updateWidgetSettings, team(), input);
 
-const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [], onPortal: true, aiFirst: true };
+const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [], onPortal: true, aiFirst: true, popup: false };
 
 test("the launcher starts as the green chat bubble named Feedback, bottom right, without links; Home shows every part, in its own words", async () => {
   expect(await call(getWidgetSettings, team(), {})).toEqual(DEFAULTS);
@@ -46,6 +46,7 @@ test("the team sets the label, colour, corner and up to 5 https links; each chan
     hidden: [],
     onPortal: true,
     aiFirst: true,
+    popup: false,
   });
   expect(await update({ label: "Ideas" })).toMatchObject({ label: "Ideas", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status" }, { label: "Docs" }] });
   // Picking the brand green (or null) is the default again, with its dark-mode shade.
@@ -155,6 +156,7 @@ test("the app's form saves the settings, skipping empty link rows and refusing h
     // The form's switch for the portal, left off; AI first's isn't on this form (no aiFirstShown), so it stays.
     onPortal: false,
     aiFirst: true,
+    popup: false,
   });
   // With Home's fields, its heading, greeting and the parts switched on; the rest are turned off.
   const withHome = form([]);
@@ -251,4 +253,21 @@ test("a new message in Messages goes to the AI first unless the team turns it of
   await update({ aiFirst: true });
   expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
   expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: true });
+});
+
+test("a new announcement pops up by the launcher only once the team turns it on; the form's switch sets it", async () => {
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ popup: false });
+  expect(await update({ popup: true })).toMatchObject({ popup: true });
+  expect(await update({ label: "Help" })).toMatchObject({ popup: true });
+  actAs(owner);
+  const data = new FormData();
+  data.set("label", "Help");
+  data.set("color", "#5b21b6");
+  data.set("position", "bottom-right");
+  // Switched off on the form, it's off.
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ popup: false });
+  data.set("popup", "on");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ popup: true });
 });

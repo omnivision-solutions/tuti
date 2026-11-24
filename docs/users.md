@@ -47,3 +47,31 @@ the users with their address, once it's verified.
 `GET /api/v1/users` lists them by name (`q` finds them by name, email or id; `limit` and `cursor`
 page through them), and `GET /api/v1/users/{id}` gets one, each with their properties and the
 `groups` (keys) they're in now.
+
+## Deleting users
+
+When someone deletes their account in your app, or asks to be forgotten, `DELETE /api/v1/users/{id}`
+with a read and write key (`users.delete`) removes them from Tuti too:
+
+- Their name, email, avatar and properties go, as do their votes (vote counts follow), the posts
+  they follow, their comment likes and changelog reactions, email preferences and this project's changelog email
+  subscription for their address.
+- They're signed out at once: portal sessions end and widget tokens stop working.
+- What they wrote stays for your team, shown as by **Deleted user**: their posts, comments and
+  support conversations (with those started by email from their address, verified), with their
+  email address taken off them, so replies are no longer emailed to them.
+- The same id signing in or synced again later is a new, empty user.
+- An id there's no user with is `404`.
+
+While their address is still someone else's too (another of your users with it, such as a shared
+mailbox, or a portal account that verified it), nothing that goes by the address is changed: their
+changelog subscription and messages from it stay, and conversations started by email from it stay
+with the address, unless they also wrote in one from the widget: that one is anonymised like the
+rest of theirs.
+
+Tuti knows only the address you gave them last. An email they sent from an earlier one (before a
+sync changed it) is in the thread as from someone else, and keeps that address; so does a
+conversation they started by email from it.
+
+An account someone made on your portal another way (an email link, a password) is theirs, not
+your app's, and isn't touched.

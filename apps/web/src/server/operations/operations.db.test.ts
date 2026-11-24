@@ -112,6 +112,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "groups.delete": () => ({ group: "beta" }),
   "users.list": () => ({}),
   "users.get": () => ({ user: "matrix-user" }),
+  "users.delete": () => ({ user: "matrix-user" }),
   // Like groups.create: admins only in the app.
   "users.sync": () => ({ users: [{ id: "matrix-user", properties: { plan: "pro" } }, { id: "matrix-new", email: "e2e-matrix-user@example.com" }] }),
   "posts.list": () => ({}),

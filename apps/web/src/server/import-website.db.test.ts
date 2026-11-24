@@ -26,6 +26,7 @@ vi.mock("node:dns/promises", async (original) => {
 /** Importing a public help center by its address (docs/plan.md, Import a public help center by URL), against a local static site. */
 
 const budgetMs = contentBudget.ms;
+const pace = { ...crawlPace, ms: 0 };
 let site: HelpCenterFake;
 let s3: S3Fake;
 let owner: TestUser;
@@ -118,6 +119,26 @@ test("a help center's pages come across as drafts, in collections from its folde
   // robots.txt's closed folder, and pages outside the address, aren't read.
   expect(site.requests).not.toContain("/docs/private/secret");
   expect(site.requests).not.toContain("/blog/launch");
+});
+
+test("the site is asked at its pace all through: from one page of the import to the next too", async () => {
+  // A clock only the pace's waits move: each request but the first waits the whole pace after the one before it.
+  let clock = Date.now();
+  const waits: number[] = [];
+  const wait = async (ms: number) => {
+    waits.push(ms);
+    clock += ms;
+  };
+  Object.assign(crawlPace, { ms: 300, now: () => clock, wait });
+  crawlPace.sites.clear();
+  try {
+    expect(await importSite()).toMatchObject({ state: "done" });
+  } finally {
+    Object.assign(crawlPace, pace);
+    crawlPace.sites.clear();
+  }
+  expect(waits.length).toBeGreaterThan(10);
+  expect(waits.slice(1).filter((ms) => ms !== 300)).toEqual([]);
 });
 
 test("old paths never take a redirect the portal has, nor one past its 200", async () => {

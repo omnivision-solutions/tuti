@@ -1,5 +1,6 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { codeChangesSettings, type JobKey, jobs } from "@tuti/shared";
+import { codeChange, handlers, importStep } from "@tuti/jobs";
+import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tuti/shared";
 
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
 type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: number; maxSeconds: number }; concurrencyKey?: string };
@@ -7,8 +8,19 @@ type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: 
 /** How long a queued code change may wait for its turn before Hatchet gives up on it (its default is 5 minutes). */
 const CODE_CHANGE_QUEUE = "24h" as const;
 
-/** How long one page of an import may take (Hatchet's default is 60 seconds): Featurebase's rate limit can hold it up. */
-const IMPORT_STEP_TIMEOUT = "5m" as const;
+/**
+ * How long an import's run may take (Hatchet's default is 60 seconds): it goes from page to page for 10 minutes
+ * (@tuti/jobs IMPORT_RUN), and its last page may take 3 to read (the source's rate limit can hold it up) and, at
+ * worst, 3 tries of a minute each to save (imports.ts `locked`): 20 minutes leaves room for both.
+ */
+const IMPORT_STEP_TIMEOUT = "20m" as const;
+/**
+ * Imports' runs at once on the whole server: each holds a worker slot for its ten minutes, and the worker's other jobs
+ * (emails, webhooks) need theirs. The rest wait their turn, up to an hour rather than Hatchet's 5 minutes; one Hatchet
+ * gives up on is queued again when the import is found stuck.
+ */
+const IMPORT_RUNS = 10;
+const IMPORT_QUEUE = "1h" as const;
 
 /**
  * How long indexing an API reference may take (Hatchet's default is 60 seconds): a spec of thousands of operations is
@@ -40,9 +52,43 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
           ],
         }
       : own && { concurrency: own }),
-    ...(key === "importStep" && { executionTimeout: IMPORT_STEP_TIMEOUT }),
+    ...(key === "importStep" && {
+      executionTimeout: IMPORT_STEP_TIMEOUT,
+      scheduleTimeout: IMPORT_QUEUE,
+      concurrency: [...(own ? [own] : []), { expression: "'import-step'", maxRuns: IMPORT_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+    }),
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
     ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
   };
+}
+
+/** What a task's function is told of its run by Hatchet's context. */
+type Run = { retryCount: () => number; cancelled: boolean };
+
+/**
+ * A job's function, as its Hatchet task runs it. A code change's run is told whether it's the last try: until then a
+ * failure leaves it analysing (it's retried). An import's run stops going from page to page (it queues the next run)
+ * once the worker is stopping, or Hatchet has given up on the run.
+ */
+export function taskFn(key: JobKey, retries: number, stopping: () => boolean) {
+  return (input: unknown, ctx: Run) =>
+    key === "codeChange"
+      ? codeChange(input as JobInput<"codeChange">, log, { lastTry: ctx.retryCount() >= retries })
+      : key === "importStep"
+        ? importStep(input as JobInput<"importStep">, log, () => stopping() || ctx.cancelled)
+        : handlers[key](input as never, log);
+}
+
+/**
+ * Whether the worker has been asked to stop (a deploy's SIGTERM, Ctrl-C): Hatchet's worker then waits for its runs to
+ * end. Listened for once Hatchet's worker has its own listeners (they're what exits): alone, these would keep the
+ * process from stopping.
+ */
+export function stopSignal(on: Pick<NodeJS.Process, "once"> = process) {
+  let stopping = false;
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    on.once(signal, () => (stopping = true));
+  }
+  return () => stopping;
 }
