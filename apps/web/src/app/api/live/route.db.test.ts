@@ -105,6 +105,13 @@ test("the web app's cookie stream names the conversation too, and still answers 
   expect((await open({ query: `?project=${project.slug}`, slug: null })).status).toBe(404);
 });
 
+test("the web app behind a self-hoster's password prompt keeps its cookie stream: a Basic header isn't the app's", async () => {
+  actAs(owner);
+  const stream = await open({ token: "Basic b3duZXI6cGFzc3dvcmQ=", query: `?project=${project.slug}`, slug: null });
+  expect(stream.status).toBe(200);
+  expect(await stream.next()).toBe(ready);
+});
+
 test("refused as /api/v1 refuses: another team's project, no project, no valid session", async () => {
   const outsider = await signUp("Otto Outsider");
   const refusal = async (sent: Parameters<typeof open>[0]) => {
@@ -126,8 +133,8 @@ test("refused as /api/v1 refuses: another team's project, no project, no valid s
 test("a cookie is never a session on the app's path: a page can't use its visitor's", async () => {
   // The owner's cookie, on the request and as next/headers reads it, beside a token that isn't a session.
   actAs(owner);
-  for (const token of ["Bearer nonsense", "Basic b3duZXI6cGFzc3dvcmQ="]) {
-    const stream = await open({ token, cookie: owner.cookie, query: `?project=${project.slug}` });
+  for (const sent of [{ token: "Bearer nonsense" }, { token: "Bearer nonsense", slug: null }, { token: "Basic b3duZXI6cGFzc3dvcmQ=" }]) {
+    const stream = await open({ ...sent, cookie: owner.cookie, query: `?project=${project.slug}` });
     expect(stream.status).toBe(401);
     expect(stream.response.headers.get("set-cookie")).toBeNull();
   }

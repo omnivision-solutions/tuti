@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { apiError, authenticateTeammate, sendsSession } from "@/server/api-auth";
+import { apiError, authenticateTeammate, PROJECT_HEADER, sendsSession } from "@/server/api-auth";
 import { inboxStream } from "@/server/live";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -11,11 +11,12 @@ import { getSession } from "@/server/session";
  *
  * Two ways in. The web app's pages: the session cookie and `?project=<slug>`, 404 for anyone else. The mobile app:
  * its session as /api/v1 takes it, `Authorization: Bearer <session token>` and the slug in `Tuti-Project`, refused as
- * /api/v1 refuses (lib/app-sign-in.ts has the app's contract). A request with an Authorization header is only ever
- * the app's: its cookies aren't read, and nothing it gets back sets one.
+ * /api/v1 refuses (lib/app-sign-in.ts has the app's contract). A request with a session's token or the project header,
+ * which no page's EventSource sends, is only ever the app's: its cookies aren't read, and nothing it gets back sets one.
+ * Any other Authorization header (a self-hoster's proxy asking for a password) leaves the web's request on its cookie.
  */
 export async function GET(request: Request) {
-  const viewer = request.headers.has("authorization") ? await teammate(request) : await signedIn(request);
+  const viewer = sendsSession(request) || request.headers.has(PROJECT_HEADER) ? await teammate(request) : await signedIn(request);
   if (viewer instanceof Response) {
     return viewer;
   }
