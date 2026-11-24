@@ -122,7 +122,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "comments.create": () => ({ number: 1, body: "From the matrix" }),
   "comments.like": (f) => ({ number: 1, id: f.commentId, liked: true }),
   "posts.update": () => ({ number: 1, status: "planned" }),
-  "conversations.list": () => ({ status: "open" }),
+  "conversations.list": () => ({ status: "open", q: "matrix" }),
   "companies.list": () => ({}),
   "conversations.get": () => ({ number: 1 }),
   "conversations.markRead": () => ({ number: 1, seen: new Date().toISOString() }),

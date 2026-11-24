@@ -79,7 +79,18 @@ const conversationFields = {
   url: z.string().describe("Its page in Tuti's inbox").meta({ examples: ["https://tuti.example.com/app/acme/inbox/12"] }),
 };
 
-const conversationOutput = z.object(conversationFields).meta({ id: "Conversation", description: "A conversation between someone and the team" });
+const matchOutput = z
+  .object({
+    messageId: z.string().describe("The message's id, as conversations.get lists it").meta({ examples: ["cm3k9x2ab0002qz8h9c4b7a3d"] }),
+    author: z.enum(["user", "team", "ai", "tuti"]).describe("Who wrote it").meta({ examples: ["user"] }),
+    note: z.boolean().describe("Whether it's an internal note").meta({ examples: [false] }),
+    snippet: z
+      .string()
+      .describe("Its text around the first place it has the search text, on one line, up to 160 characters; … where it's cut")
+      .meta({ examples: ["…tried twice and the export button does nothing on the reports page. Chrome on a Mac, if that…"] }),
+    createdAt: at("When it was written"),
+  })
+  .meta({ id: "ConversationMatch", description: "The message a search found a conversation by" });
 
 const attachmentOutput = z
   .object({
@@ -268,16 +279,107 @@ async function teamMemberByEmail(projectId: string, email: string) {
   return member.userId;
 }
 
+/** The longest text a search takes. */
+export const MAX_SEARCH_LENGTH = 200;
+
+/** Text for a `contains` (a LIKE): its wildcards, and the escape, typed as themselves. */
+const likeText = (q: string) => q.replace(/[\\%_]/g, "\\$&");
+
+/**
+ * The conversations a search for `q` finds, whatever the case: the one with that number (`12` or `#12`), and those with
+ * the text in their subject, in who they're with as the Inbox shows them (conversationPerson's name and email; their
+ * company, conversationCompanies'), or in a message or note. For the team only: notes are theirs. The trigram index on
+ * messages' text answers the last (its project's messages alone under three characters).
+ * ponytail: an address-linked company is found through at most 1,000 of the project's users at companies with the text;
+ * join conversations to identities in SQL if a project outgrows that.
+ */
+export async function conversationsMatching(projectId: string, q: string): Promise<Prisma.ConversationWhereInput> {
+  const has = { contains: likeText(q), mode: "insensitive" as const };
+  const atCompany = { path: ["company"], string_contains: likeText(q), mode: "insensitive" as const };
+  const asNumber = /^#?\d{1,10}$/.test(q) ? Number(q.replace("#", "")) : null;
+  // The project's users at such a company, by address: someone writing from a verified one is at theirs.
+  const colleagues = await prisma.ssoIdentity.findMany({
+    where: { projectId, email: { not: null }, properties: atCompany },
+    distinct: ["email"],
+    take: 1000,
+    select: { email: true },
+  });
+  const addresses = colleagues.map((colleague) => colleague.email!);
+  return {
+    OR: [
+      // A number as conversations have them (a 32-bit integer).
+      ...(asNumber !== null && asNumber <= 2_147_483_647 ? [{ number: asNumber }] : []),
+      { subject: has },
+      // Someone known by their address alone: the name it came with only once it's verified, as shown.
+      { userId: null, email: has },
+      { userId: null, emailVerified: true, name: has },
+      // An account: its name; the address your app gave (the account's own is a placeholder then, as a deleted one's is).
+      { user: { OR: [{ name: has }, { ssoIdentity: { OR: [{ email: has }, { properties: atCompany }] } }, { ssoIdentity: null, deletedAt: null, email: has }] } },
+      ...(addresses.length > 0
+        ? [
+            { userId: null, emailVerified: true, email: { in: addresses } },
+            { user: { ssoIdentity: null, emailVerified: true, email: { in: addresses }, teamMemberships: { none: { projectId } } } },
+          ]
+        : []),
+      // With its project, so the search reads this project's messages only.
+      { messages: { some: { projectId, body: has } } },
+    ],
+  };
+}
+
+/** How much of a message a search's snippet shows, and how much of that comes before the text found. */
+const SNIPPET_LENGTH = 160;
+const SNIPPET_LEAD = 30;
+
+/**
+ * Where a search for `q` found each of these conversations (ids) in a message: the newest message or note with the text,
+ * and its text around the first place it has it, on one line. By conversation id; none for one found by its number,
+ * subject or person alone.
+ */
+export async function matchedMessages(ids: string[], q: string) {
+  const rows = ids.length
+    ? await prisma.$queryRaw<{ conversationId: string; id: string; author: MessageAuthor; note: boolean; createdAt: Date; text: string; from: number; length: number }[]>`
+        SELECT c.id AS "conversationId", m.id, m.author, m.note, m."createdAt", m.length, m."from", substring(m.body FROM m."from" FOR ${SNIPPET_LENGTH}) AS text
+        FROM unnest(${ids}::text[]) AS c(id)
+        CROSS JOIN LATERAL (
+          SELECT id, author, note, "createdAt", body, length(body) AS length, greatest(position(lower(${q}) IN lower(body)) - ${SNIPPET_LEAD}, 1) AS "from"
+          FROM conversation_message
+          WHERE "conversationId" = c.id AND body ILIKE ${`%${likeText(q)}%`} ORDER BY "createdAt" DESC, id DESC LIMIT 1
+        ) m`
+    : [];
+  return new Map(
+    rows.map((row) => [
+      row.conversationId,
+      {
+        messageId: row.id,
+        author: row.author.toLowerCase(),
+        note: row.note,
+        snippet: `${row.from > 1 ? "…" : ""}${row.text.replace(/\s+/g, " ").trim()}${row.from + SNIPPET_LENGTH <= row.length ? "…" : ""}`,
+        createdAt: row.createdAt,
+      },
+    ]),
+  );
+}
+
 export const listConversations = defineOperation({
   name: "conversations.list",
   title: "List conversations",
-  summary: "List conversations, latest message first, a page at a time. Spam is left out unless asked for.",
+  summary: "List conversations, latest message first, a page at a time, or search them with `q`. Spam is left out unless asked for.",
   method: "GET",
   path: "/conversations",
   scope: "read",
   access: "team",
   errors: [404],
   input: z.object({
+    q: z
+      .string()
+      .trim()
+      .max(MAX_SEARCH_LENGTH)
+      .optional()
+      .describe(
+        "Only those with this text, whatever the case, in their subject, their person's name, email or company, or a message or note; a number (`12` or `#12`) finds that conversation too. With the other filters: every status unless `status` says one",
+      )
+      .meta({ examples: ["refund"] }),
     status: z.enum(CONVERSATION_STATUSES).optional().describe("Only those with this status").meta({ examples: ["open"] }),
     assignee: z
       .union([z.literal("none"), z.email()])
@@ -292,7 +394,18 @@ export const listConversations = defineOperation({
   }),
   output: z
     .object({
-      conversations: z.array(conversationOutput).describe("The conversations, latest message first"),
+      conversations: z
+        .array(
+          z
+            .object({
+              ...conversationFields,
+              match: matchOutput
+                .nullable()
+                .describe("With `q`: the newest message or note with the text; null when none has it (its number, subject or person does), and without `q`"),
+            })
+            .meta({ id: "Conversation", description: "A conversation between someone and the team; in a search, with the message it was found by" }),
+        )
+        .describe("The conversations, latest message first"),
       nextCursor: z.string().nullable().describe("The next page's `cursor`; null on the last page").meta({ examples: ["25"] }),
     })
     .describe("A page of conversations"),
@@ -312,6 +425,7 @@ export const listConversations = defineOperation({
         // past the plan's history.
         AND: [
           visibleConversations(await historySince(projectId)),
+          ...(input.q ? [await conversationsMatching(projectId, input.q)] : []),
           ...(input.snoozed === true ? [{ snoozedUntil: { gt: new Date() } }, { status: { not: "CLOSED" as const } }, { spam: false }] : []),
           ...(input.snoozed === false ? [awake()] : []),
         ],
@@ -322,8 +436,10 @@ export const listConversations = defineOperation({
       select: conversationSelect,
     });
     const slug = await projectSlug(projectId);
+    const page = rows.slice(0, input.limit);
+    const matches = input.q ? await matchedMessages(page.map((row) => row.id), input.q) : null;
     return {
-      conversations: rows.slice(0, input.limit).map((row) => view(row, slug)),
+      conversations: page.map((row) => ({ ...view(row, slug), match: matches?.get(row.id) ?? null })),
       nextCursor: rows.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },

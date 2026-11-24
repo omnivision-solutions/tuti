@@ -1410,6 +1410,10 @@ model ConversationMessage {
   attachments  ConversationAttachment[]
 
   @@index([conversationId, createdAt])
+  /// The Inbox's search (conversations.list's `q`): a project's messages, and trigrams of their text (pg_trgm), so
+  /// `contains` doesn't read every message. Searches of one or two characters read the project's.
+  @@index([projectId])
+  @@index([body(ops: raw("gin_trgm_ops"))], type: Gin, map: "conversation_message_body_trgm_idx")
   @@map("conversation_message")
 }
 
