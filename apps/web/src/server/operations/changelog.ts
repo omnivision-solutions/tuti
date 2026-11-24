@@ -639,11 +639,11 @@ export const draftChangelogEntry = defineOperation({
     const listed = new Map(reader.posts.map(({ post }) => [post.number, post]));
     const asked = posts.map((post) => ({ title: post.title, url: post.url, votes: listed.get(post.number)!.voteCount, id: listed.get(post.number)!.id }));
     const pullRequests = await withAutopilotNotes(projectId, entry.pullRequests, asked);
-    const { screenshotMarkers, ...style } = await writingStyle(projectId, entry.id);
+    const style = await writingStyle(projectId, entry.id);
     const ai = await aiOrRefuse(projectId, "changelog");
     let reply: string;
     try {
-      reply = await complete({ ...releaseNotesPrompt({ posts: asked, pullRequests, text: entry.body, style, screenshotMarkers }), ...ai });
+      reply = await complete({ ...releaseNotesPrompt({ posts: asked, pullRequests, text: entry.body, style }), ...ai });
     } catch (error) {
       log.warn("AI changelog draft failed", { projectId, number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
@@ -856,15 +856,15 @@ export const MAX_STYLE_EXAMPLES = 3;
 
 /** The team's tone notes and example entries (the ones still published, in the order picked). */
 async function changelogStyle(projectId: string) {
-  const { changelogTone, changelogExampleIds, changelogScreenshotMarkers } = await prisma.project.findUniqueOrThrow({
+  const { changelogTone, changelogExampleIds } = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { changelogTone: true, changelogExampleIds: true, changelogScreenshotMarkers: true },
+    select: { changelogTone: true, changelogExampleIds: true },
   });
   const entries = await prisma.changelogEntry.findMany({
     where: { projectId, id: { in: changelogExampleIds }, publishedAt: { not: null } },
     select: { id: true, number: true, title: true, body: true, content: true },
   });
-  return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)), screenshotMarkers: changelogScreenshotMarkers };
+  return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)) };
 }
 
 /**
@@ -873,7 +873,7 @@ async function changelogStyle(projectId: string) {
  * published entries: its own, so not Home's samples, and not the entry being written.
  */
 async function writingStyle(projectId: string, entryId: string) {
-  const { tone, examples, screenshotMarkers } = await changelogStyle(projectId);
+  const { tone, examples } = await changelogStyle(projectId);
   const entries =
     examples.length > 0
       ? examples
@@ -883,7 +883,7 @@ async function writingStyle(projectId: string, entryId: string) {
           take: MAX_STYLE_EXAMPLES,
           select: { title: true, body: true, content: true },
         });
-  return { tone, examples: entries.map((entry) => ({ title: entry.title, markdown: toMarkdown(displayDoc(entry)) })), screenshotMarkers };
+  return { tone, examples: entries.map((entry) => ({ title: entry.title, markdown: toMarkdown(displayDoc(entry)) })) };
 }
 
 const styleOutput = z
@@ -897,17 +897,12 @@ const styleOutput = z
         }),
       )
       .describe("Published entries to write like, in the order picked"),
-    screenshotMarkers: z
-      .boolean()
-      .describe("AI drafts mark where a screenshot belongs with a line \"[Screenshot: what it should show]\", to replace with the picture before publishing")
-      .meta({ examples: [false] }),
   })
   .meta({ id: "ChangelogStyle", description: "The changelog's writing style: the tone notes and example entries AI drafts follow" });
 
-const styleView = ({ tone, examples, screenshotMarkers }: Awaited<ReturnType<typeof changelogStyle>>) => ({
+const styleView = ({ tone, examples }: Awaited<ReturnType<typeof changelogStyle>>) => ({
   tone,
   examples: examples.map(({ number, title }) => ({ number, title })),
-  screenshotMarkers,
 });
 
 export const getChangelogStyle = defineOperation({
@@ -945,11 +940,6 @@ export const updateChangelogStyle = defineOperation({
       .optional()
       .describe(`Up to ${MAX_STYLE_EXAMPLES} published entries to write like, by number: replaces the list`)
       .meta({ examples: [[3]] }),
-    screenshotMarkers: z
-      .boolean()
-      .optional()
-      .describe("Whether AI drafts mark where a screenshot belongs (\"[Screenshot: what it should show]\"); an entry with a marker left can't be published")
-      .meta({ examples: [true] }),
   }),
   output: styleOutput.describe("The writing style now"),
   example: { tone: "Friendly, short sentences, no jargon. Address the reader as you.", examples: [3] },
@@ -971,7 +961,6 @@ export const updateChangelogStyle = defineOperation({
       where: { id: projectId },
       data: {
         ...(input.tone !== undefined && { changelogTone: input.tone }),
-        ...(input.screenshotMarkers !== undefined && { changelogScreenshotMarkers: input.screenshotMarkers }),
         ...(exampleIds && { changelogExampleIds: exampleIds }),
       },
     });

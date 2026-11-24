@@ -47,7 +47,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   acceptChangelogRewrite,
@@ -891,13 +890,10 @@ export function ChangelogStyleForm({
   projectSlug,
   tone,
   examples,
-  screenshotMarkers,
   published,
 }: {
   projectSlug: string;
   tone: string;
-  /** AI drafts mark where a screenshot belongs. */
-  screenshotMarkers: boolean;
   /** The entries picked as examples, by number. */
   examples: number[];
   /** Published entries, newest first; `sample`: one of Home's sample updates, which AI never follows unpicked. */
@@ -921,22 +917,13 @@ export function ChangelogStyleForm({
     }
     toneWas.current = tone;
   }, [tone]);
-  // …and the screenshots' switch.
-  const [marking, setMarking] = useState(screenshotMarkers);
-  const [markingWas, setMarkingWas] = useState(screenshotMarkers);
-  if (markingWas !== screenshotMarkers) {
-    setMarkingWas(screenshotMarkers);
-    if (marking === markingWas) {
-      setMarking(screenshotMarkers);
-    }
-  }
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
   // The dialog, opened, has had its pick.
   const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
-    saved: [["tone", tone], ...examples.map((number): [string, string] => ["examples", String(number)]), ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : [])],
+    saved: [["tone", tone], ...examples.map((number): [string, string] => ["examples", String(number)])],
     save: async (prev, formData) => {
       const result = await saveChangelogStyle(projectSlug, prev, formData);
       if (result.error) {
@@ -951,7 +938,7 @@ export function ChangelogStyleForm({
   // picked, so the same examples are never a change to save.
   const chosen = published.filter((entry) => picked.includes(entry.number));
   // Chips come and go without anyone typing: the form is told, for "Save changes".
-  useFieldChanged(pick, `${chosen.map((entry) => entry.number).join()} ${marking}`);
+  useFieldChanged(pick, chosen.map((entry) => entry.number).join());
   // No more to pick: 3 are, or every published entry is.
   const full = chosen.length >= Math.min(MAX_EXAMPLES, published.length);
   const words = query.trim().toLowerCase();
@@ -1037,15 +1024,6 @@ export function ChangelogStyleForm({
             </Button>
           </div>
         )}
-      </SettingRow>
-      <SettingRow
-        label="Mark where screenshots go"
-        htmlFor="style-screenshots"
-        description="A draft leaves a line where a picture belongs, to replace before publishing."
-        info="AI can't take screenshots. With this on, a draft has a line like [Screenshot: the new theme menu] where one would help, and the entry can't be published while such a line is left."
-        inline
-      >
-        <Switch id="style-screenshots" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
       </SettingRow>
       {/* Outside the form in the page (a portal): typing in its search isn't a change to save. */}
       <Dialog open={picking} onOpenChange={setPicking}>

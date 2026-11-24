@@ -238,28 +238,11 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(dialog).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
 
-  // Screenshots are the team's to add: a draft can mark where one goes. Off until they ask; what it means is behind its ⓘ.
-  const screenshots = team.getByRole("switch", { name: "Mark where screenshots go" });
-  await expect(screenshots).not.toBeChecked();
-  const marking = team.locator('[data-slot="setting-row"]').filter({ hasText: "Mark where screenshots go" });
-  await expect(marking.getByText("A draft leaves a line where a picture belongs, to replace before publishing.")).toBeVisible();
-  await marking.getByRole("button", { name: "More about this setting" }).click();
-  await expect(team.getByText(/^AI can't take screenshots\. With this on, a draft has a line like \[Screenshot: the new theme menu\]/)).toBeVisible();
-  await team.keyboard.press("Escape");
-  await screenshots.check();
-  await checkpoint(team, "team-settings-changelog-screenshots");
-
   // Saved from the header, and there after a reload.
   await save.click();
   await expect(team.getByText("Changelog saved")).toBeVisible();
   await team.reload();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
-  await expect(screenshots).toBeChecked();
-  await expect(save).toBeDisabled();
-  // Turned off again, it's a change to save; on again, none.
-  await screenshots.uncheck();
-  await expect(save).toBeEnabled();
-  await screenshots.check();
   await expect(save).toBeDisabled();
   // A chip removed is a change to save; the same one picked again is none.
   await team.getByRole("button", { name: "Remove Faster month view" }).click();
@@ -399,23 +382,18 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await expect(save(team)).toBeDisabled();
 
   // Saved in another tab while this one has nothing edited: this one shows it, with nothing to save.
-  const screenshots = (page: typeof team) => page.getByRole("switch", { name: "Mark where screenshots go" });
   await instructions(other).fill("From the other tab.");
   await pickExample(other, "Agenda view");
-  await screenshots(other).check();
   await save(other).click();
   await expect(other.getByText("Changelog saved")).toBeVisible();
   await hearAgain("Best", "Claude Opus 5.5");
   await expect(instructions(team)).toHaveValue("From the other tab.");
   await expect(chips(team)).toHaveText(["Agenda view"]);
-  await expect(screenshots(team)).toBeChecked();
   await expect(save(team)).toBeDisabled();
 
   // Typed here, then an example picked there: the instructions typed stay, the examples follow, and Save sends both.
   await instructions(team).fill("Typed here.");
   await expect(save(team)).toBeEnabled();
-  // The switch changed here and not saved stays as it's set here, too.
-  await screenshots(team).uncheck();
   await pickExample(other, "Faster month view");
   await expect(other.getByText("Changelog saved")).toHaveCount(0, { timeout: 15_000 });
   await save(other).click();
@@ -423,10 +401,7 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await hearAgain("Balanced", "Claude Haiku 5.5");
   await expect(instructions(team)).toHaveValue("Typed here.");
   await expect(chips(team)).toHaveText(["Agenda view", "Faster month view"]);
-  await expect(screenshots(team)).not.toBeChecked();
   await expect(save(team)).toBeEnabled();
-  // Set back to what's saved, it's no change.
-  await screenshots(team).check();
   // Typed back to what's saved, there's nothing to save.
   await instructions(team).fill("From the other tab.");
   await expect(save(team)).toBeDisabled();
