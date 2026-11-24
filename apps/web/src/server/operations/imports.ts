@@ -25,6 +25,7 @@ const importSelect = {
   error: true,
   createdAt: true,
   updatedAt: true,
+  progressAt: true,
   resumeAt: true,
   finishedAt: true,
   startedBy: { select: { name: true } },

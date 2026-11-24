@@ -55,8 +55,10 @@ const sealedKey = () => sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY);
 /** Earlier tests' imports left running, out of the way: resume-imports takes up every project's. */
 const alone = () => prisma.dataImport.updateMany({ where: { state: "RUNNING" }, data: { state: "FAILED", apiKey: null } });
 /** An import's row, as if one had started (running, with the key), at `step`. */
-const running = (data: { apiKey?: string; step?: string; updatedAt?: Date; tries?: number } = {}) =>
-  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts: ["contacts"], step: "contacts", ...data } });
+const running = (data: { apiKey?: string; step?: string; updatedAt?: Date; tries?: number; progressAt?: Date } = {}) =>
+  prisma.dataImport.create({
+    data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts: ["contacts"], step: "contacts", progressAt: data.updatedAt, ...data },
+  });
 
 test("every part the app offers can be imported", () => {
   expect(Object.keys(STEPS)).toEqual(expect.arrayContaining(Object.keys(IMPORT_PARTS)));
@@ -427,6 +429,20 @@ test("a stuck import (its job went away) is resumed by resume-imports, nobody lo
   });
   // Only the stuck one's page was read.
   expect(fake.requests.filter((request) => request.startsWith("GET /v2/contacts"))).toHaveLength(1);
+});
+
+test("an import resumed again and again (its runs can't be queued) but saving no page is still failed after a day, its key cleared", async () => {
+  await alone();
+  // Resumed eight minutes ago, as it has been all day: no page saved since yesterday.
+  const resumed = await running({ updatedAt: new Date(Date.now() - 8 * 60_000), progressAt: new Date(Date.now() - 25 * 60 * 60_000) });
+  expect(await handlers.failStaleImports({}, log)).toEqual({ failed: 1 });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: resumed.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
+
+  // A page saved moves it on: one saving pages isn't failed, however long it has run.
+  const saving = await running({ progressAt: new Date(Date.now() - 25 * 60 * 60_000) });
+  await handlers.importStep({ importId: saving.id }, log);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: saving.id } })).toMatchObject({ state: "DONE" });
+  expect((await prisma.dataImport.findUniqueOrThrow({ where: { id: saving.id } })).progressAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
 });
 
 test("one that hasn't moved for a day is failed when it's looked at, not resumed: inline installs run no daily job", async () => {

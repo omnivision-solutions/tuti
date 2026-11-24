@@ -107,7 +107,10 @@ export const IMPORT_STUCK_MS = 8 * 60_000;
 export const IMPORT_WAITS = { ms: [1, 2, 5, 15, 30, 60].map((minutes) => minutes * 60_000) };
 /** The longest a source may ask an import to wait: one asking for more fails it, so it never waits past STALE_MS. */
 const LONGEST_WAIT_MS = 6 * 60 * 60_000;
-/** One that hasn't moved for a day is failed by the daily fail-stale-imports (or, inline, when it's looked at), its key cleared. */
+/**
+ * One that hasn't saved a page for a day (DataImport.progressAt: resuming it, however often, isn't progress) is failed
+ * by fail-stale-imports (or when it's looked at), its key cleared.
+ */
 const STALE_MS = 24 * 60 * 60_000;
 /**
  * How long a page may spend reading its source, retries and their waits included, so it has time left to save (a run's
@@ -163,8 +166,8 @@ export async function importsSettled(): Promise<void> {
 export const importDue = (row: Pick<DataImport, "state" | "updatedAt" | "resumeAt">) =>
   row.state === "RUNNING" && (row.resumeAt ? row.resumeAt.getTime() <= Date.now() : Date.now() - row.updatedAt.getTime() > IMPORT_STUCK_MS);
 
-/** Whether a running import hasn't moved for a day: fail-stale-imports fails it. */
-export const importStale = (row: Pick<DataImport, "state" | "updatedAt">) => row.state === "RUNNING" && Date.now() - row.updatedAt.getTime() > STALE_MS;
+/** Whether a running import hasn't saved a page for a day: fail-stale-imports fails it. */
+export const importStale = (row: Pick<DataImport, "state" | "progressAt">) => row.state === "RUNNING" && Date.now() - row.progressAt.getTime() > STALE_MS;
 
 /** Resumes an import whose wait is over, or a stuck one, once however many look at once (each claims it by moving it). */
 export async function resumeImport(importId: string, log: JobLogger, options: { wait?: boolean } = {}): Promise<void> {
@@ -397,7 +400,7 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
       await assertStarterAdmin(tx, row);
       await page.save(tx);
       const data = next ? { step: next, cursor: page.next, counts: job.counts } : { state: "DONE" as const, apiKey: null, step: "", cursor: null, counts: job.counts, finishedAt: new Date() };
-      await tx.dataImport.update({ where: { id: row.id }, data: { ...data, resumeAt: null, tries: 0 } });
+      await tx.dataImport.update({ where: { id: row.id }, data: { ...data, resumeAt: null, tries: 0, progressAt: new Date() } });
       return true;
     });
   } catch (error) {
@@ -417,10 +420,10 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
   return saved ? { result: { step: next ?? "done" }, more: next !== null } : ended({ skipped: true });
 }
 
-/** Fails imports that haven't moved for a day (daily), clearing their keys: they can be started again. */
+/** Fails imports that haven't saved a page for a day, clearing their keys: they can be started again. */
 export async function failStaleImports(): Promise<JobResult> {
   const { count } = await prisma.dataImport.updateMany({
-    where: { state: "RUNNING", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
+    where: { state: "RUNNING", progressAt: { lt: new Date(Date.now() - STALE_MS) } },
     data: { state: "FAILED", apiKey: null, error: `It stopped moving for a day. ${AGAIN}`, finishedAt: new Date() },
   });
   return { failed: count };
