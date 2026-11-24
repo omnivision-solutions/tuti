@@ -1400,6 +1400,9 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   await expect(visitorComments.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
   await expect(visitorComments.getByRole("link", { name: "Sign in" })).toBeVisible();
   await checkpoint(visitor, "portal-entry-comments-signed-out");
+  // In the app, a published entry without any says where they'll come from.
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(team.getByRole("region", { name: "Comments" }).getByRole("heading", { name: "No comments yet. Users comment on it on your portal." })).toBeVisible();
 
   // Signed in: they comment, under the reactions.
   const ada = await signUp(browser, portalUrl(slug), "Ada Reader");

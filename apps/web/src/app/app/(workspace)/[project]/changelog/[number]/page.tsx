@@ -10,11 +10,12 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { ChangelogComment, COMMENTS_HEADING } from "@/components/changelog-comment";
+import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
+import { COMMENTS_HEADING } from "@/lib/comment-threads";
 import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
