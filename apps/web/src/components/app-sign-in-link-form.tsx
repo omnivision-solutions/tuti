@@ -15,7 +15,7 @@ export function AppSignInLinkForm({ token, state }: { token: string; state: stri
     <form method="post" action="/app/auth/app-link/open" onSubmit={(event) => (opening ? event.preventDefault() : setOpening(true))}>
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="state" value={state} />
-      <Button type="submit" className="w-full" disabled={opening}>
+      <Button type="submit" className="w-full" disabled={opening} focusableWhenDisabled>
         Open the app
       </Button>
     </form>
