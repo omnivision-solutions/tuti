@@ -19,7 +19,7 @@ const NONE = new Set<string>();
  * What a save answers while the page trades a token: without one the server would act for the portal's session, which may
  * be someone else's. Nothing's sent; what's typed stays, to send once they're signed in.
  */
-const SIGNING_IN = { error: "Signing you in… Try again in a moment." };
+const SIGNING_IN = { error: "Signing you in… Try again in a moment.", waiting: true };
 
 const Commenter = createContext<{
   projectSlug: string;

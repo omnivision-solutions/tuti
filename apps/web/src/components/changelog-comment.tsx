@@ -59,7 +59,8 @@ export function ChangelogComment({
   mediaUrls?: MediaUrls | null;
   /** Saves an edit, and deletes it (the widget's act for whoever the customer's page signed in); the portal's server actions by default. */
   onEdit?: (prev: FormState, formData: FormData) => Promise<FormState>;
-  onDelete?: () => Promise<FormState>;
+  /** `waiting`: refused before anything was sent (the widget, signing someone in): it's still there. */
+  onDelete?: () => Promise<FormState & { waiting?: boolean }>;
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
@@ -124,8 +125,10 @@ export function ChangelogComment({
                           toast.error(result.error);
                           // Deleted meanwhile (another tab, the team): the list as it is now, which takes this comment (and
                           // its Delete) away: the keyboard goes to the heading then, as below.
-                          gone.current = true;
-                          router.refresh();
+                          if (!result.waiting) {
+                            gone.current = true;
+                            router.refresh();
+                          }
                         } else {
                           toast.success("Comment deleted");
                           document.getElementById(COMMENTS_HEADING)?.focus();

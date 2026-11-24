@@ -885,6 +885,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await checkpoint(sam, "widget-entry-commented");
   // They edit it.
   await own.getByRole("button", { name: "Edit your comment" }).click();
+  await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveText("Works with my work calendar too.");
   await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Works with my work and home calendars.");
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(widget.getByText("Comment saved")).toBeVisible();
@@ -892,6 +893,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   // The page signs Sam in again (a fresh token for the same person) while they're editing: what they typed stays, and saves.
   await own.getByRole("button", { name: "Edit your comment" }).click();
   const editing = comments.getByRole("textbox", { name: "Edit your comment" });
+  await expect(editing).toHaveText("Works with my work and home calendars.");
   await editing.fill("Works with all my calendars.");
   // Their own comments read again with the fresh token: `widgetComments(slug, token, 1)` (and the reactions', of the same shape).
   const reread = sam.waitForResponse((response) => !!response.request().headers()["next-action"] && /^\["[^"]+","[^"]+",1\]$/.test(response.request().postData() ?? ""));
@@ -903,6 +905,39 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(own).toContainText("Works with all my calendars.");
   await expect(own.getByRole("button", { name: "Edit your comment" })).toBeVisible();
+  // A comment of theirs with an image (written on their behalf through the API, the image uploaded in the team's editor):
+  // the image shows in its editor too, though the panel adds no images for them.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  const body = owner.getByRole("textbox", { name: "What changed" });
+  const picture = await owner.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], "screen.png", { type: "image/png" }));
+    return transfer;
+  }, [...png(40, 20)]);
+  await body.evaluate((element, transfer) => {
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer as DataTransfer, bubbles: true, cancelable: true }));
+  }, picture);
+  await expect(body.locator("figure img")).toHaveAttribute("src", /.+/);
+  type Node = { type: string; content?: Node[] };
+  const find = (node: Node): Node | undefined => (node.type === "image" ? node : node.content?.map(find).find(Boolean));
+  let image: Node | undefined;
+  await expect.poll(async () => (image = find(JSON.parse((await owner.locator('input[name="content"]').first().inputValue()) || "{}")))).toBeTruthy();
+  await api("/changelog/1/comments", {
+    content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Here's my setup." }] }, image] },
+    author: { id: "app-user-7" },
+  });
+  await sam.reload();
+  await sam.getByRole("button", { name: /^Feedback/ }).click();
+  await widget.getByRole("link", { name: /^What's new/ }).click();
+  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
+  const setup = comments.getByRole("listitem").filter({ hasText: "Here's my setup." });
+  await setup.getByRole("button", { name: "Edit your comment" }).click();
+  const inEditor = comments.getByRole("textbox", { name: "Edit your comment" }).locator("img");
+  await expect.poll(() => inEditor.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  await comments.getByRole("button", { name: "Cancel" }).click();
+  await setup.getByRole("button", { name: "Delete your comment" }).click();
+  await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
+  await expect(setup).toHaveCount(0);
   // Signed in again with the trade held: no token yet, so commenting sends nothing (the server would act for the portal's
   // session, which could be someone else's), and what they typed stays for once it's in.
   let releaseTrade!: () => void;
@@ -922,6 +957,8 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await box.fill("Sent while signing in?");
   await own.getByRole("button", { name: "Edit your comment" }).click();
   const editBox = comments.getByRole("textbox", { name: "Edit your comment" });
+  // (Once it has the comment's text: typing before then would be added to it.)
+  await expect(editBox).toHaveText("Works with all my calendars.");
   await editBox.fill("Edited while signing in?");
   await sam.evaluate(() =>
     (window as unknown as { Tuti: { identify(getToken: () => Promise<string>): void } }).Tuti.identify(() => fetch(`/token${location.pathname}`).then((r) => r.text())),
@@ -963,42 +1000,9 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   const oops = comments.getByRole("listitem").filter({ hasText: "Oops, posted twice." });
   await oops.getByRole("button", { name: "Delete your comment" }).click();
   await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
-  await expect(widget.getByText("Comment deleted")).toBeVisible();
+  await expect(widget.getByText("Comment deleted").last()).toBeVisible();
   await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
   await expect(oops).toHaveCount(0);
-  // A comment of theirs with an image (written on their behalf through the API, the image uploaded in the team's editor):
-  // the image shows in its editor too, though the panel adds no images for them.
-  await owner.goto(`/app/${slug}/changelog/1`);
-  const body = owner.getByRole("textbox", { name: "What changed" });
-  const picture = await owner.evaluateHandle((bytes) => {
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([new Uint8Array(bytes)], "screen.png", { type: "image/png" }));
-    return transfer;
-  }, [...png(40, 20)]);
-  await body.evaluate((element, transfer) => {
-    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer as DataTransfer, bubbles: true, cancelable: true }));
-  }, picture);
-  await expect(body.locator("figure img")).toHaveAttribute("src", /.+/);
-  type Node = { type: string; content?: Node[] };
-  const find = (node: Node): Node | undefined => (node.type === "image" ? node : node.content?.map(find).find(Boolean));
-  let image: Node | undefined;
-  await expect.poll(async () => (image = find(JSON.parse((await owner.locator('input[name="content"]').first().inputValue()) || "{}")))).toBeTruthy();
-  await api("/changelog/1/comments", {
-    content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Here's my setup." }] }, image] },
-    author: { id: "app-user-7" },
-  });
-  await sam.reload();
-  await sam.getByRole("button", { name: /^Feedback/ }).click();
-  await widget.getByRole("link", { name: /^What's new/ }).click();
-  await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
-  const setup = comments.getByRole("listitem").filter({ hasText: "Here's my setup." });
-  await setup.getByRole("button", { name: "Edit your comment" }).click();
-  const inEditor = comments.getByRole("textbox", { name: "Edit your comment" }).locator("img");
-  await expect.poll(() => inEditor.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
-  await comments.getByRole("button", { name: "Cancel" }).click();
-  await setup.getByRole("button", { name: "Delete your comment" }).click();
-  await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
-  await expect(setup).toHaveCount(0);
   await sam.emulateMedia({ colorScheme: "dark" });
   await checkpoint(sam, "widget-entry-comments-dark");
   await sam.setViewportSize({ width: 390, height: 844 });
@@ -1020,13 +1024,29 @@ test("someone a customer's site signs in comments on an update in the widget, ed
     await route.fallback();
   });
   await expect(comments.getByRole("textbox", { name: "Comment" })).toBeVisible();
+  // An edit they'd left open goes too: what they typed isn't left for whoever's next.
+  await own.getByRole("button", { name: "Edit your comment" }).click();
+  await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveText("Works with all my calendars.");
+  await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Half-typed when signed out");
   await sam.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
   await expect.poll(() => signingOut).toBe(true);
-  await expect(comments.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
+  await expect(comments.getByRole("textbox", { name: /comment/i })).toHaveCount(0);
   await expect(own.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+  await expect(own).not.toContainText("Half-typed when signed out");
+  // Their delete refused while signing in earlier wasn't a comment gone: the keyboard isn't sent to the heading.
+  await expect(comments.getByRole("heading", { name: "1 comment" })).not.toBeFocused();
   releaseSignOut();
   await expect(comments.getByText("Sign in to comment.")).toBeVisible();
   await sam.unroute("**/*");
+  // Signed in again, Sam opens Delete's dialog on their comment; then the page switches to someone else.
+  await sam.evaluate(() =>
+    (window as unknown as { Tuti: { identify(getToken: () => Promise<string>): void } }).Tuti.identify(() => fetch(`/token${location.pathname}`).then((r) => r.text())),
+  );
+  // (Once their reactions and comments are read: the hold below is for Bo's.)
+  await expect(widget.getByRole("button", { name: /^React with 🎉/ })).toBeEnabled();
+  await own.getByRole("button", { name: "Delete your comment" }).click();
+  const samsDelete = widget.getByRole("alertdialog", { name: "Delete this comment?" });
+  await expect(samsDelete).toBeVisible();
   // The page switches to someone else: until their own comments are read (held here), nobody's are theirs to edit.
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
@@ -1042,6 +1062,8 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   const bo = ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-8", name: "Bo from Acme", email: `e2e-bo-${slug}@example.com` });
   await sam.evaluate((token) => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => token), bo);
   await expect.poll(() => held).toBe(true);
+  // Sam's dialog is gone with them: never Bo's to press.
+  await expect(samsDelete).toHaveCount(0);
   await expect(own.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
   await expect(comments.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
   release();
@@ -1589,6 +1611,7 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   const hers = comments.getByRole("listitem").filter({ hasText: "Syncs my phone too." });
   await expect(comments.getByRole("listitem").filter({ hasText: "Thanks for reading!" }).getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
   await hers.getByRole("button", { name: "Edit your comment" }).click();
+  await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveText("Syncs my phone too.");
   await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Syncs my phone and tablet too.");
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(hers).toHaveCount(0);
