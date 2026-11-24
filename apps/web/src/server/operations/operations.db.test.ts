@@ -49,6 +49,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.seen": () => ({ at: "2026-10-20T09:00:00Z", author: { id: "matrix-reader" } }),
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
+  "changelog.editSection": () => ({ number: 1, append: true, markdown: "Added by the matrix." }),
   "changelog.draft": () => ({ number: 2 }),
   "changelog.rewrite": () => ({ number: 2, mode: "shorten" }),
   "changelog.publish": () => ({ number: 1 }),

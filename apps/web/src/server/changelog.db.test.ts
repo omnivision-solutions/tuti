@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import {
   createChangelogEntry,
   deleteChangelogEntry,
+  editChangelogSection,
   getChangelogEntry,
   listChangelog,
   publishChangelogEntry,
@@ -271,7 +272,7 @@ describe("changelog entries", () => {
  * `images.origin` once started. /shot.png is an image, /big.png 2 MB, /page.png a page served as one; the rest 404.
  */
 function imageServer() {
-  const images = { origin: "" };
+  const images = { origin: "", s3: undefined as unknown as S3Fake };
   let s3: S3Fake;
   const files = createServer((request, response) => {
     if (request.url?.startsWith("/shot.png")) {
@@ -286,7 +287,7 @@ function imageServer() {
     }
   });
   beforeAll(async () => {
-    s3 = await startS3Fake();
+    s3 = images.s3 = await startS3Fake();
     await new Promise<void>((resolve) => files.listen(0, "127.0.0.1", resolve));
     images.origin = `http://127.0.0.1:${(files.address() as AddressInfo).port}`;
   });
@@ -299,8 +300,133 @@ function imageServer() {
   return images;
 }
 
+describe("an entry's text as Markdown", () => {
+  const text = "Intro.\n\n## Dark mode\n\nOld text.\n\n### Details\n\nFollows your system.\n\n## Search\n\nFaster.";
+  const edit = (input: Parameters<typeof updateChangelogEntry.run>[1]) => call(updateChangelogEntry, as(owner), input);
+  const editSection = (input: { number: number; markdown: string; section?: number | string; append?: boolean; expectedUpdatedAt?: string }) => call(editChangelogSection, as(owner), input);
+
+  test("reads back as it's written, with when it last changed; a list goes without the Markdown", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
+    expect(entry.markdown).toBe(text);
+    const saved = await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: entry.number } } });
+    expect(entry.updatedAt).toBe(saved.updatedAt.toISOString());
+    expect(await call(getChangelogEntry, as(owner), { number: entry.number })).toMatchObject({ markdown: text, updatedAt: entry.updatedAt });
+    const [listed] = (await call(listChangelog, as(owner), { status: "draft" })).entries;
+    expect(listed).toMatchObject({ number: entry.number, updatedAt: entry.updatedAt });
+    expect(listed).not.toHaveProperty("markdown");
+    // Sent back as it came, nothing is lost or added.
+    expect((await edit({ number: entry.number, markdown: entry.markdown })).content).toEqual(entry.content);
+  });
+
+  test("Markdown for one section replaces only it, by its heading or its number; `append` adds at the end", async () => {
+    const { number } = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
+
+    // A section runs to the next heading at its level or above: its sub-heading goes with it.
+    expect((await editSection({ number, section: "dark mode", markdown: "## Dark mode\n\nNew text." })).markdown).toBe("Intro.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
+    // By number: 0 is the text before the first heading, 2 the second heading's.
+    expect((await editSection({ number, section: 0, markdown: "Hello." })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
+    expect((await editSection({ number, section: 2, markdown: "## Search\n\n- Faster\n- Finds typos" })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos");
+    const appended = await editSection({ number, append: true, markdown: "Thanks for reading!" });
+    expect(appended.markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos\n\nThanks for reading!");
+    // The title and the rest are as they were.
+    expect(appended).toMatchObject({ title: "Dark mode", status: "draft" });
+
+    // They say where the Markdown goes: one of them, and a section that's there.
+    await expect(editSection({ number, markdown: "Nowhere" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append: true`, one of them" });
+    await expect(editSection({ number, section: 1, append: true, markdown: "Both" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append: true`, one of them" });
+    await expect(editSection({ number, section: "Billing", markdown: "## Billing" })).rejects.toMatchObject({ status: 400, code: "no_section", message: "There's no section “Billing”" });
+    await expect(editSection({ number, section: 7, markdown: "## Seven" })).rejects.toMatchObject({ status: 400, code: "no_section" });
+    // Held to a size before it's read, as the whole text's Markdown is: a file pasted by mistake isn't parsed first.
+    expect(editChangelogSection.input.safeParse({ number, append: true, markdown: "x".repeat(40_001) }).success).toBe(false);
+    expect(editChangelogSection.input.safeParse({ number, append: true, markdown: "x".repeat(40_000) }).success).toBe(true);
+    // Not changelog.update's to do: there, `markdown` is the whole text, and the previous release (which reads these
+    // fields as nothing) would save it so. A part's edit has an operation of its own, which that release doesn't have.
+    expect(Object.keys(updateChangelogEntry.input.shape)).not.toEqual(expect.arrayContaining(["section"]));
+    expect(Object.keys(updateChangelogEntry.input.shape)).not.toEqual(expect.arrayContaining(["append"]));
+    expect((await call(getChangelogEntry, as(owner), { number })).markdown).toBe(appended.markdown);
+  });
+
+  test("`updatedAt` sent back as `expectedUpdatedAt` saves only if nothing changed since", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
+    const changed = await edit({ number: entry.number, title: "Dark mode is here" });
+    expect(new Date(changed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.updatedAt).getTime());
+    await expect(editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nStale.", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect((await editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nFresh.", expectedUpdatedAt: changed.updatedAt })).markdown).toContain("Fresh.");
+    // The whole text's edit takes it too.
+    await expect(edit({ number: entry.number, title: "Stale", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
+  });
+});
+
 describe("Markdown's images", () => {
   const images = imageServer();
+
+  test("read back as lasting links, and sent back they're the same uploads: nothing is copied again, in the whole text or one section", async () => {
+    // Tuti's own address is the local image server here: a link that isn't taken as the project's own upload is
+    // fetched like any address, and this one answers (with no such image) whatever else runs on this machine.
+    vi.stubEnv("APP_URL", images.origin);
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)\n\n## Search\n\nFaster.` });
+    const imagesIn = (content: unknown) => (content as { content: { type: string; attrs?: { mediaId?: string } }[] }).content.filter((node) => node.type === "image").map((node) => node.attrs!.mediaId);
+    const [mediaId] = imagesIn(entry.content);
+    // Its link is this server's, for as long as the image is in use.
+    expect(entry.markdown).toMatch(new RegExp(`!\\[The menu\\]\\(${process.env.APP_URL!.replace(/\/$/, "")}/api/media/${mediaId}/[^)]+\\)`));
+    const uploads = () => prisma.media.count({ where: { projectId: project.id } });
+    expect(await uploads()).toBe(1);
+
+    const again = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: `${entry.markdown}\n\nMore.` });
+    expect(imagesIn(again.content)).toEqual([mediaId]);
+    const section = await call(editChangelogSection, as(owner), { number: entry.number, section: "Search", markdown: "## Search\n\nMuch faster." });
+    expect(imagesIn(section.content)).toEqual([mediaId]);
+    // The section's own image by its link too.
+    const themes = /## Themes[^#]+/.exec(section.markdown!)![0].trim();
+    expect(imagesIn((await call(editChangelogSection, as(owner), { number: entry.number, section: "Themes", markdown: `${themes}\n\nPick one.` })).content)).toEqual([mediaId]);
+    expect(await uploads()).toBe(1);
+
+    // Markdown can't say an image's size or alignment, nor that a link is a video's player: sent back, the text keeps them.
+    const video = { type: "video", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } };
+    const small = { type: "image", attrs: { mediaId, width: "50", align: "left", alt: "The menu" } };
+    const laidOut = await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video, { type: "paragraph", content: [{ type: "text", text: "Watch it." }] }] } });
+    expect(laidOut.markdown).toContain("[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)");
+    const back = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: `${laidOut.markdown}\n\nAnd more.` });
+    expect((back.content as { content: object[] }).content.slice(0, 2)).toMatchObject([small, video]);
+    // The same image twice, laid out two ways: each keeps its own, in the whole text and in the one section sent back.
+    const wide = { type: "image", attrs: { mediaId, width: "100", align: "center", alt: "The menu" } };
+    const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: value }] });
+    const twice = await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [heading("First"), small, heading("Second"), wide, small] } });
+    const layouts = (content: unknown) => (content as { content: { type: string; attrs?: { width?: string } }[] }).content.filter((node) => node.type === "image").map((node) => node.attrs!.width);
+    expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: twice.markdown })).content)).toEqual(["50", "100", "50"]);
+    const second = /## Second[^#]+/.exec(twice.markdown!)![0].trim();
+    expect(layouts((await call(editChangelogSection, as(owner), { number: entry.number, section: "Second", markdown: `${second}\n\nMore.` })).content)).toEqual(["50", "100", "50"]);
+    // Brought in from another part of the text (appended, by its link), an image takes the layout it has there, and the
+    // text's own video is its player.
+    await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
+    const copied = await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: `${/!\[[^\]]*\]\(\S+\)/.exec(twice.markdown!)![0]}\n\n[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)` });
+    expect((copied.content as { content: object[] }).content).toMatchObject([small, video, small, video]);
+    await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
+    // A link that only looks like one (another video, other words) is a link.
+    const linked = await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
+    expect((linked.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("paragraph");
+    // And the text's own video named inside a list item is a link there: a list item can't hold a player, and the edit saves.
+    const listed = await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: "- [Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)" });
+    expect((listed.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("bulletList");
+    expect((listed.content as { content: { type: string }[] }).content.filter((node) => node.type === "video")).toHaveLength(1);
+    expect(await uploads()).toBe(1);
+
+    // Another project's image isn't this one's to reuse by its link, nor is a link with a signature that isn't ours: neither is taken as an upload.
+    const other = await createProject(owner);
+    const ours = /\((\S+)\)/.exec(entry.markdown!)![1]!;
+    const theirs = await call(createChangelogEntry, { ...as(owner), projectId: other.id }, { title: "Theirs", markdown: `![Ours](${ours})` });
+    expect(imagesIn(theirs.content)).not.toContain(mediaId);
+    // In its own project too, an upload isn't had by its id alone: a signature that isn't ours, or ours on another
+    // server's address (the storage fake's here, which answers with no image), is an address to fetch like any other:
+    // left out, nothing uploaded.
+    const forged = await call(createChangelogEntry, as(owner), {
+      title: "Forged",
+      markdown: `![Forged](${ours.replace(/s=[\w-]+/, "s=forged")})\n\n![Elsewhere](${ours.replace(new URL(ours).origin, new URL(images.s3.url).origin)})\n\nText.`,
+    });
+    expect(imagesIn(forged.content)).toEqual([]);
+    expect(await uploads()).toBe(1);
+    expect(await prisma.media.count({ where: { id: mediaId, projectId: project.id } })).toBe(1);
+  });
 
   test("are copied into the project and kept attached; one that can't be fetched is left out", async () => {
     const entry = await call(createChangelogEntry, as(owner), {
@@ -312,6 +438,24 @@ describe("Markdown's images", () => {
     const media = await prisma.media.findUniqueOrThrow({ where: { id: copied[0]!.attrs!.mediaId! } });
     expect(media).toMatchObject({ projectId: project.id, uploaderId: owner.id, status: "READY", attachedAt: expect.any(Date) });
     expect(entry.body).toContain("After.");
+  });
+
+  test("a section's edit is saved only if the entry didn't change while its images were copied, asked or not", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: "## Themes\n\nOld.\n\n## Search\n\nFaster." });
+    // A merged pull request's line lands in the text (the running draft's job) as the edit's image is being kept.
+    let changed = false;
+    images.s3.beforeGet = async () => {
+      if (!changed) {
+        changed = true;
+        await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: "- A line added meanwhile" });
+      }
+    };
+    await expect(
+      call(editChangelogSection, as(owner), { number: entry.number, section: "Themes", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)` }),
+    ).rejects.toMatchObject({ status: 409, code: "changed" });
+    images.s3.beforeGet = undefined;
+    // What landed meanwhile is still there, and the section is as it was.
+    expect((await call(getChangelogEntry, as(owner), { number: entry.number })).markdown).toBe("## Themes\n\nOld.\n\n## Search\n\nFaster.\n\n- A line added meanwhile");
   });
 
   test("count as the member's uploads: past their hourly limit, an image is left out", async () => {
@@ -358,6 +502,18 @@ describe("a cover given by URL", () => {
     const edited = await call(updateChangelogEntry, as(owner), { number: entry.number, cover: `${images.origin}/shot.png?v=2`, markdown: `![Shot](${images.origin}/shot.png)` });
     expect(edited.cover!.id).not.toBe(entry.cover!.id);
     expect(await ready()).toBe(3);
+  });
+
+  test("that's the project's own image by the link Tuti gave (an entry's cover, an image in its Markdown) is that upload, not a copy", async () => {
+    const first = await call(createChangelogEntry, as(owner), { title: "Dark mode", cover: `${images.origin}/shot.png`, markdown: `![The menu](${images.origin}/shot.png?2)` });
+    expect(await ready()).toBe(2);
+    // Another entry takes the first one's cover by its link, then the picture in its text.
+    const second = await call(createChangelogEntry, as(owner), { title: "Search", cover: first.cover!.url });
+    expect(second.cover!.id).toBe(first.cover!.id);
+    const picture = /\((\S+)\)/.exec(first.markdown!)![1]!;
+    const third = await call(updateChangelogEntry, as(owner), { number: second.number, cover: picture });
+    expect(third.cover!.id).toBe((first.content as unknown as { content: { attrs: { mediaId: string } }[] }).content[0]!.attrs.mediaId);
+    expect(await ready()).toBe(2);
   });
 
   test("that can't be fetched, isn't an image or is private is a 400, and nothing is saved", async () => {
