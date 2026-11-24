@@ -361,6 +361,9 @@ describe("Markdown's images", () => {
   const images = imageServer();
 
   test("read back as lasting links, and sent back they're the same uploads: nothing is copied again, in the whole text or one section", async () => {
+    // Tuti's own address is the local image server here: a link that isn't taken as the project's own upload is
+    // fetched like any address, and this one answers (with no such image) whatever else runs on this machine.
+    vi.stubEnv("APP_URL", images.origin);
     const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)\n\n## Search\n\nFaster.` });
     const imagesIn = (content: unknown) => (content as { content: { type: string; attrs?: { mediaId?: string } }[] }).content.filter((node) => node.type === "image").map((node) => node.attrs!.mediaId);
     const [mediaId] = imagesIn(entry.content);
@@ -417,7 +420,7 @@ describe("Markdown's images", () => {
     // server's address, is an address to fetch like any other (these answer with no image: left out, nothing uploaded).
     const forged = await call(createChangelogEntry, as(owner), {
       title: "Forged",
-      markdown: `![Forged](${ours.replace(/s=[\w-]+/, "s=forged")})\n\n![Elsewhere](${ours.replace(new URL(ours).origin, images.origin)})\n\nText.`,
+      markdown: `![Forged](${ours.replace(/s=[\w-]+/, "s=forged")})\n\n![Elsewhere](${ours.replace(new URL(ours).origin, "http://127.0.0.1:1")})\n\nText.`,
     });
     expect(imagesIn(forged.content)).toEqual([]);
     expect(await uploads()).toBe(1);
