@@ -120,7 +120,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
 
 /**
  * Expo's receipts for the pushes it took 15 minutes ago or more: a token Expo says is no longer registered loses its
- * devices. A ticket goes once its receipt is read; one with none yet is asked about again next time, until receipts are
+ * devices registered before the push. A ticket goes once its receipt is read; one with none yet is asked about again next time, until receipts are
  * gone (a day on).
  */
 export async function checkPushReceipts(_: JobInput<"checkPushReceipts">, log: JobLogger, now = new Date()): Promise<JobResult> {
@@ -133,7 +133,7 @@ export async function checkPushReceipts(_: JobInput<"checkPushReceipts">, log: J
       where: { createdAt: { lte: new Date(now.getTime() - RECEIPT_AFTER_MS) }, id: { gt: after } },
       orderBy: { id: "asc" },
       take: RECEIPTS_PER_REQUEST,
-      select: { id: true, token: true },
+      select: { id: true, token: true, createdAt: true },
     });
     if (tickets.length === 0) {
       break;
@@ -146,7 +146,10 @@ export async function checkPushReceipts(_: JobInput<"checkPushReceipts">, log: J
     if (failed > 0) {
       log.warn(`${failed} pushes didn't reach their phones: ${JSON.stringify(Object.values(data!).find((r) => r.status === "error" && r.details?.error !== GONE)).slice(0, 300)}`);
     }
-    await prisma.device.deleteMany({ where: { token: { in: unregistered.map((ticket) => ticket.token) } } });
+    // Only a device registered before the push: one registered again since has a token Expo may have taken back.
+    if (unregistered.length > 0) {
+      await prisma.device.deleteMany({ where: { OR: unregistered.map((ticket) => ({ token: ticket.token, lastSeenAt: { lte: ticket.createdAt } })) } });
+    }
     await prisma.pushTicket.deleteMany({ where: { id: { in: answered.map((ticket) => ticket.id) } } });
     read += answered.length;
     gone += unregistered.length;

@@ -95,6 +95,16 @@ test("a phone registers under its session, registering again replaces it, and it
   expect(await prisma.device.count({ where: { userId: owner.id } })).toBe(0);
 });
 
+test("another account can't take a phone's token from its teammate, and the phone is told once", async () => {
+  const other = await addMember(project.id, "MEMBER");
+  await phone(owner, "shared");
+  await phone(other, "shared");
+  // Both kept: a token alone takes nobody's phone off their notifications.
+  expect(await prisma.device.count({ where: { token: "ExponentPushToken[shared]" } })).toBe(2);
+  await userWrites();
+  expect(pushedTo()).toEqual(["shared"]);
+});
+
 test("a device is registered with the app's session only", async () => {
   // A teammate's actor without one (the web app's actions): refused, as API keys are (operations matrix).
   await expect(call(registerDevice, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { deviceId: "web", token: "ExponentPushToken[web]", platform: "ios" })).rejects.toMatchObject({
@@ -212,8 +222,17 @@ test("a token Expo no longer has loses its device, when sending and from a recei
   expect(expo.asked).toEqual([[ticket!.id]]);
   expect(await prisma.pushTicket.count()).toBe(1);
 
-  // Its receipt says the token is gone: the device goes, and the ticket.
+  // Its receipt says the token is gone, but the phone registered again since: kept.
   expo.receipts[ticket!.id] = deviceNotRegistered("ExponentPushToken[owner]");
+  await prisma.device.updateMany({ where: { userId: owner.id }, data: { lastSeenAt: new Date(ticket!.createdAt.getTime() + 1000) } });
+  const ticketCopy = await prisma.pushTicket.create({ data: { id: "ticket-again", token: ticket!.token, createdAt: ticket!.createdAt } });
+  expo.receipts[ticketCopy.id] = deviceNotRegistered("ExponentPushToken[owner]");
+  await checkPushReceipts({}, console, later);
+  expect(await prisma.device.count()).toBe(1);
+
+  // Not registered again: the device goes, and the ticket.
+  await prisma.device.updateMany({ where: { userId: owner.id }, data: { lastSeenAt: ticket!.createdAt } });
+  await prisma.pushTicket.create({ data: { id: ticket!.id, token: ticket!.token, createdAt: ticket!.createdAt } });
   expect(await checkPushReceipts({}, console, later)).toEqual({ read: 1, unregistered: 1 });
   expect(await prisma.device.count()).toBe(0);
   expect(await prisma.pushTicket.count()).toBe(0);
@@ -234,4 +253,21 @@ test("a receipt that's fine keeps the device, and a ticket past a day is let go"
   await checkPushReceipts({}, console, new Date(Date.now() + 25 * 60 * 60 * 1000));
   expect(await prisma.pushTicket.count()).toBe(0);
   expect(expo.asked).toEqual([]);
+});
+
+test("pushes go 100 a request, and receipts are read 1,000 at a time", async () => {
+  await phone(owner, "owner");
+  const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
+  await prisma.device.createMany({
+    data: Array.from({ length: 100 }, (_, i) => ({ userId: owner.id, deviceId: `many-${i}`, token: `ExponentPushToken[many-${i}]`, platform: "android", sessionId: session.id })),
+  });
+  // The fake refuses more than 100 in one request, as Expo does.
+  await userWrites();
+  expect(expo.sent).toHaveLength(101);
+  expect(await prisma.pushTicket.count()).toBe(101);
+
+  await prisma.pushTicket.createMany({ data: Array.from({ length: 900 }, (_, i) => ({ id: `extra-${i}`, token: "ExponentPushToken[owner]" })) });
+  expo.asked = [];
+  await checkPushReceipts({}, console, new Date(Date.now() + RECEIPT_AFTER_MS + 1000));
+  expect(expo.asked.map((ids) => ids.length)).toEqual([1000, 1]);
 });
