@@ -116,6 +116,21 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await expect(owner.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
 });
 
+test("with only Home's sample update published, the style examples don't say AI follows the latest entries: it never follows a sample unpicked", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Sam Sample");
+  await createProject(team, "Acme", slug);
+  await team.goto(`/app/${slug}`);
+  await team.getByRole("button", { name: "Add sample content" }).click();
+  await expect(team.getByText(/^Here to try things with, labelled Sample/)).toBeVisible();
+  await team.goto(`/app/${slug}/settings/changelog`);
+  const row = team.locator('[data-slot="setting-row"]').filter({ hasText: "Style examples" });
+  // The sample update can be picked, like any published entry.
+  await expect(row.getByText("0/3")).toBeVisible();
+  await expect(row.getByText("Entries that read the way you like.", { exact: true })).toBeVisible();
+  await expect(row.getByText("With none picked")).toHaveCount(0);
+});
+
 test("an admin picks the changelog's style examples: published entries from a searchable dialog, shown as chips, up to 3, saved by the page's Save changes", async ({ browser }, testInfo) => {
   test.setTimeout(150_000);
   const checkpoint = checkpoints(testInfo);
@@ -147,6 +162,7 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(row.getByText("0/3")).toBeVisible();
   // With none picked, AI drafts follow the latest entries, and the row says so.
   await expect(row.getByText("Entries that read the way you like. With none picked, AI follows your latest ones.")).toBeVisible();
+  await checkpoint(team, "team-settings-changelog-no-examples");
 
   // The dialog lists the published entries, newest first; its search narrows them by title.
   await pick.click();
@@ -173,6 +189,8 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(dialog).toBeHidden();
   await expect(chips).toHaveText(["Faster month view"]);
   await expect(row.getByText("1/3")).toBeVisible();
+  // One picked: AI follows it, so the row no longer speaks of the latest ones.
+  await expect(row.getByText("With none picked")).toHaveCount(0);
   await expect(save).toBeEnabled();
   await expect(pick).toBeFocused();
   // The one picked is no longer offered.
