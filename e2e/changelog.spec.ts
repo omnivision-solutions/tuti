@@ -1458,6 +1458,9 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   await team.goto(`/app/${slug}/changelog/1`);
   const teamComments = team.getByRole("region", { name: "Comments" });
   await expect(teamComments.getByRole("heading", { name: "3 comments" })).toBeVisible();
+  // The team's own comments carry the Team badge here too; readers' don't (the badge, not "Tess Team"'s name).
+  await expect(teamComments.getByRole("listitem").filter({ hasText: "Glad it helps!" }).getByText("Team", { exact: true })).toHaveCount(1);
+  await expect(teamComments.getByRole("listitem").filter({ hasText: "Ada Reader" }).getByText("Team", { exact: true })).toHaveCount(0);
   const spam = teamComments.getByRole("listitem").filter({ hasText: "Buy cheap watches here" });
   // A reader's to delete, not to edit (their own they edit too).
   await expect(spam.getByRole("button", { name: /^Edit/ })).toHaveCount(0);
