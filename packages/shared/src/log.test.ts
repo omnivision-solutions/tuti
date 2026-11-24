@@ -28,6 +28,19 @@ describe("in production", () => {
     expect(Date.parse(entry.time)).not.toBeNaN();
   });
 
+  test("an error keeps its code and its causes: fetch's reason for failing is in its cause", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+    const refused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:9"), { code: "ECONNREFUSED" });
+    const looping = new Error("again");
+    looping.cause = looping;
+    log.error("Copying failed", { error: new TypeError("fetch failed", { cause: refused }), other: looping });
+
+    const entry = JSON.parse(String(stderr.mock.calls[0]![0]));
+    expect(entry.error).toMatchObject({ name: "TypeError", message: "fetch failed", cause: { message: "connect ECONNREFUSED 127.0.0.1:9", code: "ECONNREFUSED" } });
+    expect(entry.other).toMatchObject({ message: "again", cause: { message: "again", cause: { cause: { cause: { cause: "again" } } } } });
+  });
+
   test("fields can't overwrite the level or message, and odd values never make logging throw", () => {
     vi.stubEnv("NODE_ENV", "production");
     const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
