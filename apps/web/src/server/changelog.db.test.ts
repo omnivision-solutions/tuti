@@ -383,6 +383,11 @@ describe("Markdown's images", () => {
     expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: twice.markdown })).content)).toEqual(["50", "100", "50"]);
     const second = /## Second[^#]+/.exec(twice.markdown!)![0].trim();
     expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Second", markdown: `${second}\n\nMore.` })).content)).toEqual(["50", "100", "50"]);
+    // Brought in from another part of the text (appended, by its link), an image takes the layout it has there, and the
+    // text's own video is its player.
+    await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
+    const copied = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: `${/!\[[^\]]*\]\(\S+\)/.exec(twice.markdown!)![0]}\n\n[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)` });
+    expect((copied.content as { content: object[] }).content).toMatchObject([small, video, small, video]);
     await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
     // A link that only looks like one (another video, other words) is a link.
     const linked = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
@@ -395,8 +400,17 @@ describe("Markdown's images", () => {
 
     // Another project's image isn't this one's to reuse by its link, nor is a link with a signature that isn't ours: neither is taken as an upload.
     const other = await createProject(owner);
-    const theirs = await call(createChangelogEntry, { ...as(owner), projectId: other.id }, { title: "Theirs", markdown: `![Ours](${/\((\S+)\)/.exec(entry.markdown!)![1]})\n\n![Forged](${process.env.APP_URL!.replace(/\/$/, "")}/api/media/${mediaId}/960.webp?s=forged)` });
+    const ours = /\((\S+)\)/.exec(entry.markdown!)![1]!;
+    const theirs = await call(createChangelogEntry, { ...as(owner), projectId: other.id }, { title: "Theirs", markdown: `![Ours](${ours})` });
     expect(imagesIn(theirs.content)).not.toContain(mediaId);
+    // In its own project too, an upload isn't had by its id alone: a signature that isn't ours, or ours on another
+    // server's address, is an address to fetch like any other (these answer with no image: left out, nothing uploaded).
+    const forged = await call(createChangelogEntry, as(owner), {
+      title: "Forged",
+      markdown: `![Forged](${ours.replace(/s=[\w-]+/, "s=forged")})\n\n![Elsewhere](${ours.replace(new URL(ours).origin, images.origin)})\n\nText.`,
+    });
+    expect(imagesIn(forged.content)).toEqual([]);
+    expect(await uploads()).toBe(1);
     expect(await prisma.media.count({ where: { id: mediaId, projectId: project.id } })).toBe(1);
   });
 
