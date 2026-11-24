@@ -10,6 +10,14 @@ describe("the app's Expo config", () => {
     expect(config.android?.package).toBe("so.tuti.app");
   });
 
+  it("takes an empty variable as not set", () => {
+    const config = appConfig({ EXPO_OWNER: "", EAS_PROJECT_ID: "", APP_ID: "" });
+    expect(config.owner).toBeUndefined();
+    expect(config.extra).toBeUndefined();
+    expect(config.ios?.bundleIdentifier).toBe("so.tuti.app");
+    expect(config.android?.package).toBe("so.tuti.app");
+  });
+
   it("builds under the account, project and app id the environment gives", () => {
     const config = appConfig({ EXPO_OWNER: "acme", EAS_PROJECT_ID: "project-1", APP_ID: "com.acme.inbox" });
     expect(config.owner).toBe("acme");

@@ -5,7 +5,8 @@ type Env = Record<string, string | undefined>;
 // The Expo account and project a build belongs to come from the environment, never from this file: Tuti's builds get
 // Tuti's, and a fork builds under its own account and app id.
 export function appConfig(env: Env): ExpoConfig {
-  const appId = env.APP_ID ?? "so.tuti.app";
+  // `||`: a variable that is set but empty (an unset CI variable) means the default too.
+  const appId = env.APP_ID || "so.tuti.app";
   return {
     name: "Tuti",
     slug: "tuti",
