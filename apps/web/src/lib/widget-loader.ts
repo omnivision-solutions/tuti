@@ -284,9 +284,18 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   function onChangelog() {
     return onPortal && String(window.location.pathname).indexOf(portalPath + "/changelog") === 0;
   }
+  // The entry this page view has shown: it may come back here (after the panel closes, say), never on another load,
+  // even one that reuses this answer (cached a minute) and so still finds the announcement after the last visit.
+  var popupShown = null;
   function popupWanted() {
-    return !!announcement && !hideLauncher && !sidebar && !opened && known && !checking && !onChangelog() && isUnseen() && hidden.indexOf("whatsNew") < 0 &&
-      !!lastVisit && latest > lastVisit && storage(function (s) { return s.getItem(popupKey); }) !== String(announcement.number);
+    if (!announcement || hideLauncher || sidebar || opened || !known || checking || onChangelog() || !isUnseen() || hidden.indexOf("whatsNew") >= 0 ||
+      !lastVisit || !(latest > lastVisit)) return false;
+    var number = String(announcement.number);
+    if (popupShown === number) return true;
+    if (storage(function (s) { return s.getItem(popupKey); }) === number) return false;
+    popupShown = number;
+    storage(function (s) { s.setItem(popupKey, number); });
+    return true;
   }
   // Closed or read: never again for this entry in this browser.
   function dismissPopup() {

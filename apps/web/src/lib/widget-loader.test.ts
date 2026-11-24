@@ -1969,6 +1969,17 @@ test("taken away under the keyboard (signed in, so it's checked elsewhere first)
   expect(page.document.activeElement).toBe(page.button);
 });
 
+test("shown once is enough: a reload that reuses the app's answer (cached a minute) doesn't bring it back", async () => {
+  const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(page.popup).toBeDefined();
+  expect(page.stored.get("tuti:popup:acme")).toBe("7");
+  // The same answer again, and a last visit from before it, as a reload within the minute would have.
+  const reloaded = loadWidget({ latest: ANNOUNCED, before: (p) => (visitedAt("2026-10-17T00:00:00.000Z")(p), p.stored.set("tuti:popup:acme", "7")) });
+  await settled();
+  expect(reloaded.popup).toBeUndefined();
+});
+
 test("without an answer from the app, no visit is recorded: the last one still counts next time", async () => {
   const page = loadWidget({ latest: null, before: visitedAt("2026-10-17T00:00:00.000Z") });
   await settled();
