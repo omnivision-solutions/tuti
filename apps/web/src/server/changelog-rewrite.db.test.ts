@@ -7,6 +7,7 @@ import {
   AI_EDITS_PER_HOUR,
   createChangelogEntry,
   getChangelogEntry,
+  publishChangelogEntry,
   rewriteChangelogEntry as rewriteOperation,
   updateChangelogEntry,
   updateChangelogStyle,
@@ -135,6 +136,23 @@ test("plain: explained for non-developers, following the writing style", async (
     paragraph(text("The app now matches your device's light or dark setting, as asked in "), link("Dark mode", postUrl), text(".")),
   );
   expect(result.proposed.body).not.toContain("prefers-color-scheme");
+});
+
+test("with no examples picked, a rewrite follows the project's other latest published entries, as Markdown: never the entry it rewrites", async () => {
+  const other = await call(createChangelogEntry, team(), { title: "Agenda view", markdown: "## Search\n\n- Quicker as you type\n\nThanks for reading" });
+  await call(publishChangelogEntry, team(), { number: other.number });
+  const number = await plainEntry();
+  await call(publishChangelogEntry, team(), { number });
+  model.reply(reply("Shorter."));
+
+  await rewrite({ number, mode: "shorten" });
+
+  const [request] = model.requests;
+  const data = JSON.parse(request!.user.slice(request!.user.indexOf("{"))) as Record<string, unknown>;
+  expect(data.writingStyle).toEqual({
+    toneNotes: "",
+    examplesOfPublishedEntries: [{ title: "Agenda view", text: "## Search\n\n- Quicker as you type\n\nThanks for reading" }],
+  });
 });
 
 test("section: only that section is rewritten, with the team's instruction and the whole entry as context", async () => {

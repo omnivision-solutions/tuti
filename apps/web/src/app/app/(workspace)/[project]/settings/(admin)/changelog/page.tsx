@@ -25,7 +25,7 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
       where: { projectId: project.id, publishedAt: { not: null } },
       // As the changelog lists them; ties in one order, so the examples saved are always in the same one.
       orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
-      select: { id: true, number: true, title: true },
+      select: { id: true, number: true, title: true, sample: true },
     }),
   ]);
   // The picked examples that are still published.
@@ -40,7 +40,7 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
           projectSlug={slug}
           tone={changelogTone}
           examples={examples}
-          published={published.map(({ number, title }) => ({ number, title }))}
+          published={published.map(({ number, title, sample }) => ({ number, title, sample }))}
         />
       </SettingsCard>
     </SettingsPane>

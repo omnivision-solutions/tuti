@@ -632,7 +632,7 @@ export const draftChangelogEntry = defineOperation({
     if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
       throw new OperationError(400, "nothing_to_draft", "Pick the public posts it completes or write a few notes first");
     }
-    const style = await changelogStyle(projectId);
+    const style = await writingStyle(projectId, entry.id);
     const ai = await aiOrRefuse(projectId, "changelog");
     let reply: string;
     try {
@@ -753,7 +753,7 @@ export const rewriteChangelogEntry = defineOperation({
           text,
           entry: target.length < blocks.length ? toMarkdown(doc) : undefined,
           instruction: input.instruction || undefined,
-          style: await changelogStyle(projectId),
+          style: await writingStyle(projectId, entry.id),
         }),
         ...ai,
       });
@@ -814,7 +814,7 @@ async function countAiEdit(projectId: string) {
   }
 }
 
-export const MAX_TONE_LENGTH = 1000;
+export const MAX_TONE_LENGTH = 4000;
 export const MAX_STYLE_EXAMPLES = 3;
 
 /** The team's tone notes and example entries (the ones still published, in the order picked). */
@@ -825,9 +825,28 @@ async function changelogStyle(projectId: string) {
   });
   const entries = await prisma.changelogEntry.findMany({
     where: { projectId, id: { in: changelogExampleIds }, publishedAt: { not: null } },
-    select: { id: true, number: true, title: true, body: true },
+    select: { id: true, number: true, title: true, body: true, content: true },
   });
   return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)) };
+}
+
+/**
+ * What AI writes like (releaseNotesPrompt, rewritePrompt): the tone notes, and the examples as Markdown, so their
+ * headings and lists show as the reply's own do (without their images). With none picked, the project's latest
+ * published entries: its own, so not Home's samples, and not the entry being written.
+ */
+async function writingStyle(projectId: string, entryId: string) {
+  const { tone, examples } = await changelogStyle(projectId);
+  const entries =
+    examples.length > 0
+      ? examples
+      : await prisma.changelogEntry.findMany({
+          where: { projectId, publishedAt: { not: null }, sample: false, id: { not: entryId } },
+          orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+          take: MAX_STYLE_EXAMPLES,
+          select: { title: true, body: true, content: true },
+        });
+  return { tone, examples: entries.map((entry) => ({ title: entry.title, markdown: toMarkdown(displayDoc(entry)) })) };
 }
 
 const styleOutput = z
@@ -874,9 +893,9 @@ export const updateChangelogStyle = defineOperation({
     tone: z
       .string()
       .trim()
-      .max(MAX_TONE_LENGTH, "Keep the tone notes under 1,000 characters")
+      .max(MAX_TONE_LENGTH, "Keep the tone notes under 4,000 characters")
       .optional()
-      .describe("Notes on the tone to write in, under 1,000 characters")
+      .describe("Notes on the tone to write in, under 4,000 characters")
       .meta({ examples: ["Friendly, short sentences, no jargon. Address the reader as you."] }),
     examples: z
       .array(entryNumber)

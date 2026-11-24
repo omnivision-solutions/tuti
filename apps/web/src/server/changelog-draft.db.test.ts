@@ -191,7 +191,7 @@ test("without an AI key it says AI isn't set up", async () => {
 const setStyle = (input: { tone?: string; examples?: number[] }) => call(updateChangelogStyle, team(), input);
 const getStyle = () => call(getChangelogStyle, team(), {});
 
-test("the writing style is saved and checked: tone notes up to 1,000 characters, up to 3 of the project's published entries", async () => {
+test("the writing style is saved and checked: tone notes up to 4,000 characters, up to 3 of the project's published entries", async () => {
   expect(await getStyle()).toEqual({ tone: "", examples: [] });
   const published = await call(createChangelogEntry, team(), { title: "Faster search", body: "Search is quicker now." });
   await call(publishChangelogEntry, team(), { number: published.number });
@@ -204,10 +204,13 @@ test("the writing style is saved and checked: tone notes up to 1,000 characters,
   // Each field is optional: changing one keeps the other.
   expect(await setStyle({ tone: "Short sentences." })).toMatchObject({ examples: [{ number: published.number }] });
 
-  await expect(setStyle({ tone: "x".repeat(1001) })).rejects.toMatchObject({
+  // Room for a page of instructions, and no more.
+  expect(await setStyle({ tone: "x".repeat(4000) })).toMatchObject({ tone: "x".repeat(4000) });
+  await expect(setStyle({ tone: "x".repeat(4001) })).rejects.toMatchObject({
     status: 400,
-    message: "Keep the tone notes under 1,000 characters",
+    message: "Keep the tone notes under 4,000 characters",
   });
+  await setStyle({ tone: "Short sentences." });
   await expect(setStyle({ examples: [draft.number] })).rejects.toMatchObject({
     status: 400,
     message: `There's no published entry #${draft.number}`,
@@ -231,10 +234,9 @@ test("the writing style is saved and checked: tone notes up to 1,000 characters,
 });
 
 test("drafts follow the tone notes and the examples, marked as style only", async () => {
-  const example = await call(createChangelogEntry, team(), {
-    title: "Faster search",
-    body: "Search is quicker now. You'll find posts as you type.",
-  });
+  // Longer than the 2,000 characters examples were once cut to, laid out with a heading and a list, signed off at its end.
+  const layout = `## Search\n\n- ${"Search is quicker now. ".repeat(100).trim()}\n- You'll find posts as you type.\n\nThanks for reading, the team`;
+  const example = await call(createChangelogEntry, team(), { title: "Faster search", markdown: layout });
   await call(publishChangelogEntry, team(), { number: example.number });
   const unpublished = await call(createChangelogEntry, team(), { title: "Old favourite", body: "Written our way." });
   await call(publishChangelogEntry, team(), { number: unpublished.number });
@@ -251,7 +253,31 @@ test("drafts follow the tone notes and the examples, marked as style only", asyn
   const data = JSON.parse(request!.user.slice(request!.user.indexOf("{"))) as Record<string, unknown>;
   expect(data.writingStyle).toEqual({
     toneNotes: "Friendly, short sentences. Address the reader as you.",
-    examplesOfPublishedEntries: [{ title: "Faster search", text: "Search is quicker now. You'll find posts as you type." }],
+    // As Markdown and whole: its heading, its list and its last line.
+    examplesOfPublishedEntries: [{ title: "Faster search", text: layout }],
+  });
+});
+
+test("with no examples picked, drafts follow the project's latest published entries: not drafts, samples or the one before those", async () => {
+  for (const title of ["Oldest", "Older", "Newer", "Newest"]) {
+    const { number } = await call(createChangelogEntry, team(), { title, body: `${title}, written our way.` });
+    await call(publishChangelogEntry, team(), { number });
+  }
+  await call(createChangelogEntry, team(), { title: "Not out yet", body: "A draft." });
+  // Home's sample content isn't the team's writing.
+  const sample = await call(createChangelogEntry, team(), { title: "Sample update", body: "Lorem ipsum." });
+  await call(publishChangelogEntry, team(), { number: sample.number });
+  await prisma.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number: sample.number } }, data: { sample: true } });
+  const { number } = await entryWithPullRequests();
+  model.reply(reply("Dark mode", "You can switch to dark mode now."));
+
+  await draft(number);
+
+  const [request] = model.requests;
+  const data = JSON.parse(request!.user.slice(request!.user.indexOf("{"))) as Record<string, unknown>;
+  expect(data.writingStyle).toEqual({
+    toneNotes: "",
+    examplesOfPublishedEntries: ["Newest", "Newer", "Older"].map((title) => ({ title, text: `${title}, written our way.` })),
   });
 });
 
