@@ -1272,6 +1272,39 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(preview).toHaveCount(0);
 });
 
+test("a draft with a line left to fill in isn't published: Publish names the lines and waits for them", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // As an AI draft leaves it: a fact it didn't have, and where a screenshot belongs.
+  await api("/changelog", { title: "Dark mode is here", markdown: "Dark mode is here.\n\n[Check: is it out on iOS yet?]\n\n## Themes\n\n[Screenshot: the theme menu, open]\n\nPick one in your profile." });
+  await team.goto(`/app/${slug}/changelog/1`);
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  const dialog = team.getByRole("alertdialog");
+  await expect(dialog.getByText("Replace or remove these 2 lines first")).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Lines to replace" }).getByRole("listitem")).toHaveText(["[Check: is it out on iOS yet?]", "[Screenshot: the theme menu, open]"]);
+  await expect(dialog.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+  await checkpoint(team, "team-changelog-publish-markers");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  // One answered and saved: the other is still named.
+  await api("/changelog/1", { markdown: "Dark mode is here, on iOS too.\n\n## Themes\n\n[Screenshot: the theme menu, open]\n\nPick one in your profile." }, "PATCH");
+  await team.reload();
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(dialog.getByText("Replace or remove this line first")).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Lines to replace" }).getByRole("listitem")).toHaveText(["[Screenshot: the theme menu, open]"]);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  // Both gone: it's published.
+  await api("/changelog/1", { markdown: "Dark mode is here, on iOS too.\n\n## Themes\n\nPick one in your profile." }, "PATCH");
+  await team.reload();
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(dialog.getByRole("list", { name: "Lines to replace" })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+});
+
 test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);

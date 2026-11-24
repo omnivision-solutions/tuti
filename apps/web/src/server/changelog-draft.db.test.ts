@@ -231,11 +231,46 @@ test("the model gets what Autopilot wrote about each pull request and the posts 
   expect(request!.user).not.toContain(url(secret));
 });
 
-const setStyle = (input: { tone?: string; examples?: number[] }) => call(updateChangelogStyle, team(), input);
+test("a draft leaves a line where it needs a fact, and where a screenshot belongs once the team asks; the entry isn't published with one left", async () => {
+  const { number, postUrl } = await entryWithPullRequests();
+  const notes = (...lines: string[]) => reply("Dark mode", lines.join("\n\n"));
+  model.reply(notes(`Dark mode is here ([Dark mode](${postUrl})).`, "[Check: is it out on iOS yet?]", "Search is faster."));
+
+  const drafted = await draft(number);
+
+  // Told to ask rather than guess, always; nothing about screenshots unless the team asked for them.
+  expect(model.requests[0]!.system).toContain('"[Check: the question to answer]"');
+  expect(model.requests[0]!.system).not.toContain("[Screenshot:");
+  // The line is plain text in the entry, as written.
+  expect(drafted.body).toContain("[Check: is it out on iOS yet?]");
+  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({
+    status: 409,
+    code: "markers",
+    message: "Replace or remove the marker in its text first: [Check: is it out on iOS yet?]",
+  });
+  expect((await get(number)).status).toBe("draft");
+
+  // Asked for (Settings → Changelog): the draft is told where a picture belongs, and each line left holds publishing back.
+  expect(await setStyle({ screenshotMarkers: true })).toMatchObject({ screenshotMarkers: true, tone: "" });
+  model.reply(notes("Dark mode is here.", "[Screenshot: the theme menu, open]", "- Faster search\n- [Check: which plans?]", "It says [Check: later] in a sentence, which is only text."));
+  await draft(number);
+  expect(model.requests[1]!.system).toContain('"[Screenshot: what it should show]"');
+  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({
+    status: 409,
+    message: "Replace or remove the 2 markers in its text first: [Screenshot: the theme menu, open] [Check: which plans?]",
+  });
+  // Replaced (the picture in, the answer written), it's published.
+  await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan. It says [Check: later] in a sentence, which is only text." });
+  expect((await call(publishChangelogEntry, team(), { number })).status).toBe("published");
+  // Each setting is its own: turning the screenshots off keeps the tone and examples.
+  expect(await setStyle({ screenshotMarkers: false })).toEqual({ tone: "", examples: [], screenshotMarkers: false });
+});
+
+const setStyle = (input: { tone?: string; examples?: number[]; screenshotMarkers?: boolean }) => call(updateChangelogStyle, team(), input);
 const getStyle = () => call(getChangelogStyle, team(), {});
 
 test("the writing style is saved and checked: tone notes up to 4,000 characters, up to 3 of the project's published entries", async () => {
-  expect(await getStyle()).toEqual({ tone: "", examples: [] });
+  expect(await getStyle()).toEqual({ tone: "", examples: [], screenshotMarkers: false });
   const published = await call(createChangelogEntry, team(), { title: "Faster search", body: "Search is quicker now." });
   await call(publishChangelogEntry, team(), { number: published.number });
   const draft = await call(createChangelogEntry, team(), { title: "Not out yet" });
@@ -243,6 +278,7 @@ test("the writing style is saved and checked: tone notes up to 4,000 characters,
   expect(await setStyle({ tone: "  Friendly, no jargon.  ", examples: [published.number] })).toEqual({
     tone: "Friendly, no jargon.",
     examples: [{ number: published.number, title: "Faster search" }],
+    screenshotMarkers: false,
   });
   // Each field is optional: changing one keeps the other.
   expect(await setStyle({ tone: "Short sentences." })).toMatchObject({ examples: [{ number: published.number }] });
@@ -267,13 +303,13 @@ test("the writing style is saved and checked: tone notes up to 4,000 characters,
   }
   await call(publishChangelogEntry, theirs, { number: 3 });
   await expect(setStyle({ examples: [3] })).rejects.toMatchObject({ status: 400, message: "There's no published entry #3" });
-  expect(await call(getChangelogStyle, { ...team(), projectId: other.id }, {})).toEqual({ tone: "", examples: [] });
+  expect(await call(getChangelogStyle, { ...team(), projectId: other.id }, {})).toEqual({ tone: "", examples: [] , screenshotMarkers: false });
   // Refused changes left it as it was.
-  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [{ number: published.number, title: "Faster search" }] });
+  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [{ number: published.number, title: "Faster search" }] , screenshotMarkers: false });
 
   // An example that's deleted drops out.
   await call(deleteChangelogEntry, team(), { number: published.number });
-  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [] });
+  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [] , screenshotMarkers: false });
 });
 
 test("drafts follow the tone notes and the examples, marked as style only", async () => {

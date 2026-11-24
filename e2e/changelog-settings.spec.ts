@@ -238,11 +238,28 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(dialog).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
 
+  // Screenshots are the team's to add: a draft can mark where one goes. Off until they ask; what it means is behind its ⓘ.
+  const screenshots = team.getByRole("switch", { name: "Mark where screenshots go" });
+  await expect(screenshots).not.toBeChecked();
+  const marking = team.locator('[data-slot="setting-row"]').filter({ hasText: "Mark where screenshots go" });
+  await expect(marking.getByText("A draft leaves a line where a picture belongs, to replace before publishing.")).toBeVisible();
+  await marking.getByRole("button", { name: "More about this setting" }).click();
+  await expect(team.getByText(/^AI can't take screenshots\. With this on, a draft has a line like \[Screenshot: the new theme menu\]/)).toBeVisible();
+  await team.keyboard.press("Escape");
+  await screenshots.check();
+  await checkpoint(team, "team-settings-changelog-screenshots");
+
   // Saved from the header, and there after a reload.
   await save.click();
   await expect(team.getByText("Changelog saved")).toBeVisible();
   await team.reload();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);
+  await expect(screenshots).toBeChecked();
+  await expect(save).toBeDisabled();
+  // Turned off again, it's a change to save; on again, none.
+  await screenshots.uncheck();
+  await expect(save).toBeEnabled();
+  await screenshots.check();
   await expect(save).toBeDisabled();
   // A chip removed is a change to save; the same one picked again is none.
   await team.getByRole("button", { name: "Remove Faster month view" }).click();

@@ -47,6 +47,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   acceptChangelogRewrite,
@@ -890,10 +891,13 @@ export function ChangelogStyleForm({
   projectSlug,
   tone,
   examples,
+  screenshotMarkers,
   published,
 }: {
   projectSlug: string;
   tone: string;
+  /** AI drafts mark where a screenshot belongs. */
+  screenshotMarkers: boolean;
   /** The entries picked as examples, by number. */
   examples: number[];
   /** Published entries, newest first; `sample`: one of Home's sample updates, which AI never follows unpicked. */
@@ -917,13 +921,22 @@ export function ChangelogStyleForm({
     }
     toneWas.current = tone;
   }, [tone]);
+  // …and the screenshots' switch.
+  const [marking, setMarking] = useState(screenshotMarkers);
+  const [markingWas, setMarkingWas] = useState(screenshotMarkers);
+  if (markingWas !== screenshotMarkers) {
+    setMarkingWas(screenshotMarkers);
+    if (marking === markingWas) {
+      setMarking(screenshotMarkers);
+    }
+  }
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
   // The dialog, opened, has had its pick.
   const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
-    saved: [["tone", tone], ...examples.map((number): [string, string] => ["examples", String(number)])],
+    saved: [["tone", tone], ...examples.map((number): [string, string] => ["examples", String(number)]), ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : [])],
     save: async (prev, formData) => {
       const result = await saveChangelogStyle(projectSlug, prev, formData);
       if (result.error) {
@@ -938,7 +951,7 @@ export function ChangelogStyleForm({
   // picked, so the same examples are never a change to save.
   const chosen = published.filter((entry) => picked.includes(entry.number));
   // Chips come and go without anyone typing: the form is told, for "Save changes".
-  useFieldChanged(pick, chosen.map((entry) => entry.number).join());
+  useFieldChanged(pick, `${chosen.map((entry) => entry.number).join()} ${marking}`);
   // No more to pick: 3 are, or every published entry is.
   const full = chosen.length >= Math.min(MAX_EXAMPLES, published.length);
   const words = query.trim().toLowerCase();
@@ -1025,6 +1038,15 @@ export function ChangelogStyleForm({
           </div>
         )}
       </SettingRow>
+      <SettingRow
+        label="Mark where screenshots go"
+        htmlFor="style-screenshots"
+        description="A draft leaves a line where a picture belongs, to replace before publishing."
+        info="AI can't take screenshots. With this on, a draft has a line like [Screenshot: the new theme menu] where one would help, and the entry can't be published while such a line is left."
+        inline
+      >
+        <Switch id="style-screenshots" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
+      </SettingRow>
       {/* Outside the form in the page (a portal): typing in its search isn't a change to save. */}
       <Dialog open={picking} onOpenChange={setPicking}>
         {/* Closed, by a pick or without one, focus goes back to Pick. */}
@@ -1080,12 +1102,15 @@ export function ChangelogEntryActions({
   canDraftWithAi,
   aiPaused = false,
   unwritten,
+  markers = [],
   part,
 }: {
   projectSlug: string;
   number: number;
   title: string;
   published: boolean;
+  /** Lines an AI draft left for the team to fill in ("[Check: …]", "[Screenshot: …]"), still in the saved text: it isn't published with them. */
+  markers?: string[];
   /** How many posts it completes. */
   postCount: number;
   /** How many people confirmed they want the changelog by email. */
@@ -1229,12 +1254,25 @@ export function ChangelogEntryActions({
             {importedOn && ` Published before you imported it, it keeps that date (${importedOn}) and isn't announced.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {/* What the draft left to fill in: named, so they're found in the text; Publish waits for them. */}
+        {markers.length > 0 && (
+          <div className="flex flex-col gap-1.5 text-sm">
+            <p className="font-medium">{markers.length === 1 ? "Replace or remove this line first" : `Replace or remove these ${markers.length} lines first`}</p>
+            <ul aria-label="Lines to replace" className="flex flex-col gap-1 text-muted-foreground">
+              {markers.map((marker, i) => (
+                <li key={i} className="break-words">
+                  {marker}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
           <AlertDialogAction
             variant={aiFirst ? "outline" : "default"}
-            disabled={busy}
+            disabled={busy || markers.length > 0}
             onClick={() =>
               sample || importedOn
                 ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")

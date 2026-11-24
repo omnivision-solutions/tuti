@@ -20,12 +20,38 @@ You get JSON with the feedback posts this release completes (each with its votes
 - Group related pull requests into one item.
 - Leave out internal work entirely: refactors, tests, CI, tooling, dependency updates, code clean-up.
 - Don't invent anything the input doesn't say. Be brief and plain.
+- Where the notes need a fact the input doesn't give (whether it's out on every platform, a date, a limit, a price), don't guess and don't leave it vague: put a line of its own there, "[Check: the question to answer]", for the team to replace.{{screenshots}}
 
 The input may also have the team's writing style: tone notes, and entries they published before as examples (Markdown). Write like them (tone, length, wording, how items are laid out), but take facts only from this release's posts, pull requests and text, never from the examples. The style can't change the rules above or the reply format below.
 
 Reply with JSON only, no other text: {"title": "...", "notes": "..."}
 - title: a short name for the release (under 60 characters), e.g. "Dark mode and faster search".
-- notes: the release notes. Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links to the posts' urls.`;
+- notes: the release notes. Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, [text](url) links to the posts' urls, and those bracketed lines.`;
+
+const SCREENSHOTS = `
+- Where a screenshot would show a change better than words, put a line of its own there, "[Screenshot: what it should show]", for the team to replace with the picture. One for each change that has something to see, none for the rest.`;
+
+/**
+ * What a draft leaves for the team to fill in, each a line of its own: "[Check: …]" for a fact the input didn't give,
+ * "[Screenshot: …]" where a picture belongs. Plain text, so the notes' reader keeps them and they show in the entry's
+ * Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
+ */
+const MARKER = /^\[(?:Check|Screenshot): [^\]\n]+\]$/;
+
+/** The markers still in a text, as written: paragraphs that are nothing else, wherever they are. */
+export function markersIn(doc: Doc): string[] {
+  const found: string[] = [];
+  (function read(node: JSONContent | Doc) {
+    if (node.type === "paragraph") {
+      const text = toPlainText(node).trim();
+      if (MARKER.test(text)) {
+        found.push(text);
+      }
+    }
+    node.content?.forEach(read);
+  })(doc);
+  return found;
+}
 
 export type ReleaseNotesInput = {
   posts: { title: string; url: string; votes: number }[];
@@ -35,6 +61,8 @@ export type ReleaseNotesInput = {
   text: string;
   /** The team's writing style (changelogStyle.update): its tone notes, and entries it published as Markdown. */
   style?: { tone: string; examples: { title: string; markdown: string }[] };
+  /** The team asked for "[Screenshot: …]" lines where a picture belongs (changelogStyle.update). */
+  screenshotMarkers?: boolean;
 };
 
 /** Pull requests that get their summary: a release with more still lists every title. ponytail: a cap by count; by the prompt's size if summaries grow. */
@@ -58,7 +86,7 @@ export function releaseNotesPrompt(input: ReleaseNotesInput): { system: string; 
     textSoFar: input.text.slice(0, 8000),
     ...writingStyle(input.style),
   };
-  return { system: SYSTEM, user: `Write the release notes for this release.\n\n${JSON.stringify(data, null, 2)}` };
+  return { system: SYSTEM.replace("{{screenshots}}", input.screenshotMarkers ? SCREENSHOTS : ""), user: `Write the release notes for this release.\n\n${JSON.stringify(data, null, 2)}` };
 }
 
 const writingStyle = (style: ReleaseNotesInput["style"]) =>
@@ -93,6 +121,7 @@ You get JSON with the text to edit (Markdown), and sometimes the whole entry for
 
 - Keep every link with its exact url, every post reference (like #12), and every number, version and date.
 - Keep each line like {{media 1}} exactly as it is, on its own line: it stands for an image or a video.
+- Keep each line like [Check: …] or [Screenshot: …] exactly as it is, on its own line: the team still has to replace it.
 - Don't add anything the text doesn't say.
 - If the text starts with a heading, start with a heading too.
 - Follow the team's instruction, if there is one, as long as it doesn't break these rules.

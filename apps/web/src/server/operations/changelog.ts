@@ -17,6 +17,7 @@ import {
   droppedFacts,
   factsIn,
   readReleaseNotes,
+  markersIn,
   releaseNotesPrompt,
   REWRITE_MODES,
   rewritePrompt,
@@ -637,11 +638,11 @@ export const draftChangelogEntry = defineOperation({
     const listed = new Map(reader.posts.map(({ post }) => [post.number, post]));
     const asked = posts.map((post) => ({ title: post.title, url: post.url, votes: listed.get(post.number)!.voteCount, id: listed.get(post.number)!.id }));
     const pullRequests = await withAutopilotNotes(projectId, entry.pullRequests, asked);
-    const style = await writingStyle(projectId, entry.id);
+    const { screenshotMarkers, ...style } = await writingStyle(projectId, entry.id);
     const ai = await aiOrRefuse(projectId, "changelog");
     let reply: string;
     try {
-      reply = await complete({ ...releaseNotesPrompt({ posts: asked, pullRequests, text: entry.body, style }), ...ai });
+      reply = await complete({ ...releaseNotesPrompt({ posts: asked, pullRequests, text: entry.body, style, screenshotMarkers }), ...ai });
     } catch (error) {
       log.warn("AI changelog draft failed", { projectId, number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
@@ -852,15 +853,15 @@ export const MAX_STYLE_EXAMPLES = 3;
 
 /** The team's tone notes and example entries (the ones still published, in the order picked). */
 async function changelogStyle(projectId: string) {
-  const { changelogTone, changelogExampleIds } = await prisma.project.findUniqueOrThrow({
+  const { changelogTone, changelogExampleIds, changelogScreenshotMarkers } = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { changelogTone: true, changelogExampleIds: true },
+    select: { changelogTone: true, changelogExampleIds: true, changelogScreenshotMarkers: true },
   });
   const entries = await prisma.changelogEntry.findMany({
     where: { projectId, id: { in: changelogExampleIds }, publishedAt: { not: null } },
     select: { id: true, number: true, title: true, body: true, content: true },
   });
-  return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)) };
+  return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)), screenshotMarkers: changelogScreenshotMarkers };
 }
 
 /**
@@ -869,7 +870,7 @@ async function changelogStyle(projectId: string) {
  * published entries: its own, so not Home's samples, and not the entry being written.
  */
 async function writingStyle(projectId: string, entryId: string) {
-  const { tone, examples } = await changelogStyle(projectId);
+  const { tone, examples, screenshotMarkers } = await changelogStyle(projectId);
   const entries =
     examples.length > 0
       ? examples
@@ -879,7 +880,7 @@ async function writingStyle(projectId: string, entryId: string) {
           take: MAX_STYLE_EXAMPLES,
           select: { title: true, body: true, content: true },
         });
-  return { tone, examples: entries.map((entry) => ({ title: entry.title, markdown: toMarkdown(displayDoc(entry)) })) };
+  return { tone, examples: entries.map((entry) => ({ title: entry.title, markdown: toMarkdown(displayDoc(entry)) })), screenshotMarkers };
 }
 
 const styleOutput = z
@@ -893,12 +894,17 @@ const styleOutput = z
         }),
       )
       .describe("Published entries to write like, in the order picked"),
+    screenshotMarkers: z
+      .boolean()
+      .describe("AI drafts mark where a screenshot belongs with a line \"[Screenshot: what it should show]\", to replace with the picture before publishing")
+      .meta({ examples: [false] }),
   })
   .meta({ id: "ChangelogStyle", description: "The changelog's writing style: the tone notes and example entries AI drafts follow" });
 
-const styleView = ({ tone, examples }: Awaited<ReturnType<typeof changelogStyle>>) => ({
+const styleView = ({ tone, examples, screenshotMarkers }: Awaited<ReturnType<typeof changelogStyle>>) => ({
   tone,
   examples: examples.map(({ number, title }) => ({ number, title })),
+  screenshotMarkers,
 });
 
 export const getChangelogStyle = defineOperation({
@@ -936,6 +942,11 @@ export const updateChangelogStyle = defineOperation({
       .optional()
       .describe(`Up to ${MAX_STYLE_EXAMPLES} published entries to write like, by number: replaces the list`)
       .meta({ examples: [[3]] }),
+    screenshotMarkers: z
+      .boolean()
+      .optional()
+      .describe("Whether AI drafts mark where a screenshot belongs (\"[Screenshot: what it should show]\"); an entry with a marker left can't be published")
+      .meta({ examples: [true] }),
   }),
   output: styleOutput.describe("The writing style now"),
   example: { tone: "Friendly, short sentences, no jargon. Address the reader as you.", examples: [3] },
@@ -957,6 +968,7 @@ export const updateChangelogStyle = defineOperation({
       where: { id: projectId },
       data: {
         ...(input.tone !== undefined && { changelogTone: input.tone }),
+        ...(input.screenshotMarkers !== undefined && { changelogScreenshotMarkers: input.screenshotMarkers }),
         ...(exampleIds && { changelogExampleIds: exampleIds }),
       },
     });
@@ -968,11 +980,12 @@ export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   title: "Publish a changelog entry",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Sample entries (Home's sample content) are always published quietly and never emailed; so, the first time, is one imported as a draft though published in the other tool, and it keeps its date there.",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     number: entryNumber,
     announce: z
@@ -990,6 +1003,11 @@ export const publishChangelogEntry = defineOperation({
   example: { announce: true, emailSubscribers: true },
   run: async ({ actor, projectId }, { number, announce, emailSubscribers }) => {
     const entry = await teamEntry(projectId, number);
+    // What a draft left for the team to fill in ("[Check: …]", "[Screenshot: …]") doesn't go out to readers, or by email, which can't be taken back.
+    const markers = entry.publishedAt ? [] : markersIn(displayDoc(entry));
+    if (markers.length > 0) {
+      throw new OperationError(409, "markers", `Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+    }
     const slug = await projectSlug(projectId);
     const portal = await portalAddress(slug);
     // One transaction: published, its posts completed (and due for their shipped

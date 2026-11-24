@@ -18,9 +18,9 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
   if (!project || !aiEnabled()) {
     notFound();
   }
-  const [model, { changelogTone, changelogExampleIds }, published] = await Promise.all([
+  const [model, { changelogTone, changelogExampleIds, changelogScreenshotMarkers }, published] = await Promise.all([
     aiModelSetting(project, "changelog", { changelog: "Drafts" }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true, changelogScreenshotMarkers: true } }),
     prisma.changelogEntry.findMany({
       where: { projectId: project.id, publishedAt: { not: null } },
       // As the changelog lists them; ties in one order, so the examples saved are always in the same one.
@@ -40,6 +40,7 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
           projectSlug={slug}
           tone={changelogTone}
           examples={examples}
+          screenshotMarkers={changelogScreenshotMarkers}
           published={published.map(({ number, title, sample }) => ({ number, title, sample }))}
         />
       </SettingsCard>

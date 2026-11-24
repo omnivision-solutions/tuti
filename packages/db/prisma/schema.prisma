@@ -221,6 +221,8 @@ model Project {
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone         String       @default("")
   changelogExampleIds   String[]     @default([])
+  /// AI drafts mark where a screenshot belongs ("[Screenshot: …]"), for the team to add before publishing (changelogStyle.update).
+  changelogScreenshotMarkers Boolean @default(false)
   /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
   /// changelogAiHour, for the per-project hourly cap.
   changelogAiHour       DateTime     @default(now())
