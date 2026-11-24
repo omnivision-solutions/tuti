@@ -278,6 +278,31 @@ test("a draft leaves a line where it needs a fact; the entry isn't published wit
   expect((await call(publishChangelogEntry, team(), { number })).status).toBe("published");
 });
 
+test("once it's published, an entry's text can't gain a marker: a save with one is refused, also one that waited for the publish", async () => {
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode", body: "Dark mode is here." });
+  // A save with a marker, started while the entry is a draft and held up by a publish that's committing.
+  let commit!: () => void;
+  const held = new Promise<void>((resolve) => (commit = resolve));
+  let locked!: () => void;
+  const publishing = new Promise<void>((resolve) => (locked = resolve));
+  const publish = prisma.$transaction(async (tx) => {
+    await tx.changelogEntry.update({ where: { projectId_number: { projectId: project.id, number } }, data: { publishedAt: new Date() } });
+    locked();
+    await held;
+  });
+  await publishing;
+  const saving = call(updateChangelogEntry, team(), { number, body: "Dark mode is here.\n[Check: is it out on iOS yet?]" });
+  saving.catch(() => {});
+  await untilWaitingOnLock();
+  commit();
+  await publish;
+  await expect(saving).rejects.toMatchObject({ status: 409, code: "markers", message: "This entry is published. Replace or remove the marker in its text first: [Check: is it out on iOS yet?]" });
+  // And any save after it: the text stays as readers have it. Without a marker, a published entry is edited as ever.
+  await expect(call(updateChangelogEntry, team(), { number, markdown: "Now with [Screenshot: the menu]." })).rejects.toMatchObject({ status: 409, code: "markers" });
+  expect((await get(number)).body).toBe("Dark mode is here.");
+  expect((await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on iOS too." })).body).toBe("Dark mode is here, on iOS too.");
+});
+
 test("publishing reads the text as it is under its lock: a marker saved while it waits holds it back", async () => {
   const { number } = await call(createChangelogEntry, team(), { title: "Dark mode", body: "Dark mode is here." });
   // A save that adds a marker, not committed yet.

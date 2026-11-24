@@ -586,6 +586,16 @@ export const updateChangelogEntry = defineOperation({
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
           await linkEntryPosts(tx, posts.map((postId) => ({ entryId: entry.id, postId })));
         }
+        // Text with a line still to fill in ("[Check: …]", "[Screenshot: …]") isn't saved into an entry that's out to
+        // readers, as it isn't published with one: read under the entry's lock, so a save that waited for a publish
+        // finds it published.
+        const markers = text ? markersIn(text.doc) : [];
+        if (markers.length > 0) {
+          const [now] = await tx.$queryRaw<{ publishedAt: Date | null }[]>`SELECT "publishedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+          if (now?.publishedAt) {
+            throw new OperationError(409, "markers", `This entry is published. Replace or remove ${markers.length === 1 ? "the marker" : `the ${markers.length} markers`} in its text first: ${markers.join(" ")}`);
+          }
+        }
         await attachCover(tx, projectId, cover);
         const saved = await tx.changelogEntry.update({
           where: { id: entry.id },
