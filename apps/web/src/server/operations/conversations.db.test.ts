@@ -158,7 +158,7 @@ test("a list's rows say what the Inbox's do: the company, the latest message's f
   const asUser = (userId: string) => ({ actor: { kind: "user", userId } as Actor, projectId: project.id });
   const rows = async (who: { actor: Actor; projectId: string } = context) => (await call(listConversations, who, {})).conversations;
   expect(await rows()).toMatchObject([
-    { number: 2, company: null, unread: true, latestMessage: { author: "user", name: null, fromAddress: null, line: null } },
+    { number: 2, company: null, unread: true, latestMessage: { author: "user", name: null, fromYou: false, fromAddress: null, line: null } },
     { number: 1, company: "Acme", unread: true, latestMessage: { author: "user", name: null, line: "The export button does nothing." } },
   ]);
 
@@ -166,11 +166,15 @@ test("a list's rows say what the Inbox's do: the company, the latest message's f
   await call(replyToConversation, asUser(owner.id), { number: 1, body: "On it.\nMore soon." });
   await call(replyToConversation, asUser(owner.id), { number: 1, body: "Ask Ravi", note: true });
   await call(markConversationRead, asUser(owner.id), { number: 1, seen: new Date().toISOString() });
-  const row = async (who: Parameters<typeof rows>[0]) => (await rows(who)).find((c) => c.number === 1);
-  expect(await row(asUser(owner.id))).toMatchObject({ unread: false, latestMessage: { author: "team", name: "Olive Owner", line: "On it." } });
-  expect(await row(asUser(tess.id))).toMatchObject({ unread: true });
+  const row = async (who: NonNullable<Parameters<typeof rows>[0]>) => (await rows(who)).find((c) => c.number === 1);
+  expect(await row(asUser(owner.id))).toMatchObject({ unread: false, latestMessage: { author: "team", name: "Olive Owner", fromYou: true, line: "On it." } });
+  expect(await row(asUser(tess.id))).toMatchObject({ unread: true, latestMessage: { name: "Olive Owner", fromYou: false } });
   // An API key's is its creator's.
-  expect(await row(context)).toMatchObject({ unread: false });
+  expect(await row(context)).toMatchObject({ unread: false, latestMessage: { fromYou: true } });
+  // In the conversation too: the reply and the note are the owner's, the user's message nobody's on the team.
+  const theirs = async (who: NonNullable<Parameters<typeof rows>[0]>) => (await call(getConversation, who, { number: 1 })).messages.map((m) => m.fromYou);
+  expect(await theirs(asUser(owner.id))).toEqual([false, true, true]);
+  expect(await theirs(asUser(tess.id))).toEqual([false, false, false]);
 
   expect(await call(listConversations, context, { limit: 1 })).toMatchObject({ nextCursor: "1", total: 2 });
   expect(await call(listConversations, context, { status: "waiting" })).toMatchObject({ nextCursor: null, total: 1 });

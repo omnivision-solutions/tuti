@@ -95,10 +95,17 @@ const inboxFields = {
     .meta({ examples: [true] }),
 };
 
+/** Whether a message is the asking teammate's own: the Inbox says "You" for it, whoever else has their name. */
+const fromYou = z
+  .boolean()
+  .describe("Whether the teammate asking wrote it; for an API key, the teammate who created it")
+  .meta({ examples: [false] });
+
 const latestMessageOutput = z
   .object({
     author: z.enum(["user", "team", "ai", "tuti"]).describe("Who wrote it").meta({ examples: ["user"] }),
     name: z.string().nullable().describe("The teammate who wrote it; null for anyone else's").meta({ examples: [null] }),
+    fromYou,
     fromAddress: z.string().nullable().describe("The address it was emailed from, for a message that came by email; null otherwise").meta({ examples: [null] }),
     line: z
       .string()
@@ -576,6 +583,7 @@ export const listConversations = defineOperation({
             ? {
                 author: message.author.toLowerCase(),
                 name: message.author === "TEAM" ? message.name : null,
+                fromYou: message.author === "TEAM" && message.authorId === me,
                 fromAddress: message.fromAddress,
                 line: rowLine(row.subject, message.body) ?? null,
               }
@@ -607,6 +615,7 @@ export const getConversation = defineOperation({
       messages: z
         .array(
           messageOutput.extend({
+            fromYou,
             fromAddress: z
               .string()
               .nullable()
@@ -629,7 +638,7 @@ export const getConversation = defineOperation({
     const messages = await prisma.conversationMessage.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "asc" },
-      select: { ...messageSelect, fromAddress: true, seenAt: true, emailStatus: true, emailError: true },
+      select: { ...messageSelect, authorId: true, fromAddress: true, seenAt: true, emailStatus: true, emailError: true },
     });
     // Each attachment with a link to it, signed for a while: images to show, other files saved under their name.
     const links = new Map(
@@ -643,9 +652,10 @@ export const getConversation = defineOperation({
       ).map((link) => [link.id, link.url]),
     );
     const online = conversation.userId || conversation.visitorHash ? await onlineUntil(projectId, presenceKey(conversation)) : null;
+    const me = teamMemberId(actor);
     return {
       ...view(conversation, await projectSlug(projectId)),
-      ...(await inboxDetails(projectId, teamMemberId(actor), [conversation.id])).get(conversation.id)!,
+      ...(await inboxDetails(projectId, me, [conversation.id])).get(conversation.id)!,
       onlineUntil: online,
       posts: await linkedPosts(conversation.id),
       messages: messages.map((message) => {
@@ -653,6 +663,7 @@ export const getConversation = defineOperation({
         return {
           ...shown,
           attachments: shown.attachments.map((a) => ({ ...a, url: links.get(a.id) ?? null })),
+          fromYou: message.author === "TEAM" && message.authorId === me,
           fromAddress: message.fromAddress,
           seenAt: message.seenAt,
           emailStatus: message.emailStatus?.toLowerCase() ?? null,
