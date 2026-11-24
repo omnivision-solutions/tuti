@@ -347,8 +347,10 @@ type Blocks = NonNullable<Doc["content"]>;
 
 /**
  * Markdown read back from an entry (changelog.get) can't say an image's size and alignment, and writes a video as a
- * link named "Video". Sent back, an image the text already has keeps the size and alignment it has there, and such a
- * link to a video the text has is that video's player again: the round trip changes only what was edited.
+ * link named "Video" to its page (an entry's videos are YouTube's, Vimeo's or Loom's: uploaded ones are articles'). Sent back, an image the text already has keeps the size
+ * and alignment it has there, and such a link to a video the text has is that video's player again: the round trip
+ * changes only what was edited. A video only as a block of its own, where the Markdown wrote it: inside a list item,
+ * say, the link stays a link (a video can't go there).
  */
 function keepingMedia(before: Doc, added: Blocks): Blocks {
   const images = new Map<unknown, Record<string, unknown>>();
@@ -361,16 +363,15 @@ function keepingMedia(before: Doc, added: Blocks): Blocks {
     }
     node.content?.forEach(read);
   })(before);
-  return added.map(function keep(node): Blocks[number] {
+  const sized = (node: Blocks[number]): Blocks[number] => {
     const had = node.type === "image" && images.get(node.attrs?.mediaId);
-    if (had) {
-      return { ...node, attrs: { ...node.attrs, width: had.width, align: had.align } };
-    }
+    return had ? { ...node, attrs: { ...node.attrs, width: had.width, align: had.align } } : node.content ? { ...node, content: node.content.map(sized) } : node;
+  };
+  return added.map((node) => {
     // A paragraph that's nothing but toMarkdown's link for a video.
     const [only, ...rest] = node.type === "paragraph" ? (node.content ?? []) : [];
     const link = rest.length === 0 && only?.type === "text" && only.text === "Video" && only.marks?.length === 1 && only.marks[0]!.type === "link" && only.marks[0]!.attrs?.href;
-    const video = typeof link === "string" && videos.get(link);
-    return video || (node.content ? { ...node, content: node.content.map(keep) } : node);
+    return (typeof link === "string" && videos.get(link)) || sized(node);
   });
 }
 

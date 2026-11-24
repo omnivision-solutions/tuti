@@ -378,6 +378,10 @@ describe("Markdown's images", () => {
     // A link that only looks like one (another video, other words) is a link.
     const linked = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
     expect((linked.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("paragraph");
+    // And the text's own video named inside a list item is a link there: a list item can't hold a player, and the edit saves.
+    const listed = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "- [Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)" });
+    expect((listed.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("bulletList");
+    expect((listed.content as { content: { type: string }[] }).content.filter((node) => node.type === "video")).toHaveLength(1);
     expect(await uploads()).toBe(1);
 
     // Another project's image isn't this one's to reuse by its link, nor is a link with a signature that isn't ours: neither is taken as an upload.
