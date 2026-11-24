@@ -102,6 +102,8 @@ test("Continue with Google from the app ends at the app's link with a session th
   const session = handedOver(back.headers.get("location"));
   expect(session).toMatchObject({ to: "tuti://sign-in", state: STATE, error: null });
   expect(await projectsOf(session.token)).toEqual({ status: 200, body: { projects: [{ slug: project.slug, name: project.name, role: "OWNER", openConversations: 0 }] } });
+  // The browser it went through keeps no session: it's the app's alone.
+  expect(back.headers.getSetCookie()).toEqual([]);
   // The app's own session, like one from the web's sign-in: nothing of Google's kept.
   expect(await prisma.session.findFirstOrThrow({ where: { userId: owner.id }, orderBy: { createdAt: "desc" } })).toMatchObject({ boundTo: "app" });
   expect(await prisma.account.findFirstOrThrow({ where: { userId: owner.id, providerId: "google" } })).toMatchObject({ accessToken: null, refreshToken: null, idToken: null });
@@ -140,6 +142,18 @@ test("the browser's first stop takes the sign-in's state and goes on to the prov
   // Not an open redirect: only to a provider set up here.
   expect((await proxy(`https://evil.example/login/oauth/authorize?state=${new URL(url).searchParams.get("state")}`)).status).toBe(400);
   expect((await proxy("https://github.com.evil.example/login/oauth/authorize?state=x")).status).toBe(400);
+
+  // Never for a sign-in of the web's: a page that sent a visitor here with the state of its own sign-in would have their
+  // browser finish it, signed in to the page's account. Nor a state nobody started, or one to put in a cookie as given.
+  const web = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: "/app" }, origin: null });
+  const webUrl = ((await web.json()) as { url: string }).url;
+  const refused = await proxy(webUrl);
+  expect(refused.status).toBe(400);
+  expect(refused.headers.getSetCookie()).toEqual([]);
+  expect((await proxy("https://github.com/login/oauth/authorize?state=nobody-started-this")).status).toBe(400);
+  const planted = await fromApp(`/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: url, oauthState: "anything" })}`, { origin: null });
+  expect(planted.status).toBe(400);
+  expect(planted.headers.getSetCookie()).toEqual([]);
 });
 
 /** Asks for the app's sign-in link as the app does. */
