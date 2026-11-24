@@ -118,8 +118,11 @@ test("an entry deleted while its cover is drawn is gone (a 404), not an error of
   });
 
   await expect(compose({ number })).rejects.toMatchObject({ status: 404, code: "not_found", message: `There's no changelog entry #${number}` });
-  // Its cover is no entry's: an upload like any unused one, for the daily release to free.
-  expect(await prisma.changelogEntry.count({ where: { projectId: project.id, coverId: { not: null } } })).toBe(0);
+  // The cover was drawn and kept, and it's no entry's: a finished upload like any unused one, for the daily release to free.
+  const [kept] = await covers();
+  expect(await covers()).toHaveLength(1);
+  expect(kept).toMatchObject({ status: "READY", width: 1600, height: 840 });
+  expect(await prisma.changelogEntry.count({ where: { coverId: kept!.id } })).toBe(0);
 });
 
 test("without uploads set up it's a 503, and past the member's hourly uploads a 409: the entry keeps the cover it has", async () => {
