@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { Button } from "@/components/ui/button";
+import { AppSignInLinkForm } from "@/components/app-sign-in-link-form";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { isAppSignInState } from "@/lib/app-sign-in";
 import { pendingSignInLink } from "@/server/sign-in-link-lookup";
@@ -23,14 +23,7 @@ export default async function AppSignInLinkPage(props: PageProps<"/app/auth/app-
       </CardHeader>
       {link && (
         <CardFooter className="flex-col items-stretch gap-3">
-          {/* A plain form: its post is answered with a redirect to the app (open/route.ts), which a script's navigation can't do as surely. */}
-          <form method="post" action="/app/auth/app-link/open">
-            <input type="hidden" name="token" value={token as string} />
-            <input type="hidden" name="state" value={state as string} />
-            <Button type="submit" className="w-full">
-              Open the app
-            </Button>
-          </form>
+          <AppSignInLinkForm token={token as string} state={state as string} />
           <p className="text-sm text-muted-foreground">It opens the Tuti app, so use the phone or tablet the app is on.</p>
         </CardFooter>
       )}

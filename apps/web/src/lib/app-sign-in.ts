@@ -39,20 +39,22 @@ export const appSignIn = () =>
         {
           // The plugin's stop in the device's browser, on the way to Google or GitHub: it gives the browser the state of a
           // sign-in someone else's request started, which a provider's way back is checked against. Only for a sign-in
-          // that ends at the app (where a session nobody asked for is refused by its state), never one of the web's: any
+          // that can only end at the app (where a session nobody asked for is refused by its state), never one of the web's: any
           // page could send a visitor here with the state of its own sign-in, and have their browser signed in to its
           // account. Nor with a state for a cookie (`oauthState`): states are kept in the database here.
           matcher: (ctx) => ctx.path === "/expo-authorization-proxy",
           handler: createAuthMiddleware(async (ctx) => {
             const { authorizationURL, oauthState } = (ctx.query ?? {}) as { authorizationURL?: string; oauthState?: string };
             const state = authorizationURL && URL.canParse(authorizationURL) ? new URL(authorizationURL).searchParams.get("state") : null;
-            // As Better Auth keeps a sign-in's state (`auth-state:`), with where it goes back to.
+            // As Better Auth keeps a sign-in's state (`auth-state:`), with everywhere it may go back to: all of them the
+            // app's, or a new account's way back (`newUserURL`) could be a page, where the browser would keep its session.
             const kept = state && !oauthState ? await ctx.context.internalAdapter.findVerificationValue(`auth-state:${state}`) : null;
-            let back: unknown;
+            let ends: { callbackURL?: unknown; newUserURL?: unknown; errorURL?: unknown } = {};
             try {
-              back = kept && (JSON.parse(kept.value) as { callbackURL?: unknown }).callbackURL;
+              ends = (kept && (JSON.parse(kept.value) as typeof ends)) || {};
             } catch {}
-            if (!isAppLink(back)) {
+            const appOrNone = (url: unknown) => url === undefined || url === null || isAppLink(url);
+            if (!isAppLink(ends.callbackURL) || !appOrNone(ends.newUserURL) || !appOrNone(ends.errorURL)) {
               throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
             }
           }),

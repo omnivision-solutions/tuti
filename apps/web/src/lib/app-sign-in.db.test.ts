@@ -151,6 +151,14 @@ test("the browser's first stop takes the sign-in's state and goes on to the prov
   expect(refused.status).toBe(400);
   expect(refused.headers.getSetCookie()).toEqual([]);
   expect((await proxy("https://github.com/login/oauth/authorize?state=nobody-started-this")).status).toBe(400);
+  // Nor one that ends at the app for an account that exists but on a page for a new one, or for an error.
+  for (const elsewhere of [{ newUserCallbackURL: "/app" }, { errorCallbackURL: "/app/auth/sign-in" }]) {
+    const mixed = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: `tuti://sign-in?state=${STATE}`, ...elsewhere } });
+    expect((await proxy(((await mixed.json()) as { url: string }).url)).status, JSON.stringify(elsewhere)).toBe(400);
+  }
+  // With each of them the app's, it goes on.
+  const all = await fromApp("/sign-in/social", { body: { provider: "github", callbackURL: `tuti://sign-in?state=${STATE}`, newUserCallbackURL: "tuti://welcome", errorCallbackURL: "tuti://sign-in" } });
+  expect((await proxy(((await all.json()) as { url: string }).url)).status).toBe(302);
   const planted = await fromApp(`/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: url, oauthState: "anything" })}`, { origin: null });
   expect(planted.status).toBe(400);
   expect(planted.headers.getSetCookie()).toEqual([]);

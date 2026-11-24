@@ -45,6 +45,8 @@ test("the mobile app's emailed link hands the app a session for the API, and lea
       page.getByRole("button", { name: "Open the app" }).click(),
     ]);
     expect(response.status()).toBe(303);
+    // The link works once: the button is off after the tap, so a second can't take the first's place.
+    await expect(page.getByRole("button", { name: "Open the app" })).toBeDisabled();
     return new URL((await response.headerValue("location"))!);
   };
   const handed = await open(phone);
