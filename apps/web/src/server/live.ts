@@ -12,6 +12,8 @@ import { log } from "@tuti/shared";
 export type InboxChange = {
   projectId: string;
   conversationId: string;
+  /** Its number, which the team's and the widget's streams pass on (inboxStream). Left out where no conversation changed (someone came online). */
+  number?: number;
   /** Whose conversation: someone Tuti knows, or a signed-out visitor (their token's hash). */
   userId: string | null;
   visitorHash: string | null;
@@ -29,7 +31,8 @@ export async function notifyInboxNow(change: InboxChange) {
   await prisma.$executeRaw`SELECT pg_notify(${CHANNEL}, ${JSON.stringify(change)})`;
 }
 
-type Subscriber = { wants: (change: InboxChange) => boolean; changed: () => void };
+/** `changed` gets the change, or nothing when what changed is unknown (the listener has just started listening). */
+type Subscriber = { wants: (change: InboxChange) => boolean; changed: (change?: InboxChange) => void };
 
 // One listener and one set of streams per instance (kept across hot reloads in dev).
 const state = globalThis as unknown as {
@@ -38,9 +41,9 @@ const state = globalThis as unknown as {
 const inbox = (state.tutiInbox ??= { subscribers: new Set(), stop: null, listening: null });
 
 /** Tells one subscriber; its error (a stream closing as it's told) stays its own, so the others still hear. */
-function tell(subscriber: Subscriber) {
+function tell(subscriber: Subscriber, change?: InboxChange) {
   try {
-    subscriber.changed();
+    subscriber.changed(change);
   } catch (error) {
     log.warn("A live stream couldn't take a change", { error });
   }
@@ -55,7 +58,7 @@ function received(payload: string) {
   }
   for (const subscriber of inbox.subscribers) {
     if (subscriber.wants(change)) {
-      tell(subscriber);
+      tell(subscriber, change);
     }
   }
 }
@@ -81,7 +84,7 @@ export function listening(): Promise<void> {
       inbox.stop = listen(CHANNEL, {
         onPayload: received,
         onListening: () => {
-          inbox.subscribers.forEach(tell);
+          inbox.subscribers.forEach((subscriber) => tell(subscriber));
           resolve();
         },
       });
@@ -95,7 +98,7 @@ export const KEEPALIVE_MS = 25_000;
 
 /**
  * A Server-Sent Events response: `ready` once open (fetch the current state), `change` when there's
- * something new, and a comment every KEEPALIVE_MS, when `stillAllowed` is checked again (the stream
+ * something new (`{ "conversation": <number> }` for one conversation, `{}` when it could be anything), and a comment every KEEPALIVE_MS, when `stillAllowed` is checked again (the stream
  * ends once it's false: signed out, token expired, taken off the team). Ends when the client goes.
  */
 export function inboxStream(
@@ -116,7 +119,9 @@ export function inboxStream(
           controller.enqueue(encoder.encode(text));
         }
       };
-      const unsubscribe = subscribeInbox(wants, () => send("event: change\ndata: {}\n\n"));
+      const unsubscribe = subscribeInbox(wants, (change) =>
+        send(`event: change\ndata: ${JSON.stringify(change?.number ? { conversation: change.number } : {})}\n\n`),
+      );
       const timer = setInterval(() => {
         void stillAllowed().then(
           (allowed) => (allowed ? send(": ping\n\n") : cleanup()),

@@ -132,7 +132,7 @@ export async function authenticateTeammate(request: Request): Promise<Teammate |
     // The same for a project that isn't there: nothing tells which slugs are taken.
     return apiError(403, "forbidden", "You're not on the team of a project with that slug");
   }
-  return { kind: "user", ...session, projectId: member.projectId, role: member.role };
+  return { kind: "user", userId: session.userId, sessionId: session.sessionId, projectId: member.projectId, role: member.role };
 }
 
 /**

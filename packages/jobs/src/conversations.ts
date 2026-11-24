@@ -296,6 +296,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       where: { id: conversationId },
       select: {
         projectId: true,
+        number: true,
         userId: true,
         visitorHash: true,
         email: true,
@@ -329,6 +330,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
     prisma.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({
       projectId: conversation.projectId,
       conversationId,
+      number: conversation.number,
       userId: conversation.userId,
       visitorHash: conversation.visitorHash,
       email: conversation.email,
@@ -459,19 +461,19 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
 export async function wakeConversations(_input: JobInput<"wakeConversations">, log: JobLogger): Promise<JobResult> {
   const now = new Date();
   const woken = await prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<{ id: string; projectId: string; userId: string | null; visitorHash: string | null }[]>`
+    const rows = await tx.$queryRaw<{ id: string; projectId: string; number: number; userId: string | null; visitorHash: string | null }[]>`
       UPDATE "conversation" SET "snoozedUntil" = NULL, "status" = 'OPEN', "updatedAt" = ${now}
       WHERE NOT "spam" AND "status" <> 'CLOSED'
         AND ("snoozedUntil" <= ${now} OR ("snoozedUntil" > ${now} AND "status" = 'OPEN' AND EXISTS (
           SELECT 1 FROM "conversation_message" m WHERE m."conversationId" = "conversation"."id" AND m."author" = 'USER' AND m."createdAt" >= "snoozedAt"
         )))
-      RETURNING "id", "projectId", "userId", "visitorHash"`;
+      RETURNING "id", "projectId", "number", "userId", "visitorHash"`;
     // A snooze on one closed or spam (a release from before leaves one when it closes it) is let go of, so it can't
     // open it later, nor hide it if it's opened again.
     await tx.$executeRaw`UPDATE "conversation" SET "snoozedUntil" = NULL WHERE "snoozedUntil" IS NOT NULL AND ("spam" OR "status" = 'CLOSED')`;
     for (const row of rows) {
       // As server/live.ts's notifyInbox: who it's with, never what it says.
-      await tx.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({ projectId: row.projectId, conversationId: row.id, userId: row.userId, visitorHash: row.visitorHash })})`;
+      await tx.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({ projectId: row.projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash })})`;
     }
     return rows.length;
   });

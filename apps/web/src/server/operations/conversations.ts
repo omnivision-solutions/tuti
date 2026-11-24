@@ -1001,7 +1001,7 @@ export async function startConversation(
         createdAt: new Date(now.getTime() + i + 1),
       })),
     });
-    await notifyInbox(tx, { projectId, conversationId: conversation.id, userId: start.userId, visitorHash: start.visitorHash ?? null, email: conversation.email });
+    await notifyInbox(tx, { projectId, conversationId: conversation.id, number: conversation.number, userId: start.userId, visitorHash: start.visitorHash ?? null, email: conversation.email });
     return { conversation, message: first };
   });
 }
@@ -1045,7 +1045,7 @@ export async function addMessage(
       // What it wrote with it (a received email's attachments) is part of the message the caller announces.
       written = await tx.conversationMessage.findUniqueOrThrow({ where: { id: created.id }, select: messageSelect });
     }
-    const whose = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { userId: true, visitorHash: true, email: true } });
+    const whose = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { number: true, userId: true, visitorHash: true, email: true } });
     await notifyInbox(tx, { projectId, conversationId, ...whose });
     if (message.note) {
       // The team's note to itself: nobody replied, and the user mustn't see anything move (their list is by lastMessageAt).
@@ -1269,7 +1269,7 @@ export const updateConversation = defineOperation({
         },
         select: { ...conversationSelect, userId: true, visitorHash: true },
       });
-      await notifyInbox(tx, { projectId, conversationId: row.id, userId: row.userId, visitorHash: row.visitorHash, email: row.email });
+      await notifyInbox(tx, { projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash, email: row.email });
       return row;
     });
     return view(updated, await projectSlug(projectId));
