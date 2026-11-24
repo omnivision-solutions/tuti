@@ -171,8 +171,8 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-/** An entry for the API; `counts` when several entries' reactions were read at once (a list: its entries go without their Markdown). */
-async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts) {
+/** An entry for the API; `counts` when its reactions were read already; `listed`: one of a list's, which go without their Markdown. */
+async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts, { listed = false } = {}) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   const text = displayDoc(entry);
   return {
@@ -188,7 +188,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     body: entry.body,
     content: text,
     /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
-    ...(!counts && { markdown: toMarkdown(text, { mediaUrls: lastingMediaUrls(text) }) }),
+    ...(!listed && { markdown: toMarkdown(text, { mediaUrls: lastingMediaUrls(text) }) }),
     /** The featured image (cover): a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
     // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
@@ -460,7 +460,7 @@ export const listChangelog = defineOperation({
     const shown = entries.slice(0, input.limit);
     const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts))),
+      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts, { listed: true }))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -645,6 +645,11 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
+    // What the client read has changed since: said first, before a section it names is looked for (renamed meanwhile,
+    // "there's no such section" would send it elsewhere, where "changed, reload" is what happened).
+    if (input.expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+      throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
+    }
     // Part of the text only: Markdown for one section, or to add at its end. The rest is the text as it's read here,
     // so it's saved only if the entry hasn't changed meanwhile (as with `expectedUpdatedAt`, which it stands in for).
     const part = partOfText(entry, input);
@@ -652,10 +657,7 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
     // Markdown, the whole text's or a part's: what it can't say about the images and videos it takes the place of is kept.
     const whole = displayDoc(entry).content ?? [];
     const place = (added: Blocks): Doc => (part ? part.place(keepingMedia(whole, part.replaced, added)) : { type: "doc", content: keepingMedia(whole, whole, added) });
-    // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
-    if (expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
-      throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
-    }
+    // (Checked again under the lock below; above first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.)
     const posts = input.posts && (await postIds(projectId, input.posts));
     if (input.markdown !== undefined || isCoverUrl(input.cover)) {
       await refusedBeforeCopying(projectId, { cover: input.cover, postIds: posts, sample: entry.sample });
