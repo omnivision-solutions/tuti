@@ -140,9 +140,9 @@ async function listed(where: Prisma.ConversationWhereInput, pages: number) {
   return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: PER_PAGE * pages, select: LISTED });
 }
 
-/** `text` with the search's text marked wherever it has it, whatever the case. */
+/** `text` (a snippet: its spaces single) with the search's text marked wherever it has it, whatever the case. */
 function Found({ text, q }: { text: string; q: string }) {
-  return text.split(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")).map((part, i) =>
+  return text.split(new RegExp(`(${q.replace(/\s+/g, " ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")).map((part, i) =>
     i % 2 === 1 ? (
       <mark key={i} className="rounded-sm bg-highlight px-0.5 text-highlight-foreground">
         {part}

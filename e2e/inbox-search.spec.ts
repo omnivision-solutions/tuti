@@ -18,7 +18,7 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await api("/conversations", { user: { id: "sam", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Charged twice", body: "I was charged twice this month." });
   await api("/users", { users: [{ id: "sam", properties: { company: "Northwind" } }] });
   await api("/conversations/1/messages", { body: "Sorry about that, Sam. I've looked at both charges on your account, and the refund for the second one is on its way: it takes about five days." });
-  await api("/conversations", { email: "e2e-alex@example.com", subject: "Cancel my plan", body: "Please cancel. Can I get a refund for this year?" });
+  await api("/conversations", { email: "e2e-alex@example.com", subject: "Cancel my plan", body: "Please cancel.  Can I get a refund for this year?" });
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await api("/conversations", { email: "e2e-jamie@example.com", subject: "Calendar won't connect", body: "It keeps asking me to sign in again." });
   await api("/conversations/3/messages", { body: "Jamie's on the legacy plan: check before answering.", note: true });
@@ -80,6 +80,11 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await search.press("Enter");
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Note: Jamie's on the legacy plan: check before answering.");
+  // Two spaces, as the message has them: found, and marked in the row, whose spaces are single.
+  await search.fill("cancel.  can");
+  await search.press("Enter");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.locator("mark")).toHaveText(["cancel. Can"]);
 
   // Nothing found says so; Clear search goes back to the view.
   await search.fill("zebra");
@@ -92,6 +97,11 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await expect(owner.getByRole("heading", { name: "Waiting on user 1" })).toBeVisible();
   await expect(search).toHaveValue("");
   await expect(views.getByRole("link", { name: "Waiting on user 1" })).toHaveAttribute("aria-current", "true");
+
+  // From Needs reply too, a result that needs a reply says so: the results mix those that do with those that don't.
+  await owner.goto(`/app/${slug}/inbox?q=calendar`);
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Needs reply");
 
   // On a phone the field is under the list's title, the page no wider than the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
