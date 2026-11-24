@@ -563,6 +563,14 @@ test("a run that brought articles across saves them when a later one asks (Retry
   }
 });
 
+test("a pause asked for after a run brought articles across, longer than an import waits, ends the import saying when to start again; what came across is kept", async () => {
+  site.failing.set("/docs/getting-started/first-project", 429);
+  site.retryAfter = String(2 * 24 * 60 * 60);
+  const ended = await importSite();
+  expect(ended).toMatchObject({ state: "failed", resumesAt: null, error: "127.0.0.1 asked Tuti to wait 2880 minutes. Start the import again after that: it goes on from where it stopped." });
+  expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme"]);
+});
+
 test("a short Retry-After the step hasn't the time left to wait ends the run, not the import: the next run waits it", async () => {
   // Once the page is asked for, the clock is 3 minutes on: its 1s Retry-After doesn't fit before the step's deadline.
   site.failing.set("/docs/getting-started", 429);

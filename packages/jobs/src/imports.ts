@@ -389,7 +389,8 @@ async function importPage(importId: string, log: JobLogger): Promise<{ result: J
     await assertStarterAdmin(prisma, row);
     const page = await step.page(job, row.cursor);
     after = page.after;
-    waitMs = page.waitMs;
+    // Past what an import waits, not waited: the next page asks again, and fails the import with the source's message.
+    waitMs = page.waitMs !== undefined && page.waitMs <= LONGEST_WAIT_MS ? page.waitMs : undefined;
     next = page.next ? step.name : nextStep(row.parts, step.name);
     const counted = structuredClone(job.counts);
     saved = await locked(row.projectId, async (tx) => {
