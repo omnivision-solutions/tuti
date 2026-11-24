@@ -2501,6 +2501,14 @@ test("on a server selling plans, a conversation closed before the plan's history
   const notice = owner.getByRole("note").filter({ hasText: "Closed conversations with nothing done in them for more than 7 days are past your plan's history." });
   await expect(notice.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "inbox-closed-past-plan-history");
+  // A search that would find it says so too, rather than only that nothing matches; one that wouldn't doesn't.
+  await owner.goto(`/app/${slug}/inbox?q=invoice`);
+  await expect(owner.getByText("No conversations match your search")).toBeVisible();
+  await expect(owner.getByRole("note").filter({ hasText: "Matching conversations with nothing done in them for more than 7 days are past your plan's history." })).toBeVisible();
+  await checkpoint(owner, "inbox-search-past-plan-history");
+  await owner.goto(`/app/${slug}/inbox?q=zebra`);
+  await expect(owner.getByText("No conversations match your search")).toBeVisible();
+  await expect(owner.getByRole("note").filter({ hasText: "past your plan's history" })).toHaveCount(0);
 
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.getByText("Past your plan's history")).toBeVisible();

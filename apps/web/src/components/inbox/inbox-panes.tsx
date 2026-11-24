@@ -188,8 +188,9 @@ export async function InboxPanes({
   const views = Object.keys(VIEWS) as View[];
   const history = await historySince(projectId);
   // A search's results: every status, never spam nor what's past the plan's history.
-  const where: Prisma.ConversationWhereInput = q
-    ? { projectId, spam: false, AND: [visibleConversations(history), await conversationsMatching(projectId, q)] }
+  const matching = q ? await conversationsMatching(projectId, q) : null;
+  const where: Prisma.ConversationWhereInput = matching
+    ? { projectId, spam: false, AND: [visibleConversations(history), matching] }
     : viewWhere(view, projectId, userId, history);
   // What its rows say apart from a view's: Needs reply and Closed on those that are, the message found.
   const shown = q ? "search" : view;
@@ -200,11 +201,14 @@ export async function InboxPanes({
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
     open === null ? inboxStats(projectId) : null,
   ]);
-  // Closed and Spam: whether some are past the plan's history (said above the list, rather than an empty one alone).
-  const hidden =
-    history && !q && (view === "closed" || view === "spam")
-      ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), pastConversations(history)] } })
-      : 0;
+  // Closed, Spam and a search: whether some are past the plan's history (said above the list, rather than an empty one alone).
+  const hidden = !history
+    ? 0
+    : matching
+      ? await prisma.conversation.count({ where: { projectId, spam: false, AND: [pastConversations(history), matching] } })
+      : view === "closed" || view === "spam"
+        ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), pastConversations(history)] } })
+        : 0;
   // Not one conversation in any view, spam included: the views split them all between them.
   const none = counts.every((n) => n === 0);
   const whereFrom = "New conversations show up here as they come in.";
@@ -272,7 +276,7 @@ export async function InboxPanes({
             {hidden > 0 && (
               <div className="px-3 pt-3">
                 <PastHistoryNotice
-                  what={view === "spam" ? "Spam conversations" : "Closed conversations"}
+                  what={q ? "Matching conversations" : view === "spam" ? "Spam conversations" : "Closed conversations"}
                   plan={plan}
                   projectSlug={slug}
                   admin={isAdminRole(membership.role)}
