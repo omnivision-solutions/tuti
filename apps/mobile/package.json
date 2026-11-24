@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "build": "expo export --platform ios --platform android",
-    "lint": "expo install --check && expo lint",
+    "lint": "EXPO_OFFLINE=1 expo install --check && expo lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
