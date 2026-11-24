@@ -256,7 +256,8 @@ the list picks none to approve at once.
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
-  "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
+  "View as reader". Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
+  each, Edit under the team's own while it's published). Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The featured image (its cover, and its link
   preview) shows under the title across the text's column, as readers see it, with Replace and Remove over it on
   hover, focus and touch screens; without one, a dashed band there adds one (picked or dropped). One way into AI: while the text is still the pull requests'

@@ -6,12 +6,16 @@ import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
+import { mediaStorage } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
+import { ChangelogComment } from "@/components/changelog-comment";
+import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
+import { COMMENTS_HEADING } from "@/lib/comment-threads";
 import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
@@ -102,6 +106,17 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   // Imported as a draft though published there: publishing keeps that date, quietly (changelog.publish).
   const importedOn = entry.importedPublishedAt && formatDate(entry.importedPublishedAt);
   const wideCoverUrl = cover && lastingMediaUrl(imageKey(cover.id, imageWidths(cover.width).filter((w) => w <= 1600).at(-1)!));
+  // Readers' comments on it (an unpublished one keeps them, hidden from readers, deletable but not editable): the team moderates them here.
+  const [comments, team] = await Promise.all([
+    prisma.changelogComment.findMany({
+      where: { entryId: entry.id },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, body: true, content: true, createdAt: true, asReader: true, author: { select: { id: true, name: true, image: true } } },
+    }),
+    prisma.teamMember.findMany({ where: { projectId: membership.project.id }, select: { userId: true } }),
+  ]);
+  const commentMedia = await mediaUrls(...comments.map(displayDoc));
+  const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
 
   return (
     // Save in the pane's header submits the form below, and says when it's saving. On phones the title shows once, the
@@ -193,6 +208,41 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               canEditWithAi={aiEnabled() && !unwritten}
               aiPaused={paused}
             />
+            {/* Always there, so focus has its heading to go to once the last is deleted. */}
+            <section className="flex max-w-3xl flex-col gap-4 border-t pt-6" aria-label="Comments">
+              <h2 id={COMMENTS_HEADING} tabIndex={-1} className="text-sm font-semibold outline-none">
+                {comments.length === 0 ? (
+                  <span className="font-normal text-muted-foreground">
+                    {entry.publishedAt ? "No comments yet. Users comment on it on your portal." : "No comments. Users comment on it on your portal once it's published."}
+                  </span>
+                ) : (
+                  `${comments.length} ${comments.length === 1 ? "comment" : "comments"}`
+                )}
+              </h2>
+              {comments.length > 0 && (
+                <CommentList
+                  comments={comments}
+                  teamUserIds={new Set(team.map((m) => m.userId))}
+                  mediaUrls={commentMedia}
+                  // The team deletes any (moderation); its own it edits too.
+                  editable={(comment, text) => (
+                    <ChangelogComment
+                      projectSlug={slug}
+                      number={entry.number}
+                      commentId={comment.id}
+                      author={comment.author.name}
+                      doc={displayDoc(comment)}
+                      mine={comment.author.id === membership.userId}
+                      canEdit={comment.author.id === membership.userId && entry.publishedAt !== null}
+                      canDelete
+                      uploads={commentUploads}
+                    >
+                      {text}
+                    </ChangelogComment>
+                  )}
+                />
+              )}
+            </section>
           </PaneBody>
         </Pane>
       </PaneLayout>
