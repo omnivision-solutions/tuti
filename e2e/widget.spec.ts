@@ -853,6 +853,14 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.context().close();
 });
 
+/** Replaces an editor's text, again if it was added to instead (the editor still loading the comment as it was typed in). */
+async function replaceText(editor: Locator, text: string) {
+  await expect(async () => {
+    await editor.fill(text);
+    await expect(editor).toHaveText(text, { timeout: 1000 });
+  }).toPass();
+}
+
 test("someone a customer's site signs in comments on an update in the widget, edits and deletes their own; signed out, it says how to sign in", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
@@ -886,7 +894,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   // They edit it.
   await own.getByRole("button", { name: "Edit your comment" }).click();
   await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveText("Works with my work calendar too.");
-  await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Works with my work and home calendars.");
+  await replaceText(comments.getByRole("textbox", { name: "Edit your comment" }), "Works with my work and home calendars.");
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(widget.getByText("Comment saved")).toBeVisible();
   await expect(own).toContainText("Works with my work and home calendars.");
@@ -894,7 +902,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   await own.getByRole("button", { name: "Edit your comment" }).click();
   const editing = comments.getByRole("textbox", { name: "Edit your comment" });
   await expect(editing).toHaveText("Works with my work and home calendars.");
-  await editing.fill("Works with all my calendars.");
+  await replaceText(editing, "Works with all my calendars.");
   // Their own comments read again with the fresh token: `widgetComments(slug, token, 1)` (and the reactions', of the same shape).
   const reread = sam.waitForResponse((response) => !!response.request().headers()["next-action"] && /^\["[^"]+","[^"]+",1\]$/.test(response.request().postData() ?? ""));
   await sam.evaluate(() =>
@@ -959,7 +967,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   const editBox = comments.getByRole("textbox", { name: "Edit your comment" });
   // (Once it has the comment's text: typing before then would be added to it.)
   await expect(editBox).toHaveText("Works with all my calendars.");
-  await editBox.fill("Edited while signing in?");
+  await replaceText(editBox, "Edited while signing in?");
   await sam.evaluate(() =>
     (window as unknown as { Tuti: { identify(getToken: () => Promise<string>): void } }).Tuti.identify(() => fetch(`/token${location.pathname}`).then((r) => r.text())),
   );
