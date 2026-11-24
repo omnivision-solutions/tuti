@@ -99,8 +99,8 @@ test("a phone on two accounts is told once, and only about the one that register
   const other = await addMember(project.id, "MEMBER");
   await phone(owner, "shared");
   await phone(other, "shared");
-  // Both kept: registering a token removes none of another account's rows.
-  expect(await prisma.device.count({ where: { token: "ExponentPushToken[shared]" } })).toBe(2);
+  // The phone is the last account's: the first's row is gone, so nothing of theirs can come back to it.
+  expect(await prisma.device.findMany({ where: { token: "ExponentPushToken[shared]" }, select: { userId: true } })).toEqual([{ userId: other.id }]);
   await userWrites();
   expect(pushedTo()).toEqual(["shared"]);
 
@@ -110,6 +110,12 @@ test("a phone on two accounts is told once, and only about the one that register
   const theirs = await createProject(stranger);
   expect(await api(stranger, "POST", "/devices", { deviceId: "stranger-id", token: "ExponentPushToken[shared]", platform: "ios" }, theirs.slug)).toMatchObject({ status: 200 });
   expo.sent = [];
+  await userWrites();
+  expect(expo.sent).toEqual([]);
+  // The stranger signs out: their row goes with their session, and the first account's messages still don't reach the
+  // phone, which nobody signed in to them has registered since.
+  await auth.api.signOut({ headers: new Headers({ host: appUrl().host, cookie: stranger.cookie }) });
+  expect(await prisma.device.count({ where: { token: "ExponentPushToken[shared]" } })).toBe(0);
   await userWrites();
   expect(expo.sent).toEqual([]);
   // Back on the first account, it registers again as the app opens, and it's theirs.

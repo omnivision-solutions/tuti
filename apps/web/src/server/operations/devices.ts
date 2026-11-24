@@ -66,10 +66,11 @@ export const registerDevice = defineOperation({
         create: { userId, deviceId, token, platform, sessionId },
         update: { token, platform, sessionId, lastSeenAt: new Date() },
       }),
-      // Their own install whose id was lost (a reinstall): the token is this row's now. Another account's row stays: the
-      // sender tells a token only about the account that registered it last (push.ts), so the phone is on whoever's
-      // app is signed in, and the other gets it back when their app opens and registers again.
-      prisma.device.deleteMany({ where: { userId, token, NOT: { deviceId } } }),
+      // A phone is one account's at a time: whoever's app registered it last. Every other row with this token goes,
+      // their own (a reinstall whose id was lost) and another account's (signed out while offline, then someone else
+      // signed in), so none is left to fall back to when this one's session ends. The other gets the phone back when
+      // their app opens and registers again.
+      prisma.device.deleteMany({ where: { token, NOT: { userId, deviceId } } }),
     ]);
     return { deviceId };
   },
