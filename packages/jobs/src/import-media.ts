@@ -178,6 +178,34 @@ async function copyThrough(
     extension = fileExtension(filename);
   }
 
+  return keep(projectId, uploaderId, { kind, body, path, filename, extension, late, upload });
+}
+
+/**
+ * An image Tuti drew itself (a composed changelog cover) kept as `uploaderId`'s upload, as one copied from a URL is
+ * (`uploadImage`): within their hourly uploads and the project's quota, processed at once, READY; or why not.
+ */
+export const storeImage = (body: Uint8Array, { projectId, uploaderId }: { projectId: string; uploaderId: string }) =>
+  keep(projectId, uploaderId, { kind: "image", body, path: null, filename: null, extension: "", late: undefined, upload: true });
+
+/** A fetched file kept in the project's media: its row reserved under the quota, then stored (an image processed). */
+async function keep(
+  projectId: string,
+  uploaderId: string,
+  {
+    kind,
+    body,
+    path,
+    filename,
+    extension,
+    late,
+    upload,
+  }: { kind: MediaSource["kind"]; body: Uint8Array; path: string | null; filename: string | null; extension: string; late: AbortSignal | undefined; upload: boolean | undefined },
+): Promise<Copied & { passing?: true }> {
+  const storage = mediaStorage();
+  if (!storage) {
+    return { leftOut: "unsupported" };
+  }
   // An image counts at most PROCESSED_IMAGE_MAX_BYTES until it's re-encoded: what's kept (WebP sizes and the email
   // JPEG, set by processing) is always well under it, so a large original doesn't use up quota it won't keep.
   // A video's whole size is its file's (the body is only its first bytes).

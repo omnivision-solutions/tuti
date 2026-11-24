@@ -1,7 +1,7 @@
 import { type Doc, isVideo, toMarkdown, toPlainText, videoPageUrl } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus, uploadImage } from "@tuti/jobs";
-import { mediaLimit } from "@tuti/shared/storage";
+import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, storeImage, toApiStatus, uploadImage } from "@tuti/jobs";
+import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
@@ -11,6 +11,7 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
+import { automaticDesign, COVER_DESIGNS, coverContent, coverDesigns, drawCover, MAX_COVER_HEADLINE } from "../cover-card";
 import { lastingImage, lastingMediaUrls } from "../media-urls";
 import {
   blocksToNotes,
@@ -22,6 +23,7 @@ import {
   rewritePrompt,
   sectionRange,
 } from "../release-notes";
+import { branding } from "./branding";
 import { author, authorId, saving } from "./create";
 import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -744,6 +746,64 @@ export const editChangelogSection = defineOperation({
       throw new OperationError(400, "invalid_input", "Send `section` or `append: true`, one of them");
     }
     return saveEntry(context, input);
+  },
+});
+
+export const composeChangelogCover = defineOperation({
+  name: "changelog.composeCover",
+  title: "Make an entry's cover",
+  summary:
+    "Compose a featured image for an entry from what it and the portal already have (its title, first tag, headings and first image; the portal's logo, colour and look), and set it as the entry's cover, replacing the one it has. No AI",
+  method: "POST",
+  path: "/changelog/{number}/cover/compose",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: z.object({
+    number: entryNumber,
+    design: z
+      .enum(["auto", ...COVER_DESIGNS])
+      .default("auto")
+      .describe(
+        "The design: `title` (the portal's colour and the title), `screenshot` (the entry's first image, at least 600px wide, beside the title), `sections` (the title beside the entry's headings: needs two), `pattern` (the title on the portal's page); `auto` is `screenshot` where the entry has such an image, else `title`",
+      )
+      .meta({ examples: ["auto"] }),
+    headline: z
+      .string()
+      .trim()
+      .max(MAX_COVER_HEADLINE, `Keep the headline under ${MAX_COVER_HEADLINE} characters`)
+      .optional()
+      .describe(`Shown in the title's place, under ${MAX_COVER_HEADLINE} characters; without it, the entry's title`)
+      .meta({ examples: ["Dark mode is here"] }),
+  }),
+  output: entryOutput.describe("The entry, with its new cover"),
+  example: { design: "auto" },
+  run: async ({ actor, projectId }, { number, design, headline }) => {
+    const portal = await projectPortal(projectId);
+    const entry = await teamEntry(projectId, number);
+    if (!mediaStorage()) {
+      throw new OperationError(503, "uploads_unavailable", "Uploads aren't set up on this server");
+    }
+    const [brand, project] = await Promise.all([branding({ id: projectId }), prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } })]);
+    const content = await coverContent(projectId, entry, headline);
+    const picked = design === "auto" ? automaticDesign(content) : design;
+    if (!coverDesigns(content).includes(picked)) {
+      throw new OperationError(400, "invalid_input", picked === "screenshot" ? "This entry has no image at least 600px wide for the Screenshot design" : "This entry needs two headings for the Sections design");
+    }
+    // Drawing and storing: never under the project lock (storeImage takes it itself).
+    const stored = await storeImage(await drawCover({ project, brand: brand! }, content, picked), { projectId, uploaderId: uploaderOf(actor) });
+    if (!("mediaId" in stored)) {
+      throw stored.leftOut === "quota"
+        ? new OperationError(409, "no_room", "The cover can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour")
+        : new OperationError(503, "copy_failed", "Couldn't keep the cover just now: try again in a moment");
+    }
+    const updated = await saving(() =>
+      prisma.$transaction(async (tx) => {
+        await attachCover(tx, projectId, stored.mediaId);
+        return tx.changelogEntry.update({ where: { id: entry.id }, data: { coverId: stored.mediaId }, select: entrySelect });
+      }),
+    );
+    return entryView(updated, portal);
   },
 });
 
