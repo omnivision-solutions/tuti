@@ -239,6 +239,22 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (slug) => changelog.reactToChangelogEntry(slug, 1, "tada", true),
     },
+    commentOnChangelogEntry: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (slug) => changelog.commentOnChangelogEntry(slug, 1, {}, form({ body: "Nice" })),
+    },
+    // Its author's own: the one allowed to act ("signed in": the other project's owner) wrote it.
+    editChangelogComment: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (slug, f) => changelog.editChangelogComment(slug, 1, f.entryCommentId, {}, form({ body: "Edited" })),
+    },
+    deleteChangelogComment: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (slug, f) => changelog.deleteChangelogComment(slug, 1, f.entryCommentId),
+    },
     saveChangelogStyle: {
       allowed: "ADMIN",
       call: (slug) => {
@@ -933,6 +949,9 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
   });
+  const entryComment = await prisma.changelogComment.create({
+    data: { entry: { connect: { projectId_number: { projectId, number: 1 } } }, author: { connect: { id: users.outsider.id } }, body: "A comment", content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "A comment" }] }] } },
+  });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
@@ -1063,6 +1082,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     emptyBoardId: emptyBoard.id,
     postId: post!.id,
     commentId: comment.id,
+    entryCommentId: entryComment.id,
     duplicateId: duplicate!.id,
     suggestionId: suggestion.id,
     invitationId: invitation.id,

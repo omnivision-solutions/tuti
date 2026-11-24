@@ -19,6 +19,11 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
+import {
+  createChangelogComment as createCommentOperation,
+  deleteChangelogComment as deleteCommentOperation,
+  updateChangelogComment as updateCommentOperation,
+} from "./operations/changelog-comments";
 import { asAdmin, asAnyone, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -137,5 +142,32 @@ export async function reactToChangelogEntry(
     "Entry not found",
     () => prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } }),
     (context) => call(reactOperation, context, { number: Number(number), reaction, reacted: reacted === true }),
+  );
+}
+
+const entryProject = (projectSlug: string) => () => prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+const field = (formData: FormData, name: string) => {
+  const value = formData.get(name);
+  return typeof value === "string" ? value : undefined;
+};
+
+/** A reader's comment on a published entry, from its portal page (see changelogComments.create). */
+export async function commentOnChangelogEntry(projectSlug: string, number: number, _prev: FormState, formData: FormData): Promise<FormState> {
+  return asAnyone("Sign in to comment", "Entry not found", entryProject(projectSlug), (context) =>
+    call(createCommentOperation, context, { number: Number(number), content: field(formData, "content") || undefined, body: field(formData, "body") }),
+  );
+}
+
+/** Its author's edit of their comment on an entry (see changelogComments.update). */
+export async function editChangelogComment(projectSlug: string, number: number, id: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  return asAnyone("Sign in to edit your comment", "Entry not found", entryProject(projectSlug), (context) =>
+    call(updateCommentOperation, context, { number: Number(number), id: String(id), content: field(formData, "content") || undefined, body: field(formData, "body") }),
+  );
+}
+
+/** Deletes a comment on an entry: its author's own, or any for the team in the app (see changelogComments.delete). */
+export async function deleteChangelogComment(projectSlug: string, number: number, id: string): Promise<FormState> {
+  return asAnyone("Sign in to delete your comment", "Entry not found", entryProject(projectSlug), (context) =>
+    call(deleteCommentOperation, context, { number: Number(number), id: String(id) }),
   );
 }

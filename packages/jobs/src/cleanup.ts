@@ -72,7 +72,7 @@ export const RELEASE_AFTER_HOURS = 24;
  * more than a day ago) and their quota frees.
  * A sweep rather than bookkeeping on every delete: it reads what's saved, so no delete or
  * edit path can forget to free something. "Uses" means an image node in any post, comment,
- * changelog entry, docs article (deleted ones too, until `purgeArticles` removes them), an
+ * changelog entry or comment on one, docs article (deleted ones too, until `purgeArticles` removes them), an
  * article's unpublished changes or kept article revision, plus the project's branding images, changelog covers and its team's and users' avatars uploaded in it. A new column that holds a media
  * id must be added to `used` below, or its uploads are released and deleted.
  *
@@ -107,6 +107,7 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
         UNION ALL SELECT c.content FROM comment c JOIN post p ON p.id = c."postId" WHERE p."projectId" = ${projectId}
         UNION ALL SELECT n.content FROM post_note n JOIN post p ON p.id = n."postId" WHERE p."projectId" = ${projectId}
         UNION ALL SELECT content FROM changelog_entry WHERE "projectId" = ${projectId}
+        UNION ALL SELECT c.content FROM changelog_comment c JOIN changelog_entry e ON e.id = c."entryId" WHERE e."projectId" = ${projectId}
         UNION ALL SELECT content FROM article WHERE "projectId" = ${projectId}
         UNION ALL SELECT r.content FROM article_revision r JOIN article a ON a.id = r."articleId" WHERE a."projectId" = ${projectId}
         UNION ALL SELECT ch.content FROM article_changes ch JOIN article a ON a.id = ch."articleId" WHERE a."projectId" = ${projectId}

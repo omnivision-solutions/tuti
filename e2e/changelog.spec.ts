@@ -1380,3 +1380,98 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await expect(announced).toContainText("Not emailed to subscribers.");
   expect(countEmailsTo(address)).toBe(before);
 });
+
+test("readers comment on an entry's page: they edit and delete their own, and signed out are asked to sign in", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu.", tags: ["new"], posts: [] });
+  await api("/changelog/1/publish", {});
+
+  // Signed out: no box, a way to sign in.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/changelog/1");
+  const visitorComments = visitor.getByRole("region", { name: "Comments" });
+  await expect(visitorComments.getByRole("heading", { name: "0 comments" })).toBeVisible();
+  await expect(visitorComments.getByText("Sign in to comment.")).toBeVisible();
+  await expect(visitorComments.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
+  await expect(visitorComments.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await checkpoint(visitor, "portal-entry-comments-signed-out");
+
+  // Signed in: they comment, under the reactions.
+  const ada = await signUp(browser, portalUrl(slug), "Ada Reader");
+  await ada.goto("/changelog/1");
+  const comments = ada.getByRole("region", { name: "Comments" });
+  await comments.getByRole("textbox", { name: "Comment" }).fill("Finally! My eyes thank you.");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(ada.getByText("Comment posted")).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
+  await expect(comments.getByRole("listitem").filter({ hasText: "Ada Reader" })).toContainText("Finally! My eyes thank you.");
+  await checkpoint(ada, "portal-entry-commented");
+  // The team's answer (by the key's creator) is marked as the team's; Ada's isn't.
+  await api("/changelog/1/comments", { body: "Glad it helps!" });
+  await ada.reload();
+  await expect(comments.getByRole("listitem").filter({ hasText: "Glad it helps!" })).toContainText("Team");
+  await expect(comments.getByRole("listitem").filter({ hasText: "Ada Reader" })).not.toContainText("Team");
+  // Others read them.
+  await visitor.reload();
+  await expect(visitorComments.getByRole("listitem").first()).toContainText("Finally! My eyes thank you.");
+  // Nobody else's to edit or delete.
+  await expect(visitorComments.getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+
+  // They edit it: the text becomes its editor.
+  await comments.getByRole("button", { name: "Edit your comment" }).click();
+  const edit = comments.getByRole("textbox", { name: "Edit your comment" });
+  await expect(edit).toContainText("Finally! My eyes thank you.");
+  // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh.
+  await edit.fill("");
+  // (What Save sends, once the editor's caught up.)
+  await expect(comments.locator("form").filter({ has: ada.getByRole("textbox", { name: "Edit your comment" }) }).locator('input[name="content"]')).toHaveValue("");
+  await comments.getByRole("button", { name: "Save" }).click();
+  await expect(comments.getByText("Write something first")).toBeVisible();
+  await comments.getByRole("button", { name: "Cancel" }).click();
+  await comments.getByRole("button", { name: "Edit your comment" }).click();
+  await expect(edit).toContainText("Finally! My eyes thank you.");
+  await expect(comments.getByText("Write something first")).toHaveCount(0);
+  await edit.fill("Finally! Works on my phone too.");
+  await comments.getByRole("button", { name: "Save" }).click();
+  await expect(ada.getByText("Comment saved")).toBeVisible();
+  await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveCount(0);
+  // The keyboard's back on Edit.
+  await expect(comments.getByRole("button", { name: "Edit your comment" })).toBeFocused();
+  await expect(comments.getByRole("listitem").filter({ hasText: "Ada Reader" })).toContainText("Finally! Works on my phone too.");
+  // On a phone.
+  await ada.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(ada, "portal-entry-commented-phone");
+  await ada.setViewportSize({ width: 1280, height: 720 });
+
+  // One deleted meanwhile (elsewhere, here over the API): Delete says so, and it's gone from the list.
+  await comments.getByRole("textbox", { name: "Comment" }).fill("One more thing");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(comments.getByRole("heading", { name: "3 comments" })).toBeVisible();
+  const confirm = ada.getByRole("alertdialog", { name: "Delete this comment?" });
+  await comments.getByRole("listitem").filter({ hasText: "One more thing" }).getByRole("button", { name: "Delete your comment" }).click();
+  const listed = (await api("/changelog/1/comments", undefined, "GET")) as unknown as { comments: { id: string; body: string }[] };
+  await api(`/changelog/1/comments/${listed.comments.find((c) => c.body === "One more thing")!.id}`, undefined, "DELETE");
+  await confirm.getByRole("button", { name: "Delete comment" }).click();
+  await expect(ada.getByText("There's no such comment on this entry")).toBeVisible();
+  // The list drops it, its dialog with it, and the keyboard goes to the heading.
+  await expect(confirm).toBeHidden();
+  // (Role queries, once the dialog's closed: the page behind it is hidden from them while it's open.)
+  await expect(comments.getByRole("listitem")).toHaveCount(2);
+  await expect(comments.getByRole("heading", { name: "2 comments" })).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "2 comments" })).toBeFocused();
+
+  // They delete theirs, once sure; the team's stays.
+  await comments.getByRole("listitem").filter({ hasText: "Ada Reader" }).getByRole("button", { name: "Delete your comment" }).click();
+  await checkpoint(ada, "portal-entry-comment-delete", { fullPage: false });
+  await confirm.getByRole("button", { name: "Delete comment" }).click();
+  await expect(ada.getByText("Comment deleted")).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
+  // The keyboard's on the comments' heading, its Delete gone with the comment.
+  await expect(comments.getByRole("heading", { name: "1 comment" })).toBeFocused();
+  await expect(comments.getByText("Finally! Works on my phone too.")).toHaveCount(0);
+});
