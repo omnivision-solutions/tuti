@@ -299,8 +299,81 @@ function imageServer() {
   return images;
 }
 
+describe("an entry's text as Markdown", () => {
+  const text = "Intro.\n\n## Dark mode\n\nOld text.\n\n### Details\n\nFollows your system.\n\n## Search\n\nFaster.";
+  const edit = (input: Parameters<typeof updateChangelogEntry.run>[1]) => call(updateChangelogEntry, as(owner), input);
+
+  test("reads back as it's written, with when it last changed; a list goes without the Markdown", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
+    expect(entry.markdown).toBe(text);
+    const saved = await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: entry.number } } });
+    expect(entry.updatedAt).toBe(saved.updatedAt.toISOString());
+    expect(await call(getChangelogEntry, as(owner), { number: entry.number })).toMatchObject({ markdown: text, updatedAt: entry.updatedAt });
+    const [listed] = (await call(listChangelog, as(owner), { status: "draft" })).entries;
+    expect(listed).toMatchObject({ number: entry.number, updatedAt: entry.updatedAt });
+    expect(listed).not.toHaveProperty("markdown");
+    // Sent back as it came, nothing is lost or added.
+    expect((await edit({ number: entry.number, markdown: entry.markdown })).content).toEqual(entry.content);
+  });
+
+  test("Markdown for one section replaces only it, by its heading or its number; `append` adds at the end", async () => {
+    const { number } = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
+
+    // A section runs to the next heading at its level or above: its sub-heading goes with it.
+    expect((await edit({ number, section: "dark mode", markdown: "## Dark mode\n\nNew text." })).markdown).toBe("Intro.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
+    // By number: 0 is the text before the first heading, 2 the second heading's.
+    expect((await edit({ number, section: 0, markdown: "Hello." })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
+    expect((await edit({ number, section: 2, markdown: "## Search\n\n- Faster\n- Finds typos" })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos");
+    const appended = await edit({ number, append: true, markdown: "Thanks for reading!" });
+    expect(appended.markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos\n\nThanks for reading!");
+    // The title and the rest are as they were.
+    expect(appended).toMatchObject({ title: "Dark mode", status: "draft" });
+
+    // They say where Markdown goes: one of them, with it, and a section that's there.
+    await expect(edit({ number, section: "Dark mode", body: "No Markdown" })).rejects.toMatchObject({ status: 400, code: "invalid_input" });
+    await expect(edit({ number, append: true })).rejects.toMatchObject({ status: 400, code: "invalid_input" });
+    await expect(edit({ number, section: 1, append: true, markdown: "Both" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append`, not both" });
+    await expect(edit({ number, section: "Billing", markdown: "## Billing" })).rejects.toMatchObject({ status: 400, code: "no_section", message: "There's no section “Billing”" });
+    await expect(edit({ number, section: 7, markdown: "## Seven" })).rejects.toMatchObject({ status: 400, code: "no_section" });
+    expect((await call(getChangelogEntry, as(owner), { number })).markdown).toBe(appended.markdown);
+  });
+
+  test("`updatedAt` sent back as `expectedUpdatedAt` saves only if nothing changed since", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
+    const changed = await edit({ number: entry.number, title: "Dark mode is here" });
+    expect(new Date(changed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.updatedAt).getTime());
+    await expect(edit({ number: entry.number, section: "Search", markdown: "## Search\n\nStale.", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect((await edit({ number: entry.number, section: "Search", markdown: "## Search\n\nFresh.", expectedUpdatedAt: changed.updatedAt })).markdown).toContain("Fresh.");
+  });
+});
+
 describe("Markdown's images", () => {
   const images = imageServer();
+
+  test("read back as lasting links, and sent back they're the same uploads: nothing is copied again, in the whole text or one section", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)\n\n## Search\n\nFaster.` });
+    const imagesIn = (content: unknown) => (content as { content: { type: string; attrs?: { mediaId?: string } }[] }).content.filter((node) => node.type === "image").map((node) => node.attrs!.mediaId);
+    const [mediaId] = imagesIn(entry.content);
+    // Its link is this server's, for as long as the image is in use.
+    expect(entry.markdown).toMatch(new RegExp(`!\\[The menu\\]\\(${process.env.APP_URL!.replace(/\/$/, "")}/api/media/${mediaId}/[^)]+\\)`));
+    const uploads = () => prisma.media.count({ where: { projectId: project.id } });
+    expect(await uploads()).toBe(1);
+
+    const again = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: `${entry.markdown}\n\nMore.` });
+    expect(imagesIn(again.content)).toEqual([mediaId]);
+    const section = await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Search", markdown: "## Search\n\nMuch faster." });
+    expect(imagesIn(section.content)).toEqual([mediaId]);
+    // The section's own image by its link too.
+    const themes = /## Themes[^#]+/.exec(section.markdown!)![0].trim();
+    expect(imagesIn((await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Themes", markdown: `${themes}\n\nPick one.` })).content)).toEqual([mediaId]);
+    expect(await uploads()).toBe(1);
+
+    // Another project's image isn't this one's to reuse by its link, nor is a link with a signature that isn't ours: neither is taken as an upload.
+    const other = await createProject(owner);
+    const theirs = await call(createChangelogEntry, { ...as(owner), projectId: other.id }, { title: "Theirs", markdown: `![Ours](${/\((\S+)\)/.exec(entry.markdown!)![1]})\n\n![Forged](${process.env.APP_URL!.replace(/\/$/, "")}/api/media/${mediaId}/960.webp?s=forged)` });
+    expect(imagesIn(theirs.content)).not.toContain(mediaId);
+    expect(await prisma.media.count({ where: { id: mediaId, projectId: project.id } })).toBe(1);
+  });
 
   test("are copied into the project and kept attached; one that can't be fetched is left out", async () => {
     const entry = await call(createChangelogEntry, as(owner), {

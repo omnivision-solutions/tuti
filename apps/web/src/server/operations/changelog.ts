@@ -11,7 +11,7 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
-import { lastingImage } from "../media-urls";
+import { lastingImage, lastingMediaUrls } from "../media-urls";
 import {
   blocksToNotes,
   droppedFacts,
@@ -102,6 +102,13 @@ const entryOutput = z
     tags: z.array(z.enum(TAGS)).describe("What kind of change it is").meta({ examples: [["new"]] }),
     body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
     content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
+    markdown: z
+      .string()
+      .optional()
+      .describe(
+        "Its text as Markdown, its images as lasting links: to change it, edit this and send it to changelog.update as `markdown` (with `section` or `append` for part of it). On one entry, not in changelog.list",
+      )
+      .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu."] }),
     cover: z
       .object({
         id: z.string().describe("The upload's id").meta({ examples: ["cm3k9q2xv0001abcd1234efgh"] }),
@@ -133,6 +140,10 @@ const entryOutput = z
     reactions: reactionsOutput,
     url: z.string().describe("Its page on the portal").meta({ examples: ["https://feedback.example.com/changelog/7"] }),
     createdAt: z.string().describe("When it was written").meta({ examples: ["2026-11-01T14:30:00.000Z"] }),
+    updatedAt: z
+      .string()
+      .describe("When it last changed: sent to changelog.update as `expectedUpdatedAt`, the edit is saved only if nothing changed since")
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
   })
   .meta({ id: "ChangelogEntry", description: "An entry in the project's changelog" });
 
@@ -156,9 +167,10 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-/** An entry for the API; `counts` when several entries' reactions were read at once. */
+/** An entry for the API; `counts` when several entries' reactions were read at once (a list: its entries go without their Markdown). */
 async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
+  const text = displayDoc(entry);
   return {
     number: entry.number,
     title: entry.title,
@@ -170,7 +182,9 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
     body: entry.body,
-    content: displayDoc(entry),
+    content: text,
+    /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
+    ...(!counts && { markdown: toMarkdown(text, { mediaUrls: lastingMediaUrls(text) }) }),
     /** The featured image (cover): a lasting link to its smallest stored size, and its size; null for none. */
     cover: lastingImage(entry.cover),
     // A real entry's real posts, a sample entry's sample ones (sample content, server/sample-content.ts, never mixes).
@@ -181,6 +195,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     reactions,
     url: `${portal}/changelog/${entry.number}`,
     createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
   };
 }
 
@@ -291,8 +306,15 @@ async function coverId(projectId: string, actor: Actor, cover: string | null | u
 /**
  * Its text from `content`, else `markdown`, else `body`. Markdown's images are copied in as `actor`'s uploads, under the
  * same limits. `beforeCopying` (a cover's copy) runs once the text is known to be fine, before Markdown's images are copied.
+ * `place` puts Markdown's blocks where they go in the text there is (one section's place, or its end).
  */
-async function entryText(input: { body?: string; content?: unknown; markdown?: string }, projectId: string, actor: Actor, beforeCopying: () => Promise<void>) {
+async function entryText(
+  input: { body?: string; content?: unknown; markdown?: string },
+  projectId: string,
+  actor: Actor,
+  beforeCopying: () => Promise<void>,
+  place?: (blocks: NonNullable<Doc["content"]>) => Doc,
+) {
   const fromMarkdown = input.markdown !== undefined && (input.content === undefined || input.content === null || input.content === "");
   if (fromMarkdown) {
     const html = await markdownToContent("changelog", input.markdown!, {
@@ -304,7 +326,7 @@ async function entryText(input: { body?: string; content?: unknown; markdown?: s
     if ("error" in html) {
       throw new OperationError(400, "invalid_content", html.error);
     }
-    input = { content: html.doc };
+    input = { content: place ? place(html.doc.content ?? []) : html.doc };
   }
   const text = await readContent("changelog", input, { projectId, maxLength: MAX_ENTRY_LENGTH });
   if (text.error !== undefined) {
@@ -314,6 +336,29 @@ async function entryText(input: { body?: string; content?: unknown; markdown?: s
     await beforeCopying();
   }
   return text;
+}
+
+/**
+ * Where an edit of part of the text puts its Markdown (changelog.update's `section` or `append`): in that section's
+ * place, heading and all, or after everything; undefined for an edit of the whole text. They need `markdown`, one or the
+ * other, and a section that's there.
+ */
+function partOfText(entry: { content: unknown; body: string }, input: { markdown?: string; content?: unknown; section?: number | string; append?: boolean }) {
+  if (input.section === undefined && !input.append) {
+    return undefined;
+  }
+  if (input.markdown === undefined || (input.content !== undefined && input.content !== null && input.content !== "")) {
+    throw new OperationError(400, "invalid_input", "`section` and `append` say where `markdown` goes: send it as `markdown`, without `content`");
+  }
+  if (input.section !== undefined && input.append) {
+    throw new OperationError(400, "invalid_input", "Send `section` or `append`, not both");
+  }
+  const blocks = displayDoc(entry).content ?? [];
+  const range = input.section === undefined ? { start: blocks.length, end: blocks.length } : sectionRange(blocks, input.section);
+  if (!range) {
+    throw new OperationError(400, "no_section", `There's no section ${typeof input.section === "string" ? `“${input.section}”` : input.section}`);
+  }
+  return (added: NonNullable<Doc["content"]>): Doc => ({ type: "doc", content: [...blocks.slice(0, range.start), ...added, ...blocks.slice(range.end)] });
 }
 
 /**
@@ -531,10 +576,16 @@ export const updateChangelogEntry = defineOperation({
       .optional()
       .describe("The posts it completes, by number: they replace the list. Only while it's a draft (published, the same list or a 409)"),
     cover: fields.cover,
+    section: z
+      .union([z.number().int().min(0), z.string().trim().min(1).max(200)])
+      .optional()
+      .describe("With `markdown`: replace only this section with it, by its heading or its number (1 for the first heading, 0 for the text before it), heading included; the rest of the text stays as it is")
+      .meta({ examples: ["Dark mode"] }),
+    append: z.boolean().optional().describe("With `markdown`: add it at the end of the text, which stays as it is").meta({ examples: [false] }),
     expectedUpdatedAt: z.iso
       .datetime()
       .optional()
-      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the `expectedUpdatedAt` changelog.rewrite returns")
+      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt`, or the `expectedUpdatedAt` changelog.rewrite returns")
       .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
   }),
   output: entryOutput.describe("The entry"),
@@ -545,8 +596,12 @@ export const updateChangelogEntry = defineOperation({
     if (input.posts) {
       keepsPublishedPosts(entry, input.posts);
     }
+    // Part of the text only: Markdown for one section, or to add at its end. The rest is the text as it's read here,
+    // so it's saved only if the entry hasn't changed meanwhile (as with `expectedUpdatedAt`, which it stands in for).
+    const place = partOfText(entry, input);
+    const expectedUpdatedAt = input.expectedUpdatedAt ?? (place ? entry.updatedAt.toISOString() : undefined);
     // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
-    if (input.expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+    if (expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
       throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
     }
     const posts = input.posts && (await postIds(projectId, input.posts));
@@ -557,7 +612,7 @@ export const updateChangelogEntry = defineOperation({
     const copyCover = async () => {
       cover = await coverId(projectId, actor, input.cover);
     };
-    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor, copyCover) : null;
+    const text = input.body !== undefined || input.content !== undefined || input.markdown !== undefined ? await entryText(input, projectId, actor, copyCover, place) : null;
     if (!text) {
       await copyCover();
     }
@@ -572,11 +627,11 @@ export const updateChangelogEntry = defineOperation({
             input.posts!,
           );
         }
-        if (input.expectedUpdatedAt) {
+        if (expectedUpdatedAt) {
           // Locked until this commits, so a save in between can't slip past the check.
           const [now] = await tx.$queryRaw<{ updatedAt: Date }[]>`
             SELECT "updatedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
-          if (now?.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+          if (now?.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
             throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
           }
         }
