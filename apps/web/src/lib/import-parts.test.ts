@@ -2,7 +2,7 @@ import type { ImportSource } from "@tuti/db";
 import { IMPORT_SOURCES as JOB_SOURCES } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, IMPORT_SOURCES, type ImportSourceInfo, importProgress, importSummary, kindCount, missingNeed, onHome, partBrings, partDescription, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, importNote, IMPORT_PARTS, IMPORT_SOURCES, type ImportSourceInfo, importProgress, importSummary, kindCount, missingNeed, onHome, partBrings, partDescription, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -95,6 +95,17 @@ test("the changelog runs after feedback and says its own images, apart from feed
   const run = { state: "running", step: "changelog", parts: ["docs", "changelog", "feedback", "contacts"], counts } as never;
   expect(importProgress(run).map(({ part, state }) => `${part} ${state}`)).toEqual(["contacts done", "feedback done", "changelog now", "docs next"]);
   expect(importProgress(run)[2]).toMatchObject({ brought: [["29", "changelog entries"], ["6", "images in the changelog"]], leftOut: ["1 image in the changelog that couldn't be fetched"] });
+});
+
+test("under an import's title: the part under way, that it's waiting for its tool when it is, or why it stopped", () => {
+  const run = (data: object) => ({ source: "featurebase", state: "running", step: "contacts", error: null, resumesAt: null, parts: ["team", "contacts"], counts: {}, ...data }) as never;
+  expect(importNote(run({}))).toBe("Part 2 of 2.");
+  expect(importNote(run({ resumesAt: "2026-11-24T10:00:00.000Z" }))).toBe("Part 2 of 2. Paused for now, usually because Featurebase asked Tuti to slow down. It picks up again by itself.");
+  expect(importNote(run({ source: "website", parts: ["docs"], step: "docs-content", resumesAt: "2026-11-24T10:00:00.000Z" }))).toBe(
+    "Part 1 of 1. Paused for now, usually because your help center asked Tuti to slow down. It picks up again by itself.",
+  );
+  expect(importNote(run({ state: "failed", error: "Featurebase couldn't be reached." }))).toBe("Featurebase couldn't be reached.");
+  expect(importNote(run({ state: "done", step: null }))).toBeNull();
 });
 
 test("an import in a line, as Home's card says it", () => {
