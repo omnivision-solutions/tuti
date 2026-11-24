@@ -267,6 +267,12 @@ test("a draft leaves a line where it needs a fact, and where a screenshot belong
     status: 409,
     message: "Replace or remove the 5 markers in its text first: [Check: the name] [Check: iOS?] [Screenshot: the menu] [check:when] [ Screenshot : there ]",
   });
+  // One the model left open, or with brackets in brackets, is no less a note to self: named to its closing bracket, or to the line's end.
+  await call(updateChangelogEntry, team(), { number, body: "Out now [Check: on [the [Pro] plan] too?] and here.\nIt works [Screenshot: the menu" });
+  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({
+    status: 409,
+    message: "Replace or remove the 2 markers in its text first: [Check: on [the [Pro] plan] too?] [Screenshot: the menu",
+  });
   // Replaced (the picture in, the answers written), it's published. Square brackets that aren't a marker are only text.
   await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan [beta]. Check: it works." });
   expect((await call(publishChangelogEntry, team(), { number })).status).toBe("published");

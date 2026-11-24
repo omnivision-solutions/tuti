@@ -17,6 +17,7 @@ import {
   droppedFacts,
   factsIn,
   readReleaseNotes,
+  droppedMarkers,
   markersIn,
   releaseNotesPrompt,
   REWRITE_MODES,
@@ -813,8 +814,7 @@ export const rewriteChangelogEntry = defineOperation({
     }
     // Facts are checked, not trusted: a version that drops a link, an image or a video isn't offered.
     // Nor one that drops a line the team still has to fill in: accepted, the entry could be published with the question never answered.
-    const kept = markersIn(rewritten.doc);
-    const unanswered = markersIn({ type: "doc", content: target }).filter((marker) => !kept.includes(marker));
+    const unanswered = droppedMarkers({ type: "doc", content: target }, rewritten.doc);
     const dropped = [...droppedFacts(target, rewritten.doc.content!), ...(unanswered.length > 0 ? [unanswered.length === 1 ? "a line still to fill in" : `${unanswered.length} lines still to fill in`] : [])];
     if (dropped.length > 0) {
       const list = dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} and ${dropped.at(-1)}` : dropped[0];
