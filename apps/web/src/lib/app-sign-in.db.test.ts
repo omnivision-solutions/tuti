@@ -394,9 +394,10 @@ async function view(link: URL) {
 }
 
 /** "Open the app" on that page, on `host`: where its form's post sends the browser. */
-async function open(link: URL, { host = APP.host, more = {} as Record<string, string> } = {}) {
+async function open(link: URL, { host = APP.host, more = {} as Record<string, string>, cookie = "" } = {}) {
   const form = new URLSearchParams({ token: link.searchParams.get("token") ?? "", ...more });
-  const response = await openAppLink(new Request(`http://${host}/app/auth/app-link/open`, { method: "POST", headers: { host }, body: form }));
+  const headers: Record<string, string> = { host, ...(cookie && { cookie }) };
+  const response = await openAppLink(new Request(`http://${host}/app/auth/app-link/open`, { method: "POST", headers, body: form }));
   expect(response.status).toBe(303);
   return { location: response.headers.get("location"), setCookie: response.headers.getSetCookie() };
 }
@@ -530,7 +531,7 @@ test("a browser signed in to the web app stays signed in as it was when it opens
   // Wes's browser opens Olive's link (a shared desk): the app gets Olive's session, the browser keeps Wes's.
   actAs(other);
   const sessionsBefore = await sessionsOf(other.id);
-  const opened = await open(await linkTo(owner.email));
+  const opened = await open(await linkTo(owner.email), { cookie: other.cookie });
   // No cookie for the browser at all: not Olive's, not a new one of Wes's.
   expect(opened.setCookie).toEqual([]);
   const redirect = handedOver(opened.location);
@@ -540,6 +541,8 @@ test("a browser signed in to the web app stays signed in as it was when it opens
   expect(request.written).toEqual([]);
   expect(/session_token=([^;]+)/.exec(other.cookie)![1]).not.toBe(body.token);
   expect(await sessionsOf(other.id)).toBe(sessionsBefore);
+  // And Wes's cookie is still Wes's.
+  expect((await auth.api.getSession({ headers: new Headers({ cookie: other.cookie }) }))?.user.id).toBe(other.id);
 });
 
 test("a verification link never opens the app: anyone can have one sent, and it signs in whoever opens it", async () => {
