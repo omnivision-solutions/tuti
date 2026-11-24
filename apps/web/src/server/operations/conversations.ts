@@ -298,14 +298,14 @@ export async function conversationsMatching(projectId: string, q: string): Promi
   const has = { contains: likeText(q), mode: "insensitive" as const };
   const atCompany = { path: ["company"], string_contains: likeText(q), mode: "insensitive" as const };
   const asNumber = /^#?\d{1,10}$/.test(q) ? Number(q.replace("#", "")) : null;
-  // The project's users at such a company, by address: someone writing from a verified one is at theirs.
-  const colleagues = await prisma.ssoIdentity.findMany({
-    where: { projectId, email: { not: null }, properties: atCompany },
-    distinct: ["email"],
-    take: 1000,
-    select: { email: true },
-  });
-  const addresses = colleagues.map((colleague) => colleague.email!);
+  // The project's users at such a company, by address: someone writing from a verified one is at theirs. In SQL: the
+  // database stops at 1,000 addresses (Prisma's `distinct` reads every row first), the same ones on every page.
+  const colleagues = await prisma.$queryRaw<{ email: string }[]>`
+    SELECT DISTINCT email FROM sso_identity
+    WHERE "projectId" = ${projectId} AND email IS NOT NULL
+      AND jsonb_typeof(attributes -> 'company') = 'string' AND attributes ->> 'company' ILIKE ${`%${likeText(q)}%`}
+    ORDER BY email LIMIT 1000`;
+  const addresses = colleagues.map((colleague) => colleague.email);
   return {
     OR: [
       // A number as conversations have them (a 32-bit integer).

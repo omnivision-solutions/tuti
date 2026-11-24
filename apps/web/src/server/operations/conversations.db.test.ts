@@ -176,8 +176,13 @@ test("a search finds conversations by number, subject, person and what their mes
   // One line, around the text, cut at both ends.
   expect(refunds[1]!.match!.snippet).toMatch(/^….*for writing in\. REFUNDS take five days to arrive, and then.*…$/);
   expect(refunds[1]!.match!.snippet.length).toBeLessThanOrEqual(162);
-  // A short message whole.
+  // A short message whole; of two with the text, the newer.
   expect((await found({ q: "legacy plan" })).map((c) => [c.number, c.match?.note, c.match?.snippet])).toEqual([[2, true, "They are on the legacy plan, 100% sure"]]);
+  const later = await prisma.conversationMessage.create({
+    data: { projectId: project.id, conversationId: (await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 2 } })).id, author: "TEAM", channel: "APP", body: "Moved off the Legacy Plan", note: true, createdAt: new Date(Date.now() + 60_000) },
+  });
+  expect((await found({ q: "legacy plan" }))[0]!.match).toMatchObject({ messageId: later.id, snippet: "Moved off the Legacy Plan" });
+  await prisma.conversationMessage.delete({ where: { id: later.id } });
   expect(await numbers({ q: "refund", status: "closed" })).toEqual([4]);
   expect(await numbers({ q: "refund", spam: "true" })).toEqual([3]);
   expect(await call(listConversations, context, { q: "e", limit: 2 })).toMatchObject({ conversations: [{ number: 6 }, { number: 5 }], nextCursor: "2" });
