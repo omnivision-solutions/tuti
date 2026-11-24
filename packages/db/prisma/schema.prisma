@@ -41,6 +41,9 @@ model User {
   /// When the project's app deleted them (users.delete): kept as "Deleted user", so their posts, comments and
   /// conversations stay; nothing about them is left, they can't act and nothing is emailed to them.
   deletedAt         DateTime?
+  /// Requests in the current minute with their app session, for the API's rate limit per teammate (as api_key's, per key).
+  apiRateWindowStart DateTime?
+  apiRateCount       Int            @default(0)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          Session[]

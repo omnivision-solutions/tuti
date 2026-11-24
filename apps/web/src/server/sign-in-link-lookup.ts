@@ -8,8 +8,10 @@ import { hashSecret } from "@/lib/portal-handoff";
  * A sign-in link that can still be used on this portal, with the address it was
  * sent to (from the stored link, never the URL), or null. Reads only: the token
  * is used up when the person confirms (see emailSignInLink and confirmSignInLink).
+ * `projectSlug` null: the mobile app's link (lib/app-sign-in.ts), asked for and opened on the app's
+ * host; never a portal's link there, nor the app's on a portal.
  */
-export async function pendingSignInLink(projectSlug: string, token: string) {
+export async function pendingSignInLink(projectSlug: string | null, token: string) {
   if (!token || token.length > 100) {
     return null;
   }
@@ -24,11 +26,11 @@ export async function pendingSignInLink(projectSlug: string, token: string) {
       select: { value: true },
     }),
   ]);
-  if (!link || link.project?.slug !== projectSlug || !verification) {
+  if (!link || !verification || (link.project?.slug ?? null) !== projectSlug) {
     return null;
   }
   const { email } = JSON.parse(verification.value) as { email: string };
-  return { email, projectName: link.project.name };
+  return { email, projectName: link.project?.name ?? "Tuti" };
 }
 
 /** Where a link that didn't work sends people: the sign-in page, to ask for a new one, keeping where they were going. */

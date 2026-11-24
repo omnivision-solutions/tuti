@@ -15,8 +15,9 @@ import { sessionWorksOn } from "./custom-domains";
  * on the app, and on a portal a password account's ("Continue as" from the app). Not a portal's single sign-on user's:
  * the project's app vouches for them. Never one of a user their project's app deleted.
  */
-export async function sessionFrom(requestHeaders: Headers) {
-  const session = await auth.api.getSession({ headers: requestHeaders });
+export async function sessionFrom(requestHeaders: Headers, { refresh = true } = {}) {
+  // `refresh: false` reads it without extending it, so nothing sets a cookie (the API's app sessions: server/api-auth.ts).
+  const session = await auth.api.getSession({ headers: requestHeaders, ...(!refresh && { query: { disableRefresh: true } }) });
   // Deleted by their project's app (users.delete): a sign-in that was under way as it happened may still have made one.
   if (session?.user.deletedAt) {
     return null;

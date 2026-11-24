@@ -408,9 +408,10 @@ describe("OpenAPI", () => {
     expect(spec.paths["/posts"].get.tags).toEqual(["Feedback"]);
     expect(spec.paths["/code-change-actions/{id}/stop"].post.tags).toEqual(["Autopilot"]);
     expect(spec.paths["/portal/readers"].get.tags).toEqual(["Users"]);
-    // The overview: getting a key, signing requests, errors, paging and rate limits.
+    // The overview: getting a key, signing requests, errors, paging and rate limits. (Nothing of the mobile app's session until there's an app to get.)
     expect(spec.info.description.match(/^## .+/gm)).toEqual(["## Getting a key", "## Authentication", "## Errors", "## Paging", "## Rate limits"]);
     expect(spec.info.description).toContain("Up to 600 requests a minute per key");
+    expect(spec.info.description).not.toMatch(/mobile app/i);
     // Written as plain text: rendered as the Markdown a description is, the words come back as written.
     const words = (name: string) => operations.find((operation) => operation.name === name)!.summary;
     const shown = async (path: string, method: string) => firstLine(spec.paths[path][method].description);

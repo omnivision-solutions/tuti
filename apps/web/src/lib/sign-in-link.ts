@@ -19,5 +19,5 @@ export const SIGN_IN_LINKS_PER_CLIENT_PER_HOUR = 10;
 // ponytail: fixed for every portal; a per-project setting if a big portal ever needs more.
 export const SIGN_IN_LINKS_PER_PORTAL_PER_HOUR = 200;
 
-/** What `emailSignInLink` hands the plugin, for the email. */
-export type SignInLinkMetadata = { linkId: string; slug: string; projectName: string; next: string };
+/** What `emailSignInLink` hands the plugin, for the email; `app`: the mobile app's link instead (lib/app-sign-in.ts), with what the app asked it with. */
+export type SignInLinkMetadata = { linkId: string; slug: string; projectName: string; next: string } | { linkId: string; app: { state: string; challenge: string } };
