@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { anyArticleToSend, readerToSend, searchDocs } from "@/server/docs-search";
 import { findArticlesToInsert } from "@/server/inbox";
+import { listArticlesToInsert } from "@/server/operations/conversations";
 import { createArticle, deleteArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -111,4 +112,21 @@ test("a search in the picker isn't a reader's: no embedding is asked for, and th
   } finally {
     await openai.close();
   }
+});
+
+test("conversations.articles offers the app what the reply box's Insert article offers, for any conversation by its number", async () => {
+  await write("Refunds for members", { access: "signed_in" });
+  const slug = await write("Refunds");
+  await write("Refunds hidden", { listing: "hidden" });
+  const [byEmail, signedIn] = [await conversation(1, false), await conversation(2, true)];
+  for (const number of [byEmail, signedIn]) {
+    const { articles } = await call(listArticlesToInsert, as(), { number, q: "refunds" });
+    expect({ articles }).toEqual(await findArticlesToInsert(project.slug, number, "refunds"));
+  }
+  expect((await call(listArticlesToInsert, as(), { number: byEmail, q: "refunds" })).articles).toEqual([
+    { slug, title: "Refunds", url: expect.stringMatching(new RegExp(`/docs/${slug}$`)) },
+  ]);
+  // Nothing typed finds nothing; a conversation that isn't there is said so.
+  expect(await call(listArticlesToInsert, as(), { number: signedIn, q: "  " })).toEqual({ articles: [] });
+  await expect(call(listArticlesToInsert, as(), { number: 9, q: "refunds" })).rejects.toMatchObject({ status: 404 });
 });

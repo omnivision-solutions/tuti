@@ -124,6 +124,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "comments.like": (f) => ({ number: 1, id: f.commentId, liked: true }),
   "posts.update": () => ({ number: 1, status: "planned" }),
   "conversations.views": () => ({}),
+  "conversations.assignees": () => ({}),
+  // People only: every key is refused (below).
+  "conversations.upload": () => ({ filename: "matrix.pdf", contentType: "application/pdf", size: 1000 }),
+  "conversations.articles": () => ({ number: 1, q: "matrix" }),
   "conversations.list": () => ({ status: "open", q: "matrix" }),
   "companies.list": () => ({}),
   "conversations.get": () => ({ number: 1 }),
@@ -448,7 +452,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
 }
 
 /** Operations only a person can run, in the app: API keys (and MCP, with the same keys) get 403. */
-const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start", "conversations.markRead"]);
+const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start", "conversations.markRead", "conversations.upload"]);
 
 /** Calls an operation over REST like a client would. */
 async function call(operation: Operation, input: Record<string, unknown>, key: string) {

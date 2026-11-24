@@ -6,8 +6,10 @@ import { z } from "zod";
 import { rowLine, subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 
-import { attachmentLinks, checkUploads, claimUploads } from "../attachments";
+import { attachmentLinks, checkUploads, claimUploads, startUpload } from "../attachments";
 import { conversationReads } from "../conversation-reads";
+import { portalAddress } from "../custom-domains";
+import { readerToSend, searchDocs } from "../docs-search";
 import { emitEvent } from "../events";
 import { conversationCompanies } from "../inbox-companies";
 import { notifyInbox } from "../live";
@@ -384,6 +386,47 @@ export const listInboxViews = defineOperation({
   },
 });
 
+/** Who a conversation can be assigned to: the project's team, in the order they joined, as the Inbox's picker lists them. */
+export const assignableTeam = (projectId: string) =>
+  prisma.teamMember.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+    select: { userId: true, user: { select: { name: true, email: true, image: true } } },
+  });
+
+export const listAssignees = defineOperation({
+  name: "conversations.assignees",
+  title: "List who to assign to",
+  summary:
+    "List the teammates a conversation can be assigned to, in the order they joined, as Tuti's app offers them: each with the address conversations.update's `assignee` takes, and which one is you.",
+  method: "GET",
+  path: "/inbox/assignees",
+  scope: "read",
+  access: "team",
+  input: z.object({}),
+  output: z
+    .object({
+      assignees: z
+        .array(
+          z
+            .object({
+              name: z.string().describe("Their name in Tuti").meta({ examples: ["Olive Owner"] }),
+              email: z.string().describe("Their email address: conversations.update's `assignee`").meta({ examples: ["olive@example.com"] }),
+              image: z.string().nullable().describe("A link to their picture; null when they have none (the app shows their initial)").meta({ examples: ["https://tuti.example.com/api/media/abc/64.webp?s=x"] }),
+              you: z.boolean().describe("Whether it's the signed-in teammate; for an API key, the teammate who created it").meta({ examples: [true] }),
+            })
+            .meta({ id: "Assignee", description: "A teammate a conversation can be assigned to" }),
+        )
+        .describe("The team, in the order they joined"),
+    })
+    .describe("Who conversations can be assigned to"),
+  run: async ({ actor, projectId }) => {
+    const me = teamMemberId(actor);
+    const team = await assignableTeam(projectId);
+    return { assignees: team.map(({ userId, user }) => ({ name: user.name, email: user.email, image: user.image, you: userId === me })) };
+  },
+});
+
 /** A team member by their email, for assigning. */
 async function teamMemberByEmail(projectId: string, email: string) {
   const member = await prisma.teamMember.findFirst({
@@ -709,6 +752,79 @@ export const markConversationRead = defineOperation({
       ON CONFLICT ("conversationId", "userId") DO UPDATE SET "readAt" = EXCLUDED."readAt"
       WHERE conversation_read."readAt" < EXCLUDED."readAt"`;
     return {};
+  },
+});
+
+export const startReplyUpload = defineOperation({
+  name: "conversations.upload",
+  title: "Start an attachment upload",
+  summary:
+    "Start uploading a file for a reply: PUT the file to `uploadUrl` with `contentType` as its Content-Type, then send `id` in conversations.reply's `attachments`. Unsent, it's gone after a day. 50 uploads an hour per teammate. People only: API keys get 403.",
+  method: "POST",
+  path: "/inbox/uploads",
+  scope: "write",
+  access: "team",
+  errors: [429],
+  input: z.object({
+    filename: z.string().max(1000).describe("The file's name").meta({ examples: ["invoice.pdf"] }),
+    contentType: z.string().max(200).describe("Its type; anything but a plain `type/subtype` is stored as application/octet-stream").meta({ examples: ["application/pdf"] }),
+    size: z.number().int().describe("Its size in bytes: up to 10 MB (a reply's files, 25 MB together)").meta({ examples: [48213] }),
+  }),
+  example: { filename: "invoice.pdf", contentType: "application/pdf", size: 48213 },
+  output: z
+    .object({
+      id: z.string().describe("The upload's id, for conversations.reply's `attachments`").meta({ examples: ["cm3k9x2ab0001qz8h4f7d2e1c"] }),
+      contentType: z.string().describe("The Content-Type to PUT it with: the one signed").meta({ examples: ["application/pdf"] }),
+      uploadUrl: z.string().describe("Where to PUT exactly this file, signed for a while").meta({ examples: ["https://media.example.com/attachments/abc?signature=xyz"] }),
+    })
+    .describe("Where to upload the file, and its id"),
+  run: async ({ actor, projectId }, file) => {
+    if (actor.kind !== "user") {
+      throw new OperationError(403, "people_only", "Only signed-in teammates upload attachments");
+    }
+    return startUpload(projectId, { userId: actor.userId }, file);
+  },
+});
+
+export const listArticlesToInsert = defineOperation({
+  name: "conversations.articles",
+  title: "List articles to insert",
+  summary:
+    "List the published articles matching `q` that the conversation's person can be sent, as Insert article offers them in Tuti's app: listed or unlisted, on a portal they can get into, theirs to read. Up to 10, by their words.",
+  method: "GET",
+  path: "/conversations/{number}/articles",
+  scope: "read",
+  access: "team",
+  input: z.object({
+    number: conversationNumber,
+    q: z.string().trim().max(MAX_SEARCH_LENGTH).describe("What to look for in their titles and text; an empty one finds none").meta({ examples: ["refunds"] }),
+  }),
+  output: z
+    .object({
+      articles: z
+        .array(
+          z.object({
+            slug: z.string().describe("The article's slug").meta({ examples: ["refunds"] }),
+            title: z.string().describe("Its title: the inserted link's text").meta({ examples: ["How refunds work"] }),
+            url: z.string().describe("Its page on the portal: the inserted link").meta({ examples: ["https://help.example.com/docs/refunds"] }),
+          }),
+        )
+        .describe("The articles, best match first"),
+    })
+    .describe("Articles to insert in a reply"),
+  example: { q: "refunds" },
+  run: async ({ projectId }, { number, q }) => {
+    const conversation = await findConversation(projectId, number);
+    const reader = q ? await readerToSend(projectId, conversation.userId) : false;
+    if (reader === false) {
+      return { articles: [] };
+    }
+    // Words only, as typed (no embedding per keystroke), and not counted as a reader's search in the team's insights.
+    const [results, portal] = await Promise.all([
+      searchDocs(projectId, q, 10, reader, { log: false, meaning: false, unlisted: true }),
+      portalAddress(await projectSlug(projectId)),
+    ]);
+    return { articles: results.map(({ slug, title }) => ({ slug, title, url: `${portal}/docs/${slug}` })) };
   },
 });
 
