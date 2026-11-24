@@ -40,8 +40,8 @@ const loadFonts = () =>
  * makes that address a public asset's instead (not a file, and reading it fails): there it's in the app's own folder,
  * which `next` runs from (start.sh, `pnpm dev`).
  */
-function fontFile(file: string) {
-  const beside = new URL(`../fonts/og/${file}`, import.meta.url);
+export function fontFile(file: string, base: string = import.meta.url) {
+  const beside = new URL(`../fonts/og/${file}`, base);
   return beside.protocol === "file:" ? beside : join(process.cwd(), "src/fonts/og", file);
 }
 

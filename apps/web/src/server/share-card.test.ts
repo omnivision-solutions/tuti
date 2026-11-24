@@ -1,10 +1,45 @@
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import satori from "satori";
 import { expect, test, vi } from "vitest";
 
 import type { Branding } from "@/server/operations/branding";
 
-import { cardElement, drawable, fonts, logoSize, type ShareCard } from "./share-card";
+import { cardElement, drawable, fontFile, fonts, logoSize, type ShareCard } from "./share-card";
+
+// The real reading, watched: when the fonts' files are read.
+vi.mock("node:fs/promises", async (original) => {
+  const real = await original<typeof import("node:fs/promises")>();
+  return { ...real, readFile: vi.fn(real.readFile) };
+});
+
+test("importing the renderer reads no font: they're read once, when a picture is first drawn", async () => {
+  vi.resetModules();
+  vi.mocked(readFile).mockClear();
+  const fresh = await import("./share-card");
+  // An entry's page and the changelog's operations import it (through the cover's renderer) without ever drawing.
+  expect(readFile).not.toHaveBeenCalled();
+  const loaded = await fresh.fonts();
+  expect(loaded.map((font) => font.name)).toEqual(["Bricolage Grotesque", "Figtree", "Figtree", "Noto Sans", "Noto Sans", "Noto Sans Math"]);
+  expect(readFile).toHaveBeenCalledTimes(6);
+  await fresh.fonts();
+  expect(readFile).toHaveBeenCalledTimes(6);
+});
+
+test("a font is read from beside the renderer where that's a file, else from the app's folder", () => {
+  // A route handler and tests: the module's own address is a file's.
+  expect(fontFile("figtree-500.ttf")).toEqual(new URL("../fonts/og/figtree-500.ttf", import.meta.url));
+  // A page's or a server action's bundle makes it a public asset's address: read from the folder `next` runs from.
+  const app = fileURLToPath(new URL("../..", import.meta.url));
+  const cwd = vi.spyOn(process, "cwd").mockReturnValue(app);
+  const file = fontFile("figtree-500.ttf", "https://tuti.example/_next/static/media/chunk.js");
+  expect(file).toBe(`${app}src/fonts/og/figtree-500.ttf`);
+  expect(existsSync(file as string)).toBe(true);
+  cwd.mockRestore();
+});
 
 test("a card's text loses emoji and their parts, which its fonts can't draw", () => {
   expect(drawable("Launch 🇫🇷 day")).toBe("Launch day");

@@ -40,8 +40,8 @@ type Site = { project: { name: string }; brand: Branding };
 type Logo = Awaited<ReturnType<typeof logoImage>>;
 type Picture = { src: string; width: number; height: number } | null;
 
-/** A headline given in the title's place: as long as fits a cover's three lines. */
-export const MAX_COVER_HEADLINE = 120;
+/** The longest title a cover shows whole (a longer one is cut short), so the longest headline to give in its place. */
+export const MAX_COVER_HEADLINE = 90;
 
 /** Narrower than this, an image is an icon or a badge, not something to build a cover on. */
 const MIN_PICTURE_WIDTH = 600;
@@ -131,7 +131,7 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
   // as the logo's chip (white on a mid colour reads for the big title only).
   const label = readableOn(color, theme.surface, 4.5) ?? theme.text;
   const shown = drawable(content.title);
-  const title = shown.length > 90 ? `${shown.slice(0, 88).trimEnd()}…` : shown;
+  const title = shown.length > MAX_COVER_HEADLINE ? `${shown.slice(0, MAX_COVER_HEADLINE - 2).trimEnd()}…` : shown;
   const tag = content.tag && drawable(content.tag);
   // The portal's logo (or its name beside a square of its colour), as the link card has it.
   const brand = (
