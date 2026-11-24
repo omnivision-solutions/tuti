@@ -390,8 +390,18 @@ export function importAt(run: ImportView) {
   return at < 0 ? null : `Part ${at + 1} of ${parts.length}`;
 }
 
-/** What's said under an import's title: the part under way, or why it stopped. */
-export const importNote = (run: ImportView) => (run.state === "running" ? importAt(run) && `${importAt(run)}.` : run.state === "failed" ? run.error : null);
+/**
+ * What's said under an import's title: the part under way, and that it's waiting when it is (the tool it reads asked
+ * for a pause, or failed in a way that may pass: the import goes on by itself, so nobody starts it again), or why it stopped.
+ */
+export function importNote(run: ImportView) {
+  if (run.state !== "running") {
+    return run.state === "failed" ? run.error : null;
+  }
+  // Whatever it waits for: the tool's rate limit, its trouble or silence, or a failure of Tuti's own (the database).
+  const waiting = run.resumesAt && `Paused for now, waiting for ${IMPORT_SOURCES[run.source].name} to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.`;
+  return [importAt(run) && `${importAt(run)}.`, waiting].filter(Boolean).join(" ") || null;
+}
 
 /** An import in a line, as Home's card says it: the part under way, the parts it brought, or where it stopped and why. */
 export function importBrief(run: ImportView) {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "./fixtures";
-import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
+import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_LIMITED_KEY, FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
@@ -279,6 +279,29 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
   await expect(status).toContainText("Skipped what was already brought across earlier.");
   await checkpoint(owner, "settings-import-again");
+});
+
+test("an import Featurebase's rate limit holds up says it's waiting and goes on by itself, rather than stopping", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/settings/import`);
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  // A key whose lists Featurebase answers "too many requests, try again in ten minutes" (the start's checks pass).
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_LIMITED_KEY);
+  await owner.getByRole("button", { name: "Start import" }).click();
+  // The team came across; Contacts, held up, is still under way, and the import says why nothing moves.
+  await expect(owner.getByText("Part 2 of 3. Paused for now, waiting for Featurebase to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.", { exact: false })).toBeVisible({ timeout: 15_000 });
+  const parts = owner.getByRole("list", { name: "What's brought across", exact: true });
+  await expect(parts.getByRole("listitem").filter({ has: owner.getByText("Contacts", { exact: true }) })).toContainText("In progress");
+  await expect(owner.getByRole("button", { name: "Start import" })).toHaveCount(0);
+  await checkpoint(owner, "settings-import-waiting");
+  // The same under the title of its details.
+  await owner.goto(`/app/${slug}`);
+  await owner.getByRole("button", { name: "View progress" }).click();
+  await expect(owner.getByRole("dialog").getByText("Paused for now, waiting for Featurebase to answer again (or for a hiccup of Tuti's to pass). It picks up again by itself.", { exact: false })).toBeVisible();
 });
 
 test("Feedback comes across with Contacts: the posts with their dates, votes and comments on the portal, and the team's private comment as a note in the app", async ({ browser }, testInfo) => {

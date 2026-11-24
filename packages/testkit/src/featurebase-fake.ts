@@ -9,6 +9,11 @@ export const FAKE_FEATUREBASE_KEY = "sk_fake_featurebase";
  * as a test needs. Held ones go on after a minute regardless, so nothing hangs.
  */
 export const FAKE_FEATUREBASE_SLOW_KEY = "sk_fake_featurebase_slow";
+/**
+ * A key the fake also takes whose pages of a list (100 at a time, as an import reads; not a start's checks) are
+ * answered 429, asking for ten minutes (Retry-After): an import that waits for its rate limit.
+ */
+export const FAKE_FEATUREBASE_LIMITED_KEY = "sk_fake_featurebase_limited";
 
 type Row = Record<string, unknown>;
 
@@ -538,8 +543,13 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     }
     fake.requests.push(`${req.method} ${url.pathname}${url.search}`);
     const slow = req.headers.authorization === `Bearer ${FAKE_FEATUREBASE_SLOW_KEY}`;
-    if (req.headers.authorization !== `Bearer ${FAKE_FEATUREBASE_KEY}` && !slow) {
+    const limited = req.headers.authorization === `Bearer ${FAKE_FEATUREBASE_LIMITED_KEY}`;
+    if (req.headers.authorization !== `Bearer ${FAKE_FEATUREBASE_KEY}` && !slow && !limited) {
       return send(401, { success: false, message: "Invalid API key" });
+    }
+    if (limited && url.searchParams.get("limit") === "100") {
+      res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "600" });
+      return res.end(JSON.stringify({ error: { type: "rate_limit", message: "Too many requests", status: 429 } }));
     }
     if (slow && !released && url.searchParams.get("limit") === "100" && !req.headers["x-fake-late"]) {
       req.headers["x-fake-late"] = "1";
