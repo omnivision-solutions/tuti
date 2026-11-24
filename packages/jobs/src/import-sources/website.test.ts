@@ -87,6 +87,28 @@ test("a reader whose site's pace was forgotten while it waited (a Retry-After) s
   }
 });
 
+test("two readers of one site at once (two projects importing it) ask it a whole pace apart, not together", async () => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  const site = await startHelpCenterFake();
+  const clock = Date.now();
+  const waits: number[] = [];
+  // Each wait is let go a moment later, so both readers have worked out theirs before either sends.
+  const wait = async (ms: number) => {
+    waits.push(ms);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  };
+  Object.assign(crawlPace, { ms: 300, now: () => clock, wait });
+  try {
+    const first = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    const second = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    await Promise.all([first.checkCredential(), second.checkCredential()]);
+    // Each request (robots.txt and the start page, twice) after the one before it, though the clock never moved.
+    expect(waits.toSorted((a, b) => a - b)).toEqual([0, 300, 600, 900]);
+  } finally {
+    await site.close();
+  }
+});
+
 test("a crawled page whose name can't be looked up for a moment fails the step, rather than counting as gone", async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   crawlPace.ms = 0;

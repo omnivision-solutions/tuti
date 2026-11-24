@@ -229,8 +229,8 @@ function site(start: string, deadline: number, kept: unknown) {
   let delayMs = 0;
   /**
    * The site's pace, read afresh before each request, so no reader holds one forgotten under it (it may wait out a
-   * Retry-After first). `last` is when a request began, and one may take PAGE_TIMEOUT_MS; a Crawl-delay is 5s at most.
-   * Past both, a site's pace is as good as none, and it's forgotten.
+   * Retry-After first). `last` is when the latest request began (or will: reserved), and one may take
+   * PAGE_TIMEOUT_MS; a Crawl-delay is 5s at most. Past both, a site's pace is as good as none, and it's forgotten.
    */
   const sitePace = () => {
     for (const [address, { last }] of crawlPace.sites) {
@@ -264,13 +264,13 @@ function site(start: string, deadline: number, kept: unknown) {
         throw new SiteError(0, `${parsed.hostname}'s robots.txt asks crawlers not to read ${parsed.pathname}, so Tuti doesn't.`, "refused");
       }
       const pace = sitePace();
-      const wait = pace.last + Math.max(crawlPace.ms, pace.delayMs) - crawlPace.now();
-      if (Date.now() + Math.max(wait, 0) >= deadline) {
+      const slot = Math.max(crawlPace.now(), pace.last + Math.max(crawlPace.ms, pace.delayMs));
+      if (Date.now() + (slot - crawlPace.now()) >= deadline) {
         throw new SiteError(0, `${parsed.hostname} took too long to read.`, "late");
       }
-      await crawlPace.wait(Math.max(wait, 0));
-      // Into the site's pace as it is now, not one forgotten during the wait.
-      sitePace().last = crawlPace.now();
+      // Its time reserved before the wait, so another reader of the site (another project's import) goes after it.
+      pace.last = slot;
+      await crawlPace.wait(slot - crawlPace.now());
       let response;
       try {
         response = await fetch(at, {
