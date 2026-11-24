@@ -65,13 +65,13 @@ export function WidgetComments({
   // While the page switches people or signs them out, nobody: never the last person's token.
   const token = pending || signingOut ? null : (signedIn?.token ?? null);
   // Who's here: the same person while the page trades a token (each trade makes a new one, for them or someone else), so
-  // their box and an open edit stay, waiting (no token: never sent, see SIGNING_IN), and Edit and Delete wait for it. Signing
-  // out, they're leaving: nobody's box, and their open edits close.
+  // their box, an open edit or Delete's dialog stay, waiting (no token: nothing's sent, see SIGNING_IN). Signing out, they're
+  // leaving: nobody's box, and their open edits close.
   const person = portalSignedIn ? "portal" : signingOut ? null : (signedIn?.id ?? null);
   // Whose own comments these are; anyone else's are none until theirs are read, never the last person's.
   const [mine, setMine] = useState<{ for: string | null; ids: Set<string> }>({ for: null, ids: NONE });
   const read = !portalSignedIn && !!person && mine.for === person;
-  const own = portalSignedIn ? new Set(portalMine) : read && token ? mine.ids : NONE;
+  const own = portalSignedIn ? new Set(portalMine) : read ? mine.ids : NONE;
 
   useEffect(() => {
     if (!token || !person) {

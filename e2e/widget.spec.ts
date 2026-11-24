@@ -918,22 +918,42 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   });
   const sent: string[] = [];
   const record = (request: { headers(): Record<string, string>; postData(): string | null }) => void (request.headers()["next-action"] && sent.push(request.postData() ?? ""));
-  sam.on("request", record);
-  await comments.getByRole("textbox", { name: "Comment" }).fill("Sent while signing in?");
+  const box = comments.getByRole("textbox", { name: "Comment", exact: true });
+  await box.fill("Sent while signing in?");
+  await own.getByRole("button", { name: "Edit your comment" }).click();
+  const editBox = comments.getByRole("textbox", { name: "Edit your comment" });
+  await editBox.fill("Edited while signing in?");
   await sam.evaluate(() =>
     (window as unknown as { Tuti: { identify(getToken: () => Promise<string>): void } }).Tuti.identify(() => fetch(`/token${location.pathname}`).then((r) => r.text())),
   );
   await expect.poll(() => trading).toBe(true);
-  // Comment waits for the token (the same person's, or someone else's, then their box goes).
+  // From here till the trade's done, nothing may be sent.
+  sam.on("request", record);
+  // Comment waits for the token (the same person's, or someone else's, then their box goes); sent anyway, it sends nothing.
   await expect(comments.getByText("Signing you in…", { exact: true })).toBeVisible();
   await expect(comments.getByRole("button", { name: "Comment", exact: true })).toBeDisabled();
-  await comments.getByRole("textbox", { name: "Comment" }).press("Control+Enter");
-  await comments.getByRole("button", { name: "Comment", exact: true }).click({ force: true });
-  expect(sent.filter((body) => body.includes("Sent while signing in?"))).toEqual([]);
-  await expect(comments.getByRole("textbox", { name: "Comment" })).toHaveText("Sent while signing in?");
+  await box.evaluate((element) => element.closest("form")!.requestSubmit());
+  await expect(comments.getByText("Signing you in… Try again in a moment.")).toHaveCount(1);
+  await expect(box).toHaveText("Sent while signing in?");
+  // Saving the edit sends nothing either: it says why, and what's typed stays.
+  await comments.getByRole("button", { name: "Save" }).click();
+  await expect(comments.getByText("Signing you in… Try again in a moment.")).toHaveCount(2);
+  await expect(editBox).toHaveText("Edited while signing in?");
+  await comments.getByRole("button", { name: "Cancel" }).click();
+  // Nor does deleting: the comment stays.
+  await own.getByRole("button", { name: "Delete your comment" }).click();
+  await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
+  await expect(widget.locator("[data-sonner-toast]").filter({ hasText: "Signing you in… Try again in a moment." })).toBeVisible();
+  expect(sent).toEqual([]);
   sam.off("request", record);
   releaseTrade();
   await sam.unroute("**/*");
+  // Its dialog stays, to delete it once they're signed in: here, they change their mind.
+  const deleteDialog = widget.getByRole("alertdialog", { name: "Delete this comment?" });
+  await expect(deleteDialog.getByRole("button", { name: "Delete comment" })).toBeEnabled();
+  await deleteDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(deleteDialog).toHaveCount(0);
+  await expect(own).toContainText("Works with all my calendars.");
   await expect(own.getByRole("button", { name: "Edit your comment" })).toBeVisible();
   await expect(comments.getByRole("button", { name: "Comment", exact: true })).toBeEnabled();
   // A second one, which they delete.
