@@ -1462,6 +1462,24 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await widget.getByRole("link", { name: "Read more about Calendar sync is here" }).click();
   await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toHaveAttribute("aria-pressed", "true");
   await expect(widget.getByRole("button", { name: "React with ❤️ (1)" })).toBeEnabled();
+  // She comments as herself too: hers to edit and delete, the team's answer not.
+  await api("/changelog/1/comments", { body: "Thanks for reading!" });
+  const comments = widget.getByRole("region", { name: "Comments" });
+  await comments.getByRole("textbox", { name: "Comment" }).fill("Syncs my phone too.");
+  await comments.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(comments.getByRole("heading", { name: "2 comments" })).toBeVisible();
+  const hers = comments.getByRole("listitem").filter({ hasText: "Syncs my phone too." });
+  await expect(comments.getByRole("listitem").filter({ hasText: "Thanks for reading!" }).getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
+  await hers.getByRole("button", { name: "Edit your comment" }).click();
+  await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Syncs my phone and tablet too.");
+  await comments.getByRole("button", { name: "Save" }).click();
+  await expect(hers).toHaveCount(0);
+  const edited = comments.getByRole("listitem").filter({ hasText: "Syncs my phone and tablet too." });
+  await expect(edited).toBeVisible();
+  await edited.getByRole("button", { name: "Delete your comment" }).click();
+  await widget.getByRole("alertdialog", { name: "Delete this comment?" }).getByRole("button", { name: "Delete comment" }).click();
+  await expect(comments.getByRole("heading", { name: "1 comment" })).toBeVisible();
+  await expect(edited).toHaveCount(0);
   // A link to an update that isn't there (taken down, or never was): it says so, with the way back to the list.
   await ada.goto(`${portalUrl(slug)}/widget?tab=whats-new&entry=999`);
   await expect(ada.getByText("This update isn't here")).toBeVisible();
