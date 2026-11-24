@@ -35,6 +35,11 @@ test("every design says the title and the tag, with the portal's name where it h
   // Untagged: no empty pill. A very long title is cut short.
   expect(shown(site(), content({ tag: null }), "title", null, null)).not.toContain("border-radius:9999px;padding:8px 26px");
   expect(shown(site(), content({ title: "x".repeat(200) }), "pattern", null, null)).toContain(`${"x".repeat(88)}…`);
+  // A title or a headline of 90 characters is drawn whole; one more, and it ends in an ellipsis rather than mid-word.
+  const long = `${"Dark mode ".repeat(9)}`.trim();
+  expect(long).toHaveLength(89);
+  expect(shown(site(), content({ title: `${long}!` }), "title", null, null)).toContain(`>${long}!<`);
+  expect(shown(site(), content({ title: `${long}!!` }), "title", null, null)).toContain(`>${long.slice(0, 88)}…<`);
 });
 
 test("on the portal's colour the text is white where that reads, near-black on a pale colour; the logo sits on a chip of the page", () => {

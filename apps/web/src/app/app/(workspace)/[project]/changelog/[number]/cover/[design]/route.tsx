@@ -24,7 +24,8 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   if (!entry || !brand) {
     return notFound();
   }
-  const headline = new URL(request.url).searchParams.get("headline")?.slice(0, MAX_COVER_HEADLINE);
+  // As typed, however long: the drawing cuts a long one short with an ellipsis, as it does a long title (kept to a size worth reading).
+  const headline = new URL(request.url).searchParams.get("headline")?.slice(0, MAX_COVER_HEADLINE * 4);
   const content = await coverContent(project.id, entry, headline);
   if (!coverDesigns(content).includes(design as CoverDesign)) {
     return notFound();

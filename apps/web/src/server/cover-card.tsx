@@ -40,7 +40,11 @@ type Site = { project: { name: string }; brand: Branding };
 type Logo = Awaited<ReturnType<typeof logoImage>>;
 type Picture = { src: string; width: number; height: number } | null;
 
-/** The longest title a cover shows whole (a longer one is cut short), so the longest headline to give in its place. */
+/**
+ * The most of a title a cover draws: a longer one is cut there with an ellipsis, so it's also the longest headline to
+ * give in its place. The widest design (Title) shows that much whole; the narrower ones end a long title with an
+ * ellipsis at their third line.
+ */
 export const MAX_COVER_HEADLINE = 90;
 
 /** Narrower than this, an image is an icon or a badge, not something to build a cover on. */

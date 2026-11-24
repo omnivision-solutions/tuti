@@ -57,6 +57,10 @@ test("a team member gets each design that has something to show for the entry, a
   // A headline in the title's place draws another picture.
   const [titled, headlined] = [await png(await preview(number, "title")), await png(await preview(number, "title", "?headline=Now%20in%20the%20dark"))];
   expect(headlined.equals(titled)).toBe(false);
+  // A headline longer than a cover draws isn't refused or cut mid-word here: it's drawn as its start and an ellipsis, as a long title is.
+  const long = "Dark mode ".repeat(12).trim();
+  const [cut, same] = [await png(await preview(number, "title", `?headline=${encodeURIComponent(long)}`)), await png(await preview(number, "title", `?headline=${encodeURIComponent(`${long.slice(0, 88)}…`)}`))];
+  expect(cut.equals(same)).toBe(true);
   // No image in the entry: no Screenshot. One heading only: no Sections.
   expect((await preview(number, "screenshot")).status).toBe(404);
   const plain = await call(createChangelogEntry, team(), { title: "Fixes", content: { type: "doc", content: [heading("Only one"), paragraph("Text.")] } });
