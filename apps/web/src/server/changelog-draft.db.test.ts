@@ -270,6 +270,9 @@ test("a draft leaves a line where it needs a fact; the entry isn't published wit
     status: 409,
     message: "Replace or remove the 2 markers in its text first: [Check: on [the [Pro] plan] too?] [Screenshot: the menu",
   });
+  // In a code block as well.
+  await call(updateChangelogEntry, team(), { number, markdown: "Run it:\n\n```\ntuti publish\n[Check: the flag's name]\n```" });
+  await expect(call(publishChangelogEntry, team(), { number })).rejects.toMatchObject({ status: 409, message: "Replace or remove the marker in its text first: [Check: the flag's name]" });
   // Replaced (the picture in, the answers written), it's published. Square brackets that aren't a marker are only text.
   await call(updateChangelogEntry, team(), { number, body: "Dark mode is here, on every plan [beta]. Check: it works." });
   expect((await call(publishChangelogEntry, team(), { number })).status).toBe("published");

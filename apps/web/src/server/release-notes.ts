@@ -60,14 +60,14 @@ function markersOf(text: string): string[] {
 }
 
 /**
- * The markers still in a text, as written, each one: on a line of its own as asked, or inside a sentence or a heading
- * where the model put it instead, which would go out to readers just the same.
+ * The markers still in a text, as written, each one: on a line of its own as asked, or inside a sentence, a heading or
+ * a code block where the model put it instead, which would go out to readers just the same.
  */
 export function markersIn(doc: Doc): string[] {
   const found: string[] = [];
   (function read(node: JSONContent | Doc) {
-    if (node.type === "paragraph" || node.type === "heading") {
-      found.push(...markersOf(toPlainText(node)));
+    if (node.type === "paragraph" || node.type === "heading" || node.type === "codeBlock") {
+      found.push(...toPlainText(node).split("\n").flatMap(markersOf));
       return;
     }
     node.content?.forEach(read);
