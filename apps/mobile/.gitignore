@@ -2,3 +2,15 @@
 expo-env.d.ts
 /ios
 /android
+
+# Signing keys and credentials live with the build service, never here.
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+credentials.json
+google-services.json
+GoogleService-Info.plist

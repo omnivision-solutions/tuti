@@ -18,13 +18,13 @@ export function appConfig(env: Env): ExpoConfig {
     ios: { bundleIdentifier: appId, supportsTablet: true },
     android: {
       package: appId,
-      adaptiveIcon: { foregroundImage: "./assets/android-icon-foreground.png", backgroundColor: "#f8f4f1" },
+      adaptiveIcon: { foregroundImage: "./assets/android-icon-foreground.png", backgroundColor: "#fbf9f3" },
     },
     plugins: [
       "expo-router",
       [
         "expo-splash-screen",
-        { image: "./assets/splash-icon.png", imageWidth: 96, backgroundColor: "#f8f4f1", dark: { backgroundColor: "#1c1917" } },
+        { image: "./assets/splash-icon.png", imageWidth: 96, backgroundColor: "#fbf9f3", dark: { backgroundColor: "#0f1411" } },
       ],
     ],
     experiments: { reactCompiler: true },

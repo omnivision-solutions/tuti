@@ -1,15 +1,15 @@
 import { Image, StyleSheet, Text, useColorScheme, View } from "react-native";
 
-// The palette is Tuti's (packages/ui/src/globals.css): warm paper and ink, swapped in the dark.
-const paper = "#f8f4f1";
-const ink = "#1c1917";
+// The web app's page and text colours (`--background` and `--foreground` in packages/ui/src/globals.css), as hex.
+const light = { page: "#fbf9f3", text: "#1c1917" };
+const dark = { page: "#0f1411", text: "#f1f5f2" };
 
 export default function Home() {
-  const dark = useColorScheme() === "dark";
+  const colors = useColorScheme() === "dark" ? dark : light;
   return (
-    <View style={[styles.screen, { backgroundColor: dark ? ink : paper }]}>
+    <View style={[styles.screen, { backgroundColor: colors.page }]}>
       <Image source={require("../../assets/splash-icon.png")} style={styles.mark} accessibilityIgnoresInvertColors />
-      <Text style={[styles.name, { color: dark ? paper : ink }]}>Tuti</Text>
+      <Text style={[styles.name, { color: colors.text }]}>Tuti</Text>
     </View>
   );
 }
