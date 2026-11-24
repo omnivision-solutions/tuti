@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import type { MediaUrls } from "@tuti/content/media";
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -39,6 +40,9 @@ export function ChangelogComment({
   canDelete,
   mine = canEdit,
   uploads,
+  mediaUrls,
+  onEdit = (prev, formData) => editChangelogComment(projectSlug, number, commentId, prev, formData),
+  onDelete = () => deleteChangelogComment(projectSlug, number, commentId),
   children,
 }: {
   projectSlug: string;
@@ -51,6 +55,12 @@ export function ChangelogComment({
   /** Its author's (Delete says "your"); by default whoever may edit it. */
   mine?: boolean;
   uploads?: EditorUploads;
+  /** Its images' signed URLs, for its editor when there are no `uploads`. */
+  mediaUrls?: MediaUrls | null;
+  /** Saves an edit, and deletes it (the widget's act for whoever the customer's page signed in); the portal's server actions by default. */
+  onEdit?: (prev: FormState, formData: FormData) => Promise<FormState>;
+  /** `waiting`: refused before anything was sent (the widget, signing someone in): it's still there. */
+  onDelete?: () => Promise<FormState & { waiting?: boolean }>;
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
@@ -77,7 +87,7 @@ export function ChangelogComment({
   );
 
   if (editing) {
-    return <EditForm projectSlug={projectSlug} number={number} commentId={commentId} doc={doc} uploads={uploads} onDone={() => setEditing(false)} />;
+    return <EditForm save={onEdit} doc={doc} uploads={uploads} mediaUrls={mediaUrls} onDone={() => setEditing(false)} />;
   }
   return (
     <>
@@ -110,13 +120,15 @@ export function ChangelogComment({
                     focusableWhenDisabled
                     onClick={() =>
                       startDelete(async () => {
-                        const result = await deleteChangelogComment(projectSlug, number, commentId);
+                        const result = await onDelete();
                         if (result.error) {
                           toast.error(result.error);
                           // Deleted meanwhile (another tab, the team): the list as it is now, which takes this comment (and
                           // its Delete) away: the keyboard goes to the heading then, as below.
-                          gone.current = true;
-                          router.refresh();
+                          if (!result.waiting) {
+                            gone.current = true;
+                            router.refresh();
+                          }
                         } else {
                           toast.success("Comment deleted");
                           document.getElementById(COMMENTS_HEADING)?.focus();
@@ -138,23 +150,21 @@ export function ChangelogComment({
 
 /** Its author's editor for it, in place of its text; made afresh each time Edit opens it (no error from last time). */
 function EditForm({
-  projectSlug,
-  number,
-  commentId,
+  save: send,
   doc,
   uploads,
+  mediaUrls,
   onDone,
 }: {
-  projectSlug: string;
-  number: number;
-  commentId: string;
+  save: (prev: FormState, formData: FormData) => Promise<FormState>;
   doc: Doc;
   uploads?: EditorUploads;
+  mediaUrls?: MediaUrls | null;
   onDone: () => void;
 }) {
   const errorId = useId();
   const [state, save, saving] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await editChangelogComment(projectSlug, number, commentId, prev, formData);
+    const result = await send(prev, formData);
     if (!result.error) {
       onDone();
       toast.success("Comment saved");
@@ -170,6 +180,7 @@ function EditForm({
           label="Edit your comment"
           initial={doc}
           uploads={uploads}
+          mediaUrls={mediaUrls}
           invalid={!!state.error}
           describedBy={errorId}
           onCreate={(editor) => editor.commands.focus("end")}

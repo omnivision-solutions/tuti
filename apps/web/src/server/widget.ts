@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 
 import { linksFrom } from "@/lib/forms";
@@ -17,6 +18,7 @@ import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
 import { setVote } from "./operations/more";
 import { reactToChangelogEntry } from "./operations/changelog";
+import { createChangelogComment, deleteChangelogComment, listChangelogComments, updateChangelogComment } from "./operations/changelog-comments";
 import { asAdmin, call, postNumberOf } from "./operations/run";
 import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
 import { boardPosts } from "./post-lists";
@@ -186,6 +188,81 @@ export async function widgetReact(projectSlug: string, token: string | null, num
     }
     throw error;
   }
+}
+
+/**
+ * A published entry's comments, oldest first, each saying whether it's its person's (widgetPerson) own: the ones they may
+ * edit and delete. Nobody's for nobody, or on a portal they may not read; a draft as changelogComments.list answers.
+ */
+export async function widgetComments(projectSlug: string, token: string | null, number: number) {
+  const project = await readableProject(projectSlug);
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || !userId) {
+    return { error: "Sign in to comment" };
+  }
+  try {
+    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    const { comments } = await call(listChangelogComments, context, { number: Number(number) });
+    const own = new Set(
+      (await prisma.changelogComment.findMany({ where: { authorId: userId, entry: { projectId: project.id, number: Number(number) } }, select: { id: true } })).map((c) => c.id),
+    );
+    return { comments: comments.map((comment) => ({ ...comment, mine: own.has(comment.id) })) };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Runs a comment's operation as the widget's person (widgetPerson); the panel's page then shows the list as it is now. */
+async function asCommenter<T>(projectSlug: string, token: string | null, run: (context: { actor: { kind: "user"; userId: string }; projectId: string }) => Promise<T>) {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const userId = project && (await widgetPerson(project.id, token));
+  if (!project || !userId) {
+    return { error: "Sign in to comment" };
+  }
+  try {
+    const result = await run({ actor: { kind: "user", userId }, projectId: project.id });
+    refresh();
+    return result;
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+const commentText = (formData: FormData) => {
+  const field = (name: string) => {
+    const value = formData.get(name);
+    return typeof value === "string" ? value : undefined;
+  };
+  return { content: field("content") || undefined, body: field("body") };
+};
+
+/** Comments on a published entry from the widget, as its person; with the comment's id (theirs to edit from then on). */
+export async function widgetComment(projectSlug: string, token: string | null, number: number, _prev: FormState, formData: FormData): Promise<FormState & { id?: string }> {
+  return asCommenter(projectSlug, token, async (context) => ({
+    id: (await call(createChangelogComment, context, { number: Number(number), ...commentText(formData) })).id,
+  }));
+}
+
+/** Edits its person's own comment on an entry, from the widget (see changelogComments.update). */
+export async function widgetEditComment(projectSlug: string, token: string | null, number: number, id: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  return asCommenter(projectSlug, token, async (context) => {
+    await call(updateChangelogComment, context, { number: Number(number), id: String(id), ...commentText(formData) });
+    return {};
+  });
+}
+
+/** Deletes its person's own comment on an entry, from the widget (see changelogComments.delete). */
+export async function widgetDeleteComment(projectSlug: string, token: string | null, number: number, id: string): Promise<FormState> {
+  return asCommenter(projectSlug, token, async (context) => {
+    await call(deleteChangelogComment, context, { number: Number(number), id: String(id) });
+    return {};
+  });
 }
 
 /**

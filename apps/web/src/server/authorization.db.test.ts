@@ -761,6 +761,37 @@ const matrix: Matrix = {
         return widget.widgetReact(slug, widgetToken(project.id, users.MEMBER.id), 1, "tada", true);
       },
     },
+    widgetComments: {
+      allowed: "public",
+      call: async (slug) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetComments(slug, widgetToken(project.id, users.MEMBER.id), 1);
+      },
+    },
+    widgetComment: {
+      allowed: "public",
+      call: async (slug) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetComment(slug, widgetToken(project.id, users.MEMBER.id), 1, {}, form({ body: "Nice" }));
+      },
+    },
+    // Its author's own: the other project's owner wrote it (see editChangelogComment), its token theirs.
+    widgetEditComment: {
+      allowed: "public",
+      takesIds: true,
+      call: async (slug, f) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetEditComment(slug, widgetToken(project.id, users.outsider.id), 1, f.entryCommentId, {}, form({ body: "Edited" }));
+      },
+    },
+    widgetDeleteComment: {
+      allowed: "public",
+      takesIds: true,
+      call: async (slug, f) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return widget.widgetDeleteComment(slug, widgetToken(project.id, users.outsider.id), 1, f.entryCommentId);
+      },
+    },
   },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },

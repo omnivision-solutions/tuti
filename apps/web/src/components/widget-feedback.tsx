@@ -141,7 +141,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
 }
 
 /** Signing in on the portal in a new tab, coming back to `path` there (the panel's own sign-in is the customer's page's). */
-const signInTo = (path: string) => `/sign-in?${new URLSearchParams({ next: path })}`;
+export const signInTo = (path: string) => `/sign-in?${new URLSearchParams({ next: path })}`;
 
 /**
  * The widget's Feedback tab: "Suggest an idea" (the similar ideas as they type, to vote on instead),

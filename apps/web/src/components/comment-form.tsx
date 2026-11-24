@@ -61,9 +61,12 @@ export function CommentForm({
   onDone,
   onCancel,
   action: send = addComment,
+  waiting = false,
 }: {
   postId: string;
   action?: (prev: FormState, formData: FormData) => Promise<FormState>;
+  /** It can't be sent yet (the widget's, while the page trades a token): what's typed stays, Comment waits. */
+  waiting?: boolean;
   replyTo?: string;
   autoFocus?: boolean;
   onDone?: () => void;
@@ -203,7 +206,7 @@ export function CommentForm({
           </Button>
         )}
         {/* On the portal a secondary: the post's one primary is Upvote. */}
-        <Button type="submit" variant={portal ? "outline" : "default"} disabled={pending}>
+        <Button type="submit" variant={portal ? "outline" : "default"} disabled={pending || waiting} focusableWhenDisabled>
           {pending ? "Posting…" : replyTo ? "Reply" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
         </Button>
       </div>

@@ -17,6 +17,11 @@ import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetReactions } from "@/components/widget-reactions";
+import { WidgetComment, WidgetComments } from "@/components/widget-comments";
+import { CommentList } from "@/components/comments";
+import { COMMENTS_HEADING } from "@/lib/comment-threads";
+import { displayDoc } from "@/server/content";
+import { mediaStorage } from "@tuti/shared/storage";
 import { WidgetThemeScript } from "@/components/widget-theme-script";
 import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
@@ -554,11 +559,50 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
       </>
     );
   }
+  // As on its portal page (whatever the panel's person, the list is everyone's).
+  const [comments, team] = await Promise.all([
+    prisma.changelogComment.findMany({
+      where: { entryId: entry.id },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, body: true, content: true, createdAt: true, asReader: true, author: { select: { id: true, name: true, image: true } } },
+    }),
+    prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } }),
+  ]);
+  const commentMedia = await mediaUrls(...comments.map(displayDoc));
   return (
     <div className="flex flex-col gap-4">
       {back}
       <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" base={await portalBase()} />
       <WidgetReactions projectSlug={slug} number={entry.number} counts={entry.reactions} reacted={entry.reacted} portalSignedIn={portalSignedIn} />
+      <section className="flex flex-col gap-3 border-t pt-5" aria-label="Comments">
+        <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-heading font-semibold outline-none">
+          {comments.length} {comments.length === 1 ? "comment" : "comments"}
+        </h2>
+        <WidgetComments
+          projectSlug={slug}
+          number={entry.number}
+          entryId={entry.id}
+          portalSignedIn={portalSignedIn}
+          portalMine={portalSignedIn ? comments.filter((c) => c.author.id === session.user.id).map((c) => c.id) : []}
+          // Images only for the portal's reader: uploads need its session.
+          uploads={portalSignedIn && mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined}
+          mediaUrls={commentMedia}
+        >
+          <div className="pt-2">
+            <CommentList
+              portal
+              comments={comments}
+              teamUserIds={new Set(team.map((m) => m.userId))}
+              mediaUrls={commentMedia}
+              editable={(comment, text) => (
+                <WidgetComment commentId={comment.id} author={comment.author.name} doc={displayDoc(comment)}>
+                  {text}
+                </WidgetComment>
+              )}
+            />
+          </div>
+        </WidgetComments>
+      </section>
     </div>
   );
 }

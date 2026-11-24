@@ -106,6 +106,7 @@ export function RichEditor({
   describedBy,
   hintId,
   uploads,
+  mediaUrls: shown,
   initial,
   editorRef: outerRef,
   onChange,
@@ -128,6 +129,8 @@ export function RichEditor({
   /** Id of a note about the text box that's always part of its description (not only while `invalid`). */
   hintId?: string;
   uploads?: EditorUploads;
+  /** Signed URLs of the images in `initial`, without uploads (who may not add images still sees those already there). */
+  mediaUrls?: MediaUrls | null;
   initial?: Doc;
   /** Set to the editor once it's created, for tools outside it (e.g. the changelog's AI helpers). */
   editorRef?: React.RefObject<Editor | null>;
@@ -165,7 +168,7 @@ export function RichEditor({
   // Files are attached to articles only.
   const canAttach = profile === "article" && !!uploads;
   // The image node reads these as it draws, so uploads add their URLs here first.
-  const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? {})));
+  const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? shown ?? {})));
 
   /** A new paste, drop or pick forgets the last one's error (once, so images' errors stay when files follow). */
   const startUploads = () => {
