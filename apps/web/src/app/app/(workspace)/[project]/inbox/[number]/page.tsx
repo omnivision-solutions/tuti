@@ -41,6 +41,7 @@ import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { formatDay, initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
+import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { isAdminRole } from "@/lib/roles";
 import { conversationReads } from "@/server/conversation-reads";
 import { attachmentLinks } from "@/server/attachments";
@@ -150,6 +151,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             original: true,
             seenAt: true,
             importId: true,
+            import: { select: { source: true } },
             emailStatus: true,
             emailError: true,
             createdAt: true,
@@ -266,14 +268,17 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Someone else on the email (in Cc) shows as their address.
   const byName = (message: Message) =>
     message.author === "USER" ? (message.fromAddress ?? personName) : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
-  // A team reply's email, under it. Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase).
+  // The tool an imported message came from, by name.
+  const importedFrom = (message: Message) => (message.import ? IMPORT_SOURCES[message.import.source.toLowerCase() as ImportSourceKey].name : null);
+  // A team reply's email, under it. Imported history was never emailed: no email status for it (docs/plan.md, Switching
+  // from Featurebase), but the tool it came from.
   const emailed = (message: Message) =>
     message.author !== "TEAM" || message.note
       ? undefined
       : message.seenAt
         ? "Seen"
-        : message.importId
-          ? "Imported from Featurebase"
+        : message.import
+          ? `Imported from ${importedFrom(message)}`
           : message.emailStatus
             ? EMAIL_STATUS[message.emailStatus](message.emailError)
             : wait?.status;
@@ -379,7 +384,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               cards
                               attachments={message.attachments.map((a) => links.get(a.id)!)}
                               dropped={message.attachmentsDropped}
-                              imported={!!message.importId}
+                              imported={importedFrom(message) ?? false}
                             />
                             {message.original && (
                               <details className="text-xs text-muted-foreground">

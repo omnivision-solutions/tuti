@@ -21,6 +21,10 @@ export type FerndeskFixtures = {
   changelogs: Row[];
   /** Their entries, newest first, with `changelogId`: /articles lists them too. */
   entries: Row[];
+  /** The helpdesk's conversations, newest activity first, each with its timeline (`messages`, oldest first). */
+  tickets: Row[];
+  customers: Row[];
+  teammates: Row[];
 };
 
 /** Where the fixtures' images are: written into what the fake sends as its own `<url>/files/`. */
@@ -54,10 +58,110 @@ const article = (id: string, title: string, slug: string, shortId: string, rest:
  * collection), articles published and draft, one with an open draft and one with a stale one, linking to each other by
  * their public addresses; two help center users; an AI conversation with a user and one with an anonymous visitor; a
  * changelog in a section of its own (Changelog) with entries published (one with an image, one dated before it went
- * live) and a draft, which Ferndesk lists as a collection and articles too.
+ * live) and a draft, which Ferndesk lists as a collection and articles too. Its helpdesk: an email from a customer with
+ * an attached file and one without an address, answered by a teammate who left a note, and still going; a chat with an
+ * anonymous visitor the AI agent answered, closed, with a reply never sent and one that failed; one the AI agent handed over with a note,
+ * snoozed; and spam.
  */
 export function ferndeskFixtures(): FerndeskFixtures {
+  const ines = { type: "teammate", id: "mem_ines", name: "Ines Hart", avatar_url: null };
+  const rosa = { id: "cust_rosa", name: "Rosa Lind", email: "e2e-ferndesk-rosa@example.com" };
+  const message = (id: string, conversation: string, author: Row, body: string, created: string, rest: Row = {}) => ({
+    object: "message",
+    id,
+    conversation_id: conversation,
+    type: "message",
+    visibility: "customer",
+    author,
+    body_text: body,
+    body_html: null,
+    attachments: [],
+    delivery: author.type === "customer" ? null : { status: "delivered" },
+    created_at: created,
+    ...rest,
+  });
+  const ticket = (id: string, rest: Row) => ({
+    object: "conversation",
+    id,
+    priority: "normal",
+    assignee: null,
+    labels: [],
+    is_spam: false,
+    ai_agent: { outcome: null },
+    preview: null,
+    snoozed_until: null,
+    closed_at: null,
+    url: `https://ferndesk.com/app/inbox/${id}`,
+    search: null,
+    ...rest,
+  });
   return {
+    tickets: [
+      ticket("conv_hd_invoice", {
+        subject: "Invoice for October",
+        status: "open",
+        channel: "email",
+        assignee: { id: "mem_ines", name: "Ines Hart", avatar_url: null },
+        customer: rosa,
+        created_at: ago(3),
+        updated_at: ago(0.9),
+        last_message_at: ago(0.9),
+        messages: [
+          message("msg_invoice_1", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "Could you resend October's invoice? The total looks off.", ago(3), {
+            body_html: "<p>Could you resend October's invoice? The total looks off.</p>",
+            attachments: [{ object: "attachment", id: "att_1", filename: "invoice-october.png", content_type: "image/png", size_bytes: PNG.byteLength, url: `${FAKE_FERNDESK_FILES}att/invoice-october.png?sig=abc` }],
+          }),
+          message("note_invoice", "conv_hd_invoice", ines, "Asked billing to check the total.", ago(2.5), { type: "note", visibility: "team", delivery: null }),
+          message("msg_invoice_2", "conv_hd_invoice", ines, "Here it is, with the total fixed.", ago(2), { body_html: "<p>Here it is, with the total fixed.</p>" }),
+          message("msg_invoice_3", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "Thanks! And September's?", ago(1)),
+          // Only a file, which Ferndesk gives no address for.
+          message("msg_invoice_4", "conv_hd_invoice", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "", ago(0.9), {
+            attachments: [{ object: "attachment", id: "att_2", filename: "september.pdf", content_type: "application/pdf", size_bytes: 1000, url: null }],
+          }),
+        ],
+      }),
+      // Handed over by the AI agent, with its note for the team, and snoozed until Rosa's team is back.
+      ticket("conv_hd_handoff", {
+        subject: "Can I get a refund?",
+        status: "snoozed",
+        channel: "chat",
+        customer: rosa,
+        ai_agent: { outcome: "handed_off" },
+        snoozed_until: "2099-01-05T09:00:00.000Z",
+        created_at: ago(2),
+        updated_at: ago(2),
+        last_message_at: ago(2),
+        messages: [
+          message("msg_handoff_1", "conv_hd_handoff", { type: "customer", id: "cust_rosa", name: "Rosa Lind", avatar_url: null }, "Can I get a refund?", ago(2.002)),
+          message("note_handoff", "conv_hd_handoff", { type: "ai_agent", id: null, name: "Fern", avatar_url: null }, "Refunds need a teammate: the docs don't cover them.", ago(2.001), { type: "note", visibility: "team", delivery: null }),
+          message("msg_handoff_2", "conv_hd_handoff", ines, "Yes: it's on its way.", ago(2)),
+        ],
+      }),
+      ticket("conv_hd_chat", {
+        subject: null,
+        status: "closed",
+        channel: "chat",
+        customer: null,
+        ai_agent: { outcome: "resolved" },
+        created_at: ago(6),
+        updated_at: ago(6),
+        last_message_at: ago(6),
+        closed_at: ago(6),
+        messages: [
+          message("msg_chat_1", "conv_hd_chat", { type: "customer", id: null, name: null, avatar_url: null }, "Is there a dark mode?", ago(6.003)),
+          message("msg_chat_2", "conv_hd_chat", { type: "ai_agent", id: null, name: "Fern", avatar_url: null }, "Yes: Settings → Appearance.", ago(6.002)),
+          message("msg_chat_3", "conv_hd_chat", ines, "Drafted, never sent.", ago(6.001), { delivery: { status: "cancelled" } }),
+          message("msg_chat_5", "conv_hd_chat", ines, "Sent, but it bounced.", ago(6.0005), { delivery: { status: "failed" } }),
+          message("msg_chat_4", "conv_hd_chat", { type: "system", id: null, name: null, avatar_url: null }, "Conversation closed.", ago(6)),
+        ],
+      }),
+      ticket("conv_hd_spam", { subject: "Cheap watches", status: "open", channel: "email", is_spam: true, customer: null, created_at: ago(4), updated_at: ago(4), last_message_at: ago(4), messages: [] }),
+    ],
+    customers: [{ object: "customer", ...rosa, properties: { plan: "team" }, created_at: ago(3), updated_at: ago(3) }],
+    teammates: [
+      { object: "teammate", id: "mem_ines", name: "Ines Hart", email: "e2e-ferndesk-ines@example.com", avatar_url: null, role: "admin", status: "active" },
+      { object: "teammate", id: "mem_olaf", name: "Olaf Brandt", email: "e2e-ferndesk-olaf@example.com", avatar_url: null, role: "contributor", status: "removed" },
+    ],
     sections: [
       { id: "sect_guides", name: "Guides", position: 0, isDefault: true, iconData: null, ...at("2024-01-01T09:00:00.000Z") },
       { id: "sect_api", name: "API", position: 1, isDefault: false, iconData: null, ...at("2024-01-02T09:00:00.000Z") },
@@ -206,6 +310,8 @@ export type FerndeskFake = {
   requests: string[];
   /** Paths answered 403 (e.g. "/v1/users"), as for a key without the scope. */
   forbidden: Set<string>;
+  /** Whether the workspace turned its helpdesk on: off, its conversations, customers and teammates answer 404. */
+  helpdesk: boolean;
   close(): Promise<void>;
 };
 
@@ -237,6 +343,39 @@ export async function startFerndeskFake(): Promise<FerndeskFake> {
       return send(405, { error: "the fake is read-only" });
     }
     const { fixtures } = fake;
+    const helpdesk = /^\/v1\/(conversations|customers|teammates)(\/|$)/.exec(url.pathname);
+    if (helpdesk) {
+      if (!fake.helpdesk) {
+        return send(404, { error: { type: "not_found", code: "support_not_enabled", message: "Helpdesk is not turned on in this workspace." } });
+      }
+      const [kind, id, sub] = url.pathname.split("/").slice(2).map(decodeURIComponent);
+      const notFound = () => send(404, { error: { type: "not_found", code: "not_found", message: "Not found" } });
+      // Its lists page with limit and cursor.
+      const list = (rows: Row[]) => {
+        const size = Math.min(Number(url.searchParams.get("limit") ?? 20), 100, fake.pageSize);
+        const cursor = url.searchParams.get("cursor");
+        const start = cursor ? Number(Buffer.from(cursor, "base64url").toString()) : 0;
+        const more = start + size < rows.length;
+        return send(200, { object: "list", data: rows.slice(start, start + size), has_more: more, next_cursor: more ? Buffer.from(String(start + size)).toString("base64url") : null });
+      };
+      if (kind === "teammates") {
+        return send(200, { object: "list", data: fixtures.teammates.filter((t) => url.searchParams.get("include_removed") === "true" || t.status === "active"), has_more: false, next_cursor: null });
+      }
+      const rows = kind === "customers" ? fixtures.customers : fixtures.tickets;
+      if (!id) {
+        // Spam is left out unless asked for; a conversation is listed without its timeline.
+        return list(kind === "customers" ? rows : rows.filter((row) => !row.is_spam).map(({ messages: _, ...row }) => row));
+      }
+      const one = rows.find((row) => row.id === id);
+      if (!one) {
+        return notFound();
+      }
+      if (sub === "messages") {
+        return list(one.messages as Row[]);
+      }
+      const { messages: _, ...row } = one;
+      return send(200, row);
+    }
     const byStatus = (rows: Row[]) => rows.filter((row) => [row.status, "all"].includes(url.searchParams.get("status") ?? "published"));
     const entriesOf = /^\/v1\/changelogs\/([^/]+)\/entries$/.exec(url.pathname)?.[1];
     const list = LISTS[url.pathname];
@@ -308,6 +447,7 @@ export async function startFerndeskFake(): Promise<FerndeskFake> {
     pageSize: 100,
     requests: [],
     forbidden: new Set(),
+    helpdesk: true,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
   return fake;

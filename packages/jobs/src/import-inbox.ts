@@ -190,7 +190,8 @@ function kindOf(part: FeaturebasePart): { author: MessageAuthor; note: boolean }
     case "admin_msg":
       return { author: "TEAM", note: false };
     case "admin_note":
-      return { author: "TEAM", note: true };
+      // An AI agent's (Ferndesk's leaves notes for the team when it hands a chat over) is the AI's, as Tuti's own are.
+      return { author: part.author?.type === "bot" ? "AI" : "TEAM", note: true };
     case "bot_msg":
       return { author: "AI", note: false };
     default:
@@ -234,8 +235,9 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     const { text: body, stripped } = part.channel === "email" && !kind.note ? stripQuotes(text, subject) : { text, stripped: false };
     const files: StoredFile[] = [];
     let dropped = unshown;
-    for (const url of urls) {
-      const stored = Date.now() < copyUntil ? await copyAttachment(job, url) : { leftOut: null };
+    const attached = [...urls.map((url) => ({ url, name: fileName(url) })), ...(part.files ?? [])];
+    for (const { url, name } of attached) {
+      const stored = !url ? { leftOut: "unreachable" as const } : Date.now() < copyUntil ? await copyAttachment(job, url, name) : { leftOut: null };
       if ("leftOut" in stored) {
         leftOut.push(stored.leftOut ? (LEFT_OUT[stored.leftOut] ?? "that couldn't be fetched") : NO_TIME);
         dropped++;
@@ -244,7 +246,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
       }
     }
     // A message that was only an image or file stays, whatever became of it: who wrote last decides the status.
-    if (!body && !media) {
+    if (!body && !media && attached.length === 0) {
       continue;
     }
     const author = part.author ?? null;
@@ -327,7 +329,7 @@ function withAddresses(nodes: Node[]): Node[] {
 }
 
 /** Copies a file into the inbox's attachment storage (as a received email's), outside any transaction; or why not. */
-async function copyAttachment(job: ImportJob, url: string): Promise<StoredFile | { leftOut: LeftOutReason }> {
+async function copyAttachment(job: ImportJob, url: string, name: string): Promise<StoredFile | { leftOut: LeftOutReason }> {
   const storage = mediaStorage();
   if (!storage) {
     return { leftOut: "unsupported" };
@@ -336,7 +338,7 @@ async function copyAttachment(job: ImportJob, url: string): Promise<StoredFile |
   if (typeof body === "string") {
     return { leftOut: body };
   }
-  const filename = attachmentName(fileName(url));
+  const filename = attachmentName(name);
   const extension = fileExtension(filename);
   const contentType = IMAGE_TYPES[extension] ?? UPLOAD_FILE_TYPES[extension] ?? "application/octet-stream";
   const key = `attachments/${job.projectId}/${randomUUID()}`;

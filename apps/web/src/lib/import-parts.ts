@@ -131,21 +131,21 @@ export const IMPORT_SOURCES = {
   },
   ferndesk: {
     name: "Ferndesk",
-    description: "Bring your help center, its changelog, its users and your AI assistant's conversations across with an API key.",
+    description: "Bring your help center, its changelog, its users and your helpdesk's and AI assistant's conversations across with an API key.",
     parts: ["contacts", "changelog", "docs", "inbox"],
-    // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are the AI's, text only.
+    // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are its helpdesk's and its AI assistant's.
     partDescriptions: {
       contacts: "Your help center's users, with their attributes, as Users.",
       changelog: "Your changelog entries (from every changelog, into one) with their images and dates; published ones come as drafts or published, as you pick, and drafts stay drafts. Tags like New, Improved and Fixed become Tuti's. Nothing is emailed.",
-      inbox: "Your AI assistant's conversations with readers, closed, as the Inbox.",
+      inbox: "Your helpdesk's conversations with their notes and files, and your AI assistant's chats, closed, as the Inbox. Nothing is emailed.",
     },
-    partBrings: { contacts: "Your help center's users", changelog: "Your changelog entries, with their images", inbox: "Your AI assistant's conversations" },
+    partBrings: { contacts: "Your help center's users", changelog: "Your changelog entries, with their images", inbox: "Your helpdesk's and AI assistant's conversations" },
     askPublish: true,
     credential: {
       kind: "key",
       keysUrl: "https://ferndesk.com/app/settings/developers",
       // Drafts need Write content (Ferndesk's scopes); its Full access preset has every scope the import reads.
-      help: "In Ferndesk, Developers → API → New API key, with Full access (it reads drafts and AI conversations). It's kept only while the import runs.",
+      help: "In Ferndesk, Developers → API → New API key, with Full access (it reads drafts, the helpdesk and AI conversations). It's kept only while the import runs.",
     },
   },
   canny: {

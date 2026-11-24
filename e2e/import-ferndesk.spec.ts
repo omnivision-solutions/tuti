@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, moreView, newPerson, signUp } from "./helpers";
 
-test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center and changelog to the portal, its users as Users and its AI conversations to the Inbox", async ({ browser }, testInfo) => {
+test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center and changelog to the portal, its users as Users and its helpdesk's and AI conversations to the Inbox", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -21,15 +21,15 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
 
   // Ferndesk: its key, made in its dashboard, and only the parts it has.
   await owner.getByRole("radio", { name: /^Ferndesk/ }).check();
-  await expect(owner.getByText("Bring your help center, its changelog, its users and your AI assistant's conversations across with an API key.")).toBeVisible();
+  await expect(owner.getByText("Bring your help center, its changelog, its users and your helpdesk's and AI assistant's conversations across with an API key.")).toBeVisible();
   await expect(owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ })).toHaveAttribute("href", "https://ferndesk.com/app/settings/developers");
-  await expect(owner.getByText("In Ferndesk, Developers → API → New API key, with Full access (it reads drafts and AI conversations). It's kept only while the import runs.")).toBeVisible();
+  await expect(owner.getByText("In Ferndesk, Developers → API → New API key, with Full access (it reads drafts, the helpdesk and AI conversations). It's kept only while the import runs.")).toBeVisible();
   await expect(owner.getByRole("checkbox", { name: /^Team/ })).toHaveCount(0);
   await expect(owner.getByRole("checkbox", { name: /^Feedback/ })).toHaveCount(0);
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  // What each part brings from Ferndesk: its users have no company; its conversations are the AI's.
+  // What each part brings from Ferndesk: its users have no company; its conversations are its helpdesk's and the AI's.
   await expect(owner.getByText("Your help center's users, with their attributes, as Users.")).toBeVisible();
-  await expect(owner.getByText("Your AI assistant's conversations with readers, closed, as the Inbox.")).toBeVisible();
+  await expect(owner.getByText("Your helpdesk's conversations with their notes and files, and your AI assistant's chats, closed, as the Inbox. Nothing is emailed.")).toBeVisible();
   // Picking the help center or the changelog asks how their published articles and entries come: Ferndesk doesn't say
   // which were private, so drafts to begin with.
   const publishAs = owner.getByRole("radiogroup", { name: "Articles and changelog entries published in Ferndesk" });
@@ -56,7 +56,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await key.fill(FAKE_FERNDESK_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Ferndesk" });
-  await expect(status).toHaveText("Imported from Ferndesk. 2 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 2 conversations brought across.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Ferndesk. 3 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 5 conversations, 1 attachment brought across. Left out: 1 attachment that couldn't be fetched.", { timeout: 15_000 });
   await checkpoint(owner, "setup-ferndesk-imported");
 
   // On the portal: its sections as collections, an article with its image and its link to another, which goes there.
@@ -85,11 +85,27 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await expect(visitor.getByText("Single sign-on (beta)")).toHaveCount(0);
   await checkpoint(visitor, "portal-ferndesk-changelog");
 
-  // The AI assistant's conversations: history, closed, the user's question and the AI's answer.
+  // The helpdesk's conversation still going: Rosa's email with her file, the team's note and reply.
+  await owner.goto(`/app/${slug}/inbox`);
+  const rows = owner.getByRole("main").getByRole("listitem");
+  await rows.filter({ hasText: "Invoice for October" }).getByRole("link").click();
+  const thread = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(thread).toHaveCount(5);
+  await expect(thread.nth(0)).toContainText("Rosa Lind");
+  // Her file, an image, shows in her message.
+  await expect(thread.nth(0).getByRole("img", { name: "invoice-october.png" })).toBeVisible();
+  await expect(thread.nth(1)).toContainText("Asked billing to check the total.");
+  await expect(thread.nth(2)).toContainText("Here it is, with the total fixed.");
+  // Never emailed from here: brought from Ferndesk.
+  await expect(thread.nth(2)).toContainText("Imported from Ferndesk");
+  // Her file Ferndesk gave no address for: said, in her message.
+  await expect(thread.nth(4)).toContainText("1 attachment wasn't brought across from Ferndesk.");
+  await checkpoint(owner, "conversation-ferndesk-helpdesk");
+
+  // The AI assistant's conversations: history, closed, the user's question and the AI's answer; the helpdesk's chat the AI agent closed.
   await owner.goto(`/app/${slug}/inbox`);
   await (await moreView(owner, /^Closed/)).click();
-  const rows = owner.getByRole("main").getByRole("listitem");
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(3);
   await rows.filter({ hasText: "Can I export my data to CSV?" }).getByRole("link").click();
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveCount(2);

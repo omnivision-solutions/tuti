@@ -1,34 +1,42 @@
 import { prisma } from "@tuti/db";
 
-import type { FeaturebaseArticle, FeaturebaseChangelog, FeaturebaseCollection, FeaturebaseContact, FeaturebaseConversation } from "../featurebase";
+import type { FeaturebaseAdmin, FeaturebaseArticle, FeaturebaseChangelog, FeaturebaseCollection, FeaturebaseContact, FeaturebaseConversation, FeaturebasePart, Page } from "../featurebase";
 import {
   type FerndeskArticle,
   type FerndeskChangelog,
   type FerndeskCollection,
   type FerndeskConversation,
+  type FerndeskCustomer,
   type FerndeskDraft,
   type FerndeskEntry,
   FerndeskError,
+  type FerndeskMessage,
   type FerndeskSection,
+  type FerndeskTeammate,
+  type FerndeskTicket,
   type FerndeskUser,
   ferndesk,
 } from "../ferndesk";
 import type { ImportSourceDefinition } from "./index";
 
 /**
- * Ferndesk (docs/plan.md, Import from Ferndesk): its help center, its changelogs, the people who signed in to it, and
- * its AI assistant's conversations, mapped into Featurebase's shapes. Its API has no team, no authors, no order for collections and
+ * Ferndesk (docs/plan.md, Import from Ferndesk): its help center, its changelogs, the people who signed in to it, its
+ * helpdesk's conversations and its AI assistant's, mapped into Featurebase's shapes. Its API has no team, no authors, no order for collections and
  * articles (they come by name, as Tuti sorts ties) and no article descriptions or visibility.
  */
 
-/** Null for a record Ferndesk no longer has (404). */
-const unlessGone = <T>(read: Promise<T>): Promise<T | null> =>
+/** Null for a record Ferndesk no longer has, or a helpdesk the workspace hasn't turned on (404: none of its conversations). */
+const unlessGone = <T>(read: Promise<T>): Promise<T | null> => unless([404], read);
+
+/** Null for an answer of one of these statuses. */
+const unless = <T>(statuses: number[], read: Promise<T>): Promise<T | null> =>
   read.catch((error: unknown) => {
-    if (error instanceof FerndeskError && error.status === 404) {
+    if (error instanceof FerndeskError && statuses.includes(error.status)) {
       return null;
     }
     throw error;
   });
+
 
 const article = (id: string) => `/articles/${encodeURIComponent(id)}`;
 /** The short id ending a public address's last segment (`…/paying-by-card-pq7rs`). */
@@ -106,6 +114,58 @@ function conversationOf(c: FerndeskConversation): FeaturebaseConversation {
     })),
   };
 }
+
+/**
+ * The helpdesk's conversations go by their Ferndesk id with this before it, the AI assistant's by theirs alone (as
+ * imports before the helpdesk recorded them): both are `conv_…` there. A list cursor with it is the helpdesk's; the
+ * helpdesk's list comes first, then the assistant's (a cursor without it, ASSISTANT for its first page).
+ */
+const HELPDESK = "helpdesk:";
+const ASSISTANT = "assistant:";
+
+/** One who wrote to the helpdesk is a lead: an address typed into a chat, or an email's sender, proves nothing. */
+const customerOf = (c: FerndeskCustomer): FeaturebaseContact => ({ id: c.id, type: "lead", email: c.email, name: c.name, customFields: c.properties });
+
+/**
+ * A helpdesk timeline entry as a conversation part. A reply that hasn't reached the customer (cancelled, failed, held,
+ * still queued) isn't one, nor is a system event: the team's message would say they were answered.
+ */
+function partOf(m: FerndeskMessage, ticket: FerndeskTicket): FeaturebasePart[] {
+  const who = m.author.type;
+  const author =
+    who === "customer" ? { id: m.author.id ?? ticket.customer?.id ?? null, type: "lead", name: m.author.name } : who === "teammate" ? { id: m.author.id, type: "admin", name: m.author.name } : { type: "bot" };
+  const partType = m.type === "note" ? (who === "teammate" || who === "ai_agent" ? "admin_note" : null) : m.type !== "message" || (m.delivery && !["sent", "delivered"].includes(m.delivery.status)) ? null : who === "customer" ? "user_msg" : who === "teammate" ? "admin_msg" : who === "ai_agent" ? "bot_msg" : null;
+  if (!partType) {
+    return [];
+  }
+  return [
+    {
+      id: m.id,
+      partType,
+      createdAt: m.created_at,
+      bodyHtml: m.body_html ?? html(m.body_text),
+      channel: ticket.channel === "email" ? "email" : "chat",
+      author,
+      // One with no address is left out and counted; its message stays.
+      files: m.attachments.map((a) => ({ url: a.url, name: a.filename })),
+    },
+  ];
+}
+
+/** A helpdesk conversation with its timeline: waiting on the customer and open are both open here (the inbox says which by who wrote last). */
+const ticketOf = (t: FerndeskTicket, timeline: FerndeskMessage[]): FeaturebaseConversation => ({
+  id: HELPDESK + t.id,
+  title: t.subject,
+  state: t.status === "closed" ? "closed" : t.status === "snoozed" ? "snoozed" : "open",
+  snoozedUntil: t.snoozed_until,
+  adminAssigneeId: t.assignee?.id ?? null,
+  participants: t.customer ? [{ id: t.customer.id, type: "lead" }] : [],
+  source: { channel: t.channel === "email" ? "email" : "widget", subject: t.subject },
+  createdAt: t.created_at,
+  updatedAt: t.updated_at,
+  lastActivityAt: t.last_message_at ?? t.updated_at,
+  conversationParts: timeline.flatMap((m) => partOf(m, t)),
+});
 
 export const ferndeskSource: ImportSourceDefinition = {
   name: "Ferndesk",
@@ -189,15 +249,27 @@ export const ferndeskSource: ImportSourceDefinition = {
           const [first] = (await api.get<{ results: FerndeskChangelog[] }>("/changelogs", { page_size: 1 })).results;
           return first && api.get(`/changelogs/${encodeURIComponent(first.id)}/entries`, { page_size: 1, status: "all" });
         },
-        inbox: () => api.get("/assistant/conversations", { page_size: 1 }),
+        // The helpdesk's (Read inbox) and the AI assistant's (Read conversations).
+        inbox: () => Promise.all([unlessGone(api.get("/conversations", { limit: 1 })), api.get("/assistant/conversations", { page_size: 1 })]),
       },
       read: {
-        admins: async () => [],
+        // Who works the helpdesk, those removed since too (they wrote its replies and notes); none without a helpdesk
+        // (404) or for a key that can't read it (403: only the inbox needs them, and its check asks for Read inbox). Every
+        // teammate is on one page (Ferndesk's API reference).
+        admins: async () => {
+          const teammates = await unless([403, 404], api.get<{ data: FerndeskTeammate[] }>("/teammates", { include_removed: "true" }));
+          return (teammates?.data ?? []).map((t): FeaturebaseAdmin => ({ id: t.id, name: t.name, email: t.email, profilePicture: t.avatar_url }));
+        },
         contacts: async (cursor) => {
           const { items, next } = await api.page<FerndeskUser>("/users", cursor);
           return { items: items.map(contactOf), next };
         },
+        // The helpdesk's customers (cust_…) and the help center's users.
         contact: async (id) => {
+          if (id.startsWith("cust_")) {
+            const customer = await unlessGone(api.get<FerndeskCustomer>(`/customers/${encodeURIComponent(id)}`));
+            return customer && customerOf(customer);
+          }
           const user = await unlessGone(api.get<FerndeskUser>(`/users/${encodeURIComponent(id)}`));
           return user && contactOf(user);
         },
@@ -247,11 +319,31 @@ export const ferndeskSource: ImportSourceDefinition = {
           return full && { id, title, body: full.contentHtml ?? "" };
         },
         articleExists: async (id) => (await unlessGone(api.get(article(id)))) !== null,
-        conversations: async (cursor, limit) => {
-          const { items, next } = await api.page<FerndeskConversation>("/assistant/conversations", cursor, { page_size: limit });
+        // The helpdesk's (spam left out), then the AI assistant's. Each listed without its messages: `conversation` reads them.
+        conversations: async (cursor, limit): Promise<Page<FeaturebaseConversation>> => {
+          if (!cursor || cursor.startsWith(HELPDESK)) {
+            const page = await unlessGone(api.helpdeskPage<FerndeskTicket>("/conversations", cursor?.slice(HELPDESK.length) || null, { limit }));
+            return { items: (page?.items ?? []).map((t) => ticketOf(t, [])), next: page?.next ? HELPDESK + page.next : ASSISTANT };
+          }
+          const { items, next } = await api.page<FerndeskConversation>("/assistant/conversations", cursor === ASSISTANT ? null : cursor, { page_size: limit });
           return { items: items.map(conversationOf), next };
         },
         conversation: async (id) => {
+          if (id.startsWith(HELPDESK)) {
+            const path = `/conversations/${encodeURIComponent(id.slice(HELPDESK.length))}`;
+            const ticket = await unlessGone(api.get<FerndeskTicket>(path));
+            if (!ticket) {
+              return null;
+            }
+            const timeline: FerndeskMessage[] = [];
+            let cursor: string | null = null;
+            do {
+              const next: Page<FerndeskMessage> = await api.helpdeskPage<FerndeskMessage>(`${path}/messages`, cursor);
+              timeline.push(...next.items);
+              cursor = next.next;
+            } while (cursor);
+            return ticketOf(ticket, timeline);
+          }
           const c = await unlessGone(api.get<FerndeskConversation>(`/assistant/conversations/${encodeURIComponent(id)}`));
           return c && conversationOf(c);
         },

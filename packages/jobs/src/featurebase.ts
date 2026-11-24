@@ -279,6 +279,8 @@ export type FeaturebasePart = {
   channel?: string | null;
   author?: FeaturebasePartAuthor | null;
   status?: string | null;
+  /** Files attached apart from its body (Ferndesk lists them): copied from wherever its source says they are (none: left out). */
+  files?: { url: string | null; name: string }[] | null;
 };
 
 /** A conversation in Featurebase's inbox (GET /v2/conversations; its parts, the newest 500, only from GET /v2/conversations/{id}). */
