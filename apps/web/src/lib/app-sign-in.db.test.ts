@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { convert } from "html-to-text";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -199,8 +200,8 @@ async function linkTo(email: string) {
 /** The page the link opens, as text. */
 async function view(link: URL) {
   const page = await AppSignInLinkPage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(link.searchParams)) } as PageProps<"/app/auth/app-link">);
-  const html = renderToStaticMarkup(page).replace(/<script[^>]*>[\s\S]*?<\/script>/g, "");
-  return html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
+  const text = convert(renderToStaticMarkup(page), { wordwrap: false, selectors: [1, 2, 3].map((level) => ({ selector: `h${level}`, options: { uppercase: false } })) });
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** "Open the app" on that page, on `host`: where its form's post sends the browser. */
