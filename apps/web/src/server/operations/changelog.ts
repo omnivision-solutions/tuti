@@ -721,6 +721,8 @@ export const editChangelogSection = defineOperation({
     number: entryNumber,
     markdown: z
       .string()
+      // As changelog.update's: its markup counts too, and the text it makes is held to the entry's limit.
+      .max(MAX_ENTRY_LENGTH * 2)
       .describe("The section's new text as Markdown, its heading included; or the text to add. Images are copied in as on changelog.update; the entry's own, by the links its `markdown` gives, stay the same uploads")
       .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu, any time of day."] }),
     section: z

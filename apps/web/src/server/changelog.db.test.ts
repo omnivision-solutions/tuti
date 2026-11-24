@@ -336,6 +336,9 @@ describe("an entry's text as Markdown", () => {
     await expect(editSection({ number, section: 1, append: true, markdown: "Both" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append: true`, one of them" });
     await expect(editSection({ number, section: "Billing", markdown: "## Billing" })).rejects.toMatchObject({ status: 400, code: "no_section", message: "There's no section “Billing”" });
     await expect(editSection({ number, section: 7, markdown: "## Seven" })).rejects.toMatchObject({ status: 400, code: "no_section" });
+    // Held to a size before it's read, as the whole text's Markdown is: a file pasted by mistake isn't parsed first.
+    expect(editChangelogSection.input.safeParse({ number, append: true, markdown: "x".repeat(40_001) }).success).toBe(false);
+    expect(editChangelogSection.input.safeParse({ number, append: true, markdown: "x".repeat(40_000) }).success).toBe(true);
     // Not changelog.update's to do: there, `markdown` is the whole text, and the previous release (which reads these
     // fields as nothing) would save it so. A part's edit has an operation of its own, which that release doesn't have.
     expect(Object.keys(updateChangelogEntry.input.shape)).not.toEqual(expect.arrayContaining(["section"]));
