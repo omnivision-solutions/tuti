@@ -106,7 +106,7 @@ const entryOutput = z
       .string()
       .optional()
       .describe(
-        "Its text as Markdown, its images as lasting links: to change it, edit this and send it to changelog.update as `markdown` (with `section` or `append` for part of it); an image sent back by its link keeps its size and alignment, and a video's link stays its player. On one entry, not in changelog.list",
+        "Its text as Markdown, its images as lasting links: to change it, edit this and send it to changelog.update as `markdown`, or one section of it to changelog.editSection; an image sent back by its link keeps its size and alignment, and a video's link stays its player. On one entry, not in changelog.list",
       )
       .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu."] }),
     cover: z
@@ -339,7 +339,7 @@ async function entryText(
 }
 
 /**
- * Where an edit of part of the text puts its Markdown (changelog.update's `section` or `append`): in that section's
+ * Where an edit of part of the text puts its Markdown (changelog.editSection's `section` or `append`): in that section's
  * place, heading and all (`replaced`: what was there), or after everything; undefined for an edit of the whole text. They need `markdown`, one or the
  * other, and a section that's there.
  */
@@ -387,12 +387,6 @@ function keepingMedia(whole: Blocks, replaced: Blocks, added: Blocks): Blocks {
 function partOfText(entry: { content: unknown; body: string }, input: { markdown?: string; content?: unknown; section?: number | string; append?: boolean }) {
   if (input.section === undefined && !input.append) {
     return undefined;
-  }
-  if (input.markdown === undefined || (input.content !== undefined && input.content !== null && input.content !== "")) {
-    throw new OperationError(400, "invalid_input", "`section` and `append` say where `markdown` goes: send it as `markdown`, without `content`");
-  }
-  if (input.section !== undefined && input.append) {
-    throw new OperationError(400, "invalid_input", "Send `section` or `append`, not both");
   }
   const blocks = displayDoc(entry).content ?? [];
   const range = input.section === undefined ? { start: blocks.length, end: blocks.length } : sectionRange(blocks, input.section);
@@ -600,16 +594,7 @@ export const createChangelogEntry = defineOperation({
   },
 });
 
-export const updateChangelogEntry = defineOperation({
-  name: "changelog.update",
-  title: "Update a changelog entry",
-  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
-  method: "PATCH",
-  path: "/changelog/{number}",
-  scope: "write",
-  access: "team",
-  errors: [409, 503],
-  input: z.object({
+const updateInput = z.object({
     number: entryNumber,
     title: fields.title.optional(),
     body: fields.body,
@@ -620,21 +605,37 @@ export const updateChangelogEntry = defineOperation({
       .optional()
       .describe("The posts it completes, by number: they replace the list. Only while it's a draft (published, the same list or a 409)"),
     cover: fields.cover,
-    section: z
-      .union([z.number().int().min(0), z.string().trim().min(1).max(200)])
-      .optional()
-      .describe("With `markdown`: replace only this section with it, by its heading or its number (1 for the first heading, 0 for the text before it), heading included; the rest of the text stays as it is")
-      .meta({ examples: ["Dark mode"] }),
-    append: z.boolean().optional().describe("With `markdown`: add it at the end of the text, which stays as it is").meta({ examples: [false] }),
     expectedUpdatedAt: z.iso
       .datetime()
       .optional()
       .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt`, or the `expectedUpdatedAt` changelog.rewrite returns")
       .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
-  }),
+  });
+
+export const updateChangelogEntry = defineOperation({
+  name: "changelog.update",
+  title: "Update a changelog entry",
+  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
+  method: "PATCH",
+  path: "/changelog/{number}",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: updateInput,
   output: entryOutput.describe("The entry"),
   example: { tags: ["new", "improved"] },
-  run: async ({ actor, projectId }, input) => {
+  run: (context, input) => saveEntry(context, input),
+});
+
+type EntryEdit = z.infer<typeof updateInput> & {
+  /** The one section `markdown` replaces (changelog.editSection), by its heading or number. */
+  section?: number | string;
+  /** `markdown` goes at the end of the text (changelog.editSection). */
+  append?: boolean;
+};
+
+/** An edit of an entry: changelog.update's, or changelog.editSection's of part of its text. */
+async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string }, input: EntryEdit) {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, input.number);
     if (input.posts) {
@@ -704,6 +705,43 @@ export const updateChangelogEntry = defineOperation({
       }),
     );
     return entryView(updated, portal);
+}
+
+export const editChangelogSection = defineOperation({
+  name: "changelog.editSection",
+  title: "Change one section of an entry",
+  summary:
+    "Replace one section of an entry's text with Markdown, or add Markdown at its end; the rest of the text stays as it is. Saved only if the entry hasn't changed since it was read (a 409 otherwise)",
+  method: "POST",
+  path: "/changelog/{number}/section",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: z.object({
+    number: entryNumber,
+    markdown: z
+      .string()
+      .describe("The section's new text as Markdown, its heading included; or the text to add. Images are copied in as on changelog.update; the entry's own, by the links its `markdown` gives, stay the same uploads")
+      .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu, any time of day."] }),
+    section: z
+      .union([z.number().int().min(0), z.string().trim().min(1).max(200)])
+      .optional()
+      .describe("The section to replace, by its heading or its number (1 for the first heading, 0 for the text before it): it runs to the next heading at its level or above. Without it, send `append`")
+      .meta({ examples: ["Dark mode"] }),
+    append: z.boolean().optional().describe("Add the Markdown at the end of the text instead of replacing a section").meta({ examples: [false] }),
+    expectedUpdatedAt: z.iso
+      .datetime()
+      .optional()
+      .describe("Save only if the entry hasn't changed since this (its `updatedAt` when you read it); without it, since this request read it")
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
+  }),
+  output: entryOutput.describe("The entry, with the section changed"),
+  example: { section: "Dark mode", markdown: "## Dark mode\n\nSwitch themes from your profile menu, any time of day." },
+  run: (context, input) => {
+    if ((input.section === undefined) === (input.append !== true)) {
+      throw new OperationError(400, "invalid_input", "Send `section` or `append: true`, one of them");
+    }
+    return saveEntry(context, input);
   },
 });
 

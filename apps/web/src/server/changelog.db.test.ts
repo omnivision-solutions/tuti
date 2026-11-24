@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import {
   createChangelogEntry,
   deleteChangelogEntry,
+  editChangelogSection,
   getChangelogEntry,
   listChangelog,
   publishChangelogEntry,
@@ -302,6 +303,7 @@ function imageServer() {
 describe("an entry's text as Markdown", () => {
   const text = "Intro.\n\n## Dark mode\n\nOld text.\n\n### Details\n\nFollows your system.\n\n## Search\n\nFaster.";
   const edit = (input: Parameters<typeof updateChangelogEntry.run>[1]) => call(updateChangelogEntry, as(owner), input);
+  const editSection = (input: { number: number; markdown: string; section?: number | string; append?: boolean; expectedUpdatedAt?: string }) => call(editChangelogSection, as(owner), input);
 
   test("reads back as it's written, with when it last changed; a list goes without the Markdown", async () => {
     const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
@@ -320,21 +322,24 @@ describe("an entry's text as Markdown", () => {
     const { number } = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
 
     // A section runs to the next heading at its level or above: its sub-heading goes with it.
-    expect((await edit({ number, section: "dark mode", markdown: "## Dark mode\n\nNew text." })).markdown).toBe("Intro.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
+    expect((await editSection({ number, section: "dark mode", markdown: "## Dark mode\n\nNew text." })).markdown).toBe("Intro.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
     // By number: 0 is the text before the first heading, 2 the second heading's.
-    expect((await edit({ number, section: 0, markdown: "Hello." })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
-    expect((await edit({ number, section: 2, markdown: "## Search\n\n- Faster\n- Finds typos" })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos");
-    const appended = await edit({ number, append: true, markdown: "Thanks for reading!" });
+    expect((await editSection({ number, section: 0, markdown: "Hello." })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\nFaster.");
+    expect((await editSection({ number, section: 2, markdown: "## Search\n\n- Faster\n- Finds typos" })).markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos");
+    const appended = await editSection({ number, append: true, markdown: "Thanks for reading!" });
     expect(appended.markdown).toBe("Hello.\n\n## Dark mode\n\nNew text.\n\n## Search\n\n- Faster\n- Finds typos\n\nThanks for reading!");
     // The title and the rest are as they were.
     expect(appended).toMatchObject({ title: "Dark mode", status: "draft" });
 
-    // They say where Markdown goes: one of them, with it, and a section that's there.
-    await expect(edit({ number, section: "Dark mode", body: "No Markdown" })).rejects.toMatchObject({ status: 400, code: "invalid_input" });
-    await expect(edit({ number, append: true })).rejects.toMatchObject({ status: 400, code: "invalid_input" });
-    await expect(edit({ number, section: 1, append: true, markdown: "Both" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append`, not both" });
-    await expect(edit({ number, section: "Billing", markdown: "## Billing" })).rejects.toMatchObject({ status: 400, code: "no_section", message: "There's no section “Billing”" });
-    await expect(edit({ number, section: 7, markdown: "## Seven" })).rejects.toMatchObject({ status: 400, code: "no_section" });
+    // They say where the Markdown goes: one of them, and a section that's there.
+    await expect(editSection({ number, markdown: "Nowhere" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append: true`, one of them" });
+    await expect(editSection({ number, section: 1, append: true, markdown: "Both" })).rejects.toMatchObject({ status: 400, message: "Send `section` or `append: true`, one of them" });
+    await expect(editSection({ number, section: "Billing", markdown: "## Billing" })).rejects.toMatchObject({ status: 400, code: "no_section", message: "There's no section “Billing”" });
+    await expect(editSection({ number, section: 7, markdown: "## Seven" })).rejects.toMatchObject({ status: 400, code: "no_section" });
+    // Not changelog.update's to do: there, `markdown` is the whole text, and the previous release (which reads these
+    // fields as nothing) would save it so. A part's edit has an operation of its own, which that release doesn't have.
+    expect(Object.keys(updateChangelogEntry.input.shape)).not.toEqual(expect.arrayContaining(["section"]));
+    expect(Object.keys(updateChangelogEntry.input.shape)).not.toEqual(expect.arrayContaining(["append"]));
     expect((await call(getChangelogEntry, as(owner), { number })).markdown).toBe(appended.markdown);
   });
 
@@ -342,8 +347,10 @@ describe("an entry's text as Markdown", () => {
     const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: text });
     const changed = await edit({ number: entry.number, title: "Dark mode is here" });
     expect(new Date(changed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.updatedAt).getTime());
-    await expect(edit({ number: entry.number, section: "Search", markdown: "## Search\n\nStale.", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
-    expect((await edit({ number: entry.number, section: "Search", markdown: "## Search\n\nFresh.", expectedUpdatedAt: changed.updatedAt })).markdown).toContain("Fresh.");
+    await expect(editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nStale.", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect((await editSection({ number: entry.number, section: "Search", markdown: "## Search\n\nFresh.", expectedUpdatedAt: changed.updatedAt })).markdown).toContain("Fresh.");
+    // The whole text's edit takes it too.
+    await expect(edit({ number: entry.number, title: "Stale", expectedUpdatedAt: entry.updatedAt })).rejects.toMatchObject({ status: 409, code: "changed" });
   });
 });
 
@@ -361,11 +368,11 @@ describe("Markdown's images", () => {
 
     const again = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: `${entry.markdown}\n\nMore.` });
     expect(imagesIn(again.content)).toEqual([mediaId]);
-    const section = await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Search", markdown: "## Search\n\nMuch faster." });
+    const section = await call(editChangelogSection, as(owner), { number: entry.number, section: "Search", markdown: "## Search\n\nMuch faster." });
     expect(imagesIn(section.content)).toEqual([mediaId]);
     // The section's own image by its link too.
     const themes = /## Themes[^#]+/.exec(section.markdown!)![0].trim();
-    expect(imagesIn((await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Themes", markdown: `${themes}\n\nPick one.` })).content)).toEqual([mediaId]);
+    expect(imagesIn((await call(editChangelogSection, as(owner), { number: entry.number, section: "Themes", markdown: `${themes}\n\nPick one.` })).content)).toEqual([mediaId]);
     expect(await uploads()).toBe(1);
 
     // Markdown can't say an image's size or alignment, nor that a link is a video's player: sent back, the text keeps them.
@@ -382,18 +389,18 @@ describe("Markdown's images", () => {
     const layouts = (content: unknown) => (content as { content: { type: string; attrs?: { width?: string } }[] }).content.filter((node) => node.type === "image").map((node) => node.attrs!.width);
     expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: twice.markdown })).content)).toEqual(["50", "100", "50"]);
     const second = /## Second[^#]+/.exec(twice.markdown!)![0].trim();
-    expect(layouts((await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Second", markdown: `${second}\n\nMore.` })).content)).toEqual(["50", "100", "50"]);
+    expect(layouts((await call(editChangelogSection, as(owner), { number: entry.number, section: "Second", markdown: `${second}\n\nMore.` })).content)).toEqual(["50", "100", "50"]);
     // Brought in from another part of the text (appended, by its link), an image takes the layout it has there, and the
     // text's own video is its player.
     await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
-    const copied = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: `${/!\[[^\]]*\]\(\S+\)/.exec(twice.markdown!)![0]}\n\n[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)` });
+    const copied = await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: `${/!\[[^\]]*\]\(\S+\)/.exec(twice.markdown!)![0]}\n\n[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)` });
     expect((copied.content as { content: object[] }).content).toMatchObject([small, video, small, video]);
     await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video] } });
     // A link that only looks like one (another video, other words) is a link.
-    const linked = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
+    const linked = await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
     expect((linked.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("paragraph");
     // And the text's own video named inside a list item is a link there: a list item can't hold a player, and the edit saves.
-    const listed = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "- [Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)" });
+    const listed = await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: "- [Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)" });
     expect((listed.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("bulletList");
     expect((listed.content as { content: { type: string }[] }).content.filter((node) => node.type === "video")).toHaveLength(1);
     expect(await uploads()).toBe(1);
@@ -433,11 +440,11 @@ describe("Markdown's images", () => {
     images.s3.beforeGet = async () => {
       if (!changed) {
         changed = true;
-        await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "- A line added meanwhile" });
+        await call(editChangelogSection, as(owner), { number: entry.number, append: true, markdown: "- A line added meanwhile" });
       }
     };
     await expect(
-      call(updateChangelogEntry, as(owner), { number: entry.number, section: "Themes", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)` }),
+      call(editChangelogSection, as(owner), { number: entry.number, section: "Themes", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)` }),
     ).rejects.toMatchObject({ status: 409, code: "changed" });
     images.s3.beforeGet = undefined;
     // What landed meanwhile is still there, and the section is as it was.
