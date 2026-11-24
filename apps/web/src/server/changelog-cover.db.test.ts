@@ -39,6 +39,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.mocked(coverCard.drawCover).mockClear();
   s3.beforeGet = undefined;
+  s3.onPut = undefined;
 });
 
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
@@ -123,6 +124,21 @@ test("an entry deleted while its cover is drawn is gone (a 404), not an error of
   expect(await covers()).toHaveLength(1);
   expect(kept).toMatchObject({ status: "READY", width: 1600, height: 840 });
   expect(await prisma.changelogEntry.count({ where: { coverId: kept!.id } })).toBe(0);
+});
+
+test("a cover that's drawn but can't be kept (storage's own trouble) is a 503 to try again: the entry keeps the cover it has", async () => {
+  const { number } = await call(createChangelogEntry, team(), { title: "Dark mode" });
+  const first = await compose({ number });
+  // Storage refuses the new picture as it's stored.
+  s3.onPut = (key) => (key.startsWith("uploads/") ? 500 : undefined);
+
+  await expect(compose({ number, design: "pattern" })).rejects.toMatchObject({ status: 503, code: "copy_failed", message: "Couldn't keep the cover just now: try again in a moment" });
+
+  expect(await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } }, select: { coverId: true } })).toEqual({ coverId: first.cover!.id });
+  // What was reserved for it is marked failed and in no one's use: off the quota, for the cleanup.
+  const uploads = await covers();
+  expect(uploads).toHaveLength(2);
+  expect(uploads.find((upload) => upload.id !== first.cover!.id)).toMatchObject({ status: "FAILED", attachedAt: null, size: 0 });
 });
 
 test("without uploads set up it's a 503, and past the member's hourly uploads a 409: the entry keeps the cover it has", async () => {
