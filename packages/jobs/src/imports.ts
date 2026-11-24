@@ -192,8 +192,9 @@ export async function resumeImports(log: JobLogger): Promise<JobResult> {
     where: { state: "RUNNING", OR: [{ resumeAt: { lte: new Date() } }, { resumeAt: null, updatedAt: { lt: new Date(Date.now() - IMPORT_STUCK_MS) } }] },
     select: { id: true },
   });
+  // Inline (JOBS_DRIVER=inline: the web server's timer), each goes on in the background, not one import's pages after another's.
   for (const { id } of due) {
-    await resumeImport(id, log);
+    await resumeImport(id, log, { wait: process.env.JOBS_DRIVER !== "inline" });
   }
   return { resumed: due.length };
 }
