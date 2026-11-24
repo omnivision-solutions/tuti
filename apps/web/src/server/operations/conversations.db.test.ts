@@ -7,7 +7,7 @@ import { addMember, actAs, createProject, signUp } from "@/test/helpers";
 
 import { homeOverview } from "../home";
 import { listMyProjects } from "../membership";
-import { presenceKey, touchPresence } from "../presence";
+import { ONLINE_FOR_MS, presenceKey, touchPresence } from "../presence";
 import { upsertProjectUser } from "../project-users";
 import { removeMember } from "../team";
 import {
@@ -197,7 +197,9 @@ test("a conversation says what the Inbox shows with it: the company, unread, whe
 
   // They open the widget's Messages and see the reply; emailing it bounced; someone else on the thread writes from their own address.
   const seenAt = new Date();
-  await touchPresence(project.id, presenceKey({ userId, visitorHash: null }));
+  // An hour ahead, so no slow run can outlast it: the real clock is what "online" is measured against.
+  const here = new Date(Date.now() + 3_600_000);
+  await touchPresence(project.id, presenceKey({ userId, visitorHash: null }), here);
   await prisma.conversationMessage.update({ where: { id: reply.id }, data: { seenAt, emailStatus: "BOUNCED", emailError: "Mailbox full" } });
   await prisma.conversationMessage.updateMany({ where: { conversation: { projectId: project.id }, author: "USER" }, data: { fromAddress: "e2e-colleague@example.com" } });
   await call(markConversationRead, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number: 1, seen: new Date().toISOString() });
@@ -206,7 +208,7 @@ test("a conversation says what the Inbox shows with it: the company, unread, whe
     unread: false,
     messages: [{ fromAddress: "e2e-colleague@example.com" }, { seenAt, emailStatus: "bounced", emailError: "Mailbox full" }],
   });
-  expect(new Date(shown.onlineUntil!).getTime()).toBeGreaterThan(Date.now());
+  expect(new Date(shown.onlineUntil!)).toEqual(new Date(here.getTime() + ONLINE_FOR_MS));
 });
 
 test("a search finds conversations by number, subject, person and what their messages and notes say, newest first, within the other filters", async () => {
