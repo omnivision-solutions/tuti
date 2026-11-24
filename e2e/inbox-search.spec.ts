@@ -88,7 +88,7 @@ test("the Inbox's search finds conversations in every view but Spam by what was 
   await expect(owner.getByRole("heading", { name: "Results 0" })).toBeVisible();
   await checkpoint(owner, "search-nothing", { fullPage: false });
   await owner.getByRole("link", { name: "Clear search" }).click();
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?view=waiting$`));
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4\\?view=waiting$`));
   await expect(owner.getByRole("heading", { name: "Waiting on user 1" })).toBeVisible();
   await expect(search).toHaveValue("");
   await expect(views.getByRole("link", { name: "Waiting on user 1" })).toHaveAttribute("aria-current", "true");
