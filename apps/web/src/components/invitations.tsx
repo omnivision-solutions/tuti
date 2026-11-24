@@ -193,12 +193,18 @@ export function RevokeInvitationButton({
 export type UnsentInvitation = { id: string; email: string; title: string; meta: string; manageable: boolean };
 
 /**
- * Team & roles' "From Featurebase, not sent yet" (`tool`: the one they came from; null: from more than one): each invite with Send and Remove (named for its address), and Send all.
+ * Team & roles' "From Featurebase, not sent yet" (`tool`: the one they came from; null: from more than one; `counted`:
+ * they count toward the plan's team members): each invite with Send and Remove (named for its address), and Send all.
  * After a Send, focus goes on to the next row's Send, else the card's heading, else (all sent) the pending invites
  * (#pending-invites). On a server without email nothing is emailed: the links are shown to pass on, as inviting does.
  * Mounted while the list empties, so it can move focus once the last row is gone.
  */
-export function UnsentInvitations({ projectSlug, invitations, note, tool }: { projectSlug: string; invitations: UnsentInvitation[]; note: string; tool: string | null }) {
+export function UnsentInvitations({ projectSlug, invitations, tool: from, counted }: { projectSlug: string; invitations: UnsentInvitation[]; tool: string | null; counted: boolean }) {
+  // Once the last is sent the page knows no tool (it goes by those unsent), while the card stays for its links: the one it named.
+  const [tool, setTool] = useState(from);
+  if (invitations.length > 0 && from !== tool) {
+    setTool(from);
+  }
   const [pending, startTransition] = useTransition();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const sendButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -248,7 +254,10 @@ export function UnsentInvitations({ projectSlug, invitations, note, tool }: { pr
             {tool ? `From ${tool}, not sent yet` : "Imported, not sent yet"}
           </h2>
         </CardTitle>
-        <CardDescription>{note}</CardDescription>
+        <CardDescription>
+          Your team in {tool ?? "the tools you imported from"}, invited as members. Nothing has been emailed: send the ones you want here.
+          {counted && " Until you remove them, they count toward your plan's team members."}
+        </CardDescription>
         {invitations.length > 1 && (
           <CardAction>
             <Button size="sm" disabled={pending} focusableWhenDisabled onClick={() => send(null)}>

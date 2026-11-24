@@ -160,7 +160,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
         <UnsentInvitations
           projectSlug={project.slug}
           tool={tool}
-          note={`Your team in ${tool ?? "the tools you imported from"}, invited as members. Nothing has been emailed: send the ones you want here.${limit !== null ? " Until you remove them, they count toward your plan's team members." : ""}`}
+          counted={limit !== null}
           invitations={unsent.map((invitation) => ({
             id: invitation.id,
             email: invitation.email!,
