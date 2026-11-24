@@ -491,7 +491,7 @@ function site(start: string, deadline: number, kept: unknown) {
    * list: its pages and its collections (the folders they're in, below the address, named as the start page's links
    * name them).
    */
-  async function find(): Promise<{ state: CrawlState; done: boolean; progress: string }> {
+  async function find(): Promise<{ state: CrawlState; done: boolean; progress: string; waitMs?: number }> {
     const { page, origin, base, readable, maps } = await bounds();
     if (!state.list && !state.crawl) {
       const listed = new Set<string>();
@@ -521,10 +521,15 @@ function site(start: string, deadline: number, kept: unknown) {
           next = await get(id);
         } catch (error) {
           // Out of time before it was asked: the next step asks. Refused (a redirect into a folder robots.txt closes):
-          // gone. Anything else (a 5xx, a 429, no answer) fails the step, as a sitemap's does, rather than a list
-          // that's quietly short.
+          // gone. Failing for a while (a 5xx, a 429, no answer) once this step fetched something: where it got to is
+          // saved, and the import waits what the site asked (or as it does for any failure that may pass) before going
+          // on from there. Anything else fails the step, as a sitemap's does, rather than a list that's quietly short.
           if (error instanceof SiteError && error.reason === "late") {
             return notYet;
+          }
+          if (fetches > 0 && error instanceof SiteError && !error.reason && (error.status === 0 || error.status === 429 || error.status >= 500)) {
+            const asked = (error as { retryAfterMs?: number | null }).retryAfterMs;
+            return { ...notYet, waitMs: asked && asked > 0 ? asked : 60_000 };
           }
           if (!(error instanceof SiteError && error.reason === "refused")) {
             throw error;

@@ -185,6 +185,31 @@ test("without a sitemap, the start page's links (and theirs) are followed; a lin
   }
 });
 
+test("a site without a sitemap that rate-limits partway through the link crawl: where the crawl got to is kept, the import waits what it asked, then goes on from there", async () => {
+  const bare = await startHelpCenterFake();
+  bare.sitemap = false;
+  // The crawl's second link.
+  bare.failing.set("/docs/billing", 429);
+  bare.failingOnce.add("/docs/billing");
+  bare.retryAfter = "120";
+  try {
+    const waiting = await importSite(bare.url);
+    expect(waiting).toMatchObject({ state: "running", resumesAt: expect.any(String) });
+    expect(Math.round((Date.parse(waiting.resumesAt!) - Date.now()) / 60_000)).toBe(2);
+    expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: waiting.id } })).toMatchObject({ sourceState: { crawl: { fetched: 1 } } });
+
+    await prisma.dataImport.update({ where: { id: waiting.id }, data: { resumeAt: new Date(Date.now() - 1000) } });
+    await call(getImport, asOwner(), {});
+    await importsSettled();
+    expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done" });
+    expect((await articles()).map((a) => a.title)).toEqual(["Getting started", "Install Acme", "Your first project"]);
+    // Crawled once (not again after the wait), and read once more for its content.
+    expect(bare.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(2);
+  } finally {
+    await bare.close();
+  }
+});
+
 test("a private address is refused when it's entered, and before each fetch", async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "");
   const port = new URL(site.origin).port;

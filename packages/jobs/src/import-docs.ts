@@ -185,7 +185,7 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
   const found = job.read.find ? await job.read.find() : null;
   const keep = (tx: Tx) => found && tx.dataImport.update({ where: { id: job.id }, data: { sourceState: found.state as Prisma.InputJsonValue } });
   if (found && !found.done) {
-    return { next: `find:${found.progress}`, save: async (tx) => void (await keep(tx)) };
+    return { next: `find:${found.progress}`, save: async (tx) => void (await keep(tx)), waitMs: found.waitMs };
   }
   let page = await job.read.collections!(null);
   const all = [...page.items];
