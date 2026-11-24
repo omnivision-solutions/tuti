@@ -49,6 +49,19 @@ import { hashSecret, randomSecret } from "./portal-handoff";
  * What this doesn't stop: a sign-in another app on the phone starts itself, with its own verifier. For Google and
  * GitHub the person would be signing in from that app; for the emailed link they'd be tapping "Open the app" on a link
  * they didn't ask for.
+ *
+ * Signed in, the Inbox stays current while it's open through `GET /api/live` (not /api/auth; not in the API reference
+ * yet), a Server-Sent Events stream with the same headers as /api/v1: `Authorization: Bearer <token>` and
+ * `Tuti-Project: <slug>`, one stream per project. Refused as /api/v1 refuses (401 session, 400 project_required, 403
+ * forbidden, 429 rate_limited; the stream's opening counts as one request). Its events:
+ * - `ready`, once open and again after each reconnect: fetch everything shown, since changes until then were missed.
+ * - `change` with `{ "conversation": <number> }`: that conversation changed (new, a message, its status or assignee, an
+ *   email's delivery). Fetch it, its row and the views' counts; a number the list hasn't got is a new conversation.
+ * - `change` with `{}`: anything may have changed (someone came online, the server's listener reconnected): fetch
+ *   everything shown.
+ * - comments (`: ping`) every 25 seconds. The stream ends (closes, no event) once the session ends or the teammate
+ *   leaves the team; reopening it then is refused. On errors, reconnect after the `retry:` it sends (3 seconds) and,
+ *   while it keeps failing, fetch every 10 seconds instead, as the web app does.
  */
 export const APP_ORIGIN = "tuti://";
 

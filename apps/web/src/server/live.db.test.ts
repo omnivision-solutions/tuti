@@ -1,4 +1,5 @@
 import { listen, prisma } from "@tuti/db";
+import { handlers } from "@tuti/jobs";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
@@ -96,4 +97,18 @@ test("a stream that throws as it's told (closing) doesn't stop the others hearin
   await vi.waitFor(() => expect(team).toHaveLength(1));
   await notifyInboxNow(change);
   await vi.waitFor(() => expect(team).toHaveLength(2));
+});
+
+test("the wake job's change names the conversation it opens, as the app's stream passes on", async () => {
+  const { project, key } = await setup();
+  await listening();
+  const heard: InboxChange[] = [];
+  subscriptions.push(subscribeInbox((change) => change.projectId === project.id && !!heard.push(change), () => {}));
+  await call(createConversation, key, { email: "e2e-asker@example.com", body: "Help" });
+  const { number } = await call(createConversation, key, { email: "e2e-other@example.com", body: "Me too" });
+  await call(updateConversation, key, { number, snoozedUntil: new Date(Date.now() + 60_000).toISOString() });
+  await prisma.conversation.updateMany({ where: { projectId: project.id, number }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  await vi.waitFor(() => expect(heard).toHaveLength(3));
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toEqual({ woken: 1 });
+  await vi.waitFor(() => expect(heard.map((change) => change.number)).toEqual([1, 2, 2, 2]));
 });

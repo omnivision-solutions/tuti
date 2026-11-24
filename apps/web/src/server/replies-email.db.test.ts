@@ -156,8 +156,8 @@ test("the team's pages hear when a reply is emailed, or fails for good", async (
   // Once the listener is listening, so they hear only real changes; NOTIFYs arrive in order, so once the last one's heard, so is the job's.
   await listening();
   const last = heardOf(({ conversationId }) => conversationId === "last");
-  // With its address: the widget of whoever's signed in with it hears too (widget-person.ts, hears).
-  const heard = heardOf(({ conversationId, email }) => conversationId !== "last" && email === kim);
+  // With its address: the widget of whoever's signed in with it hears too (widget-person.ts, hears). And its number, for the app.
+  const heard = heardOf(({ conversationId, email, number }) => conversationId !== "last" && email === kim && number === 1);
   try {
     await run();
     await marker("last");
