@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
-import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_RUN, importsSettled, importStep, loadAdmins, lockProject, upsertProjectUser } from "@tuti/jobs";
+import { adminMember, contactUsers, FeaturebaseError, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, IMPORT_RUN, importsSettled, importStep, loadAdmins, lockProject, SiteError, upsertProjectUser, waitBefore } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -339,7 +339,7 @@ test("a page Featurebase's rate limit refuses for longer than a request waits le
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ state: "done", resumesAt: null });
 });
 
-test("a wait that's over is taken up when the import is looked at too: inline installs run no resume-imports", async () => {
+test("a wait that's over is taken up when the import is looked at too, without waiting for resume-imports' minute", async () => {
   const row = await running();
   fake.failNext(429, 1, { "retry-after": "600" });
   await handlers.importStep({ importId: row.id }, log);
@@ -374,6 +374,25 @@ test("a page that keeps failing waits longer each time, and fails the import aft
   fake.failNext(429, 1, { "retry-after": String(7 * 60 * 60) });
   expect(await handlers.importStep({ importId: long.id }, log)).toEqual({ failed: true });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: long.id } })).toMatchObject({ state: "FAILED", apiKey: null });
+});
+
+test("what may pass is waited for: a rate limit, the source's own trouble, no answer, one of our own; a refusal, or a page past its tries, fails the import", () => {
+  const featurebase = (status: number, retryAfterMs: number | null = null) => Object.assign(new FeaturebaseError(status, "fake failure"), { retryAfterMs });
+  const first = { source: "FEATUREBASE", tries: 0 } as const;
+  const minute = 60_000;
+  expect([429, 500, 503, 0].map((status) => waitBefore(first, featurebase(status)))).toEqual([minute, minute, minute, minute]);
+  expect(waitBefore(first, new Error("the database went away"))).toBe(minute);
+  expect([400, 401, 403, 404, 422].map((status) => waitBefore(first, featurebase(status)))).toEqual([null, null, null, null, null]);
+  // Longer each time, and never sooner than the source asks; past the last wait, or asked for more than six hours, failed.
+  expect([0, 1, 2, 3, 4, 5, 6].map((tries) => waitBefore({ source: "FEATUREBASE", tries }, featurebase(503)))).toEqual([1, 2, 5, 15, 30, 60].map((m) => m * minute).concat(null as never));
+  expect(waitBefore(first, featurebase(429, 10 * minute))).toBe(10 * minute);
+  expect(waitBefore({ source: "FEATUREBASE", tries: 4 }, featurebase(429, 10 * minute))).toBe(30 * minute);
+  expect(waitBefore(first, featurebase(429, 7 * 60 * minute))).toBeNull();
+  // A crawled site: out of time or asking for a pause passes; refused (robots.txt, not public) or a name that doesn't exist won't.
+  const site = (status: number, reason: "refused" | "late" | "unknown" | "wait" | null) => new SiteError(status, "fake failure", reason);
+  const crawl = { source: "WEBSITE", tries: 0 } as const;
+  expect([site(0, "late"), site(429, "wait"), site(503, null), site(0, null)].map((error) => waitBefore(crawl, error))).toEqual([minute, minute, minute, minute]);
+  expect([site(0, "refused"), site(0, "unknown"), site(404, null)].map((error) => waitBefore(crawl, error))).toEqual([null, null, null]);
 });
 
 test("a failure of our own (the database) waits a minute and is tried again, not failed", async () => {

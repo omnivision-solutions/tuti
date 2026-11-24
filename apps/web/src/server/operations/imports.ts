@@ -103,8 +103,8 @@ const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 
 /**
  * The project's latest import (null: none yet); one whose wait is over or that's stuck (its job went away) goes on
- * here, as resume-imports would have it, and one that hasn't moved for a day is failed, its key cleared, as the daily
- * fail-stale-imports would (inline installs run no scheduled jobs).
+ * here, without waiting for resume-imports' minute, and one that hasn't moved for a day is failed, its key cleared,
+ * as fail-stale-imports would.
  */
 export async function latestImport(projectId: string): Promise<ImportView | null> {
   const latest = await prisma.dataImport.findFirst({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: importSelect });

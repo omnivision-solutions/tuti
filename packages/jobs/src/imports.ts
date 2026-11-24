@@ -93,8 +93,9 @@ export function nextStep(parts: string[], after: string | null): string | null {
 }
 
 /**
- * An import that hasn't moved this long is stuck (its job went away): resume-imports resumes it, each minute, as does
- * looking at it. Longer than a page may take: PAGE_READ_MS, then up to three tries of a minute each to save (`locked`).
+ * An import that hasn't moved this long is stuck (its job went away): resume-imports resumes it, each minute (inline
+ * installs run it on the web server's timer), as does looking at it. Longer than a page may take: PAGE_READ_MS, then
+ * up to three tries of a minute each to save (`locked`).
  */
 export const IMPORT_STUCK_MS = 8 * 60_000;
 /**
@@ -226,7 +227,7 @@ function failure(source: ImportSource, error: unknown): string {
  * our own (the database). Never a refusal (a key it stopped accepting, another 4xx), nor a page tried too often. The
  * wait is the source's own (`retryAfterMs` on its error) when that's longer.
  */
-function waitBefore(row: Pick<DataImport, "source" | "tries">, error: unknown): number | null {
+export function waitBefore(row: Pick<DataImport, "source" | "tries">, error: unknown): number | null {
   const status = IMPORT_SOURCES[row.source].status(error);
   const { reason, retryAfterMs } = error as { reason?: unknown; retryAfterMs?: unknown };
   const passing = error instanceof StarterGone || reason === "refused" || reason === "unknown" ? false : status === null || status === 0 || status === 429 || status >= 500 || reason === "late" || reason === "wait";
