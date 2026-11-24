@@ -76,3 +76,19 @@ test("a failed cleanup still marks the refused upload FAILED", async () => {
     s3.failDeletes.delete(originalKey(created.mediaId));
   }
 });
+
+test("concurrent image finishUpload calls both succeed when the winner claims PROCESSING or completes READY", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const file = Buffer.from("uploaded once, finished twice");
+  const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+  await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file), headers: { "content-type": "image/jpeg" } });
+  jobs.enqueue.mockResolvedValueOnce(undefined);
+
+  const results = await Promise.all([finishUpload(created.mediaId), finishUpload(created.mediaId)]);
+
+  expect(results).toEqual([{}, {}]);
+  expect(jobs.enqueue).toHaveBeenCalledTimes(1);
+  expect(await prisma.media.findUniqueOrThrow({ where: { id: created.mediaId } })).toMatchObject({ status: "PROCESSING" });
+});

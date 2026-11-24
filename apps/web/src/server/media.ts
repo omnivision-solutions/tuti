@@ -249,7 +249,8 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
   }
 
   if ((await settle({ status: "PROCESSING" })).count === 0) {
-    return { error: "Upload not found" };
+    const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
+    return now?.status === "PROCESSING" || now?.status === "READY" ? {} : { error: "Upload not found" };
   }
   try {
     await enqueue("imageUploaded", { mediaId: media.id });
