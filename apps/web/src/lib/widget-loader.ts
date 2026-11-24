@@ -292,6 +292,8 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   function dismissPopup() {
     var number = String(announcement.number);
     storage(function (s) { s.setItem(popupKey, number); });
+    // Gone for this page view even where storage refuses the write.
+    announcement = null;
     showPopup();
   }
   function paintPopup() {
@@ -748,7 +750,8 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
-      recordVisit(data && typeof data.now === "string" ? data.now : new Date().toISOString());
+      // Only the server's time: without an answer this visit saw nothing, so the last one still counts.
+      if (data && typeof data.now === "string") recordVisit(data.now);
       var entry = data && data.announcement;
       announcement = entry && typeof entry.number === "number" && typeof entry.title === "string" ? entry : null;
       inbox = !!(data && data.inbox === true);

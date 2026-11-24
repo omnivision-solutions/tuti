@@ -1941,6 +1941,27 @@ test("Close keeps the popup away for that entry in this browser, without marking
   expect(popupParts(next.popup!).texts[0]).toBe("Exports");
 });
 
+test("Close hides the popup for this page view even when the browser refuses storage writes", async () => {
+  const page = loadWidget({
+    latest: ANNOUNCED,
+    before: (p) => {
+      visitedAt("2026-10-17T00:00:00.000Z")(p);
+      (p.window.localStorage as { setItem: () => void }).setItem = () => {
+        throw new DOMException("Blocked", "SecurityError");
+      };
+    },
+  });
+  await settled();
+  popupParts(page.popup!).close.click();
+  expect(page.popup).toBeUndefined();
+});
+
+test("without an answer from the app, no visit is recorded: the last one still counts next time", async () => {
+  const page = loadWidget({ latest: null, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  await settled();
+  expect(page.stored.get("tuti:visit:acme")).toBe("2026-10-17T00:00:00.000Z");
+});
+
 test("Read more opens the panel at the entry and the popup is gone for good; it hides while the panel is open", async () => {
   const page = loadWidget({ latest: ANNOUNCED, before: visitedAt("2026-10-17T00:00:00.000Z") });
   await settled();
