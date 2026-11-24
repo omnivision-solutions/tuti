@@ -1,4 +1,4 @@
-import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
+import { type Doc, isVideo, toMarkdown, toPlainText, videoPageUrl } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
 import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus, uploadImage } from "@tuti/jobs";
 import { mediaLimit } from "@tuti/shared/storage";
@@ -106,7 +106,7 @@ const entryOutput = z
       .string()
       .optional()
       .describe(
-        "Its text as Markdown, its images as lasting links: to change it, edit this and send it to changelog.update as `markdown` (with `section` or `append` for part of it). On one entry, not in changelog.list",
+        "Its text as Markdown, its images as lasting links: to change it, edit this and send it to changelog.update as `markdown` (with `section` or `append` for part of it); an image sent back by its link keeps its size and alignment, and a video's link stays its player. On one entry, not in changelog.list",
       )
       .meta({ examples: ["## Dark mode\n\nSwitch themes from your profile menu."] }),
     cover: z
@@ -343,6 +343,37 @@ async function entryText(
  * place, heading and all, or after everything; undefined for an edit of the whole text. They need `markdown`, one or the
  * other, and a section that's there.
  */
+type Blocks = NonNullable<Doc["content"]>;
+
+/**
+ * Markdown read back from an entry (changelog.get) can't say an image's size and alignment, and writes a video as a
+ * link named "Video". Sent back, an image the text already has keeps the size and alignment it has there, and such a
+ * link to a video the text has is that video's player again: the round trip changes only what was edited.
+ */
+function keepingMedia(before: Doc, added: Blocks): Blocks {
+  const images = new Map<unknown, Record<string, unknown>>();
+  const videos = new Map<string, Blocks[number]>();
+  (function read(node: Blocks[number] | Doc) {
+    if (node.type === "image" && node.attrs) {
+      images.set(node.attrs.mediaId, node.attrs);
+    } else if (node.type === "video" && node.attrs && isVideo(node.attrs)) {
+      videos.set(videoPageUrl(node.attrs), node as Blocks[number]);
+    }
+    node.content?.forEach(read);
+  })(before);
+  return added.map(function keep(node): Blocks[number] {
+    const had = node.type === "image" && images.get(node.attrs?.mediaId);
+    if (had) {
+      return { ...node, attrs: { ...node.attrs, width: had.width, align: had.align } };
+    }
+    // A paragraph that's nothing but toMarkdown's link for a video.
+    const [only, ...rest] = node.type === "paragraph" ? (node.content ?? []) : [];
+    const link = rest.length === 0 && only?.type === "text" && only.text === "Video" && only.marks?.length === 1 && only.marks[0]!.type === "link" && only.marks[0]!.attrs?.href;
+    const video = typeof link === "string" && videos.get(link);
+    return video || (node.content ? { ...node, content: node.content.map(keep) } : node);
+  });
+}
+
 function partOfText(entry: { content: unknown; body: string }, input: { markdown?: string; content?: unknown; section?: number | string; append?: boolean }) {
   if (input.section === undefined && !input.append) {
     return undefined;
@@ -358,7 +389,7 @@ function partOfText(entry: { content: unknown; body: string }, input: { markdown
   if (!range) {
     throw new OperationError(400, "no_section", `There's no section ${typeof input.section === "string" ? `“${input.section}”` : input.section}`);
   }
-  return (added: NonNullable<Doc["content"]>): Doc => ({ type: "doc", content: [...blocks.slice(0, range.start), ...added, ...blocks.slice(range.end)] });
+  return (added: Blocks): Doc => ({ type: "doc", content: [...blocks.slice(0, range.start), ...added, ...blocks.slice(range.end)] });
 }
 
 /**
@@ -598,8 +629,11 @@ export const updateChangelogEntry = defineOperation({
     }
     // Part of the text only: Markdown for one section, or to add at its end. The rest is the text as it's read here,
     // so it's saved only if the entry hasn't changed meanwhile (as with `expectedUpdatedAt`, which it stands in for).
-    const place = partOfText(entry, input);
-    const expectedUpdatedAt = input.expectedUpdatedAt ?? (place ? entry.updatedAt.toISOString() : undefined);
+    const part = partOfText(entry, input);
+    const expectedUpdatedAt = input.expectedUpdatedAt ?? (part ? entry.updatedAt.toISOString() : undefined);
+    // Markdown, the whole text's or a part's: what it can't say about the images and videos the text has is kept.
+    const before = displayDoc(entry);
+    const place = (added: Blocks): Doc => (part ?? ((content) => ({ type: "doc", content })))(keepingMedia(before, added));
     // Checked again under the lock below; here first, so Markdown's images and a cover's URL aren't copied for an edit refused anyway.
     if (expectedUpdatedAt && entry.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
       throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");

@@ -271,7 +271,7 @@ describe("changelog entries", () => {
  * `images.origin` once started. /shot.png is an image, /big.png 2 MB, /page.png a page served as one; the rest 404.
  */
 function imageServer() {
-  const images = { origin: "" };
+  const images = { origin: "", s3: undefined as unknown as S3Fake };
   let s3: S3Fake;
   const files = createServer((request, response) => {
     if (request.url?.startsWith("/shot.png")) {
@@ -286,7 +286,7 @@ function imageServer() {
     }
   });
   beforeAll(async () => {
-    s3 = await startS3Fake();
+    s3 = images.s3 = await startS3Fake();
     await new Promise<void>((resolve) => files.listen(0, "127.0.0.1", resolve));
     images.origin = `http://127.0.0.1:${(files.address() as AddressInfo).port}`;
   });
@@ -368,6 +368,18 @@ describe("Markdown's images", () => {
     expect(imagesIn((await call(updateChangelogEntry, as(owner), { number: entry.number, section: "Themes", markdown: `${themes}\n\nPick one.` })).content)).toEqual([mediaId]);
     expect(await uploads()).toBe(1);
 
+    // Markdown can't say an image's size or alignment, nor that a link is a video's player: sent back, the text keeps them.
+    const video = { type: "video", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } };
+    const small = { type: "image", attrs: { mediaId, width: "50", align: "left", alt: "The menu" } };
+    const laidOut = await call(updateChangelogEntry, as(owner), { number: entry.number, content: { type: "doc", content: [small, video, { type: "paragraph", content: [{ type: "text", text: "Watch it." }] }] } });
+    expect(laidOut.markdown).toContain("[Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)");
+    const back = await call(updateChangelogEntry, as(owner), { number: entry.number, markdown: `${laidOut.markdown}\n\nAnd more.` });
+    expect((back.content as { content: object[] }).content.slice(0, 2)).toMatchObject([small, video]);
+    // A link that only looks like one (another video, other words) is a link.
+    const linked = await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "[Video](https://www.youtube.com/watch?v=aaaaaaaaaaa)" });
+    expect((linked.content as { content: { type: string }[] }).content.at(-1)!.type).toBe("paragraph");
+    expect(await uploads()).toBe(1);
+
     // Another project's image isn't this one's to reuse by its link, nor is a link with a signature that isn't ours: neither is taken as an upload.
     const other = await createProject(owner);
     const theirs = await call(createChangelogEntry, { ...as(owner), projectId: other.id }, { title: "Theirs", markdown: `![Ours](${/\((\S+)\)/.exec(entry.markdown!)![1]})\n\n![Forged](${process.env.APP_URL!.replace(/\/$/, "")}/api/media/${mediaId}/960.webp?s=forged)` });
@@ -385,6 +397,24 @@ describe("Markdown's images", () => {
     const media = await prisma.media.findUniqueOrThrow({ where: { id: copied[0]!.attrs!.mediaId! } });
     expect(media).toMatchObject({ projectId: project.id, uploaderId: owner.id, status: "READY", attachedAt: expect.any(Date) });
     expect(entry.body).toContain("After.");
+  });
+
+  test("a section's edit is saved only if the entry didn't change while its images were copied, asked or not", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "Dark mode", markdown: "## Themes\n\nOld.\n\n## Search\n\nFaster." });
+    // A merged pull request's line lands in the text (the running draft's job) as the edit's image is being kept.
+    let changed = false;
+    images.s3.beforeGet = async () => {
+      if (!changed) {
+        changed = true;
+        await call(updateChangelogEntry, as(owner), { number: entry.number, append: true, markdown: "- A line added meanwhile" });
+      }
+    };
+    await expect(
+      call(updateChangelogEntry, as(owner), { number: entry.number, section: "Themes", markdown: `## Themes\n\n![The menu](${images.origin}/shot.png)` }),
+    ).rejects.toMatchObject({ status: 409, code: "changed" });
+    images.s3.beforeGet = undefined;
+    // What landed meanwhile is still there, and the section is as it was.
+    expect((await call(getChangelogEntry, as(owner), { number: entry.number })).markdown).toBe("## Themes\n\nOld.\n\n## Search\n\nFaster.\n\n- A line added meanwhile");
   });
 
   test("count as the member's uploads: past their hourly limit, an image is left out", async () => {
