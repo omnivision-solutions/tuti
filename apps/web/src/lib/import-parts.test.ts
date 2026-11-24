@@ -2,7 +2,7 @@ import type { ImportSource } from "@tuti/db";
 import { IMPORT_SOURCES as JOB_SOURCES } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, importAt, importBrief, importNote, IMPORT_PARTS, IMPORT_SOURCES, type ImportSourceInfo, importProgress, importSummary, kindCount, missingNeed, onHome, partBrings, partDescription, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, importNote, IMPORT_PARTS, IMPORT_SOURCES, type ImportSourceInfo, importProgress, importSummary, kindCount, missingNeed, onHome, oneTool, partBrings, partDescription, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -174,4 +174,10 @@ test("a source's few words on a part never promise what it hasn't: wherever it d
     const own = Object.keys(source.partDescriptions ?? {}).filter((part) => !(source === IMPORT_SOURCES.canny && part === "changelog"));
     expect(Object.keys(source.partBrings ?? {}).sort()).toEqual(own.sort());
   }
+});
+
+test("the tool imported records came from, by name: none when they came from more than one, or there are none", () => {
+  expect(oneTool(["FERNDESK", "FERNDESK"])).toBe("Ferndesk");
+  expect(oneTool(["FEATUREBASE", "FERNDESK"])).toBeNull();
+  expect(oneTool([])).toBeNull();
 });

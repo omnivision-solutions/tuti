@@ -131,8 +131,8 @@ export const IMPORT_SOURCES = {
   },
   ferndesk: {
     name: "Ferndesk",
-    description: "Bring your help center, its changelog, its users and your helpdesk's and AI assistant's conversations across with an API key.",
-    parts: ["contacts", "changelog", "docs", "inbox"],
+    description: "Bring your team, help center, changelog, users and your helpdesk's and AI assistant's conversations across with an API key.",
+    parts: ["team", "contacts", "changelog", "docs", "inbox"],
     // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are its helpdesk's and its AI assistant's.
     partDescriptions: {
       contacts: "Your help center's users, with their attributes, as Users.",
@@ -232,6 +232,12 @@ export type ImportSourceInfo = {
   credential: { kind: "key"; keysUrl: string; help: string } | { kind: "url"; help: string };
 };
 export type ImportSourceKey = keyof typeof IMPORT_SOURCES;
+
+/** The tool these imported records came from (their stored sources, `FERNDESK`), by name; null for none or more than one. */
+export function oneTool(sources: string[]) {
+  const names = new Set(sources.map((source) => IMPORT_SOURCES[source.toLowerCase() as ImportSourceKey].name));
+  return names.size === 1 ? [...names][0]! : null;
+}
 
 /** What a part brings from a source, as the setup step and Settings → Import offer it. */
 export const partDescription = (source: ImportSourceInfo, part: ImportPart): string => (source.partDescriptions?.[part] ?? IMPORT_PARTS[part].description).replace("{source}", source.name);

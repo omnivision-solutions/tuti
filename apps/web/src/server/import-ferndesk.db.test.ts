@@ -487,3 +487,19 @@ test("a key that can't read the helpdesk (no Read inbox) still brings the help c
   fake.forbidden.add("/v1/teammates").add("/v1/conversations");
   expect(await importParts(["docs"], { publishArticles: true })).toMatchObject({ state: "done", counts: { articles: { imported: 4 } } });
 });
+
+test("the helpdesk's teammates come as invitations to send, those removed there left out; again, nothing twice; without the helpdesk, no team", async () => {
+  const done = await importParts(["team"]);
+  expect(done).toMatchObject({ state: "done", counts: { invitations: { imported: 1, leftOut: { "for people no longer on the team there": 1 } } } });
+  expect(await prisma.invitation.findMany({ where: { projectId: project.id }, select: { email: true, role: true, sentAt: true } })).toEqual([{ email: "e2e-ferndesk-ines@example.com", role: "MEMBER", sentAt: null }]);
+  expect(await importParts(["team"])).toMatchObject({ counts: { invitations: { imported: 0, leftOut: { "already brought across earlier": 1, "for people no longer on the team there": 1 } } } });
+
+  fake.helpdesk = false;
+  expect(await importParts(["team"])).toMatchObject({ state: "done", counts: {} });
+  expect(await prisma.invitation.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("a key that can't read the helpdesk's teammates can't start the Team part", async () => {
+  fake.forbidden.add("/v1/teammates");
+  expect(await refusal(start(["team"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Team in Ferndesk. Use a key that can, or leave Team out." });
+});

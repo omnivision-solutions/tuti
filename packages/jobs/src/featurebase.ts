@@ -148,7 +148,8 @@ export type FeaturebaseContact = {
 };
 
 /** A Featurebase admin (GET /v2/admins): a member of their team there. */
-export type FeaturebaseAdmin = { id: string; name?: string | null; email?: string | null; profilePicture?: string | null };
+/** An admin; `removed`: no longer on the team there (Ferndesk lists them for what they wrote), so not invited. */
+export type FeaturebaseAdmin = { id: string; name?: string | null; email?: string | null; profilePicture?: string | null; removed?: boolean };
 
 /** Words Featurebase keeps per locale ({ en: "…" }). */
 export type FeaturebaseLocalized = Record<string, string> | null;

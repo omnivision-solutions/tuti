@@ -136,10 +136,22 @@ export function InviteForm({ projectSlug, roles, stacked = false }: { projectSlu
 }
 
 /**
- * Revoke on a pending invite; Remove on one an import made that wasn't sent (`unsent`: its address), which asks first, as
- * a later import won't bring it back.
+ * Revoke on a pending invite; Remove on one an import made that wasn't sent (`unsent`: its address; `tool`: the one it
+ * came from, when known), which asks first, as a later import won't bring it back.
  */
-export function RevokeInvitationButton({ projectSlug, invitationId, unsent, onRevoked }: { projectSlug: string; invitationId: string; unsent?: string; onRevoked?: () => void }) {
+export function RevokeInvitationButton({
+  projectSlug,
+  invitationId,
+  unsent,
+  tool = null,
+  onRevoked,
+}: {
+  projectSlug: string;
+  invitationId: string;
+  unsent?: string;
+  tool?: string | null;
+  onRevoked?: () => void;
+}) {
   const [pending, startTransition] = useTransition();
   const revoke = () =>
     startTransition(async () => {
@@ -164,7 +176,7 @@ export function RevokeInvitationButton({ projectSlug, invitationId, unsent, onRe
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-anywhere">Remove the invite for {unsent}?</AlertDialogTitle>
-          <AlertDialogDescription>They won&apos;t be invited, and importing from Featurebase again won&apos;t bring them back. You can still invite them yourself.</AlertDialogDescription>
+          <AlertDialogDescription>They won&apos;t be invited, and importing{tool ? ` from ${tool}` : ""} again won&apos;t bring them back. You can still invite them yourself.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -181,12 +193,13 @@ export function RevokeInvitationButton({ projectSlug, invitationId, unsent, onRe
 export type UnsentInvitation = { id: string; email: string; title: string; meta: string; manageable: boolean };
 
 /**
- * Team & roles' "From Featurebase, not sent yet": each invite with Send and Remove (named for its address), and Send all.
+ * Team & roles' "From Featurebase, not sent yet" (`tool`: the one they came from; null: from more than one; `counted`:
+ * they count toward the plan's team members): each invite with Send and Remove (named for its address), and Send all.
  * After a Send, focus goes on to the next row's Send, else the card's heading, else (all sent) the pending invites
  * (#pending-invites). On a server without email nothing is emailed: the links are shown to pass on, as inviting does.
  * Mounted while the list empties, so it can move focus once the last row is gone.
  */
-export function UnsentInvitations({ projectSlug, invitations, note }: { projectSlug: string; invitations: UnsentInvitation[]; note: string }) {
+export function UnsentInvitations({ projectSlug, invitations, tool, counted }: { projectSlug: string; invitations: UnsentInvitation[]; tool: string | null; counted: boolean }) {
   const [pending, startTransition] = useTransition();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const sendButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -233,10 +246,13 @@ export function UnsentInvitations({ projectSlug, invitations, note }: { projectS
       <CardHeader>
         <CardTitle>
           <h2 ref={heading} tabIndex={-1} className="outline-none">
-            From Featurebase, not sent yet
+            {tool ? `From ${tool}, not sent yet` : "Imported, not sent yet"}
           </h2>
         </CardTitle>
-        <CardDescription>{note}</CardDescription>
+        <CardDescription>
+          Your team in {tool ?? "the tools you imported from"}, invited as members. Nothing has been emailed: send the ones you want here.
+          {counted && " Until you remove them, they count toward your plan's team members."}
+        </CardDescription>
         {invitations.length > 1 && (
           <CardAction>
             <Button size="sm" disabled={pending} focusableWhenDisabled onClick={() => send(null)}>
@@ -284,7 +300,7 @@ export function UnsentInvitations({ projectSlug, invitations, note }: { projectS
                       >
                         Send
                       </Button>
-                      <RevokeInvitationButton projectSlug={projectSlug} invitationId={invitation.id} unsent={invitation.email} onRevoked={() => moveFocus(invitation.id)} />
+                      <RevokeInvitationButton projectSlug={projectSlug} invitationId={invitation.id} unsent={invitation.email} tool={tool} onRevoked={() => moveFocus(invitation.id)} />
                     </>
                   )
                 }

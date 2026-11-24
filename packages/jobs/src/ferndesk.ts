@@ -202,4 +202,4 @@ export type FerndeskMessage = {
 export type FerndeskCustomer = { id: string; name: string | null; email: string | null; properties: Record<string, unknown> | null };
 
 /** Someone who works the helpdesk (GET /v1/teammates). */
-export type FerndeskTeammate = { id: string; name: string; email: string | null; avatar_url: string | null };
+export type FerndeskTeammate = { id: string; name: string; email: string | null; avatar_url: string | null; status: string };

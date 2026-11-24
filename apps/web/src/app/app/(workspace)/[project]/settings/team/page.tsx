@@ -12,6 +12,7 @@ import { MemberActions, MemberRoleSelect } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { formatDay } from "@/lib/format";
+import { oneTool } from "@/lib/import-parts";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -50,6 +51,13 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   // An import's invitations (docs/plan.md, Switching from Featurebase) wait apart until someone sends them.
   const sent = invitations.filter((invitation) => invitation.sentAt);
   const unsent = invitations.filter((invitation) => !invitation.sentAt && invitation.email);
+  // The tool they came from, by the import's record of each pending one: sent ones too, so the card still names it while
+  // it shows the links of those just sent (a server without email).
+  const tool = oneTool(
+    (await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "invite", localId: { in: invitations.map((invitation) => invitation.id) } }, select: { source: true } })).map(
+      (record) => record.source,
+    ),
+  );
   const assignable = ROLES.filter((r) => canAssignRole(myRole, r));
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } });
   const limit = teamLimit(plan);
@@ -127,7 +135,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
 
       {sent.length > 0 && (
         <SettingsCard title="Pending invites" count={sent.length}>
-          {/* Where focus goes once the last invite from Featurebase is sent (UnsentInvitations). */}
+          {/* Where focus goes once the last imported invite is sent (UnsentInvitations). */}
           <div id="pending-invites" tabIndex={-1} className="rounded-xl outline-none">
             <ItemList aria-label="Pending invites">
               {sent.map((invitation) => (
@@ -151,7 +159,8 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
       {isAdmin && (
         <UnsentInvitations
           projectSlug={project.slug}
-          note={`Your team in Featurebase, invited as members. Nothing has been emailed: send the ones you want here.${limit !== null ? " Until you remove them, they count toward your plan's team members." : ""}`}
+          tool={tool}
+          counted={limit !== null}
           invitations={unsent.map((invitation) => ({
             id: invitation.id,
             email: invitation.email!,
