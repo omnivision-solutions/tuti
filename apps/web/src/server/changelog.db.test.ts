@@ -417,10 +417,11 @@ describe("Markdown's images", () => {
     const theirs = await call(createChangelogEntry, { ...as(owner), projectId: other.id }, { title: "Theirs", markdown: `![Ours](${ours})` });
     expect(imagesIn(theirs.content)).not.toContain(mediaId);
     // In its own project too, an upload isn't had by its id alone: a signature that isn't ours, or ours on another
-    // server's address, is an address to fetch like any other (these answer with no image: left out, nothing uploaded).
+    // server's address (the storage fake's here, which answers with no image), is an address to fetch like any other:
+    // left out, nothing uploaded.
     const forged = await call(createChangelogEntry, as(owner), {
       title: "Forged",
-      markdown: `![Forged](${ours.replace(/s=[\w-]+/, "s=forged")})\n\n![Elsewhere](${ours.replace(new URL(ours).origin, "http://127.0.0.1:1")})\n\nText.`,
+      markdown: `![Forged](${ours.replace(/s=[\w-]+/, "s=forged")})\n\n![Elsewhere](${ours.replace(new URL(ours).origin, new URL(images.s3.url).origin)})\n\nText.`,
     });
     expect(imagesIn(forged.content)).toEqual([]);
     expect(await uploads()).toBe(1);
