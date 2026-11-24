@@ -66,9 +66,9 @@ export const registerDevice = defineOperation({
         create: { userId, deviceId, token, platform, sessionId },
         update: { token, platform, sessionId, lastSeenAt: new Date() },
       }),
-      // Their own install whose id was lost (a reinstall): the token is this row's now, so the phone isn't told twice.
-      // Never another account's row: whoever had a token could take someone's phone off their notifications (the
-      // sender sends a token one push, so a phone on two accounts isn't told twice either).
+      // Their own install whose id was lost (a reinstall): the token is this row's now. Another account's row stays: the
+      // sender tells a token only about the account that registered it last (push.ts), so the phone is on whoever's
+      // app is signed in, and the other gets it back when their app opens and registers again.
       prisma.device.deleteMany({ where: { userId, token, NOT: { deviceId } } }),
     ]);
     return { deviceId };

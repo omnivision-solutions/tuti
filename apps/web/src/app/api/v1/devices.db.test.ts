@@ -284,3 +284,16 @@ test("pushes go 100 a request, and receipts are read 1,000 at a time", async () 
   await checkPushReceipts({}, console, new Date(Date.now() + RECEIPT_AFTER_MS + 1000));
   expect(expo.asked.map((ids) => ids.length)).toEqual([1000, 1]);
 });
+
+test("a send isn't failed by saving its tickets, so a retry doesn't push again", async () => {
+  await phone(owner, "owner");
+  const { number } = await userWrites();
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversation: { projectId: project.id, number } } });
+  expo.sent = [];
+  await prisma.pushTicket.deleteMany();
+  vi.spyOn(prisma.pushTicket, "createMany").mockRejectedValueOnce(new Error("The database went away"));
+  // Inline jobs aren't retried: a job that failed here would be, on the worker, and push again.
+  expect(await enqueue("conversationPush", { messageId: message.id })).toEqual({ pushed: 1 });
+  expect(expo.sent).toHaveLength(1);
+  expect(await prisma.pushTicket.count()).toBe(0);
+});

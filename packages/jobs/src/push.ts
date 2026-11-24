@@ -83,7 +83,9 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   });
   // A token goes to the account that registered it last, across everyone's: a phone someone signed out of offline (their
   // session and row left on the server) and then signed in to as someone else is told only the latter's. It registers
-  // again each time the app opens, so this is the one it's on. Once a token, too.
+  // again each time the app opens, so this is the one it's on. Once a token, too. The cost: someone who had another's token
+  // (Expo's, never shown by Tuti) and registered it would mute that phone until its app opens again; a phone showing a
+  // previous account's messages is worse.
   const latest = new Set(
     (
       await prisma.device.findMany({
