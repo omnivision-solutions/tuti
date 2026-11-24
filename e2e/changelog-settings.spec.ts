@@ -145,7 +145,8 @@ test("an admin picks the changelog's style examples: published entries from a se
   const chips = team.getByRole("list", { name: "Style examples" }).getByRole("listitem");
   await expect(save).toBeDisabled();
   await expect(row.getByText("0/3")).toBeVisible();
-  await expect(row.getByText("Entries that read the way you like.")).toBeVisible();
+  // With none picked, AI drafts follow the latest entries, and the row says so.
+  await expect(row.getByText("Entries that read the way you like. With none picked, AI follows your latest ones.")).toBeVisible();
 
   // The dialog lists the published entries, newest first; its search narrows them by title.
   await pick.click();

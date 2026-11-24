@@ -957,7 +957,7 @@ export function ChangelogStyleForm({
           id="style-tone"
           name="tone"
           defaultValue={tone}
-          maxLength={1000}
+          maxLength={4000}
           placeholder="Friendly, short sentences, no jargon. Address the reader as you."
           aria-invalid={state.error ? true : undefined}
           aria-describedby={state.error ? "style-error" : undefined}
@@ -975,7 +975,13 @@ export function ChangelogStyleForm({
             )}
           </>
         }
-        description={published.length === 0 ? "Publish an entry to use it as an example." : "Entries that read the way you like."}
+        description={
+          published.length === 0
+            ? "Publish an entry to use it as an example."
+            : chosen.length === 0
+              ? "Entries that read the way you like. With none picked, AI follows your latest ones."
+              : "Entries that read the way you like."
+        }
       >
         {published.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
