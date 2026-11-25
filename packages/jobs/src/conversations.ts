@@ -18,6 +18,29 @@ const LOOP_HEADER = "X-Tuti-Loop";
 export const NOTIFY_EVERY_MS = 10 * 60 * 1000;
 
 /**
+ * Who hears about a user's message in a conversation, by email and on their phones (push.ts), so the two never disagree:
+ * its assignee, or with nobody assigned, every team member with "Email me new conversations" on.
+ */
+export const teamToTell = (conversation: { projectId: string; assigneeId: string | null }) => ({
+  projectId: conversation.projectId,
+  ...(conversation.assigneeId ? { userId: conversation.assigneeId } : { emailNewConversations: true }),
+});
+
+/**
+ * Who wrote a user's message, as the team is told: someone else on the email thread (a Cc'd colleague) by their address;
+ * the person by their account's name, or the name their email gave with its address beside it (anyone can give any
+ * name), or the address.
+ */
+export const whoWrote = (
+  message: { fromAddress: string | null },
+  conversation: { user: { name: string } | null; name: string | null; email: string | null },
+) =>
+  message.fromAddress ??
+  conversation.user?.name ??
+  (conversation.name && conversation.email ? `${conversation.name} (${conversation.email})` : conversation.email) ??
+  "Someone";
+
+/**
  * A user wrote in the support inbox (docs/plan.md, Support inbox): emails the conversation's
  * assignee, or with nobody assigned, every team member with "Email me new conversations" on. Spam
  * tells nobody. At most once every NOTIFY_EVERY_MS per conversation (claimed before sending, so two
@@ -55,13 +78,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   if (!message || !conversation || message.author !== "USER" || conversation.spam) {
     return { skipped: "nothing to tell" };
   }
-  const team = await prisma.teamMember.findMany({
-    where: {
-      projectId: conversation.projectId,
-      ...(conversation.assigneeId ? { userId: conversation.assigneeId } : { emailNewConversations: true }),
-    },
-    select: { user: { select: { email: true } } },
-  });
+  const team = await prisma.teamMember.findMany({ where: teamToTell(conversation), select: { user: { select: { email: true } } } });
   const recipients = only ? team.filter((member) => only.includes(member.user.email)) : team;
   if (recipients.length === 0) {
     return { skipped: "nobody to tell" };
@@ -72,13 +89,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   });
   const email = conversationEmail({
     projectName: conversation.project.name,
-    // Who wrote it: someone else on the email thread (a Cc'd colleague) by their address; the person by their account's
-    // name, or the name their email gave with its address beside it (anyone can give any name), or the address.
-    from:
-      message.fromAddress ??
-      conversation.user?.name ??
-      (conversation.name && conversation.email ? `${conversation.name} (${conversation.email})` : conversation.email) ??
-      "Someone",
+    from: whoWrote(message, conversation),
     // The user's first message is the conversation's start.
     isNew: earlier === 0,
     subject: conversation.subject,

@@ -31,6 +31,19 @@ export const jobs = {
     // `only`: the addresses a first run couldn't reach, tried again on their own (no claim: the first run made it).
     input: z.object({ messageId: z.string(), only: z.array(z.string()).optional() }),
   },
+  /** A user wrote in the support inbox: push it to the phones of the team members it's emailed to (packages/jobs push.ts). */
+  conversationPush: {
+    name: "conversation-push",
+    input: z.object({ messageId: z.string() }),
+    // A push is worth little late: a couple of quick tries, then it's let go.
+    retries: 2,
+  },
+  /** Reads Expo's receipts for pushes sent 15 minutes ago or more, dropping devices whose token is no longer registered. */
+  checkPushReceipts: {
+    name: "check-push-receipts",
+    input: z.object({}),
+    cron: "*/15 * * * *",
+  },
   /** Queues conversation-message again for users' messages the team should have heard about but didn't (queueing failed). */
   resubmitConversationNotices: {
     name: "conversation-notices-resubmit",

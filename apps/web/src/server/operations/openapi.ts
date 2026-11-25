@@ -241,8 +241,8 @@ export const groups = [
   },
   {
     name: "Inbox",
-    description: "Conversations with the people who use your product, from the widget and email, and the support inbox's settings.",
-    prefixes: ["conversations", "support"],
+    description: "Conversations with your product's users, from the widget and email, the inbox's settings, and phone notifications.",
+    prefixes: ["conversations", "support", "devices", "notifications"],
   },
   {
     name: "Autopilot",

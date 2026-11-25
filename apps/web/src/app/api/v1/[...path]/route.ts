@@ -48,7 +48,7 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
   }
 
   try {
-    const actor = caller.kind === "user" ? { kind: caller.kind, userId: caller.userId } : caller;
+    const actor = caller.kind === "user" ? { kind: caller.kind, userId: caller.userId, sessionId: caller.sessionId } : caller;
     return Response.json(await operation.run({ actor, projectId: caller.projectId }, input.data));
   } catch (e) {
     if (e instanceof OperationError) {

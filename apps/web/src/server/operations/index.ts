@@ -19,6 +19,7 @@ import {
   updateConversation,
 } from "./conversations";
 import { getConversationPerson } from "./conversation-person";
+import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
 import { suggestReply, summarizeConversation } from "./support-ai";
 import { removeLink } from "./links";
@@ -102,6 +103,10 @@ const all = [
   listConversations,
   markConversationRead,
   startReplyUpload,
+  registerDevice,
+  removeDevice,
+  getNotificationSettings,
+  updateNotificationSettings,
   listArticlesToInsert,
   getConversation,
   getConversationPerson,
