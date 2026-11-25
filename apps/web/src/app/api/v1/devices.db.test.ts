@@ -262,9 +262,13 @@ test("a user's message notifies the phones of exactly those its email goes to", 
     sound: "default",
     priority: "high",
     categoryId: "conversation",
-    // `server`: this server's address (APP_URL's origin); the app acts on the push only when signed in to it.
-    data: { project: project.slug, conversation: number, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), server: "http://tuti.localhost:3100" },
+    data: { project: project.slug, conversation: number, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), device: expect.any(String) },
   });
+  // Each names the id its phone registered the row under (it changes on every sign-out): the app acts only while it's its own.
+  expect(expo.sent.map((sent) => [sent.to, (sent.data as { device: string }).device]).sort()).toEqual([
+    ["ExponentPushToken[listening]", "listening-id"],
+    ["ExponentPushToken[owner]", "owner-id"],
+  ]);
   // No access token unless one is set.
   expect(expo.sent[0]!.headers.authorization).toBeUndefined();
 
@@ -321,7 +325,7 @@ test("an Android phone gets data only, which its app shows with Reply and Close 
       project: project.slug,
       conversation: number,
       at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
-      server: "http://tuti.localhost:3100",
+      device: "android-id",
       title: "e2e-asker@example.com · " + project.name,
       text: "The export button does nothing",
     },

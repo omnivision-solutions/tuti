@@ -122,7 +122,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   const told = await prisma.device.findMany({
     where: { user: { teamMemberships: { some: teamToTell(conversation) } }, session: { expiresAt: { gt: new Date() } } },
-    select: { id: true, token: true, platform: true, user: { select: { pushShowsText: true } } },
+    select: { id: true, deviceId: true, token: true, platform: true, user: { select: { pushShowsText: true } } },
   });
   // A token goes to the account that registered it last, across everyone's: a phone someone signed out of offline (their
   // session and row left on the server) and then signed in to as someone else is told only the latter's. It registers
@@ -145,13 +145,14 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   const title = `${whoWrote(message, conversation)} · ${conversation.project.name}`;
   const text = pushText(message.body);
-  // What opens the conversation; `at`, the message's time, which a reply from the notification says it saw
-  // (conversations.reply's `seen`), so a message after it keeps the conversation waiting on the team; and `server`, this
-  // server's address (the conversation emails' links' origin), so the app acts only when it's signed in here: another
-  // server can have a project of the same slug.
-  const server = process.env.APP_URL ? new URL(process.env.APP_URL).origin : undefined;
-  const data = { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString(), ...(server && { server }) };
+  // What opens the conversation, and `at`, the message's time, which a reply from the notification says it saw
+  // (conversations.reply's `seen`), so a message after it keeps the conversation waiting on the team.
+  const opens = { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString() };
   const messages = devices.map((device) => {
+    // `device`: the id the phone registered this row under, which it changes on every sign-out. The app shows and acts on
+    // a push only while it's still its id, so one for a session it has left (on any server: another can have a project
+    // of the same slug) does nothing, whichever of the server's addresses it signed in with.
+    const data = { ...opens, device: device.deviceId };
     const shown = { title, ...(device.user.pushShowsText && text && { text }) };
     // Android: data only, which the app shows itself (apps/mobile src/lib/notification-actions.ts) with its Reply and
     // Close: a push with a title is shown by Firebase while the app isn't in front, without them. High priority, so it

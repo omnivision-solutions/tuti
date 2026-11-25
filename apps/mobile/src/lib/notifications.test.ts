@@ -261,7 +261,7 @@ describe("a notification's conversation", () => {
   it("is read from the server's data, checked", async () => {
     const { targetOf, tapped } = await load();
     expect(targetOf({ project: "acme", conversation: 12 })).toEqual({ project: "acme", number: 12 });
-    expect(targetOf({ project: "acme", conversation: 12, server: "https://tuti.so" })).toEqual({ project: "acme", number: 12, server: "https://tuti.so" });
+    expect(targetOf({ project: "acme", conversation: 12, device: "phone-1" })).toEqual({ project: "acme", number: 12, device: "phone-1" });
     for (const bad of [null, {}, { project: "acme" }, { project: "Acme\nx", conversation: 1 }, { project: "acme", conversation: "12" }, { project: "acme", conversation: 0 }, { project: "acme", conversation: 1.5 }]) {
       expect(targetOf(bad)).toBeNull();
     }
@@ -305,18 +305,16 @@ describe("a notification while the app is in front", () => {
   });
 });
 
-describe("whether a notification is from the server signed in to", () => {
-  it("compares origins: a default port, a trailing slash or a path on either side are the same server", async () => {
-    const { fromServer } = await load();
-    const at = (server?: string) => ({ project: "acme", number: 7, ...(server && { server }) });
-    // The push names its server as an origin; a session stored with the port typed.
-    expect(fromServer(at("https://tuti.example.com"), { server: "https://tuti.example.com:443" })).toBe(true);
-    expect(fromServer(at("https://tuti.example.com:443/"), { server: "https://tuti.example.com" })).toBe(true);
-    expect(fromServer(at("http://tuti.example.com/app/"), { server: "http://tuti.example.com:80" })).toBe(true);
-    expect(fromServer(at("https://tuti.example.com:8443"), { server: "https://tuti.example.com" })).toBe(false);
-    expect(fromServer(at("https://other.example"), { server: "https://tuti.example.com" })).toBe(false);
-    // A server from before pushes named it.
-    expect(fromServer(at(), { server: "https://tuti.example.com" })).toBe(true);
+describe("whether a notification is for this sign-in", () => {
+  it("is when it names the id the phone registered under, which a sign-out changes", async () => {
+    const { deviceId, forThisSignIn, removeDevice } = await load();
+    const id = await deviceId();
+    expect(await forThisSignIn({ project: "acme", number: 7, device: id })).toBe(true);
+    // A push for a sign-in since left (on any server), or one that names no registration, isn't.
+    await removeDevice(api);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: id })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: await deviceId() })).toBe(true);
+    expect(await forThisSignIn({ project: "acme", number: 7 })).toBe(false);
   });
 });
 
@@ -347,16 +345,17 @@ describe("opening a tapped notification", () => {
     expect(order).toEqual(["leave", "project kite", "/conversation/7"]);
   });
 
-  it("opens nothing signed out, from another server, or when the project can't be switched", async () => {
-    const { openTarget } = await load();
+  it("opens nothing signed out, for a sign-in since left, or when the project can't be switched", async () => {
+    const { deviceId, openTarget } = await load();
     const open = vi.fn();
     await openTarget({ project: "acme", number: 7 }, null, async () => {}, { leave: () => {}, open, projects });
-    // From another server, which can have a project of the same slug: nothing.
-    await openTarget({ project: "acme", number: 7, server: "https://other.example" }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    // For a sign-in since left (its registration's id isn't the phone's now): nothing.
+    await openTarget({ project: "acme", number: 7, device: "an-id-since-left" }, signedIn, async () => {}, { leave: () => {}, open, projects });
     expect(open).not.toHaveBeenCalled();
-    // Its own server, however the address is written.
-    await openTarget({ project: "acme", number: 7, server: "HTTPS://Tuti.Example.com" }, signedIn, async () => {}, { leave: () => {}, open, projects });
-    expect(open).toHaveBeenCalledWith("/conversation/7");
+    // For this one, or naming none (a tap only opens, in the teammate's own projects): opened.
+    await openTarget({ project: "acme", number: 7, device: await deviceId() }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    await openTarget({ project: "acme", number: 7 }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    expect(open).toHaveBeenCalledTimes(2);
     open.mockClear();
     await expect(
       openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), { leave: () => {}, open, projects }),

@@ -16,7 +16,7 @@ export function normalizeServer(typed: string): string | null {
     return null;
   }
   const scheme = given.toLowerCase();
-  // The scheme's own port left out, as an origin has it: the server names itself so (its pushes' `server`).
+  // The scheme's own port left out, as an origin has it: one server, however its address is typed.
   const port = typedPort === (scheme === "https" ? ":443" : ":80") ? "" : typedPort;
   return `${scheme}://${host!.toLowerCase()}${port}`;
 }

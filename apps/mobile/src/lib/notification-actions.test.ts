@@ -34,12 +34,17 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("expo-secure-store", () => ({ AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 0, getItemAsync: async (key: string) => phone.stored.get(key) ?? null }));
+vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 0,
+  getItemAsync: async (key: string) => phone.stored.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => void phone.stored.set(key, value),
+}));
 vi.mock("expo-web-browser", () => ({}));
 vi.mock("expo-constants", () => ({ default: {} }));
 vi.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
   digestStringAsync: async (_: string, text: string) => Buffer.from(text).toString("hex").padEnd(64, "0"),
+  randomUUID: () => "a-new-id",
 }));
 vi.mock("expo-file-system", () => {
   const path = (parts: unknown[]) => parts.map((part) => (typeof part === "string" ? part : (part as { uri: string }).uri)).join("/");
@@ -109,19 +114,21 @@ vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
 });
 
 const SERVER = "https://tuti.example";
+/** The id this phone registered under (notifications.ts `deviceId`), which pushes to it name as `device`. */
+const DEVICE = "phone-1";
 /** When the notification's message was sent. */
 const AT = "2026-11-25T10:00:00.000Z";
 const signIn = (project = "acme") => phone.stored.set("session", JSON.stringify({ server: SERVER, token: "token-1", cookie: "c", project }));
 const response = (
   actionIdentifier: string,
-  { userText, project = "acme", id = "push-1", server }: { userText?: string; project?: string; id?: string; server?: string } = {},
+  { userText, project = "acme", id = "push-1", device = DEVICE }: { userText?: string; project?: string; id?: string; device?: string | null } = {},
 ) =>
   ({
     actionIdentifier,
     ...(userText !== undefined && { userText }),
     notification: {
       date: 0,
-      request: { identifier: id, trigger: null, content: { title: "Ada · Acme", body: "Hi", data: { project, conversation: 7, at: AT, ...(server && { server }) } } },
+      request: { identifier: id, trigger: null, content: { title: "Ada · Acme", body: "Hi", data: { project, conversation: 7, at: AT, ...(device && { device }) } } },
     },
   }) as unknown as NotificationResponse;
 /** The reply kept in the conversation's draft, by its body. */
@@ -142,6 +149,7 @@ beforeEach(() => {
   answer = () => Response.json({});
   hang = false;
   signIn();
+  phone.stored.set("device-id", DEVICE);
 });
 
 describe("the notification's actions", () => {
@@ -230,18 +238,40 @@ describe("Reply", () => {
     expect(isSending(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent[0]!.id)).toBe(false);
   });
 
-  it("from another server, even one with a project of the same slug, sends nothing and says so", async () => {
-    await (await load()).act(response("reply", { userText: "On it!", server: "https://other.example" }));
+  it("for an account signed out of since (the phone's registration has a new id), sends nothing and says so", async () => {
+    await (await load()).act(response("reply", { userText: "On it!", device: "an-id-since-left" }));
     expect(calls).toEqual([]);
-    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: It's from a Tuti server you're not signed in to."]);
-    // With its server, so a tap on it opens nothing here (openTarget).
-    expect(phone.shown[0]!.content.data).toEqual({ project: "acme", conversation: 7, server: "https://other.example" });
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: It's for an account you've since signed out of."]);
+    // With that id, so a tap on it opens nothing either (openTarget).
+    expect(phone.shown[0]!.content.data).toEqual({ project: "acme", conversation: 7, device: "an-id-since-left" });
     expect(await kept()).toEqual([]);
 
-    // Its own server, however the address is written.
+    // A push that names no registration: nothing either.
     phone.shown = [];
-    await (await load()).act(response("reply", { userText: "On it!", server: "HTTPS://Tuti.Example", id: "push-2" }));
-    expect(calls.map((call) => call.method)).toEqual(["POST"]);
+    await (await load()).act(response("reply", { userText: "On it!", device: null, id: "push-2" }));
+    expect(calls).toEqual([]);
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: It's for an account you've since signed out of."]);
+  });
+
+  it("is sent whichever of the server's addresses the teammate signed in with (a custom domain, an alias)", async () => {
+    phone.stored.set("session", JSON.stringify({ server: "https://help.acme.example", token: "token-1", cookie: "c", project: "acme" }));
+    await (await load()).act(response("reply", { userText: "On it!" }));
+    expect(calls.map((call) => [call.method, call.url])).toEqual([["POST", "https://help.acme.example/api/v1/conversations/7/messages"]]);
+  });
+
+  it("whose answer's body never comes is given up on too, and kept", async () => {
+    vi.useFakeTimers();
+    try {
+      // Headers, then the network gone before the body.
+      answer = () => ({ status: 200, statusText: "OK", headers: new Headers(), ok: true, text: () => new Promise<string>(() => {}) }) as unknown as Response;
+      const acting = (await load()).act(response("reply", { userText: "On it!" }));
+      await vi.advanceTimersByTimeAsync(15_000);
+      await acting;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(phone.shown.map((shown) => shown.content.title)).toEqual(["Your reply didn't send"]);
+    expect(await kept()).toEqual([{ body: "On it!", error: expect.stringContaining("Couldn't reach") }]);
   });
 
   it("goes to another of the teammate's projects, never to one that isn't theirs", async () => {
@@ -259,7 +289,7 @@ describe("Reply", () => {
     // Not sent, and said so, rather than left spinning.
     expect(phone.dismissed).toEqual(["push-2"]);
     expect(phone.shown.map((shown) => shown.content)).toEqual([
-      { title: "Your reply didn't send", body: "Ada · Acme: It's in a project you're not on.", data: { project: "initech", conversation: 7 } },
+      { title: "Your reply didn't send", body: "Ada · Acme: It's in a project you're not on.", data: { project: "initech", conversation: 7, device: DEVICE } },
     ]);
     const { getDraft } = await import("./conversation");
     const { screenKey } = await import("./details");
@@ -371,7 +401,7 @@ describe("Reply", () => {
         content: {
           title: "Your reply didn't send",
           body: "Ada · Acme: Couldn't reach tuti.example. Check the address and your connection. It's kept in the conversation, with Retry.",
-          data: { project: "acme", conversation: 7 },
+          data: { project: "acme", conversation: 7, device: DEVICE },
         },
         trigger: null,
       },
@@ -398,7 +428,7 @@ describe("Close", () => {
     await (await load()).act(response("close"));
     expect(phone.shown).toEqual([
       {
-        content: { title: "Couldn't close the conversation", body: "Ada · Acme: You can't change this conversation.", data: { project: "acme", conversation: 7 } },
+        content: { title: "Couldn't close the conversation", body: "Ada · Acme: You can't change this conversation.", data: { project: "acme", conversation: 7, device: DEVICE } },
         trigger: { channelId: "default" },
       },
     ]);
@@ -408,23 +438,23 @@ describe("Close", () => {
 describe("on Android", () => {
   // A push as the task is given it: Firebase's data, the server's in `body` as JSON.
   const push = (data: object) => ({ messageId: "0:fcm-1", notification: null, data: { categoryId: "conversation", body: JSON.stringify(data), dataString: JSON.stringify(data) } });
-  const pushed = { project: "acme", conversation: 7, at: AT, title: "Ada · Acme", text: "Hi" };
+  const pushed = { project: "acme", conversation: 7, at: AT, title: "Ada · Acme", text: "Hi", device: DEVICE };
 
   it("shows a push itself, with Reply and Close, on the app's channel", async () => {
     phone.os = "android";
     (await load()).startNotificationActions();
-    await phone.task!({ data: push({ ...pushed, server: SERVER }) });
+    await phone.task!({ data: push({ ...pushed, device: DEVICE }) });
     expect(phone.shown).toEqual([
       {
         identifier: "0:fcm-1",
-        // The server kept, for its actions to check.
-        content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, server: SERVER }, categoryIdentifier: "conversation", sound: "default" },
+        // The registration's id kept, for its actions to check.
+        content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, device: DEVICE }, categoryIdentifier: "conversation", sound: "default" },
         trigger: { channelId: "default" },
       },
     ]);
   });
 
-  it("shows nothing signed out, from another server, or for a push that isn't a server's", async () => {
+  it("shows nothing signed out, for a sign-in since left, or for a push that isn't a server's", async () => {
     phone.os = "android";
     const { present } = await load();
     phone.stored.clear();
@@ -432,7 +462,8 @@ describe("on Android", () => {
     signIn();
     await present(push({ ...pushed, project: "Not a slug" }));
     await present(push({ project: "acme", conversation: 7 }));
-    await present(push({ ...pushed, server: "https://other.example" }));
+    await present(push({ ...pushed, device: "an-id-since-left" }));
+    await present(push({ ...pushed, device: undefined }));
     await present({ data: { body: "not JSON" } });
     await present(null);
     expect(phone.shown).toEqual([]);
@@ -457,7 +488,7 @@ describe("on Android", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(phone.shown).toEqual([{ identifier: "push-1", content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, sent: true }, sound: false }, trigger: { channelId: "default" } }]);
+    expect(phone.shown).toEqual([{ identifier: "push-1", content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, device: DEVICE, sent: true }, sound: false }, trigger: { channelId: "default" } }]);
     expect(phone.dismissed).toEqual(["push-1"]);
   });
 

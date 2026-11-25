@@ -6,7 +6,7 @@ import { AppState, Platform } from "react-native";
 import { ApiError, createApi } from "./api";
 import { draftsGeneration, sendReply, trackSend, type Unsent, updateDraft } from "./conversation";
 import { screenKey, updateConversation } from "./details";
-import { CHANNEL, fromServer, isTheirs, type Target, targetOf } from "./notifications";
+import { CHANNEL, forThisSignIn, isTheirs, type Target, targetOf } from "./notifications";
 import { readSession } from "./session-store";
 
 /**
@@ -43,15 +43,28 @@ export const setCategory = () =>
 const done = new Set<string>();
 
 /**
- * How long a request from a notification waits for its answer: a phone can leave one hanging for minutes (a network
- * that went and came back), which would say nothing at all. A reply whose answer this gave up on may have been saved:
- * its `requestId` makes Retry give back the one saved, not a second.
+ * How long a request from a notification waits for its answer, body and all: a phone can leave one hanging for minutes
+ * (a network that went and came back), which would say nothing at all. A reply whose answer this gave up on may have been
+ * saved: its `requestId` makes Retry give back the one saved, not a second.
  */
 export const ACTION_TIMEOUT_MS = 15_000;
-const timedFetch: typeof fetch = (input, init) => {
+const timedFetch: typeof fetch = async (input, init) => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ACTION_TIMEOUT_MS);
-  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new TypeError("Timed out"));
+    }, ACTION_TIMEOUT_MS);
+  });
+  try {
+    // The answer's body too: headers can come and the body never (the network gone in between).
+    const response = await Promise.race([fetch(input, { ...init, signal: controller.signal }), deadline]);
+    const body = await Promise.race([response.text(), deadline]);
+    return new Response(body || null, { status: response.status, statusText: response.statusText, headers: response.headers });
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 /** What the failure notification says, in the server's words where it gave them. */
@@ -60,7 +73,7 @@ const reasonOf = (error: unknown) => (error instanceof ApiError || error instanc
 /** Why an action wasn't taken, said in the notification left in its place. */
 export const SIGNED_OUT = "You're signed out of Tuti.";
 export const NOT_YOURS = "It's in a project you're not on.";
-export const OTHER_SERVER = "It's from a Tuti server you're not signed in to.";
+export const SIGNED_OUT_SINCE = "It's for an account you've since signed out of.";
 
 /**
  * The response as the last one the system keeps, forgotten once it's taken: a later start of the app's JavaScript (a
@@ -74,11 +87,11 @@ function forget({ actionIdentifier, userText, notification }: Notifications.Noti
 }
 
 /**
- * Acts on a Reply or Close: as the signed-in teammate, in the notification's project when it's one of theirs, on its
- * server. Done, the notification goes. Not done, it goes too (Android would keep a reply's spinner), and one in its place
+ * Acts on a Reply or Close: as the signed-in teammate, in the notification's project when it's one of theirs, when it
+ * was pushed to this sign-in (`forThisSignIn`). Done, the notification goes. Not done, it goes too (Android would keep a reply's spinner), and one in its place
  * says why and opens the conversation, so nothing typed is lost unsaid. A reply is in the conversation's draft, as one
  * being sent, from before it's sent until it's saved (the app's process can end meanwhile), and stays there with Retry
- * when it fails; signed out, in a project that isn't theirs, or from another server, nothing is sent or kept: only why.
+ * when it fails; signed out, for a sign-in since left, or in a project that isn't theirs, nothing is sent or kept: only why.
  */
 export async function act(response: Notifications.NotificationResponse) {
   const { actionIdentifier: action } = response;
@@ -101,8 +114,8 @@ export async function act(response: Notifications.NotificationResponse) {
   // the app's other JavaScript, which has generations of its own) while the send is on its way keeps nothing of it.
   const since = draftsGeneration();
   const session = await readSession();
-  if (!session || !fromServer(target, session)) {
-    await tell(response, target, session ? OTHER_SERVER : SIGNED_OUT, false);
+  if (!session || !(await forThisSignIn(target))) {
+    await tell(response, target, session ? SIGNED_OUT_SINCE : SIGNED_OUT, false);
     return;
   }
   const draftKey = screenKey({ server: session.server, project: target.project }, target.number);
@@ -165,8 +178,8 @@ export async function act(response: Notifications.NotificationResponse) {
 /**
  * A push received on Android, as the task is given it: the server's are data only (packages/jobs push.ts), its `data`
  * in `data.body` as JSON with the notification's `title` and `text`, and shown here with the category's Reply and Close
- * (Firebase shows a push with a title itself while the app isn't in front, without them). Only while signed in to its
- * server: a push a sign-out that didn't reach the server left coming shows nothing.
+ * (Firebase shows a push with a title itself while the app isn't in front, without them). Only for this sign-in: a push
+ * a sign-out that didn't reach the server left coming shows nothing.
  */
 export async function present(payload: unknown) {
   const { data: raw, messageId } = (payload ?? {}) as { data?: { body?: unknown } | null; messageId?: unknown };
@@ -179,8 +192,8 @@ export async function present(payload: unknown) {
   const target = targetOf(data);
   const title = typeof data.title === "string" ? data.title : null;
   const session = title && target ? await readSession() : null;
-  // Only from the server signed in to, which the notification keeps saying for its actions.
-  if (!target || !title || !session || !fromServer(target, session)) {
+  // Only for this sign-in, which the notification keeps saying for its actions.
+  if (!target || !title || !session || !(await forThisSignIn(target))) {
     return;
   }
   const at = seenOf(data);
@@ -190,7 +203,7 @@ export async function present(payload: unknown) {
     content: {
       title,
       ...(typeof data.text === "string" && { body: data.text }),
-      data: { project: target.project, conversation: target.number, ...(at && { at }), ...(target.server && { server: target.server }) },
+      data: { project: target.project, conversation: target.number, ...(at && { at }), ...(target.device && { device: target.device }) },
       categoryIdentifier: CATEGORY,
       sound: "default",
     },
@@ -255,10 +268,10 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function tell(response: Notifications.NotificationResponse, target: Target, reason: string, kept: boolean) {
   await remove(response);
   await Notifications.scheduleNotificationAsync({
-    // With its server: tapped, it opens the conversation only when signed in there (openTarget).
+    // With its registration's id: tapped, it opens the conversation only while that's still this sign-in (openTarget).
     content: {
       ...failure(response.actionIdentifier, response.notification.request.content.title, reason, kept),
-      data: { project: target.project, conversation: target.number, ...(target.server && { server: target.server }) },
+      data: { project: target.project, conversation: target.number, ...(target.device && { device: target.device }) },
     },
     trigger: Platform.OS === "android" ? { channelId: CHANNEL } : null,
   });

@@ -6,7 +6,6 @@ import { AndroidImportance, IosAuthorizationStatus } from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 
 import { type Api, ApiError } from "./api";
-import { normalizeServer } from "./server";
 import type { Session } from "./session-store";
 import { STORE_OPTIONS } from "./sign-in";
 
@@ -165,24 +164,23 @@ export const dismissDelivered = () => Notifications.dismissAllNotificationsAsync
 
 /**
  * A notification's conversation: `data` as the server sends it, checked, since anything on the phone can post one. With
- * the server it's from (`server`, packages/jobs push.ts), when it says.
+ * the id of the phone's registration it was pushed to (`device`, packages/jobs push.ts), when it says.
  */
-export type Target = { project: string; number: number; server?: string };
+export type Target = { project: string; number: number; device?: string };
 export function targetOf(data: unknown): Target | null {
-  const { project, conversation, server } = (data ?? {}) as { project?: unknown; conversation?: unknown; server?: unknown };
+  const { project, conversation, device } = (data ?? {}) as { project?: unknown; conversation?: unknown; device?: unknown };
   if (typeof project !== "string" || !/^[a-z0-9][a-z0-9-]{0,99}$/.test(project) || !Number.isSafeInteger(conversation) || (conversation as number) < 1) {
     return null;
   }
-  return { project, number: conversation as number, ...(typeof server === "string" && { server }) };
+  return { project, number: conversation as number, ...(typeof device === "string" && { device }) };
 }
 
 /**
- * Whether a notification is from the server the session is on: another server can have a project of the same slug. One
- * that doesn't say (a server from before it did) is taken to be.
+ * Whether a notification is for this phone's sign-in now: pushed to the id it registered under (`deviceId`), which
+ * changes on every sign-out. One for a session since left, on any server (another can have a project of the same slug),
+ * isn't; one for this one is, whichever of its server's addresses the teammate signed in with. One that names no id isn't.
  */
-export const fromServer = (target: Target, session: { server: string }) =>
-  // Both as origins: a session stored before default ports were left out can still have one.
-  target.server === undefined || normalizeServer(target.server) === normalizeServer(session.server);
+export const forThisSignIn = async (target: Target) => !!target.device && target.device === (await deviceId().catch(() => null));
 
 /** The conversation a tap opens: a tap on the notification itself (not one of its actions), with a conversation in it. */
 export const tapped = (response: Notifications.NotificationResponse | null | undefined) =>
@@ -227,7 +225,7 @@ export const isTheirs = async (target: Target, session: Session, projects: () =>
  * Opens a tapped notification's conversation, in its project, over the Inbox: the screens open go first (`leave`), so
  * it never opens over a sheet, and a conversation open can't show another project's of its number. Another project: only
  * one of the teammate's (`projects`, their slugs; a notification left from another account, or posted by something else,
- * opens nothing), switched to before it opens. Signed out, or from another server, nothing (sign-in is all there is).
+ * opens nothing), switched to before it opens. Signed out, or for a sign-in since left, nothing (sign-in is all there is).
  */
 export async function openTarget(
   target: Target,
@@ -235,7 +233,9 @@ export async function openTarget(
   setProject: (slug: string) => Promise<void>,
   { leave, open, projects }: { leave: () => void; open: (path: string) => void; projects: () => Promise<string[]> },
 ) {
-  if (!session || !fromServer(target, session)) {
+  // A tap only opens, in the teammate's own projects: one that names no registration (posted by the app before pushes
+  // named one) still does; one for a sign-in since left doesn't.
+  if (!session || (target.device !== undefined && !(await forThisSignIn(target)))) {
     return;
   }
   const other = session.project !== target.project;
