@@ -25,7 +25,13 @@ jest.mock("expo-router", () => {
 });
 let mockFocus: (() => void) | null = null;
 let mockCovered = false;
-jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
+jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 120 }));
+// A plain view with its props, so a test reads the offset it was given.
+jest.mock("react-native/Libraries/Components/Keyboard/KeyboardAvoidingView", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return { __esModule: true, default: (props: object) => React.createElement(View, { ...props, testID: "keyboard-avoiding" }) };
+});
 jest.mock("expo-symbols", () => ({ SymbolView: () => null }));
 jest.mock("expo-image-picker", () => ({ UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" } }));
 jest.mock("expo-document-picker", () => ({}));
@@ -317,11 +323,28 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
       window.mockWindow = { ...narrow, width: 1280, height: 800 };
       await view.rerender(<ConversationRoute />);
       expect(dismissTo()).not.toHaveBeenCalled();
+      // Still under the sheet, and seen again as it closes: never blank meanwhile.
+      expect(screen.getByText("Hi! The export stops at 500 rows.")).toBeTruthy();
     } finally {
       mockCovered = false;
     }
     await view.rerender(<ConversationRoute />);
     expect(dismissTo()).toHaveBeenCalledWith({ pathname: "/", params: { c: "12", p: "acme" } });
+    expect(screen.queryByText("Hi! The export stops at 500 rows.")).toBeNull();
+  });
+
+  it("keeps the composer on the keyboard in the pane on iOS: the Inbox already put it under the header", async () => {
+    window.mockWindow = { ...narrow, width: 1280, height: 800 };
+    const view = await render(<ConversationPane number={12} onLeave={() => {}} />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    expect(screen.getByTestId("keyboard-avoiding").props.keyboardVerticalOffset).toBe(0);
+    await view.unmount();
+
+    // Its own screen still lifts it by the header it's under.
+    window.mockWindow = narrow;
+    await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    expect(screen.getByTestId("keyboard-avoiding").props.keyboardVerticalOffset).toBe(120);
   });
 
   it("forgets a conversation chosen beside the Inbox when it opens on its own (a narrow window)", async () => {

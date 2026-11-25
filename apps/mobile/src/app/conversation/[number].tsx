@@ -88,10 +88,13 @@ export default function ConversationRoute() {
   const { number } = useLocalSearchParams<{ number: string }>();
   const { session } = useSession();
   const wide = useWide();
+  // Shown until it hands off (one opened in a wide window never is): widened under the details sheet, it stays on screen.
+  const [handingOff, setHandingOff] = useState(wide);
   // Only while it's in front: with the details sheet over it, once the sheet has closed.
   useFocusEffect(
     useCallback(() => {
       if (wide) {
+        setHandingOff(true);
         router.dismissTo({ pathname: "/", params: { c: number, p: session?.project } });
       }
     }, [wide, number, session?.project]),
@@ -102,7 +105,7 @@ export default function ConversationRoute() {
       forgetChosen();
     }
   }, [wide]);
-  if (wide) {
+  if (handingOff) {
     return null;
   }
   // One screen per conversation: its draft is read once, and goes with it.
@@ -382,7 +385,12 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
     : [];
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.card }} behavior="padding" keyboardVerticalOffset={headerHeight}>
+    // In the pane on iOS the Inbox's padding already puts it under the header: counted again, the composer floats above the keyboard.
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.card }}
+      behavior="padding"
+      keyboardVerticalOffset={pane && IOS ? 0 : headerHeight}
+    >
       {pane ? (
         // Beside the list: its header in the pane, the Inbox's own header above both.
         <View style={[styles.paneHeader, { borderBottomColor: colors.border }]}>
