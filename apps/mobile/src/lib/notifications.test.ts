@@ -106,6 +106,11 @@ describe("asking for permission", () => {
     expect(await shouldOffer()).toBe(true);
   });
 
+  it("is offered on Android, which calls a permission it never asked for denied, but can ask", async () => {
+    system.permissions = { granted: false, status: "denied", canAskAgain: true };
+    expect(await (await load()).shouldOffer()).toBe(true);
+  });
+
   it("isn't offered once allowed or refused", async () => {
     expect(await (await load()).shouldOffer()).toBe(false);
     files.clear();

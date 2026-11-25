@@ -26,7 +26,7 @@ export function appConfig(env: Env): ExpoConfig {
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
-      // Pushes name no channel, so Expo's push service sends them to `default`, which the app makes (src/lib/notifications.ts).
+      // The server's pushes name the `default` channel, which the app makes (src/lib/notifications.ts); also Firebase's own.
       ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#12804a", defaultChannel: "default" }],
       // Photos for replies come from the system's picker: no camera or microphone, so the app never asks for them.
       ["expo-image-picker", { photosPermission: "Tuti attaches the photos you choose to your replies.", cameraPermission: false, microphonePermission: false }],

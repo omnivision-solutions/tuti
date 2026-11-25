@@ -20,7 +20,7 @@ type Platform = "ios" | "android";
 const DEVICE_ID = "device-id";
 /** Asked already, in a file rather than the keychain: iOS forgets the permission on reinstalling, and so does this. */
 const asked = () => new File(Paths.document, "notifications-asked");
-/** Where pushes without a channel of their own go: Expo's push service sends to `default` when none is named. */
+/** The channel the server's pushes name (packages/jobs push.ts): unnamed, they'd go to Expo's own "Miscellaneous". */
 const CHANNEL = "default";
 
 /**
@@ -75,7 +75,8 @@ export async function shouldOffer() {
     }
     file.writeSync("1");
     const now = await Notifications.getPermissionsAsync();
-    return !now.granted && now.status === Notifications.PermissionStatus.UNDETERMINED && now.canAskAgain;
+    // Not the status: Android calls a permission it never asked for "denied", with canAskAgain.
+    return !now.granted && now.canAskAgain;
   } catch {
     return false;
   }
