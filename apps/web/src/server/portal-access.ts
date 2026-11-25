@@ -5,7 +5,7 @@ import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
 import type { Session } from "@/lib/auth";
-import { inGroup, storedRule } from "@/lib/group-conditions";
+import { inGroup, storedRule } from "@tuti/shared/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { storedProperties } from "@tuti/shared/user-properties";
@@ -149,7 +149,7 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
 /**
  * Who's reading, for what of the docs they may read (see lib/read-access.ts): null for the project's
  * team (everything; onTeam: never with a portal's session); else whether they're signed in, and the keys of the groups they're in as the
- * project's user (by their properties, see lib/group-conditions.ts): the one
+ * project's user (by their properties, see @tuti/shared/group-conditions): the one
  * its SSO signed them in as, or, signed in another way, the ones with their address once it's
  * verified (any of them puts them in a group). None for everyone else, and none on a plan without
  * reader groups. Once per request: pages ask many times.

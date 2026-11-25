@@ -6,7 +6,7 @@ import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
-import { aiEnabled } from "@tuti/shared";
+import { aiEnabled, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cn } from "cn";
 import { ExternalLinkIcon } from "lucide-react";
@@ -27,9 +27,11 @@ import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
 import { portalAddress } from "@/server/custom-domains";
-import { getMembership } from "@/server/membership";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
+import { getMembership, isAdminRole } from "@/server/membership";
 import { lastingImage, lastingMediaUrl, mediaUrls } from "@/server/media-urls";
 import { pageTitle } from "@/lib/page-title";
+import { claimsOf, groupClaims } from "@/lib/reader-groups";
 
 /** The tab: the entry's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/changelog/[number]">): Promise<Metadata> {
@@ -59,6 +61,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       body: true,
       content: true,
       tags: true,
+      groups: groupClaims,
       updatedAt: true,
       publishedAt: true,
       announced: true,
@@ -91,8 +94,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     entry.subscribersEmailedAt &&
     sent === 0 &&
     (await prisma.importedRecord.findFirst({ where: { projectId: membership.project.id, source: { in: Object.values(ImportSource) }, kind: "changelog-emailed", localId: entry.id }, select: { source: true } }));
-  // Counted as the email job picks them (changelogReach); null on a private portal, which emails nobody.
-  const subscribers = await subscriberCount(membership.project.id);
+  // Counted as the email job picks them (changelogReach, the entry's groups); null on a private portal, which emails nobody.
+  const subscribers = await subscriberCount(membership.project.id, entry.id);
   // A draft not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to
   // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts). Still the pull requests' titles,
   // or the one line each Autopilot wrote into the running draft: neither is release notes.
@@ -228,6 +231,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 title: entry.title,
                 content: displayDoc(entry) as Doc,
                 tags: entry.tags.map((t) => t.toLowerCase() as TagName),
+                groups: claimsOf(entry),
                 posts: listed,
                 published: entry.publishedAt !== null,
                 cover,
@@ -243,6 +247,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 emailPaused: await projectEmailWaits(membership.project.id),
               }}
               subscribers={subscribers}
+              groupsUpgrade={planIncludes(membership.project.plan, "privatePortal") ? null : upgradePrompt("privatePortal", slug, isAdminRole(membership.role))}
+              groups={await prisma.readerGroup.findMany({ where: { projectId: membership.project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } })}
               posts={posts}
               standing={
                 <>

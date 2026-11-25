@@ -5,6 +5,7 @@ import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
 import { dismissDelivered, forgetDeviceId, removeDevice } from "./notifications";
+import { forgetCached, startCache } from "./offline";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
@@ -39,6 +40,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void dismissDelivered();
     setSession(null);
     forgetDrafts();
+    // And what was kept to read offline: the next person never sees this one's customers.
+    forgetCached();
     await inTurn(async () => {
       await removed;
       await forgetSession();
@@ -70,6 +73,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await inTurn(async () => {
       if (draftsGoWith(await readSession(), which)) {
         forgetDrafts();
+        forgetCached();
         // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too. And the
         // phone's id, as a sign-out changes it: a push sent before and delivered after names the old one.
         void dismissDelivered();
@@ -111,7 +115,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContext>(
     () => ({
       session,
-      signIn: (signedIn) => save(signedIn),
+      // Every sign-in starts with nothing kept, however the last session went (a restored phone, a lost keystore), and
+      // owns what it keeps from then on.
+      signIn: (signedIn) => save({ ...signedIn, owner: startCache() }),
       signOut,
       // Shown once saved, and only if it's still the session in use (signed out meanwhile stays signed out).
       setProject: (project) => (session ? choose(session, project) : Promise.resolve()),

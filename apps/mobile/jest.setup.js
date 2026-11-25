@@ -15,3 +15,31 @@ jest.mock("react-native-gesture-handler/ReanimatedSwipeable", () => {
     },
   };
 });
+
+// Expo's SQLite key-value store, in memory: one map per database.
+jest.mock("expo-sqlite/kv-store", () => {
+  const databases = new Map();
+  class SQLiteStorage {
+    constructor(name) {
+      this.items = databases.get(name) ?? new Map();
+      databases.set(name, this.items);
+    }
+    getItemSync(key) {
+      return this.items.get(key) ?? null;
+    }
+    setItemSync(key, value) {
+      this.items.set(key, value);
+    }
+    removeItemSync(key) {
+      return this.items.delete(key);
+    }
+    clearSync() {
+      this.items.clear();
+      return true;
+    }
+    getAllKeysSync() {
+      return [...this.items.keys()];
+    }
+  }
+  return { __esModule: true, SQLiteStorage, default: new SQLiteStorage("ExpoSQLiteStorage") };
+});

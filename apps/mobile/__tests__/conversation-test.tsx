@@ -4,6 +4,7 @@ import { AccessibilityInfo } from "react-native";
 
 import ConversationRoute from "@/app/conversation/[number]";
 import { ApiError } from "@/lib/api";
+import { cached, cacheGeneration, conversationKey, forgetCached, keep, startCache } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
 
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
@@ -13,10 +14,14 @@ jest.mock("expo-router", () => {
     Stack: { Screen: () => null },
     useLocalSearchParams: () => ({ number: "12" }),
     router: { back: jest.fn(), canGoBack: () => true },
-    // Focused once it's on screen.
-    useFocusEffect: (effect: () => void) => React.useEffect(() => effect(), [effect]),
+    // Focused once it's on screen, and again when the test says it came back (`mockFocus`).
+    useFocusEffect: (effect: () => void) => {
+      mockFocus = effect;
+      React.useEffect(() => effect(), [effect]);
+    },
   };
 });
+let mockFocus: (() => void) | null = null;
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("expo-symbols", () => ({ SymbolView: () => null }));
 jest.mock("expo-image-picker", () => ({ UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" } }));
@@ -36,7 +41,7 @@ jest.mock("expo-file-system", () => {
   return { File: Entry, Directory: Entry, Paths: { document: "documents" } };
 });
 
-const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
+const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme", owner: "owner-1" };
 const mockApi = jest.fn<(path: string, init?: { method?: string; body?: unknown }) => Promise<unknown>>();
 jest.mock("@/lib/session", () => ({ useApi: () => mockApi, useSession: () => ({ session: mockSession }) }));
 // The live stream is tested on its own (src/lib/conversation.test.ts).
@@ -167,5 +172,90 @@ describe("a Send and close whose reply arrived, the conversation still waiting o
     expect(await screen.findByText(`Sent, but not closed: ${NETWORK}`)).toBeTruthy();
     expect(announce).toHaveBeenCalledWith(`Sent, but not closed: ${NETWORK}`);
     expect(announce).not.toHaveBeenCalledWith("Not sent");
+  });
+});
+
+describe("reading offline", () => {
+  beforeEach(() => {
+    forgetDrafts();
+    // A signed-in session's own cache, empty.
+    startCache(mockSession.owner);
+  });
+  afterEach(() => void jest.useRealTimers());
+
+  it("shows a conversation as it was last opened, saying it's offline and when, with no connection", async () => {
+    jest.useFakeTimers({ now: new Date("2026-11-25T10:00:00Z") });
+    mockApi.mockImplementation(async (path) => (path === "/conversations/12" ? conversation([message({})]) : {}));
+    const opened = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    await opened.unmount();
+
+    jest.setSystemTime(new Date("2026-11-25T10:20:00Z"));
+    mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
+    await render(<ConversationRoute />);
+    expect(await screen.findByText("Hi! The export stops at 500 rows.")).toBeTruthy();
+    expect(screen.getByText("Offline · updated 20 minutes ago")).toBeTruthy();
+    expect(screen.queryByText(NETWORK)).toBeNull();
+  });
+
+  it("keeps what's on screen when a refresh finds no connection, rather than an older kept copy, saying so", async () => {
+    mockApi.mockImplementation(async (path) => (path === "/conversations/12" ? conversation([message({ body: "The newest." })]) : {}));
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => {});
+    await render(<ConversationRoute />);
+    await screen.findByText("The newest.");
+    // What was kept is older (a change the sheet made since, say).
+    keep(conversationKey(mockSession, 12), conversation([message({ body: "An older copy." })]), cacheGeneration(), mockSession.owner);
+
+    mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
+    announce.mockClear();
+    await act(async () => mockFocus!());
+    expect(screen.getByText("The newest.")).toBeTruthy();
+    expect(screen.queryByText("An older copy.")).toBeNull();
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+    // Said to VoiceOver too.
+    expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Offline · updated/));
+  });
+
+  it("dates the note from the last load that landed, and moves it on with the clock", async () => {
+    jest.useFakeTimers({ now: new Date("2026-11-25T10:00:00Z") });
+    mockApi.mockImplementation(async (path) => (path === "/conversations/12" ? conversation([message({})]) : {}));
+    await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    // Nothing kept (signed out elsewhere meanwhile, say): the note still dates from that load.
+    forgetCached();
+
+    await act(() => jest.advanceTimersByTimeAsync(15 * 60_000));
+    mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
+    await act(async () => mockFocus!());
+    expect(screen.getByText("Offline · updated 15 minutes ago")).toBeTruthy();
+    await act(() => jest.advanceTimersByTimeAsync(5 * 60_000));
+    expect(screen.getByText("Offline · updated 20 minutes ago")).toBeTruthy();
+  });
+
+  it("keeps nothing from a load that answers after everything was forgotten (signed out)", async () => {
+    let answer!: (conversation: Conversation) => void;
+    mockApi.mockImplementation((path) => (path === "/conversations/12" ? new Promise((resolve) => (answer = resolve as never)) : Promise.resolve({})));
+    await render(<ConversationRoute />);
+    forgetCached();
+    await act(async () => answer(conversation([message({ body: "Another account's customer." })])));
+    expect(cached(conversationKey(mockSession, 12), mockSession.owner)).toBeNull();
+  });
+
+  it("says why when it was never opened", async () => {
+    mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
+    await render(<ConversationRoute />);
+    expect(await screen.findByText(NETWORK)).toBeTruthy();
+  });
+
+  it("says the server's words, not the kept copy, when the server answers with an error", async () => {
+    mockApi.mockImplementation(async (path) => (path === "/conversations/12" ? conversation([message({})]) : {}));
+    const opened = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    await opened.unmount();
+
+    mockApi.mockImplementation(() => Promise.reject(new ApiError(404, "not_found", "Conversation not found.")));
+    await render(<ConversationRoute />);
+    expect(await screen.findByText("Conversation not found.")).toBeTruthy();
+    expect(screen.queryByText("Hi! The export stops at 500 rows.")).toBeNull();
   });
 });

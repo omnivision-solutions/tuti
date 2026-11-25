@@ -7,7 +7,7 @@ vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
 
-const { HowAnnounced, publishSummary } = await import("./changelog");
+const { HowAnnounced, publishSummary, WhoSeesIt } = await import("./changelog");
 
 /** The Publish dialog's line, as text (the count's popover aside). */
 const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
@@ -17,7 +17,7 @@ const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
 
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
-  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean },
+  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean; groups?: string[] },
   subscribers: number | null = 3,
 ) =>
   renderToStaticMarkup(
@@ -27,6 +27,7 @@ const sidebar = (
         title: "Dark mode",
         content: { type: "doc", content: [] },
         tags: [],
+        groups: [],
         posts: [],
         cover: null,
         told: null,
@@ -83,7 +84,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
   test("a draft on a private portal (subscribers null: nothing is emailed from one) offers no email: the checkbox off and disabled, and says why", () => {
     const html = renderToStaticMarkup(
       createElement(HowAnnounced, {
-        entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
+        entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], groups: [], posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
         subscribers: null,
       }),
     );
@@ -149,5 +150,30 @@ describe("the Publish dialog's line", () => {
 
   test("nobody to email: no count", () => {
     expect(line({ posts: 1 })).toBe("It goes on your portal and in your widget, completes 1 post.");
+  });
+});
+
+describe("Who sees it", () => {
+  test("a draft for some groups counts, and says it counts, only the subscribers in them", () => {
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 0)).toContain("Nobody in its groups has subscribed.");
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 1)).toContain("1 person in its groups subscribed.");
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 0)).toContain("Nobody has subscribed yet.");
+  });
+
+  const groups = [{ key: "enterprise", name: "Enterprise" }];
+  const picker = (upgrade: { title: string; billingHref: string | null; note: string | null } | null) =>
+    renderToStaticMarkup(createElement(WhoSeesIt, { groups, picked: ["enterprise"], upgrade, onChange: () => {} }));
+
+  test("the groups are sent only once a pick changes: a save of the text keeps the ones set meanwhile, and needs no plan for them", () => {
+    expect(picker(null)).toMatch(/<input type="checkbox"[^>]*name="groups" checked="" value="enterprise"/);
+    expect(picker(null)).not.toContain("groupsEditable");
+  });
+
+  test("on a plan without reader groups, each group's description names the plan it needs", () => {
+    const html = picker({ title: "Reader groups need the Business plan", billingHref: null, note: null });
+    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeTruthy();
+    expect(html).toContain(`id="${id}" hidden="">Reader groups need the Business plan</span>`);
+    expect(picker(null)).not.toContain("aria-describedby");
   });
 });

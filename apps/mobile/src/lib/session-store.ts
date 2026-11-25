@@ -4,7 +4,7 @@ import { authRequest } from "./api";
 import { type SignedIn, STORE_OPTIONS } from "./sign-in";
 
 /** The signed-in teammate's session: the server, its token for /api/v1, its cookie for /api/auth, and the project they chose. */
-export type Session = SignedIn & { project?: string };
+export type Session = SignedIn & { project?: string; owner?: string };
 
 const KEY = "session";
 

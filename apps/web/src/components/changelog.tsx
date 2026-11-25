@@ -7,6 +7,9 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
 import { CheckIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
+
+import { UpgradeDialog } from "@/components/upgrade-dialog";
+import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import {
   createContext,
   type ReactNode,
@@ -84,6 +87,8 @@ type Entry = {
   title: string;
   content: Doc;
   tags: TagName[];
+  /** The keys of the reader groups it's for; none: everyone. */
+  groups: string[];
   posts: number[];
   published: boolean;
   /** Its cover (the featured image): a link to its thumbnail size. */
@@ -114,7 +119,7 @@ type PostOption = PickablePost & { status: PostStatus };
 const CHANGELOG_FORM = "changelog-form";
 /** AiHelpers' menu button: Draft with AI's dialog gives the keyboard's focus back to it once the text is written. */
 const EDIT_WITH_AI = "edit-with-ai";
-const ChangelogSavingContext = createContext<{
+export const ChangelogSavingContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
   /** Publish, Unpublish or Draft with AI is running: Save waits for it, as they wait for a save (one would undo the other). */
@@ -135,6 +140,9 @@ const ChangelogSavingContext = createContext<{
   /** The form's featured image isn't the saved one (one uploaded or removed, not saved yet): Publish offers no cover of its own over it. */
   coverChanged: boolean;
   setCoverChanged: (changed: boolean) => void;
+  /** "Who sees it" changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
+  groupsChanged: boolean;
+  setGroupsChanged: (changed: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -147,9 +155,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [drafting, setDrafting] = useState(false);
   const [locked, setLocked] = useState(false);
   const [coverChanged, setCoverChanged] = useState(false);
+  const [groupsChanged, setGroupsChanged] = useState(false);
   return (
     <ChangelogSavingContext
-      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged }}
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged, groupsChanged, setGroupsChanged }}
     >
       {children}
     </ChangelogSavingContext>
@@ -512,9 +521,15 @@ export function ChangelogForm({
   aiPaused = false,
   subscribers = 0,
   pullRequests = null,
+  groups = [],
+  groupsUpgrade = null,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** The project's reader groups, for "Who sees it" (not shown without any). */
+  groups?: { key: string; name: string }[];
+  /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking works: changelog.update needs the plan only for groups added). */
+  groupsUpgrade?: UpgradePrompt | null;
   /** The cover designs "Make a cover" offers (a saved entry, where uploads are set up). */
   covers?: CoverChoices | null;
   /** Its merged pull requests, in their section; null for none (GitHub isn't connected and it has none). */
@@ -535,6 +550,8 @@ export function ChangelogForm({
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
+  // Saves so far: "Who sees it" starts afresh after each (from the saved groups), its picks sent again only once changed.
+  const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
   const [published, setPublished] = useState(entry?.published);
   if (published !== entry?.published) {
@@ -543,16 +560,17 @@ export function ChangelogForm({
   }
   // The featured image uploading (how many): Save waits, "Uploading…" showing on it.
   const [uploading, setUploading] = useState(0);
+  const saving = useContext(ChangelogSavingContext);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
       setDirty(false);
+      setSaves((n) => n + 1);
       toast.success("Saved");
     }
     return result;
   }, {});
   // The top bar's Save (ChangelogSaveButton) says when it's saving too.
-  const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   useEffect(() => saving?.setUploading(uploading > 0), [saving, uploading]);
   const link = (numbers: number[]) => {
@@ -664,6 +682,7 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
+        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} saving={pending} onChange={() => setDirty(true)} />}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
@@ -677,6 +696,92 @@ export function ChangelogForm({
         {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
       </aside>
     </form>
+  );
+}
+
+/**
+ * "Who sees it": the reader groups an entry is for, as chips (none picked: everyone). Sent with the form only once a
+ * pick changed, so a save of the text never touches groups set meanwhile (by the API, or a teammate), nor needs the
+ * plan for ones it already has.
+ */
+export function WhoSeesIt({
+  groups,
+  picked,
+  upgrade,
+  saving: pending = false,
+  onChange,
+}: {
+  groups: { key: string; name: string }[];
+  picked: string[];
+  upgrade: UpgradePrompt | null;
+  /** A save is running: the picks wait for it (one made now would be dropped as the picker starts afresh after it). */
+  saving?: boolean;
+  onChange: () => void;
+}) {
+  const [changed, setChanged] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  // Told to Publish, which waits for it: while this picker has a change it hasn't saved, and no longer once it's gone
+  // (started afresh after a save, or with the form when new saved text replaces it, which drops the picks too).
+  const saving = useContext(ChangelogSavingContext);
+  useEffect(() => {
+    saving?.setGroupsChanged(changed);
+    return () => saving?.setGroupsChanged(false);
+  }, [saving, changed]);
+  const needsId = useId();
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="group-label mb-2">Who sees it</legend>
+      {changed && <input type="hidden" name="groupsEditable" value="1" />}
+      <div className="flex flex-wrap gap-2">
+        {groups.map((group) => (
+          <label
+            key={group.key}
+            className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+          >
+            <input
+              type="checkbox"
+              name="groups"
+              value={group.key}
+              defaultChecked={picked.includes(group.key)}
+              // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
+              aria-disabled={pending || undefined}
+              aria-describedby={upgrade ? needsId : undefined}
+              onClick={(event) => {
+                if (pending) {
+                  event.preventDefault();
+                  return;
+                }
+                // Picking one needs the plan: the prompt opens and it stays unpicked.
+                if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
+                  event.preventDefault();
+                  setUpgrading(true);
+                }
+              }}
+              onChange={(event) => {
+                // The pick the prompt refused, or made while a save runs (onClick put it back), isn't a change.
+                if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
+                  return;
+                }
+                setChanged(true);
+                onChange();
+              }}
+              className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
+            />
+            <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
+            {group.name}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
+      {upgrade && (
+        <>
+          <span id={needsId} hidden>
+            {upgrade.title}
+          </span>
+          <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />
+        </>
+      )}
+    </fieldset>
   );
 }
 
@@ -800,9 +905,14 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 ? "Your project's email is paused."
                 : subscribers === null
                 ? "Your portal is private, so it isn't emailed."
-                : subscribers === 0
-                  ? "Nobody has subscribed yet."
-                  : `${people(subscribers)} subscribed.`,
+                : entry.groups.length > 0
+                  ? // Counted in its groups only (changelogEmailed sends it to no one else).
+                    subscribers === 0
+                    ? "Nobody in its groups has subscribed."
+                    : `${people(subscribers)} in its groups subscribed.`
+                  : subscribers === 0
+                    ? "Nobody has subscribed yet."
+                    : `${people(subscribers)} subscribed.`,
               { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}
@@ -1849,6 +1959,8 @@ export function ChangelogEntryActions({
   // Pull requests' titles aren't release notes: writing them is the next step, not publishing them.
   // Text this release's editor can't show isn't rewritten by AI either (ChangelogForm's onUnreadable).
   const locked = saving?.locked ?? false;
+  // Who it's for changed and isn't saved: Publish would send it to whoever the saved groups say.
+  const groupsUnsaved = saving?.groupsChanged ?? false;
   const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused && !locked;
   // Sample and imported entries go out without announcing (changelog.publish): no subscriber is emailed.
   const summary = publishSummary({
@@ -1955,13 +2067,21 @@ export function ChangelogEntryActions({
       <AlertDialogContent className={cn("max-h-[calc(100dvh-2rem)] overflow-y-auto", covers && "sm:max-w-md")}>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {markers.length > 0 ? (markers.length === 1 ? "Replace a line before publishing" : `Replace ${markers.length} lines before publishing`) : `Publish “${title}”?`}
+            {markers.length > 0
+              ? markers.length === 1
+                ? "Replace a line before publishing"
+                : `Replace ${markers.length} lines before publishing`
+              : groupsUnsaved
+                ? "Save who sees it before publishing"
+                : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
           {/* A div, so the note on text not written yet is in it too: all of it is read out as the dialog opens. */}
           <AlertDialogDescription render={<div />} className={cn("flex flex-col gap-3", markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
-            {markers.length > 0 ? (
+            {markers.length === 0 && groupsUnsaved ? (
+              <p>{`You changed who sees “${title}” and haven't saved it. Save, then publish.`}</p>
+            ) : markers.length > 0 ? (
               <p>{`“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`}</p>
             ) : (
               <p>
@@ -2006,7 +2126,7 @@ export function ChangelogEntryActions({
           {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
           <AlertDialogAction
             // Off while lines are left to fill in, but in the keyboard's reach: the description says why.
-            disabled={busy || markers.length > 0}
+            disabled={busy || markers.length > 0 || groupsUnsaved}
             focusableWhenDisabled
             onClick={() =>
               sample || importedOn

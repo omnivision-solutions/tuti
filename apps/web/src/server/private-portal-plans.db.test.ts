@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { createChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { createArticle } from "./operations/docs";
 import { createGroup, deleteGroup, updateGroup } from "./operations/groups";
 import { addPortalReaders, updatePortal } from "./operations/portal";
@@ -50,9 +51,22 @@ test("a private portal, groups, readers by email and content for groups need Bus
   await onPlan("pro");
   await expect(call(updateGroup, as(), { group: "beta", name: "Beta testers" })).rejects.toMatchObject(refused);
   await expect(call(createArticle, as(), { title: "Roadmap", body: "Soon", access: "groups", groups: ["beta"] })).rejects.toMatchObject(refused);
+  await expect(call(createChangelogEntry, as(), { title: "Beta news", body: "Soon", groups: ["beta"] })).rejects.toMatchObject(refused);
+  const entry = await call(createChangelogEntry, as(), { title: "News", body: "Soon" });
+  await expect(call(updateChangelogEntry, as(), { number: entry.number, groups: ["beta"] })).rejects.toMatchObject(refused);
+  expect((await call(updateChangelogEntry, as(), { number: entry.number, groups: [] })).groups).toEqual([]);
+  // Set on Business, they can be taken off one at a time on a lower plan; not swapped for another.
+  await onPlan("business");
+  await call(createGroup, as(), { name: "Gamma", conditions: BETA });
+  await call(updateChangelogEntry, as(), { number: entry.number, groups: ["beta", "gamma"] });
+  await onPlan("pro");
+  expect((await call(updateChangelogEntry, as(), { number: entry.number, groups: ["beta"] })).groups).toEqual(["beta"]);
+  await expect(call(updateChangelogEntry, as(), { number: entry.number, groups: ["gamma"] })).rejects.toMatchObject(refused);
+  await call(updateChangelogEntry, as(), { number: entry.number, groups: [] });
   // Taking things back to public always works.
   await call(updatePortal, as(), { access: "public" });
   await call(deleteGroup, as(), { group: "beta" });
+  await call(deleteGroup, as(), { group: "gamma" });
   expect(await prisma.readerGroup.count({ where: { projectId: project.id } })).toBe(0);
 });
 

@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 
 import { PostShipped, PostsLike, PostVoters, VOTERS_NAMED } from "@/components/post-sidebar";
 
-import type { GroupCondition } from "@/lib/group-conditions";
+import type { GroupCondition } from "@tuti/shared/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";

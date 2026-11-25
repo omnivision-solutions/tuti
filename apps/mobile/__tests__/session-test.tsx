@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Pressable, Text } from "react-native";
 
+import { cached, cacheGeneration, keep, startCache } from "@/lib/offline";
 import { SessionProvider, useSession } from "@/lib/session";
 
 // Secure storage in memory, each write held until the test lets it land.
@@ -32,7 +33,7 @@ async function landWrites() {
 }
 
 function Harness() {
-  const { session, setProject, signOut, api } = useSession();
+  const { session, setProject, signOut, signIn, api } = useSession();
   return (
     <>
       <Text testID="project">{session === null ? "signed out" : (session?.project ?? "")}</Text>
@@ -44,6 +45,9 @@ function Harness() {
       </Pressable>
       <Pressable onPress={() => void signOut()}>
         <Text>Sign out</Text>
+      </Pressable>
+      <Pressable onPress={() => void signIn({ server: "https://tuti.example.com", token: "token-2", cookie: "c2" })}>
+        <Text>Sign in</Text>
       </Pressable>
       <Pressable onPress={() => void api?.("/projects").catch(() => {})}>
         <Text>Call</Text>
@@ -93,7 +97,39 @@ describe("choosing a project", () => {
   });
 });
 
+/** Something kept by "owner-0", checked to be there (the cache started before the load's generation is read). */
+function keepFixture() {
+  const owner = startCache("owner-0");
+  keep("kept", { rows: [] }, cacheGeneration(), owner);
+  expect(cached("kept", owner)).not.toBeNull();
+}
+
+describe("signing in", () => {
+  it("starts with nothing kept, however the last session went (a restored phone, a lost keystore)", async () => {
+    // Kept by an earlier session that never signed out here.
+    keepFixture();
+    await render(
+      <SessionProvider>
+        <Harness />
+      </SessionProvider>,
+    );
+    expect(await screen.findByText("signed out")).toBeTruthy();
+
+    await fireEvent.press(screen.getByText("Sign in"));
+    await landWrites();
+    expect(cached("kept", "owner-0")).toBeNull();
+    // The new session owns the cache from now on: kept with its owner, it reads back.
+    const owner = (JSON.parse(mockStored.get("session")!) as { owner?: string }).owner;
+    expect(owner).toBeTruthy();
+    keep("mine", { rows: [] }, cacheGeneration(), owner);
+    expect(cached("mine", owner)).not.toBeNull();
+  });
+});
+
 describe("signing out", () => {
+  // Something kept to read offline, from this account.
+  beforeEach(keepFixture);
+
   it("removes the phone's registration first, without waiting for it", async () => {
     mockStored.set("session", JSON.stringify(session));
     const asked: string[] = [];
@@ -117,8 +153,9 @@ describe("signing out", () => {
     const removal = asked.indexOf("DELETE https://tuti.example.com/api/v1/devices/phone-1");
     expect(removal).toBeGreaterThan(-1);
     expect(removal).toBeLessThan(asked.indexOf("POST https://tuti.example.com/api/auth/sign-out"));
-    // The notifications shown go too.
+    // The notifications shown go too, and what was kept to read offline.
     expect(mockDismissed).toHaveBeenCalled();
+    expect(cached("kept", "owner-0")).toBeNull();
   });
 
   it("takes the notifications shown off when the server ends the session too, and gives the phone a new id", async () => {
@@ -138,6 +175,7 @@ describe("signing out", () => {
 
     expect(await screen.findByText("signed out")).toBeTruthy();
     expect(mockDismissed).toHaveBeenCalled();
+    expect(cached("kept", "owner-0")).toBeNull();
     // A push sent before the end and delivered after names the old id, which no longer passes as this sign-in's.
     await landWrites();
     expect(mockStored.get("device-id")).toBe("phone-1");

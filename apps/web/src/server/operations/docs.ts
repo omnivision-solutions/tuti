@@ -1730,7 +1730,7 @@ function parentFor(tree: Awaited<ReturnType<typeof treeOf>>, collection: { id: s
 }
 
 /** Links to the project's groups with these keys, for a tab, collection or article; one that isn't there is refused. Call it with the project locked. */
-async function groupLinks(tx: Prisma.TransactionClient, projectId: string, keys: string[]) {
+export async function groupLinks(tx: Prisma.TransactionClient, projectId: string, keys: string[]) {
   const groups = await tx.readerGroup.findMany({ where: { projectId, key: { in: keys } }, select: { id: true, key: true } });
   const missing = keys.find((key) => !groups.some((group) => group.key === key));
   if (missing !== undefined) {
